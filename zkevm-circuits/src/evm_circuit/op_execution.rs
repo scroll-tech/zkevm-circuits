@@ -16,9 +16,11 @@ use std::{collections::HashMap, ops::Range};
 
 mod arithmetic;
 mod push;
+mod dup;
 
 use arithmetic::AddGadget;
 use push::PushGadget;
+use dup::DupGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],
@@ -207,7 +209,23 @@ pub(crate) struct OpExecutionGadget<F> {
     preset_map: HashMap<(usize, Case), Preset<F>>,
     add_gadget: AddGadget<F>,
     push_gadget: PushGadget<F>,
-}
+    dup1_gadget: DupGadget<F, 0x80>,
+    dup2_gadget: DupGadget<F, 0x81>,
+    dup3_gadget: DupGadget<F, 0x82>,
+    dup4_gadget: DupGadget<F, 0x83>,
+    dup5_gadget: DupGadget<F, 0x84>,
+    dup6_gadget: DupGadget<F, 0x85>,
+    dup7_gadget: DupGadget<F, 0x86>,
+    dup8_gadget: DupGadget<F, 0x87>,
+    dup9_gadget: DupGadget<F, 0x88>,
+    dup10_gadget: DupGadget<F, 0x89>,
+    dup11_gadget: DupGadget<F, 0x8a>,
+    dup12_gadget: DupGadget<F, 0x8b>,
+    dup13_gadget: DupGadget<F, 0x8c>,
+    dup14_gadget: DupGadget<F, 0x8d>,
+    dup15_gadget: DupGadget<F, 0x8e>,
+    dup16_gadget: DupGadget<F, 0x8f>,
+} 
 
 impl<F: FieldExt> OpExecutionGadget<F> {
     // TODO: refactor input type
@@ -261,6 +279,23 @@ impl<F: FieldExt> OpExecutionGadget<F> {
 
         construct_op_gadget!(add_gadget);
         construct_op_gadget!(push_gadget);
+        construct_op_gadget!(dup1_gadget);
+        construct_op_gadget!(dup2_gadget);
+        construct_op_gadget!(dup3_gadget);
+        construct_op_gadget!(dup4_gadget);
+        construct_op_gadget!(dup5_gadget);
+        construct_op_gadget!(dup6_gadget);
+        construct_op_gadget!(dup7_gadget);
+        construct_op_gadget!(dup8_gadget);
+        construct_op_gadget!(dup9_gadget);
+        construct_op_gadget!(dup10_gadget);
+        construct_op_gadget!(dup11_gadget);
+        construct_op_gadget!(dup12_gadget);
+        construct_op_gadget!(dup13_gadget);
+        construct_op_gadget!(dup14_gadget);
+        construct_op_gadget!(dup15_gadget);
+        construct_op_gadget!(dup16_gadget);
+
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -298,6 +333,22 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             resumption,
             add_gadget,
             push_gadget,
+            dup1_gadget,
+            dup2_gadget,
+            dup3_gadget,
+            dup4_gadget,
+            dup5_gadget,
+            dup6_gadget,
+            dup7_gadget,
+            dup8_gadget,
+            dup9_gadget,
+            dup10_gadget,
+            dup11_gadget,
+            dup12_gadget,
+            dup13_gadget,
+            dup14_gadget,
+            dup15_gadget,
+            dup16_gadget,
         }
     }
 
@@ -510,6 +561,102 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 )?,
                 // PUSH1, ..., PUSH32
                 OpcodeId(0x60..=0x7f) => self.push_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP1 => self.dup1_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                OpcodeId::DUP2 => self.dup2_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP3 => self.dup3_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP4 => self.dup4_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP5 => self.dup5_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP6 => self.dup6_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP7 => self.dup7_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP8 => self.dup8_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP9 => self.dup9_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP10 => self.dup10_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP11 => self.dup11_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP12 => self.dup12_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP13 => self.dup13_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP14 => self.dup14_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP15 => self.dup15_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                 OpcodeId::DUP16 => self.dup16_gadget.assign(
                     region,
                     offset,
                     core_state,
