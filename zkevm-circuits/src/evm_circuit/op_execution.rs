@@ -16,15 +16,15 @@ use std::{collections::HashMap, ops::Range};
 
 mod arithmetic;
 mod comparator;
+mod dup;
 mod pop;
 mod push;
-mod dup;
 
 use arithmetic::AddGadget;
 use comparator::LtGadget;
+use dup::DupGadget;
 use pop::PopGadget;
 use push::PushGadget;
-use dup::DupGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],
@@ -704,7 +704,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     core_state,
                     execution_step,
                 )?,
-                
+
                 _ => unimplemented!(),
             }
         }
