@@ -97,7 +97,7 @@ impl<F: FieldExt> OpGadget<F> for PcGadget<F> {
 			
 			let bus_mapping_lookups = [
 				vec![Lookup::BusMappingLookup(BusMappingLookup::Stack {
-					index_offset: 0,
+					index_offset: -1,
 					value: pc.expr(),
 					is_write: true,
 				})]]
@@ -199,31 +199,37 @@ mod test {
 	use halo2::{arithmetic::FieldExt, dev::MockProver};
 	use num::BigUint;
 	use pasta_curves::pallas::Base;
-	use std::ops::Add;
 	
 	macro_rules! try_test_circuit {
-        ($execution_steps:expr, $operations:expr, $result:expr) => {{
+        ($execution_steps:expr, $operations:expr, $result:expr) => {
             let circuit =
                 TestCircuit::<Base>::new($execution_steps, $operations);
             let prover = MockProver::<Base>::run(10, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
-        }};
+        };
     }
 	
 	#[test]
 	fn pc_gadget() {
-		let pc = 0x00u64;
 		let data = BigUint::from(0x03_02_01u64);
 		let selector = BigUint::from(0x01_01_01u64);
-		println!("--------- bits: {}", data.to_bytes_be().len());
+		let pc = (data.to_bytes_be().len() + 1) as u64;
 		// PC
 		try_test_circuit!(
 			vec![
 				ExecutionStep {
+                    opcode: OpcodeId::PUSH3,
+                    case: Case::Success,
+                    values: vec![
+                        data,
+                        selector,
+                    ],
+                },
+				ExecutionStep {
                     opcode: OpcodeId::PC,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(pc.clone()),
+                        BigUint::from(pc),
                     ],
                 },
 			],
@@ -235,6 +241,17 @@ mod test {
                     values: [
                         Base::zero(),
                         Base::from_u64(1023),
+                        Base::from_u64(1+2+3),
+                        Base::zero(),
+                    ]
+                },
+				Operation {
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1022),
                         Base::from_u64(pc),
                         Base::zero(),
                     ]
