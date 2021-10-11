@@ -18,11 +18,13 @@ mod arithmetic;
 mod comparator;
 mod pop;
 mod push;
+mod mul;
 
 use arithmetic::AddGadget;
 use comparator::LtGadget;
 use pop::PopGadget;
 use push::PushGadget;
+use mul::MulGadget;
 
 fn bool_switches_constraints<F: FieldExt>(
     bool_switches: &[Cell<F>],
@@ -213,6 +215,7 @@ pub(crate) struct OpExecutionGadget<F> {
     push_gadget: PushGadget<F>,
     lt_gadget: LtGadget<F>,
     pop_gadget: PopGadget<F>,
+    mul_gadget: MulGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -270,6 +273,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(push_gadget);
         construct_op_gadget!(lt_gadget);
         construct_op_gadget!(pop_gadget);
+        construct_op_gadget!(mul_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -309,6 +313,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             push_gadget,
             lt_gadget,
             pop_gadget,
+            mul_gadget,
         }
     }
 
@@ -553,6 +558,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     execution_step,
                 )?,
                 (_, OpcodeId::POP) => self.pop_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, OpcodeId::MUL) => self.mul_gadget.assign(
                     region,
                     offset,
                     core_state,

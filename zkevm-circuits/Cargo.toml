@@ -14,6 +14,7 @@ bigint = "4"
 num = "0.4"
 sha3 = "0.7.2"
 digest = "0.7.6"
+rand = "0.7"
 bus-mapping = { path = "../bus-mapping"}
 
 [dev-dependencies]
