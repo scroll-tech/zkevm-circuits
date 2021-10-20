@@ -18,6 +18,7 @@ mod arithmetic;
 mod byte;
 mod comparator;
 mod dup;
+mod jumpdest;
 mod pop;
 mod push;
 mod utils;
@@ -26,6 +27,7 @@ use arithmetic::AddGadget;
 use byte::ByteGadget;
 use comparator::LtGadget;
 use dup::DupGadget;
+use jumpdest::JumpdestGadget;
 use pop::PopGadget;
 use push::PushGadget;
 
@@ -220,6 +222,7 @@ pub(crate) struct OpExecutionGadget<F> {
     byte_gadget: ByteGadget<F>,
     pop_gadget: PopGadget<F>,
     dup_gadget: DupGadget<F>,
+    jumpdest_gadget: JumpdestGadget<F>,
 }
 
 impl<F: FieldExt> OpExecutionGadget<F> {
@@ -279,6 +282,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         construct_op_gadget!(pop_gadget);
         construct_op_gadget!(byte_gadget);
         construct_op_gadget!(dup_gadget);
+        construct_op_gadget!(jumpdest_gadget);
         let _ = qs_op_idx;
 
         for constraint in constraints.into_iter() {
@@ -320,6 +324,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
             pop_gadget,
             byte_gadget,
             dup_gadget,
+            jumpdest_gadget,
         }
     }
 
@@ -577,6 +582,12 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                     execution_step,
                 )?,
                 (_, _, OpcodeId::BYTE) => self.byte_gadget.assign(
+                    region,
+                    offset,
+                    core_state,
+                    execution_step,
+                )?,
+                (_, _, OpcodeId::JUMPDEST) => self.jumpdest_gadget.assign(
                     region,
                     offset,
                     core_state,
