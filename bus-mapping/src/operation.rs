@@ -46,6 +46,8 @@ pub enum Target {
     Stack,
     /// Means the target of the operation is the Storage.
     Storage,
+    /// Means the target of the operation is the Byte_code table.
+    Byte_code,
 }
 
 /// Trait used for Operation Kinds.

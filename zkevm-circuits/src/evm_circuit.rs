@@ -118,6 +118,8 @@ pub(crate) enum BusMappingLookup<F> {
     Bytecode {
         hash: Expression<F>,
         index: Expression<F>,
+        push_rindex: Expression<F>,
+        is_code: Expression<F>,
         value: Expression<F>,
     },
     /* TODO: Block,
@@ -132,6 +134,7 @@ impl<F: FieldExt> BusMappingLookup<F> {
             Self::Stack { .. } => Target::Stack,
             Self::Memory { .. } => Target::Memory,
             Self::AccountStorage { .. } => Target::Storage,
+            Self::Bytecode { .. } => Target::Byte_code,
             _ => unimplemented!(),
         }
     }
@@ -152,6 +155,16 @@ pub(crate) enum FixedLookup {
     SignByte,
 }
 
+#[derive(Clone, Copy, Debug, PartialOrd, PartialEq, Eq, Ord)]
+pub(crate) enum BytecodeLookup {
+    // Noop provides [0, 0, 0, 0,0] row
+    Noop,
+    // meaningful tags start with 1
+    BytecodeTable,
+    Memory,
+    CallData,
+}
+
 impl<F: FieldExt> Expr<F> for FixedLookup {
     fn expr(&self) -> Expression<F> {
         Expression::Constant(F::from_u64(*self as u64))
@@ -162,6 +175,7 @@ impl<F: FieldExt> Expr<F> for FixedLookup {
 pub(crate) enum Lookup<F> {
     FixedLookup(FixedLookup, [Expression<F>; 3]),
     BusMappingLookup(BusMappingLookup<F>),
+    BytecodeLookup(BytecodeLookup, [Expression<F>; 5]),
 }
 
 #[derive(Clone, Debug)]
@@ -331,6 +345,7 @@ struct EvmCircuit<F> {
     qs_byte_lookup: Column<Advice>,
     fixed_table: [Column<Fixed>; 4],
     rw_table: [Column<Advice>; 7],
+    byte_code_table: [Column<Advice>; 5],
     op_execution_gadget: OpExecutionGadget<F>,
 }
 
@@ -354,6 +369,14 @@ impl<F: FieldExt> EvmCircuit<F> {
             meta.advice_column(), // val2
             meta.advice_column(), // val3
             meta.advice_column(), // val4
+        ];
+
+        let byte_code_table = [
+            meta.advice_column(), // code_hash
+            meta.advice_column(), // index
+            meta.advice_column(), // push_rindex
+            meta.advice_column(), // is_code
+            meta.advice_column(), // byte code
         ];
 
         // fixed_table contains pre-built tables identified by tag including:
@@ -400,6 +423,7 @@ impl<F: FieldExt> EvmCircuit<F> {
             advices,
             fixed_table,
             rw_table,
+            byte_code_table,
             op_execution_state_curr,
             independent_lookups,
         );
@@ -409,6 +433,7 @@ impl<F: FieldExt> EvmCircuit<F> {
             qs_byte_lookup,
             fixed_table,
             rw_table,
+            byte_code_table,
             op_execution_gadget,
         }
     }
@@ -504,6 +529,7 @@ impl<F: FieldExt> EvmCircuit<F> {
         advices: [Column<Advice>; CIRCUIT_WIDTH],
         fixed_table: [Column<Fixed>; 4],
         rw_table: [Column<Advice>; 7],
+        byte_code_table: [Column<Advice>; 5],
         op_execution_state_curr: OpExecutionState<F>,
         independent_lookups: Vec<(Expression<F>, Vec<Lookup<F>>)>,
     ) {
@@ -512,10 +538,12 @@ impl<F: FieldExt> EvmCircuit<F> {
 
         let mut fixed_lookups = Vec::<[Expression<F>; 4]>::new();
         let mut rw_lookups = Vec::<[Expression<F>; 7]>::new();
+        let mut byte_code_lookups = Vec::<[Expression<F>; 5]>::new();
 
         for (qs_lookup, lookups) in independent_lookups {
             let mut fixed_lookup_count = 0;
             let mut rw_lookup_count = 0;
+            let mut bytecode_lookup_count = 0;
 
             for lookup in lookups {
                 match lookup {
@@ -602,6 +630,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                                 value,
                                 value_prev,
                             ],
+
                             // TODO:
                             _ => unimplemented!(),
                         });
@@ -613,6 +642,29 @@ impl<F: FieldExt> EvmCircuit<F> {
                         }
 
                         rw_lookup_count += 1;
+                    }
+                    Lookup::BytecodeLookup(tag, exprs) => {
+                        // let exprs = iter::once(tag.expr()).chain(exprs.clone());
+                        // disable tag now for testing
+                        let exprs = iter::empty().chain(exprs.clone());
+                        if byte_code_lookups.len() == bytecode_lookup_count {
+                            byte_code_lookups.push(
+                                exprs
+                                    .map(|expr| qs_lookup.clone() * expr)
+                                    .collect::<Vec<_>>()
+                                    .try_into()
+                                    .unwrap(),
+                            );
+                        } else {
+                            for (acc, expr) in byte_code_lookups
+                                [bytecode_lookup_count]
+                                .iter_mut()
+                                .zip(exprs)
+                            {
+                                *acc = acc.clone() + qs_lookup.clone() * expr;
+                            }
+                        }
+                        bytecode_lookup_count += 1;
                     }
                     _ => unimplemented!(),
                 }
@@ -656,6 +708,21 @@ impl<F: FieldExt> EvmCircuit<F> {
             });
         }
 
+        // Configure byte code lookups
+        for byte_code_lookup in byte_code_lookups.iter() {
+            meta.lookup(|meta| {
+                byte_code_lookup
+                    .iter()
+                    .zip(byte_code_table.iter())
+                    .map(|(expr, column)| {
+                        (
+                            expr.clone(),
+                            meta.query_advice(*column, Rotation::cur()),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            });
+        }
         // Configure rw lookups
         for rw_lookup in rw_lookups.iter() {
             meta.lookup(|meta| {
@@ -896,6 +963,45 @@ impl<F: FieldExt> EvmCircuit<F> {
         )
     }
 
+    fn load_byte_code_tables(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        byte_code_table: Vec<[u32; 5]>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "byte_code table",
+            |mut region| {
+                let mut offset = 0;
+
+                for column in self.byte_code_table.iter() {
+                    region.assign_advice(
+                        || "byte_code noop",
+                        *column,
+                        offset,
+                        || Ok(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
+                for byte_code_entry in byte_code_table.iter() {
+                    for (column, value) in
+                        self.byte_code_table.iter().zip(byte_code_entry)
+                    {
+                        region.assign_advice(
+                            || "byte_codes table",
+                            *column,
+                            offset,
+                            || Ok(F::from_u64(*value as u64)),
+                        )?;
+                    }
+                    offset += 1;
+                }
+
+                Ok(())
+            },
+        )
+    }
+
     fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -944,12 +1050,51 @@ mod test {
         circuit::{Layouter, SimpleFloorPlanner},
         plonk::{Circuit, ConstraintSystem, Error},
     };
+    extern crate hex;
+    use bus_mapping::{evm::OpcodeId, operation::Target};
 
     #[derive(Clone)]
     pub(crate) struct TestCircuitConfig<F> {
         evm_circuit: EvmCircuit<F>,
     }
 
+    // contruct byte code table from compiled by contract
+    pub(crate) fn assgin_byte_table(bytecode_source: &str) -> vec![u32; 5] {
+        let byte_codes = hex::decode(bytecode_source).expect("Decoding failed");
+        // TODO: add keccak hash (byte_codes)
+        let code_hash = 0 as u32;
+        println!("{:?}", byte_codes);
+        let mut i = 0;
+        let mut push_x = 0;
+        let mut byte_code_table = Vec::<[u32; 5]>::new();
+        for byte in byte_codes.iter() {
+            if (push_x != 0) {
+                let push_rindex = push_x;
+                for x in 0..push_rindex {
+                    // rw_lookups
+                    // .push(vec![0.expr(); 7].try_into().unwrap());
+                    byte_code_table.push([
+                        code_hash,
+                        i,
+                        push_rindex - x,
+                        0,
+                        *byte as u32,
+                    ]);
+                    i += 1;
+                }
+                push_x = 0;
+            } else {
+                byte_code_table.push([code_hash, i, 0, 1, *byte as u32]);
+                if (OpcodeId::PUSH1.as_u8() <= *byte
+                    && *byte <= OpcodeId::PUSH32.as_u8())
+                {
+                    push_x = (*byte - OpcodeId::PUSH1.as_u8() + 1) as u32;
+                }
+                i += 1
+            }
+        }
+        println!("done for parse code");
+    }
     #[derive(Default)]
     pub(crate) struct TestCircuit<F> {
         execution_steps: Vec<ExecutionStep>,
@@ -992,6 +1137,14 @@ mod test {
             config
                 .evm_circuit
                 .load_rw_tables(&mut layouter, &self.operations)?;
+
+            let bytecode_source = "608060406007565b00";
+            let byte_code_table = assgin_byte_table(bytecode_source);
+
+            config
+                .evm_circuit
+                .load_byte_code_tables(&mut layouter, byte_code_table);
+
             config
                 .evm_circuit
                 .assign(&mut layouter, &self.execution_steps)
