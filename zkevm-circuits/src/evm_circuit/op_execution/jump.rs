@@ -1,6 +1,6 @@
 use super::super::{
     BytecodeLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-    FixedLookup, Lookup, Word,
+    Word,
 };
 use super::utils::common_cases::OutOfGasCase;
 use super::utils::constraint_builder::ConstraintBuilder;
@@ -26,6 +26,7 @@ impl_op_gadget!(
     JumpGadget {
         JumpSuccessCase(),
         OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
+        //TODO: ErrJumpcase
     }
 );
 
@@ -34,13 +35,12 @@ struct JumpSuccessCase<F> {
     case_selector: Cell<F>,
     code_hash: Word<F>,
     dest: Word<F>,
-    current_pc: Word<F>,
 }
 
 impl<F: FieldExt> JumpSuccessCase<F> {
     pub(crate) const CASE_CONFIG: &'static CaseConfig = &CaseConfig {
         case: Case::Success,
-        num_word: 3, // top stack value as pc, hash of contract, current pc
+        num_word: 2, // top stack value as pc, hash of contract
         num_cell: 0,
         will_halt: false,
     };
@@ -50,7 +50,6 @@ impl<F: FieldExt> JumpSuccessCase<F> {
             case_selector: alloc.selector.clone(),
             code_hash: alloc.words.pop().unwrap(),
             dest: alloc.words.pop().unwrap(),
-            current_pc: alloc.words.pop().unwrap(),
         }
     }
 
@@ -71,11 +70,15 @@ impl<F: FieldExt> JumpSuccessCase<F> {
 
         // Pop the value from the stack
         cb.stack_pop(self.dest.expr());
-        // // lookup byte code table to ensure 'dest' is valid
+        // lookup byte code table to ensure 'dest' is valid( jumpdest & is_cpde)
         cb.add_byte_code_lookup(
             BytecodeLookup::BytecodeTable,
-            [self.code_hash.expr(), self.dest.expr(), 0.expr(), 1.expr(),
-            OpcodeId::JUMPDEST.as_u8().expr()
+            [
+                self.code_hash.expr(),
+                self.dest.expr(),
+                0.expr(),
+                1.expr(),
+                OpcodeId::JUMPDEST.as_u8().expr(),
             ],
         );
 
@@ -101,17 +104,11 @@ impl<F: FieldExt> JumpSuccessCase<F> {
         self.dest
             .assign(region, offset, Some(step.values[1].to_word()))?;
 
-        self.current_pc.assign(
-            region,
-            offset,
-            Some(step.values[2].to_word()),
-        )?;
-
         // State transitions
-        let mut st = STATE_TRANSITION.clone();
-        //TODO: set pc_delta = dest - current_pc so that resue current state transition functions
-        st.pc_delta = Some(5 as usize); //Some(step.values[1].to_usize().unwrap() - step.values[2].to_usize().unwrap());
+        let st = STATE_TRANSITION.clone();
         st.assign(state);
+        // other than noraml op code, jump change pc specially, adjust here
+        state.program_counter = step.values[1].to_usize().unwrap();
         Ok(())
     }
 }
@@ -136,14 +133,14 @@ mod test {
     }
 
     #[test]
-    fn Jump_gadget() {
+    fn jump_gadget() {
         try_test_circuit!(
             vec![
                 ExecutionStep {
                     opcode: OpcodeId::PUSH1,
                     case: Case::Success,
                     values: vec![
-                        BigUint::from(0x07u64),
+                        BigUint::from(0x03u64),
                         BigUint::from(0x01u64),
                     ],
                 },
@@ -153,22 +150,40 @@ mod test {
                     case: Case::Success,
                     values: vec![
                         BigUint::from(0x00u64), // code hash
-                        BigUint::from(0x07u64), // dest value
-                        BigUint::from(0x06u64), // current pc value
+                        BigUint::from(0x03u64), // dest value
                     ],
+                },
+                ExecutionStep {
+                    // JUMPDEST
+                    opcode: OpcodeId::JUMPDEST,
+                    case: Case::Success,
+                    values: vec![],
                 }
             ],
-            vec![Operation {
-                gc: 1,
-                target: Target::Stack,
-                is_write: true,
-                values: [
-                    Base::zero(),
-                    Base::from_u64(1023),
-                    Base::from_u64(7),
-                    Base::zero(),
-                ]
-            }],
+            vec![
+                Operation {
+                    gc: 1,
+                    target: Target::Stack,
+                    is_write: true,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(03),
+                        Base::zero(),
+                    ]
+                },
+                Operation {
+                    gc: 2,
+                    target: Target::Stack,
+                    is_write: false,
+                    values: [
+                        Base::zero(),
+                        Base::from_u64(1023),
+                        Base::from_u64(03),
+                        Base::zero(),
+                    ]
+                }
+            ],
             Ok(())
         );
     }
