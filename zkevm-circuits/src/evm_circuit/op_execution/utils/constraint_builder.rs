@@ -198,7 +198,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         self.add_lookup(Lookup::FixedLookup(table, expressions));
     }
 
-    pub(crate) fn add_byte_code_lookup(
+    pub(crate) fn add_bytecode_lookup(
         &mut self,
         table: BytecodeLookup,
         expressions: [Expression<F>; 5],
