@@ -1058,7 +1058,7 @@ mod test {
         evm_circuit: EvmCircuit<F>,
     }
 
-    // contruct byte codes from compiled by contract
+    // contruct byte codes from compiled by contract,  i.e. bytecode_source = "6002565b00";
     pub(crate) fn assgin_byte_table(bytecode_source: &str) -> Vec<[u32; 5]> {
         let byte_codes = hex::decode(bytecode_source).expect("Decoding failed");
         // TODO: add keccak hash (byte_codes)
@@ -1096,7 +1096,7 @@ mod test {
         return bytecode_table;
     }
 
-    // contruct byte code table from compiled by contract， .ie. bytecode_source = "6002565b00";
+    // contruct bytecode table from ExecutionSteps of test
     pub(crate) fn assgin_byte_table_step(
         execution_steps: &[ExecutionStep],
     ) -> Vec<[u32; 5]> {
