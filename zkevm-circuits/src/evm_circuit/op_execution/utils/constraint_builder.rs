@@ -1,6 +1,4 @@
-use super::super::super::{
-    BusMappingLookup, BytecodeLookup, Constraint, FixedLookup, Lookup,
-};
+use super::super::super::{BusMappingLookup, Constraint, FixedLookup, Lookup};
 use crate::util::Expr;
 use halo2::{arithmetic::FieldExt, plonk::Expression};
 
@@ -200,13 +198,12 @@ impl<F: FieldExt> ConstraintBuilder<F> {
 
     pub(crate) fn add_bytecode_lookup(
         &mut self,
-        table: BytecodeLookup,
-        expressions: [Expression<F>; 5],
+        expressions: [Expression<F>; 4],
     ) {
         for expression in expressions.iter() {
             self.validate_lookup_expression(expression);
         }
-        self.add_lookup(Lookup::BytecodeLookup(table, expressions));
+        self.add_lookup(Lookup::BytecodeLookup(expressions));
     }
 
     fn add_lookup(&mut self, lookup: Lookup<F>) {

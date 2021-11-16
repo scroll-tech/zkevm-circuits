@@ -1,6 +1,5 @@
 use super::super::{
-    BytecodeLookup, Case, Cell, Constraint, CoreStateInstance, ExecutionStep,
-    Word,
+    Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
 };
 use super::utils::common_cases::OutOfGasCase;
 use super::utils::constraint_builder::ConstraintBuilder;
@@ -71,16 +70,12 @@ impl<F: FieldExt> JumpSuccessCase<F> {
         // Pop the value from the stack
         cb.stack_pop(self.dest.expr());
         // lookup byte code table to ensure 'dest' is valid( jumpdest & is_cpde)
-        cb.add_byte_code_lookup(
-            BytecodeLookup::BytecodeTable,
-            [
-                self.code_hash.expr(),
-                self.dest.expr(),
-                0.expr(),
-                1.expr(),
-                OpcodeId::JUMPDEST.as_u8().expr(),
-            ],
-        );
+        cb.add_bytecode_lookup([
+            self.code_hash.expr(),
+            self.dest.expr(),
+            1.expr(),
+            OpcodeId::JUMPDEST.as_u8().expr(),
+        ]);
 
         // Generate the constraint
         cb.constraint(self.case_selector.expr(), name)
@@ -107,7 +102,7 @@ impl<F: FieldExt> JumpSuccessCase<F> {
         // State transitions
         let st = STATE_TRANSITION.clone();
         st.assign(state);
-        // other than noraml op code, jump change pc specially, adjust here
+        // other than normal op code, jump change pc specially, adjust here
         state.program_counter = step.values[1].to_usize().unwrap();
         Ok(())
     }

@@ -115,13 +115,6 @@ pub(crate) enum BusMappingLookup<F> {
         field: CallField,
         value: Expression<F>,
     },
-    Bytecode {
-        hash: Expression<F>,
-        index: Expression<F>,
-        push_rindex: Expression<F>,
-        is_code: Expression<F>,
-        value: Expression<F>,
-    },
     /* TODO: Block,
      * TODO: Bytecode,
      * TODO: Tx,
@@ -154,16 +147,6 @@ pub(crate) enum FixedLookup {
     SignByte,
 }
 
-#[derive(Clone, Copy, Debug, PartialOrd, PartialEq, Eq, Ord)]
-pub(crate) enum BytecodeLookup {
-    // Noop provides [0, 0, 0, 0,0] row
-    Noop,
-    // meaningful tags start with 1
-    BytecodeTable,
-    Memory,
-    CallData,
-}
-
 impl<F: FieldExt> Expr<F> for FixedLookup {
     fn expr(&self) -> Expression<F> {
         Expression::Constant(F::from_u64(*self as u64))
@@ -174,7 +157,7 @@ impl<F: FieldExt> Expr<F> for FixedLookup {
 pub(crate) enum Lookup<F> {
     FixedLookup(FixedLookup, [Expression<F>; 3]),
     BusMappingLookup(BusMappingLookup<F>),
-    BytecodeLookup(BytecodeLookup, [Expression<F>; 5]),
+    BytecodeLookup([Expression<F>; 4]),
 }
 
 #[derive(Clone, Debug)]
@@ -344,7 +327,7 @@ struct EvmCircuit<F> {
     qs_byte_lookup: Column<Advice>,
     fixed_table: [Column<Fixed>; 4],
     rw_table: [Column<Advice>; 7],
-    bytecode_table: [Column<Advice>; 5],
+    bytecode_table: [Column<Advice>; 4],
     op_execution_gadget: OpExecutionGadget<F>,
 }
 
@@ -373,7 +356,6 @@ impl<F: FieldExt> EvmCircuit<F> {
         let bytecode_table = [
             meta.advice_column(), // code_hash
             meta.advice_column(), // index
-            meta.advice_column(), // push_rindex
             meta.advice_column(), // is_code
             meta.advice_column(), // byte code
         ];
@@ -528,16 +510,15 @@ impl<F: FieldExt> EvmCircuit<F> {
         advices: [Column<Advice>; CIRCUIT_WIDTH],
         fixed_table: [Column<Fixed>; 4],
         rw_table: [Column<Advice>; 7],
-        bytecode_table: [Column<Advice>; 5],
+        bytecode_table: [Column<Advice>; 4],
         op_execution_state_curr: OpExecutionState<F>,
         independent_lookups: Vec<(Expression<F>, Vec<Lookup<F>>)>,
     ) {
         // TODO: call_lookups
-        // TODO: bytecode_lookups
 
         let mut fixed_lookups = Vec::<[Expression<F>; 4]>::new();
         let mut rw_lookups = Vec::<[Expression<F>; 7]>::new();
-        let mut bytecode_lookups = Vec::<[Expression<F>; 5]>::new();
+        let mut bytecode_lookups = Vec::<[Expression<F>; 4]>::new();
 
         for (qs_lookup, lookups) in independent_lookups {
             let mut fixed_lookup_count = 0;
@@ -642,9 +623,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 
                         rw_lookup_count += 1;
                     }
-                    Lookup::BytecodeLookup(_tag, exprs) => {
-                        // let exprs = iter::once(tag.expr()).chain(exprs.clone());
-                        // TODO: add tag later but now omit for testing
+                    Lookup::BytecodeLookup(exprs) => {
                         let exprs = iter::empty().chain(exprs.clone());
                         if bytecode_lookups.len() == bytecode_lookup_count {
                             bytecode_lookups.push(
@@ -965,7 +944,7 @@ impl<F: FieldExt> EvmCircuit<F> {
     fn load_bytecode_tables(
         &self,
         layouter: &mut impl Layouter<F>,
-        bytecode_table: Vec<[u32; 5]>,
+        bytecode_table: Vec<[u32; 4]>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "bytecode table",
@@ -1059,31 +1038,22 @@ mod test {
     }
 
     // contruct byte codes from compiled by contract,  i.e. bytecode_source = "6002565b00";
-    pub(crate) fn assgin_byte_table(bytecode_source: &str) -> Vec<[u32; 5]> {
+    pub(crate) fn assgin_byte_table(bytecode_source: &str) -> Vec<[u32; 4]> {
         let byte_codes = hex::decode(bytecode_source).expect("Decoding failed");
         // TODO: add keccak hash (byte_codes)
         let code_hash = 0 as u32;
         let mut i = 0;
         let mut push_x = 0;
-        let mut bytecode_table = Vec::<[u32; 5]>::new();
+        let mut bytecode_table = Vec::<[u32; 4]>::new();
         for byte in byte_codes.iter() {
             if push_x != 0 {
-                let push_rindex = push_x;
-                for x in 0..push_rindex {
-                    // rw_lookups
-                    // .push(vec![0.expr(); 7].try_into().unwrap());
-                    bytecode_table.push([
-                        code_hash,
-                        i,
-                        push_rindex - x,
-                        0,
-                        *byte as u32,
-                    ]);
-                    i += 1;
+                for x in 0..push_x {
+                    bytecode_table.push([code_hash, i + x, 0, *byte as u32]);
                 }
+                i += push_x;
                 push_x = 0;
             } else {
-                bytecode_table.push([code_hash, i, 0, 1, *byte as u32]);
+                bytecode_table.push([code_hash, i, 1, *byte as u32]);
                 if OpcodeId::PUSH1.as_u8() <= *byte
                     && *byte <= OpcodeId::PUSH32.as_u8()
                 {
@@ -1099,36 +1069,27 @@ mod test {
     // contruct bytecode table from ExecutionSteps of test
     pub(crate) fn assgin_byte_table_step(
         execution_steps: &[ExecutionStep],
-    ) -> Vec<[u32; 5]> {
+    ) -> Vec<[u32; 4]> {
         // TODO: add keccak hash (byte_codes)
         let code_hash = 0 as u32;
         let mut i = 0;
-        let mut bytecode_table = Vec::<[u32; 5]>::new();
+        let mut bytecode_table = Vec::<[u32; 4]>::new();
 
         for curr_step in execution_steps.iter() {
             let byte = curr_step.opcode.as_u8();
             if OpcodeId::PUSH1.as_u8() <= byte
                 && byte <= OpcodeId::PUSH32.as_u8()
             {
-                bytecode_table.push([code_hash, i, 0, 1, byte as u32]);
+                bytecode_table.push([code_hash, i, 1, byte as u32]);
                 i += 1;
                 // loading data segement
-                let push_rindex = byte - OpcodeId::PUSH1.as_u8() + 1;
-                let mut x = 0;
                 for data in curr_step.values[0].to_bytes_le() {
-                    bytecode_table.push([
-                        code_hash,
-                        i,
-                        (push_rindex - x) as u32,
-                        0,
-                        data as u32,
-                    ]);
+                    bytecode_table.push([code_hash, i, 0, data as u32]);
 
                     i += 1; // next byte
-                    x = x + 1;
                 }
             } else {
-                bytecode_table.push([code_hash, i, 0, 1, byte as u32]);
+                bytecode_table.push([code_hash, i, 1, byte as u32]);
                 i += 1
             }
         }
