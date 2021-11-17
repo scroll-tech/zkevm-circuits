@@ -1037,35 +1037,6 @@ mod test {
         evm_circuit: EvmCircuit<F>,
     }
 
-    // contruct byte codes from compiled by contract,  i.e. bytecode_source = "6002565b00";
-    pub(crate) fn assgin_byte_table(bytecode_source: &str) -> Vec<[u32; 4]> {
-        let byte_codes = hex::decode(bytecode_source).expect("Decoding failed");
-        // TODO: add keccak hash (byte_codes)
-        let code_hash = 0 as u32;
-        let mut i = 0;
-        let mut push_x = 0;
-        let mut bytecode_table = Vec::<[u32; 4]>::new();
-        for byte in byte_codes.iter() {
-            if push_x != 0 {
-                for x in 0..push_x {
-                    bytecode_table.push([code_hash, i + x, 0, *byte as u32]);
-                }
-                i += push_x;
-                push_x = 0;
-            } else {
-                bytecode_table.push([code_hash, i, 1, *byte as u32]);
-                if OpcodeId::PUSH1.as_u8() <= *byte
-                    && *byte <= OpcodeId::PUSH32.as_u8()
-                {
-                    push_x = (*byte - OpcodeId::PUSH1.as_u8() + 1) as u32;
-                }
-                i += 1
-            }
-        }
-
-        return bytecode_table;
-    }
-
     // contruct bytecode table from ExecutionSteps of test
     pub(crate) fn assgin_byte_table_step(
         execution_steps: &[ExecutionStep],
