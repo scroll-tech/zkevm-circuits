@@ -107,6 +107,15 @@ impl ToBigEndian for U256 {
     }
 }
 
+impl ToLittleEndian for U256 {
+    /// Encode the value as byte array in little endian.
+    fn to_le_bytes(&self) -> [u8; 32] {
+        let mut bytes = [0u8; 32];
+        self.to_little_endian(&mut bytes);
+        bytes
+    }
+}
+
 impl<F: FieldExt> ToScalar<F> for U256 {
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
