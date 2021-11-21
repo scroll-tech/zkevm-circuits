@@ -8,6 +8,10 @@ use halo2::{
 
 pub(crate) mod constraint_builder;
 pub(crate) mod math_gadget;
+pub(crate) mod memory_gadget;
+
+type Address = u64;
+type MemorySize = u64;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
