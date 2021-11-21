@@ -36,6 +36,8 @@ pub(crate) struct ComparatorGadget<F> {
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
+    const NAME: &'static str = "LT";
+
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::LT;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
@@ -246,21 +248,21 @@ mod test {
             }],
             rws: vec![
                 Rw::Stack {
-                    counter: 1,
+                    rw_counter: 1,
                     is_write: false,
                     call_id: 1,
                     stack_pointer: 1022,
                     value: a,
                 },
                 Rw::Stack {
-                    counter: 2,
+                    rw_counter: 2,
                     is_write: false,
                     call_id: 1,
                     stack_pointer: 1023,
                     value: b,
                 },
                 Rw::Stack {
-                    counter: 3,
+                    rw_counter: 3,
                     is_write: true,
                     call_id: 1,
                     stack_pointer: 1023,

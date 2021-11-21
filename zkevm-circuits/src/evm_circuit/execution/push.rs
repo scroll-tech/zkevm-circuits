@@ -24,10 +24,12 @@ pub(crate) struct PushGadget<F> {
     opcode: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, 8>,
     value: Word<F>,
-    selectors: [Cell<F>; 32],
+    selectors: [Cell<F>; 31],
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
+    const NAME: &'static str = "PUSH";
+
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::PUSH;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
@@ -38,47 +40,53 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
             cb.require_sufficient_gas_left(GasCost::FASTEST.expr());
 
         // Query selectors for each opcode_lookup
-        let selectors = array_init(|idx| {
-            if idx == 0 {
-                cb.query_cell()
-            } else {
-                cb.query_bool()
-            }
-        });
+        let selectors = array_init(|_| cb.query_bool());
 
         // Lookup opcode from the LSB to MSB
         let bytes = array_init(|idx| {
+            let index = cb.curr.state.program_counter.expr() + opcode.expr()
+                - (OpcodeId::PUSH1.as_u8() - 1 + idx as u8).expr();
             let byte = cb.query_cell();
-            cb.condition(selectors[idx].expr(), |cb| {
-                cb.opcode_lookup_at(
-                    cb.curr.state.program_counter.expr() + opcode.expr()
-                        - (OpcodeId::PUSH1.as_u8() - 1 + idx as u8).expr(),
-                    byte.expr(),
-                )
-            });
+            if idx == 0 {
+                cb.opcode_lookup_at(index, byte.expr())
+            } else {
+                cb.condition(selectors[idx - 1].expr(), |cb| {
+                    cb.opcode_lookup_at(index, byte.expr())
+                });
+            }
             byte
         });
 
-        // First selector (for the LSB) always needs to be enabled
-        cb.require_equal(selectors[0].expr(), 1.expr());
-        for idx in 1..32 {
+        for idx in 0..31 {
+            let selector_prev = if idx == 0 {
+                // First selector will always be 1
+                1.expr()
+            } else {
+                selectors[idx - 1].expr()
+            };
             // selector can transit from 1 to 0 only once as [1, 1, 1, ...,
             // 0, 0, 0]
             cb.require_boolean(
-                selectors[idx - 1].expr() - selectors[idx].expr(),
+                "Constrain selector can only transit from 1 to 0",
+                selector_prev - selectors[idx].expr(),
             );
-            // value byte should be 0 when selector is 0
+            // byte should be 0 when selector is 0
             cb.require_zero(
-                bytes[idx].expr() * (1.expr() - selectors[idx].expr()),
+                "Constrain byte == 0 when selector == 0",
+                bytes[idx + 1].expr() * (1.expr() - selectors[idx].expr()),
             );
         }
 
-        // Deduce the number of bytes to push from the 'x' value of 'pushx'
-        // The number of bytes starts at 1 for PUSH1
-        let num_pushed = opcode.expr() - (OpcodeId::PUSH1.as_u64() - 1).expr();
-        // Sum of selectors needs to be exactly the number of bytes
+        // Deduce the number of additional bytes to push than PUSH1
+        let num_additional_pushed =
+            opcode.expr() - OpcodeId::PUSH1.as_u64().expr();
+        // Sum of selectors needs to be exactly the number of additional bytes
         // that needs to be pushed.
-        cb.require_equal(sum::expr(&selectors), num_pushed);
+        cb.require_equal(
+            "Constrain sum of selectors equal to num_additional_pushed",
+            sum::expr(&selectors),
+            num_additional_pushed,
+        );
 
         // Push the value on the stack
         let value = Word::new(bytes, cb.randomness());
@@ -131,13 +139,13 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        let num_pushed =
-            (opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize;
+        let num_additional_pushed =
+            (opcode.as_u8() - OpcodeId::PUSH1.as_u8()) as usize;
         for (idx, selector) in self.selectors.iter().enumerate() {
             selector.assign(
                 region,
                 offset,
-                Some(F::from_u64((idx < num_pushed) as u64)),
+                Some(F::from_u64((idx < num_additional_pushed) as u64)),
             )?;
         }
 
@@ -204,7 +212,7 @@ mod test {
                 ),
             }],
             rws: vec![Rw::Stack {
-                counter: 1,
+                rw_counter: 1,
                 is_write: true,
                 call_id: 1,
                 stack_pointer: 1023,

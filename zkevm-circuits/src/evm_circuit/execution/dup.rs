@@ -26,6 +26,8 @@ pub(crate) struct DupGadget<F> {
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for DupGadget<F> {
+    const NAME: &'static str = "DUP";
+
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::DUP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
@@ -155,14 +157,14 @@ mod test {
             }],
             rws: vec![
                 Rw::Stack {
-                    counter: 1,
+                    rw_counter: 1,
                     is_write: false,
                     call_id: 1,
                     stack_pointer: 1023,
                     value,
                 },
                 Rw::Stack {
-                    counter: 2,
+                    rw_counter: 2,
                     is_write: true,
                     call_id: 1,
                     stack_pointer: 1023 - n,

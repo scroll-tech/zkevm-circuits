@@ -52,7 +52,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     pub(crate) curr: &'a Step<F>,
     pub(crate) next: &'a Step<F>,
     randomness: &'a Expression<F>,
-    constraints: Vec<Expression<F>>,
+    constraints: Vec<(&'static str, Expression<F>)>,
     lookups: Vec<Lookup<F>>,
     row_usages: Vec<StepRowUsage>,
     rw_counter_offset: usize,
@@ -84,13 +84,20 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     #[allow(clippy::type_complexity)]
     pub(crate) fn build(
         self,
-    ) -> (Vec<Expression<F>>, Vec<Lookup<F>>, Vec<Preset<F>>) {
+    ) -> (
+        Vec<(&'static str, Expression<F>)>,
+        Vec<Lookup<F>>,
+        Vec<Preset<F>>,
+    ) {
         let mut constraints = self.constraints;
         let mut presets = Vec::new();
 
         for (row, usage) in self.curr.rows.iter().zip(self.row_usages.iter()) {
             if usage.is_byte_lookup_enabled {
-                constraints.push(row.qs_byte_lookup.expr() - 1.expr());
+                constraints.push((
+                    "Enable byte lookup",
+                    row.qs_byte_lookup.expr() - 1.expr(),
+                ));
             }
 
             presets.extend(
@@ -131,7 +138,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     pub(crate) fn query_bool(&mut self) -> Cell<F> {
         let [cell] = self.query_cells::<1>(false);
-        self.require_boolean(cell.expr());
+        self.require_boolean("Constrain cell to be a bool", cell.expr());
         cell
     }
 
@@ -182,20 +189,29 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Common
 
-    pub(crate) fn require_boolean(&mut self, value: Expression<F>) {
-        self.add_constraint(value.clone() * (1.expr() - value));
+    pub(crate) fn require_boolean(
+        &mut self,
+        name: &'static str,
+        value: Expression<F>,
+    ) {
+        self.add_constraint(name, value.clone() * (1.expr() - value));
     }
 
-    pub(crate) fn require_zero(&mut self, constraint: Expression<F>) {
-        self.add_constraint(constraint);
+    pub(crate) fn require_zero(
+        &mut self,
+        name: &'static str,
+        constraint: Expression<F>,
+    ) {
+        self.add_constraint(name, constraint);
     }
 
     pub(crate) fn require_equal(
         &mut self,
+        name: &'static str,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) {
-        self.add_constraint(lhs - rhs);
+        self.add_constraint(name, lhs - rhs);
     }
 
     pub(crate) fn require_in_range(
@@ -230,53 +246,63 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         state_transition: StateTransition<F>,
     ) {
-        for (curr, next, transition) in vec![
+        for (name, curr, next, transition) in vec![
             (
+                "State transition constrain of rw_counter",
                 &self.curr.state.rw_counter,
                 &self.next.state.rw_counter,
                 state_transition.rw_counter,
             ),
             (
+                "State transition constrain of call_id",
                 &self.curr.state.call_id,
                 &self.next.state.call_id,
                 state_transition.call_id,
             ),
             (
+                "State transition constrain of is_root",
                 &self.curr.state.is_root,
                 &self.next.state.is_root,
                 state_transition.is_root,
             ),
             (
+                "State transition constrain of is_create",
                 &self.curr.state.is_create,
                 &self.next.state.is_create,
                 state_transition.is_create,
             ),
             (
+                "State transition constrain of opcode_source",
                 &self.curr.state.opcode_source,
                 &self.next.state.opcode_source,
                 state_transition.opcode_source,
             ),
             (
+                "State transition constrain of program_counter",
                 &self.curr.state.program_counter,
                 &self.next.state.program_counter,
                 state_transition.program_counter,
             ),
             (
+                "State transition constrain of stack_pointer",
                 &self.curr.state.stack_pointer,
                 &self.next.state.stack_pointer,
                 state_transition.stack_pointer,
             ),
             (
+                "State transition constrain of gas_left",
                 &self.curr.state.gas_left,
                 &self.next.state.gas_left,
                 state_transition.gas_left,
             ),
             (
+                "State transition constrain of memory_size",
                 &self.curr.state.memory_size,
                 &self.next.state.memory_size,
                 state_transition.memory_size,
             ),
             (
+                "State transition constrain of state_write_counter",
                 &self.curr.state.state_write_counter,
                 &self.next.state.state_write_counter,
                 state_transition.state_write_counter,
@@ -284,12 +310,12 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         ] {
             match transition {
                 Transition::Persistent => {
-                    self.require_equal(next.expr(), curr.expr())
+                    self.require_equal(name, next.expr(), curr.expr())
                 }
                 Transition::Delta(delta) => {
-                    self.require_equal(next.expr(), curr.expr() + delta)
+                    self.require_equal(name, next.expr(), curr.expr() + delta)
                 }
-                Transition::To(to) => self.require_equal(next.expr(), to),
+                Transition::To(to) => self.require_equal(name, next.expr(), to),
             }
         }
     }
@@ -445,19 +471,26 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         ret
     }
 
-    pub(crate) fn add_constraints(&mut self, constraint: Vec<Expression<F>>) {
-        for constraint in constraint {
-            self.add_constraint(constraint);
+    pub(crate) fn add_constraints(
+        &mut self,
+        constraint: Vec<(&'static str, Expression<F>)>,
+    ) {
+        for (name, constraint) in constraint {
+            self.add_constraint(name, constraint);
         }
     }
 
-    pub(crate) fn add_constraint(&mut self, constraint: Expression<F>) {
+    pub(crate) fn add_constraint(
+        &mut self,
+        name: &'static str,
+        constraint: Expression<F>,
+    ) {
         let constraint = match &self.condition {
             Some(condition) => condition.clone() * constraint,
             None => constraint,
         };
         self.validate_degree(constraint.degree());
-        self.constraints.push(constraint);
+        self.constraints.push((name, constraint));
     }
 
     pub(crate) fn add_lookup(&mut self, lookup: Lookup<F>) {

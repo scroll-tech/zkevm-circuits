@@ -25,6 +25,8 @@ pub(crate) struct PcGadget<F> {
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for PcGadget<F> {
+    const NAME: &'static str = "PC";
+
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::PC;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
@@ -37,6 +39,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PcGadget<F> {
         // program_counter is limited to 64 bits so we only consider 8 bytes
         let bytes = array_init(|_| cb.query_cell());
         cb.require_equal(
+            "Constrain program_counter equal to stack value",
             from_bytes::expr(bytes.to_vec()),
             cb.curr.state.program_counter.expr(),
         );
@@ -156,7 +159,7 @@ mod test {
                 ),
             }],
             rws: vec![Rw::Stack {
-                counter: 1,
+                rw_counter: 1,
                 is_write: true,
                 call_id: 1,
                 stack_pointer: 1022,

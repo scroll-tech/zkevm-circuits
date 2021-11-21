@@ -27,6 +27,8 @@ pub(crate) struct ByteGadget<F> {
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
+    const NAME: &'static str = "BYTE";
+
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::BYTE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
@@ -212,21 +214,21 @@ mod test {
             }],
             rws: vec![
                 Rw::Stack {
-                    counter: 1,
+                    rw_counter: 1,
                     is_write: false,
                     call_id: 1,
                     stack_pointer: 1022,
                     value: index,
                 },
                 Rw::Stack {
-                    counter: 2,
+                    rw_counter: 2,
                     is_write: false,
                     call_id: 1,
                     stack_pointer: 1023,
                     value,
                 },
                 Rw::Stack {
-                    counter: 3,
+                    rw_counter: 3,
                     is_write: true,
                     call_id: 1,
                     stack_pointer: 1023,

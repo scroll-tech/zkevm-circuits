@@ -1,4 +1,4 @@
-use crate::util::Expr;
+use crate::{evm_circuit::param::MAX_MEMORY_SIZE_IN_BYTES, util::Expr};
 use halo2::{
     arithmetic::FieldExt,
     circuit::{self, Region},
@@ -97,12 +97,12 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        word: Option<[u8; N]>,
+        bytes: Option<[u8; N]>,
     ) -> Result<Vec<circuit::Cell>, Error> {
-        word.map_or(Err(Error::SynthesisError), |word| {
+        bytes.map_or(Err(Error::SynthesisError), |bytes| {
             self.cells
                 .iter()
-                .zip(word.iter())
+                .zip(bytes.iter())
                 .map(|(cell, byte)| {
                     cell.assign(region, offset, Some(F::from_u64(*byte as u64)))
                 })
@@ -118,7 +118,8 @@ impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
 }
 
 pub(crate) type Word<F> = RandomLinearCombination<F, 32>;
-pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, 5>;
+pub(crate) type MemoryAddress<F> =
+    RandomLinearCombination<F, MAX_MEMORY_SIZE_IN_BYTES>;
 
 /// Returns the sum of the passed in cells
 pub(crate) mod sum {

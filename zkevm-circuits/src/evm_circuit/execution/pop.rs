@@ -23,6 +23,8 @@ pub(crate) struct PopGadget<F> {
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for PopGadget<F> {
+    const NAME: &'static str = "POP";
+
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::POP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
@@ -152,7 +154,7 @@ mod test {
                 ),
             }],
             rws: vec![Rw::Stack {
-                counter: 1,
+                rw_counter: 1,
                 is_write: false,
                 call_id: 1,
                 stack_pointer: 1023,

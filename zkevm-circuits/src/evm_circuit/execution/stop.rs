@@ -14,6 +14,8 @@ pub(crate) struct StopGadget<F> {
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for StopGadget<F> {
+    const NAME: &'static str = "STOP";
+
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::STOP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {

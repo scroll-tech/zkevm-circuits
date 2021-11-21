@@ -22,6 +22,8 @@ pub(crate) struct JumpdestGadget<F> {
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for JumpdestGadget<F> {
+    const NAME: &'static str = "JUMPDEST";
+
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::JUMPDEST;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {

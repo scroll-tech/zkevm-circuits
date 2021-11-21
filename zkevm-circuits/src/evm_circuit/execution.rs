@@ -22,6 +22,7 @@ mod byte;
 mod comparator;
 mod dup;
 mod jumpdest;
+mod memory;
 mod pc;
 mod pop;
 mod push;
@@ -33,6 +34,7 @@ use byte::ByteGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
 use jumpdest::JumpdestGadget;
+use memory::MemoryGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
@@ -72,7 +74,7 @@ pub(crate) mod bus_mapping_tmp {
         pub(crate) stack_pointer: usize,
         pub(crate) gas_left: u64,
         pub(crate) gas_cost: u64,
-        pub(crate) memory_size: usize,
+        pub(crate) memory_size: u64,
         pub(crate) state_write_counter: usize,
         pub(crate) opcode: Option<OpcodeId>,
     }
@@ -105,48 +107,48 @@ pub(crate) mod bus_mapping_tmp {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub(crate) enum Rw {
         TxAccessListAccount {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         TxAccessListStorageSlot {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         TxRefund {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         Account {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         AccountStorage {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         AccountDestructed {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         CallContext {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
         },
         Stack {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
             call_id: usize,
             stack_pointer: usize,
             value: Word,
         },
         Memory {
-            counter: usize,
+            rw_counter: usize,
             is_write: bool,
             call_id: usize,
-            memory_address: usize,
+            memory_address: u64,
             byte: u8,
         },
     }
@@ -165,13 +167,13 @@ pub(crate) mod bus_mapping_tmp {
         ) -> [F; 8] {
             match self {
                 Self::Stack {
-                    counter,
+                    rw_counter,
                     is_write,
                     call_id,
                     stack_pointer,
                     value,
                 } => [
-                    F::from_u64(*counter as u64),
+                    F::from_u64(*rw_counter as u64),
                     F::from_u64(*is_write as u64),
                     F::from_u64(RwTableTag::Stack as u64),
                     F::from_u64(*call_id as u64),
@@ -184,17 +186,17 @@ pub(crate) mod bus_mapping_tmp {
                     F::zero(),
                 ],
                 Self::Memory {
-                    counter,
+                    rw_counter,
                     is_write,
                     call_id,
                     memory_address,
                     byte,
                 } => [
-                    F::from_u64(*counter as u64),
+                    F::from_u64(*rw_counter as u64),
                     F::from_u64(*is_write as u64),
-                    F::from_u64(RwTableTag::Stack as u64),
+                    F::from_u64(RwTableTag::Memory as u64),
                     F::from_u64(*call_id as u64),
-                    F::from_u64(*memory_address as u64),
+                    F::from_u64(*memory_address),
                     F::from_u64(*byte as u64),
                     F::zero(),
                     F::zero(),
@@ -207,6 +209,8 @@ pub(crate) mod bus_mapping_tmp {
 use bus_mapping_tmp::ExecTrace;
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
+    const NAME: &'static str;
+
     const EXECUTION_RESULT: ExecutionResult;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self;
@@ -230,6 +234,7 @@ pub(crate) struct ExecutionConfig<F> {
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
+    memory_gadget: MemoryGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
@@ -328,6 +333,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             jumpdest_gadget: configure_gadget!(),
+            memory_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
@@ -373,11 +379,16 @@ impl<F: FieldExt> ExecutionConfig<F> {
         );
 
         if !constraints.is_empty() {
-            meta.create_gate("ExecutionGadget constraint", |meta| {
+            meta.create_gate(G::NAME, |meta| {
                 let q_step = meta.query_selector(q_step);
                 let q_execution_result = q_execution_result.clone();
-                constraints.into_iter().map(move |constraint| {
-                    q_step.clone() * q_execution_result.clone() * constraint
+                constraints.into_iter().map(move |(name, constraint)| {
+                    (
+                        name,
+                        q_step.clone()
+                            * q_execution_result.clone()
+                            * constraint,
+                    )
                 })
             });
         }
@@ -521,6 +532,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 .assign_exec_step(region, offset, exec_trace, step_idx)?,
             ExecutionResult::POP => self
                 .pop_gadget
+                .assign_exec_step(region, offset, exec_trace, step_idx)?,
+            ExecutionResult::MLOAD => self
+                .memory_gadget
                 .assign_exec_step(region, offset, exec_trace, step_idx)?,
             ExecutionResult::PC => self
                 .pc_gadget
