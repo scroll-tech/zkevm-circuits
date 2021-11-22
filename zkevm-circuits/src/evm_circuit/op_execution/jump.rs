@@ -1,7 +1,7 @@
 use super::super::{
     Case, Cell, Constraint, CoreStateInstance, ExecutionStep, Word,
 };
-use super::utils::common_cases::OutOfGasCase;
+use super::utils::common_cases::{OutOfGasCase, StackUnderflowCase};
 use super::utils::constraint_builder::ConstraintBuilder;
 use super::utils::{StateTransition, StateTransitionExpressions};
 use super::{CaseAllocation, CaseConfig, OpExecutionState, OpGadget};
@@ -20,11 +20,13 @@ static STATE_TRANSITION: StateTransition = StateTransition {
     gas_delta: Some(GasCost::MID.as_usize()),
 };
 
+const NUM_POPPED: usize = 1;
 impl_op_gadget!(
     #set[JUMP]
     JumpGadget {
         JumpSuccessCase(),
         OutOfGasCase(STATE_TRANSITION.gas_delta.unwrap()),
+        StackUnderflowCase(NUM_POPPED),
         //TODO: ErrJumpcase
     }
 );
@@ -69,13 +71,16 @@ impl<F: FieldExt> JumpSuccessCase<F> {
 
         // Pop the value from the stack
         cb.stack_pop(self.dest.expr());
-        // lookup byte code table to ensure 'dest' is valid( jumpdest & is_cpde)
-        cb.add_bytecode_lookup([
-            self.code_hash.expr(),
-            self.dest.expr(),
+        // lookup byte code table to ensure 'dest' is valid( jumpdest & is_code)
+        cb.add_bytecode_lookup(
             1.expr(),
-            OpcodeId::JUMPDEST.as_u8().expr(),
-        ]);
+            [
+                self.code_hash.expr(),
+                self.dest.expr(),
+                1.expr(),
+                OpcodeId::JUMPDEST.as_u8().expr(),
+            ],
+        );
 
         // Generate the constraint
         cb.constraint(self.case_selector.expr(), name)

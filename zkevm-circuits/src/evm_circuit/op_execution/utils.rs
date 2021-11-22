@@ -119,7 +119,7 @@ impl StateTransition {
 pub(crate) fn batch_add_expressions<F: FieldExt>(
     constraints: Vec<Constraint<F>>,
     expressions: Vec<Expression<F>>,
-    lookups: Vec<Lookup<F>>,
+    lookups: Vec<(Expression<F>, Lookup<F>)>,
 ) -> Vec<Constraint<F>> {
     constraints
         .into_iter()
