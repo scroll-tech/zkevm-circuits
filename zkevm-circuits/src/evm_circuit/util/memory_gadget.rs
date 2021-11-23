@@ -11,6 +11,42 @@ use bus_mapping::evm::GasCost;
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 
+/// Decodes the usable part of an address stored in a Word
+pub(crate) mod address_low {
+    use crate::evm_circuit::{
+        param::NUM_ADDRESS_BYTES_USED,
+        util::{from_bytes, Address, Word},
+    };
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
+        from_bytes::expr(address.cells[0..NUM_ADDRESS_BYTES_USED].to_vec())
+    }
+
+    pub(crate) fn value<F: FieldExt>(address: [u8; 32]) -> Address {
+        from_bytes::value::<F>(address[0..NUM_ADDRESS_BYTES_USED].to_vec())
+            .get_lower_128() as Address
+    }
+}
+
+/// The sum of bytes of the address that are unused for most calculations on the
+/// address
+pub(crate) mod address_high {
+    use crate::evm_circuit::{
+        param::NUM_ADDRESS_BYTES_USED,
+        util::{sum, Word},
+    };
+    use halo2::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
+        sum::expr(&address.cells[NUM_ADDRESS_BYTES_USED..32].to_vec())
+    }
+
+    pub(crate) fn value<F: FieldExt>(address: [u8; 32]) -> F {
+        sum::value::<F>(&address[NUM_ADDRESS_BYTES_USED..32].to_vec())
+    }
+}
+
 /// Calculates the memory size required for a memory access at the specified
 /// address. `memory_size = ceil(address/32) = floor((address + 31) / 32)`
 #[derive(Clone, Debug)]

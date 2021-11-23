@@ -476,6 +476,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         condition: Expression<F>,
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
+        assert!(
+            self.condition.is_none(),
+            "Nested condition is not supported"
+        );
         self.condition = Some(condition);
         let ret = constraint(self);
         self.condition = None;
