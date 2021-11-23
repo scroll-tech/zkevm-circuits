@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        execution::bus_mapping_tmp::ExecTrace,
+        execution::bus_mapping_tmp::ExecStep,
         param::MAX_GAS_SIZE_IN_BYTES,
         table::{FixedTableTag, Lookup},
         util::{
@@ -82,11 +82,8 @@ impl<F: FieldExt> SameContextGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        exec_trace: &ExecTrace<F>,
-        step_idx: usize,
+        step: &ExecStep,
     ) -> Result<(), Error> {
-        let step = &exec_trace.steps[step_idx];
-
         let opcode = step.opcode.unwrap();
         self.opcode.assign(
             region,

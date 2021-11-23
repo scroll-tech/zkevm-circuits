@@ -1,6 +1,9 @@
 use crate::{
     evm_circuit::{
-        execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
+        execution::{
+            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
+            ExecutionGadget,
+        },
         param::MAX_GAS_SIZE_IN_BYTES,
         step::ExecutionResult,
         util::{
@@ -147,19 +150,18 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        exec_trace: &ExecTrace<F>,
-        step_idx: usize,
+        block: &Block<F>,
+        _: &Transaction<F>,
+        _: &Call<F>,
+        step: &ExecStep,
     ) -> Result<(), Error> {
-        let step = &exec_trace.steps[step_idx];
-
-        self.same_context
-            .assign_exec_step(region, offset, exec_trace, step_idx)?;
+        self.same_context.assign_exec_step(region, offset, step)?;
 
         let opcode = step.opcode.unwrap();
 
         // Inputs/Outputs
         let [address, value] = [step.rw_indices[0], step.rw_indices[1]]
-            .map(|idx| exec_trace.rws[idx].stack_value());
+            .map(|idx| block.rws[idx].stack_value());
         self.address.assign(
             region,
             offset,
@@ -198,7 +200,9 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{Bytecode, Call, ExecStep, ExecTrace, Rw},
+        execution::bus_mapping_tmp::{
+            Block, Bytecode, Call, ExecStep, Rw, Transaction,
+        },
         step::ExecutionResult,
         test::{rand_word, try_test_circuit},
         util::RandomLinearCombination,
@@ -232,41 +236,43 @@ mod test {
             ]
             .concat(),
         );
-        let exec_trace = ExecTrace {
+        let block = Block {
             randomness,
-            steps: vec![
-                ExecStep {
-                    rw_indices: vec![0, 1],
-                    execution_result: ExecutionResult::MLOAD,
-                    rw_counter: 1,
-                    program_counter: 66,
-                    stack_pointer: 1022,
-                    gas_left: gas_cost,
-                    gas_cost,
-                    memory_size: 0,
-                    opcode: Some(opcode),
-                    ..Default::default()
-                },
-                ExecStep {
-                    execution_result: ExecutionResult::STOP,
-                    rw_counter: 35 - 31 * is_mstore8 as usize,
-                    program_counter: 67,
-                    stack_pointer: 1022 + 2 * !is_mload as usize,
-                    gas_left: 0,
-                    memory_size,
-                    opcode: Some(OpcodeId::STOP),
-                    ..Default::default()
-                },
-            ],
-            txs: vec![],
-            calls: vec![Call {
-                id: 1,
-                is_root: false,
-                is_create: false,
-                opcode_source: RandomLinearCombination::random_linear_combine(
-                    bytecode.hash.to_le_bytes(),
-                    randomness,
-                ),
+            txs: vec![Transaction {
+                calls: vec![Call {
+                    id: 1,
+                    is_root: false,
+                    is_create: false,
+                    opcode_source:
+                        RandomLinearCombination::random_linear_combine(
+                            bytecode.hash.to_le_bytes(),
+                            randomness,
+                        ),
+                }],
+                steps: vec![
+                    ExecStep {
+                        rw_indices: vec![0, 1],
+                        execution_result: ExecutionResult::MLOAD,
+                        rw_counter: 1,
+                        program_counter: 66,
+                        stack_pointer: 1022,
+                        gas_left: gas_cost,
+                        gas_cost,
+                        memory_size: 0,
+                        opcode: Some(opcode),
+                        ..Default::default()
+                    },
+                    ExecStep {
+                        execution_result: ExecutionResult::STOP,
+                        rw_counter: 35 - 31 * is_mstore8 as usize,
+                        program_counter: 67,
+                        stack_pointer: 1022 + 2 * !is_mload as usize,
+                        gas_left: 0,
+                        memory_size,
+                        opcode: Some(OpcodeId::STOP),
+                        ..Default::default()
+                    },
+                ],
             }],
             rws: [
                 vec![
@@ -304,7 +310,7 @@ mod test {
             .concat(),
             bytecodes: vec![bytecode],
         };
-        try_test_circuit(exec_trace, Ok(()));
+        try_test_circuit(block, Ok(()));
     }
 
     #[test]

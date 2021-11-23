@@ -56,18 +56,29 @@ pub(crate) mod bus_mapping_tmp {
     use sha3::{Digest, Keccak256};
 
     #[derive(Debug, Default)]
-    pub(crate) struct ExecTrace<F> {
-        pub(crate) randomness: F,
-        pub(crate) steps: Vec<ExecStep>,
-        pub(crate) txs: Vec<Tx>,
-        pub(crate) calls: Vec<Call<F>>,
+    pub(crate) struct Block<F> {
+        pub(crate) randomness: F, // randomness for random linear combination
+        pub(crate) txs: Vec<Transaction<F>>,
         pub(crate) rws: Vec<Rw>,
         pub(crate) bytecodes: Vec<Bytecode>,
     }
 
     #[derive(Debug, Default)]
+    pub(crate) struct Transaction<F> {
+        pub(crate) calls: Vec<Call<F>>,
+        pub(crate) steps: Vec<ExecStep>,
+    }
+
+    #[derive(Debug, Default)]
+    pub(crate) struct Call<F> {
+        pub(crate) id: usize,
+        pub(crate) is_root: bool,
+        pub(crate) is_create: bool,
+        pub(crate) opcode_source: F,
+    }
+
+    #[derive(Debug, Default)]
     pub(crate) struct ExecStep {
-        pub(crate) tx_idx: usize,
         pub(crate) call_idx: usize,
         pub(crate) rw_indices: Vec<usize>,
         pub(crate) execution_result: ExecutionResult,
@@ -79,17 +90,6 @@ pub(crate) mod bus_mapping_tmp {
         pub(crate) memory_size: u64,
         pub(crate) state_write_counter: usize,
         pub(crate) opcode: Option<OpcodeId>,
-    }
-
-    #[derive(Debug)]
-    pub(crate) struct Tx {}
-
-    #[derive(Debug)]
-    pub(crate) struct Call<F> {
-        pub(crate) id: usize,
-        pub(crate) is_root: bool,
-        pub(crate) is_create: bool,
-        pub(crate) opcode_source: F,
     }
 
     #[derive(Debug)]
@@ -208,7 +208,7 @@ pub(crate) mod bus_mapping_tmp {
         }
     }
 }
-use bus_mapping_tmp::ExecTrace;
+use bus_mapping_tmp::{Block, Call, ExecStep, Transaction};
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
@@ -221,8 +221,10 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        exec_trace: &ExecTrace<F>,
-        step_idx: usize,
+        block: &Block<F>,
+        transaction: &Transaction<F>,
+        call: &Call<F>,
+        step: &ExecStep,
     ) -> Result<(), Error>;
 }
 
@@ -468,24 +470,31 @@ impl<F: FieldExt> ExecutionConfig<F> {
         lookup!(Table::Bytecode, bytecode_table);
     }
 
-    pub fn assign_exec_trace(
+    pub fn assign_block(
         &self,
         layouter: &mut impl Layouter<F>,
-        exec_trace: &ExecTrace<F>,
+        block: &Block<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "Execution step",
             |mut region| {
-                for step_idx in 0..exec_trace.steps.len() {
-                    let offset = step_idx * STEP_HEIGHT;
+                let mut offset = 0;
+                for transaction in &block.txs {
+                    for step in &transaction.steps {
+                        let call = &transaction.calls[step.call_idx];
 
-                    self.q_step.enable(&mut region, offset)?;
-                    self.assign_exec_step(
-                        &mut region,
-                        offset,
-                        exec_trace,
-                        step_idx,
-                    )?;
+                        self.q_step.enable(&mut region, offset)?;
+                        self.assign_exec_step(
+                            &mut region,
+                            offset,
+                            block,
+                            transaction,
+                            call,
+                            step,
+                        )?;
+
+                        offset += STEP_HEIGHT;
+                    }
                 }
                 Ok(())
             },
@@ -496,12 +505,12 @@ impl<F: FieldExt> ExecutionConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        exec_trace: &ExecTrace<F>,
-        step_idx: usize,
+        block: &Block<F>,
+        transaction: &Transaction<F>,
+        call: &Call<F>,
+        step: &ExecStep,
     ) -> Result<(), Error> {
-        let step = &exec_trace.steps[step_idx];
-        self.step
-            .assign_exec_step(region, offset, exec_trace, step_idx)?;
+        self.step.assign_exec_step(region, offset, call, step)?;
 
         for (cell, value) in self
             .presets_map
@@ -511,46 +520,39 @@ impl<F: FieldExt> ExecutionConfig<F> {
             cell.assign(region, offset, Some(*value))?;
         }
 
+        macro_rules! assign_exec_step {
+            ($gadget:expr) => {
+                $gadget.assign_exec_step(
+                    region,
+                    offset,
+                    block,
+                    transaction,
+                    call,
+                    step,
+                )?
+            };
+        }
+
         match step.execution_result {
-            ExecutionResult::STOP => self
-                .stop_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::ADD => self
-                .add_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::SIGNEXTEND => self
-                .signextend_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::LT => self
-                .comparator_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::BYTE => self
-                .byte_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::POP => self
-                .pop_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::MLOAD => self
-                .memory_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::PC => self
-                .pc_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::JUMPDEST => self
-                .jumpdest_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::PUSH => self
-                .push_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::DUP => self
-                .dup_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::SWAP => self
-                .swap_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
-            ExecutionResult::ErrorOutOfGasPureMemory => self
-                .error_oog_pure_memory_gadget
-                .assign_exec_step(region, offset, exec_trace, step_idx)?,
+            ExecutionResult::STOP => assign_exec_step!(self.stop_gadget),
+            ExecutionResult::ADD => assign_exec_step!(self.add_gadget),
+            ExecutionResult::SIGNEXTEND => {
+                assign_exec_step!(self.signextend_gadget)
+            }
+            ExecutionResult::LT => assign_exec_step!(self.comparator_gadget),
+            ExecutionResult::BYTE => assign_exec_step!(self.byte_gadget),
+            ExecutionResult::POP => assign_exec_step!(self.pop_gadget),
+            ExecutionResult::MLOAD => assign_exec_step!(self.memory_gadget),
+            ExecutionResult::PC => assign_exec_step!(self.pc_gadget),
+            ExecutionResult::JUMPDEST => {
+                assign_exec_step!(self.jumpdest_gadget)
+            }
+            ExecutionResult::PUSH => assign_exec_step!(self.push_gadget),
+            ExecutionResult::DUP => assign_exec_step!(self.dup_gadget),
+            ExecutionResult::SWAP => assign_exec_step!(self.swap_gadget),
+            ExecutionResult::ErrorOutOfGasPureMemory => {
+                assign_exec_step!(self.error_oog_pure_memory_gadget)
+            }
             _ => unimplemented!(),
         }
 

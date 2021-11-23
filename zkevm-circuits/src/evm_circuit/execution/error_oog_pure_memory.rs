@@ -1,6 +1,9 @@
 use crate::{
     evm_circuit::{
-        execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
+        execution::{
+            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
+            ExecutionGadget,
+        },
         param::MAX_MEMORY_SIZE_IN_BYTES,
         step::ExecutionResult,
         util::{
@@ -100,15 +103,15 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        exec_trace: &ExecTrace<F>,
-        step_idx: usize,
+        block: &Block<F>,
+        _: &Transaction<F>,
+        _: &Call<F>,
+        step: &ExecStep,
     ) -> Result<(), Error> {
-        let step = &exec_trace.steps[step_idx];
-
         let opcode = step.opcode.unwrap();
 
         // Inputs/Outputs
-        let address = exec_trace.rws[step.rw_indices[0]].stack_value();
+        let address = block.rws[step.rw_indices[0]].stack_value();
         self.address
             .assign(region, offset, Some(address.to_le_bytes()))?;
 

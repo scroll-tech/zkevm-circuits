@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        execution::bus_mapping_tmp::ExecTrace,
+        execution::bus_mapping_tmp::{Call, ExecStep},
         param::{STEP_HEIGHT, STEP_WIDTH},
         util::Cell,
     },
@@ -487,12 +487,9 @@ impl<F: FieldExt> Step<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        exec_trace: &ExecTrace<F>,
-        step_idx: usize,
+        call: &Call<F>,
+        step: &ExecStep,
     ) -> Result<(), Error> {
-        let step = &exec_trace.steps[step_idx];
-        let call = &exec_trace.calls[step.call_idx];
-
         for (idx, cell) in self.state.execution_result.iter().enumerate() {
             cell.assign(
                 region,

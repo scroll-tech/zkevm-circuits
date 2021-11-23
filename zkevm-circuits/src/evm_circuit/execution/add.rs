@@ -1,6 +1,9 @@
 use crate::{
     evm_circuit::{
-        execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
+        execution::{
+            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
+            ExecutionGadget,
+        },
         step::ExecutionResult,
         util::{
             common_gadget::SameContextGadget,
@@ -73,13 +76,12 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        exec_trace: &ExecTrace<F>,
-        step_idx: usize,
+        block: &Block<F>,
+        _: &Transaction<F>,
+        _: &Call<F>,
+        step: &ExecStep,
     ) -> Result<(), Error> {
-        let step = &exec_trace.steps[step_idx];
-
-        self.same_context
-            .assign_exec_step(region, offset, exec_trace, step_idx)?;
+        self.same_context.assign_exec_step(region, offset, step)?;
 
         let opcode = step.opcode.unwrap();
         let indices = if opcode == OpcodeId::SUB {
@@ -87,7 +89,7 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
         } else {
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
         };
-        let [a, b, c] = indices.map(|idx| exec_trace.rws[idx].stack_value());
+        let [a, b, c] = indices.map(|idx| block.rws[idx].stack_value());
         self.word_addition.assign(region, offset, a, b, c)?;
         self.is_sub.assign(
             region,
@@ -104,7 +106,9 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{Bytecode, Call, ExecStep, ExecTrace, Rw},
+        execution::bus_mapping_tmp::{
+            Block, Bytecode, Call, ExecStep, Rw, Transaction,
+        },
         step::ExecutionResult,
         test::{rand_word, try_test_circuit},
         util::RandomLinearCombination,
@@ -128,39 +132,41 @@ mod test {
             ]
             .concat(),
         );
-        let exec_trace = ExecTrace {
+        let block = Block {
             randomness,
-            steps: vec![
-                ExecStep {
-                    rw_indices: vec![0, 1, 2],
-                    execution_result: ExecutionResult::ADD,
-                    rw_counter: 1,
-                    program_counter: 66,
-                    stack_pointer: 1022,
-                    gas_left: 3,
-                    gas_cost: 3,
-                    opcode: Some(opcode),
-                    ..Default::default()
-                },
-                ExecStep {
-                    execution_result: ExecutionResult::STOP,
-                    rw_counter: 4,
-                    program_counter: 67,
-                    stack_pointer: 1023,
-                    gas_left: 0,
-                    opcode: Some(OpcodeId::STOP),
-                    ..Default::default()
-                },
-            ],
-            txs: vec![],
-            calls: vec![Call {
-                id: 1,
-                is_root: false,
-                is_create: false,
-                opcode_source: RandomLinearCombination::random_linear_combine(
-                    bytecode.hash.to_le_bytes(),
-                    randomness,
-                ),
+            txs: vec![Transaction {
+                calls: vec![Call {
+                    id: 1,
+                    is_root: false,
+                    is_create: false,
+                    opcode_source:
+                        RandomLinearCombination::random_linear_combine(
+                            bytecode.hash.to_le_bytes(),
+                            randomness,
+                        ),
+                }],
+                steps: vec![
+                    ExecStep {
+                        rw_indices: vec![0, 1, 2],
+                        execution_result: ExecutionResult::ADD,
+                        rw_counter: 1,
+                        program_counter: 66,
+                        stack_pointer: 1022,
+                        gas_left: 3,
+                        gas_cost: 3,
+                        opcode: Some(opcode),
+                        ..Default::default()
+                    },
+                    ExecStep {
+                        execution_result: ExecutionResult::STOP,
+                        rw_counter: 4,
+                        program_counter: 67,
+                        stack_pointer: 1023,
+                        gas_left: 0,
+                        opcode: Some(OpcodeId::STOP),
+                        ..Default::default()
+                    },
+                ],
             }],
             rws: vec![
                 Rw::Stack {
@@ -187,7 +193,7 @@ mod test {
             ],
             bytecodes: vec![bytecode],
         };
-        try_test_circuit(exec_trace, Ok(()));
+        try_test_circuit(block, Ok(()));
     }
 
     #[test]

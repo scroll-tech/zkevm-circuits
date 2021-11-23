@@ -11,7 +11,7 @@ mod step;
 mod table;
 mod util;
 
-use execution::{bus_mapping_tmp::ExecTrace, ExecutionConfig};
+use execution::{bus_mapping_tmp::Block, ExecutionConfig};
 use table::{FixedTableTag, LookupTable};
 
 #[derive(Clone)]
@@ -76,19 +76,19 @@ impl<F: FieldExt> EvmCircuit<F> {
         )
     }
 
-    pub fn assign_exec_trace(
+    pub fn assign_block(
         &self,
         layouter: &mut impl Layouter<F>,
-        exec_trace: &ExecTrace<F>,
+        block: &Block<F>,
     ) -> Result<(), Error> {
-        self.execution.assign_exec_trace(layouter, exec_trace)
+        self.execution.assign_block(layouter, block)
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{Bytecode, ExecTrace, Rw, Tx},
+        execution::bus_mapping_tmp::{Block, Bytecode, Rw, Transaction},
         param::STEP_HEIGHT,
         util::RandomLinearCombination,
         EvmCircuit,
@@ -127,7 +127,7 @@ mod test {
         fn load_txs(
             &self,
             _layouter: &mut impl Layouter<F>,
-            _txs: &[Tx],
+            _txs: &[Transaction<F>],
             _randomness: F,
         ) -> Result<(), Error> {
             Ok(())
@@ -225,12 +225,12 @@ mod test {
 
     #[derive(Default)]
     pub(crate) struct TestCircuit<F> {
-        exec_trace: ExecTrace<F>,
+        block: Block<F>,
     }
 
     impl<F> TestCircuit<F> {
-        pub fn new(exec_trace: ExecTrace<F>) -> Self {
-            Self { exec_trace }
+        pub fn new(block: Block<F>) -> Self {
+            Self { block }
         }
     }
 
@@ -270,34 +270,36 @@ mod test {
             config.evm_circuit.load_fixed_table(&mut layouter)?;
             config.load_txs(
                 &mut layouter,
-                &self.exec_trace.txs,
-                self.exec_trace.randomness,
+                &self.block.txs,
+                self.block.randomness,
             )?;
             config.load_rws(
                 &mut layouter,
-                &self.exec_trace.rws,
-                self.exec_trace.randomness,
+                &self.block.rws,
+                self.block.randomness,
             )?;
             config.load_bytecodes(
                 &mut layouter,
-                &self.exec_trace.bytecodes,
-                self.exec_trace.randomness,
+                &self.block.bytecodes,
+                self.block.randomness,
             )?;
-            config
-                .evm_circuit
-                .assign_exec_trace(&mut layouter, &self.exec_trace)
+            config.evm_circuit.assign_block(&mut layouter, &self.block)
         }
     }
 
     pub(crate) fn try_test_circuit(
-        exec_trace: ExecTrace<Base>,
+        block: Block<Base>,
         result: Result<(), Vec<VerifyFailure>>,
     ) {
         let k = 11;
 
         let randomness =
-            vec![exec_trace.randomness; exec_trace.steps.len() * STEP_HEIGHT];
-        let circuit = TestCircuit::<Base>::new(exec_trace);
+            vec![
+                block.randomness;
+                block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>()
+                    * STEP_HEIGHT
+            ];
+        let circuit = TestCircuit::<Base>::new(block);
         let prover =
             MockProver::<Base>::run(k, &circuit, vec![randomness]).unwrap();
 
