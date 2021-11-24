@@ -81,8 +81,7 @@ impl<F: FieldExt> JumpiSuccessCase<F> {
                 * (st.clone().pc_delta.unwrap() - 1.expr()),
         );
 
-        // st.pc_delta =
-        //     Some(self.dest.expr() - state_curr.program_counter.expr());
+         // is_cond_met == 1 --> cond != 0, pc = `dest`
         cb.require_zero(
             is_cond_met.clone()
                 * (st.clone().pc_delta.unwrap()
@@ -92,11 +91,11 @@ impl<F: FieldExt> JumpiSuccessCase<F> {
 
         // Pop the 'dest' and 'cond' from the stack
         cb.stack_pop(self.dest.expr());
-        // cb.stack_pop(self.cond.expr());
+        cb.stack_pop(self.cond.expr());
 
         // Generate the constraint
         let mut constrains = Vec::<Constraint<F>>::new();
-        // 1. `cond` is zero constraint (is_cond_met = 0 )
+        // 1. `cond` is zero constraint (is_cond_met = 0 ) 
         constrains.push(cb.constraint(
             self.case_selector.expr() * (1.expr() - is_cond_met.clone()),
             name,

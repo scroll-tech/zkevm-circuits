@@ -29,12 +29,6 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         Self::init(DEFAULT_MAX_DEGREE, None)
     }
 
-    //TODO: add reset method:
-    pub(crate) fn reset_expression(&mut self) {
-        self.expressions = vec![];
-        self.lookups = vec![];
-    }
-
     fn init(max_degree: usize, call_id: Option<Expression<F>>) -> Self {
         ConstraintBuilder {
             expressions: vec![],
