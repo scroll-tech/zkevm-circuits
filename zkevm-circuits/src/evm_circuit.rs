@@ -526,8 +526,6 @@ impl<F: FieldExt> EvmCircuit<F> {
             let mut rw_lookup_count = 0;
             let mut bytecode_lookup_count = 0;
 
-            //println!("qs_lookup: {:?}", qs_lookup);
-
             for lookup in lookups {
                 match lookup {
                     Lookup::FixedLookup(tag, exprs) => {

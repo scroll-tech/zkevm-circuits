@@ -80,10 +80,7 @@ impl<F: FieldExt> JumpSuccessCase<F> {
         ]);
 
         // Generate the constraint
-        // vec![cb.constraint(self.case_selector.expr(), name)]
-        let mut constrains = Vec::<Constraint<F>>::new();
-        constrains.push(cb.constraint(self.case_selector.expr(), name));
-        constrains
+        vec![cb.constraint(self.case_selector.expr(), name)]
     }
 
     fn assign(
