@@ -1,33 +1,29 @@
-use std::convert::TryInto;
-
 use crate::{
     evm_circuit::{
         execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
         param::MAX_GAS_SIZE_IN_BYTES,
         step::ExecutionResult,
         util::{
+            common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
-            math_gadget::{IsEqualGadget, RangeCheckGadget},
+            math_gadget::IsEqualGadget,
             memory_gadget::MemoryExpansionGadget,
-            select, Cell, MemoryAddress, Word,
+            select, MemoryAddress, Word,
         },
     },
     util::Expr,
 };
-use bus_mapping::{
-    eth_types::ToLittleEndian,
-    evm::{GasCost, OpcodeId},
-};
+use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use std::convert::TryInto;
 
 #[derive(Clone)]
 pub(crate) struct MemoryGadget<F> {
-    opcode: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, 8>,
+    same_context: SameContextGadget<F>,
     address: MemoryAddress<F>,
     value: Word<F>,
     memory_expansion: MemoryExpansionGadget<F, MAX_GAS_SIZE_IN_BYTES>,
@@ -42,7 +38,6 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr());
 
         // In successful case the address must be in 5 bytes
         let address = MemoryAddress::new(cb.query_bytes(), cb.randomness());
@@ -71,11 +66,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
                 + 1.expr()
                 + (is_not_mstore8.clone() * 31.expr()),
         );
-        let (next_memory_size, memory_cost) = memory_expansion.expr();
-
-        let gas_cost = GasCost::FASTEST.expr() + memory_cost;
-        let sufficient_gas_left =
-            cb.require_sufficient_gas_left(gas_cost.clone());
+        let (next_memory_size, memory_gas_cost) = memory_expansion.expr();
 
         /* Stack operations */
         // Pop the address from the stack
@@ -121,25 +112,29 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
             );
         }
 
-        // State transitions
-        // - `gc_delta` needs to be increased by
-        //   GC_DELTA_MLOAD_MSTORE/GC_DELTA_MSTORE8
-        // - `sp_delta` needs to be increased by SP_DELTA_MLOAD/SP_DELTA_MSTORE
-        // - `gas_delta` needs to be increased by `GAS + memory_cost`
-        // - `next_memory_size` needs to be set to `next_memory_size`
+        // State transition
+        // - `rw_counter` needs to be increased by 34 when is_not_mstore8,
+        //   otherwise to be increased by 31
+        // - `program_counter` needs to be increased by 1
+        // - `stack_pointer` needs to be increased by 2 when is_store, otherwise
+        //   to be persistent
+        // - `memory_size` needs to be set to `next_memory_size`
         let state_transition = StateTransition {
             rw_counter: Delta(34.expr() - is_mstore8.expr() * 31.expr()),
-            program_counter: Delta(cb.program_counter_offset().expr()),
+            program_counter: Delta(1.expr()),
             stack_pointer: Delta(is_store * 2.expr()),
-            gas_left: Delta(-gas_cost),
             memory_size: To(next_memory_size),
             ..Default::default()
         };
-        cb.require_state_transition(state_transition);
+        let same_context = SameContextGadget::construct(
+            cb,
+            opcode,
+            state_transition,
+            Some(memory_gas_cost),
+        );
 
         Self {
-            opcode,
-            sufficient_gas_left,
+            same_context,
             address,
             value,
             memory_expansion,
@@ -157,18 +152,10 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
     ) -> Result<(), Error> {
         let step = &exec_trace.steps[step_idx];
 
-        let opcode = step.opcode.unwrap();
-        self.opcode.assign(
-            region,
-            offset,
-            Some(F::from_u64(opcode.as_u64())),
-        )?;
+        self.same_context
+            .assign_exec_step(region, offset, exec_trace, step_idx)?;
 
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from_u64((step.gas_left - step.gas_cost) as u64),
-        )?;
+        let opcode = step.opcode.unwrap();
 
         // Inputs/Outputs
         let [address, value] = [step.rw_indices[0], step.rw_indices[1]]
@@ -241,7 +228,7 @@ mod test {
                 value.to_be_bytes().to_vec(),
                 vec![OpcodeId::PUSH32.as_u8()],
                 address.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), 0],
+                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
             ]
             .concat(),
         );

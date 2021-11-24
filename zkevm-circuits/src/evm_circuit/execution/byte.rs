@@ -3,23 +3,23 @@ use crate::{
         execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
         step::ExecutionResult,
         util::{
+            common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StateTransition, Transition::Delta,
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget, RangeCheckGadget},
-            sum, Cell, Word,
+            math_gadget::{IsEqualGadget, IsZeroGadget},
+            sum, Word,
         },
     },
     util::Expr,
 };
 use array_init::array_init;
-use bus_mapping::{eth_types::ToLittleEndian, evm::GasCost};
+use bus_mapping::eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone)]
 pub(crate) struct ByteGadget<F> {
-    opcode: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, 8>,
+    same_context: SameContextGadget<F>,
     index: Word<F>,
     value: Word<F>,
     is_msb_sum_zero: IsZeroGadget<F>,
@@ -32,28 +32,25 @@ impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::BYTE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr());
-
-        let sufficient_gas_left =
-            cb.require_sufficient_gas_left(GasCost::FASTEST.expr());
-
         let index = cb.query_word();
         let value = cb.query_word();
 
-        // If any of the non-LSB bytes of the index word are non-zero we never need to copy any bytes.
-        // So just sum all the non-LSB byte values here and then check if it's non-zero
-        // so we can use that as an additional condition when to copy the byte value.
+        // If any of the non-LSB bytes of the index word are non-zero we never
+        // need to copy any bytes. So just sum all the non-LSB byte
+        // values here and then check if it's non-zero so we can use
+        // that as an additional condition when to copy the byte value.
         let is_msb_sum_zero =
             IsZeroGadget::construct(cb, sum::expr(&index.cells[1..32]));
 
-        // Now we just need to check that `result[0]` is the sum of all copied bytes.
-        // We go byte by byte and check if `idx == index[0]`.
-        // If they are equal (at most once) we add the byte value to the sum, else we add 0.
-        // The additional condition for this is that none of the non-LSB bytes are non-zero (see above).
-        // At the end this sum needs to equal `result[0]`.
+        // Now we just need to check that `result[0]` is the sum of all copied
+        // bytes. We go byte by byte and check if `idx == index[0]`.
+        // If they are equal (at most once) we add the byte value to the sum,
+        // else we add 0. The additional condition for this is that none
+        // of the non-LSB bytes are non-zero (see above). At the end
+        // this sum needs to equal `result[0]`.
         let is_byte_selected = array_init(|idx| {
-            // Check if this byte is selected looking only at the LSB of the index word
+            // Check if this byte is selected looking only at the LSB of the
+            // index word
             IsEqualGadget::construct(
                 cb,
                 index.cells[0].expr(),
@@ -78,19 +75,19 @@ impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
         cb.stack_pop(value.expr());
         cb.stack_push(selected_byte);
 
-        // State transitions
+        // State transition
         let state_transition = StateTransition {
-            rw_counter: Delta(cb.rw_counter_offset().expr()),
-            program_counter: Delta(cb.program_counter_offset().expr()),
-            stack_pointer: Delta(cb.stack_pointer_offset().expr()),
-            gas_left: Delta(-GasCost::FASTEST.expr()),
+            rw_counter: Delta(3.expr()),
+            program_counter: Delta(1.expr()),
+            stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        cb.require_state_transition(state_transition);
+        let opcode = cb.query_cell();
+        let same_context =
+            SameContextGadget::construct(cb, opcode, state_transition, None);
 
         Self {
-            opcode,
-            sufficient_gas_left,
+            same_context,
             index,
             value,
             is_msb_sum_zero,
@@ -107,18 +104,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
     ) -> Result<(), Error> {
         let step = &exec_trace.steps[step_idx];
 
-        let opcode = step.opcode.unwrap();
-        self.opcode.assign(
-            region,
-            offset,
-            Some(F::from_u64(opcode.as_u64())),
-        )?;
-
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from_u64((step.gas_left - step.gas_cost) as u64),
-        )?;
+        self.same_context
+            .assign_exec_step(region, offset, exec_trace, step_idx)?;
 
         // Inputs/Outputs
         let index = exec_trace.rws[step.rw_indices[0]]
@@ -170,11 +157,11 @@ mod test {
         let randomness = Base::rand();
         let bytecode = Bytecode::new(
             [
-                vec![0x7f],
+                vec![OpcodeId::PUSH32.as_u8()],
                 value.to_be_bytes().to_vec(),
-                vec![0x7f],
+                vec![OpcodeId::PUSH32.as_u8()],
                 index.to_be_bytes().to_vec(),
-                vec![OpcodeId::BYTE.as_u8(), 0x00],
+                vec![OpcodeId::BYTE.as_u8(), OpcodeId::STOP.as_u8()],
             ]
             .concat(),
         );

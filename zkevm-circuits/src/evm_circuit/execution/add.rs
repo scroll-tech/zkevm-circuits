@@ -3,28 +3,26 @@ use crate::{
         execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
         step::ExecutionResult,
         util::{
+            common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StateTransition, Transition::Delta,
             },
-            math_gadget::{
-                PairSelectGadget, RangeCheckGadget, WordAdditionGadget,
-            },
-            select, Cell,
+            math_gadget::{PairSelectGadget, WordAdditionGadget},
+            select,
         },
     },
     util::Expr,
 };
-use bus_mapping::evm::{GasCost, OpcodeId};
+use bus_mapping::evm::OpcodeId;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 // AddGadget verifies ADD and SUB at the same time by an extra swap flag,
 // when it's ADD, we annotate stack as [a, b, ...] and [c, ...],
-// when it's SUB, we annotate stack as [a, c, ...] and [b, ...].
+// when it's SUB, we annotate stack as [c, b, ...] and [a, ...].
 // Then we verify if a + b is equal to c.
 #[derive(Clone)]
 pub(crate) struct AddGadget<F> {
-    opcode: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, 8>,
+    same_context: SameContextGadget<F>,
     word_addition: WordAdditionGadget<F>,
     is_sub: PairSelectGadget<F>,
 }
@@ -36,10 +34,6 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr());
-
-        let sufficient_gas_left =
-            cb.require_sufficient_gas_left(GasCost::FASTEST.expr());
 
         let word_addition = WordAdditionGadget::construct(cb);
 
@@ -58,19 +52,18 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
         cb.stack_pop(b.expr());
         cb.stack_push(select::expr(is_sub.expr().0, a.expr(), c.expr()));
 
-        // State transitions
+        // State transition
         let state_transition = StateTransition {
-            rw_counter: Delta(cb.rw_counter_offset().expr()),
-            program_counter: Delta(cb.program_counter_offset().expr()),
-            stack_pointer: Delta(cb.stack_pointer_offset().expr()),
-            gas_left: Delta(-GasCost::FASTEST.expr()),
+            rw_counter: Delta(3.expr()),
+            program_counter: Delta(1.expr()),
+            stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        cb.require_state_transition(state_transition);
+        let same_context =
+            SameContextGadget::construct(cb, opcode, state_transition, None);
 
         Self {
-            opcode,
-            sufficient_gas_left,
+            same_context,
             word_addition,
             is_sub,
         }
@@ -85,19 +78,10 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
     ) -> Result<(), Error> {
         let step = &exec_trace.steps[step_idx];
 
+        self.same_context
+            .assign_exec_step(region, offset, exec_trace, step_idx)?;
+
         let opcode = step.opcode.unwrap();
-        self.opcode.assign(
-            region,
-            offset,
-            Some(F::from_u64(opcode.as_u64())),
-        )?;
-
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from_u64((step.gas_left - step.gas_cost) as u64),
-        )?;
-
         let indices = if opcode == OpcodeId::SUB {
             [step.rw_indices[2], step.rw_indices[1], step.rw_indices[0]]
         } else {
@@ -136,11 +120,11 @@ mod test {
         let randomness = Base::rand();
         let bytecode = Bytecode::new(
             [
-                vec![0x7f],
+                vec![OpcodeId::PUSH32.as_u8()],
                 b.to_be_bytes().to_vec(),
-                vec![0x7f],
+                vec![OpcodeId::PUSH32.as_u8()],
                 a.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), 0x00],
+                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
             ]
             .concat(),
         );

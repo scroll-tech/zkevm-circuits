@@ -366,12 +366,15 @@ impl<F: FieldExt> ExecutionConfig<F> {
         independent_lookups: &mut Vec<Vec<Lookup<F>>>,
         presets_map: &mut HashMap<ExecutionResult, Vec<Preset<F>>>,
     ) -> G {
-        let mut cb = ConstraintBuilder::new(step_curr, step_next, randomness);
+        let mut cb = ConstraintBuilder::new(
+            step_curr,
+            step_next,
+            randomness.clone(),
+            G::EXECUTION_RESULT,
+        );
 
         let gadget = G::configure(&mut cb);
 
-        let q_execution_result =
-            step_curr.q_execution_result(G::EXECUTION_RESULT);
         let (constraints, lookups, presets) = cb.build();
         assert!(
             presets_map.insert(G::EXECUTION_RESULT, presets).is_none(),
@@ -381,24 +384,14 @@ impl<F: FieldExt> ExecutionConfig<F> {
         if !constraints.is_empty() {
             meta.create_gate(G::NAME, |meta| {
                 let q_step = meta.query_selector(q_step);
-                let q_execution_result = q_execution_result.clone();
+
                 constraints.into_iter().map(move |(name, constraint)| {
-                    (
-                        name,
-                        q_step.clone()
-                            * q_execution_result.clone()
-                            * constraint,
-                    )
+                    (name, q_step.clone() * constraint)
                 })
             });
         }
 
-        independent_lookups.push(
-            lookups
-                .into_iter()
-                .map(|lookup| lookup.conditional(q_execution_result.clone()))
-                .collect(),
-        );
+        independent_lookups.push(lookups);
 
         gadget
     }

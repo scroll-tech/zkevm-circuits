@@ -3,25 +3,21 @@ use crate::{
         execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
         step::ExecutionResult,
         util::{
+            common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StateTransition, Transition::Delta,
             },
-            math_gadget::RangeCheckGadget,
             Cell, Word,
         },
     },
     util::Expr,
 };
-use bus_mapping::{
-    eth_types::ToLittleEndian,
-    evm::{GasCost, OpcodeId},
-};
+use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone)]
 pub(crate) struct SwapGadget<F> {
-    opcode: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, 8>,
+    same_context: SameContextGadget<F>,
     values: [Cell<F>; 2],
 }
 
@@ -32,15 +28,11 @@ impl<F: FieldExt> ExecutionGadget<F> for SwapGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr());
-
-        let sufficient_gas_left =
-            cb.require_sufficient_gas_left(GasCost::FASTEST.expr());
 
         let values = [cb.query_cell(), cb.query_cell()];
 
-        // The stack index we have to peek, deduced from the 'x' value of 'swapx'
-        // The offset starts at 1 for SWAP1
+        // The stack index we have to peek, deduced from the 'x' value of
+        // 'swapx' The offset starts at 1 for SWAP1
         let swap_offset = opcode.expr() - (OpcodeId::SWAP1.as_u64() - 1).expr();
 
         // Peek the value at `swap_offset`
@@ -52,18 +44,17 @@ impl<F: FieldExt> ExecutionGadget<F> for SwapGadget<F> {
         // Write the value previously at `swap_offset` to the top of the stack
         cb.stack_lookup(true.expr(), 0.expr(), values[0].expr());
 
-        // State transitions
+        // State transition
         let state_transition = StateTransition {
-            rw_counter: Delta(cb.rw_counter_offset().expr()),
-            program_counter: Delta(cb.program_counter_offset().expr()),
-            gas_left: Delta(-GasCost::FASTEST.expr()),
+            rw_counter: Delta(4.expr()),
+            program_counter: Delta(1.expr()),
             ..Default::default()
         };
-        cb.require_state_transition(state_transition);
+        let same_context =
+            SameContextGadget::construct(cb, opcode, state_transition, None);
 
         Self {
-            opcode,
-            sufficient_gas_left,
+            same_context,
             values,
         }
     }
@@ -77,12 +68,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SwapGadget<F> {
     ) -> Result<(), Error> {
         let step = &exec_trace.steps[step_idx];
 
-        let opcode = step.opcode.unwrap();
-        self.opcode.assign(
-            region,
-            offset,
-            Some(F::from_u64(opcode.as_u64())),
-        )?;
+        self.same_context
+            .assign_exec_step(region, offset, exec_trace, step_idx)?;
 
         for (cell, value) in self.values.iter().zip(
             [step.rw_indices[0], step.rw_indices[1]]
@@ -123,12 +110,12 @@ mod test {
         let randomness = Base::rand();
         let bytecode = Bytecode::new(
             [
-                vec![0x7f],
+                vec![OpcodeId::PUSH32.as_u8()],
                 lhs.to_be_bytes().to_vec(),
                 vec![OpcodeId::DUP1.as_u8(); n - 1],
-                vec![0x7f],
+                vec![OpcodeId::PUSH32.as_u8()],
                 rhs.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), 0x00],
+                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
             ]
             .concat(),
         );

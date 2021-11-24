@@ -1,4 +1,4 @@
-use crate::impl_expr;
+use crate::{evm_circuit::step::ExecutionResult, impl_expr};
 use halo2::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
@@ -33,6 +33,7 @@ pub(crate) enum FixedTableTag {
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,
+    ResponsibleOpcode,
 }
 
 impl FixedTableTag {
@@ -44,9 +45,12 @@ impl FixedTableTag {
             .chain(Self::Range256.build())
             .chain(Self::Range512.build())
             .chain(Self::SignByte.build())
-        // .chain(Self::BitwiseAnd.build())
-        // .chain(Self::BitwiseOr.build())
-        // .chain(Self::BitwiseXor.build())
+            // Enable bitwise when testing time too long issue is resolved, see
+            // https://github.com/appliedzkp/zkevm-circuits/issues/88 for more information.
+            // .chain(Self::BitwiseAnd.build())
+            // .chain(Self::BitwiseOr.build())
+            // .chain(Self::BitwiseXor.build())
+            .chain(Self::ResponsibleOpcode.build())
     }
 
     fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = Vec<F>>> {
@@ -105,6 +109,20 @@ impl FixedTableTag {
                     ]
                 })
             })),
+            Self::ResponsibleOpcode => Box::new(
+                ExecutionResult::iterator().flat_map(move |execution_result| {
+                    execution_result.responsible_opcodes().into_iter().map(
+                        move |opcode| {
+                            vec![
+                                tag,
+                                F::from_u64(execution_result.as_u64()),
+                                F::from_u64(opcode.as_u64()),
+                                F::zero(),
+                            ]
+                        },
+                    )
+                }),
+            ),
         }
     }
 }

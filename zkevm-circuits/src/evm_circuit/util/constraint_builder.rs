@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        step::{Preset, Step},
+        step::{ExecutionResult, Preset, Step},
         table::{FixedTableTag, Lookup, RwTableTag, TxTableTag},
         util::{Cell, Word},
     },
@@ -8,8 +8,6 @@ use crate::{
 };
 use halo2::{arithmetic::FieldExt, plonk::Expression};
 use std::convert::TryInto;
-
-use super::math_gadget::RangeCheckGadget;
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
 const MAX_DEGREE: usize = 2usize.pow(3) + 1 + 32;
@@ -22,13 +20,13 @@ struct StepRowUsage {
     is_byte_lookup_enabled: bool,
 }
 
-pub(crate) enum Transition<F: FieldExt> {
+pub(crate) enum Transition<T> {
     Persistent,
-    Delta(Expression<F>),
-    To(Expression<F>),
+    Delta(T),
+    To(T),
 }
 
-impl<F: FieldExt> Default for Transition<F> {
+impl<F> Default for Transition<F> {
     fn default() -> Self {
         Self::Persistent
     }
@@ -36,22 +34,23 @@ impl<F: FieldExt> Default for Transition<F> {
 
 #[derive(Default)]
 pub(crate) struct StateTransition<F: FieldExt> {
-    pub(crate) rw_counter: Transition<F>,
-    pub(crate) call_id: Transition<F>,
-    pub(crate) is_root: Transition<F>,
-    pub(crate) is_create: Transition<F>,
-    pub(crate) opcode_source: Transition<F>,
-    pub(crate) program_counter: Transition<F>,
-    pub(crate) stack_pointer: Transition<F>,
-    pub(crate) gas_left: Transition<F>,
-    pub(crate) memory_size: Transition<F>,
-    pub(crate) state_write_counter: Transition<F>,
+    pub(crate) rw_counter: Transition<Expression<F>>,
+    pub(crate) call_id: Transition<Expression<F>>,
+    pub(crate) is_root: Transition<Expression<F>>,
+    pub(crate) is_create: Transition<Expression<F>>,
+    pub(crate) opcode_source: Transition<Expression<F>>,
+    pub(crate) program_counter: Transition<Expression<F>>,
+    pub(crate) stack_pointer: Transition<Expression<F>>,
+    pub(crate) gas_left: Transition<Expression<F>>,
+    pub(crate) memory_size: Transition<Expression<F>>,
+    pub(crate) state_write_counter: Transition<Expression<F>>,
 }
 
 pub(crate) struct ConstraintBuilder<'a, F> {
     pub(crate) curr: &'a Step<F>,
     pub(crate) next: &'a Step<F>,
-    randomness: &'a Expression<F>,
+    randomness: Expression<F>,
+    execution_result: ExecutionResult,
     constraints: Vec<(&'static str, Expression<F>)>,
     lookups: Vec<Lookup<F>>,
     row_usages: Vec<StepRowUsage>,
@@ -65,12 +64,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     pub(crate) fn new(
         curr: &'a Step<F>,
         next: &'a Step<F>,
-        randomness: &'a Expression<F>,
+        randomness: Expression<F>,
+        execution_result: ExecutionResult,
     ) -> Self {
         Self {
             curr,
             next,
             randomness,
+            execution_result,
             constraints: Vec::new(),
             lookups: Vec::new(),
             row_usages: vec![StepRowUsage::default(); curr.rows.len()],
@@ -115,11 +116,30 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             ));
         }
 
-        (constraints, self.lookups, presets)
+        let q_execution_result =
+            self.curr.q_execution_result(self.execution_result);
+
+        (
+            constraints
+                .into_iter()
+                .map(|(name, constraint)| {
+                    (name, q_execution_result.clone() * constraint)
+                })
+                .collect(),
+            self.lookups
+                .into_iter()
+                .map(|lookup| lookup.conditional(q_execution_result.clone()))
+                .collect(),
+            presets,
+        )
     }
 
     pub(crate) fn randomness(&self) -> Expression<F> {
         self.randomness.clone()
+    }
+
+    pub(crate) fn execution_result(&self) -> ExecutionResult {
+        self.execution_result
     }
 
     pub(crate) fn rw_counter_offset(&self) -> usize {
@@ -233,15 +253,6 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         });
     }
 
-    pub(crate) fn require_sufficient_gas_left(
-        &mut self,
-        gas_cost: Expression<F>,
-    ) -> RangeCheckGadget<F, 8> {
-        RangeCheckGadget::construct(
-            self,
-            self.curr.state.gas_left.expr() - gas_cost,
-        )
-    }
     pub(crate) fn require_state_transition(
         &mut self,
         state_transition: StateTransition<F>,

@@ -6,6 +6,7 @@ use halo2::{
     poly::Rotation,
 };
 
+pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
@@ -141,8 +142,8 @@ pub(crate) mod sum {
     }
 }
 
-/// Returns `1` when `expr[0] && expr[1] && ... == 1`, and returns `0` otherwise.
-/// Inputs need to be boolean
+/// Returns `1` when `expr[0] && expr[1] && ... == 1`, and returns `0`
+/// otherwise. Inputs need to be boolean
 pub(crate) mod and {
     use crate::util::Expr;
     use halo2::{arithmetic::FieldExt, plonk::Expression};
@@ -160,8 +161,8 @@ pub(crate) mod and {
     }
 }
 
-/// Returns `when_true` when `selector == 1`, and returns `when_false` when `selector == 0`.
-/// `selector` needs to be boolean.
+/// Returns `when_true` when `selector == 1`, and returns `when_false` when
+/// `selector == 0`. `selector` needs to be boolean.
 pub(crate) mod select {
     use crate::util::Expr;
     use halo2::{arithmetic::FieldExt, plonk::Expression};

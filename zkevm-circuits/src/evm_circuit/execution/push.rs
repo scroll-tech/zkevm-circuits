@@ -3,26 +3,22 @@ use crate::{
         execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
         step::ExecutionResult,
         util::{
+            common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StateTransition, Transition::Delta,
             },
-            math_gadget::RangeCheckGadget,
             sum, Cell, Word,
         },
     },
     util::Expr,
 };
 use array_init::array_init;
-use bus_mapping::{
-    eth_types::ToLittleEndian,
-    evm::{GasCost, OpcodeId},
-};
+use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone)]
 pub(crate) struct PushGadget<F> {
-    opcode: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, 8>,
+    same_context: SameContextGadget<F>,
     value: Word<F>,
     selectors: [Cell<F>; 31],
 }
@@ -34,10 +30,6 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr());
-
-        let sufficient_gas_left =
-            cb.require_sufficient_gas_left(GasCost::FASTEST.expr());
 
         // Query selectors for each opcode_lookup
         let selectors = array_init(|_| cb.query_bool());
@@ -92,22 +84,21 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
         let value = Word::new(bytes, cb.randomness());
         cb.stack_push(value.expr());
 
-        // State transitions
+        // State transition
         // `program_counter` needs to be increased by number of bytes pushed + 1
         let state_transition = StateTransition {
-            rw_counter: Delta(cb.rw_counter_offset().expr()),
+            rw_counter: Delta(1.expr()),
             program_counter: Delta(
                 opcode.expr() - (OpcodeId::PUSH1.as_u64() - 2).expr(),
             ),
-            stack_pointer: Delta(cb.stack_pointer_offset().expr()),
-            gas_left: Delta(-GasCost::FASTEST.expr()),
+            stack_pointer: Delta((-1).expr()),
             ..Default::default()
         };
-        cb.require_state_transition(state_transition);
+        let same_context =
+            SameContextGadget::construct(cb, opcode, state_transition, None);
 
         Self {
-            opcode,
-            sufficient_gas_left,
+            same_context,
             value,
             selectors,
         }
@@ -122,18 +113,10 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
     ) -> Result<(), Error> {
         let step = &exec_trace.steps[step_idx];
 
-        let opcode = step.opcode.unwrap();
-        self.opcode.assign(
-            region,
-            offset,
-            Some(F::from_u64(opcode.as_u64())),
-        )?;
+        self.same_context
+            .assign_exec_step(region, offset, exec_trace, step_idx)?;
 
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from_u64((step.gas_left - step.gas_cost) as u64),
-        )?;
+        let opcode = step.opcode.unwrap();
 
         let value = exec_trace.rws[step.rw_indices[0]].stack_value();
         self.value
@@ -175,7 +158,12 @@ mod test {
 
         let randomness = Base::rand();
         let bytecode = Bytecode::new(
-            [vec![opcode.as_u8()], bytes.to_vec(), vec![0x00]].concat(),
+            [
+                vec![opcode.as_u8()],
+                bytes.to_vec(),
+                vec![OpcodeId::STOP.as_u8()],
+            ]
+            .concat(),
         );
         let exec_trace = ExecTrace {
             randomness,

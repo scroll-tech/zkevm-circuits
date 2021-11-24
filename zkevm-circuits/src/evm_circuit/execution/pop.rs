@@ -3,22 +3,21 @@ use crate::{
         execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
         step::ExecutionResult,
         util::{
+            common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StateTransition, Transition::Delta,
             },
-            math_gadget::RangeCheckGadget,
             Cell, Word,
         },
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::GasCost};
+use bus_mapping::eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone)]
 pub(crate) struct PopGadget<F> {
-    opcode: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, 8>,
+    same_context: SameContextGadget<F>,
     value: Cell<F>,
 }
 
@@ -28,31 +27,24 @@ impl<F: FieldExt> ExecutionGadget<F> for PopGadget<F> {
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::POP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr());
-
-        let sufficient_gas_left =
-            cb.require_sufficient_gas_left(GasCost::QUICK.expr());
-
         let value = cb.query_cell();
 
         // Pop the value from the stack
         cb.stack_pop(value.expr());
 
-        // State transitions
-        // `program_counter` needs to be increased by number of bytes pushed + 1
+        // State transition
         let state_transition = StateTransition {
-            rw_counter: Delta(cb.rw_counter_offset().expr()),
-            program_counter: Delta(cb.program_counter_offset().expr()),
-            stack_pointer: Delta(cb.stack_pointer_offset().expr()),
-            gas_left: Delta(-GasCost::QUICK.expr()),
+            rw_counter: Delta(1.expr()),
+            program_counter: Delta(1.expr()),
+            stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        cb.require_state_transition(state_transition);
+        let opcode = cb.query_cell();
+        let same_context =
+            SameContextGadget::construct(cb, opcode, state_transition, None);
 
         Self {
-            opcode,
-            sufficient_gas_left,
+            same_context,
             value,
         }
     }
@@ -66,18 +58,8 @@ impl<F: FieldExt> ExecutionGadget<F> for PopGadget<F> {
     ) -> Result<(), Error> {
         let step = &exec_trace.steps[step_idx];
 
-        let opcode = step.opcode.unwrap();
-        self.opcode.assign(
-            region,
-            offset,
-            Some(F::from_u64(opcode.as_u64())),
-        )?;
-
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from_u64((step.gas_left - step.gas_cost) as u64),
-        )?;
+        self.same_context
+            .assign_exec_step(region, offset, exec_trace, step_idx)?;
 
         let value = exec_trace.rws[step.rw_indices[0]].stack_value();
         self.value.assign(
@@ -115,7 +97,7 @@ mod test {
             [
                 vec![OpcodeId::PUSH32.as_u8()],
                 value.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), 0x00],
+                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
             ]
             .concat(),
         );

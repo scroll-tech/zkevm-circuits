@@ -3,22 +3,19 @@ use crate::{
         execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
         step::ExecutionResult,
         util::{
+            common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StateTransition, Transition::Delta,
             },
-            math_gadget::RangeCheckGadget,
-            Cell,
         },
     },
     util::Expr,
 };
-use bus_mapping::evm::GasCost;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone)]
 pub(crate) struct JumpdestGadget<F> {
-    opcode: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, 8>,
+    same_context: SameContextGadget<F>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for JumpdestGadget<F> {
@@ -27,24 +24,16 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpdestGadget<F> {
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::JUMPDEST;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr());
-
-        let sufficient_gas_left =
-            cb.require_sufficient_gas_left(GasCost::ONE.expr());
-
-        // State transitions
+        // State transition
         let state_transition = StateTransition {
-            program_counter: Delta(cb.program_counter_offset().expr()),
-            gas_left: Delta(-GasCost::ONE.expr()),
+            program_counter: Delta(1.expr()),
             ..Default::default()
         };
-        cb.require_state_transition(state_transition);
+        let opcode = cb.query_cell();
+        let same_context =
+            SameContextGadget::construct(cb, opcode, state_transition, None);
 
-        Self {
-            opcode,
-            sufficient_gas_left,
-        }
+        Self { same_context }
     }
 
     fn assign_exec_step(
@@ -54,22 +43,8 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpdestGadget<F> {
         exec_trace: &ExecTrace<F>,
         step_idx: usize,
     ) -> Result<(), Error> {
-        let step = &exec_trace.steps[step_idx];
-
-        let opcode = step.opcode.unwrap();
-        self.opcode.assign(
-            region,
-            offset,
-            Some(F::from_u64(opcode.as_u64())),
-        )?;
-
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from_u64((step.gas_left - step.gas_cost) as u64),
-        )?;
-
-        Ok(())
+        self.same_context
+            .assign_exec_step(region, offset, exec_trace, step_idx)
     }
 }
 
@@ -88,7 +63,8 @@ mod test {
     fn test_ok() {
         let opcode = OpcodeId::JUMPDEST;
         let randomness = Base::rand();
-        let bytecode = Bytecode::new(vec![opcode.as_u8(), 0x00]);
+        let bytecode =
+            Bytecode::new(vec![opcode.as_u8(), OpcodeId::STOP.as_u8()]);
         let exec_trace = ExecTrace {
             randomness,
             steps: vec![

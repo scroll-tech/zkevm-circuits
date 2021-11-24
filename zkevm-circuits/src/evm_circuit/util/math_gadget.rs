@@ -27,12 +27,14 @@ impl<F: FieldExt> IsZeroGadget<F> {
         let inverse = cb.query_cell();
 
         let is_zero = 1.expr() - (value.clone() * inverse.expr());
-        // when `value != 0` check `inverse = a.invert()`: value * (1 - value * inverse)
+        // when `value != 0` check `inverse = a.invert()`: value * (1 - value *
+        // inverse)
         cb.add_constraint(
             "value ⋅ (1 - value ⋅ value_inv)",
             value * is_zero.clone(),
         );
-        // when `value == 0` check `inverse = 0`: `inverse ⋅ (1 - value * inverse)`
+        // when `value == 0` check `inverse = 0`: `inverse ⋅ (1 - value *
+        // inverse)`
         cb.add_constraint(
             "value_inv ⋅ (1 - value ⋅ value_inv)",
             inverse.expr() * is_zero.clone(),
@@ -89,6 +91,8 @@ impl<F: FieldExt> IsEqualGadget<F> {
     }
 }
 
+/// Construction of 2 256-bit words addition and result, which is useful for
+/// opcode ADD, SUB and balance operation
 #[derive(Clone, Debug)]
 pub(crate) struct WordAdditionGadget<F> {
     pub(crate) a: util::Word<F>,
@@ -183,7 +187,8 @@ impl<F: FieldExt, const NUM_BYTES: usize> RangeCheckGadget<F, NUM_BYTES> {
         assert!(NUM_BYTES <= 31, "number of bytes too large");
 
         let parts = cb.query_bytes();
-        // Require that the reconstructed value from the parts equals the original value
+        // Require that the reconstructed value from the parts equals the
+        // original value
         cb.require_equal(
             "Constrain bytes recomposited to value",
             value,

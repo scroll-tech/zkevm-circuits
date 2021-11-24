@@ -3,20 +3,18 @@ use crate::{
         execution::{bus_mapping_tmp::ExecTrace, ExecutionGadget},
         step::ExecutionResult,
         util::{
+            common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StateTransition, Transition::Delta,
             },
             from_bytes,
-            math_gadget::{ComparisonGadget, IsEqualGadget, RangeCheckGadget},
-            select, Cell, Word,
+            math_gadget::{ComparisonGadget, IsEqualGadget},
+            select, Word,
         },
     },
     util::Expr,
 };
-use bus_mapping::{
-    eth_types::ToLittleEndian,
-    evm::{GasCost, OpcodeId},
-};
+use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 // ComparatorGadget verifies ADD and SUB at the same time by an extra swap flag,
@@ -25,8 +23,7 @@ use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 // Then we verify if a + b is equal to c.
 #[derive(Clone)]
 pub(crate) struct ComparatorGadget<F> {
-    opcode: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, 8>,
+    same_context: SameContextGadget<F>,
     a: Word<F>,
     b: Word<F>,
     comparison_lo: ComparisonGadget<F, 16>,
@@ -42,10 +39,6 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr());
-
-        let sufficient_gas_left =
-            cb.require_sufficient_gas_left(GasCost::FASTEST.expr());
 
         let a = cb.query_word();
         let b = cb.query_word();
@@ -94,19 +87,18 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
         cb.stack_pop(select::expr(is_gt.expr(), a.expr(), b.expr()));
         cb.stack_push(result);
 
-        // State transitions
+        // State transition
         let state_transition = StateTransition {
-            rw_counter: Delta(cb.rw_counter_offset().expr()),
-            program_counter: Delta(cb.program_counter_offset().expr()),
-            stack_pointer: Delta(cb.stack_pointer_offset().expr()),
-            gas_left: Delta(-GasCost::FASTEST.expr()),
+            rw_counter: Delta(3.expr()),
+            program_counter: Delta(1.expr()),
+            stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        cb.require_state_transition(state_transition);
+        let same_context =
+            SameContextGadget::construct(cb, opcode, state_transition, None);
 
         Self {
-            opcode,
-            sufficient_gas_left,
+            same_context,
             a,
             b,
             comparison_lo,
@@ -125,18 +117,10 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
     ) -> Result<(), Error> {
         let step = &exec_trace.steps[step_idx];
 
-        let opcode = step.opcode.unwrap();
-        self.opcode.assign(
-            region,
-            offset,
-            Some(F::from_u64(opcode.as_u64())),
-        )?;
+        self.same_context
+            .assign_exec_step(region, offset, exec_trace, step_idx)?;
 
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from_u64((step.gas_left - step.gas_cost) as u64),
-        )?;
+        let opcode = step.opcode.unwrap();
 
         // EQ op check
         self.is_eq.assign(
@@ -204,11 +188,11 @@ mod test {
         let randomness = Base::rand();
         let bytecode = Bytecode::new(
             [
-                vec![0x7f],
+                vec![OpcodeId::PUSH32.as_u8()],
                 b.to_be_bytes().to_vec(),
-                vec![0x7f],
+                vec![OpcodeId::PUSH32.as_u8()],
                 a.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), 0x00],
+                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
             ]
             .concat(),
         );

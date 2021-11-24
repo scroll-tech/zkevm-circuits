@@ -121,6 +121,12 @@ impl GasCost {
     pub const SLOW: Self = Self(10);
     /// Constant cost for ext step
     pub const EXT: Self = Self(20);
+    /// Constant cost for SHA3
+    pub const SHA3: Self = Self(30);
+    /// Constant cost for SELFDESTRUCT
+    pub const SELFDESTRUCT: Self = Self(5000);
+    /// Constant cost for CREATE
+    pub const CREATE: Self = Self(32000);
     /// Constant cost for every additional word when expanding memory
     pub const MEMORY: Self = Self(3);
     /// Constant cost for a cold SLOAD

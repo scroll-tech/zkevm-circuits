@@ -5,23 +5,23 @@ use crate::{
         table::{FixedTableTag, Lookup},
         util::{
             and,
+            common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StateTransition, Transition::Delta,
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget, RangeCheckGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget},
             select, sum, Cell, Word,
         },
     },
     util::Expr,
 };
 use array_init::array_init;
-use bus_mapping::{eth_types::ToLittleEndian, evm::GasCost};
+use bus_mapping::eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone)]
 pub(crate) struct SignextendGadget<F> {
-    opcode: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, 8>,
+    same_context: SameContextGadget<F>,
     index: Word<F>,
     value: Word<F>,
     sign_byte: Cell<F>,
@@ -36,39 +36,38 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
     const EXECUTION_RESULT: ExecutionResult = ExecutionResult::SIGNEXTEND;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr());
-
-        let sufficient_gas_left =
-            cb.require_sufficient_gas_left(GasCost::FAST.expr());
-
         let index = cb.query_word();
         let value = cb.query_word();
         let sign_byte = cb.query_cell();
         let selectors = array_init(|_| cb.query_bool());
 
         // Generate the selectors.
-        // If any of the non-LSB bytes of the index word are non-zero we never need to do any changes.
-        // So just sum all the non-LSB byte values here and then check if it's non-zero
-        // so we can use that as an additional condition to enable the selector.
+        // If any of the non-LSB bytes of the index word are non-zero we never
+        // need to do any changes. So just sum all the non-LSB byte
+        // values here and then check if it's non-zero so we can use
+        // that as an additional condition to enable the selector.
         let is_msb_sum_zero =
             IsZeroGadget::construct(cb, sum::expr(&index.cells[1..32]));
 
-        // Check if this byte is selected looking only at the LSB of the index word
+        // Check if this byte is selected looking only at the LSB of the index
+        // word
         let is_byte_selected = array_init(|idx| {
             IsEqualGadget::construct(cb, index.cells[0].expr(), idx.expr())
         });
 
-        // We need to find the byte we have to get the sign from so we can extend correctly.
-        // We go byte by byte and check if `idx == index[0]`.
-        // If they are equal (at most once) we add the byte value to the sum, else we add 0.
-        // We also generate the selectors, which we'll use to decide if we need to
+        // We need to find the byte we have to get the sign from so we can
+        // extend correctly. We go byte by byte and check if `idx ==
+        // index[0]`. If they are equal (at most once) we add the byte
+        // value to the sum, else we add 0. We also generate the
+        // selectors, which we'll use to decide if we need to
         // replace bytes with the sign byte.
-        // There is no need to check the MSB, even if the MSB is selected no bytes need to be changed.
+        // There is no need to check the MSB, even if the MSB is selected no
+        // bytes need to be changed.
         let mut selected_byte = 0.expr();
         for idx in 0..31 {
             // Check if this byte is selected
-            // The additional condition for this is that none of the non-LSB bytes are non-zero (see above).
+            // The additional condition for this is that none of the non-LSB
+            // bytes are non-zero (see above).
             let is_selected = and::expr(vec![
                 is_byte_selected[idx].expr(),
                 is_msb_sum_zero.expr(),
@@ -79,11 +78,13 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
                 selected_byte + (is_selected.clone() * value.cells[idx].expr());
 
             // Verify the selector.
-            // Cells are used here to store intermediate results, otherwise these sums
-            // are very long expressions.
-            // The selector for a byte position is enabled when its value needs to change to the sign byte.
-            // Once a byte was selected, all following bytes need to be replaced as well,
-            // so a selector is the sum of the current and all previous `is_selected` values.
+            // Cells are used here to store intermediate results, otherwise
+            // these sums are very long expressions.
+            // The selector for a byte position is enabled when its value needs
+            // to change to the sign byte. Once a byte was selected,
+            // all following bytes need to be replaced as well, so a
+            // selector is the sum of the current and all previous `is_selected`
+            // values.
             cb.require_equal(
                 "Constrain selector == 1 when is_selected == 1 || previous selector == 1", 
                 is_selected.clone()
@@ -97,18 +98,19 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
         }
 
         // Lookup the sign byte.
-        // This will use the most significant bit of the selected byte to return the sign byte,
-        // which is a byte with all its bits set to the sign of the selected byte.
+        // This will use the most significant bit of the selected byte to return
+        // the sign byte, which is a byte with all its bits set to the
+        // sign of the selected byte.
         cb.add_lookup(Lookup::Fixed {
             tag: FixedTableTag::SignByte.expr(),
             values: [selected_byte, sign_byte.expr(), 0.expr()],
         });
 
         // Verify the result.
-        // The LSB always remains the same, all other bytes with their selector enabled
-        // need to be changed to the sign byte.
-        // When a byte was selected all the **following** bytes need to be replaced
-        // (hence the `selectors[idx - 1]`).
+        // The LSB always remains the same, all other bytes with their selector
+        // enabled need to be changed to the sign byte.
+        // When a byte was selected all the **following** bytes need to be
+        // replaced (hence the `selectors[idx - 1]`).
         let result = Word::random_linear_combine_expr(
             array_init(|idx| {
                 if idx == 0 {
@@ -124,24 +126,25 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
             cb.randomness(),
         );
 
-        // Pop the byte index and the value from the stack, push the result on the stack
+        // Pop the byte index and the value from the stack, push the result on
+        // the stack
         cb.stack_pop(index.expr());
         cb.stack_pop(value.expr());
         cb.stack_push(result);
 
-        // State transitions
+        // State transition
         let state_transition = StateTransition {
-            rw_counter: Delta(cb.rw_counter_offset().expr()),
-            program_counter: Delta(cb.program_counter_offset().expr()),
-            stack_pointer: Delta(cb.stack_pointer_offset().expr()),
-            gas_left: Delta(-GasCost::FAST.expr()),
+            rw_counter: Delta(3.expr()),
+            program_counter: Delta(1.expr()),
+            stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        cb.require_state_transition(state_transition);
+        let opcode = cb.query_cell();
+        let same_context =
+            SameContextGadget::construct(cb, opcode, state_transition, None);
 
         Self {
-            opcode,
-            sufficient_gas_left,
+            same_context,
             index,
             value,
             sign_byte,
@@ -160,18 +163,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
     ) -> Result<(), Error> {
         let step = &exec_trace.steps[step_idx];
 
-        let opcode = step.opcode.unwrap();
-        self.opcode.assign(
-            region,
-            offset,
-            Some(F::from_u64(opcode.as_u64())),
-        )?;
-
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from_u64((step.gas_left - step.gas_cost) as u64),
-        )?;
+        self.same_context
+            .assign_exec_step(region, offset, exec_trace, step_idx)?;
 
         // Inputs/Outputs
         let index = exec_trace.rws[step.rw_indices[0]]
@@ -239,11 +232,11 @@ mod test {
         let randomness = Base::rand();
         let bytecode = Bytecode::new(
             [
-                vec![0x7f],
+                vec![OpcodeId::PUSH32.as_u8()],
                 value.to_be_bytes().to_vec(),
-                vec![0x7f],
+                vec![OpcodeId::PUSH32.as_u8()],
                 index.to_be_bytes().to_vec(),
-                vec![OpcodeId::SIGNEXTEND.as_u8(), 0x00],
+                vec![OpcodeId::SIGNEXTEND.as_u8(), OpcodeId::STOP.as_u8()],
             ]
             .concat(),
         );
