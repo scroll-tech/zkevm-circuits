@@ -87,7 +87,7 @@ mod test {
             Block, Bytecode, Call, ExecStep, Rw, Transaction,
         },
         step::ExecutionResult,
-        test::try_test_circuit,
+        test::run_test_circuit_incomplete_fixed_table,
         util::RandomLinearCombination,
     };
     use bus_mapping::{
@@ -153,7 +153,7 @@ mod test {
             }],
             bytecodes: vec![bytecode],
         };
-        try_test_circuit(block, Ok(()));
+        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
     #[test]

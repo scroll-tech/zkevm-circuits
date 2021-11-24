@@ -18,6 +18,7 @@ use halo2::{
 use std::collections::HashMap;
 
 mod add;
+mod and;
 mod byte;
 mod comparator;
 mod dup;
@@ -31,6 +32,7 @@ mod signextend;
 mod stop;
 mod swap;
 use add::AddGadget;
+use and::AndGadget;
 use byte::ByteGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
@@ -232,6 +234,7 @@ pub(crate) struct ExecutionConfig<F> {
     step: Step<F>,
     presets_map: HashMap<ExecutionResult, Vec<Preset<F>>>,
     add_gadget: AddGadget<F>,
+    and_gadget: AndGadget<F>,
     byte_gadget: ByteGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
@@ -332,6 +335,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         let config = Self {
             q_step,
             add_gadget: configure_gadget!(),
+            and_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
@@ -534,6 +538,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         match step.execution_result {
             ExecutionResult::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionResult::ADD => assign_exec_step!(self.add_gadget),
+            ExecutionResult::AND => assign_exec_step!(self.and_gadget),
             ExecutionResult::SIGNEXTEND => {
                 assign_exec_step!(self.signextend_gadget)
             }

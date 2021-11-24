@@ -4,7 +4,6 @@ use halo2::{
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::iter;
 
 pub trait LookupTable<F: FieldExt, const W: usize> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W];
@@ -23,7 +22,7 @@ impl<F: FieldExt, const W: usize> LookupTable<F, W> for [Column<Fixed>; W] {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum FixedTableTag {
+pub enum FixedTableTag {
     Range16 = 1,
     Range17,
     Range32,
@@ -37,23 +36,24 @@ pub(crate) enum FixedTableTag {
 }
 
 impl FixedTableTag {
-    pub(crate) fn build_all<F: FieldExt>() -> impl Iterator<Item = Vec<F>> {
-        iter::once(vec![F::zero(), F::zero(), F::zero(), F::zero()])
-            .chain(Self::Range16.build())
-            .chain(Self::Range17.build())
-            .chain(Self::Range32.build())
-            .chain(Self::Range256.build())
-            .chain(Self::Range512.build())
-            .chain(Self::SignByte.build())
-            // Enable bitwise when testing time too long issue is resolved, see
-            // https://github.com/appliedzkp/zkevm-circuits/issues/88 for more information.
-            // .chain(Self::BitwiseAnd.build())
-            // .chain(Self::BitwiseOr.build())
-            // .chain(Self::BitwiseXor.build())
-            .chain(Self::ResponsibleOpcode.build())
+    pub fn iterator() -> impl Iterator<Item = Self> {
+        [
+            Self::Range16,
+            Self::Range17,
+            Self::Range32,
+            Self::Range256,
+            Self::Range512,
+            Self::SignByte,
+            Self::BitwiseAnd,
+            Self::BitwiseOr,
+            Self::BitwiseXor,
+            Self::ResponsibleOpcode,
+        ]
+        .iter()
+        .copied()
     }
 
-    fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = Vec<F>>> {
+    pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = Vec<F>>> {
         let tag = F::from_u64(*self as u64);
         match self {
             Self::Range16 => Box::new((0..16).map(move |value| {

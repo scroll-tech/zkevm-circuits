@@ -32,9 +32,7 @@ pub enum ExecutionResult {
     LT,  // LT, GT, EQ
     SLT, // SLT, SGT
     ISZERO,
-    AND,
-    OR,
-    XOR,
+    AND, // AND, OR, XOR
     NOT,
     BYTE,
     SHL,
@@ -146,8 +144,6 @@ impl ExecutionResult {
             Self::SLT,
             Self::ISZERO,
             Self::AND,
-            Self::OR,
-            Self::XOR,
             Self::NOT,
             Self::BYTE,
             Self::SHL,
@@ -252,9 +248,7 @@ impl ExecutionResult {
             Self::LT => vec![OpcodeId::LT, OpcodeId::GT, OpcodeId::EQ],
             Self::SLT => vec![OpcodeId::SLT, OpcodeId::SGT],
             Self::ISZERO => vec![OpcodeId::ISZERO],
-            Self::AND => vec![OpcodeId::AND],
-            Self::OR => vec![OpcodeId::OR],
-            Self::XOR => vec![OpcodeId::XOR],
+            Self::AND => vec![OpcodeId::AND, OpcodeId::OR, OpcodeId::XOR],
             Self::NOT => vec![OpcodeId::NOT],
             Self::BYTE => vec![OpcodeId::BYTE],
             Self::SHL => vec![OpcodeId::SHL],

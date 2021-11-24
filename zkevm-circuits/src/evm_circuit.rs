@@ -57,11 +57,19 @@ impl<F: FieldExt> EvmCircuit<F> {
     pub fn load_fixed_table(
         &self,
         layouter: &mut impl Layouter<F>,
+        fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
-                for (offset, row) in FixedTableTag::build_all::<F>().enumerate()
+                for (offset, row) in std::iter::once(vec![
+                    F::zero(),
+                    F::zero(),
+                    F::zero(),
+                    F::zero(),
+                ])
+                .chain(fixed_table_tags.iter().map(|tag| tag.build()).flatten())
+                .enumerate()
                 {
                     for (column, value) in
                         self.fixed_table.iter().zip(row.into_iter())
@@ -95,6 +103,7 @@ mod test {
     use crate::evm_circuit::{
         execution::bus_mapping_tmp::{Block, Bytecode, Rw, Transaction},
         param::STEP_HEIGHT,
+        table::FixedTableTag,
         util::RandomLinearCombination,
         EvmCircuit,
     };
@@ -231,11 +240,18 @@ mod test {
     #[derive(Default)]
     pub(crate) struct TestCircuit<F> {
         block: Block<F>,
+        fixed_table_tags: Vec<FixedTableTag>,
     }
 
     impl<F> TestCircuit<F> {
-        pub fn new(block: Block<F>) -> Self {
-            Self { block }
+        pub fn new(
+            block: Block<F>,
+            fixed_table_tags: Vec<FixedTableTag>,
+        ) -> Self {
+            Self {
+                block,
+                fixed_table_tags,
+            }
         }
     }
 
@@ -272,7 +288,10 @@ mod test {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            config.evm_circuit.load_fixed_table(&mut layouter)?;
+            config.evm_circuit.load_fixed_table(
+                &mut layouter,
+                self.fixed_table_tags.clone(),
+            )?;
             config.load_txs(
                 &mut layouter,
                 &self.block.txs,
@@ -292,11 +311,16 @@ mod test {
         }
     }
 
-    pub(crate) fn try_test_circuit(
+    pub(crate) fn run_test_circuit(
         block: Block<Base>,
-        result: Result<(), Vec<VerifyFailure>>,
-    ) {
-        let k = 11;
+        fixed_table_tags: Vec<FixedTableTag>,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        let k = u32::BITS
+            - (1 + fixed_table_tags
+                .iter()
+                .map(|tag| tag.build::<Base>().count() as u32)
+                .sum::<u32>())
+            .leading_zeros();
 
         let randomness =
             vec![
@@ -304,10 +328,33 @@ mod test {
                 block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>()
                     * STEP_HEIGHT
             ];
-        let circuit = TestCircuit::<Base>::new(block);
+        let circuit = TestCircuit::<Base>::new(block, fixed_table_tags);
+
         let prover =
             MockProver::<Base>::run(k, &circuit, vec![randomness]).unwrap();
+        prover.verify()
+    }
 
-        assert_eq!(prover.verify(), result);
+    pub(crate) fn run_test_circuit_incomplete_fixed_table(
+        block: Block<Base>,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        run_test_circuit(
+            block,
+            vec![
+                FixedTableTag::Range16,
+                FixedTableTag::Range17,
+                FixedTableTag::Range32,
+                FixedTableTag::Range256,
+                FixedTableTag::Range512,
+                FixedTableTag::SignByte,
+                FixedTableTag::ResponsibleOpcode,
+            ],
+        )
+    }
+
+    pub(crate) fn run_test_circuit_complete_fixed_table(
+        block: Block<Base>,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        run_test_circuit(block, FixedTableTag::iterator().collect())
     }
 }

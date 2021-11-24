@@ -5,12 +5,13 @@ use crate::{
             ExecutionGadget,
         },
         step::ExecutionResult,
+        table::{FixedTableTag, Lookup},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StateTransition, Transition::Delta,
             },
-            Cell, Word,
+            Word,
         },
     },
     util::Expr,
@@ -19,34 +20,50 @@ use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
-pub(crate) struct DupGadget<F> {
+pub(crate) struct AndGadget<F> {
     same_context: SameContextGadget<F>,
-    value: Cell<F>,
+    a: Word<F>,
+    b: Word<F>,
+    c: Word<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for DupGadget<F> {
-    const NAME: &'static str = "DUP";
+impl<F: FieldExt> ExecutionGadget<F> for AndGadget<F> {
+    const NAME: &'static str = "AND";
 
-    const EXECUTION_RESULT: ExecutionResult = ExecutionResult::DUP;
+    const EXECUTION_RESULT: ExecutionResult = ExecutionResult::AND;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let value = cb.query_cell();
+        let a = cb.query_word();
+        let b = cb.query_word();
+        let c = cb.query_word();
 
-        // The stack index we have to peek, deduced from the 'x' value of 'dupx'
-        // The offset starts at 0 for DUP1
-        let dup_offset = opcode.expr() - OpcodeId::DUP1.expr();
+        cb.stack_pop(a.expr());
+        cb.stack_pop(b.expr());
+        cb.stack_push(c.expr());
 
-        // Peek the value at `dup_offset` and push the value on the stack
-        cb.stack_lookup(false.expr(), dup_offset, value.expr());
-        cb.stack_push(value.expr());
+        // Because opcode AND, OR, and XOR are continuous, so we can make the
+        // FixedTableTag of them also continuous, and use the opcode delta from
+        // OpcodeId::AND as the delta to FixedTableTag::BitwiseAnd.
+        let tag = FixedTableTag::BitwiseAnd.expr()
+            + (opcode.expr() - OpcodeId::AND.as_u64().expr());
+        for idx in 0..32 {
+            cb.add_lookup(Lookup::Fixed {
+                tag: tag.clone(),
+                values: [
+                    a.cells[idx].expr(),
+                    b.cells[idx].expr(),
+                    c.cells[idx].expr(),
+                ],
+            });
+        }
 
         // State transition
         let state_transition = StateTransition {
-            rw_counter: Delta(2.expr()),
+            rw_counter: Delta(3.expr()),
             program_counter: Delta(1.expr()),
-            stack_pointer: Delta((-1).expr()),
+            stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
         let same_context =
@@ -54,7 +71,9 @@ impl<F: FieldExt> ExecutionGadget<F> for DupGadget<F> {
 
         Self {
             same_context,
-            value,
+            a,
+            b,
+            c,
         }
     }
 
@@ -69,15 +88,12 @@ impl<F: FieldExt> ExecutionGadget<F> for DupGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
-        self.value.assign(
-            region,
-            offset,
-            Some(Word::random_linear_combine(
-                value.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        let [a, b, c] =
+            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
+                .map(|idx| block.rws[idx].stack_value());
+        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+        self.c.assign(region, offset, Some(c.to_le_bytes()))?;
 
         Ok(())
     }
@@ -90,7 +106,7 @@ mod test {
             Block, Bytecode, Call, ExecStep, Rw, Transaction,
         },
         step::ExecutionResult,
-        test::{rand_word, run_test_circuit_incomplete_fixed_table},
+        test::{rand_word, run_test_circuit_complete_fixed_table},
         util::RandomLinearCombination,
     };
     use bus_mapping::{
@@ -100,14 +116,14 @@ mod test {
     use halo2::arithmetic::FieldExt;
     use pasta_curves::pallas::Base;
 
-    fn test_ok(opcode: OpcodeId, value: Word) {
-        let n = (opcode.as_u8() - OpcodeId::DUP1.as_u8() + 1) as usize;
+    fn test_ok(opcode: OpcodeId, a: Word, b: Word, c: Word) {
         let randomness = Base::rand();
         let bytecode = Bytecode::new(
             [
                 vec![OpcodeId::PUSH32.as_u8()],
-                value.to_be_bytes().to_vec(),
-                vec![OpcodeId::DUP1.as_u8(); n - 1],
+                b.to_be_bytes().to_vec(),
+                vec![OpcodeId::PUSH32.as_u8()],
+                a.to_be_bytes().to_vec(),
                 vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
             ]
             .concat(),
@@ -127,11 +143,11 @@ mod test {
                 }],
                 steps: vec![
                     ExecStep {
-                        rw_indices: vec![0, 1],
-                        execution_result: ExecutionResult::DUP,
+                        rw_indices: vec![0, 1, 2],
+                        execution_result: ExecutionResult::AND,
                         rw_counter: 1,
-                        program_counter: (33 + n - 1) as u64,
-                        stack_pointer: 1024 - n,
+                        program_counter: 66,
+                        stack_pointer: 1022,
                         gas_left: 3,
                         gas_cost: 3,
                         opcode: Some(opcode),
@@ -139,9 +155,9 @@ mod test {
                     },
                     ExecStep {
                         execution_result: ExecutionResult::STOP,
-                        rw_counter: 3,
-                        program_counter: (33 + n) as u64,
-                        stack_pointer: 1023 - n,
+                        rw_counter: 4,
+                        program_counter: 67,
+                        stack_pointer: 1023,
                         gas_left: 0,
                         opcode: Some(OpcodeId::STOP),
                         ..Default::default()
@@ -153,54 +169,58 @@ mod test {
                     rw_counter: 1,
                     is_write: false,
                     call_id: 1,
-                    stack_pointer: 1023,
-                    value,
+                    stack_pointer: 1022,
+                    value: a,
                 },
                 Rw::Stack {
                     rw_counter: 2,
+                    is_write: false,
+                    call_id: 1,
+                    stack_pointer: 1023,
+                    value: b,
+                },
+                Rw::Stack {
+                    rw_counter: 3,
                     is_write: true,
                     call_id: 1,
-                    stack_pointer: 1023 - n,
-                    value,
+                    stack_pointer: 1023,
+                    value: c,
                 },
             ],
             bytecodes: vec![bytecode],
         };
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit_complete_fixed_table(block), Ok(()));
     }
 
     #[test]
-    fn dup_gadget_simple() {
-        test_ok(OpcodeId::DUP1, Word::max_value());
-        test_ok(OpcodeId::DUP2, Word::max_value());
-        test_ok(OpcodeId::DUP15, Word::max_value());
-        test_ok(OpcodeId::DUP16, Word::max_value());
+    fn and_gadget_simple() {
+        test_ok(
+            OpcodeId::AND,
+            0x12_34_56.into(),
+            0x78_9A_BC.into(),
+            0x10_10_14.into(),
+        );
+        test_ok(
+            OpcodeId::OR,
+            0x12_34_56.into(),
+            0x78_9A_BC.into(),
+            0x7A_BE_FE.into(),
+        );
+        test_ok(
+            OpcodeId::XOR,
+            0x12_34_56.into(),
+            0x78_9A_BC.into(),
+            0x6A_AE_EA.into(),
+        );
     }
 
     #[test]
     #[ignore]
-    fn dup_gadget_rand() {
-        for opcode in vec![
-            OpcodeId::DUP1,
-            OpcodeId::DUP2,
-            OpcodeId::DUP3,
-            OpcodeId::DUP4,
-            OpcodeId::DUP5,
-            OpcodeId::DUP6,
-            OpcodeId::DUP7,
-            OpcodeId::DUP8,
-            OpcodeId::DUP9,
-            OpcodeId::DUP10,
-            OpcodeId::DUP11,
-            OpcodeId::DUP12,
-            OpcodeId::DUP13,
-            OpcodeId::DUP14,
-            OpcodeId::DUP15,
-            OpcodeId::DUP16,
-        ]
-        .into_iter()
-        {
-            test_ok(opcode, rand_word());
-        }
+    fn and_gadget_rand() {
+        let a = rand_word();
+        let b = rand_word();
+        test_ok(OpcodeId::AND, a, b, a & b);
+        test_ok(OpcodeId::OR, a, b, a | b);
+        test_ok(OpcodeId::XOR, a, b, a ^ b);
     }
 }

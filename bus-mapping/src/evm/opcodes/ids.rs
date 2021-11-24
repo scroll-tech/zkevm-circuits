@@ -631,7 +631,7 @@ impl OpcodeId {
             OpcodeId::CREATE2 => GasCost::CREATE,
             OpcodeId::STATICCALL => GasCost::WARM_STORAGE_READ_COST,
             OpcodeId::REVERT => GasCost::ZERO,
-            OpcodeId::INVALID => GasCost::ZERO,
+            OpcodeId::INVALID(_) => GasCost::ZERO,
             OpcodeId::SELFDESTRUCT => GasCost::SELFDESTRUCT,
         }
     }
