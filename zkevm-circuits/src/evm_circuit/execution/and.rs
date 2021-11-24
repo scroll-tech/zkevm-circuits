@@ -116,7 +116,7 @@ mod test {
     use halo2::arithmetic::FieldExt;
     use pasta_curves::pallas::Base;
 
-    fn test_ok(opcode: OpcodeId, a: Word, b: Word, c: Word) {
+    fn test_ok(a: Word, b: Word, c_and: Word, c_or: Word, c_xor: Word) {
         let randomness = Base::rand();
         let bytecode = Bytecode::new(
             [
@@ -124,7 +124,22 @@ mod test {
                 b.to_be_bytes().to_vec(),
                 vec![OpcodeId::PUSH32.as_u8()],
                 a.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
+                vec![OpcodeId::PUSH32.as_u8()],
+                b.to_be_bytes().to_vec(),
+                vec![OpcodeId::PUSH32.as_u8()],
+                a.to_be_bytes().to_vec(),
+                vec![OpcodeId::PUSH32.as_u8()],
+                b.to_be_bytes().to_vec(),
+                vec![OpcodeId::PUSH32.as_u8()],
+                a.to_be_bytes().to_vec(),
+                vec![
+                    OpcodeId::AND.as_u8(),
+                    OpcodeId::POP.as_u8(),
+                    OpcodeId::OR.as_u8(),
+                    OpcodeId::POP.as_u8(),
+                    OpcodeId::XOR.as_u8(),
+                    OpcodeId::STOP.as_u8(),
+                ],
             ]
             .concat(),
         );
@@ -146,17 +161,61 @@ mod test {
                         rw_indices: vec![0, 1, 2],
                         execution_result: ExecutionResult::AND,
                         rw_counter: 1,
-                        program_counter: 66,
+                        program_counter: 198,
+                        stack_pointer: 1018,
+                        gas_left: 13,
+                        gas_cost: 3,
+                        opcode: Some(OpcodeId::AND),
+                        ..Default::default()
+                    },
+                    ExecStep {
+                        rw_indices: vec![3],
+                        execution_result: ExecutionResult::POP,
+                        rw_counter: 4,
+                        program_counter: 199,
+                        stack_pointer: 1019,
+                        gas_left: 10,
+                        gas_cost: 2,
+                        opcode: Some(OpcodeId::POP),
+                        ..Default::default()
+                    },
+                    ExecStep {
+                        rw_indices: vec![4, 5, 6],
+                        execution_result: ExecutionResult::AND,
+                        rw_counter: 5,
+                        program_counter: 200,
+                        stack_pointer: 1020,
+                        gas_left: 8,
+                        gas_cost: 3,
+                        opcode: Some(OpcodeId::OR),
+                        ..Default::default()
+                    },
+                    ExecStep {
+                        rw_indices: vec![7],
+                        execution_result: ExecutionResult::POP,
+                        rw_counter: 8,
+                        program_counter: 201,
+                        stack_pointer: 1021,
+                        gas_left: 5,
+                        gas_cost: 2,
+                        opcode: Some(OpcodeId::POP),
+                        ..Default::default()
+                    },
+                    ExecStep {
+                        rw_indices: vec![8, 9, 10],
+                        execution_result: ExecutionResult::AND,
+                        rw_counter: 9,
+                        program_counter: 202,
                         stack_pointer: 1022,
                         gas_left: 3,
                         gas_cost: 3,
-                        opcode: Some(opcode),
+                        opcode: Some(OpcodeId::XOR),
                         ..Default::default()
                     },
                     ExecStep {
                         execution_result: ExecutionResult::STOP,
-                        rw_counter: 4,
-                        program_counter: 67,
+                        rw_counter: 12,
+                        program_counter: 203,
                         stack_pointer: 1023,
                         gas_left: 0,
                         opcode: Some(OpcodeId::STOP),
@@ -170,22 +229,78 @@ mod test {
                     rw_counter: 1,
                     is_write: false,
                     call_id: 1,
-                    stack_pointer: 1022,
+                    stack_pointer: 1018,
                     value: a,
                 },
                 Rw::Stack {
                     rw_counter: 2,
                     is_write: false,
                     call_id: 1,
-                    stack_pointer: 1023,
+                    stack_pointer: 1019,
                     value: b,
                 },
                 Rw::Stack {
                     rw_counter: 3,
                     is_write: true,
                     call_id: 1,
+                    stack_pointer: 1019,
+                    value: c_and,
+                },
+                Rw::Stack {
+                    rw_counter: 4,
+                    is_write: false,
+                    call_id: 1,
+                    stack_pointer: 1019,
+                    value: c_and,
+                },
+                Rw::Stack {
+                    rw_counter: 5,
+                    is_write: false,
+                    call_id: 1,
+                    stack_pointer: 1020,
+                    value: a,
+                },
+                Rw::Stack {
+                    rw_counter: 6,
+                    is_write: false,
+                    call_id: 1,
+                    stack_pointer: 1021,
+                    value: b,
+                },
+                Rw::Stack {
+                    rw_counter: 7,
+                    is_write: true,
+                    call_id: 1,
+                    stack_pointer: 1021,
+                    value: c_or,
+                },
+                Rw::Stack {
+                    rw_counter: 8,
+                    is_write: false,
+                    call_id: 1,
+                    stack_pointer: 1021,
+                    value: c_or,
+                },
+                Rw::Stack {
+                    rw_counter: 9,
+                    is_write: false,
+                    call_id: 1,
+                    stack_pointer: 1022,
+                    value: a,
+                },
+                Rw::Stack {
+                    rw_counter: 10,
+                    is_write: false,
+                    call_id: 1,
                     stack_pointer: 1023,
-                    value: c,
+                    value: b,
+                },
+                Rw::Stack {
+                    rw_counter: 11,
+                    is_write: true,
+                    call_id: 1,
+                    stack_pointer: 1023,
+                    value: c_xor,
                 },
             ],
             bytecodes: vec![bytecode],
@@ -196,32 +311,18 @@ mod test {
     #[test]
     fn and_gadget_simple() {
         test_ok(
-            OpcodeId::AND,
             0x12_34_56.into(),
             0x78_9A_BC.into(),
             0x10_10_14.into(),
-        );
-        test_ok(
-            OpcodeId::OR,
-            0x12_34_56.into(),
-            0x78_9A_BC.into(),
             0x7A_BE_FE.into(),
-        );
-        test_ok(
-            OpcodeId::XOR,
-            0x12_34_56.into(),
-            0x78_9A_BC.into(),
             0x6A_AE_EA.into(),
         );
     }
 
     #[test]
-    #[ignore]
     fn and_gadget_rand() {
         let a = rand_word();
         let b = rand_word();
-        test_ok(OpcodeId::AND, a, b, a & b);
-        test_ok(OpcodeId::OR, a, b, a | b);
-        test_ok(OpcodeId::XOR, a, b, a ^ b);
+        test_ok(a, b, a & b, a | b, a ^ b);
     }
 }
