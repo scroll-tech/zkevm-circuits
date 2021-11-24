@@ -11,16 +11,19 @@ mod step;
 mod table;
 mod util;
 
+pub use execution::bus_mapping_tmp;
 use execution::{bus_mapping_tmp::Block, ExecutionConfig};
 use table::{FixedTableTag, LookupTable};
 
-#[derive(Clone)]
-struct EvmCircuit<F> {
+/// EvmCircuit implements verification of execution trace of a block.
+#[derive(Clone, Debug)]
+pub struct EvmCircuit<F> {
     fixed_table: [Column<Fixed>; 4],
     execution: ExecutionConfig<F>,
 }
 
 impl<F: FieldExt> EvmCircuit<F> {
+    /// Configure EvmCircuit
     pub fn configure<TxTable, RwTable, BytecodeTable>(
         meta: &mut ConstraintSystem<F>,
         randomness: Column<Instance>,
@@ -50,6 +53,7 @@ impl<F: FieldExt> EvmCircuit<F> {
         }
     }
 
+    /// Load fixed table
     pub fn load_fixed_table(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -76,6 +80,7 @@ impl<F: FieldExt> EvmCircuit<F> {
         )
     }
 
+    /// Assign block
     pub fn assign_block(
         &self,
         layouter: &mut impl Layouter<F>,

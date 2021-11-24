@@ -18,7 +18,7 @@ use crate::{
 use array_init::array_init;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct PcGadget<F> {
     same_context: SameContextGadget<F>,
     value: RandomLinearCombination<F, 8>,

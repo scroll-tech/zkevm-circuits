@@ -22,7 +22,7 @@ use halo2::{
 /// Construction of execution result that stays in the same call context, which
 /// lookups the opcode and verifies the execution result is responsible for it,
 /// then calculates the gas_cost and constrain the state transition.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct SameContextGadget<F> {
     opcode: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, MAX_GAS_SIZE_IN_BYTES>,

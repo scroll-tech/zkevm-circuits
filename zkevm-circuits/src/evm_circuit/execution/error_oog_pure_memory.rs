@@ -21,7 +21,7 @@ use bus_mapping::{
 };
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGPureMemoryGadget<F> {
     opcode: Cell<F>,
     address: Word<F>,

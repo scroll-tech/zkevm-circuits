@@ -11,7 +11,7 @@ use crate::{
 };
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct StopGadget<F> {
     opcode: Cell<F>,
 }

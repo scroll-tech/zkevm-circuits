@@ -24,7 +24,7 @@ use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct MemoryGadget<F> {
     same_context: SameContextGadget<F>,
     address: MemoryAddress<F>,

@@ -15,7 +15,7 @@ use halo2::{
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum ExecutionResult {
+pub enum ExecutionResult {
     BeginTx,
     // Opcodes
     STOP,
@@ -389,7 +389,7 @@ impl ExecutionResult {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct StepState<F> {
     pub(crate) execution_result: Vec<Cell<F>>,
     pub(crate) rw_counter: Cell<F>,
@@ -404,13 +404,13 @@ pub(crate) struct StepState<F> {
     pub(crate) state_write_counter: Cell<F>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct StepRow<F> {
     pub(crate) qs_byte_lookup: Cell<F>,
     pub(crate) cells: [Cell<F>; STEP_WIDTH],
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Step<F> {
     pub(crate) state: StepState<F>,
     pub(crate) rows: Vec<StepRow<F>>,

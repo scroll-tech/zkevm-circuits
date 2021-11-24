@@ -6,7 +6,7 @@ use halo2::{
 };
 use std::iter;
 
-pub(crate) trait LookupTable<F: FieldExt, const W: usize> {
+pub trait LookupTable<F: FieldExt, const W: usize> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W];
 }
 

@@ -24,7 +24,7 @@ use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 // when it's ADD, we annotate stack as [a, b, ...] and [c, ...],
 // when it's SUB, we annotate stack as [a, c, ...] and [b, ...].
 // Then we verify if a + b is equal to c.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct ComparatorGadget<F> {
     same_context: SameContextGadget<F>,
     a: Word<F>,

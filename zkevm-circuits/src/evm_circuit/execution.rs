@@ -44,7 +44,8 @@ use signextend::SignextendGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
 
-pub(crate) mod bus_mapping_tmp {
+#[allow(missing_docs)]
+pub mod bus_mapping_tmp {
     use crate::evm_circuit::{
         step::ExecutionResult, table::RwTableTag, util::RandomLinearCombination,
     };
@@ -56,50 +57,50 @@ pub(crate) mod bus_mapping_tmp {
     use sha3::{Digest, Keccak256};
 
     #[derive(Debug, Default)]
-    pub(crate) struct Block<F> {
-        pub(crate) randomness: F, // randomness for random linear combination
-        pub(crate) txs: Vec<Transaction<F>>,
-        pub(crate) rws: Vec<Rw>,
-        pub(crate) bytecodes: Vec<Bytecode>,
+    pub struct Block<F> {
+        pub randomness: F, // randomness for random linear combination
+        pub txs: Vec<Transaction<F>>,
+        pub rws: Vec<Rw>,
+        pub bytecodes: Vec<Bytecode>,
     }
 
     #[derive(Debug, Default)]
-    pub(crate) struct Transaction<F> {
-        pub(crate) calls: Vec<Call<F>>,
-        pub(crate) steps: Vec<ExecStep>,
+    pub struct Transaction<F> {
+        pub calls: Vec<Call<F>>,
+        pub steps: Vec<ExecStep>,
     }
 
     #[derive(Debug, Default)]
-    pub(crate) struct Call<F> {
-        pub(crate) id: usize,
-        pub(crate) is_root: bool,
-        pub(crate) is_create: bool,
-        pub(crate) opcode_source: F,
+    pub struct Call<F> {
+        pub id: usize,
+        pub is_root: bool,
+        pub is_create: bool,
+        pub opcode_source: F,
     }
 
     #[derive(Debug, Default)]
-    pub(crate) struct ExecStep {
-        pub(crate) call_idx: usize,
-        pub(crate) rw_indices: Vec<usize>,
-        pub(crate) execution_result: ExecutionResult,
-        pub(crate) rw_counter: usize,
-        pub(crate) program_counter: u64,
-        pub(crate) stack_pointer: usize,
-        pub(crate) gas_left: u64,
-        pub(crate) gas_cost: u64,
-        pub(crate) memory_size: u64,
-        pub(crate) state_write_counter: usize,
-        pub(crate) opcode: Option<OpcodeId>,
+    pub struct ExecStep {
+        pub call_idx: usize,
+        pub rw_indices: Vec<usize>,
+        pub execution_result: ExecutionResult,
+        pub rw_counter: usize,
+        pub program_counter: u64,
+        pub stack_pointer: usize,
+        pub gas_left: u64,
+        pub gas_cost: u64,
+        pub memory_size: u64,
+        pub state_write_counter: usize,
+        pub opcode: Option<OpcodeId>,
     }
 
     #[derive(Debug)]
-    pub(crate) struct Bytecode {
-        pub(crate) hash: Word,
-        pub(crate) bytes: Vec<u8>,
+    pub struct Bytecode {
+        pub hash: Word,
+        pub bytes: Vec<u8>,
     }
 
     impl Bytecode {
-        pub(crate) fn new(bytes: Vec<u8>) -> Self {
+        pub fn new(bytes: Vec<u8>) -> Self {
             Self {
                 hash: Word::from_big_endian(
                     Keccak256::digest(&bytes).as_slice(),
@@ -110,7 +111,7 @@ pub(crate) mod bus_mapping_tmp {
     }
 
     #[derive(Clone, Debug)]
-    pub(crate) enum Rw {
+    pub enum Rw {
         TxAccessListAccount {
             rw_counter: usize,
             is_write: bool,
@@ -156,17 +157,14 @@ pub(crate) mod bus_mapping_tmp {
     }
 
     impl Rw {
-        pub(crate) fn stack_value(&self) -> Word {
+        pub fn stack_value(&self) -> Word {
             match self {
                 Self::Stack { value, .. } => *value,
                 _ => unreachable!(),
             }
         }
 
-        pub(crate) fn table_assignment<F: FieldExt>(
-            &self,
-            randomness: F,
-        ) -> [F; 8] {
+        pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> [F; 8] {
             match self {
                 Self::Stack {
                     rw_counter,
@@ -228,7 +226,7 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
     ) -> Result<(), Error>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct ExecutionConfig<F> {
     q_step: Selector,
     step: Step<F>,

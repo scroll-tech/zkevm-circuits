@@ -18,7 +18,7 @@ use crate::{
 use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct DupGadget<F> {
     same_context: SameContextGadget<F>,
     value: Cell<F>,

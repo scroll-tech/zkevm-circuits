@@ -16,7 +16,7 @@ use crate::{
 };
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct JumpdestGadget<F> {
     same_context: SameContextGadget<F>,
 }
