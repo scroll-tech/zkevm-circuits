@@ -140,11 +140,41 @@ mod test {
     impl<F: FieldExt> TestCircuitConfig<F> {
         fn load_txs(
             &self,
-            _layouter: &mut impl Layouter<F>,
-            _txs: &[Transaction<F>],
-            _randomness: F,
+            layouter: &mut impl Layouter<F>,
+            txs: &[Transaction<F>],
+            randomness: F,
         ) -> Result<(), Error> {
-            Ok(())
+            layouter.assign_region(
+                || "tx table",
+                |mut region| {
+                    let mut offset = 0;
+                    for column in self.rw_table {
+                        region.assign_advice(
+                            || "tx table all-zero row",
+                            column,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    offset += 1;
+
+                    for tx in txs.iter() {
+                        for row in tx.table_assignments(randomness) {
+                            for (column, value) in self.tx_table.iter().zip(row)
+                            {
+                                region.assign_advice(
+                                    || format!("tx table row {}", offset),
+                                    *column,
+                                    offset,
+                                    || Ok(value),
+                                )?;
+                            }
+                            offset += 1;
+                        }
+                    }
+                    Ok(())
+                },
+            )
         }
 
         fn load_rws(

@@ -143,6 +143,7 @@ mod test {
                         ..Default::default()
                     },
                 ],
+                ..Default::default()
             }],
             rws: vec![Rw::Stack {
                 rw_counter: 1,

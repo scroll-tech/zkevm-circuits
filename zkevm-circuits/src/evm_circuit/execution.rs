@@ -49,10 +49,12 @@ use swap::SwapGadget;
 #[allow(missing_docs)]
 pub mod bus_mapping_tmp {
     use crate::evm_circuit::{
-        step::ExecutionResult, table::RwTableTag, util::RandomLinearCombination,
+        step::ExecutionResult,
+        table::{RwTableTag, TxContextFieldTag},
+        util::RandomLinearCombination,
     };
     use bus_mapping::{
-        eth_types::{ToLittleEndian, Word},
+        eth_types::{Address, ToLittleEndian, ToScalar, Word},
         evm::OpcodeId,
     };
     use halo2::arithmetic::FieldExt;
@@ -60,7 +62,8 @@ pub mod bus_mapping_tmp {
 
     #[derive(Debug, Default)]
     pub struct Block<F> {
-        pub randomness: F, // randomness for random linear combination
+        // randomness for random linear combination
+        pub randomness: F,
         pub txs: Vec<Transaction<F>>,
         pub rws: Vec<Rw>,
         pub bytecodes: Vec<Bytecode>,
@@ -68,8 +71,106 @@ pub mod bus_mapping_tmp {
 
     #[derive(Debug, Default)]
     pub struct Transaction<F> {
+        // Context
+        pub id: usize,
+        pub nonce: u64,
+        pub gas: u64,
+        pub gas_tip_cap: Word,
+        pub gas_fee_cap: Word,
+        pub caller_address: Address,
+        pub callee_address: Address,
+        pub is_create: bool,
+        pub value: Word,
+        pub calldata_length: usize,
+        pub calldata: Vec<u8>,
+
         pub calls: Vec<Call<F>>,
         pub steps: Vec<ExecStep>,
+    }
+
+    impl<F: FieldExt> Transaction<F> {
+        pub fn table_assignments(&self, randomness: F) -> Vec<[F; 4]> {
+            [
+                vec![
+                    [
+                        F::from_u64(self.id as u64),
+                        F::from_u64(TxContextFieldTag::Nonce as u64),
+                        F::zero(),
+                        F::from_u64(self.nonce),
+                    ],
+                    [
+                        F::from_u64(self.id as u64),
+                        F::from_u64(TxContextFieldTag::Gas as u64),
+                        F::zero(),
+                        F::from_u64(self.gas),
+                    ],
+                    [
+                        F::from_u64(self.id as u64),
+                        F::from_u64(TxContextFieldTag::GasTipCap as u64),
+                        F::zero(),
+                        RandomLinearCombination::random_linear_combine(
+                            self.gas_tip_cap.to_le_bytes(),
+                            randomness,
+                        ),
+                    ],
+                    [
+                        F::from_u64(self.id as u64),
+                        F::from_u64(TxContextFieldTag::GasFeeCap as u64),
+                        F::zero(),
+                        RandomLinearCombination::random_linear_combine(
+                            self.gas_fee_cap.to_le_bytes(),
+                            randomness,
+                        ),
+                    ],
+                    [
+                        F::from_u64(self.id as u64),
+                        F::from_u64(TxContextFieldTag::CallerAddress as u64),
+                        F::zero(),
+                        self.caller_address.to_scalar().unwrap(),
+                    ],
+                    [
+                        F::from_u64(self.id as u64),
+                        F::from_u64(TxContextFieldTag::CalleeAddress as u64),
+                        F::zero(),
+                        self.callee_address.to_scalar().unwrap(),
+                    ],
+                    [
+                        F::from_u64(self.id as u64),
+                        F::from_u64(TxContextFieldTag::IsCreate as u64),
+                        F::zero(),
+                        F::from_u64(self.is_create as u64),
+                    ],
+                    [
+                        F::from_u64(self.id as u64),
+                        F::from_u64(TxContextFieldTag::Value as u64),
+                        F::zero(),
+                        RandomLinearCombination::random_linear_combine(
+                            self.value.to_le_bytes(),
+                            randomness,
+                        ),
+                    ],
+                    [
+                        F::from_u64(self.id as u64),
+                        F::from_u64(TxContextFieldTag::CalldataLength as u64),
+                        F::zero(),
+                        F::from_u64(self.calldata_length as u64),
+                    ],
+                ],
+                self.calldata
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, byte)| {
+                        [
+                            F::from_u64(self.id as u64),
+                            F::from_u64(TxContextFieldTag::Calldata as u64),
+                            F::from_u64(idx as u64),
+                            F::from_u64(*byte as u64),
+                        ]
+                    })
+                    .collect(),
+            ]
+            .concat()
+        }
     }
 
     #[derive(Debug, Default)]

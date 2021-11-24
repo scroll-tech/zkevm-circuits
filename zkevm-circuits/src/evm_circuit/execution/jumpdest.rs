@@ -106,6 +106,7 @@ mod test {
                         ..Default::default()
                     },
                 ],
+                ..Default::default()
             }],
             rws: vec![],
             bytecodes: vec![bytecode],

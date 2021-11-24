@@ -128,7 +128,7 @@ impl FixedTableTag {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum TxTableTag {
+pub(crate) enum TxContextFieldTag {
     Nonce = 1,
     Gas,
     GasTipCap,
@@ -189,7 +189,7 @@ pub(crate) enum CallContextFieldTag {
 }
 
 impl_expr!(FixedTableTag);
-impl_expr!(TxTableTag);
+impl_expr!(TxContextFieldTag);
 impl_expr!(RwTableTag);
 impl_expr!(AccountFieldTag);
 impl_expr!(CallContextFieldTag);

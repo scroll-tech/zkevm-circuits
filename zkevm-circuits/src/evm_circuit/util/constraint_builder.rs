@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         step::{ExecutionResult, Preset, Step},
-        table::{FixedTableTag, Lookup, RwTableTag, TxTableTag},
+        table::{FixedTableTag, Lookup, RwTableTag, TxContextFieldTag},
         util::{Cell, Word},
     },
     util::Expr,
@@ -352,7 +352,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.add_lookup(
             Lookup::Tx {
                 id: self.curr.state.opcode_source.expr(),
-                tag: TxTableTag::Calldata.expr(),
+                tag: TxContextFieldTag::Calldata.expr(),
                 index: index.clone(),
                 value: opcode.clone(),
             }
