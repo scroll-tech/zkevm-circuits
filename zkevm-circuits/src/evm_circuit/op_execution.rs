@@ -251,10 +251,7 @@ impl<F: FieldExt> OpExecutionGadget<F> {
         state_curr: OpExecutionState<F>,
         state_next: OpExecutionState<F>,
         free_cells: Vec<Cell<F>>,
-        independent_lookups: &mut Vec<(
-            Expression<F>,
-            Vec<(Expression<F>, Lookup<F>)>,
-        )>,
+        independent_lookups: &mut Vec<(Expression<F>, Vec<Lookup<F>>)>,
     ) -> Self {
         let (qs_ops, free_cells) =
             free_cells.split_at(NUM_CELL_OP_GADGET_SELECTOR);
@@ -479,10 +476,10 @@ impl<F: FieldExt> OpExecutionGadget<F> {
                 .constraints(state_curr, state_next)
                 .into_iter()
                 .map(|mut constraint| {
-                    assert!(
-                        matches!(constraint.selector, Expression::Advice{ .. }),
-                        "constraint selector of case should be a queried advice"
-                    );
+                    // assert!(
+                    //     matches!(constraint.selector, Expression::Advice{ .. }),
+                    //     "constraint selector of case should be a queried advice"
+                    // );
 
                     constraint.selector =
                         qs_op.expr() * constraint.selector.clone();

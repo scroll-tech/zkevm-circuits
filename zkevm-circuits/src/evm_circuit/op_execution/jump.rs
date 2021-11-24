@@ -59,7 +59,7 @@ impl<F: FieldExt> JumpSuccessCase<F> {
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
         name: &'static str,
-    ) -> Constraint<F> {
+    ) -> Vec<Constraint<F>> {
         let mut cb = ConstraintBuilder::default();
 
         // State transitions
@@ -72,18 +72,18 @@ impl<F: FieldExt> JumpSuccessCase<F> {
         // Pop the value from the stack
         cb.stack_pop(self.dest.expr());
         // lookup byte code table to ensure 'dest' is valid( jumpdest & is_code)
-        cb.add_bytecode_lookup(
+        cb.add_bytecode_lookup([
+            self.code_hash.expr(),
+            self.dest.expr(),
             1.expr(),
-            [
-                self.code_hash.expr(),
-                self.dest.expr(),
-                1.expr(),
-                OpcodeId::JUMPDEST.as_u8().expr(),
-            ],
-        );
+            OpcodeId::JUMPDEST.as_u8().expr(),
+        ]);
 
         // Generate the constraint
-        cb.constraint(self.case_selector.expr(), name)
+        // vec![cb.constraint(self.case_selector.expr(), name)]
+        let mut constrains = Vec::<Constraint<F>>::new();
+        constrains.push(cb.constraint(self.case_selector.expr(), name));
+        constrains
     }
 
     fn assign(

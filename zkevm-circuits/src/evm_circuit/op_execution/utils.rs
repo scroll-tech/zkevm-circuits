@@ -109,7 +109,7 @@ impl StateTransition {
 pub(crate) fn batch_add_expressions<F: FieldExt>(
     constraints: Vec<Constraint<F>>,
     expressions: Vec<Expression<F>>,
-    lookups: Vec<(Expression<F>, Lookup<F>)>,
+    lookups: Vec<Lookup<F>>,
 ) -> Vec<Constraint<F>> {
     constraints
         .into_iter()
@@ -314,26 +314,24 @@ macro_rules! impl_op_gadget {
                 state_curr: &OpExecutionState<F>,
                 state_next: &OpExecutionState<F>,
             ) -> Vec<Constraint<F>> {
+                let mut case_constrains = Vec::<Constraint<F>>::new();
                 paste::paste! {
                     $(
-                        let [<$case:snake>] = self.[<$case:snake>].constraint(
+                        let mut [<$case:snake>] = self.[<$case:snake>].constraint(
                             state_curr,
                             state_next,
                             concat!(stringify!($name), " ", stringify!([<$case:snake>])),
                         );
+                        case_constrains.append(&mut [<$case:snake>] );
                     )*
-                    let cases = vec![
-                        $(
-                            [<$case:snake>],
-                        )*
-                    ];
+
                     // Add common expressions to all cases
                     let cb = super::utils::[<require_opcode_in_ $shared>](
                         state_curr.opcode.expr(),
                         vec![$(OpcodeId::$op),*],
                     );
                     super::utils::batch_add_expressions(
-                        cases,
+                        case_constrains,
                         cb.expressions,
                         cb.lookups,
                     )

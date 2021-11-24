@@ -166,9 +166,7 @@ pub(crate) struct Constraint<F> {
     // case selector
     selector: Expression<F>,
     polys: Vec<Expression<F>>,
-    // lookup selector: Vec<(enable, Lookup<F>),
-    lookups: Vec<(Expression<F>, Lookup<F>)>,
-    // lookups: Vec<Lookup<F>>,
+    lookups: Vec<Lookup<F>>,
 }
 
 #[derive(Clone, Debug)]
@@ -386,7 +384,7 @@ impl<F: FieldExt> EvmCircuit<F> {
         // independent_lookups collect lookups by independent selectors, which
         // means we can sum some of them together to save lookups.
         let mut independent_lookups =
-            Vec::<(Expression<F>, Vec<(Expression<F>, Lookup<F>)>)>::new();
+            Vec::<(Expression<F>, Vec<Lookup<F>>)>::new();
 
         let op_execution_gadget = OpExecutionGadget::configure(
             meta,
@@ -515,10 +513,7 @@ impl<F: FieldExt> EvmCircuit<F> {
         rw_table: [Column<Advice>; 7],
         bytecode_table: [Column<Advice>; 4],
         op_execution_state_curr: OpExecutionState<F>,
-        independent_lookups: Vec<(
-            Expression<F>,
-            Vec<(Expression<F>, Lookup<F>)>,
-        )>,
+        independent_lookups: Vec<(Expression<F>, Vec<Lookup<F>>)>,
     ) {
         // TODO: call_lookups
 
@@ -535,17 +530,13 @@ impl<F: FieldExt> EvmCircuit<F> {
 
             for lookup in lookups {
                 match lookup {
-                    (enable, Lookup::FixedLookup(tag, exprs)) => {
+                    Lookup::FixedLookup(tag, exprs) => {
                         let exprs = iter::once(tag.expr()).chain(exprs.clone());
 
                         if fixed_lookups.len() == fixed_lookup_count {
                             fixed_lookups.push(
                                 exprs
-                                    .map(|expr| {
-                                        qs_lookup.clone()
-                                            * enable.clone()
-                                            * expr
-                                    })
+                                    .map(|expr| qs_lookup.clone() * expr)
                                     .collect::<Vec<_>>()
                                     .try_into()
                                     .unwrap(),
@@ -555,23 +546,19 @@ impl<F: FieldExt> EvmCircuit<F> {
                                 .iter_mut()
                                 .zip(exprs)
                             {
-                                *acc = acc.clone()
-                                    + qs_lookup.clone() * enable.clone() * expr;
+                                *acc = acc.clone() + qs_lookup.clone() * expr;
                             }
                         }
                         fixed_lookup_count += 1;
                     }
-                    (
-                        _enable,
-                        Lookup::BusMappingLookup(
-                            rw_lookup
-                            @
-                            (BusMappingLookup::Stack { .. }
-                            | BusMappingLookup::Memory { .. }
-                            | BusMappingLookup::AccountStorage {
-                                ..
-                            }),
-                        ),
+                    Lookup::BusMappingLookup(
+                        rw_lookup
+                        @
+                        (BusMappingLookup::Stack { .. }
+                        | BusMappingLookup::Memory { .. }
+                        | BusMappingLookup::AccountStorage {
+                            ..
+                        }),
                     ) => {
                         let OpExecutionState {
                             global_counter,
@@ -639,16 +626,12 @@ impl<F: FieldExt> EvmCircuit<F> {
 
                         rw_lookup_count += 1;
                     }
-                    (enable, Lookup::BytecodeLookup(exprs)) => {
+                    Lookup::BytecodeLookup(exprs) => {
                         let exprs = iter::empty().chain(exprs.clone());
                         if bytecode_lookups.len() == bytecode_lookup_count {
                             bytecode_lookups.push(
                                 exprs
-                                    .map(|expr| {
-                                        qs_lookup.clone()
-                                            * enable.clone()
-                                            * expr
-                                    })
+                                    .map(|expr| qs_lookup.clone() * expr)
                                     .collect::<Vec<_>>()
                                     .try_into()
                                     .unwrap(),
@@ -659,8 +642,7 @@ impl<F: FieldExt> EvmCircuit<F> {
                                 .iter_mut()
                                 .zip(exprs)
                             {
-                                *acc = acc.clone()
-                                    + qs_lookup.clone() * enable.clone() * expr;
+                                *acc = acc.clone() + qs_lookup.clone() * expr;
                             }
                         }
                         bytecode_lookup_count += 1;

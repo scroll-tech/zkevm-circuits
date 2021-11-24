@@ -65,46 +65,53 @@ impl<F: FieldExt> JumpiSuccessCase<F> {
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
         name: &'static str,
-    ) -> Constraint<F> {
+    ) -> Vec<Constraint<F>> {
         let mut cb = ConstraintBuilder::default();
 
-        let is_cond_zero = self
-            .is_cond_zero
-            .constraints(&mut cb, sum::expr(&self.cond.cells[1..32]));
+        let is_cond_met = 1.expr()
+            - self
+                .is_cond_zero
+                .constraints(&mut cb, sum::expr(&self.cond.cells));
 
         // State transitions
         let st = StateTransitionExpressions::new(STATE_TRANSITION.clone());
-        // is_cond_zero == 1, pc + 1
+        // is_cond_met == 0 --> cond = 0, pc + 1
         cb.require_zero(
-            is_cond_zero.clone() * (st.clone().pc_delta.unwrap() - 1.expr()),
+            (1.expr() - is_cond_met.clone())
+                * (st.clone().pc_delta.unwrap() - 1.expr()),
         );
-        // is_cond_zero == 0 which means cond is not zero, pc = `dest`
+
         // st.pc_delta =
         //     Some(self.dest.expr() - state_curr.program_counter.expr());
         cb.require_zero(
-            (1.expr() - is_cond_zero.clone())
+            is_cond_met.clone()
                 * (st.clone().pc_delta.unwrap()
                     - (self.dest.expr() - state_curr.program_counter.expr())),
         );
-
         st.constraints(&mut cb, state_curr, state_next);
 
         // Pop the 'dest' and 'cond' from the stack
         cb.stack_pop(self.dest.expr());
-        cb.stack_pop(self.cond.expr());
-        // conditinally lookup byte code table to ensure 'dest' is valid
-        cb.add_bytecode_lookup(
-            1.expr() - is_cond_zero,
-            [
-                self.code_hash.expr(),
-                self.dest.expr(),
-                1.expr(),
-                OpcodeId::JUMPDEST.as_u8().expr(),
-            ],
-        );
+        // cb.stack_pop(self.cond.expr());
 
         // Generate the constraint
-        cb.constraint(self.case_selector.expr(), name)
+        let mut constrains = Vec::<Constraint<F>>::new();
+        // 1. `cond` is zero constraint (is_cond_met = 0 )
+        constrains.push(cb.constraint(
+            self.case_selector.expr() * (1.expr() - is_cond_met.clone()),
+            name,
+        ));
+        // 2. `cond` is non-zero constraint (is_cond_met = 1 )
+        // lookup byte code table to ensure 'dest' is valid( jumpdest & is_code)
+        cb.add_bytecode_lookup([
+            self.code_hash.expr(),
+            self.dest.expr(),
+            1.expr(),
+            OpcodeId::JUMPDEST.as_u8().expr(),
+        ]);
+        constrains
+            .push(cb.constraint(self.case_selector.expr() * is_cond_met, name));
+        constrains
     }
 
     fn assign(
@@ -127,6 +134,12 @@ impl<F: FieldExt> JumpiSuccessCase<F> {
 
         self.cond
             .assign(region, offset, Some(step.values[2].to_word()))?;
+
+        self.is_cond_zero.assign(
+            region,
+            offset,
+            sum::value(&step.values[2].to_word()),
+        )?;
 
         // State transitions
         let st = STATE_TRANSITION.clone();

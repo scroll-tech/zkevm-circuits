@@ -62,7 +62,7 @@ impl<F: FieldExt> DupSuccessCase<F> {
         state_curr: &OpExecutionState<F>,
         state_next: &OpExecutionState<F>,
         name: &'static str,
-    ) -> Constraint<F> {
+    ) -> Vec<Constraint<F>> {
         let mut cb = ConstraintBuilder::default();
 
         // The stack index we have to peek, deduced from the 'x' value of 'dupx'
@@ -77,7 +77,10 @@ impl<F: FieldExt> DupSuccessCase<F> {
         STATE_TRANSITION.constraints(&mut cb, state_curr, state_next);
 
         // Generate the constraint
-        cb.constraint(self.case_selector.expr(), name)
+        //cb.constraint(self.case_selector.expr(), name)
+        let mut constrains = Vec::<Constraint<F>>::new();
+        constrains.push(cb.constraint(self.case_selector.expr(), name));
+        constrains
     }
 
     fn assign(
