@@ -372,7 +372,6 @@ mod test {
             block,
             vec![
                 FixedTableTag::Range16,
-                FixedTableTag::Range17,
                 FixedTableTag::Range32,
                 FixedTableTag::Range256,
                 FixedTableTag::Range512,

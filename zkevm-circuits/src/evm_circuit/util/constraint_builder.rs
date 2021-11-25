@@ -241,7 +241,6 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         let tag = match range {
             16 => FixedTableTag::Range16,
-            17 => FixedTableTag::Range17,
             32 => FixedTableTag::Range32,
             256 => FixedTableTag::Range256,
             512 => FixedTableTag::Range512,

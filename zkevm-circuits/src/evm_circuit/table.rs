@@ -24,7 +24,6 @@ impl<F: FieldExt, const W: usize> LookupTable<F, W> for [Column<Fixed>; W] {
 #[derive(Clone, Copy, Debug)]
 pub enum FixedTableTag {
     Range16 = 1,
-    Range17,
     Range32,
     Range256,
     Range512,
@@ -39,7 +38,6 @@ impl FixedTableTag {
     pub fn iterator() -> impl Iterator<Item = Self> {
         [
             Self::Range16,
-            Self::Range17,
             Self::Range32,
             Self::Range256,
             Self::Range512,
@@ -57,9 +55,6 @@ impl FixedTableTag {
         let tag = F::from_u64(*self as u64);
         match self {
             Self::Range16 => Box::new((0..16).map(move |value| {
-                vec![tag, F::from_u64(value), F::zero(), F::zero()]
-            })),
-            Self::Range17 => Box::new((0..17).map(move |value| {
                 vec![tag, F::from_u64(value), F::zero(), F::zero()]
             })),
             Self::Range32 => Box::new((0..32).map(move |value| {
