@@ -37,7 +37,19 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
         // Query selectors for each opcode_lookup
         let selectors = array_init(|_| cb.query_bool());
 
-        // Lookup opcode from the LSB to MSB
+        // The pushed bytes are viewed as left-padded big-endian, but our random
+        // linear combination uses little-endian, so we lookup from the LSB
+        // which has index (program_counter + num_pushed), and then move left
+        // (program_counter + num_pushed - idx) to lookup all 32 bytes
+        // condiionally by selectors.
+        // For PUSH2 as an example, we lookup from byte0, byte1, ..., byte31,
+        // where the byte2 is actually the PUSH2 itself, and lookup are only
+        // enabled for byte0 and byte1.
+        //
+        //                    program_counter    program_counter + num_pushed(2)
+        //                           ▼                     ▼
+        //   [byte31,     ...,     byte2,     byte1,     byte0]
+        //
         let bytes = array_init(|idx| {
             let index = cb.curr.state.program_counter.expr() + opcode.expr()
                 - (OpcodeId::PUSH1.as_u8() - 1 + idx as u8).expr();
@@ -72,7 +84,8 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
             );
         }
 
-        // Deduce the number of additional bytes to push than PUSH1
+        // Deduce the number of additional bytes to push than PUSH1. Note that
+        // num_additional_pushed = n - 1 where n is the suffix number of PUSH*.
         let num_additional_pushed =
             opcode.expr() - OpcodeId::PUSH1.as_u64().expr();
         // Sum of selectors needs to be exactly the number of additional bytes

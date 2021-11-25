@@ -40,7 +40,7 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
 
         let word_addition = WordAdditionGadget::construct(cb);
 
-        // Swap b and c if it's SUB
+        // Swap a and c if opcode is SUB
         let is_sub = PairSelectGadget::construct(
             cb,
             opcode.expr(),
