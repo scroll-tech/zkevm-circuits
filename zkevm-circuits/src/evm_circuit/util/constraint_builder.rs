@@ -367,6 +367,33 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    // Rw
+
+    fn rw_lookup_at(
+        &mut self,
+        rw_counter_offset: Expression<F>,
+        is_write: Expression<F>,
+        tag: Expression<F>,
+        values: [Expression<F>; 5],
+    ) {
+        self.add_lookup(Lookup::Rw {
+            counter: self.curr.state.rw_counter.expr() + rw_counter_offset,
+            is_write,
+            tag,
+            values,
+        });
+    }
+
+    fn rw_lookup(
+        &mut self,
+        is_write: Expression<F>,
+        tag: Expression<F>,
+        values: [Expression<F>; 5],
+    ) {
+        self.rw_lookup_at(self.rw_counter_offset.expr(), is_write, tag, values);
+        self.rw_counter_offset += 1;
+    }
+
     // Stack
 
     pub(crate) fn stack_pop(&mut self, value: Expression<F>) {
@@ -389,34 +416,17 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         stack_pointer_offset: Expression<F>,
         value: Expression<F>,
     ) {
-        self.stack_lookup_at(
+        self.rw_lookup(
             is_write,
-            stack_pointer_offset,
-            value,
-            self.rw_counter_offset.expr(),
-        );
-        self.rw_counter_offset += 1;
-    }
-
-    pub(crate) fn stack_lookup_at(
-        &mut self,
-        is_write: Expression<F>,
-        stack_pointer_offset: Expression<F>,
-        value: Expression<F>,
-        rw_counter_offset: Expression<F>,
-    ) {
-        self.add_lookup(Lookup::Rw {
-            counter: self.curr.state.rw_counter.expr() + rw_counter_offset,
-            is_write,
-            tag: RwTableTag::Stack.expr(),
-            values: [
+            RwTableTag::Stack.expr(),
+            [
                 self.curr.state.call_id.expr(),
                 self.curr.state.stack_pointer.expr() + stack_pointer_offset,
                 value,
                 0.expr(),
                 0.expr(),
             ],
-        });
+        );
     }
 
     // Memory
@@ -427,34 +437,38 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         memory_address: Expression<F>,
         byte: Expression<F>,
     ) {
-        self.memory_lookup_at(
+        self.rw_lookup(
             is_write,
-            memory_address,
-            byte,
-            self.rw_counter_offset.expr(),
-        );
-        self.rw_counter_offset += 1;
-    }
-
-    pub(crate) fn memory_lookup_at(
-        &mut self,
-        is_write: Expression<F>,
-        memory_address: Expression<F>,
-        byte: Expression<F>,
-        rw_counter_offset: Expression<F>,
-    ) {
-        self.add_lookup(Lookup::Rw {
-            counter: self.curr.state.rw_counter.expr() + rw_counter_offset,
-            is_write,
-            tag: RwTableTag::Memory.expr(),
-            values: [
+            RwTableTag::Memory.expr(),
+            [
                 self.curr.state.call_id.expr(),
                 memory_address,
                 byte,
                 0.expr(),
                 0.expr(),
             ],
-        });
+        );
+    }
+
+    pub(crate) fn memory_lookup_at(
+        &mut self,
+        rw_counter_offset: Expression<F>,
+        is_write: Expression<F>,
+        memory_address: Expression<F>,
+        byte: Expression<F>,
+    ) {
+        self.rw_lookup_at(
+            rw_counter_offset,
+            is_write,
+            RwTableTag::Memory.expr(),
+            [
+                self.curr.state.call_id.expr(),
+                memory_address,
+                byte,
+                0.expr(),
+                0.expr(),
+            ],
+        );
     }
 
     // Validation
