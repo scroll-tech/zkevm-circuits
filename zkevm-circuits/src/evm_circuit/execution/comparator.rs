@@ -57,16 +57,16 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
         // `a[0..16] <= b[0..16]`
         let comparison_lo = ComparisonGadget::construct(
             cb,
-            from_bytes::expr(a.cells[0..16].to_vec()),
-            from_bytes::expr(b.cells[0..16].to_vec()),
+            from_bytes::expr(&a.cells[0..16]),
+            from_bytes::expr(&b.cells[0..16]),
         );
         let (lt_lo, eq_lo) = comparison_lo.expr();
 
         // `a[16..32] <= b[16..32]`
         let comparison_hi = ComparisonGadget::construct(
             cb,
-            from_bytes::expr(a.cells[16..32].to_vec()),
-            from_bytes::expr(b.cells[16..32].to_vec()),
+            from_bytes::expr(&a.cells[16..32]),
+            from_bytes::expr(&b.cells[16..32]),
         );
         let (lt_hi, eq_hi) = comparison_hi.expr();
 
@@ -152,16 +152,16 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
         self.comparison_lo.assign(
             region,
             offset,
-            from_bytes::value(a[0..16].to_vec()),
-            from_bytes::value(b[0..16].to_vec()),
+            from_bytes::value(&a[0..16]),
+            from_bytes::value(&b[0..16]),
         )?;
 
         // `a[16..32] <= b[16..32]`
         self.comparison_hi.assign(
             region,
             offset,
-            from_bytes::value(a[16..32].to_vec()),
-            from_bytes::value(b[16..32].to_vec()),
+            from_bytes::value(&a[16..32]),
+            from_bytes::value(&b[16..32]),
         )?;
 
         self.a.assign(region, offset, Some(a))?;

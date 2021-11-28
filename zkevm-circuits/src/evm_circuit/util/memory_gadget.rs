@@ -20,11 +20,11 @@ pub(crate) mod address_low {
     use halo2::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
-        from_bytes::expr(address.cells[0..NUM_ADDRESS_BYTES_USED].to_vec())
+        from_bytes::expr(&address.cells[0..NUM_ADDRESS_BYTES_USED])
     }
 
     pub(crate) fn value<F: FieldExt>(address: [u8; 32]) -> Address {
-        from_bytes::value::<F>(address[0..NUM_ADDRESS_BYTES_USED].to_vec())
+        from_bytes::value::<F>(&address[0..NUM_ADDRESS_BYTES_USED])
             .get_lower_128() as Address
     }
 }
@@ -39,11 +39,11 @@ pub(crate) mod address_high {
     use halo2::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
-        sum::expr(&address.cells[NUM_ADDRESS_BYTES_USED..32].to_vec())
+        sum::expr(&address.cells[NUM_ADDRESS_BYTES_USED..32])
     }
 
     pub(crate) fn value<F: FieldExt>(address: [u8; 32]) -> F {
-        sum::value::<F>(&address[NUM_ADDRESS_BYTES_USED..32].to_vec())
+        sum::value::<F>(&address[NUM_ADDRESS_BYTES_USED..32])
     }
 }
 

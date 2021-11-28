@@ -38,6 +38,20 @@ impl_expr!(Target);
 impl_expr!(OpcodeId, OpcodeId::as_u8);
 impl_expr!(GasCost, GasCost::as_u64);
 
+impl<F: FieldExt> Expr<F> for Expression<F> {
+    #[inline]
+    fn expr(&self) -> Expression<F> {
+        self.clone()
+    }
+}
+
+impl<F: FieldExt> Expr<F> for &Expression<F> {
+    #[inline]
+    fn expr(&self) -> Expression<F> {
+        (*self).clone()
+    }
+}
+
 impl<F: FieldExt> Expr<F> for i32 {
     #[inline]
     fn expr(&self) -> Expression<F> {

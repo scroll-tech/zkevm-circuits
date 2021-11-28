@@ -71,7 +71,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
             // Check if this byte is selected
             // The additional condition for this is that none of the non-LSB
             // bytes are non-zero (see above).
-            let is_selected = and::expr(vec![
+            let is_selected = and::expr(&[
                 is_byte_selected[idx].expr(),
                 is_msb_sum_zero.expr(),
             ]);

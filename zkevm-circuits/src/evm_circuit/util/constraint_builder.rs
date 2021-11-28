@@ -57,6 +57,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     rw_counter_offset: usize,
     program_counter_offset: usize,
     stack_pointer_offset: i32,
+    state_write_counter_offset: usize,
     condition: Option<Expression<F>>,
 }
 
@@ -78,6 +79,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             rw_counter_offset: 0,
             program_counter_offset: 0,
             stack_pointer_offset: 0,
+            state_write_counter_offset: 0,
             condition: None,
         }
     }
@@ -209,14 +211,6 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Common
 
-    pub(crate) fn require_boolean(
-        &mut self,
-        name: &'static str,
-        value: Expression<F>,
-    ) {
-        self.add_constraint(name, value.clone() * (1.expr() - value));
-    }
-
     pub(crate) fn require_zero(
         &mut self,
         name: &'static str,
@@ -234,22 +228,26 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.add_constraint(name, lhs - rhs);
     }
 
-    pub(crate) fn require_in_range(
+    pub(crate) fn require_boolean(
         &mut self,
+        name: &'static str,
         value: Expression<F>,
-        range: u64,
     ) {
-        let tag = match range {
-            16 => FixedTableTag::Range16,
-            32 => FixedTableTag::Range32,
-            256 => FixedTableTag::Range256,
-            512 => FixedTableTag::Range512,
-            _ => unimplemented!(),
-        };
-        self.add_lookup(Lookup::Fixed {
-            tag: tag.expr(),
-            values: [value, 0.expr(), 0.expr()],
-        });
+        self.add_constraint(name, value.clone() * (1.expr() - value));
+    }
+
+    pub(crate) fn require_in_set(
+        &mut self,
+        name: &'static str,
+        value: Expression<F>,
+        set: Vec<Expression<F>>,
+    ) {
+        self.add_constraint(
+            name,
+            set.iter().fold(1.expr(), |acc, item| {
+                acc * (value.clone() - item.clone())
+            }),
+        );
     }
 
     pub(crate) fn require_state_transition(
@@ -330,6 +328,22 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         }
     }
 
+    // Fixed
+
+    pub(crate) fn range_lookup(&mut self, value: Expression<F>, range: u64) {
+        let tag = match range {
+            16 => FixedTableTag::Range16,
+            32 => FixedTableTag::Range32,
+            256 => FixedTableTag::Range256,
+            512 => FixedTableTag::Range512,
+            _ => unimplemented!(),
+        };
+        self.add_lookup(Lookup::Fixed {
+            tag: tag.expr(),
+            values: [value, 0.expr(), 0.expr()],
+        });
+    }
+
     // Opcode
 
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>) {
@@ -369,15 +383,15 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Rw
 
-    fn rw_lookup_at(
+    fn rw_lookup_inner(
         &mut self,
-        rw_counter_offset: Expression<F>,
+        counter: Expression<F>,
         is_write: Expression<F>,
         tag: Expression<F>,
         values: [Expression<F>; 5],
     ) {
         self.add_lookup(Lookup::Rw {
-            counter: self.curr.state.rw_counter.expr() + rw_counter_offset,
+            counter,
             is_write,
             tag,
             values,
@@ -390,7 +404,12 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         tag: Expression<F>,
         values: [Expression<F>; 5],
     ) {
-        self.rw_lookup_at(self.rw_counter_offset.expr(), is_write, tag, values);
+        self.rw_lookup_inner(
+            self.curr.state.rw_counter.expr() + self.rw_counter_offset.expr(),
+            is_write,
+            tag,
+            values,
+        );
         self.rw_counter_offset += 1;
     }
 
@@ -450,15 +469,15 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn memory_lookup_at(
+    pub(crate) fn memory_lookup_inner(
         &mut self,
-        rw_counter_offset: Expression<F>,
+        rw_counter: Expression<F>,
         is_write: Expression<F>,
         memory_address: Expression<F>,
         byte: Expression<F>,
     ) {
-        self.rw_lookup_at(
-            rw_counter_offset,
+        self.rw_lookup_inner(
+            rw_counter,
             is_write,
             RwTableTag::Memory.expr(),
             [

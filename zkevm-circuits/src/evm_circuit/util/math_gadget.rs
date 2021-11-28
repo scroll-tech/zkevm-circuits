@@ -2,8 +2,8 @@ use crate::{
     evm_circuit::{
         param::MAX_BYTES_FIELD,
         util::{
-            self, constraint_builder::ConstraintBuilder, from_bytes, get_range,
-            select, sum, Cell,
+            self, constraint_builder::ConstraintBuilder, from_bytes,
+            pow_of_two, pow_of_two_expr, select, split_u256, sum, Cell,
         },
     },
     util::Expr,
@@ -94,44 +94,55 @@ impl<F: FieldExt> IsEqualGadget<F> {
 /// Construction of 2 256-bit words addition and result, which is useful for
 /// opcode ADD, SUB and balance operation
 #[derive(Clone, Debug)]
-pub(crate) struct WordAdditionGadget<F> {
-    pub(crate) a: util::Word<F>,
-    pub(crate) b: util::Word<F>,
-    pub(crate) c: util::Word<F>,
-    pub(crate) carry_lo: Cell<F>,
-    pub(crate) carry_hi: Cell<F>,
+pub(crate) struct AddWordsGadget<F, const N: usize> {
+    addends: [util::Word<F>; N],
+    sum: util::Word<F>,
+    carry_lo: Cell<F>,
+    carry_hi: Cell<F>,
 }
 
-impl<F: FieldExt> WordAdditionGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let c = cb.query_word();
-        let carry_lo = cb.query_bool();
-        let carry_hi = cb.query_bool();
+impl<F: FieldExt, const N: usize> AddWordsGadget<F, N> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        addends: [util::Word<F>; N],
+    ) -> Self {
+        let sum = cb.query_word();
+        let carry_lo = cb.query_cell();
+        let carry_hi = cb.query_cell();
 
-        let a_lo = from_bytes::expr(a.cells[..16].to_vec());
-        let a_hi = from_bytes::expr(a.cells[16..].to_vec());
-        let b_lo = from_bytes::expr(b.cells[..16].to_vec());
-        let b_hi = from_bytes::expr(b.cells[16..].to_vec());
-        let c_lo = from_bytes::expr(c.cells[..16].to_vec());
-        let c_hi = from_bytes::expr(c.cells[16..].to_vec());
+        let addends_lo = &addends
+            .iter()
+            .map(|addend| from_bytes::expr(&addend.cells[..16]))
+            .collect::<Vec<_>>();
+        let addends_hi = &addends
+            .iter()
+            .map(|addend| from_bytes::expr(&addend.cells[16..]))
+            .collect::<Vec<_>>();
+        let sum_lo = from_bytes::expr(&sum.cells[..16]);
+        let sum_hi = from_bytes::expr(&sum.cells[16..]);
 
         cb.require_equal(
-            "a_lo + b_lo == c_lo + carry_lo ⋅ 2^128",
-            a_lo + b_lo,
-            c_lo + carry_lo.expr() * Expression::Constant(get_range(128)),
+            "sum(addends_lo) == sum_lo + carry_lo ⋅ 2^128",
+            sum::expr(addends_lo),
+            sum_lo + carry_lo.expr() * pow_of_two_expr(128),
         );
         cb.require_equal(
-            "a_hi + b_hi + carry_lo == c_hi + carry_hi ⋅ 2^128",
-            a_hi + b_hi + carry_lo.expr(),
-            c_hi + carry_hi.expr() * Expression::Constant(get_range(128)),
+            "sum(addends_hi) + carry_lo == sum_hi + carry_hi ⋅ 2^128",
+            sum::expr(addends_hi) + carry_lo.expr(),
+            sum_hi + carry_hi.expr() * pow_of_two_expr(128),
         );
+
+        for carry in [&carry_lo, &carry_hi] {
+            cb.require_in_set(
+                "carry_lo in 0..N",
+                carry.expr(),
+                (0..N).map(|idx| idx.expr()).collect(),
+            );
+        }
 
         Self {
-            a,
-            b,
-            c,
+            addends,
+            sum,
             carry_lo,
             carry_hi,
         }
@@ -141,34 +152,47 @@ impl<F: FieldExt> WordAdditionGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        a: Word,
-        b: Word,
-        c: Word,
+        addends: [Word; N],
+        sum: Word,
     ) -> Result<(), Error> {
-        let mut assign_and_split = |word: &util::Word<F>, value: &Word| {
-            let bytes = value.to_le_bytes();
-            word.assign(region, offset, Some(bytes))?;
-            let (lo, hi) = bytes.split_at(16);
-            let (lo, hi) =
-                (Word::from_little_endian(lo), Word::from_little_endian(hi));
-            Ok((lo, hi))
-        };
-        let (a_lo, a_hi) = assign_and_split(&self.a, &a)?;
-        let (b_lo, b_hi) = assign_and_split(&self.b, &b)?;
-        let (c_lo, c_hi) = assign_and_split(&self.c, &c)?;
-        let carry_lo = c_lo != a_lo + b_lo;
-        let carry_hi = c_hi != a_hi + b_hi + Word::from(carry_lo as usize);
+        for (word, value) in self.addends.iter().zip(addends.iter()) {
+            word.assign(region, offset, Some(value.to_le_bytes()))?;
+        }
+        self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
+
+        let (addends_lo, addends_hi): (Vec<_>, Vec<_>) =
+            addends.iter().map(split_u256).unzip();
+        let (sum_lo, sum_hi) = split_u256(&sum);
+
+        let sum_of_addends_lo = addends_lo
+            .into_iter()
+            .fold(Word::zero(), |acc, addend_lo| acc + addend_lo);
+        let sum_of_addends_hi = addends_hi
+            .into_iter()
+            .fold(Word::zero(), |acc, addend_hi| acc + addend_hi);
+
+        let carry_lo = (sum_of_addends_lo - sum_lo) >> 128;
+        let carry_hi = (sum_of_addends_hi + carry_lo - sum_hi) >> 128;
         self.carry_lo.assign(
             region,
             offset,
-            Some(F::from_u64(carry_lo as u64)),
+            Some(F::from_u64(carry_lo.low_u64())),
         )?;
         self.carry_hi.assign(
             region,
             offset,
-            Some(F::from_u64(carry_hi as u64)),
+            Some(F::from_u64(carry_hi.low_u64())),
         )?;
+
         Ok(())
+    }
+
+    pub(crate) fn sum(&self) -> &util::Word<F> {
+        &self.sum
+    }
+
+    pub(crate) fn carry(&self) -> &util::Cell<F> {
+        &self.carry_hi
     }
 }
 
@@ -192,7 +216,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> RangeCheckGadget<F, NUM_BYTES> {
         cb.require_equal(
             "Constrain bytes recomposited to value",
             value,
-            from_bytes::expr(parts.to_vec()),
+            from_bytes::expr(&parts),
         );
 
         Self { parts }
@@ -239,13 +263,13 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
 
         let lt = cb.query_bool();
         let diff = cb.query_bytes();
-        let range = get_range(NUM_BYTES * 8);
+        let range = pow_of_two(NUM_BYTES * 8);
 
         // The equation we require to hold: `lhs - rhs == diff - (lt * range)`.
         cb.require_equal(
             "lhs - rhs == diff - (lt ⋅ range)",
             lhs - rhs,
-            from_bytes::expr(diff.to_vec()) - (lt.expr() * range),
+            from_bytes::expr(&diff) - (lt.expr() * range),
         );
 
         Self { lt, diff, range }
@@ -307,8 +331,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> ComparisonGadget<F, NUM_BYTES> {
         rhs: Expression<F>,
     ) -> Self {
         let lt = LtGadget::<F, NUM_BYTES>::construct(cb, lhs, rhs);
-        let eq =
-            IsZeroGadget::<F>::construct(cb, sum::expr(&lt.diff_bytes()[..]));
+        let eq = IsZeroGadget::<F>::construct(cb, sum::expr(&lt.diff_bytes()));
 
         Self { lt, eq }
     }
@@ -328,7 +351,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> ComparisonGadget<F, NUM_BYTES> {
         let (lt, diff) = self.lt.assign(region, offset, lhs, rhs)?;
 
         // eq
-        let eq = self.eq.assign(region, offset, sum::value(&diff[..]))?;
+        let eq = self.eq.assign(region, offset, sum::value(&diff))?;
 
         Ok((lt, eq))
     }
@@ -414,7 +437,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> ConstantDivisionGadget<F, NUM_BYTES> {
         let remainder = cb.query_cell();
 
         // Require that remainder < divisor
-        cb.require_in_range(remainder.expr(), divisor);
+        cb.range_lookup(remainder.expr(), divisor);
 
         // Require that quotient < 2**NUM_BYTES
         // so we can't have any overflow when doing `quotient * divisor`.

@@ -51,23 +51,23 @@ impl FixedTableTag {
         .copied()
     }
 
-    pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = Vec<F>>> {
+    pub fn build<F: FieldExt>(&self) -> Box<dyn Iterator<Item = [F; 4]>> {
         let tag = F::from_u64(*self as u64);
         match self {
             Self::Range16 => Box::new((0..16).map(move |value| {
-                vec![tag, F::from_u64(value), F::zero(), F::zero()]
+                [tag, F::from_u64(value), F::zero(), F::zero()]
             })),
             Self::Range32 => Box::new((0..32).map(move |value| {
-                vec![tag, F::from_u64(value), F::zero(), F::zero()]
+                [tag, F::from_u64(value), F::zero(), F::zero()]
             })),
             Self::Range256 => Box::new((0..256).map(move |value| {
-                vec![tag, F::from_u64(value), F::zero(), F::zero()]
+                [tag, F::from_u64(value), F::zero(), F::zero()]
             })),
             Self::Range512 => Box::new((0..512).map(move |value| {
-                vec![tag, F::from_u64(value), F::zero(), F::zero()]
+                [tag, F::from_u64(value), F::zero(), F::zero()]
             })),
             Self::SignByte => Box::new((0..256).map(move |value| {
-                vec![
+                [
                     tag,
                     F::from_u64(value),
                     F::from_u64((value >> 7) * 0xFFu64),
@@ -76,7 +76,7 @@ impl FixedTableTag {
             })),
             Self::BitwiseAnd => Box::new((0..256).flat_map(move |lhs| {
                 (0..256).map(move |rhs| {
-                    vec![
+                    [
                         tag,
                         F::from_u64(lhs),
                         F::from_u64(rhs),
@@ -86,7 +86,7 @@ impl FixedTableTag {
             })),
             Self::BitwiseOr => Box::new((0..256).flat_map(move |lhs| {
                 (0..256).map(move |rhs| {
-                    vec![
+                    [
                         tag,
                         F::from_u64(lhs),
                         F::from_u64(rhs),
@@ -96,7 +96,7 @@ impl FixedTableTag {
             })),
             Self::BitwiseXor => Box::new((0..256).flat_map(move |lhs| {
                 (0..256).map(move |rhs| {
-                    vec![
+                    [
                         tag,
                         F::from_u64(lhs),
                         F::from_u64(rhs),
@@ -108,7 +108,7 @@ impl FixedTableTag {
                 ExecutionResult::iterator().flat_map(move |execution_result| {
                     execution_result.responsible_opcodes().into_iter().map(
                         move |opcode| {
-                            vec![
+                            [
                                 tag,
                                 F::from_u64(execution_result.as_u64()),
                                 F::from_u64(opcode.as_u64()),
@@ -123,7 +123,7 @@ impl FixedTableTag {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum TxContextFieldTag {
+pub enum TxContextFieldTag {
     Nonce = 1,
     Gas,
     GasTipCap,
@@ -137,7 +137,7 @@ pub(crate) enum TxContextFieldTag {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum RwTableTag {
+pub enum RwTableTag {
     TxAccessListAccount = 1,
     TxAccessListStorageSlot,
     TxRefund,
@@ -150,14 +150,14 @@ pub(crate) enum RwTableTag {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum AccountFieldTag {
+pub enum AccountFieldTag {
     Nonce = 1,
     Balance,
     CodeHash,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum CallContextFieldTag {
+pub enum CallContextFieldTag {
     RWCounterEndOfReversion = 1,
     CallerCallId,
     TxId,

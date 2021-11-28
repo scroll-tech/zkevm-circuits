@@ -34,7 +34,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PcGadget<F> {
         let bytes = array_init(|_| cb.query_cell());
         cb.require_equal(
             "Constrain program_counter equal to stack value",
-            from_bytes::expr(bytes.to_vec()),
+            from_bytes::expr(&bytes),
             cb.curr.state.program_counter.expr(),
         );
 

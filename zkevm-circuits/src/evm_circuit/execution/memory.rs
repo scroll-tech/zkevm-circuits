@@ -65,7 +65,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
             cb.curr.state.memory_size.expr(),
-            from_bytes::expr(address.cells.to_vec())
+            from_bytes::expr(&address.cells)
                 + 1.expr()
                 + (is_not_mstore8.clone() * 31.expr()),
         );
@@ -107,10 +107,12 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
             } else {
                 is_not_mstore8.clone() * idx.expr()
             };
-            cb.memory_lookup_at(
-                cb.rw_counter_offset().expr() + offset.clone(),
+            cb.memory_lookup_inner(
+                cb.curr.state.rw_counter.expr()
+                    + cb.rw_counter_offset().expr()
+                    + offset.clone(),
                 is_store.clone(),
-                from_bytes::expr(address.cells.to_vec()) + offset,
+                from_bytes::expr(&address.cells) + offset,
                 byte,
             );
         }

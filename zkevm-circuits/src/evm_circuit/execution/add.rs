@@ -10,7 +10,7 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, StateTransition, Transition::Delta,
             },
-            math_gadget::{PairSelectGadget, WordAdditionGadget},
+            math_gadget::{AddWordsGadget, PairSelectGadget},
             select,
         },
     },
@@ -26,7 +26,7 @@ use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct AddGadget<F> {
     same_context: SameContextGadget<F>,
-    word_addition: WordAdditionGadget<F>,
+    add_words: AddWordsGadget<F, 2>,
     is_sub: PairSelectGadget<F>,
 }
 
@@ -38,7 +38,10 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let word_addition = WordAdditionGadget::construct(cb);
+        let a = cb.query_word();
+        let b = cb.query_word();
+        let add_words = AddWordsGadget::construct(cb, [a.clone(), b.clone()]);
+        let c = add_words.sum();
 
         // Swap a and c if opcode is SUB
         let is_sub = PairSelectGadget::construct(
@@ -50,7 +53,6 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
 
         // ADD: Pop a and b from the stack, push c on the stack
         // SUB: Pop c and b from the stack, push a on the stack
-        let WordAdditionGadget { a, b, c, .. } = &word_addition;
         cb.stack_pop(select::expr(is_sub.expr().0, c.expr(), a.expr()));
         cb.stack_pop(b.expr());
         cb.stack_push(select::expr(is_sub.expr().0, a.expr(), c.expr()));
@@ -67,7 +69,7 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
 
         Self {
             same_context,
-            word_addition,
+            add_words,
             is_sub,
         }
     }
@@ -90,7 +92,7 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
         };
         let [a, b, c] = indices.map(|idx| block.rws[idx].stack_value());
-        self.word_addition.assign(region, offset, a, b, c)?;
+        self.add_words.assign(region, offset, [a, b], c)?;
         self.is_sub.assign(
             region,
             offset,

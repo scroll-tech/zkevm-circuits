@@ -1,4 +1,5 @@
 use crate::{evm_circuit::param::MAX_MEMORY_SIZE_IN_BYTES, util::Expr};
+use bus_mapping::eth_types::U256;
 use halo2::{
     arithmetic::FieldExt,
     circuit::{self, Region},
@@ -57,6 +58,12 @@ impl<F: FieldExt> Cell<F> {
 }
 
 impl<F: FieldExt> Expr<F> for Cell<F> {
+    fn expr(&self) -> Expression<F> {
+        self.expression.clone()
+    }
+}
+
+impl<F: FieldExt> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
@@ -128,11 +135,15 @@ pub(crate) type MemoryAddress<F> =
 
 /// Returns the sum of the passed in cells
 pub(crate) mod sum {
-    use crate::{evm_circuit::util::Cell, util::Expr};
+    use crate::util::Expr;
     use halo2::{arithmetic::FieldExt, plonk::Expression};
 
-    pub(crate) fn expr<F: FieldExt>(cells: &[Cell<F>]) -> Expression<F> {
-        cells.iter().fold(0.expr(), |acc, cell| acc + cell.expr())
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(
+        inputs: I,
+    ) -> Expression<F> {
+        inputs
+            .into_iter()
+            .fold(0.expr(), |acc, input| acc + input.expr())
     }
 
     pub(crate) fn value<F: FieldExt>(values: &[u8]) -> F {
@@ -148,12 +159,12 @@ pub(crate) mod and {
     use crate::util::Expr;
     use halo2::{arithmetic::FieldExt, plonk::Expression};
 
-    pub(crate) fn expr<F: FieldExt>(
-        inputs: Vec<Expression<F>>,
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(
+        inputs: I,
     ) -> Expression<F> {
         inputs
-            .iter()
-            .fold(1.expr(), |acc, input| acc * input.clone())
+            .into_iter()
+            .fold(1.expr(), |acc, input| acc * input.expr())
     }
 
     pub(crate) fn value<F: FieldExt>(inputs: Vec<F>) -> F {
@@ -198,13 +209,10 @@ pub(crate) mod select {
 
 /// Decodes a field element from its byte representation
 pub(crate) mod from_bytes {
-    use crate::{
-        evm_circuit::{param::MAX_BYTES_FIELD, util::Cell},
-        util::Expr,
-    };
+    use crate::{evm_circuit::param::MAX_BYTES_FIELD, util::Expr};
     use halo2::{arithmetic::FieldExt, plonk::Expression};
 
-    pub(crate) fn expr<F: FieldExt>(bytes: Vec<Cell<F>>) -> Expression<F> {
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
         assert!(bytes.len() <= MAX_BYTES_FIELD, "number of bytes too large");
         let mut value = 0.expr();
         let mut multiplier = F::one();
@@ -215,7 +223,7 @@ pub(crate) mod from_bytes {
         value
     }
 
-    pub(crate) fn value<F: FieldExt>(bytes: Vec<u8>) -> F {
+    pub(crate) fn value<F: FieldExt>(bytes: &[u8]) -> F {
         assert!(bytes.len() <= MAX_BYTES_FIELD, "number of bytes too large");
         let mut value = F::zero();
         let mut multiplier = F::one();
@@ -227,7 +235,20 @@ pub(crate) mod from_bytes {
     }
 }
 
-/// Returns 2**num_bits
-pub(crate) fn get_range<F: FieldExt>(num_bits: usize) -> F {
-    F::from_u64(2).pow(&[num_bits as u64, 0, 0, 0])
+/// Returns 2**by as FieldExt
+pub(crate) fn pow_of_two<F: FieldExt>(by: usize) -> F {
+    F::from_u64(2).pow(&[by as u64, 0, 0, 0])
+}
+
+/// Returns 2**by as Expression
+pub(crate) fn pow_of_two_expr<F: FieldExt>(by: usize) -> Expression<F> {
+    Expression::Constant(pow_of_two(by))
+}
+
+/// Returns tuple consists of low and high part of U256
+pub(crate) fn split_u256(value: &U256) -> (U256, U256) {
+    (
+        U256([value.0[0], value.0[1], 0, 0]),
+        U256([value.0[2], value.0[3], 0, 0]),
+    )
 }
