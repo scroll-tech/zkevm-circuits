@@ -309,7 +309,111 @@ pub mod bus_mapping_tmp {
         }
     }
 }
+
 use bus_mapping_tmp::{Block, Call, ExecStep, Transaction};
+
+// convert from bus_mapping to bus_mapping_tmp
+#[allow(missing_docs)]
+pub mod bus_mapping_tmp_convert {
+    use crate::evm_circuit::{
+        bus_mapping_tmp::Rw, step::ExecutionResult,
+        util::RandomLinearCombination,
+    };
+    use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+    use halo2::arithmetic::FieldExt;
+    use pasta_curves::pallas::Base;
+
+    use super::bus_mapping_tmp;
+
+    fn get_execution_result_from_step(
+        step: &bus_mapping::circuit_input_builder::ExecStep,
+    ) -> ExecutionResult {
+        // TODO: convert error (circuit_input_builder.rs)
+        assert!(step.error.is_none());
+        match step.op {
+            OpcodeId::ADD => ExecutionResult::ADD,
+            OpcodeId::SUB => ExecutionResult::ADD,
+            OpcodeId::STOP => ExecutionResult::STOP,
+            _ => unimplemented!(),
+        }
+    }
+
+    fn bytecode_convert(
+        b: &bus_mapping::bytecode::Bytecode,
+    ) -> bus_mapping_tmp::Bytecode {
+        bus_mapping_tmp::Bytecode::new(b.to_bytes())
+    }
+
+    fn step_convert(
+        step: &bus_mapping::circuit_input_builder::ExecStep,
+    ) -> bus_mapping_tmp::ExecStep {
+        let result = bus_mapping_tmp::ExecStep {
+            rw_indices: step
+                .bus_mapping_instance
+                .iter()
+                .map(|x| x.as_usize() - 1)
+                .collect(),
+            execution_result: get_execution_result_from_step(step),
+            rw_counter: usize::from(step.gc),
+            program_counter: usize::from(step.pc) as u64,
+            stack_pointer: 1024 - step.stack_size,
+            gas_left: step.gas_left.0,
+            gas_cost: step.gas_cost.as_u64(),
+            opcode: Some(step.op),
+            ..Default::default()
+        };
+        result
+    }
+    fn tx_convert(
+        randomness: Base,
+        bytecode: &bus_mapping_tmp::Bytecode,
+        tx: &bus_mapping::circuit_input_builder::Transaction,
+    ) -> bus_mapping_tmp::Transaction<Base> {
+        let mut result: bus_mapping_tmp::Transaction<Base> = Default::default();
+        result.calls = vec![bus_mapping_tmp::Call {
+            id: 1,
+            is_root: true,
+            is_create: tx.is_create(),
+            opcode_source: RandomLinearCombination::random_linear_combine(
+                bytecode.hash.to_le_bytes(),
+                randomness,
+            ),
+        }];
+        result.steps = tx.steps().iter().map(|s| step_convert(&s)).collect();
+        result
+    }
+
+    pub fn block_convert(
+        bytecode: &bus_mapping::bytecode::Bytecode,
+        b: &bus_mapping::circuit_input_builder::Block,
+    ) -> bus_mapping_tmp::Block<Base> {
+        let randomness = Base::rand();
+        let bytecode = bytecode_convert(bytecode);
+        let mut block = bus_mapping_tmp::Block {
+            randomness,
+            txs: b
+                .txs()
+                .iter()
+                .map(|tx| tx_convert(randomness, &bytecode, tx))
+                .collect(),
+            bytecodes: vec![bytecode],
+            ..Default::default()
+        };
+        block.rws = b
+            .container
+            .sorted_stack()
+            .iter()
+            .map(|s| Rw::Stack {
+                rw_counter: s.gc().into(),
+                is_write: s.op().rw().is_write(),
+                call_id: 1,
+                stack_pointer: usize::from(*s.op().address()),
+                value: *s.op().value(),
+            })
+            .collect();
+        block
+    }
+}
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;

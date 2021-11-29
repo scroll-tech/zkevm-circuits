@@ -108,118 +108,67 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
+        bus_mapping_tmp,
+        execution::{
+            bus_mapping_tmp::{
+                Block, Bytecode, Call, ExecStep, Rw, Transaction,
+            },
+            bus_mapping_tmp_convert, byte,
         },
         step::ExecutionResult,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
     };
     use bus_mapping::{
+        bytecode,
+        circuit_input_builder::{self, CircuitInputBuilder},
         eth_types::{ToBigEndian, ToLittleEndian, Word},
         evm::OpcodeId,
     };
     use halo2::arithmetic::FieldExt;
     use pasta_curves::pallas::Base;
 
-    fn test_ok(opcode: OpcodeId, a: Word, b: Word, c: Word) {
+    fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
         let randomness = Base::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                b.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                a.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0, 1, 2],
-                        execution_result: ExecutionResult::ADD,
-                        rw_counter: 1,
-                        program_counter: 66,
-                        stack_pointer: 1022,
-                        gas_left: 3,
-                        gas_cost: 3,
-                        opcode: Some(opcode),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_result: ExecutionResult::STOP,
-                        rw_counter: 4,
-                        program_counter: 67,
-                        stack_pointer: 1023,
-                        gas_left: 0,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: vec![
-                Rw::Stack {
-                    rw_counter: 1,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1022,
-                    value: a,
-                },
-                Rw::Stack {
-                    rw_counter: 2,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: b,
-                },
-                Rw::Stack {
-                    rw_counter: 3,
-                    is_write: true,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: c,
-                },
-            ],
-            bytecodes: vec![bytecode],
+        let mut code = bytecode! {
+            PUSH32(a)
+            PUSH32(b)
         };
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        code.add_marker("start".into());
+        code.write_op(opcode);
+        code.append(&bytecode! {
+            STOP
+        });
+
+        let block =
+            bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
+                &code,
+            )
+            .unwrap();
+
+        let mut builder =
+            bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
+                block.eth_block.clone(),
+                block.block_ctants.clone(),
+            );
+        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
+
+        let b = bus_mapping_tmp_convert::block_convert(&code, &builder.block);
+        assert_eq!(run_test_circuit_incomplete_fixed_table(b), Ok(()));
     }
 
     #[test]
     fn add_gadget_simple() {
-        test_ok(
-            OpcodeId::ADD,
-            0x030201.into(),
-            0x060504.into(),
-            0x090705.into(),
-        );
-        test_ok(
-            OpcodeId::SUB,
-            0x090705.into(),
-            0x060504.into(),
-            0x030201.into(),
-        );
+        test_ok(OpcodeId::ADD, 0x030201.into(), 0x060504.into());
+
+        test_ok(OpcodeId::SUB, 0x090705.into(), 0x060504.into());
     }
 
     #[test]
     fn add_gadget_rand() {
         let a = rand_word();
         let b = rand_word();
-        test_ok(OpcodeId::ADD, a, b, a.overflowing_add(b).0);
-        test_ok(OpcodeId::SUB, a, b, a.overflowing_sub(b).0);
+        test_ok(OpcodeId::ADD, a, b);
+        test_ok(OpcodeId::SUB, a, b);
     }
 }
