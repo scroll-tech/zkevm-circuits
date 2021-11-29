@@ -4,7 +4,7 @@ use std::collections::HashMap;
 /// Account of the Ethereum State Trie, which contains an in-memory key-value
 /// database that represents the Account Storage Trie.
 #[derive(Debug, PartialEq)]
-pub(crate) struct Account {
+pub struct Account {
     pub nonce: Word,
     pub balance: Word,
     pub storage: HashMap<Word, Word>,
@@ -24,10 +24,16 @@ impl Account {
 
 /// In-memory key-value database that represents the Ethereum State Trie.
 #[derive(Debug)]
-pub(crate) struct StateDB {
+pub struct StateDB {
     state: HashMap<Address, Account>,
     acc_zero: Account,
     value_zero: Word,
+}
+
+impl Default for StateDB {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StateDB {

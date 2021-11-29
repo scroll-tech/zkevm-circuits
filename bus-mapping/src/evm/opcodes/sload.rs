@@ -30,7 +30,7 @@ impl Opcode for Sload {
         let storage_value_read = step.storage.get_or_err(&stack_value_read)?;
         state.push_op(StorageOp::new(
             RW::READ,
-            state.tx_ctx.call_ctx().address,
+            state.call().address,
             stack_value_read,
             storage_value_read,
             storage_value_read,
@@ -96,7 +96,9 @@ mod sload_tests {
         // Generate step corresponding to SLOAD
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
+            0,
             test_builder.block_ctx.gc,
+            0,
         );
         let mut state_ref =
             test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);

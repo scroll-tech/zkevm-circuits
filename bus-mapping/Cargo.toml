@@ -13,9 +13,9 @@ lazy_static = "1.4"
 serde_json = "1.0.66"
 hex = "0.4"
 geth-utils = { path = "../geth-utils" }
-web3 = {version = "0.17", default-features = false}
 uint = "0.9.1"
-ethers-providers = "0.5.5"
+ethers-providers = "0.6.0"
+ethers-core = "0.6.0"
 regex = "1.5.4"
 
 [dev-dependencies]

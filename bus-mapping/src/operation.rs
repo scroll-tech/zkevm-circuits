@@ -265,6 +265,8 @@ pub enum OpEnum {
 #[derive(Debug, Clone)]
 pub struct Operation<T: Op> {
     gc: GlobalCounter,
+    /// True when this Operation is a revert of its mirror
+    revert: bool,
     op: T,
 }
 
@@ -294,7 +296,11 @@ impl<T: Op> Ord for Operation<T> {
 impl<T: Op> Operation<T> {
     /// Create a new Operation from an `op` with a `gc`
     pub fn new(gc: GlobalCounter, op: T) -> Self {
-        Self { gc, op }
+        Self {
+            gc,
+            revert: false,
+            op,
+        }
     }
 
     /// Return this `Operation` `gc`

@@ -20,7 +20,7 @@ impl Transaction {
     /// Create Self from a web3 transaction
     pub fn from_eth_tx(tx: &eth_types::Transaction) -> Self {
         Self {
-            origin: tx.from.unwrap(),
+            origin: tx.from,
             gas_limit: tx.gas,
             target: tx.to.unwrap(),
         }

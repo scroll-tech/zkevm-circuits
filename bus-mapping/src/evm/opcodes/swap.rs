@@ -101,7 +101,9 @@ mod swap_tests {
         for (i, (a, b)) in [(6, 5), (5, 3), (3, 1)].iter().enumerate() {
             let mut step = ExecStep::new(
                 &block.geth_trace.struct_logs[i],
+                0,
                 test_builder.block_ctx.gc,
+                0,
             );
             let mut state_ref =
                 test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);

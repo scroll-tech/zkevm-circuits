@@ -1,7 +1,7 @@
 //! Mock types and functions to generate mock data useful for tests
 use crate::address;
 use crate::bytecode::Bytecode;
-use crate::eth_types::{self, Address, Bytes, Hash, Index, Word, H64, U64};
+use crate::eth_types::{self, Address, Bytes, Hash, Word, U64};
 use crate::evm::Gas;
 use crate::external_tracer;
 use crate::BlockConstants;
@@ -10,18 +10,18 @@ use crate::Error;
 /// Generate a new mock block with preloaded data, useful for tests.
 pub fn new_block() -> eth_types::Block<()> {
     eth_types::Block {
-        hash: Some(Hash::from([0u8; 32])),
-        parent_hash: Hash::from([0u8; 32]),
-        uncles_hash: Hash::from([0u8; 32]),
-        author: Address::from([0u8; 20]),
-        state_root: Hash::from([0u8; 32]),
-        transactions_root: Hash::from([0u8; 32]),
-        receipts_root: Hash::from([0u8; 32]),
+        hash: Some(Hash::zero()),
+        parent_hash: Hash::zero(),
+        uncles_hash: Hash::zero(),
+        author: Address::zero(),
+        state_root: Hash::zero(),
+        transactions_root: Hash::zero(),
+        receipts_root: Hash::zero(),
         number: Some(U64([123456u64])),
         gas_used: Word::from(15_000_000u64),
         gas_limit: Word::from(15_000_000u64),
         base_fee_per_gas: Some(Word::from(97u64)),
-        extra_data: Bytes(Vec::new()),
+        extra_data: Bytes::default(),
         logs_bloom: None,
         timestamp: Word::from(1633398551u64),
         difficulty: Word::from(0x200000u64),
@@ -31,30 +31,32 @@ pub fn new_block() -> eth_types::Block<()> {
         transactions: Vec::new(),
         size: None,
         mix_hash: None,
-        nonce: Some(H64([0u8; 8])),
+        nonce: Some(U64::zero()),
     }
 }
 
 /// Generate a new mock transaction with preloaded data, useful for tests.
 pub fn new_tx<TX>(block: &eth_types::Block<TX>) -> eth_types::Transaction {
     eth_types::Transaction {
-        hash: Hash::from([0u8; 32]),
-        nonce: Word::from([0u8; 32]),
+        hash: Hash::zero(),
+        nonce: Word::zero(),
         block_hash: block.hash,
         block_number: block.number,
-        transaction_index: Some(Index::from(0u64)),
-        from: Some(address!("0x00000000000000000000000000000000c014ba5e")),
+        transaction_index: Some(U64::zero()),
+        from: address!("0x00000000000000000000000000000000c014ba5e"),
         to: Some(Address::zero()),
-        value: Word::from([0u8; 32]),
-        gas_price: Word::from([0u8; 32]),
+        value: Word::zero(),
+        gas_price: Some(Word::zero()),
         gas: Word::from(1_000_000u64),
-        input: Bytes(Vec::new()),
-        v: Some(U64([0u64])),
-        r: Some(Word::from([0u8; 32])),
-        s: Some(Word::from([0u8; 32])),
-        raw: Some(Bytes(Vec::new())),
-        transaction_type: Some(U64([0u64])),
+        input: Bytes::default(),
+        v: U64::zero(),
+        r: Word::zero(),
+        s: Word::zero(),
+        transaction_type: Some(U64::zero()),
         access_list: None,
+        max_priority_fee_per_gas: Some(Word::zero()),
+        max_fee_per_gas: Some(Word::zero()),
+        chain_id: Some(Word::zero()),
     }
 }
 

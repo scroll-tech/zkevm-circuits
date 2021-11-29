@@ -73,7 +73,9 @@ mod pc_tests {
         // Generate step corresponding to MLOAD
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
+            0,
             test_builder.block_ctx.gc,
+            0,
         );
         let mut state_ref =
             test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
