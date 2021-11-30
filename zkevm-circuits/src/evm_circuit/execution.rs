@@ -334,6 +334,7 @@ pub mod bus_mapping_tmp_convert {
             OpcodeId::ADD => ExecutionResult::ADD,
             OpcodeId::SUB => ExecutionResult::ADD,
             OpcodeId::STOP => ExecutionResult::STOP,
+            OpcodeId::PUSH32 => ExecutionResult::PUSH,
             _ => unimplemented!(),
         }
     }
@@ -399,9 +400,11 @@ pub mod bus_mapping_tmp_convert {
             bytecodes: vec![bytecode],
             ..Default::default()
         };
-        block.rws = b
-            .container
-            .sorted_stack()
+        let mut stack_ops = b.container.sorted_stack();
+        // in EVM circuit, we need gc-sorted ops
+        stack_ops.sort_by_key(|s| usize::from(s.gc()));
+        // TODO memory and storage
+        block.rws = stack_ops
             .iter()
             .map(|s| Rw::Stack {
                 rw_counter: s.gc().into(),

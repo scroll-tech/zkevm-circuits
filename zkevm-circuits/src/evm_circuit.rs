@@ -12,6 +12,7 @@ mod table;
 mod util;
 
 pub use execution::bus_mapping_tmp;
+pub use execution::bus_mapping_tmp_convert;
 use execution::{bus_mapping_tmp::Block, ExecutionConfig};
 use table::{FixedTableTag, LookupTable};
 
@@ -96,8 +97,10 @@ impl<F: FieldExt> EvmCircuit<F> {
     }
 }
 
-#[cfg(test)]
-mod test {
+//#[cfg(test)]
+
+#[allow(missing_docs)]
+pub mod test {
     use crate::evm_circuit::{
         execution::bus_mapping_tmp::{Block, Bytecode, Rw, Transaction},
         param::STEP_HEIGHT,
@@ -114,6 +117,7 @@ mod test {
     };
     use pasta_curves::pallas::Base;
     use rand::random;
+    //use rand::random;
 
     pub(crate) fn rand_bytes(n: usize) -> Vec<u8> {
         vec![random(); n]
@@ -363,7 +367,7 @@ mod test {
         prover.verify()
     }
 
-    pub(crate) fn run_test_circuit_incomplete_fixed_table(
+    pub fn run_test_circuit_incomplete_fixed_table(
         block: Block<Base>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(

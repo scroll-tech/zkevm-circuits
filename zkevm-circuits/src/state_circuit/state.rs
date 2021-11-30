@@ -82,7 +82,7 @@ pub(crate) struct BusMapping<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Config<
+pub struct Config<
     F: FieldExt,
     const GLOBAL_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
@@ -1152,8 +1152,10 @@ impl<
     }
 }
 
-#[cfg(test)]
-mod tests {
+//#[cfg(test)]
+
+#[allow(missing_docs)]
+pub mod tests {
     use super::Config;
     use bus_mapping::address;
     use bus_mapping::circuit_input_builder::CircuitInputBuilder;
@@ -1173,77 +1175,78 @@ mod tests {
 
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
+    #[derive(Default, Debug)]
+    pub struct StateCircuit<
+        const GLOBAL_COUNTER_MAX: usize,
+        const MEMORY_ROWS_MAX: usize,
+        const MEMORY_ADDRESS_MAX: usize,
+        const STACK_ROWS_MAX: usize,
+        const STACK_ADDRESS_MAX: usize,
+        const STORAGE_ROWS_MAX: usize,
+    > {
+        pub memory_ops: Vec<Operation<MemoryOp>>,
+        pub stack_ops: Vec<Operation<StackOp>>,
+        pub storage_ops: Vec<Operation<StorageOp>>,
+    }
+
+    impl<
+            F: FieldExt,
+            const GLOBAL_COUNTER_MAX: usize,
+            const MEMORY_ROWS_MAX: usize,
+            const MEMORY_ADDRESS_MAX: usize,
+            const STACK_ROWS_MAX: usize,
+            const STACK_ADDRESS_MAX: usize,
+            const STORAGE_ROWS_MAX: usize,
+        > Circuit<F>
+        for StateCircuit<
+            GLOBAL_COUNTER_MAX,
+            MEMORY_ROWS_MAX,
+            MEMORY_ADDRESS_MAX,
+            STACK_ROWS_MAX,
+            STACK_ADDRESS_MAX,
+            STORAGE_ROWS_MAX,
+        >
+    {
+        type Config = Config<
+            F,
+            GLOBAL_COUNTER_MAX,
+            MEMORY_ROWS_MAX,
+            MEMORY_ADDRESS_MAX,
+            STACK_ROWS_MAX,
+            STACK_ADDRESS_MAX,
+            STORAGE_ROWS_MAX,
+        >;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            Config::configure(meta)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config.load(&mut layouter)?;
+            config.assign(
+                layouter,
+                self.memory_ops.clone(),
+                self.stack_ops.clone(),
+                self.storage_ops.clone(),
+            )?;
+
+            Ok(())
+        }
+    }
+
+    #[macro_export]
     macro_rules! test_state_circuit {
         ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
-            #[derive(Default)]
-            struct StateCircuit<
-                const GLOBAL_COUNTER_MAX: usize,
-                const MEMORY_ROWS_MAX: usize,
-                const MEMORY_ADDRESS_MAX: usize,
-                const STACK_ROWS_MAX: usize,
-                const STACK_ADDRESS_MAX: usize,
-                const STORAGE_ROWS_MAX: usize,
-            > {
-                memory_ops: Vec<Operation<MemoryOp>>,
-                stack_ops: Vec<Operation<StackOp>>,
-                storage_ops: Vec<Operation<StorageOp>>,
-            }
-
-            impl<
-                    F: FieldExt,
-                    const GLOBAL_COUNTER_MAX: usize,
-                    const MEMORY_ROWS_MAX: usize,
-                    const MEMORY_ADDRESS_MAX: usize,
-                    const STACK_ROWS_MAX: usize,
-                    const STACK_ADDRESS_MAX: usize,
-                    const STORAGE_ROWS_MAX: usize,
-                > Circuit<F>
-                for StateCircuit<
-                    GLOBAL_COUNTER_MAX,
-                    MEMORY_ROWS_MAX,
-                    MEMORY_ADDRESS_MAX,
-                    STACK_ROWS_MAX,
-                    STACK_ADDRESS_MAX,
-                    STORAGE_ROWS_MAX,
-                >
-            {
-                type Config = Config<
-                    F,
-                    GLOBAL_COUNTER_MAX,
-                    MEMORY_ROWS_MAX,
-                    MEMORY_ADDRESS_MAX,
-                    STACK_ROWS_MAX,
-                    STACK_ADDRESS_MAX,
-                    STORAGE_ROWS_MAX,
-                >;
-                type FloorPlanner = SimpleFloorPlanner;
-
-                fn without_witnesses(&self) -> Self {
-                    Self::default()
-                }
-
-                fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                    Config::configure(meta)
-                }
-
-                fn synthesize(
-                    &self,
-                    config: Self::Config,
-                    mut layouter: impl Layouter<F>,
-                ) -> Result<(), Error> {
-                    config.load(&mut layouter)?;
-                    config.assign(
-                        layouter,
-                        self.memory_ops.clone(),
-                        self.stack_ops.clone(),
-                        self.storage_ops.clone(),
-                    )?;
-
-                    Ok(())
-                }
-            }
-
-            let circuit = StateCircuit::<
+            let circuit = $crate::state_circuit::state::tests::StateCircuit::<
                 $global_counter_max,
                 $memory_rows_max,
                 $memory_address_max,
@@ -1257,7 +1260,12 @@ mod tests {
             };
 
             let prover =
-                MockProver::<pallas::Base>::run($k, &circuit, vec![]).unwrap();
+                halo2::dev::MockProver::<pasta_curves::pallas::Base>::run(
+                    $k,
+                    &circuit,
+                    vec![],
+                )
+                .unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -2040,6 +2048,8 @@ mod tests {
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
         let stack_ops = builder.block.container.sorted_stack();
+
+        println!("correct stack ops {:#?}", stack_ops);
 
         test_state_circuit!(
             14,

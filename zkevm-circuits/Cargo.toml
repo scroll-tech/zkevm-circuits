@@ -6,6 +6,10 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "prover"
+path = "src/bin/prover.rs"
+
 [dependencies]
 ff = "0.11"
 halo2 = "0.0"
@@ -18,10 +22,10 @@ array-init = "2.0.0"
 paste = "1.0"
 bus-mapping = { path = "../bus-mapping"}
 serde_json = "1.0.66"
+rand = "0.8"
 
 [dev-dependencies]
 criterion = "0.3"
-rand = "0.8"
 
 [[bench]]
 name = "binary_value"

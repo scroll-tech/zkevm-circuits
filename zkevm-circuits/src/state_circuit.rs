@@ -1,3 +1,4 @@
 //! The state circuit implementation.
 
-pub(crate) mod state;
+#[allow(missing_docs)]
+pub mod state;
