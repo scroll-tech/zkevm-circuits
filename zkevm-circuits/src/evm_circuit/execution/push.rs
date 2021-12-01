@@ -155,12 +155,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
 mod test {
     use crate::evm_circuit::{
         bus_mapping_tmp_convert,
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
-        },
-        step::ExecutionResult,
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
     };
     use bus_mapping::{
         bytecode,
