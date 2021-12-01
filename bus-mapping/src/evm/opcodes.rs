@@ -106,8 +106,8 @@ impl OpcodeId {
             // OpcodeId::BASEFEE => {},
             OpcodeId::POP => Pop::gen_associated_ops,
             OpcodeId::MLOAD => Mload::gen_associated_ops,
-            OpcodeId::MSTORE => Mstore::gen_associated_ops,
-            // OpcodeId::MSTORE8 => {}
+            OpcodeId::MSTORE => Mstore::<true>::gen_associated_ops,
+            OpcodeId::MSTORE8 => Mstore::<false>::gen_associated_ops,
             OpcodeId::SLOAD => Sload::gen_associated_ops,
             // OpcodeId::SSTORE => {},
             // OpcodeId::JUMP => {},

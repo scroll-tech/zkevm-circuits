@@ -125,6 +125,7 @@ impl ExecStep {
         gc: GlobalCounter,
         swc: usize, // State Write Counter
     ) -> Self {
+        //println!("new ExecStep step {:#?}", step);
         ExecStep {
             op: step.op,
             pc: step.pc,

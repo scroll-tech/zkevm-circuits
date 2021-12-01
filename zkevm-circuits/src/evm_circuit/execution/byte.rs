@@ -139,22 +139,23 @@ impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        test::{rand_word, run_test_circuit_incomplete_fixed_table},
         bus_mapping_tmp_convert,
+        test::{rand_word, run_test_circuit_incomplete_fixed_table},
     };
-    use bus_mapping::{
-        eth_types::{Word},bytecode,
-    };
+    use bus_mapping::{bytecode, eth_types::Word};
 
     fn test_ok(index: Word, value: Word) {
-        let bytecode = bytecode!{
+        let bytecode = bytecode! {
             PUSH32(value)
             PUSH32(index)
             #[start]
             BYTE
             STOP
         };
-        let block = bus_mapping_tmp_convert::build_block_from_trace_code_at_start(&bytecode);
+        let block =
+            bus_mapping_tmp_convert::build_block_from_trace_code_at_start(
+                &bytecode,
+            );
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
@@ -168,7 +169,6 @@ mod test {
 
     #[test]
     fn byte_gadget_rand() {
-
         let index = rand_word();
         let value = rand_word();
         test_ok(index, value);
@@ -180,10 +180,7 @@ mod test {
     fn byte_gadget_exhaustive() {
         let value = Word::from_big_endian(&(1..33).collect::<Vec<_>>()[..]);
         for idx in 0..33 {
-            test_ok(
-                idx.into(),
-                value
-            );
+            test_ok(idx.into(), value);
         }
     }
 }

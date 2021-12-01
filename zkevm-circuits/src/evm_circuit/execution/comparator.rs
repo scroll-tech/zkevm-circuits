@@ -174,29 +174,34 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
+        bus_mapping_tmp_convert,
         execution::bus_mapping_tmp::{
             Block, Bytecode, Call, ExecStep, Rw, Transaction,
         },
         step::ExecutionResult,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination, bus_mapping_tmp_convert,
+        util::RandomLinearCombination,
     };
     use bus_mapping::{
+        bytecode,
         eth_types::{ToBigEndian, ToLittleEndian, Word},
-        evm::OpcodeId, bytecode,
+        evm::OpcodeId,
     };
     use halo2::arithmetic::FieldExt;
     use pasta_curves::pallas::Base;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word, _c: Word) {
-        let bytecode = bytecode!{
+        let bytecode = bytecode! {
             PUSH32(b)
             PUSH32(a)
             #[start]
             .write_op(opcode)
             STOP
         };
-        let block = bus_mapping_tmp_convert::build_block_from_trace_code_at_start(&bytecode);
+        let block =
+            bus_mapping_tmp_convert::build_block_from_trace_code_at_start(
+                &bytecode,
+            );
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 

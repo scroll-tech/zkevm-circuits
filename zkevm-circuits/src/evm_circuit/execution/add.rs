@@ -129,123 +129,24 @@ mod test {
     use pasta_curves::pallas::Base;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
-        let code = bytecode! {
+        let bytecode = bytecode! {
             PUSH32(a)
             PUSH32(b)
             #[start]
             .write_op(opcode)
             STOP
         };
-
         let block =
-            bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
-                &code,
-            )
-            .unwrap();
-
-        let mut builder =
-            bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-                block.eth_block.clone(),
-                block.block_ctants.clone(),
+            bus_mapping_tmp_convert::build_block_from_trace_code_at_start(
+                &bytecode,
             );
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-        let b = bus_mapping_tmp_convert::block_convert(&code, &builder.block);
-
-        assert_eq!(run_test_circuit_incomplete_fixed_table(b), Ok(()));
-    }
-
-    fn test_ok_old(opcode: OpcodeId, a: Word, b: Word, c: Word) {
-        let randomness = Base::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                b.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                a.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0, 1, 2],
-                        execution_result: ExecutionResult::ADD,
-                        rw_counter: 1,
-                        program_counter: 66,
-                        stack_pointer: 1022,
-                        gas_left: 3,
-                        gas_cost: 3,
-                        opcode: Some(opcode),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_result: ExecutionResult::STOP,
-                        rw_counter: 4,
-                        program_counter: 67,
-                        stack_pointer: 1023,
-                        gas_left: 0,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: vec![
-                Rw::Stack {
-                    rw_counter: 1,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1022,
-                    value: a,
-                },
-                Rw::Stack {
-                    rw_counter: 2,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: b,
-                },
-                Rw::Stack {
-                    rw_counter: 3,
-                    is_write: true,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: c,
-                },
-            ],
-            bytecodes: vec![bytecode],
-        };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
     #[test]
     fn add_gadget_simple() {
         test_ok(OpcodeId::ADD, 0x030201.into(), 0x060504.into());
-        //test_ok(OpcodeId::SUB, 0x090705.into(), 0x060504.into());
-    }
-
-    #[test]
-    fn add_gadget_simple_old() {
-        test_ok_old(
-            OpcodeId::ADD,
-            0x030201.into(),
-            0x060504.into(),
-            0x090705.into(),
-        );
+        test_ok(OpcodeId::SUB, 0x090705.into(), 0x060504.into());
     }
 
     #[test]

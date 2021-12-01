@@ -55,62 +55,20 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpdestGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Transaction,
-        },
-        step::ExecutionResult,
-        test::run_test_circuit_incomplete_fixed_table,
-        util::RandomLinearCombination,
+        bus_mapping_tmp_convert, test::run_test_circuit_incomplete_fixed_table,
     };
-    use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
-    use halo2::arithmetic::FieldExt;
-    use pasta_curves::pallas::Base;
+    use bus_mapping::bytecode;
 
     fn test_ok() {
-        let opcode = OpcodeId::JUMPDEST;
-        let randomness = Base::rand();
-        let bytecode =
-            Bytecode::new(vec![opcode.as_u8(), OpcodeId::STOP.as_u8()]);
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![],
-                        execution_result: ExecutionResult::JUMPDEST,
-                        rw_counter: 1,
-                        program_counter: 0,
-                        stack_pointer: 1024,
-                        gas_left: 3,
-                        gas_cost: 1,
-                        opcode: Some(opcode),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_result: ExecutionResult::STOP,
-                        rw_counter: 1,
-                        program_counter: 1,
-                        stack_pointer: 1024,
-                        gas_left: 2,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: vec![],
-            bytecodes: vec![bytecode],
+        let bytecode = bytecode! {
+            #[start]
+            JUMPDEST
+            STOP
         };
+        let block =
+            bus_mapping_tmp_convert::build_block_from_trace_code_at_start(
+                &bytecode,
+            );
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 

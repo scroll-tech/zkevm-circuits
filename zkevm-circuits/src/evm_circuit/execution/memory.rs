@@ -70,7 +70,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
                 + (is_not_mstore8.clone() * 31.expr()),
         );
         let (next_memory_size, memory_gas_cost) = memory_expansion.expr();
-
+        //println!("expected next_memory_size {:#?}", next_memory_size);
         /* Stack operations */
         // Pop the address from the stack
         cb.stack_pop(address.expr());
@@ -202,6 +202,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
+        bus_mapping_tmp_convert,
         execution::bus_mapping_tmp::{
             Block, Bytecode, Call, ExecStep, Rw, Transaction,
         },
@@ -210,8 +211,9 @@ mod test {
         util::RandomLinearCombination,
     };
     use bus_mapping::{
+        bytecode,
         eth_types::{ToBigEndian, ToLittleEndian, Word},
-        evm::{GasCost, OpcodeId},
+        evm::{Gas, GasCost, OpcodeId},
     };
     use halo2::arithmetic::FieldExt;
     use pasta_curves::pallas::Base;
@@ -221,9 +223,18 @@ mod test {
         opcode: OpcodeId,
         address: Word,
         value: Word,
-        memory_size: u64,
+        _memory_size: u64,
         gas_cost: u64,
     ) {
+        //ln!("expect {} {} {}", address, _memory_size, _gas_cost);
+        let bytecode = bytecode! {
+            PUSH32(value)
+            PUSH32(address)
+            #[start]
+            .write_op(opcode)
+            STOP
+        };
+        /*
         let is_mload = opcode == OpcodeId::MLOAD;
         let is_mstore8 = opcode == OpcodeId::MSTORE8;
 
@@ -312,7 +323,35 @@ mod test {
             ]
             .concat(),
             bytecodes: vec![bytecode],
-        };
+        };*/
+        //let block  =
+        // bus_mapping_tmp_convert::build_block_from_trace_code_at_start(&
+        // bytecode);
+        let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
+        let mut blockTrace =
+            bus_mapping::mock::BlockData::new_single_tx_trace_code_gas(
+                &bytecode, gas,
+            )
+            .unwrap();
+        blockTrace.geth_trace.struct_logs = blockTrace.geth_trace.struct_logs
+            [bytecode.get_pos("start")..]
+            .to_vec();
+        let mut builder =
+            bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
+                blockTrace.eth_block.clone(),
+                blockTrace.block_ctants.clone(),
+            );
+        builder
+            .handle_tx(&blockTrace.eth_tx, &blockTrace.geth_trace)
+            .unwrap();
+
+        //println!("old block is {:#?}", builder.block);
+
+        let block =
+            bus_mapping_tmp_convert::block_convert(&bytecode, &builder.block);
+
+        //println!("block is {:#?}", block);
+
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
@@ -325,6 +364,7 @@ mod test {
             38913,
             3074206,
         );
+
         test_ok(
             OpcodeId::MLOAD,
             Word::from(0x12FFFF),
@@ -368,7 +408,10 @@ mod test {
         };
 
         for opcode in [OpcodeId::MSTORE, OpcodeId::MLOAD, OpcodeId::MSTORE8] {
-            let address = rand_word() % (1u64 << 37);
+            // TODO: tracer needs to be optimized to enable larger
+            // max_memory_size_pow_of_two
+            let max_memory_size_pow_of_two = 15;
+            let address = rand_word() % (1u64 << max_memory_size_pow_of_two);
             let value = rand_word();
             let (memory_size, gas_cost) =
                 calc_memory_size_and_gas_cost(opcode, address);

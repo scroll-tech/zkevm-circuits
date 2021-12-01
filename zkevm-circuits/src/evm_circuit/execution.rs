@@ -321,7 +321,9 @@ pub mod bus_mapping_tmp_convert {
     };
     use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
     use halo2::arithmetic::FieldExt;
+    use num::traits::ops;
     use pasta_curves::pallas::Base;
+    use std::convert::TryInto;
 
     use super::bus_mapping_tmp;
 
@@ -346,6 +348,10 @@ pub mod bus_mapping_tmp_convert {
             OpcodeId::POP => ExecutionResult::POP,
             OpcodeId::PUSH32 => ExecutionResult::PUSH,
             OpcodeId::BYTE => ExecutionResult::BYTE,
+            OpcodeId::MLOAD => ExecutionResult::MLOAD,
+            OpcodeId::MSTORE => ExecutionResult::MLOAD,
+            OpcodeId::MSTORE8 => ExecutionResult::MLOAD,
+            OpcodeId::JUMPDEST => ExecutionResult::JUMPDEST,
             _ => unimplemented!("invalid opcode {:?}", step.op),
         }
     }
@@ -357,13 +363,28 @@ pub mod bus_mapping_tmp_convert {
     }
 
     fn step_convert(
+        prev: Option<&bus_mapping::circuit_input_builder::ExecStep>,
         step: &bus_mapping::circuit_input_builder::ExecStep,
+        ops_len: (usize, usize, usize),
     ) -> bus_mapping_tmp::ExecStep {
+        let (stack_ops_len, memory_ops_len, _storage_ops_len) = ops_len;
+        //println!("prev is {:#?}", prev);
         let result = bus_mapping_tmp::ExecStep {
             rw_indices: step
                 .bus_mapping_instance
                 .iter()
-                .map(|x| x.as_usize() - 1)
+                .map(|x| {
+                    let index = x.as_usize() - 1;
+                    match x.target() {
+                        bus_mapping::operation::Target::Stack => index,
+                        bus_mapping::operation::Target::Memory => {
+                            index + stack_ops_len
+                        }
+                        bus_mapping::operation::Target::Storage => {
+                            index + stack_ops_len + memory_ops_len
+                        }
+                    }
+                })
                 .collect(),
             execution_result: get_execution_result_from_step(step),
             rw_counter: usize::from(step.gc),
@@ -372,6 +393,10 @@ pub mod bus_mapping_tmp_convert {
             gas_left: step.gas_left.0,
             gas_cost: step.gas_cost.as_u64(),
             opcode: Some(step.op),
+            memory_size: match prev {
+                None => 0,
+                Some(prev_step) => (prev_step.memory_size as u64) / 32, /* memory size in word */
+            },
             ..Default::default()
         };
         result
@@ -380,6 +405,7 @@ pub mod bus_mapping_tmp_convert {
         randomness: Base,
         bytecode: &bus_mapping_tmp::Bytecode,
         tx: &bus_mapping::circuit_input_builder::Transaction,
+        ops_len: (usize, usize, usize),
     ) -> bus_mapping_tmp::Transaction<Base> {
         let mut result: bus_mapping_tmp::Transaction<Base> = Default::default();
         result.calls = vec![bus_mapping_tmp::Call {
@@ -391,7 +417,17 @@ pub mod bus_mapping_tmp_convert {
                 randomness,
             ),
         }];
-        result.steps = tx.steps().iter().map(|s| step_convert(&s)).collect();
+        for idx in 0..tx.steps().len() {
+            let cur_step = &tx.steps()[idx];
+            let prev_step = if idx == 0 {
+                None
+            } else {
+                Some(&tx.steps()[idx - 1])
+            };
+            result
+                .steps
+                .push(step_convert(prev_step, cur_step, ops_len));
+        }
         result
     }
 
@@ -401,49 +437,74 @@ pub mod bus_mapping_tmp_convert {
     ) -> bus_mapping_tmp::Block<Base> {
         let randomness = Base::rand();
         let bytecode = bytecode_convert(bytecode);
+
+        // here stack_ops/memory_ops/etc are merged into a single array
+        // in EVM circuit, we need gc-sorted ops
+        let mut stack_ops = b.container.sorted_stack();
+        stack_ops.sort_by_key(|s| usize::from(s.gc()));
+        let mut memory_ops = b.container.sorted_memory();
+        memory_ops.sort_by_key(|s| usize::from(s.gc()));
+        let mut storage_ops = b.container.sorted_storage();
+        storage_ops.sort_by_key(|s| usize::from(s.gc()));
+
         let mut block = bus_mapping_tmp::Block {
             randomness,
             txs: b
                 .txs()
                 .iter()
-                .map(|tx| tx_convert(randomness, &bytecode, tx))
+                .map(|tx| {
+                    tx_convert(
+                        randomness,
+                        &bytecode,
+                        tx,
+                        (stack_ops.len(), memory_ops.len(), storage_ops.len()),
+                    )
+                })
                 .collect(),
             bytecodes: vec![bytecode],
             ..Default::default()
         };
-        let mut stack_ops = b.container.sorted_stack();
-        // in EVM circuit, we need gc-sorted ops
-        stack_ops.sort_by_key(|s| usize::from(s.gc()));
-        // TODO memory and storage
-        block.rws = stack_ops
-            .iter()
-            .map(|s| Rw::Stack {
-                rw_counter: s.gc().into(),
-                is_write: s.op().rw().is_write(),
-                call_id: 1,
-                stack_pointer: usize::from(*s.op().address()),
-                value: *s.op().value(),
-            })
-            .collect();
+
+        block.rws.extend(stack_ops.iter().map(|s| Rw::Stack {
+            rw_counter: s.gc().into(),
+            is_write: s.op().rw().is_write(),
+            call_id: 1,
+            stack_pointer: usize::from(*s.op().address()),
+            value: *s.op().value(),
+        }));
+        block.rws.extend(memory_ops.iter().map(|s| Rw::Memory {
+            rw_counter: s.gc().into(),
+            is_write: s.op().rw().is_write(),
+            call_id: 1,
+            memory_address: u64::from_le_bytes(
+                s.op().address().to_le_bytes()[..8].try_into().unwrap(),
+            ),
+            byte: s.op().value(),
+        }));
+        // TODO add storage ops
+
         block
     }
 
-    pub fn build_block_from_trace_code_at_start(bytecode: &bus_mapping::bytecode::Bytecode) -> bus_mapping_tmp::Block<pasta_curves::pallas::Base> {
-
+    pub fn build_block_from_trace_code_at_start(
+        bytecode: &bus_mapping::bytecode::Bytecode,
+    ) -> bus_mapping_tmp::Block<pasta_curves::pallas::Base> {
         let block =
-        bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
-            &bytecode,
-        )
-        .unwrap();
-    let mut builder =
-        bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-            block.eth_block.clone(),
-            block.block_ctants.clone(),
-        );
-    builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
+            bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
+                &bytecode,
+            )
+            .unwrap();
+        let mut builder =
+            bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
+                block.eth_block.clone(),
+                block.block_ctants.clone(),
+            );
+        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-    let block =
-        super::bus_mapping_tmp_convert::block_convert(&bytecode, &builder.block);
+        let block = super::bus_mapping_tmp_convert::block_convert(
+            &bytecode,
+            &builder.block,
+        );
         block
     }
 }

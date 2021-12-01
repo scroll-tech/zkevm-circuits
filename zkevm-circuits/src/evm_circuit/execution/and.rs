@@ -119,7 +119,7 @@ mod test {
     use pasta_curves::pallas::Base;
 
     fn test_ok(a: Word, b: Word) {
-        let code = bytecode! {
+        let bytecode = bytecode! {
             PUSH32(b)
             PUSH32(a)
             PUSH32(b)
@@ -134,22 +134,11 @@ mod test {
             XOR
             STOP
         };
-
         let block =
-            bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
-                &code,
-            )
-            .unwrap();
-        let mut builder =
-            bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-                block.eth_block.clone(),
-                block.block_ctants.clone(),
+            bus_mapping_tmp_convert::build_block_from_trace_code_at_start(
+                &bytecode,
             );
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let block =
-            bus_mapping_tmp_convert::block_convert(&code, &builder.block);
-        
         assert_eq!(run_test_circuit_complete_fixed_table(block), Ok(()));
     }
 
