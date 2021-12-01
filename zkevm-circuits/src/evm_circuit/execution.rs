@@ -330,12 +330,23 @@ pub mod bus_mapping_tmp_convert {
     ) -> ExecutionResult {
         // TODO: convert error (circuit_input_builder.rs)
         assert!(step.error.is_none());
+        if step.op.is_dup() {
+            return ExecutionResult::DUP;
+        }
         match step.op {
             OpcodeId::ADD => ExecutionResult::ADD,
             OpcodeId::SUB => ExecutionResult::ADD,
+            OpcodeId::EQ => ExecutionResult::LT,
+            OpcodeId::GT => ExecutionResult::LT,
+            OpcodeId::LT => ExecutionResult::LT,
             OpcodeId::STOP => ExecutionResult::STOP,
+            OpcodeId::AND => ExecutionResult::AND,
+            OpcodeId::XOR => ExecutionResult::AND,
+            OpcodeId::OR => ExecutionResult::AND,
+            OpcodeId::POP => ExecutionResult::POP,
             OpcodeId::PUSH32 => ExecutionResult::PUSH,
-            _ => unimplemented!(),
+            OpcodeId::BYTE => ExecutionResult::BYTE,
+            _ => unimplemented!("invalid opcode {:?}", step.op),
         }
     }
 
@@ -414,6 +425,25 @@ pub mod bus_mapping_tmp_convert {
                 value: *s.op().value(),
             })
             .collect();
+        block
+    }
+
+    pub fn build_block_from_trace_code_at_start(bytecode: &bus_mapping::bytecode::Bytecode) -> bus_mapping_tmp::Block<pasta_curves::pallas::Base> {
+
+        let block =
+        bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
+            &bytecode,
+        )
+        .unwrap();
+    let mut builder =
+        bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
+            block.eth_block.clone(),
+            block.block_ctants.clone(),
+        );
+    builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
+
+    let block =
+        super::bus_mapping_tmp_convert::block_convert(&bytecode, &builder.block);
         block
     }
 }

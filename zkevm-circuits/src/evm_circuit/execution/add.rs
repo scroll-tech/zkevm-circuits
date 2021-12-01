@@ -129,18 +129,13 @@ mod test {
     use pasta_curves::pallas::Base;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
-        let start = std::time::Instant::now();
-
-        let randomness = Base::rand();
-        let mut code = bytecode! {
+        let code = bytecode! {
             PUSH32(a)
             PUSH32(b)
-        };
-        code.add_marker("start".into());
-        code.write_op(opcode);
-        code.append(&bytecode! {
+            #[start]
+            .write_op(opcode)
             STOP
-        });
+        };
 
         let block =
             bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
@@ -157,9 +152,6 @@ mod test {
 
         let b = bus_mapping_tmp_convert::block_convert(&code, &builder.block);
 
-        let duration = start.elapsed();
-
-        println!("Time elapsed in expensive_function() is: {:?}", duration);
         assert_eq!(run_test_circuit_incomplete_fixed_table(b), Ok(()));
     }
 

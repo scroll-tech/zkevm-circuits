@@ -102,6 +102,7 @@ impl<F: FieldExt> ExecutionGadget<F> for AndGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
+        bus_mapping_tmp_convert,
         execution::bus_mapping_tmp::{
             Block, Bytecode, Call, ExecStep, Rw, Transaction,
         },
@@ -110,219 +111,57 @@ mod test {
         util::RandomLinearCombination,
     };
     use bus_mapping::{
+        bytecode,
         eth_types::{ToBigEndian, ToLittleEndian, Word},
         evm::OpcodeId,
     };
     use halo2::arithmetic::FieldExt;
     use pasta_curves::pallas::Base;
 
-    fn test_ok(a: Word, b: Word, c_and: Word, c_or: Word, c_xor: Word) {
-        let randomness = Base::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                b.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                a.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                b.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                a.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                b.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                a.to_be_bytes().to_vec(),
-                vec![
-                    OpcodeId::AND.as_u8(),
-                    OpcodeId::POP.as_u8(),
-                    OpcodeId::OR.as_u8(),
-                    OpcodeId::POP.as_u8(),
-                    OpcodeId::XOR.as_u8(),
-                    OpcodeId::STOP.as_u8(),
-                ],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0, 1, 2],
-                        execution_result: ExecutionResult::AND,
-                        rw_counter: 1,
-                        program_counter: 198,
-                        stack_pointer: 1018,
-                        gas_left: 13,
-                        gas_cost: 3,
-                        opcode: Some(OpcodeId::AND),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        rw_indices: vec![3],
-                        execution_result: ExecutionResult::POP,
-                        rw_counter: 4,
-                        program_counter: 199,
-                        stack_pointer: 1019,
-                        gas_left: 10,
-                        gas_cost: 2,
-                        opcode: Some(OpcodeId::POP),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        rw_indices: vec![4, 5, 6],
-                        execution_result: ExecutionResult::AND,
-                        rw_counter: 5,
-                        program_counter: 200,
-                        stack_pointer: 1020,
-                        gas_left: 8,
-                        gas_cost: 3,
-                        opcode: Some(OpcodeId::OR),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        rw_indices: vec![7],
-                        execution_result: ExecutionResult::POP,
-                        rw_counter: 8,
-                        program_counter: 201,
-                        stack_pointer: 1021,
-                        gas_left: 5,
-                        gas_cost: 2,
-                        opcode: Some(OpcodeId::POP),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        rw_indices: vec![8, 9, 10],
-                        execution_result: ExecutionResult::AND,
-                        rw_counter: 9,
-                        program_counter: 202,
-                        stack_pointer: 1022,
-                        gas_left: 3,
-                        gas_cost: 3,
-                        opcode: Some(OpcodeId::XOR),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_result: ExecutionResult::STOP,
-                        rw_counter: 12,
-                        program_counter: 203,
-                        stack_pointer: 1023,
-                        gas_left: 0,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: vec![
-                Rw::Stack {
-                    rw_counter: 1,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1018,
-                    value: a,
-                },
-                Rw::Stack {
-                    rw_counter: 2,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1019,
-                    value: b,
-                },
-                Rw::Stack {
-                    rw_counter: 3,
-                    is_write: true,
-                    call_id: 1,
-                    stack_pointer: 1019,
-                    value: c_and,
-                },
-                Rw::Stack {
-                    rw_counter: 4,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1019,
-                    value: c_and,
-                },
-                Rw::Stack {
-                    rw_counter: 5,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1020,
-                    value: a,
-                },
-                Rw::Stack {
-                    rw_counter: 6,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1021,
-                    value: b,
-                },
-                Rw::Stack {
-                    rw_counter: 7,
-                    is_write: true,
-                    call_id: 1,
-                    stack_pointer: 1021,
-                    value: c_or,
-                },
-                Rw::Stack {
-                    rw_counter: 8,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1021,
-                    value: c_or,
-                },
-                Rw::Stack {
-                    rw_counter: 9,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1022,
-                    value: a,
-                },
-                Rw::Stack {
-                    rw_counter: 10,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: b,
-                },
-                Rw::Stack {
-                    rw_counter: 11,
-                    is_write: true,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: c_xor,
-                },
-            ],
-            bytecodes: vec![bytecode],
+    fn test_ok(a: Word, b: Word) {
+        let code = bytecode! {
+            PUSH32(b)
+            PUSH32(a)
+            PUSH32(b)
+            PUSH32(a)
+            PUSH32(b)
+            PUSH32(a)
+            #[start]
+            AND
+            POP
+            OR
+            POP
+            XOR
+            STOP
         };
+
+        let block =
+            bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
+                &code,
+            )
+            .unwrap();
+        let mut builder =
+            bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
+                block.eth_block.clone(),
+                block.block_ctants.clone(),
+            );
+        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
+
+        let block =
+            bus_mapping_tmp_convert::block_convert(&code, &builder.block);
+        
         assert_eq!(run_test_circuit_complete_fixed_table(block), Ok(()));
     }
 
     #[test]
     fn and_gadget_simple() {
-        test_ok(
-            0x12_34_56.into(),
-            0x78_9A_BC.into(),
-            0x10_10_14.into(),
-            0x7A_BE_FE.into(),
-            0x6A_AE_EA.into(),
-        );
+        test_ok(0x12_34_56.into(), 0x78_9A_BC.into());
     }
 
     #[test]
     fn and_gadget_rand() {
         let a = rand_word();
         let b = rand_word();
-        test_ok(a, b, a & b, a | b, a ^ b);
+        test_ok(a, b);
     }
 }

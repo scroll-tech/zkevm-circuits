@@ -179,89 +179,24 @@ mod test {
         },
         step::ExecutionResult,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
+        util::RandomLinearCombination, bus_mapping_tmp_convert,
     };
     use bus_mapping::{
         eth_types::{ToBigEndian, ToLittleEndian, Word},
-        evm::OpcodeId,
+        evm::OpcodeId, bytecode,
     };
     use halo2::arithmetic::FieldExt;
     use pasta_curves::pallas::Base;
 
-    fn test_ok(opcode: OpcodeId, a: Word, b: Word, result: Word) {
-        let randomness = Base::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                b.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                a.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0, 1, 2],
-                        execution_result: ExecutionResult::LT,
-                        rw_counter: 1,
-                        program_counter: 66,
-                        stack_pointer: 1022,
-                        gas_left: 3,
-                        gas_cost: 3,
-                        opcode: Some(opcode),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_result: ExecutionResult::STOP,
-                        rw_counter: 4,
-                        program_counter: 67,
-                        stack_pointer: 1023,
-                        gas_left: 0,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: vec![
-                Rw::Stack {
-                    rw_counter: 1,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1022,
-                    value: a,
-                },
-                Rw::Stack {
-                    rw_counter: 2,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: b,
-                },
-                Rw::Stack {
-                    rw_counter: 3,
-                    is_write: true,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: result,
-                },
-            ],
-            bytecodes: vec![bytecode],
+    fn test_ok(opcode: OpcodeId, a: Word, b: Word, _c: Word) {
+        let bytecode = bytecode!{
+            PUSH32(b)
+            PUSH32(a)
+            #[start]
+            .write_op(opcode)
+            STOP
         };
+        let block = bus_mapping_tmp_convert::build_block_from_trace_code_at_start(&bytecode);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
