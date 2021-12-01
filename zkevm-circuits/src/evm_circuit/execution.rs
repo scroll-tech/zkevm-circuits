@@ -494,6 +494,7 @@ pub mod bus_mapping_tmp_convert {
         block
     }
 
+    #[allow(clippy::needless_borrow)]
     pub fn build_block_from_trace_code_at_start(
         bytecode: &bus_mapping::bytecode::Bytecode,
     ) -> bus_mapping_tmp::Block<pasta_curves::pallas::Base> {
