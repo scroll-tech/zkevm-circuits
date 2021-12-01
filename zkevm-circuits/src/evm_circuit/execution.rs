@@ -509,11 +509,10 @@ pub mod bus_mapping_tmp_convert {
             );
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        let block = super::bus_mapping_tmp_convert::block_convert(
+        super::bus_mapping_tmp_convert::block_convert(
             &bytecode,
             &builder.block,
-        );
-        block
+        )
     }
 }
 
