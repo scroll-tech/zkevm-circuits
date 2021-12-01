@@ -162,7 +162,6 @@ mod test {
         eth_types::{ToLittleEndian, Word},
         evm::OpcodeId,
     };
-    use halo2::arithmetic::FieldExt;
     use pasta_curves::pallas::Base;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
