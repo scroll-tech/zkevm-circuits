@@ -328,21 +328,21 @@ mod test {
         // bus_mapping_tmp_convert::build_block_from_trace_code_at_start(&
         // bytecode);
         let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
-        let mut blockTrace =
+        let mut block_trace =
             bus_mapping::mock::BlockData::new_single_tx_trace_code_gas(
                 &bytecode, gas,
             )
             .unwrap();
-        blockTrace.geth_trace.struct_logs = blockTrace.geth_trace.struct_logs
+        block_trace.geth_trace.struct_logs = block_trace.geth_trace.struct_logs
             [bytecode.get_pos("start")..]
             .to_vec();
         let mut builder =
             bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-                blockTrace.eth_block.clone(),
-                blockTrace.block_ctants.clone(),
+                block_trace.eth_block.clone(),
+                block_trace.block_ctants.clone(),
             );
         builder
-            .handle_tx(&blockTrace.eth_tx, &blockTrace.geth_trace)
+            .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
             .unwrap();
 
         //println!("old block is {:#?}", builder.block);
