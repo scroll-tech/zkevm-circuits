@@ -335,12 +335,19 @@ pub mod bus_mapping_tmp_convert {
         if step.op.is_dup() {
             return ExecutionResult::DUP;
         }
+        if step.op.is_push() {
+            return ExecutionResult::PUSH;
+        }
+        if step.op.is_swap() {
+            return ExecutionResult::SWAP;
+        }
         match step.op {
             OpcodeId::ADD => ExecutionResult::ADD,
             OpcodeId::SUB => ExecutionResult::ADD,
             OpcodeId::EQ => ExecutionResult::LT,
             OpcodeId::GT => ExecutionResult::LT,
             OpcodeId::LT => ExecutionResult::LT,
+            OpcodeId::SIGNEXTEND => ExecutionResult::SIGNEXTEND,
             OpcodeId::STOP => ExecutionResult::STOP,
             OpcodeId::AND => ExecutionResult::AND,
             OpcodeId::XOR => ExecutionResult::AND,
@@ -352,6 +359,7 @@ pub mod bus_mapping_tmp_convert {
             OpcodeId::MSTORE => ExecutionResult::MLOAD,
             OpcodeId::MSTORE8 => ExecutionResult::MLOAD,
             OpcodeId::JUMPDEST => ExecutionResult::JUMPDEST,
+            OpcodeId::PC => ExecutionResult::PC,
             _ => unimplemented!("invalid opcode {:?}", step.op),
         }
     }
