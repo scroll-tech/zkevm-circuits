@@ -230,7 +230,7 @@ mod test {
     use halo2::arithmetic::FieldExt;
     use pasta_curves::pallas::Base;
 
-    fn test_ok(index: Word, value: Word, result: Word) {
+    fn test_ok(index: Word, value: Word, _result: Word) {
         let bytecode = bytecode! {
             PUSH32(value)
             PUSH32(index)
