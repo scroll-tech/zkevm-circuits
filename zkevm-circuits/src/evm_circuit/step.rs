@@ -1,8 +1,8 @@
 use crate::{
     evm_circuit::{
-        execution::bus_mapping_tmp::{Call, ExecStep},
         param::{STEP_HEIGHT, STEP_WIDTH},
         util::Cell,
+        witness::bus_mapping_tmp::{Call, ExecStep},
     },
     util::Expr,
 };

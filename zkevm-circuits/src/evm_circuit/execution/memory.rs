@@ -1,9 +1,6 @@
 use crate::{
     evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
-            ExecutionGadget,
-        },
+        execution::ExecutionGadget,
         param::MAX_GAS_SIZE_IN_BYTES,
         step::ExecutionResult,
         util::{
@@ -17,6 +14,7 @@ use crate::{
             memory_gadget::MemoryExpansionGadget,
             select, MemoryAddress, Word,
         },
+        witness::bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -202,8 +200,8 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        bus_mapping_tmp_convert,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
+        witness::bus_mapping_tmp_convert,
     };
     use bus_mapping::{
         bytecode,

@@ -10,11 +10,13 @@ mod param;
 mod step;
 mod table;
 mod util;
+mod witness;
 
-pub use execution::bus_mapping_tmp;
-pub use execution::bus_mapping_tmp_convert;
-use execution::{bus_mapping_tmp::Block, ExecutionConfig};
+use execution::ExecutionConfig;
 use table::{FixedTableTag, LookupTable};
+pub use witness::bus_mapping_tmp;
+pub use witness::bus_mapping_tmp::Block;
+pub use witness::bus_mapping_tmp_convert;
 
 /// EvmCircuit implements verification of execution trace of a block.
 #[derive(Clone, Debug)]
@@ -102,10 +104,10 @@ impl<F: FieldExt> EvmCircuit<F> {
 #[allow(missing_docs)]
 pub mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{Block, Bytecode, Rw, Transaction},
         param::STEP_HEIGHT,
         table::FixedTableTag,
         util::RandomLinearCombination,
+        witness::bus_mapping_tmp::{Block, Bytecode, Rw, Transaction},
         EvmCircuit,
     };
     use bus_mapping::eth_types::{ToLittleEndian, Word};

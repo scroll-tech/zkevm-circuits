@@ -1,11 +1,9 @@
 use crate::{
     evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
-            ExecutionGadget,
-        },
+        execution::ExecutionGadget,
         step::ExecutionResult,
         util::{constraint_builder::ConstraintBuilder, Cell},
+        witness::bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
