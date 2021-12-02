@@ -414,7 +414,20 @@ pub mod bus_mapping_tmp_convert {
         tx: &bus_mapping::circuit_input_builder::Transaction,
         ops_len: (usize, usize, usize),
     ) -> bus_mapping_tmp::Transaction<Base> {
-        let mut result: bus_mapping_tmp::Transaction<Base> = Default::default();
+        let mut result: bus_mapping_tmp::Transaction<Base> = Transaction::<
+            Base,
+        > {
+            calls: vec![bus_mapping_tmp::Call {
+                id: 1,
+                is_root: true,
+                is_create: tx.is_create(),
+                opcode_source: RandomLinearCombination::random_linear_combine(
+                    bytecode.hash.to_le_bytes(),
+                    randomness,
+                ),
+            }],
+            ..Default::default()
+        };
         result.calls = vec![bus_mapping_tmp::Call {
             id: 1,
             is_root: true,
