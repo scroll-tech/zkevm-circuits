@@ -157,12 +157,7 @@ mod test {
         bus_mapping_tmp_convert,
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
     };
-    use bus_mapping::{
-        bytecode,
-        eth_types::{ToLittleEndian, Word},
-        evm::OpcodeId,
-    };
-    use pasta_curves::pallas::Base;
+    use bus_mapping::{bytecode, evm::OpcodeId};
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
         assert!(
