@@ -215,20 +215,12 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
 mod test {
     use crate::evm_circuit::{
         bus_mapping_tmp_convert,
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
-        },
-        step::ExecutionResult,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
     };
     use bus_mapping::{
         bytecode,
-        eth_types::{ToBigEndian, ToLittleEndian, Word},
-        evm::OpcodeId,
+        eth_types::{ToLittleEndian, Word},
     };
-    use halo2::arithmetic::FieldExt;
-    use pasta_curves::pallas::Base;
 
     fn test_ok(index: Word, value: Word, _result: Word) {
         let bytecode = bytecode! {
