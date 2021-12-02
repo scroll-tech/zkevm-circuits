@@ -3,6 +3,7 @@ use zkevm_circuits::evm_circuit::bus_mapping_tmp_convert;
 use zkevm_circuits::evm_circuit::test::run_test_circuit_incomplete_fixed_table;
 use zkevm_circuits::test_state_circuit;
 
+#[allow(clippy::needless_borrow)]
 fn test_bytecode(code: &bus_mapping::bytecode::Bytecode) {
     println!("Step0: fetch geth trace of bytecodes, and build `block` as circuit input");
     let t = std::time::Instant::now();
