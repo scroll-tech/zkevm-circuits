@@ -186,9 +186,7 @@ mod test {
             STOP
         };
         let block =
-            bus_mapping_tmp::build_block_from_trace_code_at_start(
-                &bytecode,
-            );
+            bus_mapping_tmp::build_block_from_trace_code_at_start(&bytecode);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 

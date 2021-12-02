@@ -338,8 +338,7 @@ mod test {
 
         //println!("old block is {:#?}", builder.block);
 
-        let block =
-            bus_mapping_tmp::block_convert(&bytecode, &builder.block);
+        let block = bus_mapping_tmp::block_convert(&bytecode, &builder.block);
 
         //println!("block is {:#?}", block);
 
