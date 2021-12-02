@@ -321,7 +321,6 @@ pub mod bus_mapping_tmp_convert {
     };
     use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
     use halo2::arithmetic::FieldExt;
-    use num::traits::ops;
     use pasta_curves::pallas::Base;
     use std::convert::TryInto;
 
@@ -510,10 +509,7 @@ pub mod bus_mapping_tmp_convert {
             );
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        super::bus_mapping_tmp_convert::block_convert(
-            &bytecode,
-            &builder.block,
-        )
+        super::bus_mapping_tmp_convert::block_convert(&bytecode, &builder.block)
     }
 }
 
