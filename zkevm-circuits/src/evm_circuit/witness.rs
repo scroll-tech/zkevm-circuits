@@ -1,4 +1,4 @@
-#[allow(missing_docs)]
+#![allow(missing_docs)]
 use crate::evm_circuit::{
     step::ExecutionResult,
     table::{RwTableTag, TxContextFieldTag},

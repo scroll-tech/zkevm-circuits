@@ -9,7 +9,7 @@ use crate::{
             math_gadget::RangeCheckGadget,
             Cell,
         },
-        witness::bus_mapping_tmp::ExecStep,
+        witness::ExecStep,
     },
     util::Expr,
 };

@@ -4,7 +4,7 @@ use crate::{
         step::{ExecutionResult, Preset, Step},
         table::{FixedTableTag, Lookup, LookupTable, Table},
         util::constraint_builder::ConstraintBuilder,
-        witness::bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };

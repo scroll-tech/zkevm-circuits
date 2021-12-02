@@ -3,7 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionResult,
         util::{constraint_builder::ConstraintBuilder, Cell},
-        witness::bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };

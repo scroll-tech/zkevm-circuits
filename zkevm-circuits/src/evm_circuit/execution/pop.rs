@@ -9,7 +9,7 @@ use crate::{
             },
             Cell, Word,
         },
-        witness::bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -79,7 +79,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PopGadget<F> {
 mod test {
     use crate::evm_circuit::{
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        witness::bus_mapping_tmp,
+        witness,
     };
     use bus_mapping::{bytecode, eth_types::Word};
 
@@ -90,8 +90,7 @@ mod test {
             POP
             STOP
         };
-        let block =
-            bus_mapping_tmp::build_block_from_trace_code_at_start(&bytecode);
+        let block = witness::build_block_from_trace_code_at_start(&bytecode);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 

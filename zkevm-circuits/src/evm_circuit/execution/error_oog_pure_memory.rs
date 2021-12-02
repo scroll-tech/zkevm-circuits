@@ -9,7 +9,7 @@ use crate::{
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
             Cell, Word,
         },
-        witness::bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };

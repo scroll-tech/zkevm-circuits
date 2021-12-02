@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::{
         param::{STEP_HEIGHT, STEP_WIDTH},
         util::Cell,
-        witness::bus_mapping_tmp::{Call, ExecStep},
+        witness::{Call, ExecStep},
     },
     util::Expr,
 };
