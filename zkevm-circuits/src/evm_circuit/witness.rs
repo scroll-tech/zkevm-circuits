@@ -265,6 +265,7 @@ pub mod bus_mapping_tmp {
 // convert from bus_mapping to bus_mapping_tmp
 #[allow(missing_docs)]
 pub mod bus_mapping_tmp_convert {
+    use super::bus_mapping_tmp;
     use crate::evm_circuit::{
         bus_mapping_tmp::Rw, step::ExecutionResult,
         util::RandomLinearCombination,
@@ -273,8 +274,6 @@ pub mod bus_mapping_tmp_convert {
     use halo2::arithmetic::FieldExt;
     use pasta_curves::pallas::Base;
     use std::convert::TryInto;
-
-    use super::bus_mapping_tmp;
 
     impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionResult {
         fn from(step: &bus_mapping::circuit_input_builder::ExecStep) -> Self {
@@ -358,6 +357,7 @@ pub mod bus_mapping_tmp_convert {
         };
         result
     }
+
     fn tx_convert(
         randomness: Base,
         bytecode: &bus_mapping_tmp::Bytecode,
