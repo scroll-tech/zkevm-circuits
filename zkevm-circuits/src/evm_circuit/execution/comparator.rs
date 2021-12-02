@@ -175,20 +175,9 @@ impl<F: FieldExt> ExecutionGadget<F> for ComparatorGadget<F> {
 mod test {
     use crate::evm_circuit::{
         bus_mapping_tmp_convert,
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
-        },
-        step::ExecutionResult,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
     };
-    use bus_mapping::{
-        bytecode,
-        eth_types::{ToBigEndian, ToLittleEndian, Word},
-        evm::OpcodeId,
-    };
-    use halo2::arithmetic::FieldExt;
-    use pasta_curves::pallas::Base;
+    use bus_mapping::{bytecode, eth_types::Word, evm::OpcodeId};
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word, _c: Word) {
         let bytecode = bytecode! {
