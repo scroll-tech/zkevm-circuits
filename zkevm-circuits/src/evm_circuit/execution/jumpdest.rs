@@ -54,7 +54,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpdestGadget<F> {
 mod test {
     use crate::evm_circuit::{
         test::run_test_circuit_incomplete_fixed_table,
-        witness::bus_mapping_tmp_convert,
+        witness::bus_mapping_tmp,
     };
     use bus_mapping::bytecode;
 
@@ -65,7 +65,7 @@ mod test {
             STOP
         };
         let block =
-            bus_mapping_tmp_convert::build_block_from_trace_code_at_start(
+            bus_mapping_tmp::build_block_from_trace_code_at_start(
                 &bytecode,
             );
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));

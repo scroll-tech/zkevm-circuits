@@ -16,7 +16,6 @@ use execution::ExecutionConfig;
 use table::{FixedTableTag, LookupTable};
 pub use witness::bus_mapping_tmp;
 pub use witness::bus_mapping_tmp::Block;
-pub use witness::bus_mapping_tmp_convert;
 
 /// EvmCircuit implements verification of execution trace of a block.
 #[derive(Clone, Debug)]

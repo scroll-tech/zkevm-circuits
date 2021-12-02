@@ -201,7 +201,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 mod test {
     use crate::evm_circuit::{
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        witness::bus_mapping_tmp_convert,
+        witness::bus_mapping_tmp,
     };
     use bus_mapping::{
         bytecode,
@@ -316,7 +316,7 @@ mod test {
             bytecodes: vec![bytecode],
         };*/
         //let block  =
-        // bus_mapping_tmp_convert::build_block_from_trace_code_at_start(&
+        // bus_mapping_tmp::build_block_from_trace_code_at_start(&
         // bytecode);
         let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
         let mut block_trace =
@@ -339,7 +339,7 @@ mod test {
         //println!("old block is {:#?}", builder.block);
 
         let block =
-            bus_mapping_tmp_convert::block_convert(&bytecode, &builder.block);
+            bus_mapping_tmp::block_convert(&bytecode, &builder.block);
 
         //println!("block is {:#?}", block);
 
