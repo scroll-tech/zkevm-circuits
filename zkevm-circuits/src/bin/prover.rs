@@ -1,6 +1,6 @@
 use bus_mapping::bytecode;
-use zkevm_circuits::evm_circuit::bus_mapping_tmp_convert;
 use zkevm_circuits::evm_circuit::test::run_test_circuit_incomplete_fixed_table;
+use zkevm_circuits::evm_circuit::witness;
 use zkevm_circuits::test_state_circuit;
 
 #[allow(clippy::needless_borrow)]
@@ -39,7 +39,7 @@ fn test_bytecode(code: &bus_mapping::bytecode::Bytecode) {
 
     println!("Step2: mock prove evm circuit");
     let t = std::time::Instant::now();
-    let b = bus_mapping_tmp_convert::block_convert(&code, &builder.block);
+    let b = witness::block_convert(&code, &builder.block);
     assert_eq!(run_test_circuit_incomplete_fixed_table(b), Ok(()));
     println!("Cost of mock proving evm circuit is {:?}", t.elapsed());
 }

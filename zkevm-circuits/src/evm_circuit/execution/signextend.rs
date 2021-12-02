@@ -1,9 +1,6 @@
 use crate::{
     evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
-            ExecutionGadget,
-        },
+        execution::ExecutionGadget,
         step::ExecutionResult,
         table::{FixedTableTag, Lookup},
         util::{
@@ -15,6 +12,7 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroGadget},
             select, sum, Cell, Word,
         },
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -214,8 +212,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        bus_mapping_tmp_convert,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
+        witness,
     };
     use bus_mapping::{
         bytecode,
@@ -230,10 +228,7 @@ mod test {
             SIGNEXTEND
             STOP
         };
-        let block =
-            bus_mapping_tmp_convert::build_block_from_trace_code_at_start(
-                &bytecode,
-            );
+        let block = witness::build_block_from_trace_code_at_start(&bytecode);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
