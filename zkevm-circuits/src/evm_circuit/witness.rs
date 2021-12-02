@@ -258,15 +258,6 @@ impl Rw {
     }
 }
 
-// pub mod bus_mapping_tmp_convert {
-//     use super::bus_mapping_tmp;
-//     use crate::evm_circuit::{
-//         Rw, step::ExecutionResult,
-//         util::RandomLinearCombination,
-//     };
-//     use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
-//     use halo2::arithmetic::FieldExt;
-
 use pasta_curves::pallas::Base;
 use std::convert::TryInto;
 
