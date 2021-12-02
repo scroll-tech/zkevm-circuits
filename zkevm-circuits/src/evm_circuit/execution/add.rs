@@ -108,25 +108,10 @@ impl<F: FieldExt> ExecutionGadget<F> for AddGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        bus_mapping_tmp,
-        execution::{
-            bus_mapping_tmp::{
-                Block, Bytecode, Call, ExecStep, Rw, Transaction,
-            },
-            bus_mapping_tmp_convert, byte,
-        },
-        step::ExecutionResult,
+        execution::bus_mapping_tmp_convert,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
     };
-    use bus_mapping::{
-        bytecode,
-        circuit_input_builder::{self, CircuitInputBuilder},
-        eth_types::{ToBigEndian, ToLittleEndian, Word},
-        evm::OpcodeId,
-    };
-    use halo2::arithmetic::FieldExt;
-    use pasta_curves::pallas::Base;
+    use bus_mapping::{bytecode, eth_types::Word, evm::OpcodeId};
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
         let bytecode = bytecode! {
