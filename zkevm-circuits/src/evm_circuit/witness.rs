@@ -260,18 +260,19 @@ pub mod bus_mapping_tmp {
             }
         }
     }
-}
 
-// convert from bus_mapping to bus_mapping_tmp
-#[allow(missing_docs)]
-pub mod bus_mapping_tmp_convert {
-    use super::bus_mapping_tmp;
-    use crate::evm_circuit::{
-        bus_mapping_tmp::Rw, step::ExecutionResult,
-        util::RandomLinearCombination,
-    };
-    use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
-    use halo2::arithmetic::FieldExt;
+    // }
+
+    // // convert from bus_mapping to bus_mapping_tmp
+    // #[allow(missing_docs)]
+    // pub mod bus_mapping_tmp_convert {
+    //     use super::bus_mapping_tmp;
+    //     use crate::evm_circuit::{
+    //         Rw, step::ExecutionResult,
+    //         util::RandomLinearCombination,
+    //     };
+    //     use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+    //     use halo2::arithmetic::FieldExt;
     use pasta_curves::pallas::Base;
     use std::convert::TryInto;
 
@@ -312,9 +313,9 @@ pub mod bus_mapping_tmp_convert {
         }
     }
 
-    impl From<&bus_mapping::bytecode::Bytecode> for bus_mapping_tmp::Bytecode {
+    impl From<&bus_mapping::bytecode::Bytecode> for Bytecode {
         fn from(b: &bus_mapping::bytecode::Bytecode) -> Self {
-            bus_mapping_tmp::Bytecode::new(b.to_bytes())
+            Bytecode::new(b.to_bytes())
         }
     }
 
@@ -322,10 +323,10 @@ pub mod bus_mapping_tmp_convert {
         prev: Option<&bus_mapping::circuit_input_builder::ExecStep>,
         step: &bus_mapping::circuit_input_builder::ExecStep,
         ops_len: (usize, usize, usize),
-    ) -> bus_mapping_tmp::ExecStep {
+    ) -> ExecStep {
         let (stack_ops_len, memory_ops_len, _storage_ops_len) = ops_len;
         //println!("prev is {:#?}", prev);
-        let result = bus_mapping_tmp::ExecStep {
+        let result = ExecStep {
             rw_indices: step
                 .bus_mapping_instance
                 .iter()
@@ -360,25 +361,23 @@ pub mod bus_mapping_tmp_convert {
 
     fn tx_convert(
         randomness: Base,
-        bytecode: &bus_mapping_tmp::Bytecode,
+        bytecode: &Bytecode,
         tx: &bus_mapping::circuit_input_builder::Transaction,
         ops_len: (usize, usize, usize),
-    ) -> bus_mapping_tmp::Transaction<Base> {
-        let mut result: bus_mapping_tmp::Transaction<Base> =
-            bus_mapping_tmp::Transaction::<Base> {
-                calls: vec![bus_mapping_tmp::Call {
-                    id: 1,
-                    is_root: true,
-                    is_create: tx.is_create(),
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                ..Default::default()
-            };
-        result.calls = vec![bus_mapping_tmp::Call {
+    ) -> Transaction<Base> {
+        let mut result: Transaction<Base> = Transaction::<Base> {
+            calls: vec![Call {
+                id: 1,
+                is_root: true,
+                is_create: tx.is_create(),
+                opcode_source: RandomLinearCombination::random_linear_combine(
+                    bytecode.hash.to_le_bytes(),
+                    randomness,
+                ),
+            }],
+            ..Default::default()
+        };
+        result.calls = vec![Call {
             id: 1,
             is_root: true,
             is_create: tx.is_create(),
@@ -404,7 +403,7 @@ pub mod bus_mapping_tmp_convert {
     pub fn block_convert(
         bytecode: &bus_mapping::bytecode::Bytecode,
         b: &bus_mapping::circuit_input_builder::Block,
-    ) -> bus_mapping_tmp::Block<Base> {
+    ) -> Block<Base> {
         let randomness = Base::rand();
         let bytecode = bytecode.into();
 
@@ -417,7 +416,7 @@ pub mod bus_mapping_tmp_convert {
         let mut storage_ops = b.container.sorted_storage();
         storage_ops.sort_by_key(|s| usize::from(s.gc()));
 
-        let mut block = bus_mapping_tmp::Block {
+        let mut block = Block {
             randomness,
             txs: b
                 .txs()
@@ -459,7 +458,7 @@ pub mod bus_mapping_tmp_convert {
     #[allow(clippy::needless_borrow)]
     pub fn build_block_from_trace_code_at_start(
         bytecode: &bus_mapping::bytecode::Bytecode,
-    ) -> bus_mapping_tmp::Block<pasta_curves::pallas::Base> {
+    ) -> Block<pasta_curves::pallas::Base> {
         let block =
             bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
                 &bytecode,
@@ -472,6 +471,6 @@ pub mod bus_mapping_tmp_convert {
             );
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
 
-        super::bus_mapping_tmp_convert::block_convert(&bytecode, &builder.block)
+        block_convert(&bytecode, &builder.block)
     }
 }
