@@ -276,40 +276,40 @@ pub mod bus_mapping_tmp_convert {
 
     use super::bus_mapping_tmp;
 
-    fn get_execution_result_from_step(
-        step: &bus_mapping::circuit_input_builder::ExecStep,
-    ) -> ExecutionResult {
-        // TODO: convert error (circuit_input_builder.rs)
-        assert!(step.error.is_none());
-        if step.op.is_dup() {
-            return ExecutionResult::DUP;
-        }
-        if step.op.is_push() {
-            return ExecutionResult::PUSH;
-        }
-        if step.op.is_swap() {
-            return ExecutionResult::SWAP;
-        }
-        match step.op {
-            OpcodeId::ADD => ExecutionResult::ADD,
-            OpcodeId::SUB => ExecutionResult::ADD,
-            OpcodeId::EQ => ExecutionResult::LT,
-            OpcodeId::GT => ExecutionResult::LT,
-            OpcodeId::LT => ExecutionResult::LT,
-            OpcodeId::SIGNEXTEND => ExecutionResult::SIGNEXTEND,
-            OpcodeId::STOP => ExecutionResult::STOP,
-            OpcodeId::AND => ExecutionResult::AND,
-            OpcodeId::XOR => ExecutionResult::AND,
-            OpcodeId::OR => ExecutionResult::AND,
-            OpcodeId::POP => ExecutionResult::POP,
-            OpcodeId::PUSH32 => ExecutionResult::PUSH,
-            OpcodeId::BYTE => ExecutionResult::BYTE,
-            OpcodeId::MLOAD => ExecutionResult::MLOAD,
-            OpcodeId::MSTORE => ExecutionResult::MLOAD,
-            OpcodeId::MSTORE8 => ExecutionResult::MLOAD,
-            OpcodeId::JUMPDEST => ExecutionResult::JUMPDEST,
-            OpcodeId::PC => ExecutionResult::PC,
-            _ => unimplemented!("invalid opcode {:?}", step.op),
+    impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionResult {
+        fn from(step: &bus_mapping::circuit_input_builder::ExecStep) -> Self {
+            // TODO: convert error (circuit_input_builder.rs)
+            assert!(step.error.is_none());
+            if step.op.is_dup() {
+                return ExecutionResult::DUP;
+            }
+            if step.op.is_push() {
+                return ExecutionResult::PUSH;
+            }
+            if step.op.is_swap() {
+                return ExecutionResult::SWAP;
+            }
+            match step.op {
+                OpcodeId::ADD => ExecutionResult::ADD,
+                OpcodeId::SUB => ExecutionResult::ADD,
+                OpcodeId::EQ => ExecutionResult::LT,
+                OpcodeId::GT => ExecutionResult::LT,
+                OpcodeId::LT => ExecutionResult::LT,
+                OpcodeId::SIGNEXTEND => ExecutionResult::SIGNEXTEND,
+                OpcodeId::STOP => ExecutionResult::STOP,
+                OpcodeId::AND => ExecutionResult::AND,
+                OpcodeId::XOR => ExecutionResult::AND,
+                OpcodeId::OR => ExecutionResult::AND,
+                OpcodeId::POP => ExecutionResult::POP,
+                OpcodeId::PUSH32 => ExecutionResult::PUSH,
+                OpcodeId::BYTE => ExecutionResult::BYTE,
+                OpcodeId::MLOAD => ExecutionResult::MLOAD,
+                OpcodeId::MSTORE => ExecutionResult::MLOAD,
+                OpcodeId::MSTORE8 => ExecutionResult::MLOAD,
+                OpcodeId::JUMPDEST => ExecutionResult::JUMPDEST,
+                OpcodeId::PC => ExecutionResult::PC,
+                _ => unimplemented!("invalid opcode {:?}", step.op),
+            }
         }
     }
 
@@ -343,7 +343,7 @@ pub mod bus_mapping_tmp_convert {
                     }
                 })
                 .collect(),
-            execution_result: get_execution_result_from_step(step),
+            execution_result: ExecutionResult::from(step),
             rw_counter: usize::from(step.gc),
             program_counter: usize::from(step.pc) as u64,
             stack_pointer: 1024 - step.stack_size,
