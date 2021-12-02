@@ -69,7 +69,7 @@ mod pop_tests {
         let mut tx = Transaction::new(&block.eth_tx);
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
-        // Generate step corresponding to SLOAD
+        // Generate step corresponding to POP
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             0,

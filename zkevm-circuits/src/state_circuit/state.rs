@@ -2049,7 +2049,7 @@ pub mod tests {
 
         let stack_ops = builder.block.container.sorted_stack();
 
-        println!("correct stack ops {:#?}", stack_ops);
+        // println!("correct stack ops {:#?}", stack_ops);
 
         test_state_circuit!(
             14,

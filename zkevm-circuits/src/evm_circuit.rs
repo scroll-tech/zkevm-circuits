@@ -117,7 +117,6 @@ pub mod test {
     };
     use pasta_curves::pallas::Base;
     use rand::random;
-    //use rand::random;
 
     pub(crate) fn rand_bytes(n: usize) -> Vec<u8> {
         vec![random(); n]

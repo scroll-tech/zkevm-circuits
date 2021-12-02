@@ -335,6 +335,10 @@ fn step_convert(
         gas_left: step.gas_left.0,
         gas_cost: step.gas_cost.as_u64(),
         opcode: Some(step.op),
+        // geth increases memory size before making trace,
+        // so the memory size in ExecStep is not what we expect to see.
+        // We have to use the memory size of previous step as correct memory
+        // size before each step
         memory_size: match prev {
             None => 0,
             Some(prev_step) => (prev_step.memory_size as u64) / 32, /* memory size in word */

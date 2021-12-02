@@ -217,7 +217,7 @@ mod test {
         _memory_size: u64,
         gas_cost: u64,
     ) {
-        //ln!("expect {} {} {}", address, _memory_size, _gas_cost);
+        //println!("expect {} {} {}", address, _memory_size, _gas_cost);
         let bytecode = bytecode! {
             PUSH32(value)
             PUSH32(address)
@@ -225,96 +225,6 @@ mod test {
             .write_op(opcode)
             STOP
         };
-        /*
-        let is_mload = opcode == OpcodeId::MLOAD;
-        let is_mstore8 = opcode == OpcodeId::MSTORE8;
-
-        let randomness = Base::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                value.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                address.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0, 1],
-                        execution_result: ExecutionResult::MLOAD,
-                        rw_counter: 1,
-                        program_counter: 66,
-                        stack_pointer: 1022,
-                        gas_left: gas_cost,
-                        gas_cost,
-                        memory_size: 0,
-                        opcode: Some(opcode),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_result: ExecutionResult::STOP,
-                        rw_counter: 35 - 31 * is_mstore8 as usize,
-                        program_counter: 67,
-                        stack_pointer: 1022 + 2 * !is_mload as usize,
-                        gas_left: 0,
-                        memory_size,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: [
-                vec![
-                    Rw::Stack {
-                        rw_counter: 1,
-                        is_write: false,
-                        call_id: 1,
-                        stack_pointer: 1022,
-                        value: address,
-                    },
-                    Rw::Stack {
-                        rw_counter: 2,
-                        is_write: is_mload,
-                        call_id: 1,
-                        stack_pointer: 1022 + !is_mload as usize,
-                        value,
-                    },
-                ],
-                (if is_mstore8 {
-                    vec![value.to_le_bytes()[0]]
-                } else {
-                    value.to_be_bytes().to_vec()
-                })
-                .into_iter()
-                .enumerate()
-                .map(|(idx, byte)| Rw::Memory {
-                    rw_counter: 3 + idx,
-                    is_write: !is_mload,
-                    call_id: 1,
-                    memory_address: (address + idx).as_u64(),
-                    byte,
-                })
-                .collect::<Vec<_>>(),
-            ]
-            .concat(),
-            bytecodes: vec![bytecode],
-        };*/
         //let block  =
         // witness::build_block_from_trace_code_at_start(&
         // bytecode);
