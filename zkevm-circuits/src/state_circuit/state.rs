@@ -1154,7 +1154,7 @@ impl<
 
 //#[cfg(test)]
 
-#[allow(missing_docs)]
+#[allow(missing_docs, unused_imports)]
 pub mod tests {
     use super::Config;
     use bus_mapping::address;
