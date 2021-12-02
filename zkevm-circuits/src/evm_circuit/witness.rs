@@ -313,10 +313,10 @@ pub mod bus_mapping_tmp_convert {
         }
     }
 
-    fn bytecode_convert(
-        b: &bus_mapping::bytecode::Bytecode,
-    ) -> bus_mapping_tmp::Bytecode {
-        bus_mapping_tmp::Bytecode::new(b.to_bytes())
+    impl From<&bus_mapping::bytecode::Bytecode> for bus_mapping_tmp::Bytecode {
+        fn from(b: &bus_mapping::bytecode::Bytecode) -> Self {
+            bus_mapping_tmp::Bytecode::new(b.to_bytes())
+        }
     }
 
     fn step_convert(
@@ -406,7 +406,7 @@ pub mod bus_mapping_tmp_convert {
         b: &bus_mapping::circuit_input_builder::Block,
     ) -> bus_mapping_tmp::Block<Base> {
         let randomness = Base::rand();
-        let bytecode = bytecode_convert(bytecode);
+        let bytecode = bytecode.into();
 
         // here stack_ops/memory_ops/etc are merged into a single array
         // in EVM circuit, we need gc-sorted ops
