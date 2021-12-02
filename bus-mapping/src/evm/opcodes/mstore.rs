@@ -46,7 +46,7 @@ impl<const WHOLEWORD: bool> Opcode for Mstore<WHOLEWORD> {
             state.push_op(MemoryOp::new(
                 RW::WRITE,
                 offset_addr,
-                value.to_le_bytes().first().unwrap() & 0xff,
+                *value.to_le_bytes().first().unwrap(),
             ));
         }
 

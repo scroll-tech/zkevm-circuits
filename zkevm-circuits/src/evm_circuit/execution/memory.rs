@@ -203,20 +203,13 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 mod test {
     use crate::evm_circuit::{
         bus_mapping_tmp_convert,
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
-        },
-        step::ExecutionResult,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
     };
     use bus_mapping::{
         bytecode,
-        eth_types::{ToBigEndian, ToLittleEndian, Word},
+        eth_types::Word,
         evm::{Gas, GasCost, OpcodeId},
     };
-    use halo2::arithmetic::FieldExt;
-    use pasta_curves::pallas::Base;
     use std::iter;
 
     fn test_ok(
@@ -328,21 +321,21 @@ mod test {
         // bus_mapping_tmp_convert::build_block_from_trace_code_at_start(&
         // bytecode);
         let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
-        let mut blockTrace =
+        let mut block_trace =
             bus_mapping::mock::BlockData::new_single_tx_trace_code_gas(
                 &bytecode, gas,
             )
             .unwrap();
-        blockTrace.geth_trace.struct_logs = blockTrace.geth_trace.struct_logs
+        block_trace.geth_trace.struct_logs = block_trace.geth_trace.struct_logs
             [bytecode.get_pos("start")..]
             .to_vec();
         let mut builder =
             bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
-                blockTrace.eth_block.clone(),
-                blockTrace.block_ctants.clone(),
+                block_trace.eth_block.clone(),
+                block_trace.block_ctants.clone(),
             );
         builder
-            .handle_tx(&blockTrace.eth_tx, &blockTrace.geth_trace)
+            .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
             .unwrap();
 
         //println!("old block is {:#?}", builder.block);
