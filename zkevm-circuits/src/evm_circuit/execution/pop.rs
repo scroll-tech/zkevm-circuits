@@ -83,7 +83,7 @@ mod test {
         bus_mapping_tmp_convert,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
     };
-    use bus_mapping::bytecode;
+    use bus_mapping::{bytecode, eth_types::Word};
 
     fn test_ok(value: Word) {
         let bytecode = bytecode! {
