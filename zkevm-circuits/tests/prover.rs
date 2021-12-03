@@ -1,4 +1,3 @@
-use bus_mapping::bytecode;
 use zkevm_circuits::evm_circuit::test::run_test_circuit_incomplete_fixed_table;
 use zkevm_circuits::evm_circuit::witness;
 use zkevm_circuits::test_state_circuit;
@@ -44,17 +43,20 @@ fn test_bytecode(code: &bus_mapping::bytecode::Bytecode) {
     println!("Cost of mock proving evm circuit is {:?}", t.elapsed());
 }
 
-fn test_add() {
-    let code = bytecode! {
-        PUSH32(0x030201)
-        PUSH32(0x060504)
-        #[start]
-        ADD
-        STOP
-    };
-    test_bytecode(&code);
-}
+#[cfg(test)]
+mod prover_tests {
+    use crate::test_bytecode;
+    use bus_mapping::bytecode;
 
-fn main() {
-    test_add();
+    #[test]
+    fn test_add() {
+        let code = bytecode! {
+            PUSH32(0x030201)
+            PUSH32(0x060504)
+            #[start]
+            ADD
+            STOP
+        };
+        test_bytecode(&code);
+    }
 }
