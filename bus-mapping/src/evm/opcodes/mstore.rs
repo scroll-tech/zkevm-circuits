@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::{GethExecStep, ToBigEndian};
+use crate::eth_types::{GethExecStep, ToBigEndian, ToLittleEndian};
 use crate::{
     evm::MemoryAddress,
     operation::{MemoryOp, StackOp, RW},
@@ -12,9 +12,9 @@ use core::convert::TryInto;
 /// corresponding to the [`OpcodeId::MSTORE`](crate::evm::OpcodeId::MSTORE)
 /// `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct Mstore;
+pub(crate) struct Mstore<const WHOLEWORD: bool>;
 
-impl Opcode for Mstore {
+impl<const WHOLEWORD: bool> Opcode for Mstore<WHOLEWORD> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
@@ -32,12 +32,21 @@ impl Opcode for Mstore {
 
         // First mem write -> 32 MemoryOp generated.
         let offset_addr: MemoryAddress = offset.try_into()?;
-        let bytes = value.to_be_bytes();
-        for (i, byte) in bytes.iter().enumerate() {
+        if WHOLEWORD {
+            let bytes = value.to_be_bytes();
+            for (i, byte) in bytes.iter().enumerate() {
+                state.push_op(MemoryOp::new(
+                    RW::WRITE,
+                    offset_addr.map(|a| a + i),
+                    *byte,
+                ));
+            }
+        } else {
+            // stack write operation for mstore8
             state.push_op(MemoryOp::new(
                 RW::WRITE,
-                offset_addr.map(|a| a + i),
-                *byte,
+                offset_addr,
+                *value.to_le_bytes().first().unwrap(),
             ));
         }
 

@@ -1,9 +1,6 @@
 use crate::{
     evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
-            ExecutionGadget,
-        },
+        execution::ExecutionGadget,
         param::MAX_GAS_SIZE_IN_BYTES,
         step::ExecutionState,
         util::{
@@ -17,6 +14,7 @@ use crate::{
             memory_gadget::MemoryExpansionGadget,
             select, MemoryAddress, Word,
         },
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -202,117 +200,52 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
-        },
-        step::ExecutionState,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
+        witness,
     };
     use bus_mapping::{
-        eth_types::{ToBigEndian, ToLittleEndian, Word},
-        evm::{GasCost, OpcodeId},
+        bytecode,
+        eth_types::Word,
+        evm::{Gas, GasCost, OpcodeId},
     };
-    use halo2::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
     use std::iter;
 
     fn test_ok(
         opcode: OpcodeId,
         address: Word,
         value: Word,
-        memory_size: u64,
+        _memory_size: u64,
         gas_cost: u64,
     ) {
-        let is_mload = opcode == OpcodeId::MLOAD;
-        let is_mstore8 = opcode == OpcodeId::MSTORE8;
-
-        let randomness = Fp::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                value.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                address.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0, 1],
-                        execution_state: ExecutionState::MEMORY,
-                        rw_counter: 1,
-                        program_counter: 66,
-                        stack_pointer: 1022,
-                        gas_left: gas_cost,
-                        gas_cost,
-                        memory_size: 0,
-                        opcode: Some(opcode),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_state: ExecutionState::STOP,
-                        rw_counter: 35 - 31 * is_mstore8 as usize,
-                        program_counter: 67,
-                        stack_pointer: 1022 + 2 * !is_mload as usize,
-                        gas_left: 0,
-                        memory_size,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: [
-                vec![
-                    Rw::Stack {
-                        rw_counter: 1,
-                        is_write: false,
-                        call_id: 1,
-                        stack_pointer: 1022,
-                        value: address,
-                    },
-                    Rw::Stack {
-                        rw_counter: 2,
-                        is_write: is_mload,
-                        call_id: 1,
-                        stack_pointer: 1022 + !is_mload as usize,
-                        value,
-                    },
-                ],
-                (if is_mstore8 {
-                    vec![value.to_le_bytes()[0]]
-                } else {
-                    value.to_be_bytes().to_vec()
-                })
-                .into_iter()
-                .enumerate()
-                .map(|(idx, byte)| Rw::Memory {
-                    rw_counter: 3 + idx,
-                    is_write: !is_mload,
-                    call_id: 1,
-                    memory_address: (address + idx).as_u64(),
-                    byte,
-                })
-                .collect::<Vec<_>>(),
-            ]
-            .concat(),
-            bytecodes: vec![bytecode],
+        let bytecode = bytecode! {
+            PUSH32(value)
+            PUSH32(address)
+            #[start]
+            .write_op(opcode)
+            STOP
         };
+        //let block  =
+        // witness::build_block_from_trace_code_at_start(&
+        // bytecode);
+
+        let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
+        let mut block_trace =
+            bus_mapping::mock::BlockData::new_single_tx_trace_code_gas(
+                &bytecode, gas,
+            )
+            .unwrap();
+        block_trace.geth_trace.struct_logs = block_trace.geth_trace.struct_logs
+            [bytecode.get_pos("start")..]
+            .to_vec();
+        let mut builder =
+            bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
+                block_trace.eth_block.clone(),
+                block_trace.block_ctants.clone(),
+            );
+        builder
+            .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
+            .unwrap();
+        let block = witness::block_convert(&bytecode, &builder.block);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
@@ -325,6 +258,7 @@ mod test {
             38913,
             3074206,
         );
+
         test_ok(
             OpcodeId::MLOAD,
             Word::from(0x12FFFF),
@@ -368,7 +302,10 @@ mod test {
         };
 
         for opcode in [OpcodeId::MSTORE, OpcodeId::MLOAD, OpcodeId::MSTORE8] {
-            let address = rand_word() % (1u64 << 37);
+            // TODO: tracer needs to be optimized to enable larger
+            // max_memory_size_pow_of_two
+            let max_memory_size_pow_of_two = 15;
+            let address = rand_word() % (1u64 << max_memory_size_pow_of_two);
             let value = rand_word();
             let (memory_size, gas_cost) =
                 calc_memory_size_and_gas_cost(opcode, address);

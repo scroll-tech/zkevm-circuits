@@ -1,9 +1,6 @@
 use crate::{
     evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
-            ExecutionGadget,
-        },
+        execution::ExecutionGadget,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -12,6 +9,7 @@ use crate::{
             },
             from_bytes, RandomLinearCombination,
         },
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -87,77 +85,18 @@ impl<F: FieldExt> ExecutionGadget<F> for PcGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
-        },
-        step::ExecutionState,
-        test::run_test_circuit_incomplete_fixed_table,
-        util::RandomLinearCombination,
+        test::run_test_circuit_incomplete_fixed_table, witness,
     };
-    use bus_mapping::{
-        eth_types::{ToLittleEndian, Word},
-        evm::OpcodeId,
-    };
-    use halo2::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
+    use bus_mapping::bytecode;
 
     fn test_ok() {
-        let opcode = OpcodeId::PC;
-        let randomness = Fp::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                vec![0; 32],
-                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0],
-                        execution_state: ExecutionState::PC,
-                        rw_counter: 1,
-                        program_counter: 33,
-                        stack_pointer: 1023,
-                        gas_left: 3,
-                        gas_cost: 2,
-                        opcode: Some(opcode),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_state: ExecutionState::STOP,
-                        rw_counter: 2,
-                        program_counter: 34,
-                        stack_pointer: 1022,
-                        gas_left: 1,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: vec![Rw::Stack {
-                rw_counter: 1,
-                is_write: true,
-                call_id: 1,
-                stack_pointer: 1022,
-                value: Word::from(33),
-            }],
-            bytecodes: vec![bytecode],
+        let bytecode = bytecode! {
+            PUSH32(0)
+            #[start]
+            PC
+            STOP
         };
+        let block = witness::build_block_from_trace_code_at_start(&bytecode);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 

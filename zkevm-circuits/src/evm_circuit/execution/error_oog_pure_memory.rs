@@ -1,9 +1,6 @@
 use crate::{
     evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
-            ExecutionGadget,
-        },
+        execution::ExecutionGadget,
         param::MAX_MEMORY_SIZE_IN_BYTES,
         step::ExecutionState,
         util::{
@@ -12,6 +9,7 @@ use crate::{
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
             Cell, Word,
         },
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };

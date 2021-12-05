@@ -5,6 +5,7 @@ mod jumpdest;
 mod mload;
 mod mstore;
 mod pc;
+mod pop;
 mod push;
 mod sload;
 mod stackonlyop;
@@ -22,6 +23,7 @@ use jumpdest::Jumpdest;
 use mload::Mload;
 use mstore::Mstore;
 use pc::Pc;
+use pop::Pop;
 use sload::Sload;
 use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
@@ -102,10 +104,10 @@ impl OpcodeId {
             // OpcodeId::CHAINID => {},
             // OpcodeId::SELFBALANCE => {},
             // OpcodeId::BASEFEE => {},
-            // OpcodeId::POP => {},
+            OpcodeId::POP => Pop::gen_associated_ops,
             OpcodeId::MLOAD => Mload::gen_associated_ops,
-            OpcodeId::MSTORE => Mstore::gen_associated_ops,
-            // OpcodeId::MSTORE8 => {}
+            OpcodeId::MSTORE => Mstore::<true>::gen_associated_ops,
+            OpcodeId::MSTORE8 => Mstore::<false>::gen_associated_ops,
             OpcodeId::SLOAD => Sload::gen_associated_ops,
             // OpcodeId::SSTORE => {},
             // OpcodeId::JUMP => {},

@@ -1,9 +1,6 @@
 use crate::{
     evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
-            ExecutionGadget,
-        },
+        execution::ExecutionGadget,
         param::MAX_CODE_SIZE_IN_BYTES,
         step::ExecutionState,
         util::{
@@ -16,6 +13,7 @@ use crate::{
             math_gadget::IsZeroGadget,
             select, sum, RandomLinearCombination, Word,
         },
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -124,14 +122,12 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
-        },
         step::ExecutionState,
         test::{
             rand_range, rand_word, run_test_circuit_incomplete_fixed_table,
         },
         util::RandomLinearCombination,
+        witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
     };
     use bus_mapping::{
         eth_types::{ToBigEndian, ToLittleEndian, Word},
