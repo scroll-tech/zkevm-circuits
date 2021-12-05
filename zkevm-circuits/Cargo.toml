@@ -23,7 +23,6 @@ rand = "0.8"
 
 [dev-dependencies]
 criterion = "0.3"
-rand = "0.8"
 
 [[bench]]
 name = "binary_value"

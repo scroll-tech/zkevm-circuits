@@ -82,7 +82,7 @@ pub(crate) struct BusMapping<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Config<
+pub struct Config<
     F: FieldExt,
     const GLOBAL_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
@@ -1152,8 +1152,8 @@ impl<
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[allow(missing_docs, unused_imports)]
+pub mod tests {
     use super::Config;
     use bus_mapping::address;
     use bus_mapping::circuit_input_builder::CircuitInputBuilder;
@@ -1172,8 +1172,8 @@ mod tests {
     };
 
     use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
-    #[derive(Default)]
-    struct StateCircuit<
+    #[derive(Default, Debug)]
+    pub struct StateCircuit<
         const GLOBAL_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
@@ -1181,9 +1181,9 @@ mod tests {
         const STACK_ADDRESS_MAX: usize,
         const STORAGE_ROWS_MAX: usize,
     > {
-        memory_ops: Vec<Operation<MemoryOp>>,
-        stack_ops: Vec<Operation<StackOp>>,
-        storage_ops: Vec<Operation<StorageOp>>,
+        pub memory_ops: Vec<Operation<MemoryOp>>,
+        pub stack_ops: Vec<Operation<StackOp>>,
+        pub storage_ops: Vec<Operation<StorageOp>>,
     }
 
     impl<
@@ -1240,9 +1240,13 @@ mod tests {
         }
     }
 
+    #[macro_export]
     macro_rules! test_state_circuit {
         ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
-            let circuit = StateCircuit::<
+            use halo2::dev::MockProver;
+            use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
+
+            let circuit = $crate::state_circuit::state::tests::StateCircuit::<
                 $global_counter_max,
                 $memory_rows_max,
                 $memory_address_max,
@@ -1260,9 +1264,13 @@ mod tests {
         }};
     }
 
+    #[macro_export]
     macro_rules! test_state_circuit_error {
         ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr) => {{
-            let circuit = StateCircuit::<
+            use halo2::dev::MockProver;
+            use pairing::{arithmetic::FieldExt, bn256::Fr as Fp};
+
+            let circuit = $crate::state_circuit::state::tests::StateCircuit::<
                 $global_counter_max,
                 $memory_rows_max,
                 $memory_address_max,

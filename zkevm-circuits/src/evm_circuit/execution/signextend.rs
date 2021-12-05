@@ -1,9 +1,6 @@
 use crate::{
     evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
-            ExecutionGadget,
-        },
+        execution::ExecutionGadget,
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
@@ -15,6 +12,7 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroGadget},
             select, sum, Cell, Word,
         },
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -218,94 +216,23 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
-        },
-        step::ExecutionState,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
+        witness,
     };
     use bus_mapping::{
-        eth_types::{ToBigEndian, ToLittleEndian, Word},
-        evm::OpcodeId,
+        bytecode,
+        eth_types::{ToLittleEndian, Word},
     };
-    use halo2::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
 
-    fn test_ok(index: Word, value: Word, result: Word) {
-        let randomness = Fp::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                value.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                index.to_be_bytes().to_vec(),
-                vec![OpcodeId::SIGNEXTEND.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0, 1, 2],
-                        execution_state: ExecutionState::SIGNEXTEND,
-                        rw_counter: 1,
-                        program_counter: 66,
-                        stack_pointer: 1022,
-                        gas_left: 5,
-                        gas_cost: 5,
-                        opcode: Some(OpcodeId::SIGNEXTEND),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_state: ExecutionState::STOP,
-                        rw_counter: 4,
-                        program_counter: 67,
-                        stack_pointer: 1023,
-                        gas_left: 0,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: vec![
-                Rw::Stack {
-                    rw_counter: 1,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1022,
-                    value: index,
-                },
-                Rw::Stack {
-                    rw_counter: 2,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value,
-                },
-                Rw::Stack {
-                    rw_counter: 3,
-                    is_write: true,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: result,
-                },
-            ],
-            bytecodes: vec![bytecode],
+    fn test_ok(index: Word, value: Word, _result: Word) {
+        let bytecode = bytecode! {
+            PUSH32(value)
+            PUSH32(index)
+            #[start]
+            SIGNEXTEND
+            STOP
         };
+        let block = witness::build_block_from_trace_code_at_start(&bytecode);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 

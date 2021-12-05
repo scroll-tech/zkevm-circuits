@@ -1,9 +1,6 @@
 use crate::{
     evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
-            ExecutionGadget,
-        },
+        execution::ExecutionGadget,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -12,6 +9,7 @@ use crate::{
             },
             Cell, Word,
         },
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -88,89 +86,28 @@ impl<F: FieldExt> ExecutionGadget<F> for DupGadget<F> {
 }
 
 #[cfg(test)]
+
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
-        },
-        step::ExecutionState,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
+        witness,
     };
-    use bus_mapping::{
-        eth_types::{ToBigEndian, ToLittleEndian, Word},
-        evm::OpcodeId,
-    };
-    use halo2::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
+    use bus_mapping::{bytecode, eth_types::Word, evm::OpcodeId};
 
     fn test_ok(opcode: OpcodeId, value: Word) {
         let n = (opcode.as_u8() - OpcodeId::DUP1.as_u8() + 1) as usize;
-        let randomness = Fp::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                value.to_be_bytes().to_vec(),
-                vec![OpcodeId::DUP1.as_u8(); n - 1],
-                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0, 1],
-                        execution_state: ExecutionState::DUP,
-                        rw_counter: 1,
-                        program_counter: (33 + n - 1) as u64,
-                        stack_pointer: 1024 - n,
-                        gas_left: 3,
-                        gas_cost: 3,
-                        opcode: Some(opcode),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_state: ExecutionState::STOP,
-                        rw_counter: 3,
-                        program_counter: (33 + n) as u64,
-                        stack_pointer: 1023 - n,
-                        gas_left: 0,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: vec![
-                Rw::Stack {
-                    rw_counter: 1,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value,
-                },
-                Rw::Stack {
-                    rw_counter: 2,
-                    is_write: true,
-                    call_id: 1,
-                    stack_pointer: 1023 - n,
-                    value,
-                },
-            ],
-            bytecodes: vec![bytecode],
+        let mut bytecode = bytecode! {
+            PUSH32(value)
         };
+        for _ in 0..n - 1 {
+            bytecode.write_op(OpcodeId::DUP1);
+        }
+        bytecode.append(&bytecode! {
+            #[start]
+            .write_op(opcode)
+            STOP
+        });
+        let block = witness::build_block_from_trace_code_at_start(&bytecode);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 

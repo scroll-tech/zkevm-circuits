@@ -132,7 +132,7 @@ impl Bytecode {
 #[macro_export]
 macro_rules! bytecode {
     ($($args:tt)*) => {{
-        let mut code = crate::bytecode::Bytecode::default();
+        let mut code = $crate::bytecode::Bytecode::default();
         $crate::bytecode_internal!(code, $($args)*);
         code
     }};
@@ -145,27 +145,27 @@ macro_rules! bytecode_internal {
     ($code:ident, ) => {};
     // PUSHX op codes
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
-        assert!(crate::evm::OpcodeId::$x.is_push(), "invalid push");
-        let n = crate::evm::OpcodeId::$x.as_u8()
-            - crate::evm::OpcodeId::PUSH1.as_u8()
+        assert!($crate::evm::OpcodeId::$x.is_push(), "invalid push");
+        let n = $crate::evm::OpcodeId::$x.as_u8()
+            - $crate::evm::OpcodeId::PUSH1.as_u8()
             + 1;
         $code.push(n as usize, $v.into());
-        crate::bytecode_internal!($code, $($rest)*);
+        $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Default opcode without any inputs
     ($code:ident, $x:ident $($rest:tt)*) => {{
-        assert!(!crate::evm::OpcodeId::$x.is_push(), "invalid push");
-        $code.write_op(crate::evm::OpcodeId::$x);
-        crate::bytecode_internal!($code, $($rest)*);
+        assert!(!$crate::evm::OpcodeId::$x.is_push(), "invalid push");
+        $code.write_op($crate::evm::OpcodeId::$x);
+        $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Marker
     ($code:ident, #[$marker:tt] $($rest:tt)*) => {{
         $code.add_marker(stringify!($marker).to_string());
-        crate::bytecode_internal!($code, $($rest)*);
+        $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Function calls
     ($code:ident, .$function:ident ($($args:expr),*) $($rest:tt)*) => {{
         $code.$function($($args.into(),)*);
-        crate::bytecode_internal!($code, $($rest)*);
+        $crate::bytecode_internal!($code, $($rest)*);
     }};
 }
