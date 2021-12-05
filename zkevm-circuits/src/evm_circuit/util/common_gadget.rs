@@ -1,6 +1,5 @@
 use crate::{
     evm_circuit::{
-        execution::bus_mapping_tmp::ExecStep,
         param::MAX_GAS_SIZE_IN_BYTES,
         table::{FixedTableTag, Lookup},
         util::{
@@ -10,6 +9,7 @@ use crate::{
             math_gadget::RangeCheckGadget,
             Cell,
         },
+        witness::ExecStep,
     },
     util::Expr,
 };
