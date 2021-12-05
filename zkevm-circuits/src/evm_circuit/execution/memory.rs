@@ -217,7 +217,6 @@ mod test {
         _memory_size: u64,
         gas_cost: u64,
     ) {
-        //println!("expect {} {} {}", address, _memory_size, _gas_cost);
         let bytecode = bytecode! {
             PUSH32(value)
             PUSH32(address)
