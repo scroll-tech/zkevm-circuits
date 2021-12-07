@@ -348,6 +348,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::MSTORE => ExecutionState::MEMORY,
             OpcodeId::MSTORE8 => ExecutionState::MEMORY,
             OpcodeId::JUMPDEST => ExecutionState::JUMPDEST,
+            OpcodeId::JUMP => ExecutionState::JUMP,
             OpcodeId::PC => ExecutionState::PC,
             _ => unimplemented!("invalid opcode {:?}", step.op),
         }

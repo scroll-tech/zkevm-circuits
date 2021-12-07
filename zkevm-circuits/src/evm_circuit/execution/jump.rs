@@ -90,89 +90,27 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        step::ExecutionState,
         test::{rand_range, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
-        witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
+        witness,
     };
-    use bus_mapping::{
-        eth_types::{ToLittleEndian, Word},
-        evm::OpcodeId,
-    };
-    use halo2::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
+    use bus_mapping::bytecode;
 
     fn test_ok(destination: usize) {
         assert!((34..(1 << 24) - 1).contains(&destination));
 
-        let randomness = Fp::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                vec![0; 32 - destination.to_be_bytes().len()],
-                destination.to_be_bytes().to_vec(),
-                vec![OpcodeId::JUMP.as_u8()],
-                vec![0; destination - 34],
-                vec![OpcodeId::JUMPDEST.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0, 1],
-                        execution_state: ExecutionState::JUMP,
-                        rw_counter: 1,
-                        program_counter: 33,
-                        stack_pointer: 1022,
-                        gas_left: 9,
-                        gas_cost: 8,
-                        opcode: Some(OpcodeId::JUMP),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_state: ExecutionState::JUMPDEST,
-                        rw_counter: 2,
-                        program_counter: destination as u64,
-                        stack_pointer: 1023,
-                        gas_left: 1,
-                        gas_cost: 1,
-                        opcode: Some(OpcodeId::JUMPDEST),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_state: ExecutionState::STOP,
-                        rw_counter: 2,
-                        program_counter: destination as u64 + 1,
-                        stack_pointer: 1023,
-                        gas_left: 0,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: vec![Rw::Stack {
-                rw_counter: 1,
-                is_write: false,
-                call_id: 1,
-                stack_pointer: 1022,
-                value: Word::from(destination),
-            }],
-            bytecodes: vec![bytecode],
+        let mut bytecode = bytecode! {
+            PUSH32(destination)
+            #[start]
+            JUMP
         };
+        for _ in 0..(destination - 34) {
+            bytecode.write(0);
+        }
+        bytecode.append(&bytecode! {
+            JUMPDEST
+            STOP
+        });
+        let block = witness::build_block_from_trace_code_at_start(&bytecode);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 

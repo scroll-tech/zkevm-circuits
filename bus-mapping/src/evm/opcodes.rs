@@ -1,6 +1,7 @@
 //! Definition of each opcode of the EVM.
 mod dup;
 pub mod ids;
+mod jump;
 mod jumpdest;
 mod mload;
 mod mstore;
@@ -19,6 +20,7 @@ use ids::OpcodeId;
 
 use self::push::Push;
 use dup::Dup;
+use jump::Jump;
 use jumpdest::Jumpdest;
 use mload::Mload;
 use mstore::Mstore;
@@ -110,7 +112,7 @@ impl OpcodeId {
             OpcodeId::MSTORE8 => Mstore::<false>::gen_associated_ops,
             OpcodeId::SLOAD => Sload::gen_associated_ops,
             // OpcodeId::SSTORE => {},
-            // OpcodeId::JUMP => {},
+            OpcodeId::JUMP => Jump::gen_associated_ops,
             // OpcodeId::JUMPI => {},
             OpcodeId::PC => Pc::gen_associated_ops,
             // OpcodeId::MSIZE => {},
