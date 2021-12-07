@@ -122,118 +122,32 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        step::ExecutionState,
         test::{
             rand_range, rand_word, run_test_circuit_incomplete_fixed_table,
         },
-        util::RandomLinearCombination,
-        witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
+        witness,
     };
-    use bus_mapping::{
-        eth_types::{ToBigEndian, ToLittleEndian, Word},
-        evm::OpcodeId,
-    };
-    use halo2::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
+    use bus_mapping::{bytecode, eth_types::Word};
 
     fn test_ok(destination: usize, condition: Word) {
         assert!((68..(1 << 24) - 1).contains(&destination));
-        let should_jump = !condition.is_zero();
 
-        let randomness = Fp::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                condition.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                vec![0; 32 - destination.to_be_bytes().len()],
-                destination.to_be_bytes().to_vec(),
-                vec![OpcodeId::JUMPI.as_u8(), OpcodeId::STOP.as_u8()],
-                vec![0; destination - 68],
-                vec![OpcodeId::JUMPDEST.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: [
-                    vec![ExecStep {
-                        rw_indices: vec![0, 1],
-                        execution_state: ExecutionState::JUMPI,
-                        rw_counter: 1,
-                        program_counter: 66,
-                        stack_pointer: 1022,
-                        gas_left: 11,
-                        gas_cost: 10,
-                        opcode: Some(OpcodeId::JUMPI),
-                        ..Default::default()
-                    }],
-                    if should_jump {
-                        vec![
-                            ExecStep {
-                                execution_state: ExecutionState::JUMPDEST,
-                                rw_counter: 3,
-                                program_counter: destination as u64,
-                                stack_pointer: 1024,
-                                gas_left: 1,
-                                gas_cost: 1,
-                                opcode: Some(OpcodeId::JUMPDEST),
-                                ..Default::default()
-                            },
-                            ExecStep {
-                                execution_state: ExecutionState::STOP,
-                                rw_counter: 3,
-                                program_counter: destination as u64 + 1,
-                                stack_pointer: 1024,
-                                gas_left: 0,
-                                opcode: Some(OpcodeId::STOP),
-                                ..Default::default()
-                            },
-                        ]
-                    } else {
-                        vec![ExecStep {
-                            execution_state: ExecutionState::STOP,
-                            rw_counter: 3,
-                            program_counter: 67,
-                            stack_pointer: 1024,
-                            gas_left: 1,
-                            opcode: Some(OpcodeId::STOP),
-                            ..Default::default()
-                        }]
-                    },
-                ]
-                .concat(),
-                ..Default::default()
-            }],
-            rws: vec![
-                Rw::Stack {
-                    rw_counter: 1,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1022,
-                    value: Word::from(destination),
-                },
-                Rw::Stack {
-                    rw_counter: 2,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: condition,
-                },
-            ],
-            bytecodes: vec![bytecode],
+        let mut bytecode = bytecode! {
+            PUSH32(condition)
+            PUSH32(destination)
+            #[start]
+            JUMPI
+            STOP
         };
+        for _ in 0..(destination - 68) {
+            bytecode.write(0);
+        }
+        bytecode.append(&bytecode! {
+            JUMPDEST
+            STOP
+        });
+
+        let block = witness::build_block_from_trace_code_at_start(&bytecode);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 

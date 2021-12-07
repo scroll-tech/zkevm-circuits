@@ -2,6 +2,7 @@
 mod dup;
 pub mod ids;
 mod jumpdest;
+mod jumpi;
 mod mload;
 mod mstore;
 mod pc;
@@ -20,6 +21,7 @@ use ids::OpcodeId;
 use self::push::Push;
 use dup::Dup;
 use jumpdest::Jumpdest;
+use jumpi::Jumpi;
 use mload::Mload;
 use mstore::Mstore;
 use pc::Pc;
@@ -111,7 +113,7 @@ impl OpcodeId {
             OpcodeId::SLOAD => Sload::gen_associated_ops,
             // OpcodeId::SSTORE => {},
             // OpcodeId::JUMP => {},
-            // OpcodeId::JUMPI => {},
+            OpcodeId::JUMPI => Jumpi::gen_associated_ops,
             OpcodeId::PC => Pc::gen_associated_ops,
             // OpcodeId::MSIZE => {},
             // OpcodeId::GAS => {},
