@@ -205,7 +205,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.query_cells::<N>(true)
     }
 
-    fn query_cells<const N: usize>(&mut self, is_byte: bool) -> [Cell<F>; N] {
+    pub(crate) fn query_cells<const N: usize>(&mut self, is_byte: bool) -> [Cell<F>; N] {
         let mut cells = Vec::with_capacity(N);
 
         // Iterate rows to find cell that matches the is_byte requirement.
@@ -717,6 +717,24 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 0.expr(),
             ],
         );
+    }
+
+    // Tx
+
+    pub(crate) fn tx_lookup(
+        &mut self,
+        tx_id: Expression<F>,
+        tag: TxContextFieldTag,
+        index: Option<Expression<F>>,
+        value: Expression<F>,
+    ) {
+        let index = index.unwrap_or(0.expr());
+        self.add_lookup(Lookup::Tx {
+            id: tx_id,
+            field_tag: tag.expr(),
+            index: index,
+            value: value,
+        });
     }
 
     // Validation
