@@ -65,9 +65,8 @@ pub enum ExecutionState {
     SELFBALANCE,
     BASEFEE,
     POP,
-    MEMORY, // MLOAD, MSTORE, MSTORE8
-    SLOAD,
-    SSTORE,
+    MEMORY,  // MLOAD, MSTORE, MSTORE8
+    STORAGE, // SLOAD, SSTORE,
     JUMP,
     JUMPI,
     PC,
@@ -178,8 +177,7 @@ impl ExecutionState {
             Self::BASEFEE,
             Self::POP,
             Self::MEMORY,
-            Self::SLOAD,
-            Self::SSTORE,
+            Self::STORAGE,
             Self::JUMP,
             Self::JUMPI,
             Self::PC,
@@ -286,8 +284,7 @@ impl ExecutionState {
             Self::MEMORY => {
                 vec![OpcodeId::MLOAD, OpcodeId::MSTORE, OpcodeId::MSTORE8]
             }
-            Self::SLOAD => vec![OpcodeId::SLOAD],
-            Self::SSTORE => vec![OpcodeId::SSTORE],
+            Self::STORAGE => vec![OpcodeId::SLOAD, OpcodeId::SSTORE],
             Self::JUMP => vec![OpcodeId::JUMP],
             Self::JUMPI => vec![OpcodeId::JUMPI],
             Self::PC => vec![OpcodeId::PC],

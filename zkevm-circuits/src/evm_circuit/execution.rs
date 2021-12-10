@@ -33,6 +33,7 @@ mod pop;
 mod push;
 mod signextend;
 mod stop;
+mod storage;
 mod swap;
 use add::AddGadget;
 use bitwise::BitwiseGadget;
@@ -49,6 +50,7 @@ use pop::PopGadget;
 use push::PushGadget;
 use signextend::SignextendGadget;
 use stop::StopGadget;
+use storage::StorageGadget;
 use swap::SwapGadget;
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
@@ -84,6 +86,7 @@ pub(crate) struct ExecutionConfig<F> {
     jumpdest_gadget: JumpdestGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
     memory_gadget: MemoryGadget<F>,
+    storage_gadget: StorageGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
@@ -196,6 +199,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             jumpdest_gadget: configure_gadget!(),
             jumpi_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
+            storage_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
@@ -408,6 +412,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
+            ExecutionState::STORAGE => assign_exec_step!(self.storage_gadget),
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::JUMP => assign_exec_step!(self.jump_gadget),
             ExecutionState::JUMPI => assign_exec_step!(self.jumpi_gadget),

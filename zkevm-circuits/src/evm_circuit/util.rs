@@ -1,4 +1,7 @@
-use crate::{evm_circuit::param::MAX_MEMORY_SIZE_IN_BYTES, util::Expr};
+use crate::{
+    evm_circuit::param::{MAX_MEMORY_SIZE_IN_BYTES, MAX_STORAGE_SIZE_IN_BYTES},
+    util::Expr,
+};
 use bus_mapping::eth_types::U256;
 use halo2::{
     arithmetic::FieldExt,
@@ -11,8 +14,9 @@ pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
+pub(crate) mod storage_gadget;
 
-type Address = u64;
+type Address = u64; // TODO: should depend on MemoryAddress or StorageAddress?
 type MemorySize = u64;
 
 #[derive(Clone, Debug)]
@@ -132,6 +136,8 @@ impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
 pub(crate) type Word<F> = RandomLinearCombination<F, 32>;
 pub(crate) type MemoryAddress<F> =
     RandomLinearCombination<F, MAX_MEMORY_SIZE_IN_BYTES>;
+pub(crate) type StorageAddress<F> =
+    RandomLinearCombination<F, MAX_STORAGE_SIZE_IN_BYTES>;
 
 /// Returns the sum of the passed in cells
 pub(crate) mod sum {
