@@ -16,7 +16,9 @@ use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ExecutionState {
+    // Internal state
     BeginTx,
+    CopyMemoryToMemory,
     // Opcode successful cases
     STOP,
     ADD, // ADD, SUB
@@ -47,10 +49,8 @@ pub enum ExecutionState {
     CALLDATALOAD,
     CALLDATASIZE,
     CALLDATACOPY,
-    CALLDATACOPYCONT,
     CODESIZE,
     CODECOPY,
-    COPYMEMORYTOMEMORY,
     GASPRICE,
     EXTCODESIZE,
     EXTCODECOPY,
@@ -132,6 +132,7 @@ impl ExecutionState {
     pub(crate) fn iterator() -> impl Iterator<Item = Self> {
         [
             Self::BeginTx,
+            Self::CopyMemoryToMemory,
             Self::STOP,
             Self::ADD,
             Self::MUL,

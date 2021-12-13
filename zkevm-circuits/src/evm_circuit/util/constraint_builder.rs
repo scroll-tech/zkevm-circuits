@@ -57,7 +57,8 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     constraints: Vec<(&'static str, Expression<F>)>,
     constraints_first_step: Vec<(&'static str, Expression<F>)>,
     lookups: Vec<Lookup<F>>,
-    row_usages: Vec<StepRowUsage>,
+    curr_row_usages: Vec<StepRowUsage>,
+    next_row_usages: Vec<StepRowUsage>,
     rw_counter_offset: usize,
     program_counter_offset: usize,
     stack_pointer_offset: i32,
@@ -80,7 +81,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             constraints: Vec::new(),
             constraints_first_step: Vec::new(),
             lookups: Vec::new(),
-            row_usages: vec![StepRowUsage::default(); curr.rows.len()],
+            curr_row_usages: vec![StepRowUsage::default(); curr.rows.len()],
+            next_row_usages: vec![StepRowUsage::default(); next.rows.len()],
             rw_counter_offset: 0,
             program_counter_offset: 0,
             stack_pointer_offset: 0,
@@ -101,7 +103,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         let mut constraints = self.constraints;
         let mut presets = Vec::new();
 
-        for (row, usage) in self.curr.rows.iter().zip(self.row_usages.iter()) {
+        for (row, usage) in self.curr.rows.iter().zip(self.curr_row_usages.iter()) {
             if usage.is_byte_lookup_enabled {
                 constraints.push((
                     "Enable byte lookup",
@@ -173,18 +175,18 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Query
 
     pub(crate) fn query_bool(&mut self) -> Cell<F> {
-        let [cell] = self.query_cells::<1>(false);
+        let [cell] = self.query_cells::<1>(false, false);
         self.require_boolean("Constrain cell to be a bool", cell.expr());
         cell
     }
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
-        let [cell] = self.query_cells::<1>(true);
+        let [cell] = self.query_cells::<1>(true, false);
         cell
     }
 
     pub(crate) fn query_cell(&mut self) -> Cell<F> {
-        let [cell] = self.query_cells::<1>(false);
+        let [cell] = self.query_cells::<1>(false, false);
         cell
     }
 
@@ -202,15 +204,26 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.query_cells::<N>(true)
+        self.query_cells::<N>(true, false)
     }
 
-    pub(crate) fn query_cells<const N: usize>(&mut self, is_byte: bool) -> [Cell<F>; N] {
+    pub(crate) fn query_cell_next_step(&mut self) -> Cell<F> {
+        let [cell] = self.query_cells::<1>(false, true);
+        cell
+    }
+
+    fn query_cells<const N: usize>(&mut self, is_byte: bool, is_next: bool)
+        -> [Cell<F>; N] {
         let mut cells = Vec::with_capacity(N);
+        let rows = if is_next { &self.next.rows } else { &self.curr.rows };
+        let row_usages = if is_next {
+            &mut self.next_row_usages
+        } else {
+            &mut self.curr_row_usages
+        };
 
         // Iterate rows to find cell that matches the is_byte requirement.
-        for (row, usage) in
-            self.curr.rows.iter().zip(self.row_usages.iter_mut())
+        for (row, usage) in rows.iter().zip(row_usages.iter_mut())
         {
             // If this row doesn't match the is_byte requirement and is already
             // used, skip this row.
