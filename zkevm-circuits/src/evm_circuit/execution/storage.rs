@@ -181,6 +181,7 @@ mod test {
         // witness::build_block_from_trace_code_at_start(&
         // bytecode);
 
+        // TODO:
         let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
         let mut block_trace =
             bus_mapping::mock::BlockData::new_single_tx_trace_code_gas(
@@ -205,7 +206,7 @@ mod test {
     #[test]
     fn storage_gadget_simple() {
         test_ok(
-            OpcodeId::MSTORE,
+            OpcodeId::SSTORE,
             Word::from(0x12FFFF),
             Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
             38913,
@@ -213,14 +214,14 @@ mod test {
         );
 
         test_ok(
-            OpcodeId::MLOAD,
+            OpcodeId::SLOAD,
             Word::from(0x12FFFF),
             Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
             38913,
             3074206,
         );
         test_ok(
-            OpcodeId::MLOAD,
+            OpcodeId::SLOAD,
             Word::from(0x12FFFF) + 16,
             Word::from_big_endian(
                 &(17..33).chain(iter::repeat(0).take(16)).collect::<Vec<_>>(),
@@ -228,16 +229,10 @@ mod test {
             38914,
             3074361,
         );
-        test_ok(
-            OpcodeId::MSTORE8,
-            Word::from(0x12FFFF),
-            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
-            38912,
-            3074051,
-        );
     }
 
     #[test]
+    // TODO: fix size and gas
     fn storage_gadget_rand() {
         let calc_memory_size_and_gas_cost = |opcode, address: Word| {
             let memory_size = (address.as_u64()
