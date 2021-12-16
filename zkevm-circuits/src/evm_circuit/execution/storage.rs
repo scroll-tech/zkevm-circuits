@@ -148,3 +148,122 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
         Ok(())
     }
 }
+
+
+#[cfg(test)]
+mod test {
+    use crate::evm_circuit::{
+        test::{rand_word, run_test_circuit_incomplete_fixed_table},
+        witness,
+    };
+    use bus_mapping::{
+        bytecode,
+        eth_types::Word,
+        evm::{Gas, GasCost, OpcodeId},
+    };
+    use std::iter;
+
+    fn test_ok(
+        opcode: OpcodeId,
+        address: Word,
+        value: Word,
+        _memory_size: u64,
+        gas_cost: u64,
+    ) {
+        let bytecode = bytecode! {
+            PUSH32(value)
+            PUSH32(address)
+            #[start]
+            .write_op(opcode)
+            STOP
+        };
+        //let block  =
+        // witness::build_block_from_trace_code_at_start(&
+        // bytecode);
+
+        let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
+        let mut block_trace =
+            bus_mapping::mock::BlockData::new_single_tx_trace_code_gas(
+                &bytecode, gas,
+            )
+            .unwrap();
+        block_trace.geth_trace.struct_logs = block_trace.geth_trace.struct_logs
+            [bytecode.get_pos("start")..]
+            .to_vec();
+        let mut builder =
+            bus_mapping::circuit_input_builder::CircuitInputBuilder::new(
+                block_trace.eth_block.clone(),
+                block_trace.block_ctants.clone(),
+            );
+        builder
+            .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
+            .unwrap();
+        let block = witness::block_convert(&bytecode, &builder.block);
+        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+    }
+
+    #[test]
+    fn storage_gadget_simple() {
+        test_ok(
+            OpcodeId::MSTORE,
+            Word::from(0x12FFFF),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            38913,
+            3074206,
+        );
+
+        test_ok(
+            OpcodeId::MLOAD,
+            Word::from(0x12FFFF),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            38913,
+            3074206,
+        );
+        test_ok(
+            OpcodeId::MLOAD,
+            Word::from(0x12FFFF) + 16,
+            Word::from_big_endian(
+                &(17..33).chain(iter::repeat(0).take(16)).collect::<Vec<_>>(),
+            ),
+            38914,
+            3074361,
+        );
+        test_ok(
+            OpcodeId::MSTORE8,
+            Word::from(0x12FFFF),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            38912,
+            3074051,
+        );
+    }
+
+    #[test]
+    fn storage_gadget_rand() {
+        let calc_memory_size_and_gas_cost = |opcode, address: Word| {
+            let memory_size = (address.as_u64()
+                + match opcode {
+                    OpcodeId::MSTORE | OpcodeId::MLOAD => 32,
+                    OpcodeId::MSTORE8 => 1,
+                    _ => 0,
+                }
+                + 31)
+                / 32;
+            let gas_cost = memory_size * memory_size / 512
+                + 3 * memory_size
+                + GasCost::FASTEST.as_u64();
+            (memory_size, gas_cost)
+        };
+
+        for opcode in [OpcodeId::MSTORE, OpcodeId::MLOAD, OpcodeId::MSTORE8] {
+            // TODO: tracer needs to be optimized to enable larger
+            // max_memory_size_pow_of_two
+            let max_memory_size_pow_of_two = 15;
+            let address = rand_word() % (1u64 << max_memory_size_pow_of_two);
+            let value = rand_word();
+            let (memory_size, gas_cost) =
+                calc_memory_size_and_gas_cost(opcode, address);
+            test_ok(opcode, address, value, memory_size, gas_cost);
+        }
+    }
+}
+
