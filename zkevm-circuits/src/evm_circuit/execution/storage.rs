@@ -149,7 +149,6 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
@@ -261,4 +260,3 @@ mod test {
         }
     }
 }
-

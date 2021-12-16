@@ -16,6 +16,7 @@ pub const MAX_GAS_SIZE_IN_BYTES: usize = 8;
 pub const NUM_ADDRESS_BYTES_USED: usize = 5; // TODO:
 pub const MAX_MEMORY_SIZE_IN_BYTES: usize = 5;
 pub const MAX_STORAGE_SIZE_IN_BYTES: usize = 31; // TODO: 可能要改 storage_size 的 repr、cmp 之类的
+
 // Number of bytes that will be used of the JUMP* destination or code copy range
 // check. Although the deployed code has maximum size of 0x6000, the size of
 // a creation transaction could be 128KB, which needs 3 bytes to cover.
