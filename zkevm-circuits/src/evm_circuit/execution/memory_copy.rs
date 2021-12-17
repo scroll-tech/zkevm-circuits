@@ -1,7 +1,9 @@
 use crate::{
     evm_circuit::{
         execution::{
-            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
+            bus_mapping_tmp::{
+                Block, Call, ExecStep, Transaction, OpcodeExtraData,
+            },
             ExecutionGadget,
         },
         param::MAX_MEMORY_SIZE_IN_BYTES,
@@ -18,6 +20,7 @@ use crate::{
     util::Expr,
 };
 use array_init::array_init;
+use bus_mapping::eth_types::{ToLittleEndian, ToWord};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 const MAX_COPY_BYTES: usize = 32;
@@ -245,7 +248,82 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
+        let OpcodeExtraData::CopyMemoryToMemory {
+            src_addr,
+            dst_addr,
+            length,
+            src_addr_bound,
+            selectors,
+        } = step.extra_data.as_ref().unwrap();
+
+        let f_src_addr = F::from_bytes(&src_addr.to_word().to_le_bytes()).unwrap();
+        let f_src_addr_bound = F::from_bytes(&src_addr_bound.to_word().to_le_bytes()).unwrap();
+
+        self.src_addr.assign(region, offset, Some(f_src_addr))?;
+        self.dst_addr.assign(
+            region,
+            offset,
+            F::from_bytes(&dst_addr.to_word().to_le_bytes()).into(),
+        )?;
+        self.length.assign(
+            region,
+            offset,
+            Some(F::from(*length)),
+        )?;
+        self.src_addr_bound.assign(
+            region,
+            offset,
+            Some(f_src_addr_bound),
+        )?;
+        self.src_addr_lt_gadget.assign(
+            region, offset, f_src_addr, f_src_addr_bound,
+        )?;
+
+        assert_eq!(selectors.len(), MAX_COPY_BYTES);
+        let mut rw_idx = 0;
+        for idx in 0..MAX_COPY_BYTES {
+            self.selectors[idx].assign(region, offset, Some(F::from(selectors[idx] as u64)))?;
+            let oob = src_addr.to_word() + idx >= src_addr_bound.to_word();
+            let bound_dist = if oob.clone() {
+                F::zero()
+            } else {
+                F::from_bytes(
+                    &(src_addr_bound.to_word() - src_addr.to_word() - idx).to_le_bytes()
+                ).unwrap()
+            };
+            self.bound_dist[idx].assign(
+                region,
+                offset,
+                Some(bound_dist),
+            )?;
+            self.bound_dist_is_zero[idx].assign(
+                region,
+                offset,
+                bound_dist,
+            )?;
+            let byte = if selectors[idx] == 0 || oob.clone() {
+                F::zero()
+            } else {
+                let b =
+                    F::from(block.rws[step.rw_indices[rw_idx]].memory_value() as u64);
+                rw_idx += 1;
+                b
+            };
+            self.bytes[idx].assign(region, offset, Some(byte))?;
+
+            if selectors[idx] == 1 {
+                // increase rw_idx for write back to memory
+                rw_idx += 1
+            }
+        }
+
+        let num_bytes_copied = selectors.iter().fold(0, |acc, s| acc + (*s as u64));
+        self.copied_comp_gadget.assign(
+            region,
+            offset,
+            F::from(num_bytes_copied),
+            F::from(*length),
+        )?;
 
         Ok(())
     }
@@ -254,17 +332,36 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
+        execution::{
+            bus_mapping_tmp::{
+                Block, Bytecode, Call, ExecStep, Rw, Transaction,
+            },
+            memory_copy::MAX_COPY_BYTES,
         },
         step::ExecutionState,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
     };
     use bus_mapping::{
-        eth_types::{ToBigEndian, ToLittleEndian, Word},
+        eth_types::{ToBigEndian, ToLittleEndian, Word, Address},
         evm::OpcodeId,
     };
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
+
+    fn test_ok(
+        opcode: OpcodeId,
+        src_addr: Address,
+        dst_addr: Address,
+        length: usize,
+        bytes: Vec<u8>,
+        value: Word,
+        memory_size: u64,
+    ) {
+        // let rws = bytes.iter().map(|byte| {
+        //     Rw::Memory {
+        //         rw_counter:
+        //     }
+        // }).collect::<Vec<_>>();
+    }
 }
