@@ -1,2 +1,3 @@
 /target
 *.png
+circuit-benchmarks/src/bench_params.rs
