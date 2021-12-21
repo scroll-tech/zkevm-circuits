@@ -1,11 +1,6 @@
 use crate::{
     evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{
-                Block, Call, ExecStep, Transaction, OpcodeExtraData,
-            },
-            ExecutionGadget,
-        },
+        execution::ExecutionGadget,
         param::MAX_MEMORY_SIZE_IN_BYTES,
         step::ExecutionState,
         util::{
@@ -16,18 +11,18 @@ use crate::{
             math_gadget::{ComparisonGadget, IsZeroGadget, LtGadget},
             sum, Cell,
         },
+        witness::{Block, Call, ExecStep, Transaction, OpcodeExtraData},
     },
     util::Expr,
 };
 use array_init::array_init;
-use bus_mapping::eth_types::{ToLittleEndian, ToWord};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 const MAX_COPY_BYTES: usize = 32;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CopyMemoryToMemoryGadget<F> {
-    same_context: SameContextGadget<F>,
+    //same_context: SameContextGadget<F>,
     // The following fields are the states of CopyMemoryToMemory
     // The src memory address to copy from
     src_addr: Cell<F>,
@@ -49,8 +44,8 @@ pub(crate) struct CopyMemoryToMemoryGadget<F> {
     bound_dist: [Cell<F>; MAX_COPY_BYTES],
     // Check if bound_dist is zero
     bound_dist_is_zero: [IsZeroGadget<F>; MAX_COPY_BYTES],
-    // The compare gadget between sum(selectors) and length
-    copied_comp_gadget: ComparisonGadget<F, 4>,
+    // The comparison gadget between sum(selectors) and length
+    copied_cmp_gadget: ComparisonGadget<F, 4>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
@@ -170,10 +165,10 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
         }
 
         let copied_size = sum::expr(&selectors);
-        let copied_comp_gadget = ComparisonGadget::construct(
+        let copied_cmp_gadget = ComparisonGadget::construct(
             cb, copied_size.clone(), length.expr(),
         );
-        let (lt, finished) = copied_comp_gadget.expr();
+        let (lt, finished) = copied_cmp_gadget.expr();
         cb.add_constraint(
             "Constrain sum(selectors) <= length",
             lt * finished.clone(),
@@ -202,28 +197,28 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
                 "Constrain src_addr_bound == next_src_addr_bound",
                 src_addr_bound.expr() - next_src_addr_bound.expr(),
             );
-            cb.add_constraint(
-                "Constrain next_opcode == COPYMEMORYTOMEMORY",
-                next_opcode.expr() - ExecutionState::CopyMemoryToMemory.as_u64().expr(),
-            )
+            // cb.add_constraint(
+            //     "Constrain next_exec_state == CopyMemoryToMemory",
+            //     next_opcode.expr() - ExecutionState::CopyMemoryToMemory.as_u64().expr(),
+            // )
         });
 
         let rw_counter_delta = MAX_COPY_BYTES.expr()
             - sum::expr(bound_dist_is_zero.iter().map(|ex| ex.expr()))
             + sum::expr(&selectors);
-        let step_state_transition = StepStateTransition {
-            rw_counter: Delta(rw_counter_delta),
-            ..Default::default()
-        };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        // let step_state_transition = StepStateTransition {
+        //     rw_counter: Delta(rw_counter_delta),
+        //     ..Default::default()
+        // };
+        // let same_context = SameContextGadget::construct(
+        //     cb,
+        //     opcode,
+        //     step_state_transition,
+        //     None,
+        // );
 
         Self {
-            same_context,
+            //same_context,
             src_addr,
             dst_addr,
             length,
@@ -233,7 +228,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
             selectors,
             bound_dist,
             bound_dist_is_zero,
-            copied_comp_gadget,
+            copied_cmp_gadget,
         }
     }
 
@@ -246,7 +241,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
         _: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        self.same_context.assign_exec_step(region, offset, step)?;
+        //self.same_context.assign_exec_step(region, offset, step)?;
 
         let OpcodeExtraData::CopyMemoryToMemory {
             src_addr,
@@ -256,40 +251,27 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
             selectors,
         } = step.extra_data.as_ref().unwrap();
 
-        let f_src_addr = F::from_bytes(&src_addr.to_word().to_le_bytes()).unwrap();
-        let f_src_addr_bound = F::from_bytes(&src_addr_bound.to_word().to_le_bytes()).unwrap();
-
-        self.src_addr.assign(region, offset, Some(f_src_addr))?;
-        self.dst_addr.assign(
-            region,
-            offset,
-            F::from_bytes(&dst_addr.to_word().to_le_bytes()).into(),
-        )?;
-        self.length.assign(
-            region,
-            offset,
-            Some(F::from(*length)),
-        )?;
+        self.src_addr.assign(region, offset, Some(F::from(*src_addr)))?;
+        self.dst_addr.assign(region, offset, Some(F::from(*dst_addr)))?;
+        self.length.assign(region, offset,Some(F::from(*length)))?;
         self.src_addr_bound.assign(
             region,
             offset,
-            Some(f_src_addr_bound),
+            Some(F::from(*src_addr_bound)),
         )?;
         self.src_addr_lt_gadget.assign(
-            region, offset, f_src_addr, f_src_addr_bound,
+            region, offset, F::from(*src_addr), F::from(*src_addr_bound),
         )?;
 
         assert_eq!(selectors.len(), MAX_COPY_BYTES);
         let mut rw_idx = 0;
         for idx in 0..MAX_COPY_BYTES {
             self.selectors[idx].assign(region, offset, Some(F::from(selectors[idx] as u64)))?;
-            let oob = src_addr.to_word() + idx >= src_addr_bound.to_word();
+            let oob = *src_addr + idx as u64 >= *src_addr_bound;
             let bound_dist = if oob.clone() {
                 F::zero()
             } else {
-                F::from_bytes(
-                    &(src_addr_bound.to_word() - src_addr.to_word() - idx).to_le_bytes()
-                ).unwrap()
+                F::from(*src_addr_bound - *src_addr - idx as u64)
             };
             self.bound_dist[idx].assign(
                 region,
@@ -318,7 +300,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
         }
 
         let num_bytes_copied = selectors.iter().fold(0, |acc, s| acc + (*s as u64));
-        self.copied_comp_gadget.assign(
+        self.copied_cmp_gadget.assign(
             region,
             offset,
             F::from(num_bytes_copied),
@@ -332,36 +314,152 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{
-                Block, Bytecode, Call, ExecStep, Rw, Transaction,
-            },
-            memory_copy::MAX_COPY_BYTES,
-        },
+        execution::memory_copy::MAX_COPY_BYTES,
         step::ExecutionState,
-        test::{rand_word, run_test_circuit_incomplete_fixed_table},
+        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
+        witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction, OpcodeExtraData},
     };
     use bus_mapping::{
-        eth_types::{ToBigEndian, ToLittleEndian, Word, Address},
+        eth_types::ToLittleEndian,
         evm::OpcodeId,
     };
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
 
-    fn test_ok(
-        opcode: OpcodeId,
-        src_addr: Address,
-        dst_addr: Address,
+    fn new_memory_copy_step(
+        call_id: usize,
+        src_addr: u64,
+        dst_addr: u64,
+        src_addr_bound: u64,
         length: usize,
-        bytes: Vec<u8>,
-        value: Word,
-        memory_size: u64,
+        rws: &mut Vec<Rw>,
+        rw_counter: usize,
+    ) -> ExecStep {
+        let mut selectors = vec![0u8; MAX_COPY_BYTES];
+        let rw_idx_start = rws.len();
+        for idx in 0..MAX_COPY_BYTES {
+            if idx < length {
+                selectors[idx] = 1;
+                let byte = if idx as u64 + src_addr < src_addr_bound {
+                    let b = rand_bytes(1)[0];
+                    rws.push(Rw::Memory {
+                        rw_counter: rw_counter + idx * 2,
+                        is_write: false,
+                        call_id: call_id,
+                        memory_address: src_addr + idx as u64,
+                        byte: b,
+                    });
+                    //println!("{:?}", rws.last());
+                    b
+                } else {
+                    0
+                };
+                rws.push(Rw::Memory {
+                    rw_counter: rw_counter + idx * 2 + 1,
+                    is_write: true,
+                    call_id: call_id,
+                    memory_address: dst_addr + idx as u64,
+                    byte: byte,
+                });
+                //println!("{:?}", rws.last());
+            }
+        }
+        let rw_idx_end = rws.len();
+        let extra_data = OpcodeExtraData::CopyMemoryToMemory {
+            src_addr: src_addr,
+            dst_addr: dst_addr,
+            length: length as u64,
+            src_addr_bound: src_addr_bound,
+            selectors: selectors,
+        };
+        let step = ExecStep {
+            execution_state: ExecutionState::CopyMemoryToMemory,
+            rw_indices: (rw_idx_start..rw_idx_end).collect(),
+            rw_counter: rw_counter,
+            gas_cost: 0,
+            extra_data: Some(extra_data),
+            ..Default::default()
+        };
+        step
+    }
+
+    fn test_ok(
+        src_addr: u64,
+        dst_addr: u64,
+        src_addr_bound: u64,
+        length: usize,
     ) {
-        // let rws = bytes.iter().map(|byte| {
-        //     Rw::Memory {
-        //         rw_counter:
-        //     }
-        // }).collect::<Vec<_>>();
+        let randomness = Fp::rand();
+        let bytecode = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
+        let call_id = 1;
+        let mut rws = Vec::new();
+        let mut rw_counter = 1;
+        let mut steps = Vec::new();
+        let mut copied = 0;
+
+        while copied < length {
+            println!("src_addr = {}", src_addr + copied as u64);
+            println!("dst_addr = {}", src_addr + copied as u64);
+            println!("length = {}", length - copied);
+            let step = new_memory_copy_step(
+                call_id,
+                src_addr + copied as u64,
+                dst_addr + copied as u64,
+                src_addr_bound,
+                length - copied,
+                &mut rws,
+                rw_counter);
+            //println!("step = {:?}", step);
+            steps.push(step);
+            rw_counter += MAX_COPY_BYTES * 2;
+            copied += std::cmp::min(length, MAX_COPY_BYTES);
+            //println!("rw_counter = {:?}", rw_counter);
+        }
+
+        steps.push(ExecStep {
+            execution_state: ExecutionState::STOP,
+            rw_counter: rw_counter,
+            program_counter: 0,
+            stack_pointer: 1024,
+            opcode: Some(OpcodeId::STOP),
+            ..Default::default()
+        });
+
+        let block = Block {
+            randomness,
+            txs: vec![Transaction {
+                calls: vec![Call {
+                    id: call_id,
+                    is_root: true,
+                    is_create: false,
+                    opcode_source:
+                        RandomLinearCombination::random_linear_combine(
+                            bytecode.hash.to_le_bytes(),
+                            randomness,
+                        ),
+                }],
+                steps: steps,
+                ..Default::default()
+            }],
+            rws: rws,
+            bytecodes: vec![bytecode],
+        };
+        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+    }
+
+    #[test]
+    fn memory_copy_simple() {
+        test_ok(0x40, 0xA0, 0x70, 5)
+    }
+
+    #[test]
+    fn memory_copy_multi_step() {
+        test_ok(0x40, 0xA0, 0x70, 43)
+    }
+
+    #[test]
+    fn memory_copy_out_of_bound() {
+        test_ok(0x40, 0xA0, 0x45, 8)
     }
 }

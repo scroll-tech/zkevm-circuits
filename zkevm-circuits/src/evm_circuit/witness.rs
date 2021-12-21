@@ -264,6 +264,17 @@ pub struct Call<F> {
     pub is_static: bool,
 }
 
+#[derive(Clone, Debug)]
+pub enum OpcodeExtraData {
+    CopyMemoryToMemory {
+        src_addr: u64,
+        dst_addr: u64,
+        length: u64,
+        src_addr_bound: u64,
+        selectors: Vec<u8>,
+    },
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ExecStep {
     /// The index in the Transaction calls
@@ -288,6 +299,7 @@ pub struct ExecStep {
     pub state_write_counter: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
+    pub extra_data: Option<OpcodeExtraData>,
 }
 
 impl ExecStep {
