@@ -389,6 +389,22 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    // block
+    pub(crate) fn block_lookup(
+        &mut self,
+        tag: Expression<F>,
+        number: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.add_lookup(
+            Lookup::Block {
+                field_tag: tag,
+                number:number,
+                value: value,
+            }
+        );
+    }
+
     // Rw
 
     /// Add a Lookup::Rw without increasing the rw_counter_offset, which is
