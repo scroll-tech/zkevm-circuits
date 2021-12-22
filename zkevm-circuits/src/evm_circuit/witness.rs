@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 use crate::evm_circuit::{
     step::ExecutionState,
-    table::{RwTableTag, TxContextFieldTag},
+    table::{RwTableTag, TxContextFieldTag, BlockContextFieldTag},
     util::RandomLinearCombination,
 };
 use bus_mapping::{
@@ -20,6 +20,82 @@ pub struct Block<F> {
     pub txs: Vec<Transaction<F>>,
     pub rws: Vec<Rw>,
     pub bytecodes: Vec<Bytecode>,
+    pub context: BlockContext<F>,
+}
+
+#[derive(Debug, Default)]
+pub struct BlockContext<F> {
+    pub coinbase: Address, // u160
+    pub gas_limit: u64,
+    pub block_number: Word,
+    pub time: F, // maybe u64 is enough ? 
+    pub difficulty: Word,
+    pub base_fee: Word,
+    pub previous_block_hashes: Vec<Word>,
+}
+
+impl<F: FieldExt> BlockContext<F> {
+    pub fn table_assignments(&self, randomness: F) -> Vec<[F; 3]> {
+        [
+            vec![
+                [
+                    F::from(BlockContextFieldTag::Coinbase as u64),
+                    F::zero(),
+                    self.coinbase.to_scalar().unwrap(),
+                ],
+                [
+                    F::from(BlockContextFieldTag::GasLimit as u64),
+                    F::zero(),
+                    F::from(self.gas_limit), 
+                ],
+                [
+                    F::from(BlockContextFieldTag::BlockNumber as u64),
+                    F::zero(),
+                    RandomLinearCombination::random_linear_combine(
+                        self.block_number.to_le_bytes(),
+                        randomness,
+                    ),
+                ],
+                [
+                    F::from(BlockContextFieldTag::Time as u64),
+                    F::zero(),
+                    self.time,
+                ],
+                [
+                    F::from(BlockContextFieldTag::Difficulty as u64),
+                    F::zero(),
+                    RandomLinearCombination::random_linear_combine(
+                        self.difficulty.to_le_bytes(),
+                        randomness,
+                    ),
+                ],
+                [
+                    F::from(BlockContextFieldTag::BaseFee as u64),
+                    F::zero(),
+                    RandomLinearCombination::random_linear_combine(
+                        self.base_fee.to_le_bytes(),
+                        randomness,
+                    ),
+                ],
+               
+            ],
+            self.previous_block_hashes
+                .iter()
+                .enumerate()
+                .map(|(idx, hash)| {
+                    [
+                        F::from(BlockContextFieldTag::BlockHash as u64),
+                        F::from(idx as u64),
+                        RandomLinearCombination::random_linear_combine(
+                            hash.to_le_bytes(),
+                            randomness,
+                        ),
+                    ]
+                })
+                .collect(),
+        ]
+        .concat()
+    }
 }
 
 #[derive(Debug, Default)]

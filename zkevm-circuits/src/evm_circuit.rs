@@ -1,3 +1,6 @@
+
+
+
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
@@ -24,17 +27,19 @@ pub struct EvmCircuit<F> {
 
 impl<F: FieldExt> EvmCircuit<F> {
     /// Configure EvmCircuit
-    pub fn configure<TxTable, RwTable, BytecodeTable>(
+    pub fn configure<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
         randomness: Column<Instance>,
         tx_table: TxTable,
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
+        block_table: BlockTable,
     ) -> Self
     where
         TxTable: LookupTable<F, 4>,
         RwTable: LookupTable<F, 8>,
         BytecodeTable: LookupTable<F, 4>,
+        BlockTable: LookupTable<F, 3>,
     {
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
 
@@ -101,7 +106,7 @@ mod test {
     use crate::evm_circuit::{
         param::STEP_HEIGHT,
         table::FixedTableTag,
-        witness::{Block, Bytecode, Rw, Transaction},
+        witness::{Block, Bytecode, Rw, Transaction, BlockContext},
         EvmCircuit,
     };
     use bus_mapping::eth_types::Word;
@@ -141,6 +146,7 @@ mod test {
         tx_table: [Column<Advice>; 4],
         rw_table: [Column<Advice>; 8],
         bytecode_table: [Column<Advice>; 4],
+        block_table: [Column<Advice>; 3],
         evm_circuit: EvmCircuit<F>,
     }
 
@@ -263,6 +269,45 @@ mod test {
                 },
             )
         }
+
+        fn load_blocks(
+            &self,
+            layouter: &mut impl Layouter<F>,
+            blocks: &[BlockContext<F>],
+            randomness: F,
+        ) -> Result<(), Error> {
+            layouter.assign_region(
+                || "block table",
+                |mut region| {
+                    let mut offset = 0;
+                    for column in self.block_table {
+                        region.assign_advice(
+                            || "block table all-zero row",
+                            column,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
+                    }
+                    offset += 1;
+
+                    for block in blocks.iter() {
+                        for row in block.table_assignments(randomness) {
+                            for (column, value) in self.block_table.iter().zip(row)
+                            {
+                                region.assign_advice(
+                                    || format!("block table row {}", offset),
+                                    *column,
+                                    offset,
+                                    || Ok(value),
+                                )?;
+                            }
+                            offset += 1;
+                        }
+                    }
+                    Ok(())
+                },
+            )
+        }
     }
 
     #[derive(Default)]
@@ -295,18 +340,21 @@ mod test {
             let tx_table = [(); 4].map(|_| meta.advice_column());
             let rw_table = [(); 8].map(|_| meta.advice_column());
             let bytecode_table = [(); 4].map(|_| meta.advice_column());
+            let block_table = [(); 3].map(|_| meta.advice_column());
             let randomness = meta.instance_column();
 
             Self::Config {
                 tx_table,
                 rw_table,
                 bytecode_table,
+                block_table,
                 evm_circuit: EvmCircuit::configure(
                     meta,
                     randomness,
                     tx_table,
                     rw_table,
                     bytecode_table,
+                    block_table,
                 ),
             }
         }
