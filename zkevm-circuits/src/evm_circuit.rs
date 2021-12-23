@@ -50,6 +50,7 @@ impl<F: FieldExt> EvmCircuit<F> {
             tx_table,
             rw_table,
             bytecode_table,
+            block_table,
         );
 
         Self {
@@ -273,7 +274,7 @@ mod test {
         fn load_blocks(
             &self,
             layouter: &mut impl Layouter<F>,
-            blocks: &[BlockContext<F>],
+            block: &BlockContext<F>,
             randomness: F,
         ) -> Result<(), Error> {
             layouter.assign_region(
@@ -290,20 +291,19 @@ mod test {
                     }
                     offset += 1;
 
-                    for block in blocks.iter() {
-                        for row in block.table_assignments(randomness) {
-                            for (column, value) in self.block_table.iter().zip(row)
-                            {
-                                region.assign_advice(
-                                    || format!("block table row {}", offset),
-                                    *column,
-                                    offset,
-                                    || Ok(value),
-                                )?;
-                            }
-                            offset += 1;
+                    for row in block.table_assignments(randomness) {
+                        for (column, value) in self.block_table.iter().zip(row)
+                        {
+                            region.assign_advice(
+                                || format!("block table row {}", offset),
+                                *column,
+                                offset,
+                                || Ok(value),
+                            )?;
                         }
+                        offset += 1;
                     }
+                    
                     Ok(())
                 },
             )
@@ -381,6 +381,11 @@ mod test {
             config.load_bytecodes(
                 &mut layouter,
                 &self.block.bytecodes,
+                self.block.randomness,
+            )?;
+            config.load_blocks(
+                &mut layouter,
+                &self.block.context,
                 self.block.randomness,
             )?;
             config.evm_circuit.assign_block(&mut layouter, &self.block)
