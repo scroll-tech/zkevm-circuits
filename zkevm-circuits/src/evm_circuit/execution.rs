@@ -101,18 +101,20 @@ pub(crate) struct ExecutionConfig<F> {
 }
 
 impl<F: FieldExt> ExecutionConfig<F> {
-    pub(crate) fn configure<TxTable, RwTable, BytecodeTable>(
+    pub(crate) fn configure<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
         randomness: Column<Instance>,
         fixed_table: [Column<Fixed>; 4],
         tx_table: TxTable,
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
+        block_table: BlockTable,
     ) -> Self
     where
         TxTable: LookupTable<F, 4>,
         RwTable: LookupTable<F, 8>,
         BytecodeTable: LookupTable<F, 4>,
+        BlockTable: LookupTable<F, 3>,
     {
         let q_step = meta.complex_selector();
         let qs_byte_lookup = meta.advice_column();
@@ -223,6 +225,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             tx_table,
             rw_table,
             bytecode_table,
+            block_table,
             independent_lookups,
         );
 
@@ -270,18 +273,20 @@ impl<F: FieldExt> ExecutionConfig<F> {
         gadget
     }
 
-    fn configure_lookup<TxTable, RwTable, BytecodeTable>(
+    fn configure_lookup<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
         q_step: Selector,
         fixed_table: [Column<Fixed>; 4],
         tx_table: TxTable,
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
+        block_table: BlockTable,
         independent_lookups: Vec<Vec<Lookup<F>>>,
     ) where
         TxTable: LookupTable<F, 4>,
         RwTable: LookupTable<F, 8>,
         BytecodeTable: LookupTable<F, 4>,
+        BlockTable: LookupTable<F, 3>,
     {
         // Because one and only one ExecutionState is enabled at a step, we then
         // know only one of independent_lookups will be enabled at a step, so we
@@ -342,7 +347,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         lookup!(Table::Tx, tx_table);
         lookup!(Table::Rw, rw_table);
         lookup!(Table::Bytecode, bytecode_table);
-        lookup!(Table::Block, bytecode_table);
+        lookup!(Table::Block, block_table);
     }
 
     pub fn assign_block(

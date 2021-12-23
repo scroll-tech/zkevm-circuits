@@ -137,8 +137,9 @@ impl ToWord for Address {
 impl<F: FieldExt> ToScalar<F> for Address {
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
-        bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
-        F::from_bytes(&bytes).into()
+        bytes[..Self::len_bytes()].copy_from_slice(self.as_bytes());
+        let bytes_f = F::from_bytes(&bytes);
+        bytes_f.into()
     }
 }
 
