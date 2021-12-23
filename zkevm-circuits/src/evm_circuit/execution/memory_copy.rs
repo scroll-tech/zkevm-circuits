@@ -11,7 +11,7 @@ use crate::{
             math_gadget::{ComparisonGadget, IsZeroGadget, LtGadget},
             sum, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction, OpcodeExtraData},
+        witness::{Block, Call, ExecStep, OpcodeExtraData, Transaction},
     },
     util::Expr,
 };
@@ -132,28 +132,33 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
             )
         }
 
+        let rw_counter = cb.curr.state.rw_counter.expr();
+        let mut rw_counter_offset = 0.expr();
         // Constraints on bytes
         for i in 0..MAX_COPY_BYTES {
+            let read_flag =
+                selectors[i].expr() * (1.expr() - bound_dist_is_zero[i].expr());
             // Read bytes[i] from memory when selectors[i] != 0 &&
             // bound_dist[i] != 0
-            cb.condition(
-                selectors[i].expr() * (1.expr() - bound_dist_is_zero[i].expr()),
-                |cb| {
-                    cb.memory_lookup(
-                        0.expr(),
-                        src_addr.expr() + i.expr(),
-                        bytes[i].expr()
-                    )
-                },
-            );
-            // Write bytes[i] to memory when selectors[i] != 0
-            cb.condition(selectors[i].expr(), |cb| {
-                cb.memory_lookup(
-                1.expr(),
-                dst_addr.expr() + i.expr(),
-                bytes[i].expr(),
+            cb.condition(read_flag.clone(), |cb| {
+                cb.memory_lookup_with_counter(
+                    rw_counter.clone() + rw_counter_offset.clone(),
+                    0.expr(),
+                    src_addr.expr() + i.expr(),
+                    bytes[i].expr(),
                 )
             });
+            rw_counter_offset = rw_counter_offset + read_flag;
+            // Write bytes[i] to memory when selectors[i] != 0
+            cb.condition(selectors[i].expr(), |cb| {
+                cb.memory_lookup_with_counter(
+                    rw_counter.clone() + rw_counter_offset.clone(),
+                    1.expr(),
+                    dst_addr.expr() + i.expr(),
+                    bytes[i].expr(),
+                )
+            });
+            rw_counter_offset = rw_counter_offset + selectors[i].expr();
             cb.add_constraint(
                 "Constrain bytes[i] == 0 when selectors[i] == 0",
                 (1.expr() - selectors[i].expr()) * bytes[i].expr(),
@@ -165,9 +170,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
         }
 
         let copied_size = sum::expr(&selectors);
-        let copied_cmp_gadget = ComparisonGadget::construct(
-            cb, copied_size.clone(), length.expr(),
-        );
+        let copied_cmp_gadget =
+            ComparisonGadget::construct(cb, copied_size.clone(), length.expr());
         let (lt, finished) = copied_cmp_gadget.expr();
         cb.add_constraint(
             "Constrain sum(selectors) <= length",
@@ -182,23 +186,23 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
         let next_src_addr_bound = cb.query_cell_next_step();
         cb.condition(1.expr() - finished, |cb| {
             cb.add_constraint(
-                "Constrain src_addr + copied_size == next_src_addr",
+                "src_addr + copied_size == next_src_addr",
                 src_addr.expr() + copied_size.clone() - next_src_addr.expr(),
             );
             cb.add_constraint(
-                "Constrain dst_addr + copied_size == next_dst_addr",
+                "dst_addr + copied_size == next_dst_addr",
                 dst_addr.expr() + copied_size.clone() - next_dst_addr.expr(),
             );
             cb.add_constraint(
-                "Constrain length == copied_size + next_length",
+                "length == copied_size + next_length",
                 length.expr() - copied_size.clone() - next_length.expr(),
             );
             cb.add_constraint(
-                "Constrain src_addr_bound == next_src_addr_bound",
+                "src_addr_bound == next_src_addr_bound",
                 src_addr_bound.expr() - next_src_addr_bound.expr(),
             );
             // cb.add_constraint(
-            //     "Constrain next_exec_state == CopyMemoryToMemory",
+            //     "next_exec_state == CopyMemoryToMemory",
             //     next_opcode.expr() - ExecutionState::CopyMemoryToMemory.as_u64().expr(),
             // )
         });
@@ -251,55 +255,61 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
             selectors,
         } = step.extra_data.as_ref().unwrap();
 
-        self.src_addr.assign(region, offset, Some(F::from(*src_addr)))?;
-        self.dst_addr.assign(region, offset, Some(F::from(*dst_addr)))?;
-        self.length.assign(region, offset,Some(F::from(*length)))?;
+        self.src_addr
+            .assign(region, offset, Some(F::from(*src_addr)))?;
+        self.dst_addr
+            .assign(region, offset, Some(F::from(*dst_addr)))?;
+        self.length.assign(region, offset, Some(F::from(*length)))?;
         self.src_addr_bound.assign(
             region,
             offset,
             Some(F::from(*src_addr_bound)),
         )?;
         self.src_addr_lt_gadget.assign(
-            region, offset, F::from(*src_addr), F::from(*src_addr_bound),
+            region,
+            offset,
+            F::from(*src_addr),
+            F::from(*src_addr_bound),
         )?;
 
         assert_eq!(selectors.len(), MAX_COPY_BYTES);
         let mut rw_idx = 0;
-        for idx in 0..MAX_COPY_BYTES {
-            self.selectors[idx].assign(region, offset, Some(F::from(selectors[idx] as u64)))?;
+        for (idx, selector) in selectors.iter().enumerate() {
+            self.selectors[idx].assign(
+                region,
+                offset,
+                Some(F::from(*selector as u64)),
+            )?;
+            // assign bound_dist and bound_dist_is_zero
             let oob = *src_addr + idx as u64 >= *src_addr_bound;
-            let bound_dist = if oob.clone() {
+            let bound_dist = if oob {
                 F::zero()
             } else {
                 F::from(*src_addr_bound - *src_addr - idx as u64)
             };
-            self.bound_dist[idx].assign(
-                region,
-                offset,
-                Some(bound_dist),
-            )?;
-            self.bound_dist_is_zero[idx].assign(
-                region,
-                offset,
-                bound_dist,
-            )?;
-            let byte = if selectors[idx] == 0 || oob.clone() {
-                F::zero()
+            self.bound_dist[idx].assign(region, offset, Some(bound_dist))?;
+            self.bound_dist_is_zero[idx].assign(region, offset, bound_dist)?;
+            // assign bytes
+            let byte = if *selector == 0 || oob {
+                0
             } else {
-                let b =
-                    F::from(block.rws[step.rw_indices[rw_idx]].memory_value() as u64);
+                let b = block.rws[step.rw_indices[rw_idx]].memory_value();
                 rw_idx += 1;
                 b
             };
-            self.bytes[idx].assign(region, offset, Some(byte))?;
-
-            if selectors[idx] == 1 {
+            self.bytes[idx].assign(
+                region,
+                offset,
+                Some(F::from(byte as u64)),
+            )?;
+            if *selector == 1 {
                 // increase rw_idx for write back to memory
                 rw_idx += 1
             }
         }
 
-        let num_bytes_copied = selectors.iter().fold(0, |acc, s| acc + (*s as u64));
+        let num_bytes_copied =
+            selectors.iter().fold(0, |acc, s| acc + (*s as u64));
         self.copied_cmp_gadget.assign(
             region,
             offset,
@@ -318,12 +328,11 @@ mod test {
         step::ExecutionState,
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
-        witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction, OpcodeExtraData},
+        witness::{
+            Block, Bytecode, Call, ExecStep, OpcodeExtraData, Rw, Transaction,
+        },
     };
-    use bus_mapping::{
-        eth_types::ToLittleEndian,
-        evm::OpcodeId,
-    };
+    use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
 
@@ -335,53 +344,56 @@ mod test {
         length: usize,
         rws: &mut Vec<Rw>,
         rw_counter: usize,
-    ) -> ExecStep {
+    ) -> (ExecStep, usize) {
         let mut selectors = vec![0u8; MAX_COPY_BYTES];
+        let mut rw_offset: usize = 0;
         let rw_idx_start = rws.len();
-        for idx in 0..MAX_COPY_BYTES {
+        for (idx, selector) in selectors.iter_mut().enumerate() {
             if idx < length {
-                selectors[idx] = 1;
+                *selector = 1;
                 let byte = if idx as u64 + src_addr < src_addr_bound {
                     let b = rand_bytes(1)[0];
                     rws.push(Rw::Memory {
-                        rw_counter: rw_counter + idx * 2,
+                        rw_counter: rw_counter + rw_offset,
                         is_write: false,
-                        call_id: call_id,
+                        call_id,
                         memory_address: src_addr + idx as u64,
                         byte: b,
                     });
+                    rw_offset += 1;
                     //println!("{:?}", rws.last());
                     b
                 } else {
                     0
                 };
                 rws.push(Rw::Memory {
-                    rw_counter: rw_counter + idx * 2 + 1,
+                    rw_counter: rw_counter + rw_offset,
                     is_write: true,
-                    call_id: call_id,
+                    call_id,
                     memory_address: dst_addr + idx as u64,
-                    byte: byte,
+                    byte,
                 });
                 //println!("{:?}", rws.last());
+                rw_offset += 1;
             }
         }
         let rw_idx_end = rws.len();
         let extra_data = OpcodeExtraData::CopyMemoryToMemory {
-            src_addr: src_addr,
-            dst_addr: dst_addr,
+            src_addr,
+            dst_addr,
             length: length as u64,
-            src_addr_bound: src_addr_bound,
-            selectors: selectors,
+            src_addr_bound,
+            selectors,
         };
         let step = ExecStep {
             execution_state: ExecutionState::CopyMemoryToMemory,
             rw_indices: (rw_idx_start..rw_idx_end).collect(),
-            rw_counter: rw_counter,
+            rw_counter,
             gas_cost: 0,
             extra_data: Some(extra_data),
             ..Default::default()
         };
-        step
+        (step, rw_offset)
     }
 
     fn test_ok(
@@ -402,24 +414,25 @@ mod test {
             println!("src_addr = {}", src_addr + copied as u64);
             println!("dst_addr = {}", src_addr + copied as u64);
             println!("length = {}", length - copied);
-            let step = new_memory_copy_step(
+            let (step, rw_offset) = new_memory_copy_step(
                 call_id,
                 src_addr + copied as u64,
                 dst_addr + copied as u64,
                 src_addr_bound,
                 length - copied,
                 &mut rws,
-                rw_counter);
+                rw_counter,
+            );
             //println!("step = {:?}", step);
             steps.push(step);
-            rw_counter += MAX_COPY_BYTES * 2;
+            rw_counter += rw_offset;
             copied += std::cmp::min(length, MAX_COPY_BYTES);
             //println!("rw_counter = {:?}", rw_counter);
         }
 
         steps.push(ExecStep {
             execution_state: ExecutionState::STOP,
-            rw_counter: rw_counter,
+            rw_counter,
             program_counter: 0,
             stack_pointer: 1024,
             opcode: Some(OpcodeId::STOP),
@@ -439,10 +452,10 @@ mod test {
                             randomness,
                         ),
                 }],
-                steps: steps,
+                steps,
                 ..Default::default()
             }],
-            rws: rws,
+            rws,
             bytecodes: vec![bytecode],
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));

@@ -103,7 +103,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         let mut constraints = self.constraints;
         let mut presets = Vec::new();
 
-        for (row, usage) in self.curr.rows.iter().zip(self.curr_row_usages.iter()) {
+        for (row, usage) in
+            self.curr.rows.iter().zip(self.curr_row_usages.iter())
+        {
             if usage.is_byte_lookup_enabled {
                 constraints.push((
                     "Enable byte lookup",
@@ -212,10 +214,17 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         cell
     }
 
-    fn query_cells<const N: usize>(&mut self, is_byte: bool, is_next: bool)
-        -> [Cell<F>; N] {
+    fn query_cells<const N: usize>(
+        &mut self,
+        is_byte: bool,
+        is_next: bool,
+    ) -> [Cell<F>; N] {
         let mut cells = Vec::with_capacity(N);
-        let rows = if is_next { &self.next.rows } else { &self.curr.rows };
+        let rows = if is_next {
+            &self.next.rows
+        } else {
+            &self.curr.rows
+        };
         let row_usages = if is_next {
             &mut self.next_row_usages
         } else {
@@ -223,8 +232,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         };
 
         // Iterate rows to find cell that matches the is_byte requirement.
-        for (row, usage) in rows.iter().zip(row_usages.iter_mut())
-        {
+        for (row, usage) in rows.iter().zip(row_usages.iter_mut()) {
             // If this row doesn't match the is_byte requirement and is already
             // used, skip this row.
             if usage.is_byte_lookup_enabled != is_byte && usage.next_idx > 0 {
@@ -741,12 +749,12 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         index: Option<Expression<F>>,
         value: Expression<F>,
     ) {
-        let index = index.unwrap_or(0.expr());
+        let index = index.unwrap_or_else(|| 0.expr());
         self.add_lookup(Lookup::Tx {
             id: tx_id,
             field_tag: tag.expr(),
-            index: index,
-            value: value,
+            index,
+            value,
         });
     }
 
