@@ -50,20 +50,13 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
 
         /* Stack operations */
         // Pop the address from the stack
-        cb.stack_lookup(
-            false.expr(),
-            cb.stack_pointer_offset().expr(),
-            address.expr(),
-        );
+        cb.stack_pop(address.expr());
 
         // For SLOAD push the value to the stack
         // FOR SSTORE pop the value from the stack
         cb.stack_lookup(
             is_sload.expr(),
-            cb.stack_pointer_offset().expr()
-            // TODO:
-            + 1.expr()
-                - is_sload.expr(),
+            cb.stack_pointer_offset().expr() - is_sload.expr(),
             value.expr(),
         );
 
