@@ -8,7 +8,8 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
-            math_gadget::{ComparisonGadget, IsZeroGadget, LtGadget},
+            math_gadget::{ComparisonGadget},
+            memory_gadget::BufferGetDataGadget,
             sum, Cell,
         },
         witness::{Block, Call, ExecStep, OpcodeExtraData, Transaction},
@@ -18,34 +19,23 @@ use crate::{
 use array_init::array_init;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
-const MAX_COPY_BYTES: usize = 32;
+const MAX_COPY_BYTES: usize = 40;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CopyMemoryToMemoryGadget<F> {
     //same_context: SameContextGadget<F>,
-    // The following fields are the states of CopyMemoryToMemory
     // The src memory address to copy from
     src_addr: Cell<F>,
     // The dst memory address to copy to
     dst_addr: Cell<F>,
-    // The length to be copied in bytes
-    length: Cell<F>,
+    // The number of bytes left to copy
+    bytes_left: Cell<F>,
     // The src address bound of the buffer
-    src_addr_bound: Cell<F>,
-    // The LT gadget to check if src_addr is less than src_addr_bound
-    src_addr_lt_gadget: LtGadget<F, MAX_MEMORY_SIZE_IN_BYTES>,
-
-    // The following fields are used for data copy
-    // The bytes that are copied
-    bytes: [Cell<F>; MAX_COPY_BYTES],
-    // The selectors that indicate if the bytes contain real data
-    selectors: [Cell<F>; MAX_COPY_BYTES],
-    // The distrance of the addr to the src_addr_bound
-    bound_dist: [Cell<F>; MAX_COPY_BYTES],
-    // Check if bound_dist is zero
-    bound_dist_is_zero: [IsZeroGadget<F>; MAX_COPY_BYTES],
-    // The comparison gadget between sum(selectors) and length
-    copied_cmp_gadget: ComparisonGadget<F, 4>,
+    src_addr_end: Cell<F>,
+    //
+    buffer_get_data: BufferGetDataGadget<F, MAX_COPY_BYTES, MAX_MEMORY_SIZE_IN_BYTES>,
+    // The comparison gadget between num bytes copied and bytes_left
+    finish_gadget: ComparisonGadget<F, 4>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
@@ -55,89 +45,20 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        let src_type = cb.query_cell();
         let src_addr = cb.query_cell();
         let dst_addr = cb.query_cell();
-        let length = cb.query_cell();
-        let src_addr_bound = cb.query_cell();
-
-        let bytes = array_init(|_| cb.query_byte());
-        let selectors = array_init(|_| cb.query_bool());
-        let bound_dist = array_init(|_| cb.query_cell());
-        let bound_dist_is_zero = array_init(|idx| {
-            IsZeroGadget::construct(cb, bound_dist[idx].expr())
-        });
-
-        // Constraints on selectors
-        for idx in 0..MAX_COPY_BYTES {
-            let selector_prev = if idx == 0 {
-                // First selector will always be 1
-                1.expr()
-            } else {
-                selectors[idx - 1].expr()
-            };
-            // selector can transit from 1 to 0 only once as [1, 1, 1, ...,
-            // 0, 0, 0]
-            cb.require_boolean(
-                "Constrain selector can only transit from 1 to 0",
-                selector_prev - selectors[idx].expr(),
-            );
-            // byte should be 0 when selector is 0
-            cb.require_zero(
-                "Constrain byte == 0 when selector == 0",
-                bytes[idx].expr() * (1.expr() - selectors[idx].expr()),
-            );
-        }
-
-        // Define bound_dist[i] = max(src_addr_bound - src_addr - i, 0)
-        // The purpose of bound_dist is to track if the access to src buffer
-        // is out of bound. When bound_dist[i] == 0, it indicates OOB error
-        // and so bytes[i] has to be 0 correspondingly.
-        // Because the bound_dist is decreasing by at most 1 each time, we can
-        // use this property to reduce the use of LtGadget by adding constraints
-        // to the diff between two consecutive bound_dists.
-
-        // Constraints on bound_dist[0]
-        //   bound_dist[0] == 0 || src_addr + bound_dist[0] == src_addr_bound
-        //   src_addr < src_addr_bound when bound_dist[0] != 0
-        cb.add_constraint(
-            "Constrain bound_dist[0] == 0 or offset+bound_dist[0] == buffer_size",
-            bound_dist[0].expr() * (
-                src_addr.expr() + bound_dist[0].expr() - src_addr_bound.expr()),
+        let bytes_left = cb.query_cell();
+        let src_addr_end = cb.query_cell();
+        let buffer_get_data = BufferGetDataGadget::construct(
+            cb, &src_addr, &src_addr_end,
         );
-        let src_addr_lt_gadget =
-            LtGadget::construct(cb, src_addr.expr(), src_addr_bound.expr());
-        cb.add_constraint(
-            "Constrain src_addr < src_addr_bound when bound_dist[0] != 0",
-            bound_dist_is_zero[0].expr()
-                * (1.expr() - src_addr_lt_gadget.expr()),
-        );
-        // Constraints on bound_dist[1..MAX_COPY_BYTES]
-        //   diff == 0 / 1 where diff = bound_dist[idx - 1] - bound_dist[idx]
-        //   diff == 1 when bound_dist[idx - 1] != 0
-        //   diff == 0 when bound_dist[idx - 1] == 0
-        for idx in 1..MAX_COPY_BYTES {
-            let diff = bound_dist[idx - 1].expr() - bound_dist[idx].expr();
-            cb.require_boolean(
-                "Constrain bound_dist[i - 1] - bound_dist[i] == 0 / 1",
-                diff.clone(),
-            );
-            cb.add_constraint(
-                "Constrain diff == 1 when bound_dist[i - 1] != 0",
-                (1.expr() - bound_dist_is_zero[idx - 1].expr())
-                    * (1.expr() - diff.expr()),
-            );
-            cb.add_constraint(
-                "Constrain diff == 0 when bound_dist[i - 1] == 0",
-                bound_dist_is_zero[idx - 1].expr() * diff.expr(),
-            )
-        }
 
         let rw_counter = cb.curr.state.rw_counter.expr();
         let mut rw_counter_offset = 0.expr();
-        // Constraints on bytes
+        // Copy bytes from src and dst
         for i in 0..MAX_COPY_BYTES {
-            let read_flag =
-                selectors[i].expr() * (1.expr() - bound_dist_is_zero[i].expr());
+            let read_flag = buffer_get_data.read_from_buffer(i);
             // Read bytes[i] from memory when selectors[i] != 0 &&
             // bound_dist[i] != 0
             cb.condition(read_flag.clone(), |cb| {
@@ -145,36 +66,28 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
                     rw_counter.clone() + rw_counter_offset.clone(),
                     0.expr(),
                     src_addr.expr() + i.expr(),
-                    bytes[i].expr(),
+                    buffer_get_data.byte(i),
                 )
             });
             rw_counter_offset = rw_counter_offset + read_flag;
             // Write bytes[i] to memory when selectors[i] != 0
-            cb.condition(selectors[i].expr(), |cb| {
+            cb.condition(buffer_get_data.has_data(i), |cb| {
                 cb.memory_lookup_with_counter(
                     rw_counter.clone() + rw_counter_offset.clone(),
                     1.expr(),
                     dst_addr.expr() + i.expr(),
-                    bytes[i].expr(),
+                    buffer_get_data.byte(i),
                 )
             });
-            rw_counter_offset = rw_counter_offset + selectors[i].expr();
-            cb.add_constraint(
-                "Constrain bytes[i] == 0 when selectors[i] == 0",
-                (1.expr() - selectors[i].expr()) * bytes[i].expr(),
-            );
-            cb.add_constraint(
-                "Constrain bytes[i] == 0 when bound_dist[i] == 0",
-                bound_dist_is_zero[i].expr() * bytes[i].expr(),
-            )
+            rw_counter_offset = rw_counter_offset + buffer_get_data.has_data(i);
         }
 
-        let copied_size = sum::expr(&selectors);
-        let copied_cmp_gadget =
-            ComparisonGadget::construct(cb, copied_size.clone(), length.expr());
-        let (lt, finished) = copied_cmp_gadget.expr();
+        let copied_size = buffer_get_data.num_bytes();
+        let finish_gadget =
+            ComparisonGadget::construct(cb, copied_size.clone(), bytes_left.expr());
+        let (lt, finished) = finish_gadget.expr();
         cb.add_constraint(
-            "Constrain sum(selectors) <= length",
+            "Constrain num_bytes <= bytes_left",
             lt * finished.clone(),
         );
 
@@ -182,8 +95,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
         let next_opcode = cb.query_cell_next_step();
         let next_src_addr = cb.query_cell_next_step();
         let next_dst_addr = cb.query_cell_next_step();
-        let next_length = cb.query_cell_next_step();
-        let next_src_addr_bound = cb.query_cell_next_step();
+        let next_bytes_left = cb.query_cell_next_step();
+        let next_src_addr_end = cb.query_cell_next_step();
         cb.condition(1.expr() - finished, |cb| {
             cb.add_constraint(
                 "src_addr + copied_size == next_src_addr",
@@ -195,11 +108,11 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
             );
             cb.add_constraint(
                 "length == copied_size + next_length",
-                length.expr() - copied_size.clone() - next_length.expr(),
+                bytes_left.expr() - copied_size.clone() - next_bytes_left.expr(),
             );
             cb.add_constraint(
                 "src_addr_bound == next_src_addr_bound",
-                src_addr_bound.expr() - next_src_addr_bound.expr(),
+                src_addr_end.expr() - next_src_addr_end.expr(),
             );
             // cb.add_constraint(
             //     "next_exec_state == CopyMemoryToMemory",
@@ -207,9 +120,6 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
             // )
         });
 
-        let rw_counter_delta = MAX_COPY_BYTES.expr()
-            - sum::expr(bound_dist_is_zero.iter().map(|ex| ex.expr()))
-            + sum::expr(&selectors);
         // let step_state_transition = StepStateTransition {
         //     rw_counter: Delta(rw_counter_delta),
         //     ..Default::default()
@@ -225,14 +135,10 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
             //same_context,
             src_addr,
             dst_addr,
-            length,
-            src_addr_bound,
-            src_addr_lt_gadget,
-            bytes,
-            selectors,
-            bound_dist,
-            bound_dist_is_zero,
-            copied_cmp_gadget,
+            bytes_left,
+            src_addr_end,
+            buffer_get_data,
+            finish_gadget,
         }
     }
 
@@ -246,12 +152,11 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         //self.same_context.assign_exec_step(region, offset, step)?;
-
         let OpcodeExtraData::CopyMemoryToMemory {
             src_addr,
             dst_addr,
-            length,
-            src_addr_bound,
+            bytes_left,
+            src_addr_end,
             selectors,
         } = step.extra_data.as_ref().unwrap();
 
@@ -259,67 +164,53 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyMemoryToMemoryGadget<F> {
             .assign(region, offset, Some(F::from(*src_addr)))?;
         self.dst_addr
             .assign(region, offset, Some(F::from(*dst_addr)))?;
-        self.length.assign(region, offset, Some(F::from(*length)))?;
-        self.src_addr_bound.assign(
+        self.bytes_left.assign(region, offset, Some(F::from(*bytes_left)))?;
+        self.src_addr_end.assign(
             region,
             offset,
-            Some(F::from(*src_addr_bound)),
-        )?;
-        self.src_addr_lt_gadget.assign(
-            region,
-            offset,
-            F::from(*src_addr),
-            F::from(*src_addr_bound),
+            Some(F::from(*src_addr_end)),
         )?;
 
         assert_eq!(selectors.len(), MAX_COPY_BYTES);
         let mut rw_idx = 0;
+        let mut bytes = vec![0u8; MAX_COPY_BYTES];
         for (idx, selector) in selectors.iter().enumerate() {
-            self.selectors[idx].assign(
-                region,
-                offset,
-                Some(F::from(*selector as u64)),
-            )?;
-            // assign bound_dist and bound_dist_is_zero
-            let oob = *src_addr + idx as u64 >= *src_addr_bound;
-            let bound_dist = if oob {
-                F::zero()
-            } else {
-                F::from(*src_addr_bound - *src_addr - idx as u64)
-            };
-            self.bound_dist[idx].assign(region, offset, Some(bound_dist))?;
-            self.bound_dist_is_zero[idx].assign(region, offset, bound_dist)?;
-            // assign bytes
-            let byte = if *selector == 0 || oob {
+            let oob = *src_addr + idx as u64 >= *src_addr_end;
+            bytes[idx] = if *selector == 0 || oob {
                 0
             } else {
                 let b = block.rws[step.rw_indices[rw_idx]].memory_value();
                 rw_idx += 1;
                 b
             };
-            self.bytes[idx].assign(
-                region,
-                offset,
-                Some(F::from(byte as u64)),
-            )?;
             if *selector == 1 {
                 // increase rw_idx for write back to memory
                 rw_idx += 1
             }
         }
 
+        self.buffer_get_data.assign(
+            region,
+            offset,
+            *src_addr,
+            *src_addr_end,
+            &bytes,
+            selectors,
+        )?;
+
         let num_bytes_copied =
             selectors.iter().fold(0, |acc, s| acc + (*s as u64));
-        self.copied_cmp_gadget.assign(
+        self.finish_gadget.assign(
             region,
             offset,
             F::from(num_bytes_copied),
-            F::from(*length),
+            F::from(*bytes_left),
         )?;
 
         Ok(())
     }
 }
+
 
 #[cfg(test)]
 mod test {
@@ -340,8 +231,8 @@ mod test {
         call_id: usize,
         src_addr: u64,
         dst_addr: u64,
-        src_addr_bound: u64,
-        length: usize,
+        src_addr_end: u64,
+        bytes_left: usize,
         rws: &mut Vec<Rw>,
         rw_counter: usize,
     ) -> (ExecStep, usize) {
@@ -349,9 +240,9 @@ mod test {
         let mut rw_offset: usize = 0;
         let rw_idx_start = rws.len();
         for (idx, selector) in selectors.iter_mut().enumerate() {
-            if idx < length {
+            if idx < bytes_left {
                 *selector = 1;
-                let byte = if idx as u64 + src_addr < src_addr_bound {
+                let byte = if idx as u64 + src_addr < src_addr_end {
                     let b = rand_bytes(1)[0];
                     rws.push(Rw::Memory {
                         rw_counter: rw_counter + rw_offset,
@@ -381,8 +272,8 @@ mod test {
         let extra_data = OpcodeExtraData::CopyMemoryToMemory {
             src_addr,
             dst_addr,
-            length: length as u64,
-            src_addr_bound,
+            bytes_left: bytes_left as u64,
+            src_addr_end,
             selectors,
         };
         let step = ExecStep {
@@ -473,6 +364,6 @@ mod test {
 
     #[test]
     fn memory_copy_out_of_bound() {
-        test_ok(0x40, 0xA0, 0x45, 8)
+        test_ok(0x40, 0xA0, 0x45, 43)
     }
 }

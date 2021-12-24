@@ -269,8 +269,8 @@ pub enum OpcodeExtraData {
     CopyMemoryToMemory {
         src_addr: u64,
         dst_addr: u64,
-        length: u64,
-        src_addr_bound: u64,
+        bytes_left: u64,
+        src_addr_end: u64,
         selectors: Vec<u8>,
     },
 }

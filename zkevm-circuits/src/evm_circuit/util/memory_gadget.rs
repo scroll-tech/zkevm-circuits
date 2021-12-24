@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::ConstraintBuilder,
             from_bytes,
             math_gadget::IsZeroGadget,
-            math_gadget::{ConstantDivisionGadget, MinMaxGadget},
+            math_gadget::{ConstantDivisionGadget, MinMaxGadget, LtGadget},
             sum, Cell, MemoryAddress, Word,
         },
     },
@@ -345,5 +345,164 @@ impl<F: FieldExt, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
 
         // Return the new memory size and the memory expansion gas cost
         Ok((next_memory_word_size, memory_cost))
+    }
+}
+
+///
+#[derive(Clone, Debug)]
+pub(crate) struct BufferGetDataGadget<F, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize> {
+    // The bytes that are copied
+    bytes: [Cell<F>; MAX_BYTES],
+    // The selectors that indicate if the bytes contain real data
+    selectors: [Cell<F>; MAX_BYTES],
+    // The LT gadget to check if src_addr is less than src_addr_bound
+    lt_gadget: LtGadget<F, ADDR_SIZE_IN_BYTES>,
+    // The distrance of the offset in the buffer to the buffer_end
+    bound_dist: [Cell<F>; MAX_BYTES],
+    // Check if bound_dist is zero
+    bound_dist_is_zero: [IsZeroGadget<F>; MAX_BYTES],
+}
+
+impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
+    BufferGetDataGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        addr_start: &Cell<F>,
+        addr_end: &Cell<F>,
+    ) -> Self {
+        let bytes = array_init(|_| cb.query_byte());
+        let selectors = array_init(|_| cb.query_bool());
+        let bound_dist = array_init(|_| cb.query_cell());
+        let bound_dist_is_zero = array_init(|idx| {
+            IsZeroGadget::construct(cb, bound_dist[idx].expr())
+        });
+        let lt_gadget =
+            LtGadget::construct(cb, addr_start.expr(), addr_end.expr());
+
+        // Define bound_dist[i] = max(addr_end - addr_start - i, 0)
+        // The purpose of bound_dist is to track if the access to src buffer
+        // is out of bound. When bound_dist[i] == 0, it indicates OOB error
+        // and so bytes[i] has to be 0 correspondingly.
+        // Because the bound_dist is decreasing by at most 1 each time, we can
+        // use this property to reduce the use of LtGadget by adding constraints
+        // to the diff between two consecutive bound_dists.
+
+        // Constraints on bound_dist[0]
+        //   bound_dist[0] == 0 || addr_start + bound_dist[0] == addr_end
+        //   src_addr < src_addr_bound when bound_dist[0] != 0
+        cb.add_constraint(
+            "bound_dist[0] == 0 or addr_start + bound_dist[0] == addr_end",
+            bound_dist[0].expr() * (
+                addr_start.expr() + bound_dist[0].expr() - addr_end.expr()),
+        );
+        cb.add_constraint(
+            "addr_start < addr_end when bound_dist_is_zero[0] == 0",
+            (1.expr() - bound_dist_is_zero[0].expr()) * (1.expr() - lt_gadget.expr()),
+        );
+        // Constraints on bound_dist[1..MAX_COPY_BYTES]
+        //   diff = bound_dist[idx - 1] - bound_dist[idx]
+        //   diff == 1 when bound_dist[idx - 1] != 0
+        //   diff == 0 when bound_dist[idx - 1] == 0
+        for idx in 1..MAX_BYTES {
+            let diff = bound_dist[idx - 1].expr() - bound_dist[idx].expr();
+            cb.add_constraint(
+                "diff == 1 when bound_dist[i - 1] != 0",
+                (1.expr() - bound_dist_is_zero[idx - 1].expr())
+                    * (1.expr() - diff.expr()),
+            );
+            cb.add_constraint(
+                "diff == 0 when bound_dist[i - 1] == 0",
+                bound_dist_is_zero[idx - 1].expr() * diff.expr(),
+            )
+        }
+
+        // Constraints on bytes and selectors
+        for i in 0..MAX_BYTES {
+            let selector_prev = if i == 0 {
+                // First selector will always be 1
+                1.expr()
+            } else {
+                selectors[i - 1].expr()
+            };
+            // selector can transit from 1 to 0 only once as [1, 1, 1, ...,
+            // 0, 0, 0]
+            cb.require_boolean(
+                "Constrain selectors can only transit from 1 to 0",
+                selector_prev - selectors[i].expr(),
+            );
+            cb.add_constraint(
+                "bytes[i] == 0 when selectors[i] == 0",
+                (1.expr() - selectors[i].expr()) * bytes[i].expr(),
+            );
+            cb.add_constraint(
+                "bytes[i] == 0 when bound_dist_is_zero[i] == 1",
+                bound_dist_is_zero[i].expr() * bytes[i].expr(),
+            )
+        }
+
+        BufferGetDataGadget {
+            bytes,
+            selectors,
+            bound_dist,
+            bound_dist_is_zero,
+            lt_gadget,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        addr_start: u64,
+        addr_end: u64,
+        bytes: &Vec<u8>,
+        selectors: &Vec<u8>,
+    ) -> Result<(), Error> {
+        self.lt_gadget.assign(
+            region,
+            offset,
+            F::from(addr_start),
+            F::from(addr_end),
+        )?;
+
+        assert_eq!(selectors.len(), MAX_BYTES);
+        for (idx, selector) in selectors.iter().enumerate() {
+            self.selectors[idx].assign(
+                region,
+                offset,
+                Some(F::from(*selector as u64)),
+            )?;
+            self.bytes[idx].assign(
+                region,
+                offset,
+                Some(F::from(bytes[idx] as u64)),
+            )?;
+            // assign bound_dist and bound_dist_is_zero
+            let oob = addr_start + idx as u64 >= addr_end;
+            let bound_dist = if oob {
+                F::zero()
+            } else {
+                F::from(addr_end - addr_start - idx as u64)
+            };
+            self.bound_dist[idx].assign(region, offset, Some(bound_dist))?;
+            self.bound_dist_is_zero[idx].assign(region, offset, bound_dist)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn byte(&self, idx: usize) -> Expression<F> {
+        self.bytes[idx].expr()
+    }
+
+    pub(crate) fn has_data(&self, idx: usize) -> Expression<F> {
+        self.selectors[idx].expr()
+    }
+
+    pub(crate) fn read_from_buffer(&self, idx: usize) -> Expression<F> {
+        self.has_data(idx) * (1.expr() - self.bound_dist_is_zero[idx].expr())
+    }
+
+    pub(crate) fn num_bytes(&self) -> Expression<F> {
+        sum::expr(&self.selectors)
     }
 }
