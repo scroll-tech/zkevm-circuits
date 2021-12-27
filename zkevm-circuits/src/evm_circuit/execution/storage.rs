@@ -107,8 +107,8 @@ impl<F: FieldExt> ExecutionGadget<F> for StorageGadget<F> {
         // Inputs/Outputs
         // consistent with bus_mapping
         // TODO: fix for SSTORE
-        let [address, value] = [step.rw_indices[0], step.rw_indices[2]]
-            .map(|idx| block.rws[idx].stack_value());
+        let indices = [step.rw_indices[0], step.rw_indices[2]];
+        let [address, value] = indices.map(|idx| block.rws[idx].stack_value());
         self.address
             .assign(region, offset, Some(address.to_le_bytes()))?;
         self.value
