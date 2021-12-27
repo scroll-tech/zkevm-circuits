@@ -300,7 +300,7 @@ mod test {
                         }
                         offset += 1;
                     }
-                    
+
                     Ok(())
                 },
             )
