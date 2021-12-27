@@ -173,11 +173,11 @@ mod test {
 
     #[test]
     fn storage_gadget_simple() {
-        // test_ok(
-        //     OpcodeId::MSTORE,
-        //     Word::from_big_endian(&(33..1).collect::<Vec<_>>()),
-        //     Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
-        // );
+        test_ok(
+            OpcodeId::SSTORE,
+            Word::from_big_endian(&(33..1).collect::<Vec<_>>()),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+        );
 
         test_ok(
             OpcodeId::SLOAD,
