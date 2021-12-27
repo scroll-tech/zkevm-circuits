@@ -22,12 +22,12 @@ impl Opcode for Sstore {
         // First stack read (key)
         let key = step.stack.nth_last(0)?;
         let key_pos = step.stack.nth_last_filled(0);
-        state.push_op(StackOp::new(RW::READ, key_pos, key));
+        state.push_stack_op(RW::READ, key_pos, key);
 
         // Second stack read (value)
         let value = step.stack.nth_last(1)?;
         let value_pos = step.stack.nth_last_filled(1);
-        state.push_op(StackOp::new(RW::READ, value_pos, value));
+        state.push_stack_op(RW::READ, value_pos, value);
 
         // Storage write
         let value_prev = step.storage.get_or_err(&key)?;
