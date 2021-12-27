@@ -17,31 +17,27 @@ impl Opcode for Sstore {
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
-        // let step = &steps[0];
+        let step = &steps[0];
 
-        // // First stack read (key)
-        // let key = step.stack.nth_last(0)?;
-        // let key_pos = step.stack.nth_last_filled(0);
-        // state.push_op(StackOp::new(RW::READ, key_pos, key));
+        // First stack read (key)
+        let key = step.stack.nth_last(0)?;
+        let key_pos = step.stack.nth_last_filled(0);
+        state.push_op(StackOp::new(RW::READ, key_pos, key));
 
-        // // Second stack read (value)
-        // let value = step.stack.nth_last(1)?;
-        // let value_pos = step.stack.nth_last_filled(1);
-        // state.push_op(StackOp::new(RW::READ, value_pos, value));
+        // Second stack read (value)
+        let value = step.stack.nth_last(1)?;
+        let value_pos = step.stack.nth_last_filled(1);
+        state.push_op(StackOp::new(RW::READ, value_pos, value));
 
-        // // Storage write
-        // let value_prev = step.storage.get_or_err(&key)?;
-        // state.push_op(StorageOp::new(
-        //     RW::WRITE,
-        //     state.call().address,
-        //     key,
-        //     value,
-        //     value_prev,
-        // ));
-
-        // // TODO:
-        // // First stack write
-        // state.push_op(StackOp::new(RW::WRITE, key_pos, value));
+        // Storage write
+        let value_prev = step.storage.get_or_err(&key)?;
+        state.push_op(StorageOp::new(
+            RW::WRITE,
+            state.call().address,
+            key,
+            value,
+            value_prev,
+        ));
 
         Ok(())
     }
