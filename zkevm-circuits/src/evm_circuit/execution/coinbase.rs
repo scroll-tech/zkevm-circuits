@@ -2,31 +2,24 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        table::{BlockContextFieldTag, Lookup},
+        table::BlockContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, To},
+                ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
-            from_bytes, Cell, RandomLinearCombination, Word,
+            Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use bus_mapping::eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
-use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CoinbaseGadget<F> {
     same_context: SameContextGadget<F>,
-    // TODO: make 20 bytes length as predefined in params.rs
-    //coinbase_address: RandomLinearCombination<F, 20>,
-    // For now we only consider one block for evm circuit target, if in future
-    // support multi add block number block_number:
-    // RandomLinearCombination<F, 31>,
     coinbase_address: Cell<F>,
 }
 
@@ -36,12 +29,6 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::COINBASE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        // let coinbase_address =
-        //     RandomLinearCombination::new(cb.query_bytes(), cb.randomness());
-
-        // // Push the value to the stack
-        // cb.stack_push(coinbase_address.expr());
-
         let coinbase_address = cb.query_cell();
 
         // Pop the value from the stack
@@ -105,10 +92,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
 mod test {
     use crate::evm_circuit::{
         step::ExecutionState,
-        test::{
-            rand_range, run_test_circuit_complete_fixed_table,
-            run_test_circuit_incomplete_fixed_table,
-        },
+        test::run_test_circuit_incomplete_fixed_table,
         util::RandomLinearCombination,
         witness::{
             Block, BlockContext, Bytecode, Call, ExecStep, Rw, Transaction,
