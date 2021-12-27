@@ -1,11 +1,11 @@
 #![allow(missing_docs)]
 use crate::evm_circuit::{
     step::ExecutionState,
-    table::{RwTableTag, TxContextFieldTag, BlockContextFieldTag},
+    table::{BlockContextFieldTag, RwTableTag, TxContextFieldTag},
     util::RandomLinearCombination,
 };
 use bus_mapping::{
-    eth_types::{Address, ToLittleEndian, ToScalar, Word},
+    eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word},
     evm::OpcodeId,
 };
 use halo2::arithmetic::{BaseExt, FieldExt};
@@ -28,7 +28,7 @@ pub struct BlockContext<F> {
     pub coinbase: Address, // u160
     pub gas_limit: u64,
     pub block_number: Word,
-    pub time: F, // maybe u64 is enough ? 
+    pub time: F, // maybe u64 is enough ?
     pub difficulty: Word,
     pub base_fee: Word,
     pub previous_block_hashes: Vec<Word>,
@@ -41,12 +41,15 @@ impl<F: FieldExt> BlockContext<F> {
                 [
                     F::from(BlockContextFieldTag::Coinbase as u64),
                     F::zero(),
-                    self.coinbase.to_scalar().unwrap(),
+                    RandomLinearCombination::random_linear_combine(
+                        self.coinbase.to_word().to_le_bytes(),
+                        randomness,
+                    ),
                 ],
                 [
                     F::from(BlockContextFieldTag::GasLimit as u64),
                     F::zero(),
-                    F::from(self.gas_limit), 
+                    F::from(self.gas_limit),
                 ],
                 [
                     F::from(BlockContextFieldTag::BlockNumber as u64),
@@ -77,7 +80,6 @@ impl<F: FieldExt> BlockContext<F> {
                         randomness,
                     ),
                 ],
-               
             ],
             self.previous_block_hashes
                 .iter()
