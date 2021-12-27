@@ -256,7 +256,8 @@ pub(crate) enum Lookup<F> {
     Block {
         /// Tag to specify which field to read.
         field_tag: Expression<F>,
-        /// block_number_or_zero (meaningful only for BlockHash, will be zero for other tags)
+        /// block_number_or_zero (meaningful only for BlockHash, will be zero
+        /// for other tags)
         number: Expression<F>,
         /// Value of the field.
         value: Expression<F>,
@@ -276,7 +277,7 @@ impl<F: FieldExt> Lookup<F> {
             Self::Tx { .. } => Table::Tx,
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
-            Self::Block { .. } => Table::Bytecode,
+            Self::Block { .. } => Table::Block,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -325,11 +326,7 @@ impl<F: FieldExt> Lookup<F> {
                 number,
                 value,
             } => {
-                vec![
-                    field_tag.clone(),
-                    number.clone(),
-                    value.clone(),
-                ]
+                vec![field_tag.clone(), number.clone(), value.clone()]
             }
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

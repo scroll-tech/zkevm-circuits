@@ -1,6 +1,3 @@
-
-
-
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
@@ -107,7 +104,7 @@ mod test {
     use crate::evm_circuit::{
         param::STEP_HEIGHT,
         table::FixedTableTag,
-        witness::{Block, Bytecode, Rw, Transaction, BlockContext},
+        witness::{Block, BlockContext, Bytecode, Rw, Transaction},
         EvmCircuit,
     };
     use bus_mapping::eth_types::Word;
@@ -162,7 +159,7 @@ mod test {
                 || "tx table",
                 |mut region| {
                     let mut offset = 0;
-                    for column in self.rw_table {
+                    for column in self.tx_table {
                         region.assign_advice(
                             || "tx table all-zero row",
                             column,

@@ -21,6 +21,7 @@ use std::collections::HashMap;
 mod add;
 mod bitwise;
 mod byte;
+mod coinbase;
 mod comparator;
 mod dup;
 mod error_oog_pure_memory;
@@ -35,11 +36,11 @@ mod push;
 mod signextend;
 mod stop;
 mod swap;
-mod coinbase;
 
 use add::AddGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
+use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
 use error_oog_pure_memory::ErrorOOGPureMemoryGadget;
@@ -54,8 +55,6 @@ use push::PushGadget;
 use signextend::SignextendGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
-use coinbase::CoinbaseGadget;
-
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
@@ -80,20 +79,20 @@ pub(crate) struct ExecutionConfig<F> {
     q_step: Selector,
     step: Step<F>,
     presets_map: HashMap<ExecutionState, Vec<Preset<F>>>,
-    add_gadget: AddGadget<F>,
-    bitwise_gadget: BitwiseGadget<F>,
-    byte_gadget: ByteGadget<F>,
-    comparator_gadget: ComparatorGadget<F>,
-    dup_gadget: DupGadget<F>,
-    error_oog_pure_memory_gadget: ErrorOOGPureMemoryGadget<F>,
-    jump_gadget: JumpGadget<F>,
-    jumpdest_gadget: JumpdestGadget<F>,
-    jumpi_gadget: JumpiGadget<F>,
-    memory_gadget: MemoryGadget<F>,
-    pc_gadget: PcGadget<F>,
-    pop_gadget: PopGadget<F>,
-    push_gadget: PushGadget<F>,
-    signextend_gadget: SignextendGadget<F>,
+    // add_gadget: AddGadget<F>,
+    // bitwise_gadget: BitwiseGadget<F>,
+    // byte_gadget: ByteGadget<F>,
+    // comparator_gadget: ComparatorGadget<F>,
+    // dup_gadget: DupGadget<F>,
+    // error_oog_pure_memory_gadget: ErrorOOGPureMemoryGadget<F>,
+    // jump_gadget: JumpGadget<F>,
+    // jumpdest_gadget: JumpdestGadget<F>,
+    // jumpi_gadget: JumpiGadget<F>,
+    // memory_gadget: MemoryGadget<F>,
+    // pc_gadget: PcGadget<F>,
+    // pop_gadget: PopGadget<F>,
+    // push_gadget: PushGadget<F>,
+    // signextend_gadget: SignextendGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
     msize_gadget: MsizeGadget<F>,
@@ -196,20 +195,20 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         let config = Self {
             q_step,
-            add_gadget: configure_gadget!(),
-            bitwise_gadget: configure_gadget!(),
-            byte_gadget: configure_gadget!(),
-            comparator_gadget: configure_gadget!(),
-            dup_gadget: configure_gadget!(),
-            error_oog_pure_memory_gadget: configure_gadget!(),
-            jump_gadget: configure_gadget!(),
-            jumpdest_gadget: configure_gadget!(),
-            jumpi_gadget: configure_gadget!(),
-            memory_gadget: configure_gadget!(),
-            pc_gadget: configure_gadget!(),
-            pop_gadget: configure_gadget!(),
-            push_gadget: configure_gadget!(),
-            signextend_gadget: configure_gadget!(),
+            // add_gadget: configure_gadget!(),
+            // bitwise_gadget: configure_gadget!(),
+            // byte_gadget: configure_gadget!(),
+            // comparator_gadget: configure_gadget!(),
+            // dup_gadget: configure_gadget!(),
+            // error_oog_pure_memory_gadget: configure_gadget!(),
+            // jump_gadget: configure_gadget!(),
+            // jumpdest_gadget: configure_gadget!(),
+            // jumpi_gadget: configure_gadget!(),
+            // memory_gadget: configure_gadget!(),
+            // pc_gadget: configure_gadget!(),
+            // pop_gadget: configure_gadget!(),
+            // push_gadget: configure_gadget!(),
+            // signextend_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
@@ -268,6 +267,67 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         // Push lookups of this ExecutionState to independent_lookups for
         // further configuration in configure_lookup.
+        // hack code here:
+        // pub(crate) enum Table {
+        //     Fixed,
+        //     Tx,
+        //     Rw,
+        //     Bytecode,
+        //     Block,
+        // }
+        for lookup in lookups.clone() {
+            match lookup {
+                Lookup::Conditional(.., box1_lookup) => match *box1_lookup {
+                    Lookup::Fixed { .. } => {
+                        println!("fixed ");
+                    }
+                    Lookup::Tx { .. } => {
+                        println!("Tx ");
+                    }
+                    Lookup::Rw { .. } => {
+                        println!("Rw ");
+                    }
+                    Lookup::Bytecode { .. } => {
+                        println!("Bytecode ");
+                    }
+                    Lookup::Block { .. } => {
+                        println!("Block ");
+                    }
+                    Lookup::Conditional(.., box2_lookup) => {
+                        println!("Conditinal ");
+                        match *box2_lookup {
+                            Lookup::Fixed { tag, values } => {
+                                println!("fixed ");
+                            }
+                            Lookup::Tx { .. } => {
+                                println!("Tx ");
+                            }
+                            Lookup::Rw { .. } => {
+                                println!("Rw ");
+                            }
+                            Lookup::Bytecode {
+                                hash,
+                                index,
+                                value,
+                                is_code,
+                            } => {
+                                println!("Bytecode ");
+                            }
+                            Lookup::Block { .. } => {
+                                println!("Block ");
+                            }
+                            Lookup::Conditional(.., box2_lookup) => {
+                                println!("BloConditionalck ");
+                            }
+                        }
+                    }
+                    _ => unimplemented!(),
+                },
+                _ => unimplemented!(),
+            }
+        }
+        // hack end
+
         independent_lookups.push(lookups);
 
         gadget
@@ -343,11 +403,11 @@ impl<F: FieldExt> ExecutionConfig<F> {
             };
         }
 
-        lookup!(Table::Fixed, fixed_table);
-        lookup!(Table::Tx, tx_table);
-        lookup!(Table::Rw, rw_table);
-        lookup!(Table::Bytecode, bytecode_table);
-        lookup!(Table::Block, block_table);
+        lookup!(Table::Fixed, fixed_table); // skip
+        lookup!(Table::Tx, tx_table); // skip
+        lookup!(Table::Rw, rw_table); // 33
+        lookup!(Table::Bytecode, bytecode_table); // 34
+        lookup!(Table::Block, block_table); // 35
     }
 
     pub fn assign_block(

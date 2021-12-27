@@ -1,15 +1,15 @@
 use crate::{
     evm_circuit::{
-        table::{Lookup, BlockContextFieldTag},
         execution::ExecutionGadget,
         step::ExecutionState,
+        table::{BlockContextFieldTag, Lookup},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            from_bytes, RandomLinearCombination,
+            from_bytes, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -22,10 +22,12 @@ use std::convert::TryInto;
 #[derive(Clone, Debug)]
 pub(crate) struct CoinbaseGadget<F> {
     same_context: SameContextGadget<F>,
-    // TODO: make 20 bytes length as predefined params.rs
-    coinbase_address: RandomLinearCombination<F, 20>,
-    // For now we only consider one block for evm circuit target, if in future support multi add block number
-    // block_number: RandomLinearCombination<F, 31>, 
+    // TODO: make 20 bytes length as predefined in params.rs
+    //coinbase_address: RandomLinearCombination<F, 20>,
+    // For now we only consider one block for evm circuit target, if in future
+    // support multi add block number block_number:
+    // RandomLinearCombination<F, 31>,
+    coinbase_address: Cell<F>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
@@ -34,18 +36,23 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::COINBASE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let coinbase_address =
-            RandomLinearCombination::new(cb.query_bytes(), cb.randomness());
+        // let coinbase_address =
+        //     RandomLinearCombination::new(cb.query_bytes(), cb.randomness());
 
-        // Push the value to the stack
+        // // Push the value to the stack
         // cb.stack_push(coinbase_address.expr());
 
+        let coinbase_address = cb.query_cell();
+
+        // Pop the value from the stack
+        cb.stack_push(coinbase_address.expr());
+
         // Lookup block table with coinbase address
-        // cb.block_lookup(
-        //     BlockContextFieldTag::Coinbase.expr(),
-        //     0.expr(),
-        //     coinbase_address.expr(),
-        // );
+        cb.block_lookup(
+            BlockContextFieldTag::Coinbase.expr(),
+            0.expr(),
+            coinbase_address.expr(),
+        );
 
         // State transition
         let opcode = cb.query_cell();
@@ -80,11 +87,14 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let coinbase = block.rws[step.rw_indices[0]].stack_value();
-        
+
         self.coinbase_address.assign(
             region,
             offset,
-            Some(coinbase.to_le_bytes()[..20].try_into().unwrap()), // TODO: parametrize 20
+            Some(Word::random_linear_combine(
+                coinbase.to_le_bytes(),
+                block.randomness,
+            )),
         )?;
 
         Ok(())
@@ -95,14 +105,19 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
 mod test {
     use crate::evm_circuit::{
         step::ExecutionState,
-        test::{rand_range, run_test_circuit_incomplete_fixed_table},
+        test::{
+            rand_range, run_test_circuit_complete_fixed_table,
+            run_test_circuit_incomplete_fixed_table,
+        },
         util::RandomLinearCombination,
-        witness::{Block, BlockContext, Bytecode, Call, ExecStep, Rw, Transaction},
+        witness::{
+            Block, BlockContext, Bytecode, Call, ExecStep, Rw, Transaction,
+        },
     };
     use bus_mapping::{
         eth_types::{Address, ToLittleEndian, ToWord},
         evm::OpcodeId,
-    };  
+    };
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
     use std::str::FromStr;
@@ -111,21 +126,16 @@ mod test {
         let randomness = Fp::rand();
         let coinbase_addr = Address::from_str(address).unwrap(); // u160
         let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::COINBASE.as_u8()],
-            ]
-            .concat(),
+            [vec![OpcodeId::COINBASE.as_u8(), OpcodeId::STOP.as_u8()]].concat(),
         );
-        let block_context = BlockContext{
+        let block_context = BlockContext {
             coinbase: coinbase_addr,
-            gas_limit: 0,   
+            gas_limit: 0,
             ..Default::default()
-            };
+        };
         let block = Block {
             randomness,
             txs: vec![Transaction {
-                // caller_address: coinbase_addr,
-                // callee_address: coinbase_addr,
                 calls: vec![Call {
                     id: 1,
                     is_root: false,
@@ -135,16 +145,15 @@ mod test {
                             bytecode.hash.to_le_bytes(),
                             randomness,
                         ),
-
                 }],
                 steps: vec![
                     ExecStep {
                         rw_indices: vec![0],
                         execution_state: ExecutionState::COINBASE,
                         rw_counter: 1,
-                        program_counter: 10,
-                        stack_pointer: 1023,
-                        gas_left: 2,
+                        program_counter: 0,
+                        stack_pointer: 1024,
+                        gas_left: 3,
                         gas_cost: 2,
                         opcode: Some(OpcodeId::COINBASE),
                         ..Default::default()
@@ -152,9 +161,9 @@ mod test {
                     ExecStep {
                         execution_state: ExecutionState::STOP,
                         rw_counter: 2,
-                        program_counter: 11,
-                        stack_pointer: 1022,
-                        gas_left: 0,
+                        program_counter: 1,
+                        stack_pointer: 1023,
+                        gas_left: 1,
                         opcode: Some(OpcodeId::STOP),
                         ..Default::default()
                     },
@@ -163,9 +172,9 @@ mod test {
             }],
             rws: vec![Rw::Stack {
                 rw_counter: 1,
-                is_write:  true,
+                is_write: true,
                 call_id: 1,
-                stack_pointer: 1022,
+                stack_pointer: 1023,
                 value: coinbase_addr.to_word(),
             }],
             bytecodes: vec![bytecode],
@@ -177,7 +186,5 @@ mod test {
     #[test]
     fn coinbase_gadget_test() {
         test_ok("0x9a0C63EBb78B35D7c209aFbD299B056098b5439b");
-        //test_ok(100);
     }
 }
-    

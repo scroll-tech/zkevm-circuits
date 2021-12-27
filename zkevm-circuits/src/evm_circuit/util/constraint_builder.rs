@@ -396,13 +396,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         number: Expression<F>,
         value: Expression<F>,
     ) {
-        self.add_lookup(
-            Lookup::Block {
-                field_tag: tag,
-                number:number,
-                value: value,
-            }
-        );
+        self.add_lookup(Lookup::Block {
+            field_tag: tag,
+            number: number,
+            value: value,
+        });
     }
 
     // Rw
