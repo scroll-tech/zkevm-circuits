@@ -270,6 +270,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         gadget
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn configure_lookup<TxTable, RwTable, BytecodeTable, BlockTable>(
         meta: &mut ConstraintSystem<F>,
         q_step: Selector,
