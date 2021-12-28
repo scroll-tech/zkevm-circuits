@@ -46,7 +46,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(1.expr()),
             program_counter: Delta(1.expr()),
-            stack_pointer: Delta(-1.expr()),
+            stack_pointer: Delta((-1).expr()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(
