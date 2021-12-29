@@ -341,11 +341,11 @@ impl<F: FieldExt> ExecutionConfig<F> {
             };
         }
 
-        lookup!(Table::Fixed, fixed_table); // skip
-        lookup!(Table::Tx, tx_table); // skip
-        lookup!(Table::Rw, rw_table); // 33
-        lookup!(Table::Bytecode, bytecode_table); // 34
-        lookup!(Table::Block, block_table); // 35
+        lookup!(Table::Fixed, fixed_table);
+        lookup!(Table::Tx, tx_table);
+        lookup!(Table::Rw, rw_table);
+        lookup!(Table::Bytecode, bytecode_table);
+        lookup!(Table::Block, block_table);
     }
 
     pub fn assign_block(
