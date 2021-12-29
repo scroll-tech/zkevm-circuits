@@ -256,8 +256,8 @@ pub(crate) enum Lookup<F> {
     Block {
         /// Tag to specify which field to read.
         field_tag: Expression<F>,
-        /// block_number_or_zero (meaningful only for BlockHash, will be zero
-        /// for other tags)
+        /// Stores the block number only when field_tag is BlockHash, otherwise
+        /// should be set to 0.
         number: Expression<F>,
         /// Value of the field.
         value: Expression<F>,
