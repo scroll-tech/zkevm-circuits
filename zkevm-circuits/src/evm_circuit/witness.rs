@@ -28,7 +28,7 @@ pub struct BlockContext<F> {
     pub coinbase: Address, // u160
     pub gas_limit: u64,
     pub block_number: Word,
-    pub time: F, // maybe u64 is enough ?
+    pub time: F, 
     pub difficulty: Word,
     pub base_fee: Word,
     pub previous_block_hashes: Vec<Word>,
