@@ -27,8 +27,8 @@ pub struct Block<F> {
 pub struct BlockContext<F> {
     pub coinbase: Address, // u160
     pub gas_limit: u64,
-    pub block_number: Word,
-    pub time: F, 
+    pub block_number: F,
+    pub time: u64,
     pub difficulty: Word,
     pub base_fee: Word,
     pub previous_block_hashes: Vec<Word>,
@@ -54,15 +54,12 @@ impl<F: FieldExt> BlockContext<F> {
                 [
                     F::from(BlockContextFieldTag::BlockNumber as u64),
                     F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.block_number.to_le_bytes(),
-                        randomness,
-                    ),
+                    self.block_number,
                 ],
                 [
                     F::from(BlockContextFieldTag::Time as u64),
                     F::zero(),
-                    self.time,
+                    F::from(self.time),
                 ],
                 [
                     F::from(BlockContextFieldTag::Difficulty as u64),
