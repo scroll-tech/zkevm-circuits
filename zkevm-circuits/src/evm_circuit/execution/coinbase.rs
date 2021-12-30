@@ -37,7 +37,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
         // Lookup block table with coinbase address
         cb.block_lookup(
             BlockContextFieldTag::Coinbase.expr(),
-            0.expr(),
+            Some(0.expr()),
             coinbase_address.expr(),
         );
 
