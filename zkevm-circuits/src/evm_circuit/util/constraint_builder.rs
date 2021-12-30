@@ -393,12 +393,12 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     pub(crate) fn block_lookup(
         &mut self,
         tag: Expression<F>,
-        number_or_zero: Expression<F>,
+        number: Option<Expression<F>>,
         val: Expression<F>,
     ) {
         self.add_lookup(Lookup::Block {
             field_tag: tag,
-            number: number_or_zero,
+            number: number.unwrap(),
             value: val,
         });
     }
