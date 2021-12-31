@@ -398,7 +398,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         self.add_lookup(Lookup::Block {
             field_tag: tag,
-            number: number.unwrap(),
+            number: number.unwrap_or(0.expr()),
             value: val,
         });
     }
