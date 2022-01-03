@@ -265,6 +265,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
             });
         }
 
+        // Push lookups of this ExecutionState to independent_lookups for
+        // further configuration in configure_lookup.
         independent_lookups.push(lookups);
 
         gadget
