@@ -31,7 +31,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let coinbase_address = cb.query_cell();
 
-        // Pop the value from the stack
+        // Push the value to the stack
         cb.stack_push(coinbase_address.expr());
 
         // Lookup block table with coinbase address
