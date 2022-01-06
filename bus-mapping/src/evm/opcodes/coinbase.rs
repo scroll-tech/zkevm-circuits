@@ -32,7 +32,7 @@ mod coinbase_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        eth_types::{ToWord, Word},
+        eth_types::{ToWord},
         evm::StackAddress,
         mock,
     };
