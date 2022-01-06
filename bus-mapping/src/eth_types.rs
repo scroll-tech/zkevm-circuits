@@ -129,7 +129,9 @@ pub type Hash = types::H256;
 impl ToWord for Address {
     fn to_word(&self) -> Word {
         let mut bytes = [0u8; 32];
-        bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
+        bytes[..Self::len_bytes()].copy_from_slice(self.as_bytes());
+        // convert to little endian
+        bytes.reverse();
         Word::from(bytes)
     }
 }
