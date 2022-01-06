@@ -1,4 +1,5 @@
 //! Definition of each opcode of the EVM.
+mod coinbase;
 mod dup;
 pub mod ids;
 mod jump;
@@ -22,6 +23,7 @@ use ids::OpcodeId;
 use log::warn;
 
 use self::push::Push;
+use coinbase::Coinbase;
 use dup::Dup;
 use jump::Jump;
 use jumpdest::Jumpdest;
@@ -110,7 +112,7 @@ impl OpcodeId {
             // OpcodeId::RETURNDATACOPY => {},
             // OpcodeId::EXTCODEHASH => {},
             // OpcodeId::BLOCKHASH => {},
-            // OpcodeId::COINBASE => {},
+            OpcodeId::COINBASE => Coinbase::gen_associated_ops,
             // OpcodeId::TIMESTAMP => {},
             // OpcodeId::NUMBER => {},
             // OpcodeId::DIFFICULTY => {},
