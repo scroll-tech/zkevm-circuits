@@ -1,54 +1,37 @@
 use crate::{
     evm_circuit::{
-        execution::{
-            bus_mapping_tmp::{Block, Call, ExecStep, Transaction},
-            ExecutionGadget,
-        },
+        execution::ExecutionGadget,
+        param::MAX_GAS_SIZE_IN_BYTES,
         step::ExecutionState,
+        table::{CallContextFieldTag, TxContextFieldTag},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
+                ConstraintBuilder, StepStateTransition,
+                Transition::{Delta, To},
             },
-            math_gadget::{AddWordsGadget, PairSelectGadget},
-            select,
+            memory_gadget::MemoryExpansionGadget,
+            from_bytes, Cell, MemoryAddress, RandomLinearCombination,
         },
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use std::convert::TryInto;
 
 const MAX_COPY_BYTES: usize = 32;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataCopyGadget<F> {
-    //opcode: Cell<F>,
-    mem_offset: MemoryAddress<F>,
+    same_context: SameContextGadget<F>,
+    memory_offset: MemoryAddress<F>,
     data_offset: MemoryAddress<F>,
-    length: RandomLinearCombination<F, 5>,
-    call_data_length: Cell<F>,
-    finished: Cell<F>,
-    memory_expansion: MemoryExpansionGadget<F, MAX_GAS_SIZE_IN_BYTES>,
-    data: [Cell<F>; MAX_COPY_BYTES],
-    selectors: [Cell<F>; MAX_COPY_BYTES],
-    bound_dist: [Cell<F>; MAX_COPY_BYTES],
-    first_bound_is_zero: IsZeroGadget<F>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct CallDataCopyExtGadget<F> {
-    //opcode: Cell<F>,
-    mem_offset: Cell<F>,
-    data_offset: Cell<F>,
-    length: Cell<F>,
+    length: RandomLinearCombination<F, 4>,
     tx_id: Cell<F>,
-    call_data_length: Cell<F>,
-    finished: Cell<F>,
-    data: [Cell<F>; MAX_COPY_BYTES],
-    selectors: [Cell<F>; MAX_COPY_BYTES],
-    bound_dist: [Cell<F>; MAX_COPY_BYTES],
-    first_bound_is_zero: IsZeroGadget<F>,
+    calldata_length: Cell<F>,
+    memory_expansion: MemoryExpansionGadget<F, MAX_GAS_SIZE_IN_BYTES>,
 }
 
 
@@ -58,31 +41,32 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLDATACOPY;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        //let opcode = cb.query_cell();
-        //cb.opcode_lookup(opcode.expr(), 1.expr());
+        let opcode = cb.query_cell();
 
-        //let finished = cb.query_cell();
-
-        // Verify memory
-        let bytes_mem_offset = MemoryAddress::new(cb.query_bytes(), cb.randomness());
+        let bytes_memory_offset = MemoryAddress::new(cb.query_bytes(), cb.randomness());
         let bytes_data_offset = MemoryAddress::new(cb.query_bytes(), cb.randomness());
         let bytes_length = RandomLinearCombination::new(cb.query_bytes(), cb.randomness());
-
-        mem_offset = from_bytes::expr(bytes_mem_offset.cells);
-        data_offset = from_bytes::expr(bytes_data_offset.cells);
-        length = from_bytes::expr(bytes_length.cells);
+        let memory_offset = from_bytes::expr(&bytes_memory_offset.cells);
+        let data_offset = from_bytes::expr(&bytes_data_offset.cells);
+        let length = from_bytes::expr(&bytes_length.cells);
 
         let tx_id = cb.query_cell();
         cb.call_context_lookup(0.expr(), None, CallContextFieldTag::TxId, tx_id.expr());
 
-        let call_data_length = cb.query_cell();
-        cb.condition(cb.curr.is_root.expr(), |cb| {
-            cb.tx_lookup(tx_id, TxContextFieldTag::CallDataLength, None, call_data_length)
+        let calldata_length = cb.query_cell();
+        cb.condition(cb.curr.state.is_root.expr(), |cb| {
+            cb.tx_lookup(
+                tx_id.expr(),
+                TxContextFieldTag::CallDataLength,
+                None,
+                calldata_length.expr())
         });
-        cb.condition(1 - cb.curr.is_root.expr(), |cb| {
+        cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
             cb.call_context_lookup(
-                0.expr(), None, CallContextFieldTag::CallDataLength,
-                call_data_length)
+                0.expr(),
+                None,
+                CallContextFieldTag::CallDataLength,
+                calldata_length.expr())
         });
 
         // Calculate the next memory size and the gas cost for this memory
@@ -90,44 +74,72 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
             cb.curr.state.memory_size.expr(),
-            data_offset + length,
-        );
-        let (next_memory_size, memory_gas_cost) = memory_expansion.expr();
-
-
-
-        // Swap a and c if opcode is SUB
-        let is_sub = PairSelectGadget::construct(
-            cb,
-            opcode.expr(),
-            OpcodeId::SUB.expr(),
-            OpcodeId::ADD.expr(),
+            memory_offset.clone() + length.clone(),
         );
 
-        // ADD: Pop a and b from the stack, push c on the stack
-        // SUB: Pop c and b from the stack, push a on the stack
-        cb.stack_pop(select::expr(is_sub.expr().0, c.expr(), a.expr()));
-        cb.stack_pop(b.expr());
-        cb.stack_push(select::expr(is_sub.expr().0, a.expr(), c.expr()));
+        // Pop memory_offset, data_offset, length from stack
+        cb.stack_pop(bytes_memory_offset.expr());
+        cb.stack_pop(bytes_data_offset.expr());
+        cb.stack_pop(bytes_length.expr());
+
+        // Transition to internal state CopyToMemory
+        let next_src_addr = cb.query_cell_next_step();
+        let next_dst_addr = cb.query_cell_next_step();
+        let next_bytes_left = cb.query_cell_next_step();
+        let next_src_addr_end = cb.query_cell_next_step();
+        let next_from_tx = cb.query_cell_next_step();
+        let next_tx_id = cb.query_cell_next_step();
+        cb.require_next_state(ExecutionState::CopyToMemory);
+        cb.add_constraint(
+            "next_src_addr = data_offset",
+            next_src_addr.expr() - data_offset.clone(),
+        );
+        cb.add_constraint(
+            "next_dst_addr = memory_offset",
+            next_dst_addr.expr() - memory_offset,
+        );
+        cb.add_constraint(
+            "next_bytes_left = length",
+            next_bytes_left.expr() - length,
+        );
+        cb.add_constraint(
+            "next_src_addr_end = data_offset + calldata_length",
+            next_src_addr_end.expr() - data_offset - calldata_length.expr(),
+        );
+        cb.add_constraint(
+            "next_from_tx = is_root",
+            next_from_tx.expr() - cb.curr.state.is_root.expr(),
+        );
+        cb.add_constraint(
+            "next_tx_id = tx_id",
+            next_tx_id.expr() - tx_id.expr(),
+        );
 
         // State transition
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(3.expr()),
-            program_counter: Delta(1.expr()),
-            stack_pointer: Delta(1.expr()),
+            // We keep the program_counter same because Calldatacopy hasn't
+            // finished the copy yet
+            rw_counter: Delta(3.expr()), // 3 stack pop
+            //program_counter: Delta(1.expr()),
+            stack_pointer: Delta(3.expr()),
+            memory_size: To(memory_expansion.next_memory_size()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(
             cb,
             opcode,
             step_state_transition,
-            None,
+            Some(memory_expansion.gas_cost()),
         );
 
         Self {
             same_context,
-            add_words,
-            is_sub,
+            memory_offset: bytes_memory_offset,
+            data_offset: bytes_data_offset,
+            length: bytes_length,
+            tx_id,
+            calldata_length,
+            memory_expansion,
         }
     }
 
@@ -136,26 +148,44 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction<F>,
+        tx: &Transaction<F>,
         _: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
-        let indices = if opcode == OpcodeId::SUB {
-            [step.rw_indices[2], step.rw_indices[1], step.rw_indices[0]]
-        } else {
+        let [memory_offset, data_offset, length] =
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-        };
-        let [a, b, c] = indices.map(|idx| block.rws[idx].stack_value());
-        self.add_words.assign(region, offset, [a, b], c)?;
-        self.is_sub.assign(
+            .map(|idx| block.rws[idx].stack_value());
+        self.memory_offset.assign(
             region,
             offset,
-            F::from(opcode.as_u64()),
-            F::from(OpcodeId::SUB.as_u64()),
-            F::from(OpcodeId::ADD.as_u64()),
+            Some(memory_offset.to_le_bytes()[..5].try_into().unwrap()),
+        )?;
+        self.data_offset.assign(
+            region,
+            offset,
+            Some(data_offset.to_le_bytes()[..5].try_into().unwrap()),
+        )?;
+        self.length.assign(
+            region,
+            offset,
+            Some(length.to_le_bytes()[..4].try_into().unwrap()),
+        )?;
+        self.tx_id
+            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+        self.calldata_length.assign(
+            region,
+            offset,
+            Some(F::from(tx.call_data_length as u64)),
+        )?;
+
+        // Memory expansion
+        self.memory_expansion.assign(
+            region,
+            offset,
+            step.memory_size,
+            memory_offset.as_u64() + length.as_u64(),
         )?;
 
         Ok(())
@@ -165,118 +195,35 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        execution::bus_mapping_tmp::{
-            Block, Bytecode, Call, ExecStep, Rw, Transaction,
-        },
         step::ExecutionState,
         test::{rand_word, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
+        witness::{
+            Block, Bytecode, Call, ExecStep, Rw, Transaction,
+        },
     };
     use bus_mapping::{
+        bytecode,
         eth_types::{ToBigEndian, ToLittleEndian, Word},
         evm::OpcodeId,
     };
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
 
-    fn test_ok(opcode: OpcodeId, a: Word, b: Word, c: Word) {
-        let randomness = Fp::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                b.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                a.to_be_bytes().to_vec(),
-                vec![opcode.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                calls: vec![Call {
-                    id: 1,
-                    is_root: false,
-                    is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: vec![0, 1, 2],
-                        execution_state: ExecutionState::ADD,
-                        rw_counter: 1,
-                        program_counter: 66,
-                        stack_pointer: 1022,
-                        gas_left: 3,
-                        gas_cost: 3,
-                        opcode: Some(opcode),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_state: ExecutionState::STOP,
-                        rw_counter: 4,
-                        program_counter: 67,
-                        stack_pointer: 1023,
-                        gas_left: 0,
-                        opcode: Some(OpcodeId::STOP),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            }],
-            rws: vec![
-                Rw::Stack {
-                    rw_counter: 1,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1022,
-                    value: a,
-                },
-                Rw::Stack {
-                    rw_counter: 2,
-                    is_write: false,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: b,
-                },
-                Rw::Stack {
-                    rw_counter: 3,
-                    is_write: true,
-                    call_id: 1,
-                    stack_pointer: 1023,
-                    value: c,
-                },
-            ],
-            bytecodes: vec![bytecode],
+    fn test_ok(
+        memory_offset: Word,
+        data_offset: Word,
+        length: Word,
+    ) {
+        let bytecode = bytecode! {
+            #[start]
+            .calldatacopy(memory_offset, data_offset, length)
+            STOP
         };
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
     #[test]
     fn add_gadget_simple() {
-        test_ok(
-            OpcodeId::ADD,
-            0x030201.into(),
-            0x060504.into(),
-            0x090705.into(),
-        );
-        test_ok(
-            OpcodeId::SUB,
-            0x090705.into(),
-            0x060504.into(),
-            0x030201.into(),
-        );
-    }
 
-    #[test]
-    fn add_gadget_rand() {
-        let a = rand_word();
-        let b = rand_word();
-        test_ok(OpcodeId::ADD, a, b, a.overflowing_add(b).0);
-        test_ok(OpcodeId::SUB, a, b, a.overflowing_sub(b).0);
     }
 }

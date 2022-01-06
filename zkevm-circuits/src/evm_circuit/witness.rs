@@ -266,11 +266,12 @@ pub struct Call<F> {
 
 #[derive(Clone, Debug)]
 pub enum OpcodeExtraData {
-    CopyMemoryToMemory {
+    CopyToMemory {
         src_addr: u64,
         dst_addr: u64,
         bytes_left: u64,
         src_addr_end: u64,
+        from_tx: bool,
         selectors: Vec<u8>,
     },
 }

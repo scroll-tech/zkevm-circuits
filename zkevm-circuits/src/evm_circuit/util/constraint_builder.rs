@@ -298,6 +298,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    pub(crate) fn require_next_state(&mut self, exec_state: ExecutionState) {
+        let next_state = self.next.execution_state_selector(exec_state);
+        self.add_constraint(
+            "Constrain next execution state",
+            1.expr() - next_state.expr(),
+        );
+    }
+
     pub(crate) fn require_step_state_transition(
         &mut self,
         step_state_transition: StepStateTransition<F>,

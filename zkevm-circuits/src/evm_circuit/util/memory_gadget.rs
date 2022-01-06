@@ -350,7 +350,11 @@ impl<F: FieldExt, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
 
 ///
 #[derive(Clone, Debug)]
-pub(crate) struct BufferGetDataGadget<F, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize> {
+pub(crate) struct BufferGetDataGadget<
+    F,
+    const MAX_BYTES: usize,
+    const ADDR_SIZE_IN_BYTES: usize,
+> {
     // The bytes that are copied
     bytes: [Cell<F>; MAX_BYTES],
     // The selectors that indicate if the bytes contain real data
@@ -364,7 +368,8 @@ pub(crate) struct BufferGetDataGadget<F, const MAX_BYTES: usize, const ADDR_SIZE
 }
 
 impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
-    BufferGetDataGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES> {
+    BufferGetDataGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
+{
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         addr_start: &Cell<F>,
@@ -392,12 +397,13 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         //   src_addr < src_addr_bound when bound_dist[0] != 0
         cb.add_constraint(
             "bound_dist[0] == 0 or addr_start + bound_dist[0] == addr_end",
-            bound_dist[0].expr() * (
-                addr_start.expr() + bound_dist[0].expr() - addr_end.expr()),
+            bound_dist[0].expr()
+                * (addr_start.expr() + bound_dist[0].expr() - addr_end.expr()),
         );
         cb.add_constraint(
             "addr_start < addr_end when bound_dist_is_zero[0] == 0",
-            (1.expr() - bound_dist_is_zero[0].expr()) * (1.expr() - lt_gadget.expr()),
+            (1.expr() - bound_dist_is_zero[0].expr())
+                * (1.expr() - lt_gadget.expr()),
         );
         // Constraints on bound_dist[1..MAX_COPY_BYTES]
         //   diff = bound_dist[idx - 1] - bound_dist[idx]
@@ -455,8 +461,8 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         offset: usize,
         addr_start: u64,
         addr_end: u64,
-        bytes: &Vec<u8>,
-        selectors: &Vec<u8>,
+        bytes: &[u8],
+        selectors: &[u8],
     ) -> Result<(), Error> {
         self.lt_gadget.assign(
             region,

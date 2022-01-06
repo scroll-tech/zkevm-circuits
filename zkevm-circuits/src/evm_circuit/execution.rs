@@ -20,6 +20,7 @@ mod add;
 mod begin_tx;
 mod bitwise;
 mod byte;
+mod calldatacopy;
 mod coinbase;
 mod comparator;
 mod dup;
@@ -51,7 +52,7 @@ use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
 use memory::MemoryGadget;
-use memory_copy::CopyMemoryToMemoryGadget;
+use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul::MulGadget;
 use pc::PcGadget;
@@ -98,7 +99,7 @@ pub(crate) struct ExecutionConfig<F> {
     jumpdest_gadget: JumpdestGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
     memory_gadget: MemoryGadget<F>,
-    copy_mem2mem_gadget: CopyMemoryToMemoryGadget<F>,
+    copy_to_memory_gadget: CopyToMemoryGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
@@ -228,7 +229,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             jumpdest_gadget: configure_gadget!(),
             jumpi_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
-            copy_mem2mem_gadget: configure_gadget!(),
+            copy_to_memory_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
@@ -502,8 +503,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
-            ExecutionState::CopyMemoryToMemory => {
-                assign_exec_step!(self.copy_mem2mem_gadget)
+            ExecutionState::CopyToMemory => {
+                assign_exec_step!(self.copy_to_memory_gadget)
             }
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
