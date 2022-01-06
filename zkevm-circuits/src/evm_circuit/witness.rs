@@ -84,7 +84,7 @@ impl<F: FieldExt> BlockContext<F> {
                 .map(|(idx, hash)| {
                     [
                         F::from(BlockContextFieldTag::BlockHash as u64),
-                        self.block_number + F::from((idx - 1) as u64),
+                        self.block_number - F::from((idx + 1) as u64),
                         RandomLinearCombination::random_linear_combine(
                             hash.to_le_bytes(),
                             randomness,
