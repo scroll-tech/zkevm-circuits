@@ -32,7 +32,7 @@ mod coinbase_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        eth_types::{ToWord},
+        eth_types::ToWord,
         evm::StackAddress,
         mock,
     };
@@ -59,7 +59,7 @@ mod coinbase_tests {
         let mut tx = test_builder.new_tx(&block.eth_tx).unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx);
 
-        // Generate step corresponding to MLOAD
+        // Generate step corresponding to COINBASE
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             0,
