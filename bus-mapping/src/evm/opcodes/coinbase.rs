@@ -41,8 +41,6 @@ mod coinbase_tests {
     #[test]
     fn coinbase_opcode_impl() -> Result<(), Error> {
         let code = bytecode! {
-            // PUSH1(0x1)
-            // PUSH1(0x2)
             #[start]
             COINBASE
             STOP
