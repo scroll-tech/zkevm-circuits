@@ -32,3 +32,5 @@ pub(crate) const STACK_CAPACITY: usize = 1024;
 // counter to u64 as go-ethereum in case transaction size is allowed larger in
 // the future.
 pub(crate) const N_BYTES_PROGRAM_COUNTER: usize = N_BYTES_U64;
+pub(crate) const NUM_BYTES_PROGRAM_COUNTER: usize = N_BYTES_U64;
+pub(crate) const NUM_BYTES_GAS: usize = N_BYTES_U64;

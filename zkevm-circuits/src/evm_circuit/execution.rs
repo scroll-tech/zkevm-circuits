@@ -24,6 +24,7 @@ mod coinbase;
 mod comparator;
 mod dup;
 mod error_oog_pure_memory;
+mod gas;
 mod jump;
 mod jumpdest;
 mod jumpi;
@@ -46,6 +47,7 @@ use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
 use error_oog_pure_memory::ErrorOOGPureMemoryGadget;
+use gas::GasGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
@@ -95,6 +97,7 @@ pub(crate) struct ExecutionConfig<F> {
     jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
+    gas_gadget: GasGadget<F>,
     memory_gadget: MemoryGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
@@ -224,6 +227,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             jump_gadget: configure_gadget!(),
             jumpdest_gadget: configure_gadget!(),
             jumpi_gadget: configure_gadget!(),
+            gas_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
@@ -506,6 +510,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::JUMPDEST => {
                 assign_exec_step!(self.jumpdest_gadget)
             }
+            ExecutionState::GAS => assign_exec_step!(self.gas_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
