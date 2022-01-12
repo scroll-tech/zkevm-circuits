@@ -209,6 +209,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.query_cells::<N>(true, false)
     }
 
+    // This function needs to be used with extra precaution. You need to know
+    // the extra layout in the next step. Usually you need to use
+    // `require_next_state` to constrain on the next state when using this
+    // function.
     pub(crate) fn query_cell_next_step(&mut self) -> Cell<F> {
         let [cell] = self.query_cells::<1>(false, true);
         cell

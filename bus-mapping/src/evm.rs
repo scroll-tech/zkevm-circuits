@@ -154,6 +154,8 @@ impl GasCost {
     pub const CREATE: Self = Self(32000);
     /// Constant cost for every additional word when expanding memory
     pub const MEMORY: Self = Self(3);
+    /// Constant cost for copying every word
+    pub const COPY: Self = Self(3);
     /// Constant cost for a cold SLOAD
     pub const COLD_SLOAD_COST: Self = Self(2100);
     /// Constant cost for a cold account access

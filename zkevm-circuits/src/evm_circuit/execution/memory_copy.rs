@@ -245,7 +245,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use crate::evm_circuit::{
         execution::memory_copy::MAX_COPY_BYTES,
         step::ExecutionState,
@@ -332,7 +332,7 @@ mod test {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn make_memory_copy_steps(
+    pub(crate) fn make_memory_copy_steps(
         call_id: usize,
         buffer: &[u8],
         buffer_addr: u64,

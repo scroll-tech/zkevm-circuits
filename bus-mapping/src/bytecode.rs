@@ -126,22 +126,6 @@ impl Bytecode {
         });
         self
     }
-
-    /// Calldata copy
-    pub fn calldatacopy(
-        &mut self,
-        memory_offset: Word,
-        data_offset: Word,
-        length: Word,
-    ) -> &mut Self {
-        self.append(&crate::bytecode! {
-            PUSH32(memory_offset)
-            PUSH32(data_offset)
-            PUSH32(length)
-            CALLDATACOPY
-        });
-        self
-    }
 }
 
 /// EVM code macro

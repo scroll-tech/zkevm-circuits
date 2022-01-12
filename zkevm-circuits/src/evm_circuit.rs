@@ -119,7 +119,7 @@ mod test {
         },
         util::Expr,
     };
-    use bus_mapping::eth_types::Word;
+    use bus_mapping::{eth_types::Word, evm::GasCost};
     use halo2::{
         arithmetic::{BaseExt, FieldExt},
         circuit::{Layouter, SimpleFloorPlanner},
@@ -481,5 +481,26 @@ mod test {
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         run_test_circuit(block, FixedTableTag::iterator().collect())
+    }
+
+    pub(crate) fn calc_memory_expension_gas_cost(
+        curr_mem_size: u64,
+        next_mem_size: u64,
+    ) -> u64 {
+        if next_mem_size <= curr_mem_size {
+            0
+        } else {
+            let total_cost = |mem_size| {
+                let mem_words = (mem_size + 31) / 32;
+                mem_words * GasCost::MEMORY.as_u64()
+                    + mem_words * mem_words / 512
+            };
+            total_cost(next_mem_size) - total_cost(curr_mem_size)
+        }
+    }
+
+    pub(crate) fn calc_memory_copier_gas_cost(num_bytes: u64) -> u64 {
+        let num_words = (num_bytes + 31) / 32;
+        num_words * GasCost::COPY.as_u64()
     }
 }
