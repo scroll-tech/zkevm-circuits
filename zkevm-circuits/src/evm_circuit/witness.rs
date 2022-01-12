@@ -401,7 +401,7 @@ fn step_convert(
 
 fn tx_convert(
     randomness: Fp,
-    bytecode_hash: Word,
+    hash: Word,
     tx: &bus_mapping::circuit_input_builder::Transaction,
     ops_len: (usize, usize, usize),
 ) -> Transaction<Fp> {
@@ -411,7 +411,7 @@ fn tx_convert(
             is_root: true,
             is_create: tx.is_create(),
             opcode_source: RandomLinearCombination::random_linear_combine(
-                bytecode_hash.to_le_bytes(),
+                hash.to_le_bytes(),
                 randomness,
             ),
         }],
