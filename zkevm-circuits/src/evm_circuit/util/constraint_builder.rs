@@ -63,6 +63,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     program_counter_offset: usize,
     stack_pointer_offset: i32,
     state_write_counter_offset: usize,
+    in_next_step: bool,
     condition: Option<Expression<F>>,
 }
 
@@ -87,6 +88,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             program_counter_offset: 0,
             stack_pointer_offset: 0,
             state_write_counter_offset: 0,
+            in_next_step: false,
             condition: None,
         }
     }
@@ -177,18 +179,18 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Query
 
     pub(crate) fn query_bool(&mut self) -> Cell<F> {
-        let [cell] = self.query_cells::<1>(false, false);
+        let [cell] = self.query_cells::<1>(false);
         self.require_boolean("Constrain cell to be a bool", cell.expr());
         cell
     }
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
-        let [cell] = self.query_cells::<1>(true, false);
+        let [cell] = self.query_cells::<1>(true);
         cell
     }
 
     pub(crate) fn query_cell(&mut self) -> Cell<F> {
-        let [cell] = self.query_cells::<1>(false, false);
+        let [cell] = self.query_cells::<1>(false);
         cell
     }
 
@@ -206,30 +208,17 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.query_cells::<N>(true, false)
+        self.query_cells::<N>(true)
     }
 
-    // This function needs to be used with extra precaution. You need to know
-    // the extra layout in the next step. Usually you need to use
-    // `require_next_state` to constrain on the next state when using this
-    // function.
-    pub(crate) fn query_cell_next_step(&mut self) -> Cell<F> {
-        let [cell] = self.query_cells::<1>(false, true);
-        cell
-    }
-
-    fn query_cells<const N: usize>(
-        &mut self,
-        is_byte: bool,
-        is_next: bool,
-    ) -> [Cell<F>; N] {
+    fn query_cells<const N: usize>(&mut self, is_byte: bool) -> [Cell<F>; N] {
         let mut cells = Vec::with_capacity(N);
-        let rows = if is_next {
+        let rows = if self.in_next_step {
             &self.next.rows
         } else {
             &self.curr.rows
         };
-        let row_usages = if is_next {
+        let row_usages = if self.in_next_step {
             &mut self.next_row_usages
         } else {
             &mut self.curr_row_usages
@@ -781,6 +770,32 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.condition = Some(condition);
         let ret = constraint(self);
         self.condition = None;
+        ret
+    }
+
+    /// This function needs to be used with extra precaution. You need to make
+    /// sure the layout is the same as the gadget for `next_step_state`.
+    /// `query_cell` will return cells in the next step in the `constraint`
+    /// function.
+    pub(crate) fn constrain_next_step<R>(
+        &mut self,
+        next_step_state: ExecutionState,
+        condition: Option<Expression<F>>,
+        constraint: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        assert!(!self.in_next_step, "Already in the next step");
+        self.in_next_step = true;
+        let ret = match condition {
+            None => {
+                self.require_next_state(next_step_state);
+                constraint(self)
+            }
+            Some(cond) => self.condition(cond, |cb| {
+                cb.require_next_state(next_step_state);
+                constraint(cb)
+            }),
+        };
+        self.in_next_step = false;
         ret
     }
 

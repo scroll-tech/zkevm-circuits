@@ -265,7 +265,7 @@ pub struct Call<F> {
 }
 
 #[derive(Clone, Debug)]
-pub enum OpcodeExtraData {
+pub enum GadgetExtraData {
     CopyToMemory {
         src_addr: u64,
         dst_addr: u64,
@@ -300,7 +300,7 @@ pub struct ExecStep {
     pub state_write_counter: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
-    pub extra_data: Option<OpcodeExtraData>,
+    pub extra_data: Option<GadgetExtraData>,
 }
 
 impl ExecStep {

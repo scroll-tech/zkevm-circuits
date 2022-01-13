@@ -9,10 +9,10 @@ use crate::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
             math_gadget::ComparisonGadget,
-            memory_gadget::BufferGetDataGadget,
+            memory_gadget::BufferReaderGadget,
             Cell,
         },
-        witness::{Block, Call, ExecStep, OpcodeExtraData, Transaction},
+        witness::{Block, Call, ExecStep, GadgetExtraData, Transaction},
     },
     util::Expr,
 };
@@ -37,9 +37,9 @@ pub(crate) struct CopyToMemoryGadget<F> {
     from_tx: Cell<F>,
     // Transaction ID, optional, only used when src_is_tx == 1
     tx_id: Cell<F>,
-    // Buffer get data gadget
-    buffer_get_data:
-        BufferGetDataGadget<F, MAX_COPY_BYTES, MAX_MEMORY_SIZE_IN_BYTES>,
+    // Buffer reader gadget
+    buffer_reader:
+        BufferReaderGadget<F, MAX_COPY_BYTES, MAX_MEMORY_SIZE_IN_BYTES>,
     // The comparison gadget between num bytes copied and bytes_left
     finish_gadget: ComparisonGadget<F, 4>,
 }
@@ -56,19 +56,19 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         let src_addr_end = cb.query_cell();
         let from_tx = cb.query_bool();
         let tx_id = cb.query_cell();
-        let buffer_get_data =
-            BufferGetDataGadget::construct(cb, &src_addr, &src_addr_end);
+        let buffer_reader =
+            BufferReaderGadget::construct(cb, &src_addr, &src_addr_end);
         let from_memory = 1.expr() - from_tx.expr();
 
         // Copy bytes from src and dst
         for i in 0..MAX_COPY_BYTES {
-            let read_flag = buffer_get_data.read_from_buffer(i);
+            let read_flag = buffer_reader.read_flag(i);
             // Read bytes[i] from memory
             cb.condition(from_memory.clone() * read_flag.clone(), |cb| {
                 cb.memory_lookup(
                     0.expr(),
                     src_addr.expr() + i.expr(),
-                    buffer_get_data.byte(i),
+                    buffer_reader.byte(i),
                 )
             });
             // Read bytes[i] from Tx
@@ -77,20 +77,20 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
                     tx_id.expr(),
                     TxContextFieldTag::CallData,
                     Some(src_addr.expr() + i.expr()),
-                    buffer_get_data.byte(i),
+                    buffer_reader.byte(i),
                 )
             });
             // Write bytes[i] to memory when selectors[i] != 0
-            cb.condition(buffer_get_data.has_data(i), |cb| {
+            cb.condition(buffer_reader.has_data(i), |cb| {
                 cb.memory_lookup(
                     1.expr(),
                     dst_addr.expr() + i.expr(),
-                    buffer_get_data.byte(i),
+                    buffer_reader.byte(i),
                 )
             });
         }
 
-        let copied_size = buffer_get_data.num_bytes();
+        let copied_size = buffer_reader.num_bytes();
         let finish_gadget = ComparisonGadget::construct(
             cb,
             copied_size.clone(),
@@ -103,41 +103,49 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         );
 
         // When finished == 0, constraint the CopyToMemory state in next step
-        let next_src_addr = cb.query_cell_next_step();
-        let next_dst_addr = cb.query_cell_next_step();
-        let next_bytes_left = cb.query_cell_next_step();
-        let next_src_addr_end = cb.query_cell_next_step();
-        let next_from_tx = cb.query_cell_next_step();
-        let next_tx_id = cb.query_cell_next_step();
-        cb.condition(1.expr() - finished.clone(), |cb| {
-            cb.require_next_state(ExecutionState::CopyToMemory);
-            cb.add_constraint(
-                "src_addr + copied_size == next_src_addr",
-                src_addr.expr() + copied_size.clone() - next_src_addr.expr(),
-            );
-            cb.add_constraint(
-                "dst_addr + copied_size == next_dst_addr",
-                dst_addr.expr() + copied_size.clone() - next_dst_addr.expr(),
-            );
-            cb.add_constraint(
-                "length == copied_size + next_length",
-                bytes_left.expr()
-                    - copied_size.clone()
-                    - next_bytes_left.expr(),
-            );
-            cb.add_constraint(
-                "src_addr_bound == next_src_addr_bound",
-                src_addr_end.expr() - next_src_addr_end.expr(),
-            );
-            cb.add_constraint(
-                "from_tx == next_from_tx",
-                from_tx.expr() - next_from_tx.expr(),
-            );
-            cb.add_constraint(
-                "tx_id == next_tx_id",
-                tx_id.expr() - next_tx_id.expr(),
-            );
-        });
+
+        cb.constrain_next_step(
+            ExecutionState::CopyToMemory,
+            Some(1.expr() - finished),
+            |cb| {
+                let next_src_addr = cb.query_cell();
+                let next_dst_addr = cb.query_cell();
+                let next_bytes_left = cb.query_cell();
+                let next_src_addr_end = cb.query_cell();
+                let next_from_tx = cb.query_cell();
+                let next_tx_id = cb.query_cell();
+                cb.require_equal(
+                    "next_src_addr == src_addr + copied_size",
+                    next_src_addr.expr(),
+                    src_addr.expr() + copied_size.clone(),
+                );
+                cb.require_equal(
+                    "dst_addr + copied_size == next_dst_addr",
+                    next_dst_addr.expr(),
+                    dst_addr.expr() + copied_size.clone(),
+                );
+                cb.require_equal(
+                    "next_bytes_left + copied_size == bytes_left",
+                    next_bytes_left.expr() + copied_size.clone(),
+                    bytes_left.expr(),
+                );
+                cb.require_equal(
+                    "next_src_addr_bound == src_addr_bound",
+                    next_src_addr_end.expr(),
+                    src_addr_end.expr(),
+                );
+                cb.require_equal(
+                    "next_from_tx == from_tx",
+                    next_from_tx.expr(),
+                    from_tx.expr(),
+                );
+                cb.require_equal(
+                    "next_tx_id == tx_id",
+                    next_tx_id.expr(),
+                    tx_id.expr(),
+                );
+            },
+        );
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -153,7 +161,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             src_addr_end,
             from_tx,
             tx_id,
-            buffer_get_data,
+            buffer_reader,
             finish_gadget,
         }
     }
@@ -167,7 +175,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         _: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let OpcodeExtraData::CopyToMemory {
+        let GadgetExtraData::CopyToMemory {
             src_addr,
             dst_addr,
             bytes_left,
@@ -201,7 +209,6 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             bytes[idx] = if *selector == 1 && addr < *src_addr_end as usize {
                 if *from_tx {
                     assert!(addr < tx.call_data.len());
-                    println!("calldata[{}] = {}", idx, tx.call_data[addr]);
                     tx.call_data[addr]
                 } else {
                     rw_idx += 1;
@@ -211,12 +218,12 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
                 0
             };
             if *selector == 1 {
-                // increase rw_idx for write back to memory
+                // increase rw_idx for writing back to memory
                 rw_idx += 1
             }
         }
 
-        self.buffer_get_data.assign(
+        self.buffer_reader.assign(
             region,
             offset,
             *src_addr,
@@ -246,7 +253,7 @@ pub mod test {
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
         witness::{
-            Block, Bytecode, Call, ExecStep, OpcodeExtraData, Rw, Transaction,
+            Block, Bytecode, Call, ExecStep, GadgetExtraData, Rw, Transaction,
         },
     };
     use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
@@ -287,7 +294,6 @@ pub mod test {
                             byte: bytes_map[&addr],
                         });
                         rw_offset += 1;
-                        println!("{:?}", rws.last());
                     }
                     bytes_map[&addr]
                 } else {
@@ -300,12 +306,11 @@ pub mod test {
                     memory_address: dst_addr + idx as u64,
                     byte,
                 });
-                println!("{:?}", rws.last());
                 rw_offset += 1;
             }
         }
         let rw_idx_end = rws.len();
-        let extra_data = OpcodeExtraData::CopyToMemory {
+        let extra_data = GadgetExtraData::CopyToMemory {
             src_addr,
             dst_addr,
             bytes_left: bytes_left as u64,
@@ -347,17 +352,9 @@ pub mod test {
         let bytes_map = (buffer_addr..buffer_addr_end)
             .zip(buffer.iter().copied())
             .collect();
-        println!("buffer_addr = {}", buffer_addr);
-        println!("buffer_addr_end = {}", buffer_addr_end);
-        println!("src_addr = {}", src_addr);
-        println!("mem_size = {}", memory_size);
-        println!("{:?}", bytes_map);
 
         let mut copied = 0;
         while copied < length {
-            println!("src_addr = {}", src_addr + copied as u64);
-            println!("dst_addr = {}", dst_addr + copied as u64);
-            println!("length = {}", length - copied);
             let (step, rw_offset) = make_memory_copy_step(
                 call_id,
                 src_addr + copied as u64,
@@ -372,11 +369,9 @@ pub mod test {
                 rws,
                 &bytes_map,
             );
-            println!("step = {:?}", step);
             steps.push(step);
             *rw_counter += rw_offset;
             copied += MAX_COPY_BYTES;
-            //println!("rw_counter = {:?}", rw_counter);
         }
     }
 
@@ -420,7 +415,6 @@ pub mod test {
             opcode: Some(OpcodeId::STOP),
             ..Default::default()
         });
-        //println!("step = {:?}", steps.last());
 
         let block = Block {
             randomness,
@@ -461,10 +455,6 @@ pub mod test {
         let calldata = rand_bytes(calldata_length);
         let mut steps = Vec::new();
         let memory_size = (dst_addr + length as u64 + 31) / 32;
-        println!("calldata_length = {}", calldata_length);
-        println!("calldata = {:?}", calldata);
-        println!("src_addr = {}", src_addr);
-        println!("dst_addr = {}", dst_addr);
 
         make_memory_copy_steps(
             call_id,

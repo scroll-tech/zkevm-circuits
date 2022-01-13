@@ -413,27 +413,29 @@ impl<F: FieldExt> MemoryCopierGasGadget<F> {
     }
 }
 
-///
+/// Buffer reader gadget reads out bytes from a buffer given the start address
+/// and the end address. This gadget also pads 0 to the end of buffer if the
+/// access to the buffer is out of bound (addr >= addr_end).
 #[derive(Clone, Debug)]
-pub(crate) struct BufferGetDataGadget<
+pub(crate) struct BufferReaderGadget<
     F,
     const MAX_BYTES: usize,
     const ADDR_SIZE_IN_BYTES: usize,
 > {
-    // The bytes that are copied
+    // The bytes read from buffer
     bytes: [Cell<F>; MAX_BYTES],
-    // The selectors that indicate if the bytes contain real data
+    // The selectors that indicate if bytes contain real data
     selectors: [Cell<F>; MAX_BYTES],
-    // The LT gadget to check if src_addr is less than src_addr_bound
+    // The LT gadget to check if src_addr < src_addr_bound
     lt_gadget: LtGadget<F, ADDR_SIZE_IN_BYTES>,
-    // The distrance of the offset in the buffer to the buffer_end
+    // bound_dist[i] = max(addr_end - addr_start - i, 0)
     bound_dist: [Cell<F>; MAX_BYTES],
     // Check if bound_dist is zero
     bound_dist_is_zero: [IsZeroGadget<F>; MAX_BYTES],
 }
 
 impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
-    BufferGetDataGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
+    BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
 {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
@@ -450,39 +452,38 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
             LtGadget::construct(cb, addr_start.expr(), addr_end.expr());
 
         // Define bound_dist[i] = max(addr_end - addr_start - i, 0)
-        // The purpose of bound_dist is to track if the access to src buffer
-        // is out of bound. When bound_dist[i] == 0, it indicates OOB error
-        // and so bytes[i] has to be 0 correspondingly.
+        // The purpose of bound_dist is to check if the access to the buffer
+        // is out of bound. When bound_dist[i] == 0, it indicates OOB access
+        // and so bytes[i] has to be 0.
         // Because the bound_dist is decreasing by at most 1 each time, we can
         // use this property to reduce the use of LtGadget by adding constraints
         // to the diff between two consecutive bound_dists.
 
-        // Constraints on bound_dist[0]
-        //   bound_dist[0] == 0 || addr_start + bound_dist[0] == addr_end
-        //   src_addr < src_addr_bound when bound_dist[0] != 0
+        // The constraints on bound_dist[0].
+        //   bound_dist[0] + addr_start == addr_end if addr_start < addr_end
+        //   bound_dist[0] == 0 if addr_start >= addr_end
         cb.add_constraint(
-            "bound_dist[0] == 0 or addr_start + bound_dist[0] == addr_end",
-            bound_dist[0].expr()
-                * (addr_start.expr() + bound_dist[0].expr() - addr_end.expr()),
+            "bound_dist[0] + addr_start == addr_end if addr_start < addr_end",
+            lt_gadget.expr()
+                * (bound_dist[0].expr() + addr_start.expr() - addr_end.expr()),
         );
         cb.add_constraint(
-            "addr_start < addr_end when bound_dist_is_zero[0] == 0",
-            (1.expr() - bound_dist_is_zero[0].expr())
-                * (1.expr() - lt_gadget.expr()),
+            "bound_dist[0] == 0 if addr_start >= addr_end",
+            (1.expr() - lt_gadget.expr()) * bound_dist[0].expr(),
         );
-        // Constraints on bound_dist[1..MAX_COPY_BYTES]
+        // Constraints on bound_dist[1..MAX_BYTES]
         //   diff = bound_dist[idx - 1] - bound_dist[idx]
-        //   diff == 1 when bound_dist[idx - 1] != 0
-        //   diff == 0 when bound_dist[idx - 1] == 0
+        //   diff == 1 if bound_dist[idx - 1] != 0
+        //   diff == 0 if bound_dist[idx - 1] == 0
         for idx in 1..MAX_BYTES {
             let diff = bound_dist[idx - 1].expr() - bound_dist[idx].expr();
             cb.add_constraint(
-                "diff == 1 when bound_dist[i - 1] != 0",
+                "diff == 1 if bound_dist[i - 1] != 0",
                 (1.expr() - bound_dist_is_zero[idx - 1].expr())
                     * (1.expr() - diff.expr()),
             );
             cb.add_constraint(
-                "diff == 0 when bound_dist[i - 1] == 0",
+                "diff == 0 if bound_dist[i - 1] == 0",
                 bound_dist_is_zero[idx - 1].expr() * diff.expr(),
             )
         }
@@ -506,12 +507,12 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
                 (1.expr() - selectors[i].expr()) * bytes[i].expr(),
             );
             cb.add_constraint(
-                "bytes[i] == 0 when bound_dist_is_zero[i] == 1",
+                "bytes[i] == 0 when bound_dist[i] == 0",
                 bound_dist_is_zero[i].expr() * bytes[i].expr(),
             )
         }
 
-        BufferGetDataGadget {
+        BufferReaderGadget {
             bytes,
             selectors,
             bound_dist,
@@ -569,7 +570,8 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         self.selectors[idx].expr()
     }
 
-    pub(crate) fn read_from_buffer(&self, idx: usize) -> Expression<F> {
+    /// Indicate whether bytes[idx] is read from the buffer
+    pub(crate) fn read_flag(&self, idx: usize) -> Expression<F> {
         self.has_data(idx) * (1.expr() - self.bound_dist_is_zero[idx].expr())
     }
 
