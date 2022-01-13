@@ -76,7 +76,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
                 rw_counter_offset + from_memory.clone() * read_flag.clone();
             // Read bytes[i] from Tx
             cb.condition(from_tx.expr() * read_flag.clone(), |cb| {
-                cb.tx_lookup(
+                cb.tx_context_lookup(
                     tx_id.expr(),
                     TxContextFieldTag::CallData,
                     Some(src_addr.expr() + i.expr()),
@@ -434,6 +434,7 @@ pub mod test {
                             bytecode.hash.to_le_bytes(),
                             randomness,
                         ),
+                    ..Default::default()
                 }],
                 steps,
                 ..Default::default()
@@ -502,6 +503,7 @@ pub mod test {
                             bytecode.hash.to_le_bytes(),
                             randomness,
                         ),
+                    ..Default::default()
                 }],
                 steps,
                 ..Default::default()

@@ -52,17 +52,14 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let data_offset = from_bytes::expr(&bytes_data_offset.cells);
         let length = from_bytes::expr(&bytes_length.cells);
 
-        let tx_id = cb.query_cell();
-        cb.call_context_lookup(
-            0.expr(),
+        let tx_id = cb.call_context(
             None,
             CallContextFieldTag::TxId,
-            tx_id.expr(),
         );
 
         let calldata_length = cb.query_cell();
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            cb.tx_lookup(
+            cb.tx_context_lookup(
                 tx_id.expr(),
                 TxContextFieldTag::CallDataLength,
                 None,
@@ -71,7 +68,6 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         });
         cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
             cb.call_context_lookup(
-                0.expr(),
                 None,
                 CallContextFieldTag::CallDataLength,
                 calldata_length.expr(),
