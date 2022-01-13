@@ -59,7 +59,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     lookups: Vec<Lookup<F>>,
     curr_row_usages: Vec<StepRowUsage>,
     next_row_usages: Vec<StepRowUsage>,
-    rw_counter_offset: usize,
+    rw_counter_offset: Expression<F>,
     program_counter_offset: usize,
     stack_pointer_offset: i32,
     state_write_counter_offset: usize,
@@ -83,7 +83,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             lookups: Vec::new(),
             curr_row_usages: vec![StepRowUsage::default(); curr.rows.len()],
             next_row_usages: vec![StepRowUsage::default(); next.rows.len()],
-            rw_counter_offset: 0,
+            rw_counter_offset: 0.expr(),
             program_counter_offset: 0,
             stack_pointer_offset: 0,
             state_write_counter_offset: 0,
@@ -162,8 +162,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.execution_state
     }
 
-    pub(crate) fn rw_counter_offset(&self) -> usize {
-        self.rw_counter_offset
+    pub(crate) fn rw_counter_offset(&self) -> Expression<F> {
+        self.rw_counter_offset.clone()
     }
 
     pub(crate) fn program_counter_offset(&self) -> usize {
@@ -524,12 +524,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         values: [Expression<F>; 5],
     ) {
         self.rw_lookup_with_counter(
-            self.curr.state.rw_counter.expr() + self.rw_counter_offset.expr(),
+            self.curr.state.rw_counter.expr() + self.rw_counter_offset.clone(),
             is_write,
             tag,
             values,
         );
-        self.rw_counter_offset += 1;
+        self.rw_counter_offset = self.rw_counter_offset.clone()
+            + self.condition.clone().unwrap_or_else(|| 1.expr())
     }
 
     fn state_write_with_reversion(

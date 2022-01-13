@@ -18,7 +18,9 @@ use crate::{
 };
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
-const MAX_COPY_BYTES: usize = 39;
+// The max number of bytes that can be copied in a step limited by the number
+// of cells in a step
+const MAX_COPY_BYTES: usize = 71;
 
 /// Multi-step gadget for copying data from memory or Tx calldata to memory
 #[derive(Clone, Debug)]
@@ -56,24 +58,19 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         let tx_id = cb.query_cell();
         let buffer_get_data =
             BufferGetDataGadget::construct(cb, &src_addr, &src_addr_end);
-
         let from_memory = 1.expr() - from_tx.expr();
-        let rw_counter = cb.curr.state.rw_counter.expr();
-        let mut rw_counter_offset = 0.expr();
+
         // Copy bytes from src and dst
         for i in 0..MAX_COPY_BYTES {
             let read_flag = buffer_get_data.read_from_buffer(i);
             // Read bytes[i] from memory
             cb.condition(from_memory.clone() * read_flag.clone(), |cb| {
-                cb.memory_lookup_with_counter(
-                    rw_counter.clone() + rw_counter_offset.clone(),
+                cb.memory_lookup(
                     0.expr(),
                     src_addr.expr() + i.expr(),
                     buffer_get_data.byte(i),
                 )
             });
-            rw_counter_offset =
-                rw_counter_offset + from_memory.clone() * read_flag.clone();
             // Read bytes[i] from Tx
             cb.condition(from_tx.expr() * read_flag.clone(), |cb| {
                 cb.tx_context_lookup(
@@ -85,14 +82,12 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             });
             // Write bytes[i] to memory when selectors[i] != 0
             cb.condition(buffer_get_data.has_data(i), |cb| {
-                cb.memory_lookup_with_counter(
-                    rw_counter.clone() + rw_counter_offset.clone(),
+                cb.memory_lookup(
                     1.expr(),
                     dst_addr.expr() + i.expr(),
                     buffer_get_data.byte(i),
                 )
             });
-            rw_counter_offset = rw_counter_offset + buffer_get_data.has_data(i);
         }
 
         let copied_size = buffer_get_data.num_bytes();
@@ -146,8 +141,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
 
         // State transition
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(rw_counter_offset),
-            program_counter: Delta(finished),
+            rw_counter: Delta(cb.rw_counter_offset()),
             ..Default::default()
         };
         cb.require_step_state_transition(step_state_transition);
@@ -270,6 +264,7 @@ pub mod test {
         from_tx: bool,
         program_counter: u64,
         stack_pointer: usize,
+        memory_size: u64,
         rw_counter: usize,
         rws: &mut Vec<Rw>,
         bytes_map: &HashMap<u64, u8>,
@@ -324,6 +319,7 @@ pub mod test {
             rw_counter,
             program_counter,
             stack_pointer,
+            memory_size,
             gas_cost: 0,
             extra_data: Some(extra_data),
             ..Default::default()
@@ -335,13 +331,14 @@ pub mod test {
     pub(crate) fn make_memory_copy_steps(
         call_id: usize,
         buffer: &[u8],
-        buffer_addr: u64,
+        buffer_addr: u64, // buffer base address, use 0 for tx calldata
         src_addr: u64,
         dst_addr: u64,
         length: usize,
         from_tx: bool,
         program_counter: u64,
         stack_pointer: usize,
+        memory_size: u64,
         rw_counter: &mut usize,
         rws: &mut Vec<Rw>,
         steps: &mut Vec<ExecStep>,
@@ -353,6 +350,7 @@ pub mod test {
         println!("buffer_addr = {}", buffer_addr);
         println!("buffer_addr_end = {}", buffer_addr_end);
         println!("src_addr = {}", src_addr);
+        println!("mem_size = {}", memory_size);
         println!("{:?}", bytes_map);
 
         let mut copied = 0;
@@ -369,6 +367,7 @@ pub mod test {
                 from_tx,
                 program_counter,
                 stack_pointer,
+                memory_size,
                 *rw_counter,
                 rws,
                 &bytes_map,
@@ -388,13 +387,13 @@ pub mod test {
         length: usize,
     ) {
         let randomness = Fp::rand();
-        let bytecode =
-            Bytecode::new(vec![OpcodeId::STOP.as_u8(), OpcodeId::STOP.as_u8()]);
+        let bytecode = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
         let call_id = 1;
         let mut rws = Vec::new();
         let mut rw_counter = 1;
         let mut steps = Vec::new();
         let buffer = rand_bytes((src_addr_end - src_addr) as usize);
+        let memory_size = (dst_addr + length as u64 + 31) / 32;
 
         make_memory_copy_steps(
             call_id,
@@ -406,6 +405,7 @@ pub mod test {
             false,
             0,
             1024,
+            memory_size,
             &mut rw_counter,
             &mut rws,
             &mut steps,
@@ -414,8 +414,9 @@ pub mod test {
         steps.push(ExecStep {
             execution_state: ExecutionState::STOP,
             rw_counter,
-            program_counter: 1,
+            program_counter: 0,
             stack_pointer: 1024,
+            memory_size,
             opcode: Some(OpcodeId::STOP),
             ..Default::default()
         });
@@ -459,6 +460,7 @@ pub mod test {
         let mut rw_counter = 1;
         let calldata = rand_bytes(calldata_length);
         let mut steps = Vec::new();
+        let memory_size = (dst_addr + length as u64 + 31) / 32;
         println!("calldata_length = {}", calldata_length);
         println!("calldata = {:?}", calldata);
         println!("src_addr = {}", src_addr);
@@ -474,6 +476,7 @@ pub mod test {
             true,
             0,
             1024,
+            memory_size,
             &mut rw_counter,
             &mut rws,
             &mut steps,
@@ -482,8 +485,9 @@ pub mod test {
         steps.push(ExecStep {
             execution_state: ExecutionState::STOP,
             rw_counter,
-            program_counter: 1,
+            program_counter: 0,
             stack_pointer: 1024,
+            memory_size,
             opcode: Some(OpcodeId::STOP),
             ..Default::default()
         });
@@ -522,7 +526,7 @@ pub mod test {
 
     #[test]
     fn copy_to_memory_multi_step() {
-        test_ok_from_memory(0x40, 0xA0, 0x80, 50);
+        test_ok_from_memory(0x20, 0xA0, 0x80, 80);
         test_ok_from_tx(128, 10, 0x40, 90);
     }
 
@@ -530,5 +534,6 @@ pub mod test {
     fn copy_to_memory_out_of_bound() {
         test_ok_from_memory(0x40, 0xA0, 0x60, 45);
         test_ok_from_tx(32, 5, 0x40, 45);
+        test_ok_from_tx(32, 40, 0x40, 5);
     }
 }

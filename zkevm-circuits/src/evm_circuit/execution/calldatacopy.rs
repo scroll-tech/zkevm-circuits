@@ -29,7 +29,8 @@ pub(crate) struct CallDataCopyGadget<F> {
     data_offset: MemoryAddress<F>,
     length: RandomLinearCombination<F, 4>,
     tx_id: Cell<F>,
-    calldata_length: Cell<F>,
+    call_data_length: Cell<F>,
+    call_data_offset: Cell<F>, // Only used in the internal call
     memory_expansion: MemoryExpansionGadget<F, MAX_GAS_SIZE_IN_BYTES>,
     memory_copier_gas: MemoryCopierGasGadget<F>,
 }
@@ -52,27 +53,41 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let data_offset = from_bytes::expr(&bytes_data_offset.cells);
         let length = from_bytes::expr(&bytes_length.cells);
 
-        let tx_id = cb.call_context(
-            None,
-            CallContextFieldTag::TxId,
-        );
+        let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        let call_data_length = cb.query_cell();
+        let call_data_offset = cb.query_cell();
 
-        let calldata_length = cb.query_cell();
+        // Lookup the calldata_length and caller_address in Tx context table or
+        // Call context table
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
             cb.tx_context_lookup(
                 tx_id.expr(),
                 TxContextFieldTag::CallDataLength,
                 None,
-                calldata_length.expr(),
+                call_data_length.expr(),
+            );
+            cb.require_zero(
+                "call_data_offset == 0 in the root call",
+                call_data_offset.expr(),
             )
         });
         cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
             cb.call_context_lookup(
                 None,
                 CallContextFieldTag::CallDataLength,
-                calldata_length.expr(),
+                call_data_length.expr(),
+            );
+            cb.call_context_lookup(
+                None,
+                CallContextFieldTag::CallerAddress,
+                call_data_offset.expr(),
             )
         });
+
+        // The src address of the call data to be copied
+        let src_addr = data_offset + call_data_offset.expr();
+        // The address boundary of call data buffer
+        let src_addr_end = call_data_length.expr() + call_data_offset.expr();
 
         // Calculate the next memory size and the gas cost for this memory
         // access
@@ -102,7 +117,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         cb.require_next_state(ExecutionState::CopyToMemory);
         cb.add_constraint(
             "next_src_addr = data_offset",
-            next_src_addr.expr() - data_offset.clone(),
+            next_src_addr.expr() - src_addr,
         );
         cb.add_constraint(
             "next_dst_addr = memory_offset",
@@ -114,7 +129,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         );
         cb.add_constraint(
             "next_src_addr_end = data_offset + calldata_length",
-            next_src_addr_end.expr() - data_offset - calldata_length.expr(),
+            next_src_addr_end.expr() - src_addr_end,
         );
         cb.add_constraint(
             "next_from_tx = is_root",
@@ -127,10 +142,9 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         // State transition
         let step_state_transition = StepStateTransition {
-            // We keep the program_counter same because Calldatacopy hasn't
-            // finished the copy yet
-            rw_counter: Delta(3.expr()), // 3 stack pop
-            //program_counter: Delta(1.expr()),
+            // 1 tx id lookup + 3 stack pop + option(calldatalength lookup)
+            rw_counter: Delta(cb.rw_counter_offset()),
+            program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
             memory_size: To(memory_expansion.next_memory_size()),
             ..Default::default()
@@ -148,7 +162,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
             data_offset: bytes_data_offset,
             length: bytes_length,
             tx_id,
-            calldata_length,
+            call_data_length,
+            call_data_offset,
             memory_expansion,
             memory_copier_gas,
         }
@@ -160,14 +175,17 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction<F>,
-        _: &Call<F>,
+        call: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [memory_offset, data_offset, length] =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
+            [step.rw_indices[1], step.rw_indices[2], step.rw_indices[3]]
                 .map(|idx| block.rws[idx].stack_value());
+        println!("mem_offset = {}", memory_offset);
+        println!("data_offset = {}", data_offset);
+        println!("length = {}", length);
         self.memory_offset.assign(
             region,
             offset,
@@ -193,10 +211,21 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         )?;
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
-        self.calldata_length.assign(
+
+        let (call_data_length, call_data_offset) = if call.is_root {
+            (tx.call_data_length, 0)
+        } else {
+            (call.call_data_length, call.call_data_offset)
+        };
+        self.call_data_length.assign(
             region,
             offset,
-            Some(F::from(tx.call_data_length as u64)),
+            Some(F::from(call_data_length as u64)),
+        )?;
+        self.call_data_offset.assign(
+            region,
+            offset,
+            Some(F::from(call_data_offset as u64)),
         )?;
 
         // Memory expansion
@@ -207,12 +236,13 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
             memory_offset.as_u64() + length.as_u64(),
         )?;
 
-        self.memory_copier_gas.assign(
+        let gas_cost = self.memory_copier_gas.assign(
             region,
             offset,
             length.as_u64(),
             memory_expansion_gas_cost as u64,
         )?;
+        println!("copy gas cost = {}", gas_cost);
 
         Ok(())
     }
@@ -223,6 +253,7 @@ mod test {
     use crate::evm_circuit::{
         execution::memory_copy::test::make_memory_copy_steps,
         step::ExecutionState,
+        table::CallContextFieldTag,
         test::{
             calc_memory_copier_gas_cost, calc_memory_expension_gas_cost,
             rand_bytes, run_test_circuit_incomplete_fixed_table,
@@ -231,9 +262,10 @@ mod test {
         witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
     };
     use bus_mapping::{
-        eth_types::{ToBigEndian, Word},
+        eth_types::{ToBigEndian, ToLittleEndian, Word},
         evm::{GasCost, OpcodeId},
     };
+    use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;
 
     fn test_ok_root(
@@ -256,8 +288,6 @@ mod test {
             .concat(),
         );
         let call_id = 1;
-        let mut rws = Vec::new();
-        let mut rw_counter = 1;
         let mut steps = Vec::new();
         let calldata = rand_bytes(calldata_length);
         let gas_cost = GasCost::FASTEST.as_u64()
@@ -266,23 +296,115 @@ mod test {
                 memory_offset.as_u64() + length.as_u64(),
             )
             + calc_memory_copier_gas_cost(length.as_u64());
+        println!("total gas cost = {}", gas_cost);
+
+        let mut rws = vec![
+            Rw::CallContext {
+                rw_counter: 1,
+                is_write: false,
+                call_id: call_id,
+                field_tag: CallContextFieldTag::TxId,
+                value: Word::one(),
+            },
+            Rw::Stack {
+                rw_counter: 2,
+                is_write: false,
+                call_id: call_id,
+                stack_pointer: 1021,
+                value: memory_offset,
+            },
+            Rw::Stack {
+                rw_counter: 3,
+                is_write: false,
+                call_id: call_id,
+                stack_pointer: 1022,
+                value: data_offset,
+            },
+            Rw::Stack {
+                rw_counter: 4,
+                is_write: false,
+                call_id: call_id,
+                stack_pointer: 1023,
+                value: length,
+            },
+        ];
+        let mut rw_counter = rws.len() + 1;
+        println!("{:?}", rws[0]);
+        println!("{:?}", rws[1]);
+        println!("{:?}", rws[2]);
+        println!("{:?}", rws[3]);
+        println!("rw_counter = {}", rw_counter);
 
         steps.push(ExecStep {
-            rw_indices: vec![0, 1, 2],
+            rw_indices: vec![0, 1, 2, 3],
             execution_state: ExecutionState::CALLDATACOPY,
             rw_counter: 1,
-            program_counter: 65,
+            program_counter: 99,
             stack_pointer: 1021,
-            gas_left: 100,
-            gas_cost: gas_cost,
+            gas_left: gas_cost,
+            gas_cost,
             memory_size: 0,
             opcode: Some(OpcodeId::CALLDATACOPY),
             ..Default::default()
         });
+        let memory_size = (memory_offset.as_u64() + length.as_u64() + 31) / 32;
+        println!("calc mem size = {}", memory_size);
+
+        make_memory_copy_steps(
+            call_id,
+            &calldata,
+            0,
+            data_offset.as_u64(),
+            memory_offset.as_u64(),
+            length.as_usize(),
+            true,
+            100,
+            1024,
+            memory_size,
+            &mut rw_counter,
+            &mut rws,
+            &mut steps,
+        );
+        println!("rw_counter = {}", rw_counter);
+
+        steps.push(ExecStep {
+            execution_state: ExecutionState::STOP,
+            rw_counter,
+            program_counter: 100,
+            stack_pointer: 1024,
+            opcode: Some(OpcodeId::STOP),
+            memory_size,
+            ..Default::default()
+        });
+
+        let block = Block {
+            randomness,
+            txs: vec![Transaction {
+                id: 1,
+                call_data: calldata,
+                call_data_length: calldata_length,
+                calls: vec![Call {
+                    id: call_id,
+                    is_root: true,
+                    is_create: false,
+                    opcode_source:
+                        RandomLinearCombination::random_linear_combine(
+                            bytecode.hash.to_le_bytes(),
+                            randomness,
+                        ),
+                    ..Default::default()
+                }],
+                steps,
+                ..Default::default()
+            }],
+            rws,
+            bytecodes: vec![bytecode],
+        };
+        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
     #[test]
     fn calldatacopy_gadget_simple() {
-
+        test_ok_root(64, Word::from(0x40), Word::from(0), Word::from(64));
     }
 }
