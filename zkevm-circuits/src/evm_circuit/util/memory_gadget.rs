@@ -570,7 +570,7 @@ impl<F: FieldExt, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         self.selectors[idx].expr()
     }
 
-    /// Indicate whether bytes[idx] is read from the buffer
+    /// Indicate whether the bytes\[idx\] is read from the buffer
     pub(crate) fn read_flag(&self, idx: usize) -> Expression<F> {
         self.has_data(idx) * (1.expr() - self.bound_dist_is_zero[idx].expr())
     }

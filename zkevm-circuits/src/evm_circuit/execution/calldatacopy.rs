@@ -216,11 +216,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
             offset,
             Some(length.to_le_bytes()[..4].try_into().unwrap()),
         )?;
-        self.length_is_zero.assign(
-            region,
-            offset,
-            F::from(length.as_u64()),
-        )?;
+        self.length_is_zero
+            .assign(region, offset, F::from(length.as_u64()))?;
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
