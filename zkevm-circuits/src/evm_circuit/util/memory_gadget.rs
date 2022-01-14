@@ -7,7 +7,7 @@ use crate::evm_circuit::{
     },
 };
 use crate::util::Expr;
-use bus_mapping::evm::GasCost;
+use bus_mapping::evm_types::GasCost;
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
 

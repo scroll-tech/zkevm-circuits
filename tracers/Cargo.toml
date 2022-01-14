@@ -1,0 +1,11 @@
+[package]
+name = "tracers"
+version = "0.1.0"
+edition = "2021"
+authors = ["CPerezz <c.perezbaro@gmail.com>"]
+
+[dependencies]
+geth-utils = { path = "../geth-utils" }
+serde = {version = "1.0.130", features = ["derive"] }
+serde_json = "1.0.66"
+types = { path = "../types" }

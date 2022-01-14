@@ -10,7 +10,7 @@ use std::fmt;
 
 /// Represents a `MemoryAddress` of the EVM.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MemoryAddress(pub(crate) usize);
+pub struct MemoryAddress(pub usize);
 
 impl fmt::Debug for MemoryAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -168,7 +168,7 @@ define_mul_assign_variants!(LHS = MemoryAddress, RHS = MemoryAddress);
 /// Represents a snapshot of the EVM memory state at a certain
 /// execution step height.
 #[derive(Clone, Eq, PartialEq)]
-pub struct Memory(pub(crate) Vec<u8>);
+pub struct Memory(pub Vec<u8>);
 
 impl fmt::Debug for Memory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

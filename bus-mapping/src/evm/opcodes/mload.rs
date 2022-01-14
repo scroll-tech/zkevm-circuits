@@ -1,11 +1,12 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::{GethExecStep, ToBigEndian, Word};
-use crate::{evm::MemoryAddress, operation::RW, Error};
+use types::eth_types::{GethExecStep, ToBigEndian, Word};
+use crate::{operation::RW, Error};
+use types::evm_types::MemoryAddress;
 use core::convert::TryInto;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
+/// corresponding to the [`OpcodeId::MLOAD`](crate::evm_types::OpcodeId::MLOAD)
 /// `OpcodeId`. This is responsible of generating all of the associated
 /// [`crate::operation::StackOp`]s and [`crate::operation::MemoryOp`]s and place
 /// them inside the trace's [`crate::operation::OperationContainer`].
@@ -63,7 +64,7 @@ mod mload_tests {
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
         eth_types::Word,
-        evm::StackAddress,
+        evm_types::StackAddress,
         mock,
     };
     use pretty_assertions::assert_eq;

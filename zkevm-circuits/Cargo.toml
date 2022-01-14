@@ -23,6 +23,7 @@ rand = "0.8"
 
 [dev-dependencies]
 criterion = "0.3"
+types = { path = "../types"}
 
 [[bench]]
 name = "binary_value"

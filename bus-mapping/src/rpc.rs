@@ -1,7 +1,7 @@
 //! Module which contains all the RPC calls that are needed at any point to
 //! query a Geth node in order to get a Block, Tx or Trace info.
 
-use crate::eth_types::{
+use types::eth_types::{
     Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash,
     ResultGethExecTraces, Transaction, Word, U64,
 };

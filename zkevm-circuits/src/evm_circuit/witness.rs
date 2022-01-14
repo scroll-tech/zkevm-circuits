@@ -9,7 +9,7 @@ use crate::evm_circuit::{
 };
 use bus_mapping::{
     eth_types::{Address, ToLittleEndian, ToScalar, Word},
-    evm::OpcodeId,
+    evm_types::OpcodeId,
 };
 use halo2::arithmetic::{BaseExt, FieldExt};
 use pairing::bn256::Fr as Fp;
@@ -582,6 +582,7 @@ pub fn block_convert(
     block
 }
 
+#[cfg(test)]
 pub fn build_block_from_trace_code_at_start(
     bytecode: &bus_mapping::bytecode::Bytecode,
 ) -> Block<Fp> {

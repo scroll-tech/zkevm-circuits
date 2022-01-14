@@ -1260,7 +1260,7 @@ mod tests {
     use bus_mapping::address;
     use bus_mapping::bytecode;
     use bus_mapping::eth_types::Word;
-    use bus_mapping::evm::{MemoryAddress, RWCounter, StackAddress};
+    use bus_mapping::evm_types::{MemoryAddress, RWCounter, StackAddress};
     use bus_mapping::mock;
 
     use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};

@@ -14,7 +14,7 @@ use crate::{
     util::Expr,
 };
 use array_init::array_init;
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use bus_mapping::{eth_types::ToLittleEndian, evm_types::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -159,7 +159,7 @@ mod test {
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         witness,
     };
-    use bus_mapping::{bytecode, evm::OpcodeId};
+    use bus_mapping::{bytecode, evm_types::OpcodeId};
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
         assert!(

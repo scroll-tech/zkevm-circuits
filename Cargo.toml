@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "types",
+    "tracers",
     "zkevm-circuits",
     "bus-mapping",
     "keccak256",

@@ -1,10 +1,10 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::GethExecStep;
+use types::eth_types::GethExecStep;
 use crate::Error;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the [`OpcodeId::JUMPDEST`](crate::evm::OpcodeId::JUMPDEST)
+/// corresponding to the [`OpcodeId::JUMPDEST`](crate::evm_types::OpcodeId::JUMPDEST)
 /// `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Jumpdest;

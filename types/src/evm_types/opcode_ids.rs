@@ -1,5 +1,6 @@
-use crate::{error::Error, evm::GasCost};
 use core::fmt::Debug;
+use crate::Error;
+use crate::evm_types::GasCost;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{de, Deserialize, Serialize};

@@ -1,6 +1,6 @@
 //! Common utility traits and functions.
 use bus_mapping::{
-    evm::{GasCost, OpcodeId},
+    evm_types::{GasCost, OpcodeId},
     operation::Target,
 };
 use halo2::{arithmetic::FieldExt, plonk::Expression};

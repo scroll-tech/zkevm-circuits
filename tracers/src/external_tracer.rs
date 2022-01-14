@@ -3,7 +3,7 @@ use types::eth_types::{
     self, fix_geth_trace_memory_size, Address, Block, Bytes, GethExecStep,
     Hash, Word, U64,
 };
-use crate::Error;
+use types::Error;
 use geth_utils;
 use serde::Serialize;
 
@@ -130,6 +130,7 @@ pub fn trace(
     Ok(trace)
 }
 
+/*
 #[cfg(test)]
 mod trace_test {
     use crate::{bytecode, mock};
@@ -153,3 +154,4 @@ mod trace_test {
         assert_eq!(block.geth_trace.struct_logs[2].memory.0.len(), 0);
     }
 }
+*/

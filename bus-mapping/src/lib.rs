@@ -49,7 +49,7 @@
 //!
 //! ```rust
 //! use bus_mapping::Error;
-//! use bus_mapping::evm::Gas;
+//! use bus_mapping::evm_types::Gas;
 //! use bus_mapping::mock;
 //! use bus_mapping::state_db::{self, StateDB, CodeDB};
 //! use bus_mapping::eth_types::{
@@ -190,7 +190,7 @@
 //! - Iterate over the `ExecutionTrace` itself over
 //! each `ExecutionStep`'s is formed by and check which Stack/Memory&Storage
 //! operations are linked to each step. This is also automatically done via the
-//! [`Opcode`](crate::evm::opcodes::Opcode) trait defined in this crate.
+//! [`Opcode`](crate::evm_types::opcodes::Opcode) trait defined in this crate.
 //!
 //! ## Documentation
 //! For extra documentation, check the book with the specs written for the
@@ -210,9 +210,6 @@
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
 
 extern crate alloc;
-mod error;
-#[macro_use]
-pub(crate) mod macros;
 pub mod evm;
 pub mod exec_trace;
 pub mod external_tracer;
@@ -220,10 +217,11 @@ pub mod operation;
 #[macro_use]
 pub mod bytecode;
 pub mod circuit_input_builder;
-#[macro_use]
-pub mod eth_types;
 pub(crate) mod geth_errors;
 pub mod mock;
 pub mod rpc;
 pub mod state_db;
-pub use error::Error;
+pub use types::Error;
+pub use types::address;
+pub use types::eth_types;
+pub use types::evm_types;

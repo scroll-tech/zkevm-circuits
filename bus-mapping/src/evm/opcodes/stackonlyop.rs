@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::GethExecStep;
+use types::eth_types::GethExecStep;
 use crate::{operation::RW, Error};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -46,9 +46,10 @@ mod stackonlyop_tests {
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
         eth_types::Word,
-        evm::StackAddress,
-        mock, word,
+        evm_types::StackAddress,
+        mock,
     };
+    use types::word;
     use pretty_assertions::assert_eq;
 
     #[test]

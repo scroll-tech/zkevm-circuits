@@ -18,7 +18,7 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use bus_mapping::{eth_types::ToLittleEndian, evm_types::OpcodeId};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
@@ -209,7 +209,7 @@ mod test {
     use bus_mapping::{
         bytecode,
         eth_types::Word,
-        evm::{Gas, GasCost, OpcodeId},
+        evm_types::{Gas, GasCost, OpcodeId},
     };
     use std::iter;
 

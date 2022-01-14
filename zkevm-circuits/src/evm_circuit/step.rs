@@ -6,7 +6,7 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::evm_types::OpcodeId;
 use halo2::{
     arithmetic::FieldExt,
     circuit::Region,

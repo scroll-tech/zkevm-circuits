@@ -19,7 +19,7 @@ use crate::{
 };
 use bus_mapping::{
     eth_types::{ToLittleEndian, ToScalar},
-    evm::GasCost,
+    evm_types::GasCost,
 };
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
@@ -326,7 +326,7 @@ mod test {
     use bus_mapping::{
         address,
         eth_types::{self, Address, ToLittleEndian, ToWord, Word},
-        evm::{GasCost, OpcodeId},
+        evm_types::{GasCost, OpcodeId},
     };
 
     fn test_ok(tx: eth_types::Transaction, result: bool) {

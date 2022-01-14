@@ -349,6 +349,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "types",
  "uint",
  "url",
 ]
@@ -3530,6 +3531,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "360dfd1d6d30e05fda32ace2c8c70e9c0a9da713275777f5a4dbb8a1893930c6"
 
 [[package]]
+name = "tracers"
+version = "0.1.0"
+dependencies = [
+ "geth-utils",
+ "serde",
+ "serde_json",
+ "types",
+]
+
+[[package]]
 name = "tracing"
 version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3610,6 +3621,24 @@ name = "typenum"
 version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b63708a265f51345575b27fe43f9500ad611579e764c79edbc2037b1121959ec"
+
+[[package]]
+name = "types"
+version = "0.1.0"
+dependencies = [
+ "ethers-core",
+ "ethers-providers",
+ "ff 0.11.0",
+ "hex",
+ "itertools",
+ "lazy_static",
+ "log",
+ "pairing_bn256",
+ "regex",
+ "serde",
+ "serde_json",
+ "uint",
+]
 
 [[package]]
 name = "ucd-trie"
@@ -3961,4 +3990,5 @@ dependencies = [
  "rand_xorshift",
  "serde_json",
  "sha3 0.7.3",
+ "types",
 ]

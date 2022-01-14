@@ -1,10 +1,10 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::GethExecStep;
+use types::eth_types::GethExecStep;
 use crate::{operation::RW, Error};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the [`OpcodeId::JUMP`](crate::evm::OpcodeId::JUMP)
+/// corresponding to the [`OpcodeId::JUMP`](crate::evm_types::OpcodeId::JUMP)
 /// `OpcodeId`.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Jump;
@@ -34,7 +34,7 @@ mod jump_tests {
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
         eth_types::Word,
-        evm::StackAddress,
+        evm_types::StackAddress,
         mock,
     };
     use pretty_assertions::assert_eq;

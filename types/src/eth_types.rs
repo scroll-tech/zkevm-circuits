@@ -1,7 +1,7 @@
 //! Ethereum types used to deserialize responses from web3 / geth.
 
-use crate::evm::{memory::Memory, stack::Stack, storage::Storage};
-use crate::evm::{Gas, GasCost, OpcodeId, ProgramCounter};
+use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
+use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 use ethers_core::types;
 pub use ethers_core::types::{
     transaction::response::Transaction, Address, Block, Bytes, H160, H256,
@@ -293,16 +293,15 @@ impl<'de> Deserialize<'de> for GethExecStep {
 /// `GethExecutionTrace`s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
-#[doc(hidden)]
-pub(crate) struct ResultGethExecTraces(pub(crate) Vec<ResultGethExecTrace>);
+pub struct ResultGethExecTraces(pub Vec<ResultGethExecTrace>);
 
 /// Helper type built to deal with the weird `result` field added between
 /// `GethExecutionTrace`s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
-pub(crate) struct ResultGethExecTrace {
-    pub(crate) result: GethExecTrace,
+pub struct ResultGethExecTrace {
+    pub result: GethExecTrace,
 }
 
 #[derive(Deserialize, Debug, Eq, PartialEq)]
@@ -415,8 +414,8 @@ macro_rules! word_map {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::opcodes::ids::OpcodeId;
-    use crate::evm::{memory::Memory, stack::Stack};
+    use crate::evm_types::opcode_ids::OpcodeId;
+    use crate::evm_types::{memory::Memory, stack::Stack};
 
     #[test]
     fn deserialize_geth_exec_trace2() {

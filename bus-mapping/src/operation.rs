@@ -6,8 +6,8 @@
 //!   [`OperationContainer`].
 pub(crate) mod container;
 
-pub use super::evm::{MemoryAddress, RWCounter, StackAddress};
-use crate::eth_types::{Address, Word};
+pub use types::evm_types::{MemoryAddress, RWCounter, StackAddress};
+use types::eth_types::{Address, Word};
 pub use container::OperationContainer;
 use core::cmp::Ordering;
 use core::fmt;
@@ -66,7 +66,7 @@ pub trait Op: Eq + Ord {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
-/// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
+/// by an specific [`OpcodeId`](crate::evm_types::opcodes::ids::OpcodeId) of the
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct MemoryOp {
@@ -148,7 +148,7 @@ impl Ord for MemoryOp {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the stack implied
-/// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
+/// by an specific [`OpcodeId`](crate::evm_types::opcodes::ids::OpcodeId) of the
 /// [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct StackOp {
@@ -230,7 +230,7 @@ impl Ord for StackOp {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the storage
-/// implied by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of
+/// implied by an specific [`OpcodeId`](crate::evm_types::opcodes::ids::OpcodeId) of
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct StorageOp {
