@@ -36,7 +36,8 @@ impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
         cb.require_equal(
             "Constraint: gas left equal to stack value",
             from_bytes::expr(&gas_left),
-            cb.curr.state.gas_left.expr() - 2.expr(),
+            cb.curr.state.gas_left.expr()
+                - OpcodeId::GAS.constant_gas_cost().expr(),
         );
 
         let value =
