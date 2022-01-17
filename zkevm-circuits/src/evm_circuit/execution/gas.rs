@@ -15,6 +15,8 @@ use crate::{
     util::Expr,
 };
 
+use array_init::array_init;
+use bus_mapping::evm::OpcodeId;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -29,15 +31,16 @@ impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::GAS;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let gas_bytes = array_init::array_init(|_| cb.query_cell());
+        let gas_left = array_init(|_| cb.query_cell());
+
         cb.require_equal(
             "Constraint: gas left equal to stack value",
-            from_bytes::expr(&gas_bytes),
-            cb.curr.state.gas_left.expr(),
+            from_bytes::expr(&gas_left),
+            cb.curr.state.gas_left.expr() - 2.expr(),
         );
 
         let value =
-            RandomLinearCombination::new(gas_bytes, cb.power_of_randomness());
+            RandomLinearCombination::new(gas_left, cb.power_of_randomness());
         cb.stack_push(value.expr());
 
         let step_state_transition = StepStateTransition {
@@ -71,8 +74,17 @@ impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        self.value
-            .assign(region, offset, Some(step.gas_left.to_le_bytes()))?;
+        // The GAS opcode takes into account the reduction of gas available due
+        // to the instruction itself.
+        self.value.assign(
+            region,
+            offset,
+            Some(
+                step.gas_left
+                    .saturating_sub(OpcodeId::GAS.constant_gas_cost().as_u64())
+                    .to_le_bytes(),
+            ),
+        )?;
 
         Ok(())
     }
@@ -87,7 +99,6 @@ mod test {
 
     fn test_ok() {
         let bytecode = bytecode! {
-            PUSH32(0)
             #[start]
             GAS
             STOP
