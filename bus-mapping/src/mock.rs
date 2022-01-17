@@ -32,7 +32,7 @@ pub fn new_block() -> eth_types::Block<()> {
         hash: Some(Hash::zero()),
         parent_hash: Hash::zero(),
         uncles_hash: Hash::zero(),
-        author: Address::zero(),
+        author: *COINBASE,
         state_root: Hash::zero(),
         transactions_root: Hash::zero(),
         receipts_root: Hash::zero(),
