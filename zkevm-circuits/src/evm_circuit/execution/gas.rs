@@ -31,8 +31,11 @@ impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::GAS;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+        // The gas passed to a transaction is a 64-bit number.
         let gas_left = array_init(|_| cb.query_cell());
 
+        // The `gas_left` in the current state has to be deducted by the gas
+        // used by the `GAS` opcode itself.
         cb.require_equal(
             "Constraint: gas left equal to stack value",
             from_bytes::expr(&gas_left),
@@ -40,6 +43,7 @@ impl<F: FieldExt> ExecutionGadget<F> for GasGadget<F> {
                 - OpcodeId::GAS.constant_gas_cost().expr(),
         );
 
+        // Construct the value and push it to stack.
         let value =
             RandomLinearCombination::new(gas_left, cb.power_of_randomness());
         cb.stack_push(value.expr());
