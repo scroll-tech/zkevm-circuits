@@ -14,7 +14,7 @@ mod sload;
 mod stackonlyop;
 mod stop;
 mod swap;
-
+mod timestamp;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::evm::OpcodeId;
 use crate::Error;
@@ -112,7 +112,7 @@ impl OpcodeId {
             // OpcodeId::EXTCODEHASH => {},
             // OpcodeId::BLOCKHASH => {},
             OpcodeId::COINBASE => StackOnlyOpcode::<0>::gen_associated_ops,
-            // OpcodeId::TIMESTAMP => {},
+            OpcodeId::TIMESTAMP => StackOnlyOpcode::<0>::gen_associated_ops,
             // OpcodeId::NUMBER => {},
             // OpcodeId::DIFFICULTY => {},
             // OpcodeId::GASLIMIT => {},
@@ -229,4 +229,3 @@ pub fn gen_associated_ops(
     let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
     fn_gen_associated_ops(state, next_steps)
 }
-    
