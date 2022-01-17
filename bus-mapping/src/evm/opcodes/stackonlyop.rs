@@ -31,7 +31,7 @@ impl<const N: usize> Opcode for StackOnlyOpcode<N> {
         let result_value = steps[1].stack.last()?;
         state.push_stack_op(
             RW::WRITE,
-            step.stack.nth_last_filled(N - 1),
+            step.stack.last_filled().map(|a| a - 1 + N),
             result_value,
         );
 

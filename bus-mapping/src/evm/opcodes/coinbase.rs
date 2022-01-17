@@ -1,38 +1,11 @@
-use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::{operation::RW, Error};
-use eth_types::GethExecStep;
-
-/// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the [`OpcodeId::PC`](crate::evm::OpcodeId::PC) `OpcodeId`.
-#[derive(Debug, Copy, Clone)]
-pub(crate) struct Coinbase;
-
-impl Opcode for Coinbase {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
-        // Get value result from next step and do stack write
-        let value = steps[1].stack.last()?;
-        state.push_stack_op(
-            RW::WRITE,
-            step.stack.last_filled().map(|a| a - 1),
-            value,
-        );
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod coinbase_tests {
-    use super::*;
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
         mock,
+        operation::RW,
+        Error,
     };
     use eth_types::evm_types::StackAddress;
     use eth_types::ToWord;
