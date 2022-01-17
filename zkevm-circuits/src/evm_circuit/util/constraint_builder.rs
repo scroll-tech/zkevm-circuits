@@ -473,7 +473,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     // Rw
 
     /// Add a Lookup::Rw without increasing the rw_counter_offset, which is
-    /// useful for state reversion or dummuy lookup.
+    /// useful for state reversion or dummy lookup.
     fn rw_lookup_with_counter(
         &mut self,
         name: &'static str,
