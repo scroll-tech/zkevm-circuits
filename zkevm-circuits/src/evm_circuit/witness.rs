@@ -72,7 +72,10 @@ impl<F: FieldExt> BlockContext<F> {
                 [
                     F::from(BlockContextFieldTag::Time as u64),
                     F::zero(),
-                    F::from(self.time),
+                    RandomLinearCombination::random_linear_combine(
+                        self.time.to_le_bytes(),
+                        randomness,
+                    ),
                 ],
                 [
                     F::from(BlockContextFieldTag::Difficulty as u64),
@@ -592,6 +595,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::PC => ExecutionState::PC,
             OpcodeId::MSIZE => ExecutionState::MSIZE,
             OpcodeId::COINBASE => ExecutionState::COINBASE,
+            OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }
@@ -685,6 +689,8 @@ pub fn block_convert(
     // converting to block context
     let context = BlockContext {
         coinbase: b.block_const.coinbase,
+        time: b.block_const.timestamp.try_into().unwrap(),
+        // here??
         ..Default::default()
     };
 

@@ -37,6 +37,7 @@ mod signed_comparator;
 mod signextend;
 mod stop;
 mod swap;
+mod timestamp;
 
 use add::AddGadget;
 use begin_tx::BeginTxGadget;
@@ -59,6 +60,7 @@ use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use stop::StopGadget;
 use swap::SwapGadget;
+use timestamp::TimestampGadget;
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
@@ -105,6 +107,7 @@ pub(crate) struct ExecutionConfig<F> {
     swap_gadget: SwapGadget<F>,
     msize_gadget: MsizeGadget<F>,
     coinbase_gadget: CoinbaseGadget<F>,
+    timestamp_gadget: TimestampGadget<F>,
 }
 
 impl<F: FieldExt> ExecutionConfig<F> {
@@ -234,6 +237,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             swap_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
+            timestamp_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
@@ -510,6 +514,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
             ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
+            ExecutionState::TIMESTAMP => {
+                assign_exec_step!(self.timestamp_gadget)
+            }
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
             }
