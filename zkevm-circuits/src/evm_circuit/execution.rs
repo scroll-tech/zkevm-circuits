@@ -116,7 +116,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
     ) -> Self
     where
         TxTable: LookupTable<F, 4>,
-        RwTable: LookupTable<F, 8>,
+        RwTable: LookupTable<F, 10>,
         BytecodeTable: LookupTable<F, 4>,
         BlockTable: LookupTable<F, 3>,
     {
@@ -309,7 +309,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         independent_lookups: Vec<Vec<Lookup<F>>>,
     ) where
         TxTable: LookupTable<F, 4>,
-        RwTable: LookupTable<F, 8>,
+        RwTable: LookupTable<F, 10>,
         BytecodeTable: LookupTable<F, 4>,
         BlockTable: LookupTable<F, 3>,
     {

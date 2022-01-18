@@ -34,7 +34,7 @@ mod test_evm_circuit {
     #[derive(Clone)]
     struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
-        rw_table: [Column<Advice>; 8],
+        rw_table: [Column<Advice>; 10],
         bytecode_table: [Column<Advice>; 4],
         evm_circuit: EvmCircuit<F>,
     }
@@ -185,7 +185,7 @@ mod test_evm_circuit {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = [(); 4].map(|_| meta.advice_column());
-            let rw_table = [(); 8].map(|_| meta.advice_column());
+            let rw_table = [(); 10].map(|_| meta.advice_column());
             let bytecode_table = [(); 4].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 
