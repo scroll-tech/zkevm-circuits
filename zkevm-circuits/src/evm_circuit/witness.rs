@@ -690,7 +690,6 @@ pub fn block_convert(
     let context = BlockContext {
         coinbase: b.block_const.coinbase,
         time: b.block_const.timestamp.try_into().unwrap(),
-        // here??
         ..Default::default()
     };
 
