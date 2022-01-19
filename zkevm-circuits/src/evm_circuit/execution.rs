@@ -20,6 +20,7 @@ mod add;
 mod begin_tx;
 mod bitwise;
 mod byte;
+mod calldatasize;
 mod coinbase;
 mod comparator;
 mod dup;
@@ -42,6 +43,7 @@ use add::AddGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
+use calldatasize::CallDataSizeGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
@@ -89,6 +91,7 @@ pub(crate) struct ExecutionConfig<F> {
     bitwise_gadget: BitwiseGadget<F>,
     begin_tx_gadget: BeginTxGadget<F>,
     byte_gadget: ByteGadget<F>,
+    calldatasize_gadget: CallDataSizeGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
     error_oog_pure_memory_gadget: ErrorOOGPureMemoryGadget<F>,
@@ -218,6 +221,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             bitwise_gadget: configure_gadget!(),
             begin_tx_gadget: configure_gadget!(),
             byte_gadget: configure_gadget!(),
+            calldatasize_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             error_oog_pure_memory_gadget: configure_gadget!(),
@@ -512,6 +516,9 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
+            }
+            ExecutionState::CALLDATASIZE => {
+                assign_exec_step!(self.calldatasize_gadget)
             }
             _ => unimplemented!(),
         }

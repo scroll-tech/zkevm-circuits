@@ -1,4 +1,5 @@
 //! Definition of each opcode of the EVM.
+mod calldatasize;
 mod coinbase;
 mod dup;
 mod jump;
@@ -23,6 +24,7 @@ use eth_types::GethExecStep;
 use log::warn;
 
 use self::push::Push;
+use calldatasize::CallDataSize;
 use coinbase::Coinbase;
 use dup::Dup;
 use jump::Jump;
@@ -100,7 +102,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::CALLER => {},
         // OpcodeId::CALLVALUE => {},
         // OpcodeId::CALLDATALOAD => {},
-        // OpcodeId::CALLDATASIZE => {},
+        OpcodeId::CALLDATASIZE => CallDataSize::gen_associated_ops,
         // OpcodeId::CALLDATACOPY => {},
         // OpcodeId::CODESIZE => {},
         // OpcodeId::CODECOPY => {},
