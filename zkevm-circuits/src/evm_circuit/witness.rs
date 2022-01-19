@@ -602,6 +602,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::PC => ExecutionState::PC,
             OpcodeId::MSIZE => ExecutionState::MSIZE,
             OpcodeId::COINBASE => ExecutionState::COINBASE,
+            OpcodeId::SLOAD => ExecutionState::SLOAD,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }
