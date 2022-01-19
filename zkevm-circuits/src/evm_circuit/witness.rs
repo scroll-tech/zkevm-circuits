@@ -72,10 +72,7 @@ impl<F: FieldExt> BlockContext<F> {
                 [
                     F::from(BlockContextFieldTag::Time as u64),
                     F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.time.to_le_bytes(),
-                        randomness,
-                    ),
+                    F::from(self.time),
                 ],
                 [
                     F::from(BlockContextFieldTag::Difficulty as u64),

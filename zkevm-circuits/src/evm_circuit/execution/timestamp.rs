@@ -1,3 +1,4 @@
+use crate::evm_circuit::param::NUM_BYTES_U64;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -8,19 +9,20 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition, Transition::Delta,
             },
-            Cell, Word,
+            from_bytes, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use bus_mapping::eth_types::ToLittleEndian;
+use array_init::array_init;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use std::convert::TryFrom;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TimestampGadget<F> {
     same_context: SameContextGadget<F>,
-    timestamp: Cell<F>,
+    value: RandomLinearCombination<F, { NUM_BYTES_U64 }>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
@@ -29,17 +31,18 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::TIMESTAMP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let timestamp = cb.query_cell();
-
-        // Push the value to the stack
-        cb.stack_push(timestamp.expr());
+        let timestamp = array_init(|_| cb.query_cell());
 
         // Lookup block table with timestamp
         cb.block_lookup(
             BlockContextFieldTag::Time.expr(),
             None,
-            timestamp.expr(),
+            from_bytes::expr(&timestamp),
         );
+
+        let value =
+            RandomLinearCombination::new(timestamp, cb.power_of_randomness());
+        cb.stack_push(value.expr());
 
         // State transition
         let opcode = cb.query_cell();
@@ -58,7 +61,7 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
 
         Self {
             same_context,
-            timestamp,
+            value,
         }
     }
 
@@ -75,13 +78,10 @@ impl<F: FieldExt> ExecutionGadget<F> for TimestampGadget<F> {
 
         let timestamp = block.rws[step.rw_indices[0]].stack_value();
 
-        self.timestamp.assign(
+        self.value.assign(
             region,
             offset,
-            Some(Word::random_linear_combine(
-                timestamp.to_le_bytes(),
-                block.randomness,
-            )),
+            Some(u64::try_from(timestamp).unwrap().to_le_bytes()),
         )?;
 
         Ok(())
