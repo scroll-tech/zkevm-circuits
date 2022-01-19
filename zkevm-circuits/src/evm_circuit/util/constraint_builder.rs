@@ -436,7 +436,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         word
     }
 
-    fn tx_context_lookup(
+    pub(crate) fn tx_context_lookup(
         &mut self,
         id: Expression<F>,
         field_tag: Expression<F>,
