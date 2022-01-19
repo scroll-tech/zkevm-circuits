@@ -94,6 +94,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             storage_slot.expr(),
             1.expr(),
             is_warm.expr(),
+            is_persistent.expr(),
+            rw_counter_end_of_reversion.expr(),
         );
 
         cb.stack_push(value.expr());

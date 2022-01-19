@@ -604,9 +604,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         storage_slot: Expression<F>,
         value: Expression<F>,
         value_prev: Expression<F>,
+        is_persistent: Expression<F>,
+        rw_counter_end_of_reversion: Expression<F>,
     ) {
-        self.rw_lookup(
-            true.expr(),
+        self.state_write_with_reversion(
             RwTableTag::TxAccessListStorageSlot,
             [
                 tx_id,
@@ -617,6 +618,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
             ],
+            is_persistent,
+            rw_counter_end_of_reversion,
         );
     }
 
