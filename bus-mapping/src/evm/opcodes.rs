@@ -1,4 +1,5 @@
 //! Definition of each opcode of the EVM.
+mod calldatasize;
 mod coinbase;
 mod dup;
 mod gas;
@@ -99,7 +100,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::CALLER => {},
         // OpcodeId::CALLVALUE => {},
         // OpcodeId::CALLDATALOAD => {},
-        // OpcodeId::CALLDATASIZE => {},
+        OpcodeId::CALLDATASIZE => StackOnlyOpcode::<0>::gen_associated_ops,
         // OpcodeId::CALLDATACOPY => {},
         // OpcodeId::CODESIZE => {},
         // OpcodeId::CODECOPY => {},
