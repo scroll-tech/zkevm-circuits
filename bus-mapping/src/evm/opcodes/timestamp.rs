@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod coinbase_tests {
+mod timestamp_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
