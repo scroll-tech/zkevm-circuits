@@ -575,6 +575,51 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    pub(crate) fn storage_slot_access_list_read(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        storage_slot: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            false.expr(),
+            RwTableTag::TxAccessListStorageSlot,
+            [
+                tx_id,
+                account_address,
+                storage_slot,
+                value.clone(),
+                value,
+                0.expr(),
+                0.expr(),
+            ],
+        );
+    }
+
+    pub(crate) fn storage_slot_access_list_write_with_reversion(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        storage_slot: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+    ) {
+        self.rw_lookup(
+            true.expr(),
+            RwTableTag::TxAccessListStorageSlot,
+            [
+                tx_id,
+                account_address,
+                storage_slot,
+                value,
+                value_prev,
+                0.expr(),
+                0.expr(),
+            ],
+        );
+    }
+
     // Account
 
     pub(crate) fn account_read(
@@ -645,6 +690,31 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             ],
             is_persistent,
             rw_counter_end_of_reversion,
+        );
+    }
+
+    // Account Storage
+
+    pub(crate) fn storage_slot_read(
+        &mut self,
+        account_address: Expression<F>,
+        storage_slot: Expression<F>,
+        value: Expression<F>,
+        tx_id: Expression<F>,
+        committed_value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            false.expr(),
+            RwTableTag::AccountStorage,
+            [
+                account_address,
+                storage_slot,
+                0.expr(),
+                value.clone(),
+                value,
+                tx_id,
+                committed_value,
+            ],
         );
     }
 
