@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{MAX_GAS_SIZE_IN_BYTES, NUM_ADDRESS_BYTES_USED},
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         table::{CallContextFieldTag, TxContextFieldTag},
         util::{
@@ -11,9 +11,11 @@ use crate::{
                 Transition::{Delta, To},
             },
             from_bytes,
-            math_gadget::IsZeroGadget,
-            memory_gadget::{MemoryCopierGasGadget, MemoryExpansionGadget},
-            Cell, MemoryAddress, RandomLinearCombination,
+            memory_gadget::{
+                MemoryAddressGadget, MemoryCopierGasGadget,
+                MemoryExpansionGadget,
+            },
+            Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -26,14 +28,12 @@ use std::convert::TryInto;
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataCopyGadget<F> {
     same_context: SameContextGadget<F>,
-    memory_offset: MemoryAddress<F>,
+    memory_address: MemoryAddressGadget<F>,
     data_offset: MemoryAddress<F>,
-    length: RandomLinearCombination<F, 4>,
-    length_is_zero: IsZeroGadget<F>,
     tx_id: Cell<F>,
     call_data_length: Cell<F>,
     call_data_offset: Cell<F>, // Only used in the internal call
-    memory_expansion: MemoryExpansionGadget<F, MAX_GAS_SIZE_IN_BYTES>,
+    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F>,
 }
 
@@ -45,22 +45,17 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let bytes_memory_offset =
-            MemoryAddress::new(cb.query_bytes(), cb.randomness());
-        let bytes_data_offset =
-            MemoryAddress::new(cb.query_bytes(), cb.randomness());
-        let bytes_length =
-            RandomLinearCombination::new(cb.query_bytes(), cb.randomness());
-        let memory_offset = from_bytes::expr(&bytes_memory_offset.cells);
-        let data_offset = from_bytes::expr(&bytes_data_offset.cells);
-        let length = from_bytes::expr(&bytes_length.cells);
-        let length_is_zero = IsZeroGadget::construct(cb, length.clone());
+        let memory_offset = cb.query_cell();
+        let data_offset = cb.query_rlc();
+        let length = cb.query_rlc();
 
         // Pop memory_offset, data_offset, length from stack
-        cb.stack_pop(bytes_memory_offset.expr());
-        cb.stack_pop(bytes_data_offset.expr());
-        cb.stack_pop(bytes_length.expr());
+        cb.stack_pop(memory_offset.expr());
+        cb.stack_pop(data_offset.expr());
+        cb.stack_pop(length.expr());
 
+        let memory_address =
+            MemoryAddressGadget::construct(cb, memory_offset, length);
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
@@ -96,19 +91,19 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         // access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            cb.curr.state.memory_size.expr(),
-            memory_offset.clone() + length.clone(),
+            cb.curr.state.memory_word_size.expr(),
+            [memory_address.address()],
         );
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
-            length.clone(),
+            memory_address.length(),
             memory_expansion.gas_cost(),
         );
 
         // Constrain the next step CopyToMemory if length != 0
         cb.constrain_next_step(
             ExecutionState::CopyToMemory,
-            Some(1.expr() - length_is_zero.expr()),
+            Some(memory_address.has_length()),
             |cb| {
                 let next_src_addr = cb.query_cell();
                 let next_dst_addr = cb.query_cell();
@@ -119,17 +114,18 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 cb.require_equal(
                     "next_src_addr = data_offset + call_data_offset",
                     next_src_addr.expr(),
-                    data_offset + call_data_offset.expr(),
+                    from_bytes::expr(&data_offset.cells)
+                        + call_data_offset.expr(),
                 );
                 cb.require_equal(
                     "next_dst_addr = memory_offset",
                     next_dst_addr.expr(),
-                    memory_offset,
+                    memory_address.offset(),
                 );
                 cb.require_equal(
                     "next_bytes_left = length",
                     next_bytes_left.expr(),
-                    length,
+                    memory_address.length(),
                 );
                 cb.require_equal(
                     "next_src_addr_end = call_data_length + call_data_offset",
@@ -155,7 +151,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
             rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
-            memory_size: To(memory_expansion.next_memory_size()),
+            memory_word_size: To(memory_expansion.next_memory_word_size()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(
@@ -167,10 +163,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         Self {
             same_context,
-            memory_offset: bytes_memory_offset,
-            data_offset: bytes_data_offset,
-            length: bytes_length,
-            length_is_zero,
+            memory_address,
+            data_offset,
             tx_id,
             call_data_length,
             call_data_offset,
@@ -193,31 +187,22 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let [memory_offset, data_offset, length] =
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
                 .map(|idx| block.rws[idx].stack_value());
-        self.memory_offset.assign(
+        let memory_address = self.memory_address.assign(
             region,
             offset,
-            Some(
-                memory_offset.to_le_bytes()[..NUM_ADDRESS_BYTES_USED]
-                    .try_into()
-                    .unwrap(),
-            ),
+            memory_offset,
+            length,
+            block.randomness,
         )?;
         self.data_offset.assign(
             region,
             offset,
             Some(
-                data_offset.to_le_bytes()[..NUM_ADDRESS_BYTES_USED]
+                data_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
                     .try_into()
                     .unwrap(),
             ),
         )?;
-        self.length.assign(
-            region,
-            offset,
-            Some(length.to_le_bytes()[..4].try_into().unwrap()),
-        )?;
-        self.length_is_zero
-            .assign(region, offset, F::from(length.as_u64()))?;
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
@@ -242,8 +227,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
             offset,
-            step.memory_size,
-            memory_offset.as_u64() + length.as_u64(),
+            step.memory_word_size(),
+            [memory_address],
         )?;
 
         self.memory_copier_gas.assign(
@@ -331,8 +316,11 @@ mod test {
         ];
         let mut rw_counter = rws.len() + 1;
 
-        let next_memory_word_size =
-            (memory_offset.as_u64() + length.as_u64() + 31) / 32;
+        let next_memory_word_size = if length.is_zero() {
+            0
+        } else {
+            (memory_offset.as_u64() + length.as_u64() + 31) / 32
+        };
         let gas_cost = GasCost::FASTEST.as_u64()
             + calc_memory_copier_gas_cost(
                 0,
@@ -353,21 +341,23 @@ mod test {
             ..Default::default()
         }];
 
-        make_memory_copy_steps(
-            call_id,
-            &call_data,
-            0,
-            data_offset.as_u64(),
-            memory_offset.as_u64(),
-            length.as_usize(),
-            true,
-            100,
-            1024,
-            next_memory_word_size,
-            &mut rw_counter,
-            &mut rws,
-            &mut steps,
-        );
+        if !length.is_zero() {
+            make_memory_copy_steps(
+                call_id,
+                &call_data,
+                0,
+                data_offset.as_u64(),
+                memory_offset.as_u64(),
+                length.as_usize(),
+                true,
+                100,
+                1024,
+                next_memory_word_size * 32,
+                &mut rw_counter,
+                &mut rws,
+                &mut steps,
+            );
+        }
 
         steps.push(ExecStep {
             execution_state: ExecutionState::STOP,
@@ -375,7 +365,7 @@ mod test {
             program_counter: 100,
             stack_pointer: 1024,
             opcode: Some(OpcodeId::STOP),
-            memory_size: next_memory_word_size,
+            memory_size: next_memory_word_size * 32,
             ..Default::default()
         });
 
@@ -401,6 +391,7 @@ mod test {
             }],
             rws,
             bytecodes: vec![bytecode],
+            ..Default::default()
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
@@ -476,10 +467,14 @@ mod test {
 
         let curr_memory_word_size =
             (call_data_length.as_u64() + call_data_length.as_u64() + 31) / 32;
-        let next_memory_word_size = std::cmp::max(
-            curr_memory_word_size,
-            (memory_offset.as_u64() + length.as_u64() + 31) / 32,
-        );
+        let next_memory_word_size = if length.is_zero() {
+            curr_memory_word_size
+        } else {
+            std::cmp::max(
+                curr_memory_word_size,
+                (memory_offset.as_u64() + length.as_u64() + 31) / 32,
+            )
+        };
         let gas_cost = GasCost::FASTEST.as_u64()
             + calc_memory_copier_gas_cost(
                 curr_memory_word_size,
@@ -494,26 +489,28 @@ mod test {
             stack_pointer: 1021,
             gas_left: gas_cost,
             gas_cost,
-            memory_size: curr_memory_word_size,
+            memory_size: curr_memory_word_size * 32,
             opcode: Some(OpcodeId::CALLDATACOPY),
             ..Default::default()
         }];
 
-        make_memory_copy_steps(
-            call_id,
-            &call_data,
-            call_data_offset.as_u64(),
-            call_data_offset.as_u64() + data_offset.as_u64(),
-            memory_offset.as_u64(),
-            length.as_usize(),
-            false,
-            100,
-            1024,
-            next_memory_word_size,
-            &mut rw_counter,
-            &mut rws,
-            &mut steps,
-        );
+        if !length.is_zero() {
+            make_memory_copy_steps(
+                call_id,
+                &call_data,
+                call_data_offset.as_u64(),
+                call_data_offset.as_u64() + data_offset.as_u64(),
+                memory_offset.as_u64(),
+                length.as_usize(),
+                false,
+                100,
+                1024,
+                next_memory_word_size * 32,
+                &mut rw_counter,
+                &mut rws,
+                &mut steps,
+            );
+        }
 
         steps.push(ExecStep {
             execution_state: ExecutionState::STOP,
@@ -521,7 +518,7 @@ mod test {
             program_counter: 100,
             stack_pointer: 1024,
             opcode: Some(OpcodeId::STOP),
-            memory_size: next_memory_word_size,
+            memory_size: next_memory_word_size * 32,
             ..Default::default()
         });
 
@@ -547,6 +544,7 @@ mod test {
             }],
             rws,
             bytecodes: vec![bytecode],
+            ..Default::default()
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
@@ -583,6 +581,18 @@ mod test {
             Word::from(0xA0),
             Word::from(40),
             Word::from(10),
+        );
+    }
+
+    #[test]
+    fn calldatacopy_gadget_zero_length() {
+        test_ok_root(64, Word::from(0x40), Word::from(0), Word::from(0));
+        test_ok_internal(
+            Word::from(0x40),
+            Word::from(64),
+            Word::from(0xA0),
+            Word::from(16),
+            Word::from(0),
         );
     }
 }

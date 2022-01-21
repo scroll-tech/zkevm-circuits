@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::ConstraintBuilder,
             from_bytes,
             math_gadget::{
-                ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, LtGadget,
+                ConstantDivisionGadget, IsZeroGadget, LtGadget, MinMaxGadget,
                 RangeCheckGadget,
             },
             sum, Cell, MemoryAddress, Word,
@@ -38,7 +38,8 @@ pub(crate) mod address_low {
 
     pub(crate) fn value(address: [u8; 32]) -> u64 {
         let mut bytes = [0; 8];
-        bytes.copy_from_slice(&address[..N_BYTES_MEMORY_ADDRESS]);
+        bytes[..N_BYTES_MEMORY_ADDRESS]
+            .copy_from_slice(&address[..N_BYTES_MEMORY_ADDRESS]);
         u64::from_le_bytes(bytes)
     }
 }
@@ -147,9 +148,12 @@ impl<F: FieldExt> MemoryAddressGadget<F> {
         })
     }
 
+    pub(crate) fn has_length(&self) -> Expression<F> {
+        1.expr() - self.memory_length_is_zero.expr()
+    }
+
     pub(crate) fn offset(&self) -> Expression<F> {
-        (1.expr() - self.memory_length_is_zero.expr())
-            * from_bytes::expr(&self.memory_offset_bytes.cells)
+        self.has_length() * from_bytes::expr(&self.memory_offset_bytes.cells)
     }
 
     pub(crate) fn length(&self) -> Expression<F> {
@@ -356,9 +360,9 @@ impl<F: FieldExt, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
 /// `memory_cost = Gmem * memory_size + floor(memory_size * memory_size / 512)`
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryCopierGasGadget<F> {
-    word_size: MemorySizeGadget<F>,
+    word_size: MemoryWordSizeGadget<F>,
     gas_cost: Expression<F>,
-    gas_cost_range_check: RangeCheckGadget<F, MAX_GAS_SIZE_IN_BYTES>,
+    gas_cost_range_check: RangeCheckGadget<F, N_BYTES_GAS>,
 }
 
 impl<F: FieldExt> MemoryCopierGasGadget<F> {
@@ -377,7 +381,7 @@ impl<F: FieldExt> MemoryCopierGasGadget<F> {
         num_bytes: Expression<F>,
         memory_expansion_gas_cost: Expression<F>,
     ) -> Self {
-        let word_size = MemorySizeGadget::construct(cb, num_bytes);
+        let word_size = MemoryWordSizeGadget::construct(cb, num_bytes);
 
         let gas_cost = word_size.expr() * Self::GAS_COPY.expr()
             + memory_expansion_gas_cost;
@@ -420,14 +424,14 @@ impl<F: FieldExt> MemoryCopierGasGadget<F> {
 pub(crate) struct BufferReaderGadget<
     F,
     const MAX_BYTES: usize,
-    const ADDR_SIZE_IN_BYTES: usize,
+    const N_BYTES_MEMORY_ADDRESS: usize,
 > {
     // The bytes read from buffer
     bytes: [Cell<F>; MAX_BYTES],
     // The selectors that indicate if bytes contain real data
     selectors: [Cell<F>; MAX_BYTES],
     // The LT gadget to check if src_addr < src_addr_bound
-    lt_gadget: LtGadget<F, ADDR_SIZE_IN_BYTES>,
+    lt_gadget: LtGadget<F, N_BYTES_MEMORY_ADDRESS>,
     // bound_dist[i] = max(addr_end - addr_start - i, 0)
     bound_dist: [Cell<F>; MAX_BYTES],
     // Check if bound_dist is zero

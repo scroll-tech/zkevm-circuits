@@ -13,7 +13,7 @@ use halo2::{arithmetic::FieldExt, plonk::Expression};
 use std::convert::TryInto;
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
-const MAX_DEGREE: usize = 2usize.pow(3) + 1;
+const MAX_DEGREE: usize = 2usize.pow(3) + 3;
 // Degree added for expressions used in lookups.
 const LOOKUP_DEGREE: usize = 3;
 

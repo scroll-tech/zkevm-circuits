@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::MAX_MEMORY_SIZE_IN_BYTES,
+        param::N_BYTES_MEMORY_ADDRESS,
         step::ExecutionState,
         table::TxContextFieldTag,
         util::{
@@ -39,7 +39,7 @@ pub(crate) struct CopyToMemoryGadget<F> {
     tx_id: Cell<F>,
     // Buffer reader gadget
     buffer_reader:
-        BufferReaderGadget<F, MAX_COPY_BYTES, MAX_MEMORY_SIZE_IN_BYTES>,
+        BufferReaderGadget<F, MAX_COPY_BYTES, N_BYTES_MEMORY_ADDRESS>,
     // The comparison gadget between num bytes copied and bytes_left
     finish_gadget: ComparisonGadget<F, 4>,
 }
@@ -103,7 +103,6 @@ impl<F: FieldExt> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         );
 
         // When finished == 0, constraint the CopyToMemory state in next step
-
         cb.constrain_next_step(
             ExecutionState::CopyToMemory,
             Some(1.expr() - finished),
@@ -388,7 +387,7 @@ pub mod test {
         let mut rw_counter = 1;
         let mut steps = Vec::new();
         let buffer = rand_bytes((src_addr_end - src_addr) as usize);
-        let memory_size = (dst_addr + length as u64 + 31) / 32;
+        let memory_size = (dst_addr + length as u64 + 31) / 32 * 32;
 
         make_memory_copy_steps(
             call_id,
@@ -436,6 +435,7 @@ pub mod test {
             }],
             rws,
             bytecodes: vec![bytecode],
+            ..Default::default()
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
@@ -454,7 +454,7 @@ pub mod test {
         let mut rw_counter = 1;
         let calldata = rand_bytes(calldata_length);
         let mut steps = Vec::new();
-        let memory_size = (dst_addr + length as u64 + 31) / 32;
+        let memory_size = (dst_addr + length as u64 + 31) / 32 * 32;
 
         make_memory_copy_steps(
             call_id,
@@ -504,6 +504,7 @@ pub mod test {
             }],
             rws,
             bytecodes: vec![bytecode],
+            ..Default::default()
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
