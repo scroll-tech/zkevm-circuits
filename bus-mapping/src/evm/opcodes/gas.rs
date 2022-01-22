@@ -1,7 +1,7 @@
 use crate::{
-    circuit_input_builder::CircuitInputStateRef, eth_types::GethExecStep,
-    operation::RW, Error,
+    circuit_input_builder::CircuitInputStateRef, operation::RW, Error,
 };
+use eth_types::GethExecStep;
 
 use super::Opcode;
 
@@ -31,11 +31,11 @@ mod gas_tests {
         bytecode,
         bytecode::Bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        eth_types::Word,
         evm::OpcodeId,
         mock,
         operation::StackAddress,
     };
+    use eth_types::Word;
 
     use super::*;
 
