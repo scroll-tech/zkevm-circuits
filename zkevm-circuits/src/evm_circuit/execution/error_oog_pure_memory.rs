@@ -1,11 +1,11 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::MAX_MEMORY_SIZE_IN_BYTES,
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
             constraint_builder::ConstraintBuilder,
-            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, RangeCheckGadget},
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
             Cell, Word,
         },
@@ -13,7 +13,8 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -21,9 +22,18 @@ pub(crate) struct ErrorOOGPureMemoryGadget<F> {
     opcode: Cell<F>,
     address: Word<F>,
     address_in_range: IsZeroGadget<F>,
+    // Allow memory size to expand to 5 bytes, because memory address could be
+    // at most 2^40 - 1, after constant division by 32, the memory word size
+    // then could be at most 2^35 - 1.
+    // So generic N_BYTES_MEMORY_WORD_SIZE for MemoryExpansionGadget needs to
+    // be larger by 1 than normal usage (to be 5), to be able to contain
+    // number up to 2^35 - 1.
     memory_expansion:
-        MemoryExpansionGadget<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1 }>,
-    insufficient_gas: LtGadget<F, { MAX_MEMORY_SIZE_IN_BYTES * 2 - 1 }>,
+        MemoryExpansionGadget<F, 1, { N_BYTES_MEMORY_WORD_SIZE + 1 }>,
+    // Even memory size at most could be 2^35 - 1, the qudratic part of memory
+    // expansion gas cost could be at most 2^61 - 2^27, due to the constant
+    // division by 512, which still fits in 8 bytes.
+    insufficient_gas: RangeCheckGadget<F, N_BYTES_GAS>,
     is_mstore8: IsEqualGadget<F>,
 }
 
@@ -52,9 +62,9 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
             cb.curr.state.memory_word_size.expr(),
-            address_low::expr(&address)
+            [address_low::expr(&address)
                 + 1.expr()
-                + (is_not_mstore8 * 31.expr()),
+                + (is_not_mstore8 * 31.expr())],
         );
 
         // Check if the memory address is too large
@@ -62,20 +72,14 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
             IsZeroGadget::construct(cb, address_high::expr(&address));
         // Check if the amount of gas available is less than the amount of gas
         // required
-        let insufficient_gas = LtGadget::construct(
-            cb,
-            cb.curr.state.gas_left.expr(),
-            OpcodeId::MLOAD.constant_gas_cost().expr()
-                + memory_expansion.gas_cost(),
-        );
-
-        // Make sure we are out of gas
-        // Out of gas when either the address is too big and/or the amount of
-        // gas available is lower than what is required.
-        cb.require_zero(
-            "Either the address is too big or insufficient gas",
-            address_in_range.expr() * (1.expr() - insufficient_gas.expr()),
-        );
+        let insufficient_gas = cb.condition(address_in_range.expr(), |cb| {
+            RangeCheckGadget::construct(
+                cb,
+                OpcodeId::MLOAD.constant_gas_cost().expr()
+                    + memory_expansion.gas_cost()
+                    - cb.curr.state.gas_left.expr(),
+            )
+        });
 
         // Pop the address from the stack
         // We still have to do this to verify the correctness of `address`
@@ -130,9 +134,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            address_low::value::<F>(address.to_le_bytes())
-                + 1
-                + if is_mstore8 == F::one() { 0 } else { 31 },
+            [address_low::value(address.to_le_bytes())
+                + if is_mstore8 == F::one() { 1 } else { 32 }],
         )?;
 
         // Gas insufficient check
@@ -140,8 +143,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
         self.insufficient_gas.assign(
             region,
             offset,
-            F::from(step.gas_left),
-            F::from(step.gas_cost),
+            F::from(step.gas_cost - step.gas_left),
         )?;
 
         Ok(())

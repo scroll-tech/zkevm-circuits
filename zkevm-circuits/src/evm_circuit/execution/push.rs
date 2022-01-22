@@ -14,7 +14,8 @@ use crate::{
     util::Expr,
 };
 use array_init::array_init;
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -155,10 +156,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
-        witness,
-    };
+    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
     use bus_mapping::{bytecode, evm::OpcodeId};
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
@@ -174,8 +172,8 @@ mod test {
             bytecode.write(*b);
         }
         bytecode.write_op(OpcodeId::STOP);
-        let block = witness::build_block_from_trace_code_at_start(&bytecode);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+
+        assert_eq!(run_test_circuits(bytecode), Ok(()));
     }
 
     #[test]

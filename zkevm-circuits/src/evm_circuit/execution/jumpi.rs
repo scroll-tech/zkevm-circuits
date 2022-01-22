@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::NUM_BYTES_PROGRAM_COUNTER,
+        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -17,14 +17,15 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct JumpiGadget<F> {
     same_context: SameContextGadget<F>,
-    destination: RandomLinearCombination<F, NUM_BYTES_PROGRAM_COUNTER>,
+    destination: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
     condition: Cell<F>,
     is_condition_zero: IsZeroGadget<F>,
 }
@@ -35,10 +36,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMPI;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = RandomLinearCombination::new(
-            cb.query_bytes(),
-            cb.power_of_randomness(),
-        );
+        let destination = cb.query_rlc();
         let condition = cb.query_cell();
 
         // Pop the value from the stack
@@ -111,7 +109,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
             region,
             offset,
             Some(
-                destination.to_le_bytes()[..NUM_BYTES_PROGRAM_COUNTER]
+                destination.to_le_bytes()[..N_BYTES_PROGRAM_COUNTER]
                     .try_into()
                     .unwrap(),
             ),
@@ -125,13 +123,12 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpiGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{
-            rand_range, rand_word, run_test_circuit_incomplete_fixed_table,
-        },
-        witness,
+    use crate::{
+        evm_circuit::test::{rand_range, rand_word},
+        test_util::run_test_circuits,
     };
-    use bus_mapping::{bytecode, eth_types::Word};
+    use bus_mapping::bytecode;
+    use eth_types::Word;
 
     fn test_ok(destination: usize, condition: Word) {
         assert!((68..(1 << 24) - 1).contains(&destination));
@@ -150,9 +147,7 @@ mod test {
             JUMPDEST
             STOP
         });
-
-        let block = witness::build_block_from_trace_code_at_start(&bytecode);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuits(bytecode), Ok(()));
     }
 
     #[test]

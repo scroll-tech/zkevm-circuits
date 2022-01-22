@@ -3,9 +3,9 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
 
-use bus_mapping::eth_types::{Address, ChainConstants};
 use bus_mapping::rpc::GethClient;
 use env_logger::Env;
+use eth_types::{Address, ChainConstants};
 use ethers::{
     abi,
     core::k256::ecdsa::SigningKey,
@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env::{self, VarError};
 use std::fs::File;
+use std::sync::Once;
 use std::time::Duration;
 use url::Url;
 
@@ -42,10 +43,14 @@ lazy_static! {
     };
 }
 
+static LOG_INIT: Once = Once::new();
+
 /// Initialize log
 pub fn log_init() {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
-        .init();
+    LOG_INIT.call_once(|| {
+        env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+            .init();
+    });
 }
 
 /// Get the integration test [`GethClient`]
@@ -91,6 +96,8 @@ pub struct GenDataOutput {
     pub coinbase: Address,
     /// Wallets used by `gen_blockchain_data`
     pub wallets: Vec<Address>,
+    /// Block map: BlockContent -> BlockNum
+    pub blocks: HashMap<String, u64>,
     /// Contracts deployed map: ContractName -> (BlockNum, Address)
     pub deployments: HashMap<String, (u64, Address)>,
 }

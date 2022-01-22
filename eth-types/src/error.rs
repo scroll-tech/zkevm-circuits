@@ -1,6 +1,6 @@
 //! Error module for the bus-mapping crate
 
-use crate::eth_types::{Address, GethExecStep, Word};
+use crate::{Address, GethExecStep, Word};
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use ethers_providers::ProviderError;
 use std::error::Error as StdError;

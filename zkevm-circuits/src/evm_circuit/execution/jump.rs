@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::NUM_BYTES_PROGRAM_COUNTER,
+        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -15,14 +15,15 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct JumpGadget<F> {
     same_context: SameContextGadget<F>,
-    destination: RandomLinearCombination<F, NUM_BYTES_PROGRAM_COUNTER>,
+    destination: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
@@ -31,10 +32,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = RandomLinearCombination::new(
-            cb.query_bytes(),
-            cb.power_of_randomness(),
-        );
+        let destination = cb.query_rlc();
 
         // Pop the value from the stack
         cb.stack_pop(destination.expr());
@@ -83,7 +81,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
             region,
             offset,
             Some(
-                destination.to_le_bytes()[..NUM_BYTES_PROGRAM_COUNTER]
+                destination.to_le_bytes()[..N_BYTES_PROGRAM_COUNTER]
                     .try_into()
                     .unwrap(),
             ),
@@ -95,10 +93,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{rand_range, run_test_circuit_incomplete_fixed_table},
-        witness,
-    };
+    use crate::{evm_circuit::test::rand_range, test_util::run_test_circuits};
     use bus_mapping::bytecode;
 
     fn test_ok(destination: usize) {
@@ -116,8 +111,7 @@ mod test {
             JUMPDEST
             STOP
         });
-        let block = witness::build_block_from_trace_code_at_start(&bytecode);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuits(bytecode), Ok(()));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Doc this
-use crate::eth_types::{DebugWord, Word};
 use crate::Error;
+use crate::{DebugWord, Word};
 use std::collections::HashMap;
 use std::fmt;
 

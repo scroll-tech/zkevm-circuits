@@ -1,13 +1,14 @@
 //! Mock types and functions to generate mock data useful for tests
-use crate::address;
 use crate::bytecode::Bytecode;
 use crate::circuit_input_builder::CircuitInputBuilder;
-use crate::eth_types::{self, Address, Bytes, ChainConstants, Hash, Word, U64};
-use crate::evm::Gas;
 use crate::external_tracer;
 use crate::external_tracer::BlockConstants;
 use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
+use eth_types::evm_types::Gas;
+use eth_types::{
+    self, address, Address, Bytes, ChainConstants, Hash, Word, U64,
+};
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 

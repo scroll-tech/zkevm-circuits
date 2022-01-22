@@ -117,6 +117,8 @@ async fn main() {
     let wallet0 = get_wallet(0);
     info!("wallet0: {:x}", wallet0.address());
 
+    let mut blocks = HashMap::new();
+
     // Transfer funds to our account.
     info!("Transferring funds from coinbase...");
     let tx = TransactionRequest::new()
@@ -128,6 +130,9 @@ async fn main() {
         .expect("cannot send tx")
         .await
         .expect("cannot confirm tx");
+    let block_num =
+        prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Transfer 0".to_string(), block_num.as_u64());
 
     // Deploy smart contracts
     let mut deployments = HashMap::new();
@@ -140,6 +145,7 @@ async fn main() {
     .await;
     let block_num =
         prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Deploy Greeter".to_string(), block_num.as_u64());
     deployments.insert(
         "Greeter".to_string(),
         (block_num.as_u64(), contract.address()),
@@ -148,6 +154,7 @@ async fn main() {
     let gen_data = GenDataOutput {
         coinbase: accounts[0],
         wallets: vec![get_wallet(0).address()],
+        blocks,
         deployments,
     };
     gen_data.store();

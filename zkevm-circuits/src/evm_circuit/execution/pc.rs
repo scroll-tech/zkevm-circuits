@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::NUM_BYTES_PROGRAM_COUNTER,
+        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -14,13 +14,12 @@ use crate::{
     },
     util::Expr,
 };
-use array_init::array_init;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PcGadget<F> {
     same_context: SameContextGadget<F>,
-    value: RandomLinearCombination<F, NUM_BYTES_PROGRAM_COUNTER>,
+    value: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for PcGadget<F> {
@@ -29,17 +28,16 @@ impl<F: FieldExt> ExecutionGadget<F> for PcGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PC;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+        let value = cb.query_rlc();
+
         // program_counter is limited to 64 bits so we only consider 8 bytes
-        let bytes = array_init(|_| cb.query_cell());
         cb.require_equal(
             "Constrain program_counter equal to stack value",
-            from_bytes::expr(&bytes),
+            from_bytes::expr(&value.cells),
             cb.curr.state.program_counter.expr(),
         );
 
         // Push the value on the stack
-        let value =
-            RandomLinearCombination::new(bytes, cb.power_of_randomness());
         cb.stack_push(value.expr());
 
         // State transition
@@ -86,9 +84,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PcGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::run_test_circuit_incomplete_fixed_table, witness,
-    };
+    use crate::test_util::run_test_circuits;
     use bus_mapping::bytecode;
 
     fn test_ok() {
@@ -98,8 +94,7 @@ mod test {
             PC
             STOP
         };
-        let block = witness::build_block_from_trace_code_at_start(&bytecode);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuits(bytecode), Ok(()));
     }
 
     #[test]

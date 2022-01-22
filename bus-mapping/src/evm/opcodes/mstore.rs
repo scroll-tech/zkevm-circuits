@@ -1,8 +1,9 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::{GethExecStep, ToBigEndian, ToLittleEndian};
-use crate::{evm::MemoryAddress, operation::RW, Error};
+use crate::{operation::RW, Error};
 use core::convert::TryInto;
+use eth_types::evm_types::MemoryAddress;
+use eth_types::{GethExecStep, ToBigEndian, ToLittleEndian};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MSTORE`](crate::evm::OpcodeId::MSTORE)
@@ -61,10 +62,10 @@ mod mstore_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        eth_types::Word,
-        evm::{MemoryAddress, StackAddress},
         mock,
     };
+    use eth_types::evm_types::{MemoryAddress, StackAddress};
+    use eth_types::Word;
     use pretty_assertions::assert_eq;
 
     #[test]

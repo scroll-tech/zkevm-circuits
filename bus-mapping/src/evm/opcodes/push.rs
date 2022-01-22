@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::GethExecStep;
 use crate::{operation::RW, Error};
+use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::PUSH*` `OpcodeId`.
@@ -35,9 +35,10 @@ mod push_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        evm::StackAddress,
-        mock, word,
+        mock,
     };
+    use eth_types::evm_types::StackAddress;
+    use eth_types::word;
     use pretty_assertions::assert_eq;
 
     #[test]

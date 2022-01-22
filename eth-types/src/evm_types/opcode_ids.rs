@@ -1,4 +1,5 @@
-use crate::{error::Error, evm::GasCost};
+//! Doc this
+use crate::{error::Error, evm_types::GasCost};
 use core::fmt::Debug;
 use lazy_static::lazy_static;
 use regex::Regex;

@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 use crate::evm_circuit::{
-    param::{NUM_BYTES_WORD, STACK_CAPACITY},
+    param::{N_BYTES_WORD, STACK_CAPACITY},
     step::ExecutionState,
     table::{
         AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag,
@@ -8,11 +8,9 @@ use crate::evm_circuit::{
     },
     util::RandomLinearCombination,
 };
-use bus_mapping::{
-    eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word},
-    evm::OpcodeId,
-};
-use halo2::arithmetic::{BaseExt, FieldExt};
+use eth_types::evm_types::OpcodeId;
+use eth_types::{Address, ToLittleEndian, ToScalar, ToWord, Word};
+use halo2::arithmetic::FieldExt;
 use pairing::bn256::Fr as Fp;
 use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
@@ -295,8 +293,8 @@ impl ExecStep {
         // EVM always pads the memory size to word size
         // https://github.com/ethereum/go-ethereum/blob/master/core/vm/interpreter.go#L212-L216
         // Thus, the memory size must be a multiple of 32 bytes.
-        assert_eq!(self.memory_size % NUM_BYTES_WORD as u64, 0);
-        self.memory_size / NUM_BYTES_WORD as u64
+        assert_eq!(self.memory_size % N_BYTES_WORD as u64, 0);
+        self.memory_size / N_BYTES_WORD as u64
     }
 }
 
@@ -474,7 +472,7 @@ impl Rw {
                 value_prev,
             } => {
                 let to_scalar = |value: &Word| match field_tag {
-                    AccountFieldTag::Nonce => F::from(value.low_u64()),
+                    AccountFieldTag::Nonce => value.to_scalar().unwrap(),
                     _ => RandomLinearCombination::random_linear_combine(
                         value.to_le_bytes(),
                         randomness,
@@ -517,7 +515,7 @@ impl Rw {
                     CallContextFieldTag::CallerAddress
                     | CallContextFieldTag::CalleeAddress
                     | CallContextFieldTag::Result => value.to_scalar().unwrap(),
-                    _ => F::from(value.low_u64()),
+                    _ => value.to_scalar().unwrap(),
                 },
                 F::zero(),
                 F::zero(),
@@ -585,9 +583,8 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::ADD => ExecutionState::ADD,
             OpcodeId::MUL => ExecutionState::MUL,
             OpcodeId::SUB => ExecutionState::ADD,
-            OpcodeId::EQ => ExecutionState::CMP,
-            OpcodeId::GT => ExecutionState::CMP,
-            OpcodeId::LT => ExecutionState::CMP,
+            OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
+            OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
             OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
             OpcodeId::STOP => ExecutionState::STOP,
             OpcodeId::AND => ExecutionState::BITWISE,
@@ -680,10 +677,10 @@ fn tx_convert(
 }
 
 pub fn block_convert(
+    randomness: Fp,
     bytecode: &[u8],
     b: &bus_mapping::circuit_input_builder::Block,
 ) -> Block<Fp> {
-    let randomness = Fp::rand();
     let bytecode = Bytecode::new(bytecode.to_vec());
 
     // here stack_ops/memory_ops/etc are merged into a single array
@@ -739,18 +736,4 @@ pub fn block_convert(
     // TODO add storage ops
 
     block
-}
-
-pub fn build_block_from_trace_code_at_start(
-    bytecode: &bus_mapping::bytecode::Bytecode,
-) -> Block<Fp> {
-    let block =
-        bus_mapping::mock::BlockData::new_single_tx_trace_code_at_start(
-            bytecode,
-        )
-        .unwrap();
-    let mut builder = block.new_circuit_input_builder();
-    builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-    block_convert(bytecode.code(), &builder.block)
 }

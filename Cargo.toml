@@ -5,7 +5,8 @@ members = [
     "keccak256",
     "geth-utils",
     "integration-tests",
-    "circuit-benchmarks"
+    "circuit-benchmarks",
+    "eth-types"
 ]
 
 [patch.crates-io]

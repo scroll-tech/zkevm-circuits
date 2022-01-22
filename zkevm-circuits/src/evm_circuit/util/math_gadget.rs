@@ -1,16 +1,14 @@
 use crate::{
-    evm_circuit::{
-        param::MAX_BYTES_FIELD,
-        util::{
-            self, constraint_builder::ConstraintBuilder, from_bytes,
-            pow_of_two, pow_of_two_expr, select, split_u256, sum, Cell,
-        },
+    evm_circuit::util::{
+        self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two,
+        pow_of_two_expr, select, split_u256, sum, Cell,
     },
     util::Expr,
 };
-use bus_mapping::eth_types::{ToLittleEndian, Word};
+use eth_types::{ToLittleEndian, ToScalar, Word};
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use std::convert::TryFrom;
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
@@ -177,16 +175,8 @@ impl<F: FieldExt, const N: usize> AddWordsGadget<F, N> {
 
         let carry_lo = (sum_of_addends_lo - sum_lo) >> 128;
         let carry_hi = (sum_of_addends_hi + carry_lo - sum_hi) >> 128;
-        self.carry_lo.assign(
-            region,
-            offset,
-            Some(F::from(carry_lo.low_u64())),
-        )?;
-        self.carry_hi.assign(
-            region,
-            offset,
-            Some(F::from(carry_hi.low_u64())),
-        )?;
+        self.carry_lo.assign(region, offset, carry_lo.to_scalar())?;
+        self.carry_hi.assign(region, offset, carry_hi.to_scalar())?;
 
         Ok(())
     }
@@ -466,9 +456,12 @@ impl<F: FieldExt> MulWordByU64Gadget<F> {
 
         let mut assign_quotient =
             |cells: &[Cell<F>], value: Word| -> Result<(), Error> {
-                for (cell, byte) in
-                    cells.iter().zip(value.low_u64().to_le_bytes().iter())
-                {
+                for (cell, byte) in cells.iter().zip(
+                    u64::try_from(value)
+                        .map_err(|_| Error::Synthesis)?
+                        .to_le_bytes()
+                        .iter(),
+                ) {
                     cell.assign(region, offset, Some(F::from(*byte as u64)))?;
                 }
                 Ok(())
@@ -493,20 +486,19 @@ impl<F: FieldExt> MulWordByU64Gadget<F> {
 }
 
 /// Requires that the passed in value is within the specified range.
-/// `NUM_BYTES` is required to be `<= 31`.
+/// `N_BYTES` is required to be `<= MAX_N_BYTES_INTEGER`.
 #[derive(Clone, Debug)]
-pub struct RangeCheckGadget<F, const NUM_BYTES: usize> {
-    parts: [Cell<F>; NUM_BYTES],
+pub struct RangeCheckGadget<F, const N_BYTES: usize> {
+    parts: [Cell<F>; N_BYTES],
 }
 
-impl<F: FieldExt, const NUM_BYTES: usize> RangeCheckGadget<F, NUM_BYTES> {
+impl<F: FieldExt, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         value: Expression<F>,
     ) -> Self {
-        assert!(NUM_BYTES <= 31, "number of bytes too large");
-
         let parts = cb.query_bytes();
+
         // Require that the reconstructed value from the parts equals the
         // original value
         cb.require_equal(
@@ -533,33 +525,31 @@ impl<F: FieldExt, const NUM_BYTES: usize> RangeCheckGadget<F, NUM_BYTES> {
 }
 
 /// Returns `1` when `lhs < rhs`, and returns `0` otherwise.
-/// lhs and rhs `< 256**NUM_BYTES`
-/// `NUM_BYTES` is required to be `<= MAX_BYTES_FIELD` to prevent overflow:
-/// values are stored in a single field element and two of these
-/// are added together.
+/// lhs and rhs `< 256**N_BYTES`
+/// `N_BYTES` is required to be `<= MAX_N_BYTES_INTEGER` to prevent overflow:
+/// values are stored in a single field element and two of these are added
+/// together.
 /// The equation that is enforced is `lhs - rhs == diff - (lt * range)`.
-/// Because all values are `<= 256**NUM_BYTES` and `lt` is boolean,
-///  `lt` can only be `1` when `lhs < rhs`.
+/// Because all values are `<= 256**N_BYTES` and `lt` is boolean, `lt` can only
+/// be `1` when `lhs < rhs`.
 #[derive(Clone, Debug)]
-pub struct LtGadget<F, const NUM_BYTES: usize> {
+pub struct LtGadget<F, const N_BYTES: usize> {
     lt: Cell<F>, // `1` when `lhs < rhs`, `0` otherwise.
-    diff: [Cell<F>; NUM_BYTES], /* The byte values of `diff`.
+    diff: [Cell<F>; N_BYTES], /* The byte values of `diff`.
                   * `diff` equals `lhs - rhs` if `lhs >= rhs`,
                   * `lhs - rhs + range` otherwise. */
-    range: F, // The range of the inputs, `256**NUM_BYTES`
+    range: F, // The range of the inputs, `256**N_BYTES`
 }
 
-impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
+impl<F: FieldExt, const N_BYTES: usize> LtGadget<F, N_BYTES> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
-        assert!(NUM_BYTES <= MAX_BYTES_FIELD, "unsupported number of bytes");
-
         let lt = cb.query_bool();
         let diff = cb.query_bytes();
-        let range = pow_of_two(NUM_BYTES * 8);
+        let range = pow_of_two(N_BYTES * 8);
 
         // The equation we require to hold: `lhs - rhs == diff - (lt * range)`.
         cb.require_equal(
@@ -587,7 +577,7 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
         self.lt.assign(
             region,
             offset,
-            Some(F::from(if lt { 1 } else { 0 })),
+            Some(if lt { F::one() } else { F::zero() }),
         )?;
 
         // Set the bytes of diff
@@ -608,21 +598,21 @@ impl<F: FieldExt, const NUM_BYTES: usize> LtGadget<F, NUM_BYTES> {
 /// Returns (lt, eq):
 /// - `lt` is `1` when `lhs < rhs`, `0` otherwise.
 /// - `eq` is `1` when `lhs == rhs`, `0` otherwise.
-/// lhs and rhs `< 256**NUM_BYTES`
-/// `NUM_BYTES` is required to be `<= MAX_BYTES_FIELD`.
+/// lhs and rhs `< 256**N_BYTES`
+/// `N_BYTES` is required to be `<= MAX_N_BYTES_INTEGER`.
 #[derive(Clone, Debug)]
-pub struct ComparisonGadget<F, const NUM_BYTES: usize> {
-    lt: LtGadget<F, NUM_BYTES>,
+pub struct ComparisonGadget<F, const N_BYTES: usize> {
+    lt: LtGadget<F, N_BYTES>,
     eq: IsZeroGadget<F>,
 }
 
-impl<F: FieldExt, const NUM_BYTES: usize> ComparisonGadget<F, NUM_BYTES> {
+impl<F: FieldExt, const N_BYTES: usize> ComparisonGadget<F, N_BYTES> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
-        let lt = LtGadget::<F, NUM_BYTES>::construct(cb, lhs, rhs);
+        let lt = LtGadget::<F, N_BYTES>::construct(cb, lhs, rhs);
         let eq = IsZeroGadget::<F>::construct(cb, sum::expr(&lt.diff_bytes()));
 
         Self { lt, eq }
@@ -705,55 +695,58 @@ impl<F: FieldExt> PairSelectGadget<F> {
     }
 }
 
-/// Returns (quotient: numerator/divisor, remainder: numerator%divisor),
-/// with `numerator` an expression and `divisor` a constant.
+/// Returns (quotient: numerator/denominator, remainder: numerator%denominator),
+/// with `numerator` an expression and `denominator` a constant.
 /// Input requirements:
-/// - `quotient < 256**NUM_BYTES`
-/// - `quotient * divisor < field size`
-/// - `remainder < divisor` currently requires a lookup table for `divisor`
+/// - `quotient < 256**N_BYTES`
+/// - `quotient * denominator < field size`
+/// - `remainder < denominator` requires a range lookup table for `denominator`
 #[derive(Clone, Debug)]
-pub struct ConstantDivisionGadget<F, const NUM_BYTES: usize> {
+pub struct ConstantDivisionGadget<F, const N_BYTES: usize> {
     quotient: Cell<F>,
     remainder: Cell<F>,
-    divisor: u64,
-    quotient_range_check: RangeCheckGadget<F, NUM_BYTES>,
+    denominator: u64,
+    quotient_range_check: RangeCheckGadget<F, N_BYTES>,
 }
 
-impl<F: FieldExt, const NUM_BYTES: usize> ConstantDivisionGadget<F, NUM_BYTES> {
+impl<F: FieldExt, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         numerator: Expression<F>,
-        divisor: u64,
+        denominator: u64,
     ) -> Self {
         let quotient = cb.query_cell();
         let remainder = cb.query_cell();
 
-        // Require that remainder < divisor
-        cb.range_lookup(remainder.expr(), divisor);
+        // Require that remainder < denominator
+        cb.range_lookup(remainder.expr(), denominator);
 
-        // Require that quotient < 2**NUM_BYTES
-        // so we can't have any overflow when doing `quotient * divisor`.
+        // Require that quotient < 2**N_BYTES
+        // so we can't have any overflow when doing `quotient * denominator`.
         let quotient_range_check =
             RangeCheckGadget::construct(cb, quotient.expr());
 
         // Check if the division was done correctly
         cb.require_equal(
-            "lhnumerator - remainder == quotient ⋅ divisor",
+            "numerator - remainder == quotient ⋅ denominator",
             numerator - remainder.expr(),
-            quotient.expr() * divisor.expr(),
+            quotient.expr() * denominator.expr(),
         );
 
         Self {
             quotient,
             remainder,
-            divisor,
+            denominator,
             quotient_range_check,
         }
     }
 
-    pub(crate) fn expr(&self) -> (Expression<F>, Expression<F>) {
-        // Return the quotient and the remainder
-        (self.quotient.expr(), self.remainder.expr())
+    pub(crate) fn quotient(&self) -> Expression<F> {
+        self.quotient.expr()
+    }
+
+    pub(crate) fn remainder(&self) -> Expression<F> {
+        self.remainder.expr()
     }
 
     pub(crate) fn assign(
@@ -762,9 +755,10 @@ impl<F: FieldExt, const NUM_BYTES: usize> ConstantDivisionGadget<F, NUM_BYTES> {
         offset: usize,
         numerator: u128,
     ) -> Result<(u128, u128), Error> {
-        let divisor = self.divisor as u128;
-        let quotient = numerator / divisor;
-        let remainder = numerator % divisor;
+        let denominator = self.denominator as u128;
+        let quotient = numerator / denominator;
+        let remainder = numerator % denominator;
+
         self.quotient
             .assign(region, offset, Some(F::from_u128(quotient)))?;
         self.remainder
@@ -781,27 +775,33 @@ impl<F: FieldExt, const NUM_BYTES: usize> ConstantDivisionGadget<F, NUM_BYTES> {
 }
 
 /// Returns `rhs` when `lhs < rhs`, and returns `lhs` otherwise.
-/// lhs and rhs `< 256**NUM_BYTES`
-/// `NUM_BYTES` is required to be `<= 31`.
+/// lhs and rhs `< 256**N_BYTES`
+/// `N_BYTES` is required to be `<= MAX_N_BYTES_INTEGER`.
 #[derive(Clone, Debug)]
-pub struct MaxGadget<F, const NUM_BYTES: usize> {
-    lt: LtGadget<F, NUM_BYTES>,
+pub struct MinMaxGadget<F, const N_BYTES: usize> {
+    lt: LtGadget<F, N_BYTES>,
+    min: Expression<F>,
     max: Expression<F>,
 }
 
-impl<F: FieldExt, const NUM_BYTES: usize> MaxGadget<F, NUM_BYTES> {
+impl<F: FieldExt, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
         let lt = LtGadget::construct(cb, lhs.clone(), rhs.clone());
-        let max = select::expr(lt.expr(), rhs, lhs);
+        let max = select::expr(lt.expr(), rhs.clone(), lhs.clone());
+        let min = select::expr(lt.expr(), lhs, rhs);
 
-        Self { lt, max }
+        Self { lt, min, max }
     }
 
-    pub(crate) fn expr(&self) -> Expression<F> {
+    pub(crate) fn min(&self) -> Expression<F> {
+        self.min.clone()
+    }
+
+    pub(crate) fn max(&self) -> Expression<F> {
         self.max.clone()
     }
 
@@ -811,8 +811,12 @@ impl<F: FieldExt, const NUM_BYTES: usize> MaxGadget<F, NUM_BYTES> {
         offset: usize,
         lhs: F,
         rhs: F,
-    ) -> Result<F, Error> {
+    ) -> Result<(F, F), Error> {
         let (lt, _) = self.lt.assign(region, offset, lhs, rhs)?;
-        Ok(select::value(lt, rhs, lhs))
+        Ok(if lt.is_zero_vartime() {
+            (rhs, lhs)
+        } else {
+            (lhs, rhs)
+        })
     }
 }

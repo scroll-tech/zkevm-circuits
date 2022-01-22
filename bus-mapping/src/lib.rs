@@ -40,7 +40,7 @@
 //! execution trace from an EVM, you can parse it and construct an
 //! `ExecutionTrace` instance from it. That will automatically fill all of the
 //! bus-mapping instances of each
-//! [`GethExecStep`](crate::eth_types::GethExecStep).  Then the
+//! [`GethExecStep`](eth_types::GethExecStep).  Then the
 //! [`CircuitInputBuilder`](crate::circuit_input_builder::CircuitInputBuilder)
 //! will fill in an
 //! [`OperationContainer`](crate::operation::container::OperationContainer)
@@ -49,12 +49,12 @@
 //!
 //! ```rust
 //! use bus_mapping::Error;
-//! use bus_mapping::evm::Gas;
 //! use bus_mapping::mock;
 //! use bus_mapping::state_db::{self, StateDB, CodeDB};
-//! use bus_mapping::eth_types::{
+//! use eth_types::{
 //!     self, Address, Word, Hash, U64, GethExecTrace, GethExecStep, ChainConstants
 //! };
+//! use eth_types::evm_types::Gas;
 //! use bus_mapping::circuit_input_builder::CircuitInputBuilder;
 //! use bus_mapping::external_tracer::BlockConstants;
 //! use pairing::arithmetic::FieldExt;
@@ -218,9 +218,6 @@
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
 
 extern crate alloc;
-mod error;
-#[macro_use]
-pub(crate) mod macros;
 pub mod evm;
 pub mod exec_trace;
 pub mod external_tracer;
@@ -228,10 +225,8 @@ pub mod operation;
 #[macro_use]
 pub mod bytecode;
 pub mod circuit_input_builder;
-#[macro_use]
-pub mod eth_types;
 pub(crate) mod geth_errors;
 pub mod mock;
 pub mod rpc;
 pub mod state_db;
-pub use error::Error;
+pub use eth_types::Error;

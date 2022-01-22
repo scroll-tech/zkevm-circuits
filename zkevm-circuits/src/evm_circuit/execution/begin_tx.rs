@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{MAX_GAS_SIZE_IN_BYTES, STACK_CAPACITY},
+        param::{N_BYTES_GAS, STACK_CAPACITY},
         step::ExecutionState,
         table::{AccountFieldTag, CallContextFieldTag, TxContextFieldTag},
         util::{
@@ -17,10 +17,8 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{
-    eth_types::{ToLittleEndian, ToScalar},
-    evm::GasCost,
-};
+use eth_types::evm_types::GasCost;
+use eth_types::{ToLittleEndian, ToScalar};
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -38,7 +36,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_call_data_gas_cost: Cell<F>,
     rw_counter_end_of_reversion: Cell<F>,
     is_persistent: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, MAX_GAS_SIZE_IN_BYTES>,
+    sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     code_hash: Cell<F>,
 }
@@ -323,11 +321,9 @@ mod test {
         util::RandomLinearCombination,
         witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
     };
-    use bus_mapping::{
-        address,
-        eth_types::{self, Address, ToLittleEndian, ToWord, Word},
-        evm::{GasCost, OpcodeId},
-    };
+    use eth_types::evm_types::{GasCost, OpcodeId};
+    use eth_types::{self, address, Address, ToLittleEndian, ToWord, Word};
+    use std::convert::TryInto;
 
     fn test_ok(tx: eth_types::Transaction, result: bool) {
         let rw_counter_end_of_reversion = if result { 0 } else { 20 };
@@ -355,8 +351,8 @@ mod test {
             randomness,
             txs: vec![Transaction {
                 id: 1,
-                nonce: tx.nonce.low_u64(),
-                gas: tx.gas.low_u64(),
+                nonce: tx.nonce.try_into().unwrap(),
+                gas: tx.gas.try_into().unwrap(),
                 gas_price: tx.gas_price.unwrap_or_else(Word::zero),
                 caller_address: tx.from,
                 callee_address: tx.to.unwrap_or_else(Address::zero),

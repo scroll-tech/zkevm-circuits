@@ -5,19 +5,16 @@ edition = "2021"
 authors = ["CPerezz <c.perezbaro@gmail.com>"]
 
 [dependencies]
-ff = "0.11"
-pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
-itertools = "0.10"
-serde = {version = "1.0.130", features = ["derive"] }
-lazy_static = "1.4"
-serde_json = "1.0.66"
-hex = "0.4"
-geth-utils = { path = "../geth-utils" }
-uint = "0.9.1"
-ethers-providers = "0.6"
+eth-types = { path = "../eth-types" }
 ethers-core = "0.6"
-regex = "1.5.4"
+ethers-providers = "0.6"
+geth-utils = { path = "../geth-utils" }
+itertools = "0.10"
+lazy_static = "1.4"
 log = "0.4.14"
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
+serde = {version = "1.0.130", features = ["derive"] }
+serde_json = "1.0.66"
 
 [dev-dependencies]
 url = "2.2.2"

@@ -1,0 +1,30 @@
+name: GH Actions Prover Benches on PR
+on:
+  pull_request:
+    types: [ labeled ,  ready_for_review]
+jobs:
+  Prover_benchmarking_Automation:
+    if: ${{ github.event.label.name == 'benchmarks' }}
+    runs-on: self-hosted
+    env:
+      PR_NUMBER: ${{ github.event.number }}
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - run: .github/proverCiScripts/wakeUpProver.sh
+        shell: bash
+      - run: |
+          ssh prover "bash -s" -- < .github/proverCiScripts/rsSysstat.sh
+      - run: |
+          ssh prover "bash -s" -- < .github/proverCiScripts/prepareProver.sh "${{ env.PR_NUMBER }}" "${{ github.workspace }}"
+      - run: .github/proverCiScripts/deployToProver.sh "${{ env.PR_NUMBER }}" "${{ github.workspace }}"
+        shell: bash
+      - run: |
+          ssh prover "bash -s" -- < .github/proverCiScripts/execBench.sh "${{ env.PR_NUMBER }}" 19
+        shell: bash
+      - run: |
+          ssh prover "bash -s" -- < .github/proverCiScripts/getSysstat.sh "${{ env.PR_NUMBER }}"
+      - run: .github/proverCiScripts/shutdownProver.sh
+        shell: bash
+

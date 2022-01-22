@@ -1,8 +1,6 @@
 //! Common utility traits and functions.
-use bus_mapping::{
-    evm::{GasCost, OpcodeId},
-    operation::Target,
-};
+use bus_mapping::operation::Target;
+use eth_types::evm_types::{GasCost, OpcodeId};
 use halo2::{arithmetic::FieldExt, plonk::Expression};
 
 pub(crate) trait Expr<F: FieldExt> {

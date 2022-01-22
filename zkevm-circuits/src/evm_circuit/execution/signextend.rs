@@ -17,7 +17,7 @@ use crate::{
     util::Expr,
 };
 use array_init::array_init;
-use bus_mapping::eth_types::ToLittleEndian;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -87,7 +87,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
             // selector is the sum of the current and all previous `is_selected`
             // values.
             cb.require_equal(
-                "Constrain selector == 1 when is_selected == 1 || previous selector == 1", 
+                "Constrain selector == 1 when is_selected == 1 || previous selector == 1",
                 is_selected.clone()
                     + if idx > 0 {
                         selectors[idx - 1].expr()
@@ -102,10 +102,13 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
         // This will use the most significant bit of the selected byte to return
         // the sign byte, which is a byte with all its bits set to the
         // sign of the selected byte.
-        cb.add_lookup(Lookup::Fixed {
-            tag: FixedTableTag::SignByte.expr(),
-            values: [selected_byte, sign_byte.expr(), 0.expr()],
-        });
+        cb.add_lookup(
+            "SignByte lookup",
+            Lookup::Fixed {
+                tag: FixedTableTag::SignByte.expr(),
+                values: [selected_byte, sign_byte.expr(), 0.expr()],
+            },
+        );
 
         // Verify the result.
         // The LSB always remains the same, all other bytes with their selector
@@ -215,14 +218,9 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        witness,
-    };
-    use bus_mapping::{
-        bytecode,
-        eth_types::{ToLittleEndian, Word},
-    };
+    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use bus_mapping::bytecode;
+    use eth_types::{ToLittleEndian, Word};
 
     fn test_ok(index: Word, value: Word, _result: Word) {
         let bytecode = bytecode! {
@@ -232,8 +230,7 @@ mod test {
             SIGNEXTEND
             STOP
         };
-        let block = witness::build_block_from_trace_code_at_start(&bytecode);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuits(bytecode), Ok(()));
     }
 
     #[test]

@@ -1,9 +1,9 @@
 //! This module generates traces by connecting to an external tracer
-use crate::eth_types::{
+use crate::Error;
+use eth_types::{
     self, fix_geth_trace_memory_size, Address, Block, Bytes, GethExecStep,
     Hash, Word, U64,
 };
-use crate::Error;
 use geth_utils;
 use serde::Serialize;
 

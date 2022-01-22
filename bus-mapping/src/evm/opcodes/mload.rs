@@ -1,8 +1,9 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::{GethExecStep, ToBigEndian, Word};
-use crate::{evm::MemoryAddress, operation::RW, Error};
+use crate::{operation::RW, Error};
 use core::convert::TryInto;
+use eth_types::evm_types::MemoryAddress;
+use eth_types::{GethExecStep, ToBigEndian, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
@@ -62,10 +63,10 @@ mod mload_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        eth_types::Word,
-        evm::StackAddress,
         mock,
     };
+    use eth_types::evm_types::StackAddress;
+    use eth_types::Word;
     use pretty_assertions::assert_eq;
 
     #[test]

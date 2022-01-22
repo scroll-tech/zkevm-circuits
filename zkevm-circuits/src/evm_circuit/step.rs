@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        param::{NUM_CELLS_STEP_STATE, STEP_HEIGHT, STEP_WIDTH},
+        param::{N_CELLS_STEP_STATE, STEP_HEIGHT, STEP_WIDTH},
         util::Cell,
         witness::{Call, ExecStep},
     },
@@ -438,7 +438,7 @@ impl<F: FieldExt> Step<F> {
         advices: [Column<Advice>; STEP_WIDTH],
         is_next_step: bool,
     ) -> Self {
-        let num_state_cells = ExecutionState::amount() + NUM_CELLS_STEP_STATE;
+        let num_state_cells = ExecutionState::amount() + N_CELLS_STEP_STATE;
 
         let state = {
             let mut cells = VecDeque::with_capacity(num_state_cells);

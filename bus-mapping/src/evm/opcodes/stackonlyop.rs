@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::GethExecStep;
 use crate::{operation::RW, Error};
+use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to all the Stack only operations: take N words and return one.
@@ -45,10 +45,10 @@ mod stackonlyop_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        eth_types::Word,
-        evm::StackAddress,
-        mock, word,
+        mock,
     };
+    use eth_types::evm_types::StackAddress;
+    use eth_types::{word, Word};
     use pretty_assertions::assert_eq;
 
     #[test]

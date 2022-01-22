@@ -14,7 +14,8 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -47,14 +48,17 @@ impl<F: FieldExt> ExecutionGadget<F> for BitwiseGadget<F> {
         let tag = FixedTableTag::BitwiseAnd.expr()
             + (opcode.expr() - OpcodeId::AND.as_u64().expr());
         for idx in 0..32 {
-            cb.add_lookup(Lookup::Fixed {
-                tag: tag.clone(),
-                values: [
-                    a.cells[idx].expr(),
-                    b.cells[idx].expr(),
-                    c.cells[idx].expr(),
-                ],
-            });
+            cb.add_lookup(
+                "Bitwise lookup",
+                Lookup::Fixed {
+                    tag: tag.clone(),
+                    values: [
+                        a.cells[idx].expr(),
+                        b.cells[idx].expr(),
+                        c.cells[idx].expr(),
+                    ],
+                },
+            );
         }
 
         // State transition
@@ -103,11 +107,15 @@ impl<F: FieldExt> ExecutionGadget<F> for BitwiseGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{rand_word, run_test_circuit_complete_fixed_table},
-        witness,
+    use crate::{
+        evm_circuit::test::rand_word,
+        test_util::{
+            get_fixed_table, run_test_circuits_with_config, BytecodeTestConfig,
+            FixedTableConfig,
+        },
     };
-    use bus_mapping::{bytecode, eth_types::Word};
+    use bus_mapping::bytecode;
+    use eth_types::Word;
 
     fn test_ok(a: Word, b: Word) {
         let bytecode = bytecode! {
@@ -125,8 +133,16 @@ mod test {
             XOR
             STOP
         };
-        let block = witness::build_block_from_trace_code_at_start(&bytecode);
-        assert_eq!(run_test_circuit_complete_fixed_table(block), Ok(()));
+        let test_config = BytecodeTestConfig {
+            evm_circuit_lookup_tags: get_fixed_table(
+                FixedTableConfig::Complete,
+            ),
+            ..Default::default()
+        };
+        assert_eq!(
+            run_test_circuits_with_config(bytecode, test_config),
+            Ok(())
+        );
     }
 
     #[test]

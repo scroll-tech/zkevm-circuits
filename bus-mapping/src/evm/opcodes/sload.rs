@@ -1,10 +1,10 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::eth_types::GethExecStep;
 use crate::{
     operation::{StorageOp, RW},
     Error,
 };
+use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::SLOAD`](crate::evm::OpcodeId::SLOAD)
@@ -49,10 +49,10 @@ mod sload_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        eth_types::{Address, Word},
-        evm::StackAddress,
         mock,
     };
+    use eth_types::evm_types::StackAddress;
+    use eth_types::{Address, Word};
     use pretty_assertions::assert_eq;
 
     #[test]

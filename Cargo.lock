@@ -335,21 +335,18 @@ checksum = "8f1e260c3a9040a7c19a12468758f4c16f31a81a1fe087482be9570ec864bb6c"
 name = "bus-mapping"
 version = "0.1.0"
 dependencies = [
+ "eth-types",
  "ethers-core",
  "ethers-providers",
- "ff 0.11.0",
  "geth-utils",
- "hex",
  "itertools",
  "lazy_static",
  "log",
  "pairing_bn256",
  "pretty_assertions",
- "regex",
  "serde",
  "serde_json",
  "tokio",
- "uint",
  "url",
 ]
 
@@ -1089,6 +1086,21 @@ dependencies = [
  "sha3 0.9.1",
  "thiserror",
  "uuid",
+]
+
+[[package]]
+name = "eth-types"
+version = "0.1.0"
+dependencies = [
+ "ethers-core",
+ "ethers-providers",
+ "hex",
+ "lazy_static",
+ "pairing_bn256",
+ "regex",
+ "serde",
+ "serde_json",
+ "uint",
 ]
 
 [[package]]
@@ -1951,6 +1963,7 @@ version = "0.1.0"
 dependencies = [
  "bus-mapping",
  "env_logger",
+ "eth-types",
  "ethers",
  "halo2",
  "lazy_static",
@@ -3952,6 +3965,7 @@ dependencies = [
  "bus-mapping",
  "criterion",
  "digest 0.7.6",
+ "eth-types",
  "ff 0.11.0",
  "halo2",
  "num",

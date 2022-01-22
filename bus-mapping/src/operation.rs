@@ -6,12 +6,13 @@
 //!   [`OperationContainer`].
 pub(crate) mod container;
 
-pub use super::evm::{MemoryAddress, RWCounter, StackAddress};
-use crate::eth_types::{Address, Word};
 pub use container::OperationContainer;
+pub use eth_types::evm_types::{MemoryAddress, StackAddress};
+
 use core::cmp::Ordering;
 use core::fmt;
 use core::fmt::Debug;
+use eth_types::{Address, Word};
 
 /// Marker that defines whether an Operation performs a `READ` or a `WRITE`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -34,6 +35,55 @@ impl RW {
     /// Returns true if the RW corresponds internally to a [`WRITE`](RW::WRITE).
     pub const fn is_write(&self) -> bool {
         !self.is_read()
+    }
+}
+
+/// Wrapper type over `usize` which represents the global counter. The purpose
+/// of the `RWCounter` is to enforce that each Opcode/Instruction and Operation
+/// is unique and just executed once.
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+pub struct RWCounter(pub usize);
+
+impl fmt::Debug for RWCounter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))
+    }
+}
+
+impl From<RWCounter> for usize {
+    fn from(addr: RWCounter) -> usize {
+        addr.0
+    }
+}
+
+impl From<usize> for RWCounter {
+    fn from(rwc: usize) -> Self {
+        RWCounter(rwc)
+    }
+}
+
+impl Default for RWCounter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RWCounter {
+    /// Create a new RWCounter with the initial default value
+    pub fn new() -> Self {
+        Self(1)
+    }
+
+    /// Increase Self by one
+    pub fn inc(&mut self) {
+        self.0 += 1;
+    }
+
+    /// Increase Self by one and return the value before the increase.
+    pub fn inc_pre(&mut self) -> Self {
+        let pre = *self;
+        self.inc();
+        pre
     }
 }
 
@@ -66,8 +116,8 @@ pub trait Op: Eq + Ord {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
-/// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
-/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
+/// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
+/// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct MemoryOp {
     /// RW
@@ -148,8 +198,8 @@ impl Ord for MemoryOp {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the stack implied
-/// by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of the
-/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
+/// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
+/// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct StackOp {
     /// RW
@@ -230,7 +280,8 @@ impl Ord for StackOp {
 }
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the storage
-/// implied by an specific [`OpcodeId`](crate::evm::opcodes::ids::OpcodeId) of
+/// implied by an specific
+/// [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct StorageOp {

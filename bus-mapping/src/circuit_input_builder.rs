@@ -1,21 +1,21 @@
 //! This module contains the CircuitInputBuilder, which is an object that takes
 //! types from geth / web3 and outputs the circuit inputs.
-use crate::eth_types::{
-    self, Address, ChainConstants, GethExecStep, GethExecTrace, Hash,
-    ToAddress, ToBigEndian, Word,
-};
-use crate::evm::{
-    Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, RWCounter,
-    StackAddress,
-};
+use crate::evm::opcodes::gen_associated_ops;
 use crate::exec_trace::OperationRef;
 use crate::external_tracer::BlockConstants;
 use crate::geth_errors::*;
 use crate::operation::container::OperationContainer;
-use crate::operation::{MemoryOp, Op, Operation, StackOp, RW};
+use crate::operation::{MemoryOp, Op, Operation, RWCounter, StackOp, RW};
 use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
+use eth_types::evm_types::{
+    Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress,
+};
+use eth_types::{
+    self, Address, ChainConstants, GethExecStep, GethExecTrace, Hash,
+    ToAddress, ToBigEndian, Word,
+};
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
@@ -885,7 +885,8 @@ impl<'a> CircuitInputBuilder {
                 tx_ctx.call_ctx().swc,
             );
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx, &mut step);
-            geth_step.op.gen_associated_ops(
+            gen_associated_ops(
+                &geth_step.op,
                 &mut state_ref,
                 &geth_trace.struct_logs[index..],
             )?;
@@ -1366,15 +1367,9 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 #[cfg(test)]
 mod tracer_tests {
     use super::*;
-    use crate::{
-        address, bytecode,
-        bytecode::Bytecode,
-        eth_types::{ToWord, Word},
-        evm::{stack::Stack, Gas, OpcodeId},
-        mock,
-        state_db::Account,
-        word,
-    };
+    use crate::{bytecode, bytecode::Bytecode, mock, state_db::Account};
+    use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
+    use eth_types::{address, word, ToWord, Word};
     use lazy_static::lazy_static;
     use pretty_assertions::assert_eq;
     use std::iter::FromIterator;

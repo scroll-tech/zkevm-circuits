@@ -1,6 +1,6 @@
 //! Doc this
-use crate::eth_types::{DebugWord, Word};
 use crate::Error;
+use crate::{DebugWord, Word};
 use core::str::FromStr;
 use serde::Deserialize;
 use std::fmt;
@@ -8,7 +8,7 @@ use std::fmt;
 /// Represents a `StackAddress` of the EVM.
 /// The address range goes `TOP -> DOWN (1024, 0]`.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub struct StackAddress(pub(crate) usize);
+pub struct StackAddress(pub usize);
 
 impl fmt::Debug for StackAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -58,7 +58,7 @@ impl FromStr for StackAddress {
 /// Represents a snapshot of the EVM stack state at a certain
 /// execution step height.
 #[derive(Clone, Eq, PartialEq, Deserialize)]
-pub struct Stack(pub(crate) Vec<Word>);
+pub struct Stack(pub Vec<Word>);
 
 impl fmt::Debug for Stack {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

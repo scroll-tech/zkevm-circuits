@@ -1,7 +1,7 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
-use crate::eth_types::{Address, Hash, Word, H256};
+use eth_types::{Address, Hash, Word, H256};
 use ethers_core::utils::keccak256;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
@@ -144,7 +144,7 @@ impl StateDB {
 #[cfg(test)]
 mod statedb_tests {
     use super::*;
-    use crate::address;
+    use eth_types::address;
 
     #[test]
     fn statedb() {

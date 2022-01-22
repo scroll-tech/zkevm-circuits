@@ -1,11 +1,11 @@
 //! Module which contains all the RPC calls that are needed at any point to
 //! query a Geth node in order to get a Block, Tx or Trace info.
 
-use crate::eth_types::{
+use crate::Error;
+use eth_types::{
     Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash,
     ResultGethExecTraces, Transaction, Word, U64,
 };
-use crate::Error;
 pub use ethers_core::types::BlockNumber;
 use ethers_providers::JsonRpcClient;
 use serde::Serialize;

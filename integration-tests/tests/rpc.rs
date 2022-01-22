@@ -1,6 +1,6 @@
 #![cfg(feature = "rpc")]
 
-use bus_mapping::eth_types::{StorageProof, Word};
+use eth_types::{StorageProof, Word};
 use integration_tests::{
     get_client, CompiledContract, GenDataOutput, CHAIN_ID, CONTRACTS_PATH,
 };

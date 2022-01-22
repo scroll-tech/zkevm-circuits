@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{
-        param::MAX_GAS_SIZE_IN_BYTES,
+        param::N_BYTES_GAS,
         table::{AccountFieldTag, FixedTableTag, Lookup},
         util::{
             constraint_builder::{
@@ -13,7 +13,7 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::eth_types::U256;
+use eth_types::U256;
 use halo2::{
     arithmetic::FieldExt,
     circuit::Region,
@@ -26,7 +26,7 @@ use halo2::{
 #[derive(Clone, Debug)]
 pub(crate) struct SameContextGadget<F> {
     opcode: Cell<F>,
-    sufficient_gas_left: RangeCheckGadget<F, MAX_GAS_SIZE_IN_BYTES>,
+    sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
 }
 
 impl<F: FieldExt> SameContextGadget<F> {
@@ -37,14 +37,17 @@ impl<F: FieldExt> SameContextGadget<F> {
         dynamic_gas_cost: Option<Expression<F>>,
     ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
-        cb.add_lookup(Lookup::Fixed {
-            tag: FixedTableTag::ResponsibleOpcode.expr(),
-            values: [
-                cb.execution_state().as_u64().expr(),
-                opcode.expr(),
-                0.expr(),
-            ],
-        });
+        cb.add_lookup(
+            "Responsible opcode lookup",
+            Lookup::Fixed {
+                tag: FixedTableTag::ResponsibleOpcode.expr(),
+                values: [
+                    cb.execution_state().as_u64().expr(),
+                    opcode.expr(),
+                    0.expr(),
+                ],
+            },
+        );
 
         let mut gas_cost = cb
             .execution_state()

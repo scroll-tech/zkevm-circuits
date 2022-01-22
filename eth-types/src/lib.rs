@@ -1,7 +1,27 @@
-//! Ethereum types used to deserialize responses from web3 / geth.
+//! Ethereum and Evm types used to deserialize responses from web3 / geth.
 
-use crate::evm::{memory::Memory, stack::Stack, storage::Storage};
-use crate::evm::{Gas, GasCost, OpcodeId, ProgramCounter};
+#![cfg_attr(docsrs, feature(doc_cfg))]
+// Temporary until we have more of the crate implemented.
+#![allow(dead_code)]
+// We want to have UPPERCASE idents sometimes.
+#![allow(non_snake_case)]
+// Catch documentation errors caused by code changes.
+#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(missing_docs)]
+//#![deny(unsafe_code)] Allowed now until we find a
+// better way to handle downcasting from Operation into it's variants.
+#![allow(clippy::upper_case_acronyms)] // Too pedantic
+
+#[macro_use]
+pub mod macros;
+#[macro_use]
+pub mod error;
+pub mod evm_types;
+
+pub use error::Error;
+
+use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
+use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 use ethers_core::types;
 pub use ethers_core::types::{
     transaction::response::Transaction, Address, Block, Bytes, H160, H256,
@@ -292,15 +312,15 @@ impl<'de> Deserialize<'de> for GethExecStep {
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
-pub(crate) struct ResultGethExecTraces(pub(crate) Vec<ResultGethExecTrace>);
+pub struct ResultGethExecTraces(pub Vec<ResultGethExecTrace>);
 
 /// Helper type built to deal with the weird `result` field added between
 /// `GethExecutionTrace`s in `debug_traceBlockByHash` and
 /// `debug_traceBlockByNumber` Geth JSON-RPC calls.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[doc(hidden)]
-pub(crate) struct ResultGethExecTrace {
-    pub(crate) result: GethExecTrace,
+pub struct ResultGethExecTrace {
+    pub result: GethExecTrace,
 }
 
 #[derive(Deserialize, Debug, Eq, PartialEq)]
@@ -379,8 +399,7 @@ impl<'de> Deserialize<'de> for GethExecTrace {
 macro_rules! address {
     ($addr_hex:expr) => {{
         use std::str::FromStr;
-        $crate::eth_types::Address::from_str(&$addr_hex)
-            .expect("invalid hex Address")
+        $crate::Address::from_str(&$addr_hex).expect("invalid hex Address")
     }};
 }
 
@@ -388,8 +407,7 @@ macro_rules! address {
 /// Create a [`Word`] from a hex string.  Panics on invalid input.
 macro_rules! word {
     ($word_hex:expr) => {
-        $crate::eth_types::Word::from_str_radix(&$word_hex, 16)
-            .expect("invalid hex Word")
+        $crate::Word::from_str_radix(&$word_hex, 16).expect("invalid hex Word")
     };
 }
 
@@ -413,8 +431,8 @@ macro_rules! word_map {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::opcodes::ids::OpcodeId;
-    use crate::evm::{memory::Memory, stack::Stack};
+    use crate::evm_types::opcode_ids::OpcodeId;
+    use crate::evm_types::{memory::Memory, stack::Stack};
 
     #[test]
     fn deserialize_geth_exec_trace2() {
@@ -502,8 +520,8 @@ mod tests {
 #[cfg(test)]
 mod eth_types_test {
     use super::*;
-    use crate::eth_types::Word;
     use crate::Error;
+    use crate::Word;
     use std::str::FromStr;
 
     #[test]

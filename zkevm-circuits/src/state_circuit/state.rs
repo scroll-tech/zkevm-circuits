@@ -1,10 +1,13 @@
-use crate::gadget::{
-    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
-    monotone::{MonotoneChip, MonotoneConfig},
-    Variable,
+use crate::{
+    evm_circuit::util::RandomLinearCombination,
+    gadget::{
+        is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+        monotone::{MonotoneChip, MonotoneConfig},
+        Variable,
+    },
 };
-use bus_mapping::eth_types::ToScalar;
 use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp};
+use eth_types::{ToLittleEndian, ToScalar};
 use halo2::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{
@@ -13,6 +16,7 @@ use halo2::{
     },
     poly::Rotation,
 };
+
 use pairing::arithmetic::FieldExt;
 
 /*
@@ -84,6 +88,11 @@ pub(crate) struct BusMapping<F: FieldExt> {
 #[derive(Clone, Debug)]
 pub struct Config<
     F: FieldExt,
+    // When SANITY_CHECK is true, max_address/global_counter/stack_address are
+    // required to be in the range of
+    // MEMORY_ADDRESS_MAX/GLOBAL_COUNTER_MAX/STACK_ADDRESS_MAX during circuit
+    // synthesis
+    const SANITY_CHECK: bool,
     const GLOBAL_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
     const MEMORY_ADDRESS_MAX: usize,
@@ -114,6 +123,7 @@ pub struct Config<
 
 impl<
         F: FieldExt,
+        const SANITY_CHECK: bool,
         const GLOBAL_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
@@ -123,6 +133,7 @@ impl<
     >
     Config<
         F,
+        SANITY_CHECK,
         GLOBAL_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
@@ -566,6 +577,7 @@ impl<
         // == address_prev and storage_key_cur = storage_key_prev.
         // (Recall that storage operations are ordered first by account address,
         // then by storage_key, and finally by global_counter.)
+
         meta.lookup_any(|meta| {
             let global_counter_table =
                 meta.query_fixed(global_counter_table, Rotation::cur());
@@ -686,6 +698,7 @@ impl<
     fn assign_memory_ops(
         &self,
         region: &mut Region<F>,
+        _randomness: F,
         ops: Vec<Operation<MemoryOp>>,
         address_diff_is_zero_chip: &IsZeroChip<F>,
     ) -> Result<Vec<BusMapping<F>>, Error> {
@@ -712,9 +725,16 @@ impl<
         for (index, oper) in ops.iter().enumerate() {
             let op = oper.op();
             let address = F::from_bytes(&op.address().to_le_bytes()).unwrap();
+            if SANITY_CHECK && address > F::from(MEMORY_ADDRESS_MAX as u64) {
+                panic!(
+                    "memory address out of range {:?} > {}",
+                    address, MEMORY_ADDRESS_MAX
+                );
+            }
             let rwc = usize::from(oper.rwc());
+            // value of memory op is of type u8, so random_linear_combine is not
+            // needed here.
             let val = F::from(op.value() as u64);
-
             let mut target = 1;
             if index > 0 {
                 target = 2;
@@ -757,6 +777,7 @@ impl<
     fn assign_stack_ops(
         &self,
         region: &mut Region<F>,
+        randomness: F,
         ops: Vec<Operation<StackOp>>,
         address_diff_is_zero_chip: &IsZeroChip<F>,
     ) -> Result<Vec<BusMapping<F>>, Error> {
@@ -769,10 +790,15 @@ impl<
         let mut offset = MEMORY_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
             let op = oper.op();
+            if SANITY_CHECK && usize::from(*op.address()) > STACK_ADDRESS_MAX {
+                panic!("stack address out of range");
+            }
             let address = F::from(usize::from(*op.address()) as u64);
             let rwc = usize::from(oper.rwc());
-            let val = op.value().to_scalar().unwrap();
-
+            let val = RandomLinearCombination::random_linear_combine(
+                op.value().to_le_bytes(),
+                randomness,
+            );
             let mut target = 1;
             if index > 0 {
                 target = 3;
@@ -809,6 +835,7 @@ impl<
     fn assign_storage_ops(
         &self,
         region: &mut Region<F>,
+        randomness: F,
         ops: Vec<Operation<StorageOp>>,
         address_diff_is_zero_chip: &IsZeroChip<F>,
         storage_key_diff_is_zero_chip: &IsZeroChip<F>,
@@ -823,11 +850,24 @@ impl<
         let mut offset = MEMORY_ROWS_MAX + STACK_ROWS_MAX;
         for (index, oper) in ops.iter().enumerate() {
             let op = oper.op();
-            let address = op.address().to_scalar().unwrap();
             let rwc = usize::from(oper.rwc());
-            let val = op.value().to_scalar().unwrap();
-            let val_prev = op.value_prev().to_scalar().unwrap();
-            let storage_key = op.key().to_scalar().unwrap();
+
+            // address in 160bits, so it can be put into F.
+            // random_linear_combine is not needed here.
+            let address = op.address().to_scalar().unwrap();
+
+            let val = RandomLinearCombination::random_linear_combine(
+                op.value().to_le_bytes(),
+                randomness,
+            );
+            let val_prev = RandomLinearCombination::random_linear_combine(
+                op.value_prev().to_le_bytes(),
+                randomness,
+            );
+            let storage_key = RandomLinearCombination::random_linear_combine(
+                op.key().to_le_bytes(),
+                randomness,
+            );
 
             let mut target = 1;
             if index > 0 {
@@ -919,6 +959,7 @@ impl<
     pub(crate) fn assign(
         &self,
         mut layouter: impl Layouter<F>,
+        randomness: F,
         memory_ops: Vec<Operation<MemoryOp>>,
         stack_ops: Vec<Operation<StackOp>>,
         storage_ops: Vec<Operation<StorageOp>>,
@@ -948,6 +989,7 @@ impl<
             |mut region| {
                 let memory_mappings = self.assign_memory_ops(
                     &mut region,
+                    randomness,
                     memory_ops.clone(),
                     &address_diff_is_zero_chip,
                 );
@@ -955,6 +997,7 @@ impl<
 
                 let stack_mappings = self.assign_stack_ops(
                     &mut region,
+                    randomness,
                     stack_ops.clone(),
                     &address_diff_is_zero_chip,
                 );
@@ -962,6 +1005,7 @@ impl<
 
                 let storage_mappings = self.assign_storage_ops(
                     &mut region,
+                    randomness,
                     storage_ops.clone(),
                     &address_diff_is_zero_chip,
                     &storage_key_diff_is_zero_chip,
@@ -1046,6 +1090,9 @@ impl<
             }
         };
 
+        if SANITY_CHECK && global_counter > GLOBAL_COUNTER_MAX {
+            panic!("global_counter out of range");
+        }
         let global_counter = {
             let field_elem = F::from(global_counter as u64);
 
@@ -1155,6 +1202,8 @@ impl<
 /// State Circuit struct.
 #[derive(Default)]
 pub struct StateCircuit<
+    F: FieldExt,
+    const SANITY_CHECK: bool,
     const GLOBAL_COUNTER_MAX: usize,
     const MEMORY_ROWS_MAX: usize,
     const MEMORY_ADDRESS_MAX: usize,
@@ -1162,6 +1211,8 @@ pub struct StateCircuit<
     const STACK_ADDRESS_MAX: usize,
     const STORAGE_ROWS_MAX: usize,
 > {
+    /// randomness used in linear combination
+    pub randomness: F,
     /// Memory Operations
     pub memory_ops: Vec<Operation<MemoryOp>>,
     /// Stack Operations
@@ -1171,6 +1222,8 @@ pub struct StateCircuit<
 }
 
 impl<
+        F: FieldExt,
+        const SANITY_CHECK: bool,
         const GLOBAL_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
@@ -1179,6 +1232,8 @@ impl<
         const STORAGE_ROWS_MAX: usize,
     >
     StateCircuit<
+        F,
+        SANITY_CHECK,
         GLOBAL_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
@@ -1189,11 +1244,13 @@ impl<
 {
     /// Use memory_ops, stack_ops, storage_ops to build a StateCircuit instance.
     pub fn new(
+        randomness: F,
         memory_ops: Vec<Operation<MemoryOp>>,
         stack_ops: Vec<Operation<StackOp>>,
         storage_ops: Vec<Operation<StorageOp>>,
     ) -> Self {
         Self {
+            randomness,
             memory_ops,
             stack_ops,
             storage_ops,
@@ -1203,6 +1260,7 @@ impl<
 
 impl<
         F: FieldExt,
+        const SANITY_CHECK: bool,
         const GLOBAL_COUNTER_MAX: usize,
         const MEMORY_ROWS_MAX: usize,
         const MEMORY_ADDRESS_MAX: usize,
@@ -1211,6 +1269,8 @@ impl<
         const STORAGE_ROWS_MAX: usize,
     > Circuit<F>
     for StateCircuit<
+        F,
+        SANITY_CHECK,
         GLOBAL_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
@@ -1221,6 +1281,7 @@ impl<
 {
     type Config = Config<
         F,
+        SANITY_CHECK,
         GLOBAL_COUNTER_MAX,
         MEMORY_ROWS_MAX,
         MEMORY_ADDRESS_MAX,
@@ -1246,6 +1307,7 @@ impl<
         config.load(&mut layouter)?;
         config.assign(
             layouter,
+            self.randomness,
             self.memory_ops.clone(),
             self.stack_ops.clone(),
             self.storage_ops.clone(),
@@ -1257,23 +1319,25 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bus_mapping::address;
     use bus_mapping::bytecode;
-    use bus_mapping::eth_types::Word;
-    use bus_mapping::evm::{MemoryAddress, RWCounter, StackAddress};
     use bus_mapping::mock;
-
-    use bus_mapping::operation::{MemoryOp, Operation, StackOp, StorageOp, RW};
+    use bus_mapping::operation::{
+        MemoryOp, Operation, RWCounter, StackOp, StorageOp, RW,
+    };
+    use eth_types::evm_types::{MemoryAddress, StackAddress};
+    use eth_types::{address, Word};
+    use halo2::arithmetic::BaseExt;
     use halo2::dev::{
         MockProver, VerifyFailure::ConstraintNotSatisfied,
         VerifyFailure::Lookup,
     };
-
-    use pairing::bn256::Fr as Fp;
+    use pairing::bn256::Fr;
 
     macro_rules! test_state_circuit {
         ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr, $result:expr) => {{
             let circuit = StateCircuit::<
+                Fr,
+                true,
                 $global_counter_max,
                 $memory_rows_max,
                 $memory_address_max,
@@ -1281,12 +1345,13 @@ mod tests {
                 $stack_address_max,
                 $storage_rows_max,
             > {
+                randomness: Fr::rand(),
                 memory_ops: $memory_ops,
                 stack_ops: $stack_ops,
                 storage_ops: $storage_ops,
             };
 
-            let prover = MockProver::<Fp>::run($k, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
     }
@@ -1294,6 +1359,8 @@ mod tests {
     macro_rules! test_state_circuit_error {
         ($k:expr, $global_counter_max:expr, $memory_rows_max:expr, $memory_address_max:expr, $stack_rows_max:expr, $stack_address_max:expr, $storage_rows_max:expr, $memory_ops:expr, $stack_ops:expr, $storage_ops:expr) => {{
             let circuit = StateCircuit::<
+                Fr,
+                false,
                 $global_counter_max,
                 $memory_rows_max,
                 $memory_address_max,
@@ -1301,12 +1368,13 @@ mod tests {
                 $stack_address_max,
                 $storage_rows_max,
             > {
+                randomness: Fr::rand(),
                 memory_ops: $memory_ops,
                 stack_ops: $stack_ops,
                 storage_ops: $storage_ops,
             };
 
-            let prover = MockProver::<Fp>::run($k, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
             assert!(prover.verify().is_err());
         }};
     }

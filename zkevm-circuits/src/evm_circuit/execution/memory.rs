@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{MAX_GAS_SIZE_IN_BYTES, NUM_ADDRESS_BYTES_USED},
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -18,7 +18,8 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{eth_types::ToLittleEndian, evm::OpcodeId};
+use eth_types::evm_types::OpcodeId;
+use eth_types::ToLittleEndian;
 use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
@@ -27,7 +28,7 @@ pub(crate) struct MemoryGadget<F> {
     same_context: SameContextGadget<F>,
     address: MemoryAddress<F>,
     value: Word<F>,
-    memory_expansion: MemoryExpansionGadget<F, MAX_GAS_SIZE_IN_BYTES>,
+    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     is_mload: IsEqualGadget<F>,
     is_mstore8: IsEqualGadget<F>,
 }
@@ -41,8 +42,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         let opcode = cb.query_cell();
 
         // In successful case the address must be in 5 bytes
-        let address =
-            MemoryAddress::new(cb.query_bytes(), cb.power_of_randomness());
+        let address = cb.query_rlc();
         let value = cb.query_word();
 
         // Check if this is an MLOAD
@@ -64,9 +64,9 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
             cb.curr.state.memory_word_size.expr(),
-            from_bytes::expr(&address.cells)
+            [from_bytes::expr(&address.cells)
                 + 1.expr()
-                + (is_not_mstore8.clone() * 31.expr()),
+                + (is_not_mstore8.clone() * 31.expr())],
         );
 
         /* Stack operations */
@@ -166,7 +166,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
             region,
             offset,
             Some(
-                address.to_le_bytes()[..NUM_ADDRESS_BYTES_USED]
+                address.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
                     .try_into()
                     .unwrap(),
             ),
@@ -194,7 +194,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            address.as_u64() + 1 + if is_mstore8 == F::one() { 0 } else { 31 },
+            [address.as_u64() + if is_mstore8 == F::one() { 1 } else { 32 }],
         )?;
 
         Ok(())
@@ -203,15 +203,14 @@ impl<F: FieldExt> ExecutionGadget<F> for MemoryGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{rand_word, run_test_circuit_incomplete_fixed_table},
-        witness,
+
+    use crate::{
+        evm_circuit::test::rand_word,
+        test_util::{run_test_circuits_with_config, BytecodeTestConfig},
     };
-    use bus_mapping::{
-        bytecode,
-        eth_types::Word,
-        evm::{Gas, GasCost, OpcodeId},
-    };
+    use bus_mapping::bytecode;
+    use eth_types::evm_types::{GasCost, OpcodeId};
+    use eth_types::Word;
     use std::iter;
 
     fn test_ok(
@@ -229,21 +228,17 @@ mod test {
             STOP
         };
 
-        let gas = Gas(gas_cost + 100_000); // add extra gas for the pushes
-        let mut block_trace =
-            bus_mapping::mock::BlockData::new_single_tx_trace_code_gas(
-                &bytecode, gas,
-            )
-            .unwrap();
-        block_trace.geth_trace.struct_logs = block_trace.geth_trace.struct_logs
-            [bytecode.get_pos("start")..]
-            .to_vec();
-        let mut builder = block_trace.new_circuit_input_builder();
-        builder
-            .handle_tx(&block_trace.eth_tx, &block_trace.geth_trace)
-            .unwrap();
-        let block = witness::block_convert(bytecode.code(), &builder.block);
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        let test_config = BytecodeTestConfig {
+            gas_limit: gas_cost + 100_000,
+            // we have to disable state circit now, since the memory size used
+            // here is too large
+            enable_state_circuit_test: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            run_test_circuits_with_config(bytecode, test_config),
+            Ok(())
+        );
     }
 
     #[test]
@@ -255,7 +250,6 @@ mod test {
             38913,
             3074206,
         );
-
         test_ok(
             OpcodeId::MLOAD,
             Word::from(0x12FFFF),

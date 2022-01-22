@@ -7,6 +7,7 @@ mod tests {
     use halo2::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
     use halo2::{plonk::*, poly::commitment::Setup};
     use pairing::bn256::Bn256;
+    use pairing::bn256::Fr;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use zkevm_circuits::state_circuit::StateCircuit;
@@ -22,6 +23,8 @@ mod tests {
     fn bench_state_circuit_prover() {
         let public_inputs_size = 0;
         let empty_circuit = StateCircuit::<
+            Fr,
+            true,
             GLOBAL_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,

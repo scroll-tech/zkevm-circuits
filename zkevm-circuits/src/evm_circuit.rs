@@ -6,7 +6,7 @@ use halo2::{arithmetic::FieldExt, circuit::Layouter, plonk::*};
 mod execution;
 pub mod param;
 mod step;
-mod util;
+pub(crate) mod util;
 
 pub mod table;
 pub mod witness;
@@ -109,7 +109,7 @@ impl<F: FieldExt> EvmCircuit<F> {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use crate::{
         evm_circuit::{
             param::STEP_HEIGHT,
@@ -119,7 +119,7 @@ mod test {
         },
         util::Expr,
     };
-    use bus_mapping::eth_types::Word;
+    use eth_types::Word;
     use halo2::{
         arithmetic::{BaseExt, FieldExt},
         circuit::{Layouter, SimpleFloorPlanner},

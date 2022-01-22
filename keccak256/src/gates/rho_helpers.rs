@@ -1,11 +1,12 @@
 use crate::{
-    arith_helpers::{convert_b13_coef, B13, B9},
+    arith_helpers::{convert_b13_coef, convert_b13_lane_to_b9, B13, B2, B9},
     common::LANE_SIZE,
 };
 
-use std::convert::TryInto;
-
+use itertools::Itertools;
 use num_bigint::BigUint;
+use num_traits::Zero;
+use std::convert::TryInto;
 
 pub const BASE_NUM_OF_CHUNKS: u32 = 4;
 
@@ -24,11 +25,6 @@ pub fn get_step_size(chunk_idx: u32, rotation: u32) -> u32 {
         return LANE_SIZE - chunk_idx;
     }
     BASE_NUM_OF_CHUNKS
-}
-
-/// This is the point where power of 9 starts from 1
-pub fn is_at_rotation_offset(chunk_idx: u32, rotation: u32) -> bool {
-    chunk_idx == LANE_SIZE - rotation
 }
 
 /// Slice the lane into chunk indices and steps
@@ -91,17 +87,189 @@ pub fn get_block_count(b13_chunks: [u8; BASE_NUM_OF_CHUNKS as usize]) -> u32 {
     OVERFLOW_TRANSFORM[non_zero_chunk_count]
 }
 
-pub fn get_block_count_and_output_coef(input_coef: BigUint) -> (u32, u64) {
-    let mut b13_chunks = input_coef.to_radix_le(B13.into());
-    b13_chunks.resize(BASE_NUM_OF_CHUNKS as usize, 0);
-    b13_chunks.reverse();
-    let b13_chunks: [u8; BASE_NUM_OF_CHUNKS as usize] =
-        b13_chunks.try_into().unwrap();
-    let output_coef: u64 = b13_chunks.iter().fold(0, |acc, &b13_chunk| {
-        acc * B9 as u64 + convert_b13_coef(b13_chunk) as u64
-    });
-    let block_count = get_block_count(b13_chunks);
-    (block_count, output_coef)
+#[derive(Debug, Clone)]
+pub struct Slice {
+    pub coef: BigUint,
+    pub power_of_base: BigUint,
+    pub pre_acc: BigUint,
+}
+
+#[derive(Debug, Clone)]
+pub struct OverflowDetector {
+    pub block_count: u32,
+    pub step2_acc: u32,
+    pub step3_acc: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct Conversion {
+    chunk_idx: u32,
+    step: u32,
+    pub input: Slice,
+    pub output: Slice,
+    pub overflow_detector: OverflowDetector,
+}
+
+pub struct Special {
+    pub input: BigUint,
+    pub output_acc_pre: BigUint,
+    pub output_acc_post: BigUint,
+    pub output_coef: u8,
+}
+
+const RHO_LANE_SIZE: usize = 65;
+
+#[derive(Debug, Clone)]
+pub struct RhoLane {
+    // base 13. 65 chunks
+    input: BigUint,
+    // base 9
+    pub output: BigUint,
+    // output in binary, useful to check against plain rho output
+    output_b2: u64,
+    rotation: u32,
+    // base13 in little endian
+    chunks: [u8; RHO_LANE_SIZE],
+    special_high: u8,
+    special_low: u8,
+}
+
+impl RhoLane {
+    pub fn new(input: BigUint, rotation: u32) -> Self {
+        assert!(
+            input.lt(&BigUint::from(B13).pow(RHO_LANE_SIZE as u32)),
+            "lane too big"
+        );
+        let mut chunks = input.to_radix_le(B13.into());
+        chunks.resize(RHO_LANE_SIZE, 0);
+        let chunks: [u8; RHO_LANE_SIZE] = chunks.try_into().unwrap();
+        let special_high = *chunks.get(64).unwrap();
+        let special_low = *chunks.get(0).unwrap();
+        assert!(special_high + special_low < B13, "invalid Rho input lane");
+        let output = convert_b13_lane_to_b9(input.clone(), rotation);
+        let output_b2 =
+            *BigUint::from_radix_le(&output.to_radix_le(B9.into()), B2.into())
+                .unwrap_or_default()
+                .to_u64_digits()
+                .first()
+                .unwrap_or(&0);
+
+        Self {
+            input,
+            output,
+            output_b2,
+            rotation,
+            chunks,
+            special_high,
+            special_low,
+        }
+    }
+
+    pub fn get_full_witness(&self) -> (Vec<Conversion>, Special) {
+        let mut input_acc = self.input.clone();
+        let mut output_acc = BigUint::zero();
+        let mut step2_acc: u32 = 0;
+        let mut step3_acc: u32 = 0;
+        let conversions: Vec<Conversion> = slice_lane(self.rotation)
+            .iter()
+            .map(|&(chunk_idx, step)| {
+                let chunks = self
+                    .chunks
+                    .get(chunk_idx as usize..(chunk_idx + step) as usize)
+                    .unwrap();
+                let input = {
+                    let coef = BigUint::from_radix_le(chunks, B13.into())
+                        .unwrap_or_default();
+                    let power_of_base = BigUint::from(B13).pow(chunk_idx);
+                    let pre_acc = input_acc.clone();
+                    input_acc -= &coef * &power_of_base;
+                    Slice {
+                        coef,
+                        power_of_base,
+                        pre_acc,
+                    }
+                };
+                let output = {
+                    let converted_chunks = chunks
+                        .iter()
+                        .map(|&x| convert_b13_coef(x))
+                        .collect_vec();
+                    let coef =
+                        BigUint::from_radix_le(&converted_chunks, B9.into())
+                            .unwrap_or_default();
+                    let power = (chunk_idx + self.rotation) % LANE_SIZE;
+                    let power_of_base = BigUint::from(B9).pow(power);
+                    let pre_acc = output_acc.clone();
+                    output_acc += &coef * &power_of_base;
+                    Slice {
+                        coef,
+                        power_of_base,
+                        pre_acc,
+                    }
+                };
+                let overflow_detector = {
+                    let mut v = chunks.to_vec();
+                    // pad to 4 chunks
+                    v.resize(BASE_NUM_OF_CHUNKS as usize, 0);
+                    // to big endian
+                    v.reverse();
+                    let chunks_be: [u8; BASE_NUM_OF_CHUNKS as usize] =
+                        v.try_into().unwrap();
+                    let block_count = get_block_count(chunks_be);
+                    match step {
+                        2 => step2_acc += block_count,
+                        3 => step3_acc += block_count,
+                        _ => {}
+                    };
+                    OverflowDetector {
+                        block_count,
+                        step2_acc,
+                        step3_acc,
+                    }
+                };
+                Conversion {
+                    chunk_idx,
+                    step,
+                    input,
+                    output,
+                    overflow_detector,
+                }
+            })
+            .collect_vec();
+        self.sanity_check(&input_acc);
+        let special = {
+            let input = input_acc;
+            let output_acc_pre = output_acc;
+            let output_coef =
+                convert_b13_coef(self.special_high + self.special_low);
+            let output_acc_post = &output_acc_pre
+                + output_coef * BigUint::from(B9 as u64).pow(self.rotation);
+            Special {
+                input,
+                output_acc_pre,
+                output_acc_post,
+                output_coef,
+            }
+        };
+        (conversions, special)
+    }
+
+    /// After we run down the input accumulator for the normal chunks,
+    /// the remaining value should be equal to what the special chunks
+    /// represent
+    fn sanity_check(&self, input_acc: &BigUint) {
+        let expect = (self.special_low as u64)
+            + (self.special_high as u64) * BigUint::from(B13).pow(LANE_SIZE);
+        assert_eq!(
+            *input_acc,
+            expect,
+            "input_acc got: {:?}  expect: {:?} = low({:?}) + high({:?}) * 13**64",
+            input_acc,
+            expect,
+            self.special_low,
+            self.special_high,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -151,5 +319,34 @@ mod tests {
             STEP3_RANGE,
             (STEP_COUNTS[step3 - 1] * OVERFLOW_TRANSFORM[step3]).into()
         );
+    }
+    #[test]
+    fn test_rho_lane_rotation() {
+        // Chosen such that special chunks are all 0
+        // The special chunks transformed (high+low) value is 0 too
+        let rho_arith_input_chunks = [0, 5, 4, 3, 2, 1];
+        let rho_arith_lane =
+            BigUint::from_radix_le(&rho_arith_input_chunks, B13.into())
+                .unwrap_or_default();
+        let rho_chunks_transformed_no_special = [5, 4, 3, 2, 1]
+            .iter()
+            .map(|&x| convert_b13_coef(x))
+            .collect_vec();
+        assert_eq!(rho_chunks_transformed_no_special, [1, 0, 1, 0, 1]);
+        // We need to add back the transformed value of special chunks.
+        let rho_chunks_transformed = [0, 1, 0, 1, 0, 1];
+        let rho_bin_input: u64 =
+            BigUint::from_radix_le(&rho_chunks_transformed, B2.into())
+                .unwrap_or_default()
+                .iter_u64_digits()
+                .collect_vec()[0];
+        assert_eq!(rho_bin_input, 42);
+
+        let rotation = 5;
+        let lane = RhoLane::new(rho_arith_lane, rotation);
+
+        let (conversions, special) = lane.get_full_witness();
+        assert_eq!(conversions.len(), slice_lane(rotation).len());
+        assert_eq!(special.output_acc_post, lane.output);
     }
 }

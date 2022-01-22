@@ -11,6 +11,7 @@ ethers = "0.6"
 serde_json = "1.0.66"
 serde = {version = "1.0.130", features = ["derive"] }
 bus-mapping = { path = "../bus-mapping"}
+eth-types = { path = "../eth-types"}
 zkevm-circuits = { path = "../zkevm-circuits"}
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2.2"
