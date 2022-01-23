@@ -1,7 +1,7 @@
 use crate::{
-    circuit_input_builder::CircuitInputStateRef, eth_types::GethExecStep,
-    operation::RW, Error,
+    circuit_input_builder::CircuitInputStateRef, operation::RW, Error,
 };
+use eth_types::GethExecStep;
 
 use super::Opcode;
 
@@ -32,10 +32,10 @@ mod calldatasize_tests {
     use crate::{
         bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        eth_types::ToWord,
-        evm::StackAddress,
         mock,
     };
+    use eth_types::evm_types::StackAddress;
+    use eth_types::ToWord;
     use pretty_assertions::assert_eq;
 
     #[test]
