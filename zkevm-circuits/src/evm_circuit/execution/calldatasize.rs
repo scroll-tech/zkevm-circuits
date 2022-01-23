@@ -88,11 +88,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use bus_mapping::{
-        bytecode,
-        eth_types::{ToLittleEndian, Word},
-        evm::OpcodeId,
-    };
+    use bus_mapping::{bytecode, evm::OpcodeId};
+    use eth_types::{ToLittleEndian, Word};
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr;
 
