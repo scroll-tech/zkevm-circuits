@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{MAX_GAS_SIZE_IN_BYTES, STACK_CAPACITY},
+        param::STACK_CAPACITY,
         step::ExecutionState,
         table::{AccountFieldTag, CallContextFieldTag, TxContextFieldTag},
         util::{
@@ -17,10 +17,7 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::{
-    eth_types::{ToLittleEndian, ToScalar},
-    evm::GasCost,
-};
+use eth_types::{evm_types::GasCost, ToLittleEndian, ToScalar};
 use halo2::{
     arithmetic::FieldExt,
     circuit::Region,
