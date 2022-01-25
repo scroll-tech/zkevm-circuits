@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         table::{AccountFieldTag, CallContextFieldTag, TxContextFieldTag},
         util::{
-            common_gadget::TransferWithGasFeeGadget,
+            common_gadget::{SameContextGadget, TransferWithGasFeeGadget},
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
@@ -26,6 +26,7 @@ use halo2::{
 
 #[derive(Clone, Debug)]
 pub(crate) struct SloadGadget<F> {
+    same_context: SameContextGadget<F>,
     tx_id: Cell<F>,
     storage_slot: Word<F>,
     value: Word<F>,
@@ -39,6 +40,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::SLOAD;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+        let opcode = cb.query_cell();
+
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.curr.state.rw_counter.clone();
 
@@ -97,7 +100,21 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         cb.stack_push(value.expr());
 
+        let step_state_transition = StepStateTransition {
+            rw_counter: Delta(3.expr()),      // TODO:
+            program_counter: Delta(1.expr()), // TODO:
+            stack_pointer: Delta(2.expr()),   // TODO:
+            ..Default::default()
+        };
+        let same_context = SameContextGadget::construct(
+            cb,
+            opcode,
+            step_state_transition,
+            Some(2100.expr()), // TODO:
+        );
+
         Self {
+            same_context: same_context,
             tx_id: tx_id,
             storage_slot: storage_slot,
             value: value,
@@ -108,13 +125,33 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
     fn assign_exec_step(
         &self,
-        _region: &mut Region<'_, F>,
-        _offset: usize,
+        region: &mut Region<'_, F>,
+        offset: usize,
         _block: &Block<F>,
         _tx: &Transaction<F>,
         _call: &Call<F>,
-        _step: &ExecStep,
+        step: &ExecStep,
     ) -> Result<(), Error> {
+        self.same_context.assign_exec_step(region, offset, step)?;
+
+        // TODO:
+
+        // let opcode = step.opcode.unwrap();
+
+        // let value = block.rws[step.rw_indices[0]].stack_value();
+        // self.value
+        //     .assign(region, offset, Some(value.to_le_bytes()))?;
+
+        // let num_additional_pushed =
+        //     (opcode.as_u8() - OpcodeId::PUSH1.as_u8()) as usize;
+        // for (idx, selector) in self.selectors.iter().enumerate() {
+        //     selector.assign(
+        //         region,
+        //         offset,
+        //         Some(F::from((idx < num_additional_pushed) as u64)),
+        //     )?;
+        // }
+
         Ok(())
     }
 }
