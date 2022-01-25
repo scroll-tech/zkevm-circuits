@@ -100,7 +100,7 @@ impl OpcodeId {
             // OpcodeId::ORIGIN => {},
             // OpcodeId::CALLER => {},
             // OpcodeId::CALLVALUE => {},
-            // OpcodeId::CALLDATALOAD => {},
+            OpcodeId::CALLDATALOAD => StackOnlyOpcode::<1>::gen_associated_ops,
             // OpcodeId::CALLDATASIZE => {},
             // OpcodeId::CALLDATACOPY => {},
             // OpcodeId::CODESIZE => {},
