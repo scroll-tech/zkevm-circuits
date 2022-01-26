@@ -57,7 +57,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         // Pop the key from the stack
         cb.stack_pop(key.expr());
 
-        // let is_warm = cb.query_bool();
+        let is_warm = cb.query_bool();
         // cb.storage_slot_access_list_read(
         //     tx_id.expr(),
         //     tx_callee_address.expr(),
@@ -65,7 +65,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         //     is_warm.expr(),
         // );
 
-        // let gas = SloadGasGadget::construct(cb, is_warm.expr());
+        let gas = SloadGasGadget::construct(cb, is_warm.expr());
 
         let value = cb.query_word();
         // let committed_value = cb.query_word();
@@ -103,7 +103,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             cb,
             opcode,
             step_state_transition,
-            Some(2100.expr()), // TODO:
+            Some(gas.gas_cost().expr()),
         );
 
         Self {
