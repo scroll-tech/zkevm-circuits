@@ -400,6 +400,7 @@ pub enum Rw {
         is_write: bool,
         key: Word,
         value: Word,
+        value_prev: Word,
     },
     AccountDestructed {
         rw_counter: usize,
@@ -473,7 +474,7 @@ impl Rw {
                 // tx_id,
                 key,
                 value,
-                // value_prev,
+                value_prev,
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
@@ -770,6 +771,7 @@ pub fn block_convert(
         is_write: s.op().rw().is_write(),
         key:  *s.op().key(),
         value:  *s.op().value(),
+        value_prev:  *s.op().value_prev(),
         // call_id: 1,
     }));
 
