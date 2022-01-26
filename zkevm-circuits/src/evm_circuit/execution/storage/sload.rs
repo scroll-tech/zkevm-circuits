@@ -28,7 +28,7 @@ use halo2::{
 pub(crate) struct SloadGadget<F> {
     same_context: SameContextGadget<F>,
     // tx_id: Cell<F>,
-    storage_slot: Word<F>,
+    key: Word<F>,
     value: Word<F>,
     /* committed_value: Word<F>,
      * gas: SloadGasGadget<F>, */
@@ -53,35 +53,27 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         // let tx_callee_address =
         //     cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
 
-        let storage_slot = RandomLinearCombination::new(
-            cb.query_bytes(),
-            cb.power_of_randomness(),
-        );
-        // Pop the storage_slot from the stack
-        cb.stack_pop(storage_slot.expr());
+        let key = cb.query_word();
+        // Pop the key from the stack
+        cb.stack_pop(key.expr());
 
         // let is_warm = cb.query_bool();
         // cb.storage_slot_access_list_read(
         //     tx_id.expr(),
         //     tx_callee_address.expr(),
-        //     storage_slot.expr(),
+        //     key.expr(),
         //     is_warm.expr(),
         // );
 
         // let gas = SloadGasGadget::construct(cb, is_warm.expr());
 
-        let value = RandomLinearCombination::new(
-            cb.query_bytes(),
-            cb.power_of_randomness(),
-        );
-        // let committed_value = RandomLinearCombination::new(
-        //     cb.query_bytes(),
-        //     cb.power_of_randomness(),
-        // );
+        let value = cb.query_word();
+        // let committed_value = cb.query_word();
+        // TODO:
         let tx_callee_address = 0;
         cb.storage_slot_read(
             tx_callee_address.expr(),
-            storage_slot.expr(),
+            key.expr(),
             value.expr(),
             value.expr(),
             // tx_id.expr(),
@@ -93,7 +85,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         // cb.storage_slot_access_list_write_with_reversion(
         //     tx_id.expr(),
         //     tx_callee_address.expr(),
-        //     storage_slot.expr(),
+        //     key.expr(),
         //     1.expr(),
         //     is_warm.expr(),
         //     is_persistent.expr(),
@@ -117,7 +109,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         Self {
             same_context: same_context,
             // tx_id: tx_id,
-            storage_slot: storage_slot,
+            key: key,
             value: value,
             /* committed_value: committed_value,
              * gas: gas, */
@@ -139,12 +131,12 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         // let opcode = step.opcode.unwrap();
 
-        let [storage_slot, value] = [step.rw_indices[0], step.rw_indices[2]]
+        let [key, value] = [step.rw_indices[0], step.rw_indices[2]]
             .map(|idx| block.rws[idx].stack_value());
-        self.storage_slot.assign(
+        self.key.assign(
             region,
             offset,
-            Some(storage_slot.to_le_bytes()),
+            Some(key.to_le_bytes()),
         )?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
@@ -203,10 +195,10 @@ mod test {
     use bus_mapping::{bytecode, evm::OpcodeId};
     use eth_types::Word;
 
-    fn test_ok(address: Word, _value: Word) {
+    fn test_ok(key: Word, _value: Word) {
         let bytecode = bytecode! {
             // TODO: SSTORE first
-            PUSH32(address)
+            PUSH32(key)
             #[start]
             SLOAD
             STOP
@@ -222,9 +214,9 @@ mod test {
 
     #[test]
     fn sload_gadget_rand() {
-        let a = rand_word();
-        let b = rand_word();
-        test_ok(a, b);
-        test_ok(a, b);
+        let key = rand_word();
+        let value = rand_word();
+        test_ok(key, value);
+        test_ok(key, value);
     }
 }
