@@ -394,6 +394,7 @@ pub enum Rw {
         value: Word,
         value_prev: Word,
     },
+    // TODO:
     AccountStorage {
         rw_counter: usize,
         is_write: bool,
@@ -460,6 +461,33 @@ impl Rw {
                 F::zero(),
                 F::from(*value as u64),
                 F::from(*value_prev as u64),
+                F::zero(),
+                F::zero(),
+            ],
+            // TODO:
+            Self::AccountStorage {
+                rw_counter,
+                is_write,
+                // tx_id,
+                // account_address,
+                // value,
+                // value_prev,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::AccountStorage as u64),
+                // F::from(*tx_id as u64),
+                // account_address.to_scalar().unwrap(),
+                // F::zero(),
+                // F::from(*value as u64),
+                // F::from(*value_prev as u64),
+                // F::zero(),
+                // F::zero(),
+                F::zero(),
+                F::zero(),
+                F::zero(),
+                F::zero(),
+                F::zero(),
                 F::zero(),
                 F::zero(),
             ],
@@ -734,7 +762,11 @@ pub fn block_convert(
         ),
         byte: s.op().value(),
     }));
-    // TODO add storage ops
+    block.rws.extend(storage_ops.iter().map(|s| Rw::AccountStorage {
+        rw_counter: s.rwc().into(),
+        is_write: s.op().rw().is_write(),
+        // call_id: 1,
+    }));
 
     block
 }

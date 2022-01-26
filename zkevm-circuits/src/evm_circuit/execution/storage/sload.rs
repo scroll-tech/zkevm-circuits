@@ -80,14 +80,21 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         //     cb.query_bytes(),
         //     cb.power_of_randomness(),
         // );
+        // cb.storage_slot_read(
+        //     // tx_callee_address.expr(),
+        //     0.expr(),
+        //     storage_slot.expr(),
+        //     value.expr(),
+        //     // tx_id.expr(),
+        //     1.expr(),
+        //     // committed_value.expr(),
+        //     0.expr(),
+        // );
         cb.storage_slot_read(
-            // tx_callee_address.expr(),
             0.expr(),
-            storage_slot.expr(),
-            value.expr(),
-            // tx_id.expr(),
-            1.expr(),
-            // committed_value.expr(),
+            0.expr(),
+            0.expr(),
+            0.expr(),
             0.expr(),
         );
 
