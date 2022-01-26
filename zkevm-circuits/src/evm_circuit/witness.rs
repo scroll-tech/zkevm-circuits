@@ -490,8 +490,10 @@ impl Rw {
                     value.to_le_bytes(),
                     randomness,
                 ),
-                // F::from(*value_prev as u64),
-                F::zero(),
+                RandomLinearCombination::random_linear_combine(
+                    value_prev.to_le_bytes(),
+                    randomness,
+                ),
                 F::zero(),
                 F::zero(),
             ],

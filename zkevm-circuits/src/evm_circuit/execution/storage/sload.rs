@@ -85,6 +85,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             0.expr(),
             storage_slot.expr(),
             value.expr(),
+            value.expr(),
             // tx_id.expr(),
             0.expr(),
             // committed_value.expr(),

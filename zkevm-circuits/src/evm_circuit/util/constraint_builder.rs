@@ -705,6 +705,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         account_address: Expression<F>,
         storage_slot: Expression<F>,
         value: Expression<F>,
+        value_prev: Expression<F>,
         tx_id: Expression<F>,
         committed_value: Expression<F>,
     ) {
@@ -716,8 +717,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 account_address,
                 storage_slot,
                 0.expr(),
-                value.clone(),
                 value,
+                value_prev,
                 tx_id,
                 committed_value,
             ],
