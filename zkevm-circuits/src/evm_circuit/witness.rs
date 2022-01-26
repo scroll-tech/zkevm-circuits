@@ -398,6 +398,7 @@ pub enum Rw {
     AccountStorage {
         rw_counter: usize,
         is_write: bool,
+        address: Address,
         key: Word,
         value: Word,
         value_prev: Word,
@@ -471,6 +472,7 @@ impl Rw {
             Self::AccountStorage {
                 rw_counter,
                 is_write,
+                address,
                 // tx_id,
                 key,
                 value,
@@ -479,8 +481,7 @@ impl Rw {
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
                 F::from(RwTableTag::AccountStorage as u64),
-                // account_address.to_scalar().unwrap(),
-                F::zero(),
+                address.to_scalar().unwrap(),
                 RandomLinearCombination::random_linear_combine(
                     key.to_le_bytes(),
                     randomness,
@@ -771,10 +772,10 @@ pub fn block_convert(
     block.rws.extend(storage_ops.iter().map(|s| Rw::AccountStorage {
         rw_counter: s.rwc().into(),
         is_write: s.op().rw().is_write(),
+        address: *s.op().address(),
         key:  *s.op().key(),
         value:  *s.op().value(),
         value_prev:  *s.op().value_prev(),
-        // call_id: 1,
     }));
 
     block

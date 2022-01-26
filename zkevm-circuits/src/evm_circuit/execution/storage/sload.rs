@@ -42,16 +42,14 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        // // Use rw_counter of the step which triggers next call as its
-        // call_id. let call_id = cb.curr.state.rw_counter.clone();
-
+        // Use rw_counter of the step which triggers next call as its call_id. 
+        // let call_id = cb.curr.state.rw_counter.clone();
         // let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
         //     CallContextFieldTag::TxId,
         //     CallContextFieldTag::RwCounterEndOfReversion,
         //     CallContextFieldTag::IsPersistent,
         // ]
         // .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
-
         // let tx_callee_address =
         //     cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
 
@@ -80,9 +78,9 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         //     cb.query_bytes(),
         //     cb.power_of_randomness(),
         // );
+        let tx_callee_address = 0;
         cb.storage_slot_read(
-            // tx_callee_address.expr(),
-            0.expr(),
+            tx_callee_address.expr(),
             storage_slot.expr(),
             value.expr(),
             value.expr(),
@@ -91,13 +89,6 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             // committed_value.expr(),
             0.expr(),
         );
-        // cb.storage_slot_read(
-        //     0.expr(),
-        //     0.expr(),
-        //     0.expr(),
-        //     0.expr(),
-        //     0.expr(),
-        // );
 
         // cb.storage_slot_access_list_write_with_reversion(
         //     tx_id.expr(),
