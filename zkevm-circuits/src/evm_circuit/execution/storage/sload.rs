@@ -27,11 +27,11 @@ use halo2::{
 #[derive(Clone, Debug)]
 pub(crate) struct SloadGadget<F> {
     same_context: SameContextGadget<F>,
-    tx_id: Cell<F>,
+    // tx_id: Cell<F>,
     storage_slot: Word<F>,
     value: Word<F>,
-    committed_value: Word<F>,
-    gas: SloadGasGadget<F>,
+    // committed_value: Word<F>,
+    // gas: SloadGasGadget<F>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
@@ -42,18 +42,18 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        // Use rw_counter of the step which triggers next call as its call_id.
-        let call_id = cb.curr.state.rw_counter.clone();
+        // // Use rw_counter of the step which triggers next call as its call_id.
+        // let call_id = cb.curr.state.rw_counter.clone();
 
-        let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
-            CallContextFieldTag::TxId,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            CallContextFieldTag::IsPersistent,
-        ]
-        .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
+        // let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
+        //     CallContextFieldTag::TxId,
+        //     CallContextFieldTag::RwCounterEndOfReversion,
+        //     CallContextFieldTag::IsPersistent,
+        // ]
+        // .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
 
-        let tx_callee_address =
-            cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
+        // let tx_callee_address =
+        //     cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
 
         let storage_slot = RandomLinearCombination::new(
             cb.query_bytes(),
@@ -62,48 +62,50 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         // Pop the storage_slot from the stack
         cb.stack_pop(storage_slot.expr());
 
-        let is_warm = cb.query_bool();
-        cb.storage_slot_access_list_read(
-            tx_id.expr(),
-            tx_callee_address.expr(),
-            storage_slot.expr(),
-            is_warm.expr(),
-        );
+        // let is_warm = cb.query_bool();
+        // cb.storage_slot_access_list_read(
+        //     tx_id.expr(),
+        //     tx_callee_address.expr(),
+        //     storage_slot.expr(),
+        //     is_warm.expr(),
+        // );
 
-        let gas = SloadGasGadget::construct(cb, is_warm.expr());
+        // let gas = SloadGasGadget::construct(cb, is_warm.expr());
 
         let value = RandomLinearCombination::new(
             cb.query_bytes(),
             cb.power_of_randomness(),
         );
-        let committed_value = RandomLinearCombination::new(
-            cb.query_bytes(),
-            cb.power_of_randomness(),
-        );
+        // let committed_value = RandomLinearCombination::new(
+        //     cb.query_bytes(),
+        //     cb.power_of_randomness(),
+        // );
         cb.storage_slot_read(
-            tx_callee_address.expr(),
+            // tx_callee_address.expr(),
+            0.expr(),
             storage_slot.expr(),
             value.expr(),
-            tx_id.expr(),
-            committed_value.expr(),
+            // tx_id.expr(),
+            1.expr(),
+            // committed_value.expr(),
+            0.expr(),
         );
 
-        cb.storage_slot_access_list_write_with_reversion(
-            tx_id.expr(),
-            tx_callee_address.expr(),
-            storage_slot.expr(),
-            1.expr(),
-            is_warm.expr(),
-            is_persistent.expr(),
-            rw_counter_end_of_reversion.expr(),
-        );
+        // cb.storage_slot_access_list_write_with_reversion(
+        //     tx_id.expr(),
+        //     tx_callee_address.expr(),
+        //     storage_slot.expr(),
+        //     1.expr(),
+        //     is_warm.expr(),
+        //     is_persistent.expr(),
+        //     rw_counter_end_of_reversion.expr(),
+        // );
 
         cb.stack_push(value.expr());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(3.expr()),      // TODO:
             program_counter: Delta(1.expr()), // TODO:
-            stack_pointer: Delta(2.expr()),   // TODO:
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(
@@ -115,11 +117,11 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         Self {
             same_context: same_context,
-            tx_id: tx_id,
+            // tx_id: tx_id,
             storage_slot: storage_slot,
             value: value,
-            committed_value: committed_value,
-            gas: gas,
+            // committed_value: committed_value,
+            // gas: gas,
         }
     }
 
