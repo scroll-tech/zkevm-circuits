@@ -30,8 +30,8 @@ pub(crate) struct SloadGadget<F> {
     // tx_id: Cell<F>,
     storage_slot: Word<F>,
     value: Word<F>,
-    // committed_value: Word<F>,
-    // gas: SloadGasGadget<F>,
+    /* committed_value: Word<F>,
+     * gas: SloadGasGadget<F>, */
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
@@ -42,8 +42,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        // // Use rw_counter of the step which triggers next call as its call_id.
-        // let call_id = cb.curr.state.rw_counter.clone();
+        // // Use rw_counter of the step which triggers next call as its
+        // call_id. let call_id = cb.curr.state.rw_counter.clone();
 
         // let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
         //     CallContextFieldTag::TxId,
@@ -120,8 +120,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             // tx_id: tx_id,
             storage_slot: storage_slot,
             value: value,
-            // committed_value: committed_value,
-            // gas: gas,
+            /* committed_value: committed_value,
+             * gas: gas, */
         }
     }
 
@@ -129,7 +129,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        _block: &Block<F>,
+        block: &Block<F>,
         _tx: &Transaction<F>,
         _call: &Call<F>,
         step: &ExecStep,
@@ -139,6 +139,16 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         // TODO:
 
         // let opcode = step.opcode.unwrap();
+
+        let [storage_slot, value] = [step.rw_indices[0], step.rw_indices[2]]
+            .map(|idx| block.rws[idx].stack_value());
+        self.storage_slot.assign(
+            region,
+            offset,
+            Some(storage_slot.to_le_bytes()),
+        )?;
+        self.value
+            .assign(region, offset, Some(value.to_le_bytes()))?;
 
         // let value = block.rws[step.rw_indices[0]].stack_value();
         // self.value
