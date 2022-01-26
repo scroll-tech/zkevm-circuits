@@ -398,6 +398,8 @@ pub enum Rw {
     AccountStorage {
         rw_counter: usize,
         is_write: bool,
+        key: Word,
+        value: Word,
     },
     AccountDestructed {
         rw_counter: usize,
@@ -469,24 +471,25 @@ impl Rw {
                 rw_counter,
                 is_write,
                 // tx_id,
-                // account_address,
-                // value,
+                key,
+                value,
                 // value_prev,
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
                 F::from(RwTableTag::AccountStorage as u64),
-                // F::from(*tx_id as u64),
                 // account_address.to_scalar().unwrap(),
-                // F::zero(),
-                // F::from(*value as u64),
+                F::zero(),
+                RandomLinearCombination::random_linear_combine(
+                    key.to_le_bytes(),
+                    randomness,
+                ),
+                F::zero(),
+                RandomLinearCombination::random_linear_combine(
+                    value.to_le_bytes(),
+                    randomness,
+                ),
                 // F::from(*value_prev as u64),
-                // F::zero(),
-                // F::zero(),
-                F::zero(),
-                F::zero(),
-                F::zero(),
-                F::zero(),
                 F::zero(),
                 F::zero(),
                 F::zero(),
@@ -765,6 +768,8 @@ pub fn block_convert(
     block.rws.extend(storage_ops.iter().map(|s| Rw::AccountStorage {
         rw_counter: s.rwc().into(),
         is_write: s.op().rw().is_write(),
+        key:  *s.op().key(),
+        value:  *s.op().value(),
         // call_id: 1,
     }));
 
