@@ -494,25 +494,25 @@ impl<
             storage_key_diff_inv,
         );
 
-        meta.create_gate("First storage row operation", |meta| {
-            let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
-            let q_target_next = meta.query_fixed(q_target, Rotation::next());
-            let q_storage_first = q_target_cur.clone()
-                * (two.clone() - q_target_cur.clone())
-                * (three.clone() - q_target_cur.clone())
-                * (four.clone() - q_target_cur)
-                * (q_target_next.clone() - one.clone())
-                * (q_target_next.clone() - two.clone())
-                * (q_target_next - three.clone());
+        // meta.create_gate("First storage row operation", |meta| {
+        //     let q_target_cur = meta.query_fixed(q_target, Rotation::cur());
+        //     let q_target_next = meta.query_fixed(q_target, Rotation::next());
+        //     let q_storage_first = q_target_cur.clone()
+        //         * (two.clone() - q_target_cur.clone())
+        //         * (three.clone() - q_target_cur.clone())
+        //         * (four.clone() - q_target_cur)
+        //         * (q_target_next.clone() - one.clone())
+        //         * (q_target_next.clone() - two.clone())
+        //         * (q_target_next - three.clone());
 
-            let flag = meta.query_advice(flag, Rotation::cur());
-            let q_read = one.clone() - flag;
+        //     let flag = meta.query_advice(flag, Rotation::cur());
+        //     let q_read = one.clone() - flag;
 
-            vec![
-                q_storage_first * q_read, /* first storage op has to be
-                                           * write (flag = 1) */
-            ]
-        });
+        //     vec![
+        //         q_storage_first * q_read, /* first storage op has to be
+        //                                    * write (flag = 1) */
+        //     ]
+        // });
 
         meta.create_gate("Storage operation", |meta| {
             let q_storage_not_first = q_storage_not_first(meta);
