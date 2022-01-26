@@ -69,18 +69,18 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let gas = SloadGasGadget::construct(cb, is_warm.expr());
 
         let value = cb.query_word();
-        // let committed_value = cb.query_word();
+        let value_prev = cb.query_word();
+        let committed_value = cb.query_word();
         // TODO:
         let tx_callee_address = 0;
         cb.storage_slot_read(
             tx_callee_address.expr(),
             key.expr(),
             value.expr(),
-            value.expr(),
+            value_prev.expr(),
             // tx_id.expr(),
             0.expr(),
-            // committed_value.expr(),
-            0.expr(),
+            committed_value.expr(),
         );
 
         // cb.storage_slot_access_list_write_with_reversion(
