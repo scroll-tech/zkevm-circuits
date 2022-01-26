@@ -769,14 +769,16 @@ pub fn block_convert(
         ),
         byte: s.op().value(),
     }));
-    block.rws.extend(storage_ops.iter().map(|s| Rw::AccountStorage {
-        rw_counter: s.rwc().into(),
-        is_write: s.op().rw().is_write(),
-        address: *s.op().address(),
-        key:  *s.op().key(),
-        value:  *s.op().value(),
-        value_prev:  *s.op().value_prev(),
-    }));
+    block
+        .rws
+        .extend(storage_ops.iter().map(|s| Rw::AccountStorage {
+            rw_counter: s.rwc().into(),
+            is_write: s.op().rw().is_write(),
+            address: *s.op().address(),
+            key: *s.op().key(),
+            value: *s.op().value(),
+            value_prev: *s.op().value_prev(),
+        }));
 
     block
 }

@@ -31,7 +31,8 @@ pub(crate) struct SloadGadget<F> {
     key: Word<F>,
     value: Word<F>,
     /* committed_value: Word<F>,
-     * gas: SloadGasGadget<F>, */
+     */
+    gas: SloadGasGadget<F>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
@@ -42,7 +43,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        // Use rw_counter of the step which triggers next call as its call_id. 
+        // Use rw_counter of the step which triggers next call as its call_id.
         // let call_id = cb.curr.state.rw_counter.clone();
         // let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
         //     CallContextFieldTag::TxId,
@@ -112,7 +113,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             key: key,
             value: value,
             /* committed_value: committed_value,
-             * gas: gas, */
+             */
+            gas: gas,
         }
     }
 
@@ -127,33 +129,15 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        // TODO:
-
-        // let opcode = step.opcode.unwrap();
-
         let [key, value] = [step.rw_indices[0], step.rw_indices[2]]
             .map(|idx| block.rws[idx].stack_value());
-        self.key.assign(
-            region,
-            offset,
-            Some(key.to_le_bytes()),
-        )?;
+        self.key.assign(region, offset, Some(key.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        // let value = block.rws[step.rw_indices[0]].stack_value();
-        // self.value
-        //     .assign(region, offset, Some(value.to_le_bytes()))?;
-
-        // let num_additional_pushed =
-        //     (opcode.as_u8() - OpcodeId::PUSH1.as_u8()) as usize;
-        // for (idx, selector) in self.selectors.iter().enumerate() {
-        //     selector.assign(
-        //         region,
-        //         offset,
-        //         Some(F::from((idx < num_additional_pushed) as u64)),
-        //     )?;
-        // }
+        // TODO:
+        // self.gas.assign(region, offset,
+        // ???
 
         Ok(())
     }
