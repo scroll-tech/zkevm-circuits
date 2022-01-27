@@ -394,7 +394,6 @@ pub enum Rw {
         value: Word,
         value_prev: Word,
     },
-    // TODO:
     AccountStorage {
         rw_counter: usize,
         is_write: bool,
@@ -402,6 +401,8 @@ pub enum Rw {
         key: Word,
         value: Word,
         value_prev: Word,
+        tx_id: usize,
+        committed_value: Word,
     },
     AccountDestructed {
         rw_counter: usize,
@@ -468,15 +469,15 @@ impl Rw {
                 F::zero(),
                 F::zero(),
             ],
-            // TODO:
             Self::AccountStorage {
                 rw_counter,
                 is_write,
                 address,
-                // tx_id,
                 key,
                 value,
                 value_prev,
+                tx_id,
+                committed_value,
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
@@ -495,8 +496,11 @@ impl Rw {
                     value_prev.to_le_bytes(),
                     randomness,
                 ),
-                F::zero(),
-                F::zero(),
+                F::from(*tx_id as u64),
+                RandomLinearCombination::random_linear_combine(
+                    committed_value.to_le_bytes(),
+                    randomness,
+                ),
             ],
             Self::Account {
                 rw_counter,
@@ -778,6 +782,8 @@ pub fn block_convert(
             key: *s.op().key(),
             value: *s.op().value(),
             value_prev: *s.op().value_prev(),
+            tx_id: 1usize, // TODO:
+            committed_value: 0.into(), // TODO:
         }));
 
     block
