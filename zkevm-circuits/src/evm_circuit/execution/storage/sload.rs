@@ -30,8 +30,7 @@ pub(crate) struct SloadGadget<F> {
     // tx_id: Cell<F>,
     key: Word<F>,
     value: Word<F>,
-    /* committed_value: Word<F>,
-     */
+    // committed_value: Word<F>,
     gas: SloadGasGadget<F>,
 }
 
@@ -54,6 +53,11 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         // let tx_callee_address =
         //     cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
 
+
+        // TODO:
+        let tx_callee_address = 0;
+        let tx_id = 0;
+
         let key = cb.query_word();
         // Pop the key from the stack
         cb.stack_pop(key.expr());
@@ -70,14 +74,11 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         let value = cb.query_word();
         let committed_value = cb.query_word();
-        // TODO:
-        let tx_callee_address = 0;
         cb.storage_slot_read(
             tx_callee_address.expr(),
             key.expr(),
             value.expr(),
-            // tx_id.expr(),
-            0.expr(),
+            tx_id.expr(),
             committed_value.expr(),
         );
 
@@ -110,8 +111,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             // tx_id: tx_id,
             key: key,
             value: value,
-            /* committed_value: committed_value,
-             */
+            // committed_value: committed_value,
             gas: gas,
         }
     }
