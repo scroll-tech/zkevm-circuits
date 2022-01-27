@@ -153,6 +153,20 @@ pub enum RwTableTag {
     Memory,
 }
 
+impl RwTableTag {
+    pub fn is_reversible(self) -> bool {
+        return matches!(
+            self,
+            RwTableTag::TxAccessListAccount
+                | RwTableTag::TxAccessListStorageSlot
+                | RwTableTag::TxRefund
+                | RwTableTag::Account
+                | RwTableTag::AccountStorage
+                | RwTableTag::AccountDestructed
+        );
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum AccountFieldTag {
     Nonce = 1,

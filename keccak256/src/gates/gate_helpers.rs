@@ -1,15 +1,6 @@
-use halo2::circuit::Cell;
 use num_bigint::BigUint;
 use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
-
-#[derive(Debug, Clone, Copy)]
-pub struct BlockCount<F> {
-    pub cell: Cell,
-    pub value: F,
-}
-
-pub type BlockCount2<F> = (BlockCount<F>, BlockCount<F>);
 
 /// Convert a bigUint value to FieldExt
 ///

@@ -527,16 +527,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             // Calculate state_write_counter so far
             let state_write_counter = cb.curr.state.state_write_counter.expr()
                 + cb.state_write_counter_offset.expr();
+
             // Swap value and value_prev respect to tag
-            match tag {
-                RwTableTag::TxAccessListAccount => values.swap(3, 4),
-                RwTableTag::TxAccessListStorageSlot => values.swap(3, 4),
-                RwTableTag::Account => values.swap(3, 4),
-                RwTableTag::AccountStorage => values.swap(3, 4),
-                RwTableTag::AccountDestructed => values.swap(3, 4),
-                RwTableTag::TxRefund => values.swap(3, 4),
-                _ => {}
-            }
+            if tag.is_reversible() {
+                values.swap(3, 4)
+            };
 
             cb.rw_lookup_with_counter(
                 name,
