@@ -424,6 +424,8 @@ impl Op for TxAccessListAccountOp {
 /// `SLOAD` step of the [`ExecStep`](crate::circuit_input_builder::ExecStep).
 #[derive(Clone, PartialEq, Eq)]
 pub struct TxAccessListAccountStorageOp {
+    /// RW
+    pub rw: RW,
     /// Transaction ID: Transaction index in the block starting at 1.
     pub tx_id: usize,
     /// Account Address
@@ -434,6 +436,27 @@ pub struct TxAccessListAccountStorageOp {
     pub value: bool,
     /// Value before the operation
     pub value_prev: bool,
+}
+
+impl TxAccessListAccountStorageOp{
+    /// Create a new instance of a `TxAccessListAccountStorageOp` from it's components.
+    pub fn new(
+        rw: RW,
+        tx_id: usize,
+        address: Address,
+        key: Word,
+        value: bool,
+        value_prev: bool,
+    ) -> TxAccessListAccountStorageOp {
+        TxAccessListAccountStorageOp{
+            rw,
+            tx_id,
+            address,
+            key,
+            value,
+            value_prev,
+        }
+    }
 }
 
 impl fmt::Debug for TxAccessListAccountStorageOp {

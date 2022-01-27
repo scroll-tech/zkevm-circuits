@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
 use crate::{
-    operation::{StorageOp, RW},
+    operation::{StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
 };
 use eth_types::GethExecStep;
@@ -26,6 +26,16 @@ impl Opcode for Sload {
         // Manage first stack read at latest stack position
         state.push_stack_op(RW::READ, stack_position, stack_value_read);
 
+        // TxAccessList AccountStorage read
+        state.push_op(TxAccessListAccountStorageOp::new(
+            RW::READ,
+            1usize, // TODO:
+            state.call().address,
+            stack_value_read,
+            true, // TODO: always assume is_warm
+            true,
+        ));      
+
         // Storage read
         let storage_value_read = step.storage.get_or_err(&stack_value_read)?;
         state.push_op(StorageOp::new(
@@ -34,6 +44,17 @@ impl Opcode for Sload {
             stack_value_read,
             storage_value_read,
             storage_value_read,
+        ));
+
+        // TxAccessList AccountStorage write
+        // TODO: revert?
+        state.push_op(TxAccessListAccountStorageOp::new(
+            RW::WRITE,
+            1usize, // TODO:
+            state.call().address,
+            stack_value_read,
+            true,
+            true,
         ));
 
         // First stack write
@@ -96,6 +117,15 @@ mod sload_tests {
             StackAddress::from(1023),
             Word::from(0x0u32),
         );
+        // Add TxAccessListAccountStorageOp associated to the TxAccessListAccountStorage read.
+        state_ref.push_op(TxAccessListAccountStorageOp::new(
+            RW::READ,
+            1usize, // TODO:
+            state_ref.tx.calls()[0].address,
+            Word::from(0x0u32),
+            true,
+            true,
+        ));
         // Add StorageOp associated to the storage read.
         state_ref.push_op(StorageOp::new(
             RW::READ,
@@ -103,6 +133,15 @@ mod sload_tests {
             Word::from(0x0u32),
             Word::from(0x6fu32),
             Word::from(0x6fu32),
+        ));
+        // Add TxAccessListAccountStorageOp associated to the TxAccessListAccountStorage write.
+        state_ref.push_op(TxAccessListAccountStorageOp::new(
+            RW::WRITE,
+            1usize, // TODO:
+            state_ref.tx.calls()[0].address,
+            Word::from(0x0u32),
+            true,
+            true,
         ));
         // Add StackOp associated to the stack push.
         state_ref.push_stack_op(
