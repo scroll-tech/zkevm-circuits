@@ -153,6 +153,20 @@ pub enum RwTableTag {
     Memory,
 }
 
+impl RwTableTag {
+    pub fn is_reversible(self) -> bool {
+        return matches!(
+            self,
+            RwTableTag::TxAccessListAccount
+                | RwTableTag::TxAccessListStorageSlot
+                | RwTableTag::TxRefund
+                | RwTableTag::Account
+                | RwTableTag::AccountStorage
+                | RwTableTag::AccountDestructed
+        );
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum AccountFieldTag {
     Nonce = 1,
@@ -237,7 +251,7 @@ pub(crate) enum Lookup<F> {
         /// all tags.
         tag: Expression<F>,
         /// Values corresponding to the tag.
-        values: [Expression<F>; 5],
+        values: [Expression<F>; 7],
     },
     /// Lookup to bytecode table, which contains all used creation code and
     /// contract code.

@@ -22,7 +22,7 @@ impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let tx_table = [(); 4].map(|_| meta.advice_column());
-        let rw_table = [(); 8].map(|_| meta.advice_column());
+        let rw_table = [(); 10].map(|_| meta.advice_column());
         let bytecode_table = [(); 4].map(|_| meta.advice_column());
         let block_table = [(); 3].map(|_| meta.advice_column());
         // Use constant expression to mock constant instance column for a more

@@ -1,59 +1,58 @@
 use crate::gates::{
-    gate_helpers::BlockCount2,
-    rho_checks::{
-        BlockCountFinalConfig, LaneRotateConversionConfig, RhoAdvices,
-    },
+    rho_checks::{LaneRotateConversionConfig, OverflowCheckConfig},
+    tables::{Base13toBase9TableConfig, SpecialChunkTableConfig},
 };
 
 use halo2::{
-    circuit::{Cell, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, TableColumn},
+    circuit::{Cell, Layouter},
+    plonk::{Advice, Column, ConstraintSystem, Error},
 };
-use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
 use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
 pub struct RhoConfig<F> {
     state: [Column<Advice>; 25],
-    state_rotate_convert_configs: [LaneRotateConversionConfig<F>; 25],
-    final_block_count_config: BlockCountFinalConfig<F>,
+    lane_configs: [LaneRotateConversionConfig<F>; 25],
+    overflow_check_config: OverflowCheckConfig<F>,
+    base13_to_9_table: Base13toBase9TableConfig<F>,
+    special_chunk_table: SpecialChunkTableConfig<F>,
 }
 
 impl<F: FieldExt> RhoConfig<F> {
-    pub const OFFSET: usize = 2;
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
-        adv: &RhoAdvices,
-        axiliary: [Column<Advice>; 2],
-        base13_to_9: [TableColumn; 3],
-        special: [TableColumn; 2],
+        base13_to_9_table: Base13toBase9TableConfig<F>,
+        special_chunk_table: SpecialChunkTableConfig<F>,
     ) -> Self {
-        for lane in state.iter() {
-            meta.enable_equality((*lane).into());
-        }
-        let state_rotate_convert_configs = (0..5)
-            .cartesian_product(0..5)
-            .map(|(x, y)| {
+        let lane_configs: [LaneRotateConversionConfig<F>; 25] = state
+            .iter()
+            .enumerate()
+            .map(|(idx, &lane)| {
                 LaneRotateConversionConfig::configure(
                     meta,
-                    (x, y),
-                    adv.clone(),
-                    axiliary,
-                    base13_to_9,
-                    special,
+                    idx,
+                    lane,
+                    &base13_to_9_table,
+                    &special_chunk_table,
                 )
             })
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
-        let final_block_count_config =
-            BlockCountFinalConfig::configure(meta, axiliary);
+        let overflow_detector_cols = lane_configs
+            .iter()
+            .map(|config| config.overflow_detector)
+            .collect();
+        let overflow_check_config =
+            OverflowCheckConfig::configure(meta, overflow_detector_cols);
         Self {
             state,
-            state_rotate_convert_configs,
-            final_block_count_config,
+            lane_configs,
+            overflow_check_config,
+            base13_to_9_table,
+            special_chunk_table,
         }
     }
     pub fn assign_rotation_checks(
@@ -61,53 +60,42 @@ impl<F: FieldExt> RhoConfig<F> {
         layouter: &mut impl Layouter<F>,
         state: [(Cell, F); 25],
     ) -> Result<[(Cell, F); 25], Error> {
-        type R<F> = ((Cell, F), BlockCount2<F>);
-        let lane_and_bcs: Result<Vec<R<F>>, Error> = state
+        type R<F> = ((Cell, F), Vec<(Cell, F)>, Vec<(Cell, F)>);
+        let lane_and_ods: Result<Vec<R<F>>, Error> = state
             .iter()
-            .enumerate()
-            .map(|(idx, &lane)| -> Result<R<F>, Error> {
-                let (lane_next_row, bc) =
-                    self.state_rotate_convert_configs[idx].assign_region(
-                        &mut layouter.namespace(|| format!("arc lane {}", idx)),
-                        lane,
-                    )?;
-                Ok((lane_next_row, bc))
+            .zip(self.lane_configs.iter())
+            .map(|(&lane, lane_config)| -> Result<R<F>, Error> {
+                let (out_lane, step2_od, step3_od) =
+                    lane_config.assign_region(layouter, lane)?;
+                Ok((out_lane, step2_od, step3_od))
             })
             .into_iter()
             .collect();
-        let lane_and_bcs = lane_and_bcs?;
-        let lane_and_bcs: [R<F>; 25] = lane_and_bcs.try_into().unwrap();
+        let lane_and_ods = lane_and_ods?;
+        let lane_and_ods: [R<F>; 25] = lane_and_ods.try_into().unwrap();
+        let next_state = lane_and_ods.clone().map(|(out_lane, _, _)| out_lane);
 
-        let block_counts = lane_and_bcs.map(|(_, bc)| bc);
-        let next_state = lane_and_bcs.map(|(lane_next_row, _)| lane_next_row);
-
-        self.final_block_count_config.assign_region(
-            &mut layouter.namespace(|| "Final block count check"),
-            block_counts,
+        let step2_od_join = lane_and_ods
+            .iter()
+            .map(|(_, step2_od, _)| step2_od.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+        let step3_od_join = lane_and_ods
+            .iter()
+            .map(|(_, _, step3_od)| step3_od.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+        self.overflow_check_config.assign_region(
+            &mut layouter.namespace(|| "Final overflow check"),
+            step2_od_join,
+            step3_od_join,
         )?;
         Ok(next_state)
     }
 
-    pub fn assign_region(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        next_state: [(Cell, F); 25],
-    ) -> Result<(), Error> {
-        for (idx, next_lane) in next_state.iter().enumerate() {
-            let cell = region.assign_advice(
-                || "lane next row",
-                self.state[idx],
-                offset + 1,
-                || Ok(next_lane.1),
-            )?;
-            region.constrain_equal(cell, next_lane.0)?;
-        }
-        Ok(())
-    }
-
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        self.state_rotate_convert_configs[0].load(layouter)?;
+        self.base13_to_9_table.load(layouter)?;
+        self.special_chunk_table.load(layouter)?;
         Ok(())
     }
 }
@@ -118,6 +106,9 @@ mod tests {
     use crate::arith_helpers::*;
     use crate::common::*;
     use crate::gates::gate_helpers::*;
+    use crate::gates::tables::{
+        Base13toBase9TableConfig, SpecialChunkTableConfig,
+    };
     use crate::keccak_arith::*;
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
@@ -147,24 +138,15 @@ mod tests {
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap();
-                let cols: [Column<Advice>; 7] = state[0..7].try_into().unwrap();
-                let adv = RhoAdvices::from(cols);
-                let axiliary = [state[8], state[9]];
 
-                let base13_to_9 = [
-                    meta.lookup_table_column(),
-                    meta.lookup_table_column(),
-                    meta.lookup_table_column(),
-                ];
-                let special =
-                    [meta.lookup_table_column(), meta.lookup_table_column()];
+                let base13_to_9 = Base13toBase9TableConfig::configure(meta);
+                let special_chunk_table =
+                    SpecialChunkTableConfig::configure(meta);
                 RhoConfig::configure(
                     meta,
                     state,
-                    &adv,
-                    axiliary,
                     base13_to_9,
-                    special,
+                    special_chunk_table,
                 )
             }
 
@@ -202,18 +184,6 @@ mod tests {
                 let next_state =
                     config.assign_rotation_checks(&mut layouter, state)?;
                 assert_eq!(next_state.map(|lane| lane.1), self.out_state);
-                layouter.assign_region(
-                    || "assign output state",
-                    |mut region| {
-                        let offset = 1;
-                        config.assign_region(
-                            &mut region,
-                            offset,
-                            next_state,
-                        )?;
-                        Ok(())
-                    },
-                )?;
                 Ok(())
             }
         }
@@ -244,10 +214,10 @@ mod tests {
             in_state,
             out_state,
         };
+        let k = 15;
         #[cfg(feature = "dev-graph")]
         {
             use plotters::prelude::*;
-            let k = 15;
             let root =
                 BitMapBackend::new("rho-test-circuit.png", (16384, 65536))
                     .into_drawing_area();
@@ -258,7 +228,7 @@ mod tests {
                 .unwrap();
         }
         // Test without public inputs
-        let prover = MockProver::<Fp>::run(15, &circuit, vec![]).unwrap();
+        let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
 
         assert_eq!(prover.verify(), Ok(()));
     }

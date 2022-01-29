@@ -442,7 +442,7 @@ impl Rw {
         }
     }
 
-    pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> [F; 8] {
+    pub fn table_assignment<F: FieldExt>(&self, randomness: F) -> [F; 10] {
         match self {
             Self::TxAccessListAccount {
                 rw_counter,
@@ -457,8 +457,10 @@ impl Rw {
                 F::from(RwTableTag::TxAccessListAccount as u64),
                 F::from(*tx_id as u64),
                 account_address.to_scalar().unwrap(),
+                F::zero(),
                 F::from(*value as u64),
                 F::from(*value_prev as u64),
+                F::zero(),
                 F::zero(),
             ],
             Self::Account {
@@ -482,8 +484,10 @@ impl Rw {
                     F::from(RwTableTag::Account as u64),
                     account_address.to_scalar().unwrap(),
                     F::from(*field_tag as u64),
+                    F::zero(),
                     to_scalar(value),
                     to_scalar(value_prev),
+                    F::zero(),
                     F::zero(),
                 ]
             }
@@ -499,6 +503,7 @@ impl Rw {
                 F::from(RwTableTag::CallContext as u64),
                 F::from(*call_id as u64),
                 F::from(*field_tag as u64),
+                F::zero(),
                 match field_tag {
                     CallContextFieldTag::OpcodeSource
                     | CallContextFieldTag::Value => {
@@ -514,6 +519,7 @@ impl Rw {
                 },
                 F::zero(),
                 F::zero(),
+                F::zero(),
             ],
             Self::Stack {
                 rw_counter,
@@ -527,10 +533,12 @@ impl Rw {
                 F::from(RwTableTag::Stack as u64),
                 F::from(*call_id as u64),
                 F::from(*stack_pointer as u64),
+                F::zero(),
                 RandomLinearCombination::random_linear_combine(
                     value.to_le_bytes(),
                     randomness,
                 ),
+                F::zero(),
                 F::zero(),
                 F::zero(),
             ],
@@ -546,7 +554,9 @@ impl Rw {
                 F::from(RwTableTag::Memory as u64),
                 F::from(*call_id as u64),
                 F::from(*memory_address),
+                F::zero(),
                 F::from(*byte as u64),
+                F::zero(),
                 F::zero(),
                 F::zero(),
             ],

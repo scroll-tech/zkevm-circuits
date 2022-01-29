@@ -172,20 +172,22 @@ impl<F: FieldExt> BaseConversionConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arith_helpers::convert_b2_to_b13;
+    use crate::arith_helpers::{convert_b2_to_b13, convert_b9_lane_to_b13};
     use crate::gates::{
-        gate_helpers::biguint_to_f, tables::FromBinaryTableConfig,
+        gate_helpers::biguint_to_f,
+        tables::{FromBase9TableConfig, FromBinaryTableConfig},
     };
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
+    use num_bigint::BigUint;
     use pairing::arithmetic::FieldExt;
     use pairing::bn256::Fr as Fp;
     use pretty_assertions::assert_eq;
     #[test]
-    fn test_base_conversion() {
+    fn test_base_conversion_from_b2() {
         // We have to use a MyConfig because:
         // We need to load the table
         #[derive(Debug, Clone)]
@@ -315,6 +317,129 @@ mod tests {
                 .render(k, &circuit, &root)
                 .unwrap();
         }
+        let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn test_base_conversion_from_b9() {
+        #[derive(Debug, Clone)]
+        struct MyConfig<F> {
+            lane: Column<Advice>,
+            flag: Column<Advice>,
+            table: FromBase9TableConfig<F>,
+            conversion: BaseConversionConfig<F>,
+        }
+        impl<F: FieldExt> MyConfig<F> {
+            pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+                let table = FromBase9TableConfig::configure(meta);
+                let lane = meta.advice_column();
+                let flag = meta.advice_column();
+                let base_info = table.get_base_info(false);
+                let conversion = BaseConversionConfig::configure(
+                    meta, base_info, lane, flag,
+                );
+                Self {
+                    lane,
+                    flag,
+                    table,
+                    conversion,
+                }
+            }
+
+            pub fn load(
+                &self,
+                layouter: &mut impl Layouter<F>,
+            ) -> Result<(), Error> {
+                self.table.load(layouter)
+            }
+
+            pub fn assign_region(
+                &self,
+                layouter: &mut impl Layouter<F>,
+                input: F,
+            ) -> Result<F, Error> {
+                // The main flag is enabled
+                let flag_value = F::one();
+                let (lane, flag) = layouter.assign_region(
+                    || "Input lane",
+                    |mut region| {
+                        let lane = region.assign_advice(
+                            || "Input lane",
+                            self.lane,
+                            0,
+                            || Ok(input),
+                        )?;
+                        let flag = region.assign_advice(
+                            || "main flag",
+                            self.flag,
+                            0,
+                            || Ok(flag_value),
+                        )?;
+                        Ok((lane, flag))
+                    },
+                )?;
+                let output = self.conversion.assign_region(
+                    layouter,
+                    (lane, input),
+                    (flag, flag_value),
+                )?;
+                layouter.assign_region(
+                    || "Input lane",
+                    |mut region| {
+                        let cell = region.assign_advice(
+                            || "Output lane",
+                            self.lane,
+                            0,
+                            || Ok(output.1),
+                        )?;
+                        region.constrain_equal(cell, output.0)?;
+                        Ok(())
+                    },
+                )?;
+                Ok(output.1)
+            }
+        }
+
+        #[derive(Default)]
+        struct MyCircuit<F> {
+            input_lane: F,
+            output_lane: F,
+        }
+        impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+            type Config = MyConfig<F>;
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
+
+            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+                Self::Config::configure(meta)
+            }
+
+            fn synthesize(
+                &self,
+                config: Self::Config,
+                mut layouter: impl Layouter<F>,
+            ) -> Result<(), Error> {
+                config.load(&mut layouter)?;
+                let output =
+                    config.assign_region(&mut layouter, self.input_lane)?;
+                assert_eq!(output, self.output_lane);
+                Ok(())
+            }
+        }
+        let input = BigUint::parse_bytes(
+            b"02939a42ef593e37757abe328e9e409e75dcd76cf1b3427bc3",
+            16,
+        )
+        .unwrap();
+        let circuit = MyCircuit::<Fp> {
+            input_lane: biguint_to_f::<Fp>(&input),
+            output_lane: biguint_to_f::<Fp>(&convert_b9_lane_to_b13(input)),
+        };
+        let k = 17;
         let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }

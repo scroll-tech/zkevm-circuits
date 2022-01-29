@@ -1,8 +1,6 @@
-//! Error module for the bus-mapping crate
+//! Error module for the eth-types crate
 
-use crate::{Address, GethExecStep, Word};
 use core::fmt::{Display, Formatter, Result as FmtResult};
-use ethers_providers::ProviderError;
 use std::error::Error as StdError;
 
 /// Error type for any BusMapping related failure.
@@ -16,8 +14,6 @@ pub enum Error {
     StackAddressParsing,
     /// Error while trying to convert to an incorrect `OpcodeId`.
     InvalidOpConversion,
-    /// Serde de/serialization error.
-    SerdeError(serde_json::error::Error),
     /// Error while trying to access an invalid/empty Stack location.
     InvalidStackPointer,
     /// Error while trying to access an invalid/empty Memory location.
@@ -27,26 +23,6 @@ pub enum Error {
     /// Error when an EvmWord is too big to be converted into a
     /// `MemoryAddress`.
     WordToMemAddr,
-    /// Error while generating a trace.
-    TracingError,
-    /// JSON-RPC related error.
-    JSONRpcError(ProviderError),
-    /// OpcodeId is not a call type.
-    OpcodeIdNotCallType,
-    /// Account not found in the StateDB
-    AccountNotFound(Address),
-    /// Storage key not found in the StateDB
-    StorageKeyNotFound(Address, Word),
-    /// Unable to figure out error at a [`GethExecStep`]
-    UnexpectedExecStepError(&'static str, Box<GethExecStep>),
-    /// Invalid [`GethExecStep`] due to an invalid/unexpected value in it.
-    InvalidGethExecStep(&'static str, Box<GethExecStep>),
-}
-
-impl From<ProviderError> for Error {
-    fn from(err: ProviderError) -> Self {
-        Error::JSONRpcError(err)
-    }
 }
 
 impl Display for Error {

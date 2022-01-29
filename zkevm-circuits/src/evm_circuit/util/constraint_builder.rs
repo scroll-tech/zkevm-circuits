@@ -480,7 +480,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         counter: Expression<F>,
         is_write: Expression<F>,
         tag: RwTableTag,
-        values: [Expression<F>; 5],
+        values: [Expression<F>; 7],
     ) {
         self.add_lookup(
             name,
@@ -500,7 +500,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         name: &'static str,
         is_write: Expression<F>,
         tag: RwTableTag,
-        values: [Expression<F>; 5],
+        values: [Expression<F>; 7],
     ) {
         self.rw_lookup_with_counter(
             name,
@@ -516,7 +516,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         name: &'static str,
         tag: RwTableTag,
-        mut values: [Expression<F>; 5],
+        mut values: [Expression<F>; 7],
         is_persistent: Expression<F>,
         rw_counter_end_of_reversion: Expression<F>,
     ) {
@@ -527,15 +527,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             // Calculate state_write_counter so far
             let state_write_counter = cb.curr.state.state_write_counter.expr()
                 + cb.state_write_counter_offset.expr();
+
             // Swap value and value_prev respect to tag
-            match tag {
-                RwTableTag::TxAccessListAccount => values.swap(2, 3),
-                RwTableTag::TxAccessListStorageSlot => values.swap(3, 4),
-                RwTableTag::Account => values.swap(2, 3),
-                RwTableTag::AccountStorage => values.swap(3, 4),
-                RwTableTag::AccountDestructed => values.swap(2, 3),
-                _ => {}
-            }
+            if tag.is_reversible() {
+                values.swap(3, 4)
+            };
 
             cb.rw_lookup_with_counter(
                 name,
@@ -562,7 +558,15 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             "AccountAccessList write",
             true.expr(),
             RwTableTag::TxAccessListAccount,
-            [tx_id, account_address, value, value_prev, 0.expr()],
+            [
+                tx_id,
+                account_address,
+                0.expr(),
+                value,
+                value_prev,
+                0.expr(),
+                0.expr(),
+            ],
         );
     }
 
@@ -581,8 +585,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 account_address,
                 field_tag.expr(),
+                0.expr(),
                 value.clone(),
                 value,
+                0.expr(),
                 0.expr(),
             ],
         );
@@ -602,8 +608,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 account_address,
                 field_tag.expr(),
+                0.expr(),
                 value,
                 value_prev,
+                0.expr(),
                 0.expr(),
             ],
         );
@@ -624,8 +632,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 account_address,
                 field_tag.expr(),
+                0.expr(),
                 value,
                 value_prev,
+                0.expr(),
                 0.expr(),
             ],
             is_persistent,
@@ -658,7 +668,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 field_tag.expr(),
+                0.expr(),
                 value,
+                0.expr(),
                 0.expr(),
                 0.expr(),
             ],
@@ -694,7 +706,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 self.curr.state.call_id.expr(),
                 self.curr.state.stack_pointer.expr() + stack_pointer_offset,
+                0.expr(),
                 value,
+                0.expr(),
                 0.expr(),
                 0.expr(),
             ],
@@ -716,7 +730,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 self.curr.state.call_id.expr(),
                 memory_address,
+                0.expr(),
                 byte,
+                0.expr(),
                 0.expr(),
                 0.expr(),
             ],
@@ -738,7 +754,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 self.curr.state.call_id.expr(),
                 memory_address,
+                0.expr(),
                 byte,
+                0.expr(),
                 0.expr(),
                 0.expr(),
             ],

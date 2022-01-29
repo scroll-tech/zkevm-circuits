@@ -34,7 +34,7 @@ impl<F: FieldExt> EvmCircuit<F> {
     ) -> Self
     where
         TxTable: LookupTable<F, 4>,
-        RwTable: LookupTable<F, 8>,
+        RwTable: LookupTable<F, 10>,
         BytecodeTable: LookupTable<F, 4>,
         BlockTable: LookupTable<F, 3>,
     {
@@ -160,7 +160,7 @@ pub(crate) mod test {
     #[derive(Clone)]
     pub(crate) struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
-        rw_table: [Column<Advice>; 8],
+        rw_table: [Column<Advice>; 10],
         bytecode_table: [Column<Advice>; 4],
         block_table: [Column<Advice>; 3],
         evm_circuit: EvmCircuit<F>,
@@ -353,7 +353,7 @@ pub(crate) mod test {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = [(); 4].map(|_| meta.advice_column());
-            let rw_table = [(); 8].map(|_| meta.advice_column());
+            let rw_table = [(); 10].map(|_| meta.advice_column());
             let bytecode_table = [(); 4].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 

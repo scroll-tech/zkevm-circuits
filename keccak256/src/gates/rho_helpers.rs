@@ -48,38 +48,40 @@ pub fn slice_lane(rotation: u32) -> Vec<(u32, u32)> {
 /// See tests for more detail
 pub const STEP_COUNTS: [u32; 3] = [12, 12, 13];
 
-/// A mapping from `step` to a block count value
+/// A mapping from `step` to a overflow detector value
 ///
 /// See tests for the derivation of the values
 pub const OVERFLOW_TRANSFORM: [u32; 5] = [0, 0, 1, 13, 170];
 
-/// The sum of the step 2 block counts across all 25 lanes should not greater
-/// than this value
+/// The sum of the step 2 overflow detectors across all 25 lanes should not
+/// greater than this value
 ///
 /// See tests for the derivation of the values
 pub const STEP2_RANGE: u64 = 12;
 
-/// The sum of the step 3 block counts across all 25 lanes should not greater
-/// than this value
+/// The sum of the step 3 overflow detectors across all 25 lanes should not
+/// greater than this value
 ///
 /// See tests for the derivation of the values
 pub const STEP3_RANGE: u64 = 169;
 
-/// Get the block count from an input chunks
+/// Get the overflow detector from an input chunks
 ///
 /// The input is chunks of a base 13 number in big endian.
 /// For example, if the input is `[1, 12, 3, 7]`, it represents a coefficient
 /// `1*13^3 + 12*13^2 + 3*13 + 7`. The example only happens when `step = 4`. If
 /// we have a `step = 3`, the first chunk must be 0. It could be the case that
-/// we have `step = 4`, but all of the chunks are 0. That would result our block
-/// count value to be 0.
+/// we have `step = 4`, but all of the chunks are 0. That would result our
+/// overflow detector value to be 0.
 ///
 /// In the circuit, if we have a `step = 3`, but a non-zero first chunk is
 /// adviced. It would cause the non_zero_chunk_count to be 4, resulting the
-/// block count to be 170.
+/// overflow detector to be 170.
 ///
-/// This would fail the final block count check.
-pub fn get_block_count(b13_chunks: [u8; BASE_NUM_OF_CHUNKS as usize]) -> u32 {
+/// This would fail the final overflow detector check.
+pub fn get_overflow_detector(
+    b13_chunks: [u8; BASE_NUM_OF_CHUNKS as usize],
+) -> u32 {
     // could be 0, 1, 2, 3, 4
     let non_zero_chunk_count = BASE_NUM_OF_CHUNKS as usize
         - b13_chunks.iter().take_while(|x| **x == 0).count();
@@ -96,7 +98,7 @@ pub struct Slice {
 
 #[derive(Debug, Clone)]
 pub struct OverflowDetector {
-    pub block_count: u32,
+    pub value: u32,
     pub step2_acc: u32,
     pub step3_acc: u32,
 }
@@ -215,14 +217,14 @@ impl RhoLane {
                     v.reverse();
                     let chunks_be: [u8; BASE_NUM_OF_CHUNKS as usize] =
                         v.try_into().unwrap();
-                    let block_count = get_block_count(chunks_be);
+                    let value = get_overflow_detector(chunks_be);
                     match step {
-                        2 => step2_acc += block_count,
-                        3 => step3_acc += block_count,
+                        2 => step2_acc += value,
+                        3 => step3_acc += value,
                         _ => {}
                     };
                     OverflowDetector {
-                        block_count,
+                        value,
                         step2_acc,
                         step3_acc,
                     }
@@ -292,15 +294,15 @@ mod tests {
         // 13 step 3.
         assert_eq!(counts, STEP_COUNTS);
 
-        // We define a mapping overflow g(x), it maps step to a block count
-        // value We first define g(0) = 0, g(1) = 0
+        // We define a mapping overflow g(x), it maps step to a overflow
+        // detector value We first define g(0) = 0, g(1) = 0
         // Mapping from step 0 is meaningless, because we don't have step 0
         // Mapping step 1 to 0 as the base case.
         // Then we define `g(i+1) = g(i) * previous_step_count + 1`
-        // Because `g(i) * previous_step_count` is the max possible block count
-        // sum from previous step An overflow in previous step would get
-        // the `g(i+1)` value from the lookup table and fail the final block
-        // count sum check
+        // Because `g(i) * previous_step_count` is the max possible overflow
+        // detector sum from previous step An overflow in previous step
+        // would get the `g(i+1)` value from the lookup table and fail
+        // the final range check
         let mut overflow = vec![0, 0];
         for c in counts.iter() {
             let elem = overflow.last().cloned().unwrap();
