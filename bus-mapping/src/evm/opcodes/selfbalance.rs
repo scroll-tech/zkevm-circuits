@@ -21,8 +21,7 @@ mod timestamp_tests {
         // Get the execution steps from the external tracer
         let geth_data = new_single_tx_trace_code_at_start(&code)?;
         let self_balance = geth_data.accounts[0].balance;
-        let block =
-            BlockData::new_from_geth_data(geth_data);
+        let block = BlockData::new_from_geth_data(geth_data);
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -41,11 +40,7 @@ mod timestamp_tests {
         let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add the last Stack write
-        state_ref.push_stack_op(
-            RW::WRITE,
-            StackAddress::from(1024 - 1),
-            self_balance,
-        );
+        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1024 - 1), self_balance);
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);
