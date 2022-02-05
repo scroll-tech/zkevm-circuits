@@ -6,9 +6,7 @@ use crate::{
         table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -52,12 +50,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataSizeGadget<F> {
             ..Default::default()
         };
 
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -76,11 +69,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataSizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        self.call_data_size.assign(
-            region,
-            offset,
-            Some(F::from(call.call_data_length as u64)),
-        )?;
+        self.call_data_size
+            .assign(region, offset, Some(F::from(call.call_data_length as u64)))?;
 
         Ok(())
     }
@@ -88,8 +78,8 @@ impl<F: FieldExt> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use bus_mapping::{bytecode, evm::OpcodeId};
-    use eth_types::{ToLittleEndian, Word};
+    use bus_mapping::evm::OpcodeId;
+    use eth_types::{bytecode, ToLittleEndian, Word};
     use halo2::arithmetic::BaseExt;
     use pairing::bn256::Fr;
 
@@ -164,11 +154,10 @@ mod test {
                     is_root,
                     is_create: false,
                     call_data_length: call_data_size,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
+                    opcode_source: RandomLinearCombination::random_linear_combine(
+                        bytecode.hash.to_le_bytes(),
+                        randomness,
+                    ),
                     ..Default::default()
                 }],
                 ..Default::default()

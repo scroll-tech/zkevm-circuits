@@ -1,41 +1,14 @@
-use crate::{
-    circuit_input_builder::CircuitInputStateRef, operation::RW, Error,
-};
-use eth_types::GethExecStep;
-
-use super::Opcode;
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct CallDataSize;
-
-impl Opcode for CallDataSize {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
-        next_steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let current_step = &next_steps[0];
-        let call_data_size = next_steps[1].stack.last()?;
-
-        state.push_stack_op(
-            RW::WRITE,
-            current_step.stack.last_filled().map(|a| a - 1),
-            call_data_size,
-        );
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod calldatasize_tests {
-    use super::*;
     use crate::{
-        bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        mock,
+        mock::BlockData,
+        operation::RW,
+        Error,
     };
     use eth_types::evm_types::StackAddress;
-    use eth_types::ToWord;
+    use eth_types::{bytecode, ToWord};
+    use mock::new_single_tx_trace_code_at_start;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -48,7 +21,7 @@ mod calldatasize_tests {
 
         // Get the execution steps from the external tracer
         let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+            BlockData::new_from_geth_data(new_single_tx_trace_code_at_start(&code).unwrap());
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -64,8 +37,7 @@ mod calldatasize_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref =
-            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add the last Stack write
         state_ref.push_stack_op(
