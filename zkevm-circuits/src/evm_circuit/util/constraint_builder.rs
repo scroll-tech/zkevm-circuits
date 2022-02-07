@@ -550,7 +550,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 tx_id,
                 0.expr(), // account_address,
-                0.expr(), // storage_slot,
+                storage_slot,
                 0.expr(), // value.clone(),
                 0.expr(), // value,
                 0.expr(),
