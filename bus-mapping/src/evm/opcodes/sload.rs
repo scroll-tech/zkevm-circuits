@@ -34,7 +34,7 @@ impl Opcode for Sload {
             stack_value_read,
             true, // TODO: always assume is_warm
             true,
-        ));      
+        ));
 
         // Storage read
         let storage_value_read = step.storage.get_or_err(&stack_value_read)?;
@@ -108,12 +108,9 @@ mod sload_tests {
         );
         let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
         // Add StackOp associated to the stack pop.
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress::from(1023),
-            Word::from(0x0u32),
-        );
-        // Add TxAccessListAccountStorageOp associated to the TxAccessListAccountStorage read.
+        state_ref.push_stack_op(RW::READ, StackAddress::from(1023), Word::from(0x0u32));
+        // Add TxAccessListAccountStorageOp associated to the TxAccessListAccountStorage
+        // read.
         state_ref.push_op(TxAccessListAccountStorageOp::new(
             RW::READ,
             1usize, // TODO:
@@ -130,7 +127,8 @@ mod sload_tests {
             Word::from(0x6fu32),
             Word::from(0x6fu32),
         ));
-        // Add TxAccessListAccountStorageOp associated to the TxAccessListAccountStorage write.
+        // Add TxAccessListAccountStorageOp associated to the TxAccessListAccountStorage
+        // write.
         state_ref.push_op(TxAccessListAccountStorageOp::new(
             RW::WRITE,
             1usize, // TODO:

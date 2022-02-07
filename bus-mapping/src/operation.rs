@@ -428,8 +428,9 @@ pub struct TxAccessListAccountStorageOp {
     pub value_prev: bool,
 }
 
-impl TxAccessListAccountStorageOp{
-    /// Create a new instance of a `TxAccessListAccountStorageOp` from it's components.
+impl TxAccessListAccountStorageOp {
+    /// Create a new instance of a `TxAccessListAccountStorageOp` from it's
+    /// components.
     pub fn new(
         rw: RW,
         tx_id: usize,
@@ -438,7 +439,7 @@ impl TxAccessListAccountStorageOp{
         value: bool,
         value_prev: bool,
     ) -> TxAccessListAccountStorageOp {
-        TxAccessListAccountStorageOp{
+        TxAccessListAccountStorageOp {
             rw,
             tx_id,
             address,

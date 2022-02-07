@@ -53,7 +53,6 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         // let tx_callee_address =
         //     cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
 
-
         // TODO:
         let tx_callee_address = 0;
         let tx_id = 0;
@@ -127,8 +126,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [key, value] = [step.rw_indices[0], step.rw_indices[2]]
-            .map(|idx| block.rws[idx].stack_value());
+        let [key, value] =
+            [step.rw_indices[0], step.rw_indices[2]].map(|idx| block.rws[idx].stack_value());
         self.key.assign(region, offset, Some(key.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
@@ -148,10 +147,7 @@ pub(crate) struct SloadGasGadget<F> {
 }
 
 impl<F: FieldExt> SloadGasGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        is_warm: Expression<F>,
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
         let gas_cost = select::expr(
             is_warm.expr(),
             GasCost::WARM_STORAGE_READ_COST.expr(),

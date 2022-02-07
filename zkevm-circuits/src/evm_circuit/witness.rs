@@ -479,15 +479,9 @@ impl Rw {
                 F::from(*is_write as u64),
                 F::from(RwTableTag::AccountStorage as u64),
                 address.to_scalar().unwrap(),
-                RandomLinearCombination::random_linear_combine(
-                    key.to_le_bytes(),
-                    randomness,
-                ),
+                RandomLinearCombination::random_linear_combine(key.to_le_bytes(), randomness),
                 F::zero(),
-                RandomLinearCombination::random_linear_combine(
-                    value.to_le_bytes(),
-                    randomness,
-                ),
+                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
                 RandomLinearCombination::random_linear_combine(
                     value_prev.to_le_bytes(),
                     randomness,
@@ -773,7 +767,7 @@ pub fn block_convert(
             key: *s.op().key(),
             value: *s.op().value(),
             value_prev: *s.op().value_prev(),
-            tx_id: 1usize, // TODO:
+            tx_id: 1usize,             // TODO:
             committed_value: 0.into(), // TODO:
         }));
 
