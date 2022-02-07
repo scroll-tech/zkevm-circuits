@@ -482,7 +482,7 @@ impl Rw {
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
                 F::from(RwTableTag::TxAccessListStorageSlot as u64),
-                F::zero(), // F::from(*tx_id as u64),
+                F::from(*tx_id as u64),
                 F::zero(), // address.to_scalar().unwrap(),
                 F::zero(), // key.to_scalar().unwrap(),
                 F::zero(), // F::from(*value as u64),

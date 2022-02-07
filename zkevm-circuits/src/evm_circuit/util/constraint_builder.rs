@@ -548,7 +548,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             false.expr(),
             RwTableTag::TxAccessListStorageSlot,
             [
-                0.expr(), // tx_id,
+                tx_id,
                 0.expr(), // account_address,
                 0.expr(), // storage_slot,
                 0.expr(), // value.clone(),
