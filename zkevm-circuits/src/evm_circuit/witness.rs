@@ -648,8 +648,6 @@ fn tx_convert(
     tx: &bus_mapping::circuit_input_builder::Transaction,
     ops_len: (usize, usize, usize),
 ) -> Transaction<Fp> {
-    // look in to addresses here?
-    // callee address??
     Transaction::<Fp> {
         calls: vec![Call {
             id: 1,
