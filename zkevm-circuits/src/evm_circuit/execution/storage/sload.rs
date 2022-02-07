@@ -127,7 +127,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [key, value] =
-            [step.rw_indices[0], step.rw_indices[2]].map(|idx| block.rws[idx].stack_value());
+            [step.rw_indices[0], step.rw_indices[4]].map(|idx| block.rws[idx].stack_value());
         self.key.assign(region, offset, Some(key.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
