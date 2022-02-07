@@ -59,6 +59,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         let key = cb.query_word();
         // Pop the key from the stack
+        // TODO: 74
         cb.stack_pop(key.expr());
 
         let is_warm = cb.query_bool();
