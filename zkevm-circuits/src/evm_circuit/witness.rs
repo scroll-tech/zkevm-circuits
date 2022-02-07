@@ -670,7 +670,7 @@ fn step_convert(
     step: &bus_mapping::circuit_input_builder::ExecStep,
     ops_len: (usize, usize, usize, usize),
 ) -> ExecStep {
-    let (stack_ops_len, memory_ops_len, _storage_ops_len, txaccesslist_storage_ops_len) = ops_len;
+    let (stack_ops_len, memory_ops_len, storage_ops_len, txaccesslist_storage_ops_len) = ops_len;
     // TODO: call_index is not set in the ExecStep
     let result = ExecStep {
         rw_indices: step
@@ -685,7 +685,7 @@ fn step_convert(
                         index + stack_ops_len + memory_ops_len
                     }
                     bus_mapping::operation::Target::TxAccessListAccountStorage => {
-                        index + stack_ops_len + memory_ops_len + txaccesslist_storage_ops_len
+                        index + stack_ops_len + memory_ops_len + storage_ops_len
                     }
                     _ => unimplemented!(),
                 }
