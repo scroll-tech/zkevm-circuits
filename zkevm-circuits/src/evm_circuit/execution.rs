@@ -24,6 +24,7 @@ mod coinbase;
 mod comparator;
 mod dup;
 mod error_oog_pure_memory;
+mod gas;
 mod jump;
 mod jumpdest;
 mod jumpi;
@@ -38,6 +39,7 @@ mod signextend;
 mod stop;
 mod storage;
 mod swap;
+mod timestamp;
 
 use add::AddGadget;
 use begin_tx::BeginTxGadget;
@@ -47,6 +49,7 @@ use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
 use error_oog_pure_memory::ErrorOOGPureMemoryGadget;
+use gas::GasGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
@@ -61,6 +64,7 @@ use signextend::SignextendGadget;
 use stop::StopGadget;
 use storage::SloadGadget;
 use swap::SwapGadget;
+use timestamp::TimestampGadget;
 
 pub(crate) trait ExecutionGadget<F: FieldExt> {
     const NAME: &'static str;
@@ -97,6 +101,7 @@ pub(crate) struct ExecutionConfig<F> {
     jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
+    gas_gadget: GasGadget<F>,
     memory_gadget: MemoryGadget<F>,
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
@@ -107,6 +112,7 @@ pub(crate) struct ExecutionConfig<F> {
     swap_gadget: SwapGadget<F>,
     msize_gadget: MsizeGadget<F>,
     coinbase_gadget: CoinbaseGadget<F>,
+    timestamp_gadget: TimestampGadget<F>,
     sload_gadget: SloadGadget<F>,
 }
 
@@ -151,20 +157,18 @@ impl<F: FieldExt> ExecutionConfig<F> {
             );
 
             // Cells representation for execution_state should be bool.
-            let bool_checks =
-                step_curr.state.execution_state.iter().map(|cell| {
-                    (
-                        "Representation for execution_state should be bool",
-                        cell.expr() * (1.expr() - cell.expr()),
-                    )
-                });
+            let bool_checks = step_curr.state.execution_state.iter().map(|cell| {
+                (
+                    "Representation for execution_state should be bool",
+                    cell.expr() * (1.expr() - cell.expr()),
+                )
+            });
 
             // TODO: ExecutionState transition needs to be constraint to avoid
             // transition from non-terminator to BeginTx.
 
             let first_step_check = {
-                let begin_tx_selector =
-                    step_curr.execution_state_selector(ExecutionState::BeginTx);
+                let begin_tx_selector = step_curr.execution_state_selector(ExecutionState::BeginTx);
                 std::iter::once((
                     "First step should be BeginTx",
                     q_step_first * (begin_tx_selector - 1.expr()),
@@ -183,8 +187,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
         for advice in advices {
             meta.lookup_any(|meta| {
                 let advice = meta.query_advice(advice, Rotation::cur());
-                let qs_byte_lookup =
-                    meta.query_advice(qs_byte_lookup, Rotation::cur());
+                let qs_byte_lookup = meta.query_advice(qs_byte_lookup, Rotation::cur());
 
                 vec![
                     qs_byte_lookup.clone() * FixedTableTag::Range256.expr(),
@@ -227,6 +230,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             jump_gadget: configure_gadget!(),
             jumpdest_gadget: configure_gadget!(),
             jumpi_gadget: configure_gadget!(),
+            gas_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
@@ -237,7 +241,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
             swap_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
-            sload_gadget: configure_gadget!(),
+            timestamp_gadget: configure_gadget!(),
+            sload_gadget: SloadGadget<F>,
             step: step_curr,
             presets_map,
         };
@@ -276,10 +281,10 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         let gadget = G::configure(&mut cb);
 
-        let (constraints, constraints_first_step, lookups, presets) =
-            cb.build();
-        assert!(
-            presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
+        let (constraints, constraints_first_step, lookups, presets) = cb.build();
+        let insert_result = presets_map.insert(G::EXECUTION_STATE, presets);
+        debug_assert!(
+            insert_result.is_none(),
             "execution state already configured"
         );
 
@@ -291,17 +296,16 @@ impl<F: FieldExt> ExecutionConfig<F> {
                 meta.create_gate(G::NAME, |meta| {
                     let selector = meta.query_selector(selector);
 
-                    constraints.into_iter().map(move |(name, constraint)| {
-                        (name, selector.clone() * constraint)
-                    })
+                    constraints
+                        .into_iter()
+                        .map(move |(name, constraint)| (name, selector.clone() * constraint))
                 });
             }
         }
 
         // Push lookups of this ExecutionState to independent_lookups for
         // further configuration in configure_lookup.
-        independent_lookups
-            .push(lookups.iter().map(|(_, lookup)| lookup.clone()).collect());
+        independent_lookups.push(lookups.iter().map(|(_, lookup)| lookup.clone()).collect());
 
         gadget
     }
@@ -334,8 +338,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
             for lookup in lookups {
                 let table = lookup.table();
-                let acc_lookups =
-                    acc_lookups_of_table.entry(table).or_insert_with(Vec::new);
+                let acc_lookups = acc_lookups_of_table.entry(table).or_insert_with(Vec::new);
                 let index = index_of_table.entry(table).or_insert(0);
 
                 if *index == acc_lookups.len() {
@@ -361,15 +364,8 @@ impl<F: FieldExt> ExecutionConfig<F> {
                             let q_step = meta.query_selector(q_step);
                             input_exprs
                                 .into_iter()
-                                .zip(
-                                    $table
-                                        .table_exprs(meta)
-                                        .to_vec()
-                                        .into_iter(),
-                                )
-                                .map(|(input, table)| {
-                                    (q_step.clone() * input, table)
-                                })
+                                .zip($table.table_exprs(meta).to_vec().into_iter())
+                                .map(|(input, table)| (q_step.clone() * input, table))
                                 .collect::<Vec<_>>()
                         });
                     }
@@ -402,14 +398,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                             self.q_step_first.enable(&mut region, offset)?;
                         }
 
-                        self.assign_exec_step(
-                            &mut region,
-                            offset,
-                            block,
-                            transaction,
-                            call,
-                            step,
-                        )?;
+                        self.assign_exec_step(&mut region, offset, block, transaction, call, step)?;
 
                         offset += STEP_HEIGHT;
                     }
@@ -438,14 +427,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
                         let call = &transaction.calls[step.call_index];
 
                         self.q_step.enable(&mut region, offset)?;
-                        self.assign_exec_step(
-                            &mut region,
-                            offset,
-                            block,
-                            transaction,
-                            call,
-                            step,
-                        )?;
+                        self.assign_exec_step(&mut region, offset, block, transaction, call, step)?;
 
                         offset += STEP_HEIGHT;
                     }
@@ -476,14 +458,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
 
         macro_rules! assign_exec_step {
             ($gadget:expr) => {
-                $gadget.assign_exec_step(
-                    region,
-                    offset,
-                    block,
-                    transaction,
-                    call,
-                    step,
-                )?
+                $gadget.assign_exec_step(region, offset, block, transaction, call, step)?
             };
         }
 
@@ -510,13 +485,13 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::JUMPDEST => {
                 assign_exec_step!(self.jumpdest_gadget)
             }
+            ExecutionState::GAS => assign_exec_step!(self.gas_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
             ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
-            ExecutionState::SLOAD => {
-                assign_exec_step!(self.sload_gadget)
-            }
+            ExecutionState::TIMESTAMP => assign_exec_step!(self.timestamp_gadget),
+            ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
             ExecutionState::ErrorOutOfGasPureMemory => {
                 assign_exec_step!(self.error_oog_pure_memory_gadget)
             }

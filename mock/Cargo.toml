@@ -1,0 +1,10 @@
+[package]
+name = "mock"
+version = "0.1.0"
+edition = "2021"
+authors = ["The appliedzkp team"]
+
+[dependencies]
+eth-types = { path = "../eth-types" }
+external-tracer = { path = "../external-tracer" }
+lazy_static = "1.4"

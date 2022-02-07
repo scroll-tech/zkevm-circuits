@@ -27,8 +27,7 @@ impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
         let block_table = [(); 3].map(|_| meta.advice_column());
         // Use constant expression to mock constant instance column for a more
         // reasonable benchmark.
-        let power_of_randomness =
-            [(); 31].map(|_| Expression::Constant(F::one()));
+        let power_of_randomness = [(); 31].map(|_| Expression::Constant(F::one()));
 
         EvmCircuit::configure(
             meta,
@@ -75,13 +74,12 @@ mod evm_circ_benches {
 
         let circuit = TestCircuit::<Fr>::default();
         let rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37,
-            0x32, 0x54, 0x06, 0xbc, 0xe5,
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
         ]);
 
         // Bench setup generation
-        let setup_message =
-            format!("Setup generation with degree = {}", degree);
+        let setup_message = format!("Setup generation with degree = {}", degree);
         let start1 = start_timer!(|| setup_message);
         let params = Setup::<Bn256>::new(degree, rng);
         end_timer!(start1);
@@ -90,22 +88,18 @@ mod evm_circ_benches {
         let pk = keygen_pk(&params, vk, &circuit).unwrap();
 
         // Prove
-        let mut transcript =
-            Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message =
-            format!("EVM Proof generation with {} rows", degree);
+        let proof_message = format!("EVM Proof generation with {} rows", degree);
         let start2 = start_timer!(|| proof_message);
-        create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript)
-            .unwrap();
+        create_proof(&params, &pk, &[circuit], &[&[]], &mut transcript).unwrap();
         let proof = transcript.finalize();
         end_timer!(start2);
 
         // Verify
         let params = Setup::<Bn256>::verifier_params(&params, 0).unwrap();
-        let mut transcript =
-            Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+        let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
         // Bench verification time
         let start3 = start_timer!(|| "EVM Proof verification");

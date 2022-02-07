@@ -10,9 +10,7 @@ use crate::gadget::Variable;
 use digest::{FixedOutput, Input};
 use halo2::{
     circuit::Region,
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -94,8 +92,7 @@ impl<F: FieldExt> WordConfig<F> {
                 let q_encode = meta.query_selector(q_encode);
                 let r = Expression::Constant(r);
                 let byte = meta.query_advice(*byte, Rotation::cur());
-                let byte_lookup =
-                    meta.query_fixed(byte_lookup, Rotation::cur());
+                let byte_lookup = meta.query_fixed(byte_lookup, Rotation::cur());
 
                 // Update encode_word_expr.
                 encode_word_expr = encode_word_expr.clone() * r + byte.clone();
@@ -144,9 +141,7 @@ impl<F: FieldExt> WordConfig<F> {
     ) -> Result<Word<F>, Error> {
         let mut bytes: Vec<Variable<u8, F>> = Vec::with_capacity(32);
 
-        for (idx, (byte, column)) in
-            word.iter().zip(self.bytes.iter()).enumerate()
-        {
+        for (idx, (byte, column)) in word.iter().zip(self.bytes.iter()).enumerate() {
             // TODO: We will likely enable this selector outside of the helper.
             self.q_encode.enable(region, offset)?;
 
@@ -211,13 +206,7 @@ mod tests {
                     .unwrap();
                 let byte_lookup = meta.fixed_column();
 
-                let config = WordConfig::configure(
-                    meta,
-                    r,
-                    q_encode,
-                    bytes,
-                    byte_lookup,
-                );
+                let config = WordConfig::configure(meta, r, q_encode, bytes, byte_lookup);
 
                 let pub_inputs = meta.instance_column();
 
@@ -225,8 +214,7 @@ mod tests {
                 // public inputs.
                 meta.lookup_any(|meta| {
                     let q_encode = meta.query_selector(q_encode);
-                    let pub_inputs =
-                        meta.query_instance(pub_inputs, Rotation::cur());
+                    let pub_inputs = meta.query_instance(pub_inputs, Rotation::cur());
 
                     let encode_word = config.clone().encode_word_expr;
 
@@ -257,8 +245,8 @@ mod tests {
 
         {
             let rng = XorShiftRng::from_seed([
-                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb,
-                0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5,
+                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+                0xbc, 0xe5,
             ]);
             let word = Fp::random(rng);
             let circuit = MyCircuit::<Fp> {
@@ -273,8 +261,7 @@ mod tests {
             };
 
             // Test without public inputs
-            let prover =
-                MockProver::<Fp>::run(9, &circuit, vec![vec![]]).unwrap();
+            let prover = MockProver::<Fp>::run(9, &circuit, vec![vec![]]).unwrap();
             assert_eq!(
                 prover.verify(),
                 Err(vec![VerifyFailure::Lookup {
@@ -284,11 +271,8 @@ mod tests {
             );
 
             // Calculate word commitment and use it as public input.
-            let encoded: Fp =
-                encode(word.to_bytes().iter().rev().cloned(), r());
-            let prover =
-                MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]])
-                    .unwrap();
+            let encoded: Fp = encode(word.to_bytes().iter().rev().cloned(), r());
+            let prover = MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]]).unwrap();
             assert_eq!(prover.verify(), Ok(()))
         }
     }

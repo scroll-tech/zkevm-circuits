@@ -11,11 +11,7 @@ pub(crate) struct Variable<T, F: FieldExt> {
 }
 
 impl<T, F: FieldExt> Variable<T, F> {
-    pub(crate) fn new(
-        cell: Cell,
-        field_elem: Option<F>,
-        value: Option<T>,
-    ) -> Self {
+    pub(crate) fn new(cell: Cell, field_elem: Option<F>, value: Option<T>) -> Self {
         Self {
             cell,
             field_elem,

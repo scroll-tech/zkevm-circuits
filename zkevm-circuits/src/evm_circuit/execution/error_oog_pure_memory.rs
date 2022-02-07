@@ -28,8 +28,7 @@ pub(crate) struct ErrorOOGPureMemoryGadget<F> {
     // So generic N_BYTES_MEMORY_WORD_SIZE for MemoryExpansionGadget needs to
     // be larger by 1 than normal usage (to be 5), to be able to contain
     // number up to 2^35 - 1.
-    memory_expansion:
-        MemoryExpansionGadget<F, 1, { N_BYTES_MEMORY_WORD_SIZE + 1 }>,
+    memory_expansion: MemoryExpansionGadget<F, 1, { N_BYTES_MEMORY_WORD_SIZE + 1 }>,
     // Even memory size at most could be 2^35 - 1, the qudratic part of memory
     // expansion gas cost could be at most 2^61 - 2^27, due to the constant
     // division by 512, which still fits in 8 bytes.
@@ -40,8 +39,7 @@ pub(crate) struct ErrorOOGPureMemoryGadget<F> {
 impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
     const NAME: &'static str = "ErrorOutOfGasPureMemory";
 
-    const EXECUTION_STATE: ExecutionState =
-        ExecutionState::ErrorOutOfGasPureMemory;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasPureMemory;
 
     // Support other OOG due to pure memory including CREATE, RETURN and REVERT
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
@@ -51,32 +49,24 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
         let address = cb.query_word();
 
         // Check if this is an MSTORE8
-        let is_mstore8 = IsEqualGadget::construct(
-            cb,
-            opcode.expr(),
-            OpcodeId::MSTORE8.expr(),
-        );
+        let is_mstore8 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MSTORE8.expr());
         let is_not_mstore8 = 1.expr() - is_mstore8.expr();
 
         // Get the next memory size and the gas cost for this memory access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
             cb.curr.state.memory_word_size.expr(),
-            [address_low::expr(&address)
-                + 1.expr()
-                + (is_not_mstore8 * 31.expr())],
+            [address_low::expr(&address) + 1.expr() + (is_not_mstore8 * 31.expr())],
         );
 
         // Check if the memory address is too large
-        let address_in_range =
-            IsZeroGadget::construct(cb, address_high::expr(&address));
+        let address_in_range = IsZeroGadget::construct(cb, address_high::expr(&address));
         // Check if the amount of gas available is less than the amount of gas
         // required
         let insufficient_gas = cb.condition(address_in_range.expr(), |cb| {
             RangeCheckGadget::construct(
                 cb,
-                OpcodeId::MLOAD.constant_gas_cost().expr()
-                    + memory_expansion.gas_cost()
+                OpcodeId::MLOAD.constant_gas_cost().expr() + memory_expansion.gas_cost()
                     - cb.curr.state.gas_left.expr(),
             )
         });
@@ -140,11 +130,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
 
         // Gas insufficient check
         // Get `gas_available` variable here once it's available
-        self.insufficient_gas.assign(
-            region,
-            offset,
-            F::from(step.gas_cost - step.gas_left),
-        )?;
+        self.insufficient_gas
+            .assign(region, offset, F::from(step.gas_cost - step.gas_left))?;
 
         Ok(())
     }

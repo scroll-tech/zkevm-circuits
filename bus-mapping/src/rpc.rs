@@ -3,8 +3,8 @@
 
 use crate::Error;
 use eth_types::{
-    Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash,
-    ResultGethExecTraces, Transaction, Word, U64,
+    Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash, ResultGethExecTraces,
+    Transaction, Word, U64,
 };
 pub use ethers_core::types::BlockNumber;
 use ethers_providers::JsonRpcClient;
@@ -77,10 +77,7 @@ impl<P: JsonRpcClient> GethClient<P> {
 
     /// Calls `eth_getBlockByHash` via JSON-RPC returning a [`Block`] returning
     /// all the block information including it's transaction's details.
-    pub async fn get_block_by_hash(
-        &self,
-        hash: Hash,
-    ) -> Result<Block<Transaction>, Error> {
+    pub async fn get_block_by_hash(&self, hash: Hash) -> Result<Block<Transaction>, Error> {
         let hash = serialize(&hash);
         let flag = serialize(&true);
         self.0
@@ -107,10 +104,7 @@ impl<P: JsonRpcClient> GethClient<P> {
     /// Calls `debug_traceBlockByHash` via JSON-RPC returning a
     /// [`Vec<GethExecTrace>`] with each GethTrace corresponding to 1
     /// transaction of the block.
-    pub async fn trace_block_by_hash(
-        &self,
-        hash: Hash,
-    ) -> Result<Vec<GethExecTrace>, Error> {
+    pub async fn trace_block_by_hash(&self, hash: Hash) -> Result<Vec<GethExecTrace>, Error> {
         let hash = serialize(&hash);
         let cfg = serialize(&GethLoggerConfig::default());
         let resp: ResultGethExecTraces = self

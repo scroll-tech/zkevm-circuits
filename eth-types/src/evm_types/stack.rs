@@ -29,10 +29,7 @@ impl StackAddress {
 }
 
 // Mostly impl for testing.
-impl_from_usize_wrappers!(
-    StackAddress = StackAddress,
-    (u8, u16, u32, usize, i32, i64)
-);
+impl_from_usize_wrappers!(StackAddress = StackAddress, (u8, u16, u32, usize, i32, i64));
 
 impl From<StackAddress> for usize {
     fn from(addr: StackAddress) -> usize {
@@ -45,8 +42,7 @@ impl FromStr for StackAddress {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.strip_prefix("0x").unwrap_or(s);
-        let value = usize::from_str_radix(s, 16)
-            .map_err(|_| Error::StackAddressParsing)?;
+        let value = usize::from_str_radix(s, 16).map_err(|_| Error::StackAddressParsing)?;
         // Stack only has 1023 slots avaliable.
         if value >= 1024 {
             return Err(Error::InvalidStackPointer);

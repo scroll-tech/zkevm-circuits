@@ -4,9 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             sum, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -85,8 +83,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
 
         // Deduce the number of additional bytes to push than PUSH1. Note that
         // num_additional_pushed = n - 1 where n is the suffix number of PUSH*.
-        let num_additional_pushed =
-            opcode.expr() - OpcodeId::PUSH1.as_u64().expr();
+        let num_additional_pushed = opcode.expr() - OpcodeId::PUSH1.as_u64().expr();
         // Sum of selectors needs to be exactly the number of additional bytes
         // that needs to be pushed.
         cb.require_equal(
@@ -103,18 +100,11 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
         // `program_counter` needs to be increased by number of bytes pushed + 1
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(1.expr()),
-            program_counter: Delta(
-                opcode.expr() - (OpcodeId::PUSH1.as_u64() - 2).expr(),
-            ),
+            program_counter: Delta(opcode.expr() - (OpcodeId::PUSH1.as_u64() - 2).expr()),
             stack_pointer: Delta((-1).expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -140,8 +130,7 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        let num_additional_pushed =
-            (opcode.as_u8() - OpcodeId::PUSH1.as_u8()) as usize;
+        let num_additional_pushed = (opcode.as_u8() - OpcodeId::PUSH1.as_u8()) as usize;
         for (idx, selector) in self.selectors.iter().enumerate() {
             selector.assign(
                 region,
@@ -157,12 +146,11 @@ impl<F: FieldExt> ExecutionGadget<F> for PushGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
-    use bus_mapping::{bytecode, evm::OpcodeId};
+    use eth_types::bytecode;
+    use eth_types::evm_types::OpcodeId;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
-        assert!(
-            bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,
-        );
+        assert!(bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,);
 
         let mut bytecode = bytecode! {
             #[start]
@@ -183,15 +171,15 @@ mod test {
         test_ok(
             OpcodeId::PUSH31,
             &[
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31,
             ],
         );
         test_ok(
             OpcodeId::PUSH32,
             &[
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32,
             ],
         );
     }

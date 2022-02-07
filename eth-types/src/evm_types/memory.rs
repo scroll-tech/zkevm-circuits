@@ -2,9 +2,7 @@
 use crate::Error;
 use crate::{DebugByte, ToBigEndian, Word};
 use core::convert::TryFrom;
-use core::ops::{
-    Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign,
-};
+use core::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
 use core::str::FromStr;
 use std::fmt;
 
@@ -50,8 +48,7 @@ impl MemoryAddress {
             return Err(Error::InvalidMemoryPointer);
         }
         let mut array = [0u8; core::mem::size_of::<usize>()];
-        array[..]
-            .copy_from_slice(&bytes.as_ref()[..core::mem::size_of::<usize>()]);
+        array[..].copy_from_slice(&bytes.as_ref()[..core::mem::size_of::<usize>()]);
         Ok(MemoryAddress::from(usize::from_le_bytes(array)))
     }
 
@@ -61,8 +58,7 @@ impl MemoryAddress {
             return Err(Error::InvalidMemoryPointer);
         }
         let mut array = [0u8; core::mem::size_of::<usize>()];
-        array[..]
-            .copy_from_slice(&bytes.as_ref()[..core::mem::size_of::<usize>()]);
+        array[..].copy_from_slice(&bytes.as_ref()[..core::mem::size_of::<usize>()]);
         Ok(MemoryAddress::from(usize::from_be_bytes(array)))
     }
 
@@ -93,8 +89,7 @@ impl FromStr for MemoryAddress {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(MemoryAddress(
-            usize::from_str_radix(s, 16)
-                .map_err(|_| Error::MemAddressParsing)?,
+            usize::from_str_radix(s, 16).map_err(|_| Error::MemAddressParsing)?,
         ))
     }
 }

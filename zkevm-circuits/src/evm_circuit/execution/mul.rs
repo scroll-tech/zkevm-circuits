@@ -4,9 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::MulWordsGadget,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -49,12 +47,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MulGadget<F> {
             // gas_left: Delta(-GasCost::FAST.as_usize().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -72,8 +65,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MulGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
+        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
         let [a, b, c] = indices.map(|idx| block.rws[idx].stack_value());
         self.mul_words.assign(region, offset, a, b, c)
     }
@@ -82,9 +74,8 @@ impl<F: FieldExt> ExecutionGadget<F> for MulGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
-    use bus_mapping::bytecode;
     use eth_types::evm_types::OpcodeId;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
         let bytecode = bytecode! {
@@ -104,17 +95,13 @@ mod test {
 
     #[test]
     fn mul_gadget_overflow() {
-        let a = Word::from_dec_str("3402823669209384634633746074317682114560")
-            .unwrap(); //2**128 * 10
-        let b = Word::from_dec_str("34028236692093846346337460743176821145600")
-            .unwrap(); //2**128 * 100
+        let a = Word::from_dec_str("3402823669209384634633746074317682114560").unwrap(); //2**128 * 10
+        let b = Word::from_dec_str("34028236692093846346337460743176821145600").unwrap(); //2**128 * 100
         test_ok(OpcodeId::MUL, a, b);
 
-        let a = Word::from_dec_str("3402823669209384634633746074317682114560")
-            .unwrap(); //2**128 * 10
-        let b = Word::from_dec_str("34028236692093846346337460743176821145500")
-            .unwrap(); //(2**128
-                       //(2**128 - 1) * 100
+        let a = Word::from_dec_str("3402823669209384634633746074317682114560").unwrap(); //2**128 * 10
+        let b = Word::from_dec_str("34028236692093846346337460743176821145500").unwrap(); //(2**128
+                                                                                          //(2**128 - 1) * 100
         test_ok(OpcodeId::MUL, a, b);
     }
 

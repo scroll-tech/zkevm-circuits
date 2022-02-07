@@ -143,12 +143,7 @@ impl fmt::Debug for MemoryOp {
 
 impl MemoryOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub fn new(
-        rw: RW,
-        call_id: usize,
-        address: MemoryAddress,
-        value: u8,
-    ) -> MemoryOp {
+    pub fn new(rw: RW, call_id: usize, address: MemoryAddress, value: u8) -> MemoryOp {
         MemoryOp {
             rw,
             call_id,
@@ -225,12 +220,7 @@ impl fmt::Debug for StackOp {
 
 impl StackOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub const fn new(
-        rw: RW,
-        call_id: usize,
-        address: StackAddress,
-        value: Word,
-    ) -> StackOp {
+    pub const fn new(rw: RW, call_id: usize, address: StackAddress, value: Word) -> StackOp {
         StackOp {
             rw,
             call_id,
@@ -478,11 +468,7 @@ impl PartialOrd for TxAccessListAccountStorageOp {
 
 impl Ord for TxAccessListAccountStorageOp {
     fn cmp(&self, other: &Self) -> Ordering {
-        (&self.tx_id, &self.address, &self.key).cmp(&(
-            &other.tx_id,
-            &other.address,
-            &other.key,
-        ))
+        (&self.tx_id, &self.address, &self.key).cmp(&(&other.tx_id, &other.address, &other.key))
     }
 }
 
@@ -777,20 +763,13 @@ mod operation_tests {
 
     #[test]
     fn unchecked_op_transmutations_are_safe() {
-        let stack_op = StackOp::new(
-            RW::WRITE,
-            1,
-            StackAddress::from(1024),
-            Word::from(0x40),
-        );
+        let stack_op = StackOp::new(RW::WRITE, 1, StackAddress::from(1024), Word::from(0x40));
 
-        let stack_op_as_operation =
-            Operation::new(RWCounter(1), stack_op.clone());
+        let stack_op_as_operation = Operation::new(RWCounter(1), stack_op.clone());
 
         let memory_op = MemoryOp::new(RW::WRITE, 1, MemoryAddress(0x40), 0x40);
 
-        let memory_op_as_operation =
-            Operation::new(RWCounter(1), memory_op.clone());
+        let memory_op_as_operation = Operation::new(RWCounter(1), memory_op.clone());
 
         assert_eq!(stack_op, stack_op_as_operation.op);
         assert_eq!(memory_op, memory_op_as_operation.op)

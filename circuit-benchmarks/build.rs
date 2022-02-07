@@ -28,8 +28,8 @@ pub(crate) const STACK_ADDRESS_MAX: usize = {};
         degree, memory_address_max, stack_address_max
     );
 
-    let mut state_file = File::create("src/bench_params.rs")
-        .expect("Error generating bench_params.rs file");
+    let mut state_file =
+        File::create("src/bench_params.rs").expect("Error generating bench_params.rs file");
     state_file
         .write_all(consts.as_bytes())
         .expect("Error writing to bench_params.rs file");

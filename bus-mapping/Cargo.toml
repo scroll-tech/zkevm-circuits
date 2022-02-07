@@ -8,7 +8,6 @@ authors = ["CPerezz <c.perezbaro@gmail.com>"]
 eth-types = { path = "../eth-types" }
 ethers-core = "0.6"
 ethers-providers = "0.6"
-geth-utils = { path = "../geth-utils" }
 itertools = "0.10"
 lazy_static = "1.4"
 log = "0.4.14"
@@ -17,6 +16,7 @@ serde = {version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.66"
 
 [dev-dependencies]
-url = "2.2.2"
-tokio = { version = "1.13", features = ["macros"] }
+mock = { path = "../mock" }
 pretty_assertions = "1.0.0"
+tokio = { version = "1.13", features = ["macros"] }
+url = "2.2.2"

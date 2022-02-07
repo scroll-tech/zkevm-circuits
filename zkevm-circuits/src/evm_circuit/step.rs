@@ -445,22 +445,15 @@ impl<F: FieldExt> Step<F> {
             meta.create_gate("Query state for step", |meta| {
                 for idx in 0..num_state_cells {
                     let column_idx = idx % STEP_WIDTH;
-                    let rotation = idx / STEP_WIDTH
-                        + if is_next_step { STEP_HEIGHT } else { 0 };
-                    cells.push_back(Cell::new(
-                        meta,
-                        advices[column_idx],
-                        rotation,
-                    ));
+                    let rotation = idx / STEP_WIDTH + if is_next_step { STEP_HEIGHT } else { 0 };
+                    cells.push_back(Cell::new(meta, advices[column_idx], rotation));
                 }
 
                 vec![0.expr()]
             });
 
             StepState {
-                execution_state: cells
-                    .drain(..ExecutionState::amount())
-                    .collect(),
+                execution_state: cells.drain(..ExecutionState::amount()).collect(),
                 rw_counter: cells.pop_front().unwrap(),
                 call_id: cells.pop_front().unwrap(),
                 is_root: cells.pop_front().unwrap(),
@@ -474,17 +467,15 @@ impl<F: FieldExt> Step<F> {
             }
         };
 
-        let rotation_offset = num_state_cells / STEP_WIDTH
-            + (num_state_cells % STEP_WIDTH != 0) as usize;
+        let rotation_offset =
+            num_state_cells / STEP_WIDTH + (num_state_cells % STEP_WIDTH != 0) as usize;
         let mut rows = Vec::with_capacity(STEP_HEIGHT - rotation_offset);
         meta.create_gate("Query rows for step", |meta| {
             for rotation in rotation_offset..STEP_HEIGHT {
-                let rotation =
-                    rotation + if is_next_step { STEP_HEIGHT } else { 0 };
+                let rotation = rotation + if is_next_step { STEP_HEIGHT } else { 0 };
                 rows.push(StepRow {
                     qs_byte_lookup: Cell::new(meta, qs_byte_lookup, rotation),
-                    cells: advices
-                        .map(|column| Cell::new(meta, column, rotation)),
+                    cells: advices.map(|column| Cell::new(meta, column, rotation)),
                 });
             }
 
@@ -519,31 +510,21 @@ impl<F: FieldExt> Step<F> {
                 }),
             )?;
         }
-        self.state.rw_counter.assign(
-            region,
-            offset,
-            Some(F::from(step.rw_counter as u64)),
-        )?;
-        self.state.call_id.assign(
-            region,
-            offset,
-            Some(F::from(call.id as u64)),
-        )?;
-        self.state.is_root.assign(
-            region,
-            offset,
-            Some(F::from(call.is_root as u64)),
-        )?;
-        self.state.is_create.assign(
-            region,
-            offset,
-            Some(F::from(call.is_create as u64)),
-        )?;
-        self.state.opcode_source.assign(
-            region,
-            offset,
-            Some(call.opcode_source),
-        )?;
+        self.state
+            .rw_counter
+            .assign(region, offset, Some(F::from(step.rw_counter as u64)))?;
+        self.state
+            .call_id
+            .assign(region, offset, Some(F::from(call.id as u64)))?;
+        self.state
+            .is_root
+            .assign(region, offset, Some(F::from(call.is_root as u64)))?;
+        self.state
+            .is_create
+            .assign(region, offset, Some(F::from(call.is_create as u64)))?;
+        self.state
+            .opcode_source
+            .assign(region, offset, Some(call.opcode_source))?;
         self.state.program_counter.assign(
             region,
             offset,
@@ -554,11 +535,9 @@ impl<F: FieldExt> Step<F> {
             offset,
             Some(F::from(step.stack_pointer as u64)),
         )?;
-        self.state.gas_left.assign(
-            region,
-            offset,
-            Some(F::from(step.gas_left)),
-        )?;
+        self.state
+            .gas_left
+            .assign(region, offset, Some(F::from(step.gas_left)))?;
         self.state.memory_word_size.assign(
             region,
             offset,

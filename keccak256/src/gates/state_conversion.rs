@@ -26,9 +26,7 @@ impl<F: FieldExt> StateBaseConversion<F> {
         meta.enable_equality(flag.into());
         let bccs: [BaseConversionConfig<F>; 25] = state
             .iter()
-            .map(|&lane| {
-                BaseConversionConfig::configure(meta, bi.clone(), lane, flag)
-            })
+            .map(|&lane| BaseConversionConfig::configure(meta, bi.clone(), lane, flag))
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
@@ -61,9 +59,7 @@ impl<F: FieldExt> StateBaseConversion<F> {
 mod tests {
     use super::*;
     use crate::arith_helpers::convert_b2_to_b13;
-    use crate::gates::{
-        gate_helpers::biguint_to_f, tables::FromBinaryTableConfig,
-    };
+    use crate::gates::{gate_helpers::biguint_to_f, tables::FromBinaryTableConfig};
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
@@ -93,8 +89,7 @@ mod tests {
                     .unwrap();
                 let flag = meta.advice_column();
                 let bi = table.get_base_info(false);
-                let conversion =
-                    StateBaseConversion::configure(meta, state, bi, flag);
+                let conversion = StateBaseConversion::configure(meta, state, bi, flag);
                 Self {
                     flag,
                     state,
@@ -103,10 +98,7 @@ mod tests {
                 }
             }
 
-            pub fn load(
-                &self,
-                layouter: &mut impl Layouter<F>,
-            ) -> Result<(), Error> {
+            pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
                 self.table.load(layouter)
             }
 
@@ -136,20 +128,14 @@ mod tests {
                             .collect::<Vec<_>>()
                             .try_into()
                             .unwrap();
-                        let flag = region.assign_advice(
-                            || "Flag",
-                            self.flag,
-                            0,
-                            || Ok(flag_value),
-                        )?;
+                        let flag =
+                            region.assign_advice(|| "Flag", self.flag, 0, || Ok(flag_value))?;
                         Ok((state, flag))
                     },
                 )?;
-                let output_state = self.conversion.assign_region(
-                    layouter,
-                    state,
-                    (flag, flag_value),
-                )?;
+                let output_state =
+                    self.conversion
+                        .assign_region(layouter, state, (flag, flag_value))?;
                 let output_state: [F; 25] = output_state
                     .iter()
                     .map(|&(_, value)| value)
@@ -183,8 +169,7 @@ mod tests {
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 config.load(&mut layouter)?;
-                let out_state =
-                    config.assign_region(&mut layouter, self.in_state)?;
+                let out_state = config.assign_region(&mut layouter, self.in_state)?;
                 assert_eq!(out_state, self.out_state);
                 Ok(())
             }

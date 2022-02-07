@@ -66,21 +66,11 @@ impl<F: FieldExt> EvmCircuit<F> {
             || "fixed table",
             |mut region| {
                 for (offset, row) in std::iter::once([F::zero(); 4])
-                    .chain(
-                        fixed_table_tags
-                            .iter()
-                            .map(|tag| tag.build())
-                            .flatten(),
-                    )
+                    .chain(fixed_table_tags.iter().map(|tag| tag.build()).flatten())
                     .enumerate()
                 {
                     for (column, value) in self.fixed_table.iter().zip(row) {
-                        region.assign_fixed(
-                            || "",
-                            *column,
-                            offset,
-                            || Ok(value),
-                        )?;
+                        region.assign_fixed(|| "", *column, offset, || Ok(value))?;
                     }
                 }
 
@@ -189,8 +179,7 @@ pub(crate) mod test {
 
                     for tx in txs.iter() {
                         for row in tx.table_assignments(randomness) {
-                            for (column, value) in self.tx_table.iter().zip(row)
-                            {
+                            for (column, value) in self.tx_table.iter().zip(row) {
                                 region.assign_advice(
                                     || format!("tx table row {}", offset),
                                     *column,
@@ -227,10 +216,8 @@ pub(crate) mod test {
                     offset += 1;
 
                     for rw in rws.iter() {
-                        for (column, value) in self
-                            .rw_table
-                            .iter()
-                            .zip(rw.table_assignment(randomness))
+                        for (column, value) in
+                            self.rw_table.iter().zip(rw.table_assignment(randomness))
                         {
                             region.assign_advice(
                                 || format!("rw table row {}", offset),
@@ -268,9 +255,7 @@ pub(crate) mod test {
 
                     for bytecode in bytecodes.iter() {
                         for row in bytecode.table_assignments(randomness) {
-                            for (column, value) in
-                                self.bytecode_table.iter().zip(row)
-                            {
+                            for (column, value) in self.bytecode_table.iter().zip(row) {
                                 region.assign_advice(
                                     || format!("bytecode table row {}", offset),
                                     *column,
@@ -307,8 +292,7 @@ pub(crate) mod test {
                     offset += 1;
 
                     for row in block.table_assignments(randomness) {
-                        for (column, value) in self.block_table.iter().zip(row)
-                        {
+                        for (column, value) in self.block_table.iter().zip(row) {
                             region.assign_advice(
                                 || format!("block table row {}", offset),
                                 *column,
@@ -332,10 +316,7 @@ pub(crate) mod test {
     }
 
     impl<F> TestCircuit<F> {
-        pub fn new(
-            block: Block<F>,
-            fixed_table_tags: Vec<FixedTableTag>,
-        ) -> Self {
+        pub fn new(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
             Self {
                 block,
                 fixed_table_tags,
@@ -362,9 +343,8 @@ pub(crate) mod test {
                 let mut power_of_randomness = None;
 
                 meta.create_gate("", |meta| {
-                    power_of_randomness = Some(columns.map(|column| {
-                        meta.query_instance(column, Rotation::cur())
-                    }));
+                    power_of_randomness =
+                        Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
 
                     [0.expr()]
                 });
@@ -393,30 +373,13 @@ pub(crate) mod test {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            config.evm_circuit.load_fixed_table(
-                &mut layouter,
-                self.fixed_table_tags.clone(),
-            )?;
-            config.load_txs(
-                &mut layouter,
-                &self.block.txs,
-                self.block.randomness,
-            )?;
-            config.load_rws(
-                &mut layouter,
-                &self.block.rws,
-                self.block.randomness,
-            )?;
-            config.load_bytecodes(
-                &mut layouter,
-                &self.block.bytecodes,
-                self.block.randomness,
-            )?;
-            config.load_blocks(
-                &mut layouter,
-                &self.block.context,
-                self.block.randomness,
-            )?;
+            config
+                .evm_circuit
+                .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
+            config.load_txs(&mut layouter, &self.block.txs, self.block.randomness)?;
+            config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
+            config.load_bytecodes(&mut layouter, &self.block.bytecodes, self.block.randomness)?;
+            config.load_blocks(&mut layouter, &self.block.context, self.block.randomness)?;
             config
                 .evm_circuit
                 .assign_block_exact(&mut layouter, &self.block)
@@ -427,9 +390,7 @@ pub(crate) mod test {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let log2_ceil = |n| {
-            u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32
-        };
+        let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
         let k = log2_ceil(
             64 + fixed_table_tags
@@ -449,15 +410,13 @@ pub(crate) mod test {
             .map(|exp| {
                 vec![
                     block.randomness.pow(&[exp, 0, 0, 0]);
-                    block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>()
-                        * STEP_HEIGHT
+                    block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>() * STEP_HEIGHT
                 ]
             })
             .collect();
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
 
-        let prover =
-            MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
+        let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
         prover.verify()
     }
 

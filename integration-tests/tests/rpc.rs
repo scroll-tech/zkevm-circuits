@@ -1,9 +1,7 @@
 #![cfg(feature = "rpc")]
 
 use eth_types::{StorageProof, Word};
-use integration_tests::{
-    get_client, CompiledContract, GenDataOutput, CHAIN_ID, CONTRACTS_PATH,
-};
+use integration_tests::{get_client, CompiledContract, GenDataOutput, CHAIN_ID, CONTRACTS_PATH};
 use lazy_static::lazy_static;
 use pretty_assertions::assert_eq;
 use std::fs::File;
@@ -48,10 +46,8 @@ async fn test_trace_block_by_number_by_hash() {
 
     let cli = get_client();
     let block = cli.get_block_by_number(block_num.into()).await.unwrap();
-    let trace_by_number =
-        cli.trace_block_by_number(block_num.into()).await.unwrap();
-    let trace_by_hash =
-        cli.trace_block_by_hash(block.hash.unwrap()).await.unwrap();
+    let trace_by_number = cli.trace_block_by_number(block_num.into()).await.unwrap();
+    let trace_by_hash = cli.trace_block_by_hash(block.hash.unwrap()).await.unwrap();
     assert_eq!(trace_by_number, trace_by_hash);
     assert!(!trace_by_number[0].struct_logs.is_empty())
 }
@@ -63,10 +59,9 @@ async fn test_get_contract_code() {
 
     let (block_num, address) = GEN_DATA.deployments.get(contract_name).unwrap();
     let path_json = Path::new(CONTRACTS_PATH).join(contract_path_json);
-    let compiled: CompiledContract = serde_json::from_reader(
-        File::open(path_json).expect("cannot read file"),
-    )
-    .expect("cannot deserialize json from file");
+    let compiled: CompiledContract =
+        serde_json::from_reader(File::open(path_json).expect("cannot read file"))
+            .expect("cannot deserialize json from file");
 
     let cli = get_client();
     let code = cli.get_code(*address, (*block_num).into()).await.unwrap();

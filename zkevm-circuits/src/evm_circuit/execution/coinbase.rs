@@ -5,9 +5,7 @@ use crate::{
         table::BlockContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -49,12 +47,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
             stack_pointer: Delta((-1).expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -91,7 +84,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CoinbaseGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::run_test_circuits;
-    use bus_mapping::bytecode;
+    use eth_types::bytecode;
 
     fn test_ok() {
         let bytecode = bytecode! {

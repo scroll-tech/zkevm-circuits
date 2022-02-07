@@ -113,9 +113,7 @@ use crate::gates::{
 };
 use halo2::{
     circuit::{Cell, Layouter},
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -251,8 +249,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
         lane_base_13: (Cell, F),
     ) -> Result<((Cell, F), Vec<(Cell, F)>, Vec<(Cell, F)>), Error> {
         let (conversions, special) =
-            RhoLane::new(f_to_biguint(lane_base_13.1), self.rotation)
-                .get_full_witness();
+            RhoLane::new(f_to_biguint(lane_base_13.1), self.rotation).get_full_witness();
         layouter.assign_region(
             || "lane rotate conversion",
             |mut region| {
@@ -297,11 +294,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                             || "Output power of base",
                             self.output_pob,
                             offset,
-                            || {
-                                Ok(biguint_to_f::<F>(
-                                    &conv.output.power_of_base,
-                                ))
-                            },
+                            || Ok(biguint_to_f::<F>(&conv.output.power_of_base)),
                         )?;
                         {
                             let cell = region.assign_advice(
@@ -315,8 +308,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                             }
                         }
                         let od = {
-                            let value =
-                                F::from(conv.overflow_detector.value.into());
+                            let value = F::from(conv.overflow_detector.value.into());
                             let cell = region.assign_advice(
                                 || "Overflow detector",
                                 self.overflow_detector,
@@ -356,14 +348,7 @@ impl<F: FieldExt> LaneRotateConversionConfig<F> {
                         || "Special output power of base",
                         self.output_pob,
                         offset,
-                        || {
-                            Ok(F::from(B9.into()).pow(&[
-                                self.rotation.into(),
-                                0,
-                                0,
-                                0,
-                            ]))
-                        },
+                        || Ok(F::from(B9.into()).pow(&[self.rotation.into(), 0, 0, 0])),
                     )?;
                     region.assign_advice(
                         || "Special output acc pre",
@@ -432,29 +417,14 @@ impl<F: FieldExt> SumConfig<F> {
                 let mut offset = 0;
                 for &(cell_from, value) in xs.iter() {
                     self.q_enable.enable(&mut region, offset)?;
-                    let cell_to = region.assign_advice(
-                        || "x",
-                        self.x,
-                        offset,
-                        || Ok(value),
-                    )?;
+                    let cell_to = region.assign_advice(|| "x", self.x, offset, || Ok(value))?;
                     region.constrain_equal(cell_to, cell_from)?;
-                    region.assign_advice(
-                        || "sum",
-                        self.sum,
-                        offset,
-                        || Ok(sum),
-                    )?;
+                    region.assign_advice(|| "sum", self.sum, offset, || Ok(sum))?;
                     sum += value;
                     offset += 1;
                 }
                 let sum = {
-                    let cell = region.assign_advice(
-                        || "last sum",
-                        self.sum,
-                        offset,
-                        || Ok(sum),
-                    )?;
+                    let cell = region.assign_advice(|| "last sum", self.sum, offset, || Ok(sum))?;
                     (cell, sum)
                 };
 
@@ -473,10 +443,7 @@ pub struct OverflowCheckConfig<F> {
     step3_acc: Column<Advice>,
 }
 impl<F: FieldExt> OverflowCheckConfig<F> {
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        cols_to_copy: Vec<Column<Advice>>,
-    ) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>, cols_to_copy: Vec<Column<Advice>>) -> Self {
         for &col in cols_to_copy.iter() {
             meta.enable_equality(col.into());
         }
@@ -498,17 +465,13 @@ impl<F: FieldExt> OverflowCheckConfig<F> {
                 .chain(Some((
                     "step2_acc <= 12",
                     (0..=STEP2_RANGE)
-                        .map(|x| {
-                            step2_acc.clone() - Expression::Constant(F::from(x))
-                        })
+                        .map(|x| step2_acc.clone() - Expression::Constant(F::from(x)))
                         .fold(one.clone(), |acc, x| acc * x),
                 )))
                 .chain(Some((
                     "step3_acc <= 13 * 13",
                     (0..=STEP3_RANGE)
-                        .map(|x| {
-                            step3_acc.clone() - Expression::Constant(F::from(x))
-                        })
+                        .map(|x| step3_acc.clone() - Expression::Constant(F::from(x)))
                         .fold(one, |acc, x| acc * x),
                 )))
                 .map(|(name, poly)| (name, q_enable.clone() * poly))
@@ -529,10 +492,8 @@ impl<F: FieldExt> OverflowCheckConfig<F> {
         step2_cells: Vec<(Cell, F)>,
         step3_cells: Vec<(Cell, F)>,
     ) -> Result<(), Error> {
-        let step2_sum =
-            self.step2_sum_config.assign_region(layouter, step2_cells)?;
-        let step3_sum =
-            self.step3_sum_config.assign_region(layouter, step3_cells)?;
+        let step2_sum = self.step2_sum_config.assign_region(layouter, step2_cells)?;
+        let step3_sum = self.step3_sum_config.assign_region(layouter, step3_cells)?;
         layouter.assign_region(
             || "Overflow range check",
             |mut region| {

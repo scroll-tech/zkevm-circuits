@@ -1,41 +1,14 @@
-use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
-use crate::{operation::RW, Error};
-use eth_types::GethExecStep;
-
-/// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the [`OpcodeId::PC`](crate::evm::OpcodeId::PC) `OpcodeId`.
-#[derive(Debug, Copy, Clone)]
-pub(crate) struct Coinbase;
-
-impl Opcode for Coinbase {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
-        // Get value result from next step and do stack write
-        let value = steps[1].stack.last()?;
-        state.push_stack_op(
-            RW::WRITE,
-            step.stack.last_filled().map(|a| a - 1),
-            value,
-        );
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod coinbase_tests {
-    use super::*;
     use crate::{
-        bytecode,
         circuit_input_builder::{ExecStep, TransactionContext},
-        mock,
+        mock::BlockData,
+        operation::RW,
+        Error,
     };
     use eth_types::evm_types::StackAddress;
-    use eth_types::ToWord;
+    use eth_types::{bytecode, ToWord};
+    use mock::new_single_tx_trace_code_at_start;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -48,7 +21,7 @@ mod coinbase_tests {
 
         // Get the execution steps from the external tracer
         let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+            BlockData::new_from_geth_data(new_single_tx_trace_code_at_start(&code).unwrap());
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -64,8 +37,7 @@ mod coinbase_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref =
-            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add the last Stack write
         state_ref.push_stack_op(

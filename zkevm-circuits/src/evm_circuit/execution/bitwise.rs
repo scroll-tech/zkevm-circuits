@@ -5,9 +5,7 @@ use crate::{
         table::{FixedTableTag, Lookup},
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -45,8 +43,8 @@ impl<F: FieldExt> ExecutionGadget<F> for BitwiseGadget<F> {
         // Because opcode AND, OR, and XOR are continuous, so we can make the
         // FixedTableTag of them also continuous, and use the opcode delta from
         // OpcodeId::AND as the delta to FixedTableTag::BitwiseAnd.
-        let tag = FixedTableTag::BitwiseAnd.expr()
-            + (opcode.expr() - OpcodeId::AND.as_u64().expr());
+        let tag =
+            FixedTableTag::BitwiseAnd.expr() + (opcode.expr() - OpcodeId::AND.as_u64().expr());
         for idx in 0..32 {
             cb.add_lookup(
                 "Bitwise lookup",
@@ -68,12 +66,7 @@ impl<F: FieldExt> ExecutionGadget<F> for BitwiseGadget<F> {
             stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -94,9 +87,8 @@ impl<F: FieldExt> ExecutionGadget<F> for BitwiseGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [a, b, c] =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                .map(|idx| block.rws[idx].stack_value());
+        let [a, b, c] = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
+            .map(|idx| block.rws[idx].stack_value());
         self.a.assign(region, offset, Some(a.to_le_bytes()))?;
         self.b.assign(region, offset, Some(b.to_le_bytes()))?;
         self.c.assign(region, offset, Some(c.to_le_bytes()))?;
@@ -110,12 +102,10 @@ mod test {
     use crate::{
         evm_circuit::test::rand_word,
         test_util::{
-            get_fixed_table, run_test_circuits_with_config, BytecodeTestConfig,
-            FixedTableConfig,
+            get_fixed_table, run_test_circuits_with_config, BytecodeTestConfig, FixedTableConfig,
         },
     };
-    use bus_mapping::bytecode;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
 
     fn test_ok(a: Word, b: Word) {
         let bytecode = bytecode! {
@@ -134,15 +124,10 @@ mod test {
             STOP
         };
         let test_config = BytecodeTestConfig {
-            evm_circuit_lookup_tags: get_fixed_table(
-                FixedTableConfig::Complete,
-            ),
+            evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Complete),
             ..Default::default()
         };
-        assert_eq!(
-            run_test_circuits_with_config(bytecode, test_config),
-            Ok(())
-        );
+        assert_eq!(run_test_circuits_with_config(bytecode, test_config), Ok(()));
     }
 
     #[test]

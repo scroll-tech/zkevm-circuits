@@ -1,7 +1,6 @@
 use super::{
-    AccountDestructedOp, AccountOp, MemoryOp, Op, OpEnum, Operation, StackOp,
-    StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp,
-    TxRefundOp,
+    AccountDestructedOp, AccountOp, MemoryOp, Op, OpEnum, Operation, StackOp, StorageOp, Target,
+    TxAccessListAccountOp, TxAccessListAccountStorageOp, TxRefundOp,
 };
 use crate::exec_trace::OperationRef;
 use itertools::Itertools;
@@ -26,8 +25,7 @@ pub struct OperationContainer {
     pub(crate) stack: Vec<Operation<StackOp>>,
     pub(crate) storage: Vec<Operation<StorageOp>>,
     pub(crate) tx_access_list_account: Vec<Operation<TxAccessListAccountOp>>,
-    pub(crate) tx_access_list_storage_slot:
-        Vec<Operation<TxAccessListAccountStorageOp>>,
+    pub(crate) tx_access_list_storage_slot: Vec<Operation<TxAccessListAccountStorageOp>>,
     pub(crate) tx_refund: Vec<Operation<TxRefundOp>>,
     pub(crate) account: Vec<Operation<AccountOp>>,
     pub(crate) account_destructed: Vec<Operation<AccountDestructedOp>>,
@@ -101,10 +99,7 @@ impl OperationContainer {
             }
             OpEnum::AccountDestructed(op) => {
                 self.account_destructed.push(Operation::new(rwc, op));
-                OperationRef::from((
-                    Target::AccountDestructed,
-                    self.account_destructed.len(),
-                ))
+                OperationRef::from((Target::AccountDestructed, self.account_destructed.len()))
             }
         }
     }

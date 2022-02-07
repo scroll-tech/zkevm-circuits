@@ -55,24 +55,16 @@ impl FixedTableTag {
         let tag = F::from(*self as u64);
         match self {
             Self::Range16 => {
-                Box::new((0..16).map(move |value| {
-                    [tag, F::from(value), F::zero(), F::zero()]
-                }))
+                Box::new((0..16).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
             Self::Range32 => {
-                Box::new((0..32).map(move |value| {
-                    [tag, F::from(value), F::zero(), F::zero()]
-                }))
+                Box::new((0..32).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
             Self::Range256 => {
-                Box::new((0..256).map(move |value| {
-                    [tag, F::from(value), F::zero(), F::zero()]
-                }))
+                Box::new((0..256).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
             Self::Range512 => {
-                Box::new((0..512).map(move |value| {
-                    [tag, F::from(value), F::zero(), F::zero()]
-                }))
+                Box::new((0..512).map(move |value| [tag, F::from(value), F::zero(), F::zero()]))
             }
             Self::SignByte => Box::new((0..256).map(move |value| {
                 [
@@ -83,34 +75,29 @@ impl FixedTableTag {
                 ]
             })),
             Self::BitwiseAnd => Box::new((0..256).flat_map(move |lhs| {
-                (0..256).map(move |rhs| {
-                    [tag, F::from(lhs), F::from(rhs), F::from(lhs & rhs)]
-                })
+                (0..256).map(move |rhs| [tag, F::from(lhs), F::from(rhs), F::from(lhs & rhs)])
             })),
             Self::BitwiseOr => Box::new((0..256).flat_map(move |lhs| {
-                (0..256).map(move |rhs| {
-                    [tag, F::from(lhs), F::from(rhs), F::from(lhs | rhs)]
-                })
+                (0..256).map(move |rhs| [tag, F::from(lhs), F::from(rhs), F::from(lhs | rhs)])
             })),
             Self::BitwiseXor => Box::new((0..256).flat_map(move |lhs| {
-                (0..256).map(move |rhs| {
-                    [tag, F::from(lhs), F::from(rhs), F::from(lhs ^ rhs)]
-                })
+                (0..256).map(move |rhs| [tag, F::from(lhs), F::from(rhs), F::from(lhs ^ rhs)])
             })),
-            Self::ResponsibleOpcode => Box::new(
-                ExecutionState::iterator().flat_map(move |execution_state| {
-                    execution_state.responsible_opcodes().into_iter().map(
-                        move |opcode| {
+            Self::ResponsibleOpcode => {
+                Box::new(ExecutionState::iterator().flat_map(move |execution_state| {
+                    execution_state
+                        .responsible_opcodes()
+                        .into_iter()
+                        .map(move |opcode| {
                             [
                                 tag,
                                 F::from(execution_state.as_u64()),
                                 F::from(opcode.as_u64()),
                                 F::zero(),
                             ]
-                        },
-                    )
-                }),
-            ),
+                        })
+                }))
+            }
         }
     }
 }
@@ -298,20 +285,13 @@ impl<F: FieldExt> Lookup<F> {
 
     pub(crate) fn input_exprs(&self) -> Vec<Expression<F>> {
         match self {
-            Self::Fixed { tag, values } => {
-                [vec![tag.clone()], values.to_vec()].concat()
-            }
+            Self::Fixed { tag, values } => [vec![tag.clone()], values.to_vec()].concat(),
             Self::Tx {
                 id,
                 field_tag,
                 index,
                 value,
-            } => vec![
-                id.clone(),
-                field_tag.clone(),
-                index.clone(),
-                value.clone(),
-            ],
+            } => vec![id.clone(), field_tag.clone(), index.clone(), value.clone()],
             Self::Rw {
                 counter,
                 is_write,
@@ -328,12 +308,7 @@ impl<F: FieldExt> Lookup<F> {
                 value,
                 is_code,
             } => {
-                vec![
-                    hash.clone(),
-                    index.clone(),
-                    value.clone(),
-                    is_code.clone(),
-                ]
+                vec![hash.clone(), index.clone(), value.clone(), is_code.clone()]
             }
             Self::Block {
                 field_tag,

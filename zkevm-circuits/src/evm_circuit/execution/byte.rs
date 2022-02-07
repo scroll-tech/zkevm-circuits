@@ -4,9 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
             sum, Word,
         },
@@ -40,8 +38,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
         // need to copy any bytes. So just sum all the non-LSB byte
         // values here and then check if it's non-zero so we can use
         // that as an additional condition when to copy the byte value.
-        let is_msb_sum_zero =
-            IsZeroGadget::construct(cb, sum::expr(&index.cells[1..32]));
+        let is_msb_sum_zero = IsZeroGadget::construct(cb, sum::expr(&index.cells[1..32]));
 
         // Now we just need to check that `result[0]` is the sum of all copied
         // bytes. We go byte by byte and check if `idx == index[0]`.
@@ -52,21 +49,16 @@ impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
         let is_byte_selected = array_init(|idx| {
             // Check if this byte is selected looking only at the LSB of the
             // index word
-            IsEqualGadget::construct(
-                cb,
-                index.cells[0].expr(),
-                (31 - idx).expr(),
-            )
+            IsEqualGadget::construct(cb, index.cells[0].expr(), (31 - idx).expr())
         });
 
         // Sum all possible selected bytes
-        let selected_byte = value
-            .cells
-            .iter()
-            .zip(is_byte_selected.iter())
-            .fold(0.expr(), |acc, (cell, is_selected)| {
+        let selected_byte = value.cells.iter().zip(is_byte_selected.iter()).fold(
+            0.expr(),
+            |acc, (cell, is_selected)| {
                 acc + is_selected.expr() * is_msb_sum_zero.expr() * cell.expr()
-            });
+            },
+        );
 
         // Pop the byte index and the value from the stack,
         // push the selected byte on the stack
@@ -84,12 +76,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
             ..Default::default()
         };
         let opcode = cb.query_cell();
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -118,11 +105,8 @@ impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
         self.value.assign(region, offset, Some(value))?;
 
         // Set `is_msb_sum_zero`
-        self.is_msb_sum_zero.assign(
-            region,
-            offset,
-            sum::value(&index[1..32]),
-        )?;
+        self.is_msb_sum_zero
+            .assign(region, offset, sum::value(&index[1..32]))?;
 
         // Set `is_byte_selected`
         for i in 0..32 {
@@ -141,8 +125,7 @@ impl<F: FieldExt> ExecutionGadget<F> for ByteGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
-    use bus_mapping::bytecode;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
 
     fn test_ok(index: Word, value: Word) {
         let bytecode = bytecode! {

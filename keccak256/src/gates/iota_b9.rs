@@ -143,20 +143,18 @@ impl<F: FieldExt> IotaB9Config<F> {
         };
 
         // Copies the `is_mixing` flag to the `round_ctant_b9` Advice column.
-        let copy_flag = |region: &mut Region<'_, F>,
-                         offset: usize,
-                         flag: (Cell, F)|
-         -> Result<(), Error> {
-            let obtained_cell = region.assign_advice(
-                || format!("assign is_mixing flag {:?}", flag.1),
-                self.round_ctant_b9,
-                offset,
-                || Ok(flag.1),
-            )?;
-            region.constrain_equal(flag.0, obtained_cell)?;
+        let copy_flag =
+            |region: &mut Region<'_, F>, offset: usize, flag: (Cell, F)| -> Result<(), Error> {
+                let obtained_cell = region.assign_advice(
+                    || format!("assign is_mixing flag {:?}", flag.1),
+                    self.round_ctant_b9,
+                    offset,
+                    || Ok(flag.1),
+                )?;
+                region.constrain_equal(flag.0, obtained_cell)?;
 
-            Ok(())
-        };
+                Ok(())
+            };
 
         layouter.assign_region(
             || "Assign IotaB9 for final round step",
@@ -256,16 +254,13 @@ impl<F: FieldExt> IotaB9Config<F> {
     /// Given a [`StateBigInt`] returns the `init_state` and `out_state` ready
     /// to be added as circuit witnesses applying `IotaB9` to the input to
     /// get the output.
-    pub(crate) fn compute_circ_states(
-        state: StateBigInt,
-    ) -> ([F; 25], [F; 25]) {
+    pub(crate) fn compute_circ_states(state: StateBigInt) -> ([F; 25], [F; 25]) {
         let mut in_biguint = StateBigInt::default();
         let mut in_state: [F; 25] = [F::zero(); 25];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
-            in_biguint[(x, y)] = convert_b2_to_b9(
-                state[(x, y)].clone().try_into().expect("Conversion err"),
-            );
+            in_biguint[(x, y)] =
+                convert_b2_to_b9(state[(x, y)].clone().try_into().expect("Conversion err"));
             in_state[5 * x + y] = biguint_to_f(&in_biguint[(x, y)]);
         }
 
@@ -330,12 +325,7 @@ mod tests {
                 // Since we're not using a selector and want to test IotaB9 with
                 // the Mixing step, we make q_enable query
                 // the round_ctant_b9 at `Rotation::next`.
-                IotaB9Config::configure(
-                    meta,
-                    state,
-                    round_ctant_b9,
-                    round_ctants,
-                )
+                IotaB9Config::configure(meta, state, round_ctant_b9, round_ctants)
             }
 
             fn synthesize(
@@ -360,8 +350,7 @@ mod tests {
 
                         // Witness `state`
                         let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> =
-                                Vec::with_capacity(25);
+                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -396,8 +385,7 @@ mod tests {
             [0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0],
         ];
-        let (in_state, out_state) =
-            IotaB9Config::compute_circ_states(input1.into());
+        let (in_state, out_state) = IotaB9Config::compute_circ_states(input1.into());
 
         let constants: Vec<Fp> = ROUND_CONSTANTS
             .iter()
@@ -415,9 +403,7 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover =
-                MockProver::<Fp>::run(9, &circuit, vec![constants.clone()])
-                    .unwrap();
+            let prover = MockProver::<Fp>::run(9, &circuit, vec![constants.clone()]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
         }
@@ -435,9 +421,7 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let prover =
-                MockProver::<Fp>::run(9, &circuit, vec![constants.clone()])
-                    .unwrap();
+            let prover = MockProver::<Fp>::run(9, &circuit, vec![constants.clone()]).unwrap();
 
             let _ = prover.verify().is_err();
         }
@@ -453,8 +437,7 @@ mod tests {
             _marker: PhantomData,
         };
 
-        let prover =
-            MockProver::<Fp>::run(9, &circuit, vec![constants]).unwrap();
+        let prover = MockProver::<Fp>::run(9, &circuit, vec![constants]).unwrap();
 
         assert_eq!(prover.verify(), Ok(()));
     }
@@ -492,12 +475,7 @@ mod tests {
                 // instance column
                 let round_ctants = meta.instance_column();
 
-                IotaB9Config::configure(
-                    meta,
-                    state,
-                    round_ctant_b9,
-                    round_ctants,
-                )
+                IotaB9Config::configure(meta, state, round_ctant_b9, round_ctants)
             }
 
             fn synthesize(
@@ -512,8 +490,7 @@ mod tests {
 
                         // Witness `state`
                         let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> =
-                                Vec::with_capacity(25);
+                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -557,9 +534,7 @@ mod tests {
         }
 
         // Test for the 25 rounds
-        for (round_idx, round_val) in
-            ROUND_CONSTANTS.iter().enumerate().take(PERMUTATION)
-        {
+        for (round_idx, round_val) in ROUND_CONSTANTS.iter().enumerate().take(PERMUTATION) {
             // Compute out state
             let s1_arith = KeccakFArith::iota_b9(&in_biguint, *round_val);
             let out_state = state_bigint_to_field::<Fp, 25>(s1_arith);
@@ -576,8 +551,7 @@ mod tests {
                 .map(|num| biguint_to_f(&convert_b2_to_b9(*num)))
                 .collect();
 
-            let prover =
-                MockProver::<Fp>::run(9, &circuit, vec![constants]).unwrap();
+            let prover = MockProver::<Fp>::run(9, &circuit, vec![constants]).unwrap();
 
             assert_eq!(prover.verify(), Ok(()));
         }

@@ -40,18 +40,10 @@ impl<F: FieldExt> XiConfig<F> {
             (0..5)
                 .cartesian_product(0..5usize)
                 .map(|(x, y)| {
-                    let a =
-                        meta.query_advice(state[5 * x + y], Rotation::cur());
-                    let b = meta.query_advice(
-                        state[5 * ((x + 1) % 5) + y],
-                        Rotation::cur(),
-                    );
-                    let c = meta.query_advice(
-                        state[5 * ((x + 2) % 5) + y],
-                        Rotation::cur(),
-                    );
-                    let next_lane =
-                        meta.query_advice(state[5 * x + y], Rotation::next());
+                    let a = meta.query_advice(state[5 * x + y], Rotation::cur());
+                    let b = meta.query_advice(state[5 * ((x + 1) % 5) + y], Rotation::cur());
+                    let c = meta.query_advice(state[5 * ((x + 2) % 5) + y], Rotation::cur());
+                    let next_lane = meta.query_advice(state[5 * x + y], Rotation::next());
                     meta.query_selector(q_enable)
                         * ((Expression::Constant(F::from(2)) * a
                             + b
@@ -163,8 +155,7 @@ mod tests {
                     |mut region| {
                         // Witness `state`
                         let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> =
-                                Vec::with_capacity(25);
+                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -184,12 +175,7 @@ mod tests {
                     || "assign input state",
                     |mut region| {
                         config.q_enable.enable(&mut region, offset)?;
-                        config.assign_state(
-                            &mut region,
-                            offset,
-                            in_state,
-                            self.out_state,
-                        )
+                        config.assign_state(&mut region, offset, in_state, self.out_state)
                     },
                 )?;
 

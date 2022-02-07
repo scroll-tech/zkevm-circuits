@@ -15,8 +15,7 @@ mod tests {
     const MEMORY_ROWS_MAX: usize = 1 << (DEGREE - 2);
     const STACK_ROWS_MAX: usize = 1 << (DEGREE - 2);
     const STORAGE_ROWS_MAX: usize = 1 << (DEGREE - 2);
-    const GLOBAL_COUNTER_MAX: usize =
-        MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
+    const GLOBAL_COUNTER_MAX: usize = MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -35,32 +34,25 @@ mod tests {
 
         // Initialize the polynomial commitment parameters
         let rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37,
-            0x32, 0x54, 0x06, 0xbc, 0xe5,
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
         ]);
 
         // Bench setup generation
-        let setup_message =
-            format!("Setup generation with degree = {}", DEGREE);
+        let setup_message = format!("Setup generation with degree = {}", DEGREE);
         let start1 = start_timer!(|| setup_message);
         let params = Setup::<Bn256>::new(DEGREE as u32, rng);
-        let verifier_params =
-            Setup::<Bn256>::verifier_params(&params, public_inputs_size)
-                .unwrap();
+        let verifier_params = Setup::<Bn256>::verifier_params(&params, public_inputs_size).unwrap();
         end_timer!(start1);
 
         // Initialize the proving key
-        let vk = keygen_vk(&params, &empty_circuit)
-            .expect("keygen_vk should not fail");
-        let pk = keygen_pk(&params, vk, &empty_circuit)
-            .expect("keygen_pk should not fail");
+        let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
         // Create a proof
-        let mut transcript =
-            Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message =
-            format!("State Proof generation with {} rows", DEGREE);
+        let proof_message = format!("State Proof generation with {} rows", DEGREE);
         let start2 = start_timer!(|| proof_message);
         create_proof(&params, &pk, &[empty_circuit], &[&[]], &mut transcript)
             .expect("proof generation should not fail");
@@ -69,8 +61,7 @@ mod tests {
 
         // Bench verification time
         let start3 = start_timer!(|| "State Proof verification");
-        let mut transcript =
-            Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+        let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
         verify_proof(&verifier_params, pk.get_vk(), &[&[]], &mut transcript)
             .expect("failed to verify bench circuit");

@@ -97,8 +97,7 @@ impl<F: FieldExt> BaseConversionConfig<F> {
         input: (Cell, F),
         flag: (Cell, F),
     ) -> Result<(Cell, F), Error> {
-        let (input_coefs, output_coefs, _) =
-            self.base_info.compute_coefs(input.1)?;
+        let (input_coefs, output_coefs, _) = self.base_info.compute_coefs(input.1)?;
 
         let (out_cell, out_value) = layouter.assign_region(
             || "Base conversion",
@@ -114,12 +113,8 @@ impl<F: FieldExt> BaseConversionConfig<F> {
                     if offset != 0 {
                         self.q_running_sum.enable(&mut region, offset)?;
                     }
-                    let flag_cell = region.assign_advice(
-                        || "flag",
-                        self.flag,
-                        offset,
-                        || Ok(flag.1),
-                    )?;
+                    let flag_cell =
+                        region.assign_advice(|| "flag", self.flag, offset, || Ok(flag.1))?;
                     region.constrain_equal(flag_cell, flag.0)?;
                     let input_coef_cell = region.assign_advice(
                         || "Input Coef",
@@ -150,12 +145,8 @@ impl<F: FieldExt> BaseConversionConfig<F> {
 
                     if offset == 0 {
                         // bind first acc to first coef
-                        region
-                            .constrain_equal(input_acc_cell, input_coef_cell)?;
-                        region.constrain_equal(
-                            output_acc_cell,
-                            output_coef_cell,
-                        )?;
+                        region.constrain_equal(input_acc_cell, input_coef_cell)?;
+                        region.constrain_equal(output_acc_cell, output_coef_cell)?;
                     } else if offset == input_coefs.len() - 1 {
                         region.constrain_equal(input_acc_cell, input.0)?;
                         return Ok((output_acc_cell, output_acc));
@@ -203,9 +194,7 @@ mod tests {
                 let lane = meta.advice_column();
                 let flag = meta.advice_column();
                 let base_info = table.get_base_info(false);
-                let conversion = BaseConversionConfig::configure(
-                    meta, base_info, lane, flag,
-                );
+                let conversion = BaseConversionConfig::configure(meta, base_info, lane, flag);
                 Self {
                     lane,
                     flag,
@@ -214,10 +203,7 @@ mod tests {
                 }
             }
 
-            pub fn load(
-                &self,
-                layouter: &mut impl Layouter<F>,
-            ) -> Result<(), Error> {
+            pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
                 self.table.load(layouter)
             }
 
@@ -231,12 +217,8 @@ mod tests {
                 let (lane, flag) = layouter.assign_region(
                     || "Input lane",
                     |mut region| {
-                        let lane = region.assign_advice(
-                            || "Input lane",
-                            self.lane,
-                            0,
-                            || Ok(input),
-                        )?;
+                        let lane =
+                            region.assign_advice(|| "Input lane", self.lane, 0, || Ok(input))?;
                         let flag = region.assign_advice(
                             || "main flag",
                             self.flag,
@@ -246,11 +228,9 @@ mod tests {
                         Ok((lane, flag))
                     },
                 )?;
-                let output = self.conversion.assign_region(
-                    layouter,
-                    (lane, input),
-                    (flag, flag_value),
-                )?;
+                let output =
+                    self.conversion
+                        .assign_region(layouter, (lane, input), (flag, flag_value))?;
                 layouter.assign_region(
                     || "Input lane",
                     |mut region| {
@@ -291,8 +271,7 @@ mod tests {
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 config.load(&mut layouter)?;
-                let output =
-                    config.assign_region(&mut layouter, self.input_b2_lane)?;
+                let output = config.assign_region(&mut layouter, self.input_b2_lane)?;
                 assert_eq!(output, self.output_b13_lane);
                 Ok(())
             }
@@ -307,11 +286,9 @@ mod tests {
         #[cfg(feature = "dev-graph")]
         {
             use plotters::prelude::*;
-            let root = BitMapBackend::new("base-conversion.png", (1024, 32768))
-                .into_drawing_area();
+            let root = BitMapBackend::new("base-conversion.png", (1024, 32768)).into_drawing_area();
             root.fill(&WHITE).unwrap();
-            let root =
-                root.titled("Base conversion", ("sans-serif", 60)).unwrap();
+            let root = root.titled("Base conversion", ("sans-serif", 60)).unwrap();
             halo2::dev::CircuitLayout::default()
                 .mark_equality_cells(true)
                 .render(k, &circuit, &root)
@@ -336,9 +313,7 @@ mod tests {
                 let lane = meta.advice_column();
                 let flag = meta.advice_column();
                 let base_info = table.get_base_info(false);
-                let conversion = BaseConversionConfig::configure(
-                    meta, base_info, lane, flag,
-                );
+                let conversion = BaseConversionConfig::configure(meta, base_info, lane, flag);
                 Self {
                     lane,
                     flag,
@@ -347,10 +322,7 @@ mod tests {
                 }
             }
 
-            pub fn load(
-                &self,
-                layouter: &mut impl Layouter<F>,
-            ) -> Result<(), Error> {
+            pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
                 self.table.load(layouter)
             }
 
@@ -364,12 +336,8 @@ mod tests {
                 let (lane, flag) = layouter.assign_region(
                     || "Input lane",
                     |mut region| {
-                        let lane = region.assign_advice(
-                            || "Input lane",
-                            self.lane,
-                            0,
-                            || Ok(input),
-                        )?;
+                        let lane =
+                            region.assign_advice(|| "Input lane", self.lane, 0, || Ok(input))?;
                         let flag = region.assign_advice(
                             || "main flag",
                             self.flag,
@@ -379,11 +347,9 @@ mod tests {
                         Ok((lane, flag))
                     },
                 )?;
-                let output = self.conversion.assign_region(
-                    layouter,
-                    (lane, input),
-                    (flag, flag_value),
-                )?;
+                let output =
+                    self.conversion
+                        .assign_region(layouter, (lane, input), (flag, flag_value))?;
                 layouter.assign_region(
                     || "Input lane",
                     |mut region| {
@@ -424,17 +390,13 @@ mod tests {
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
                 config.load(&mut layouter)?;
-                let output =
-                    config.assign_region(&mut layouter, self.input_lane)?;
+                let output = config.assign_region(&mut layouter, self.input_lane)?;
                 assert_eq!(output, self.output_lane);
                 Ok(())
             }
         }
-        let input = BigUint::parse_bytes(
-            b"02939a42ef593e37757abe328e9e409e75dcd76cf1b3427bc3",
-            16,
-        )
-        .unwrap();
+        let input = BigUint::parse_bytes(b"02939a42ef593e37757abe328e9e409e75dcd76cf1b3427bc3", 16)
+            .unwrap();
         let circuit = MyCircuit::<Fp> {
             input_lane: biguint_to_f::<Fp>(&input),
             output_lane: biguint_to_f::<Fp>(&convert_b9_lane_to_b13(input)),

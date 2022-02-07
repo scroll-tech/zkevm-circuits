@@ -5,9 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -48,12 +46,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MsizeGadget<F> {
             ..Default::default()
         };
         let opcode = cb.query_cell();
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -84,8 +77,7 @@ impl<F: FieldExt> ExecutionGadget<F> for MsizeGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::run_test_circuits;
-    use bus_mapping::bytecode;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
 
     #[test]
     fn msize_gadget() {

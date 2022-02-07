@@ -31,7 +31,7 @@ impl<const N: usize> Opcode for StackOnlyOpcode<N> {
         let result_value = steps[1].stack.last()?;
         state.push_stack_op(
             RW::WRITE,
-            step.stack.nth_last_filled(N - 1),
+            step.stack.last_filled().map(|a| a - 1 + N),
             result_value,
         );
 
@@ -42,13 +42,9 @@ impl<const N: usize> Opcode for StackOnlyOpcode<N> {
 #[cfg(test)]
 mod stackonlyop_tests {
     use super::*;
-    use crate::{
-        bytecode,
-        circuit_input_builder::{ExecStep, TransactionContext},
-        mock,
-    };
+    use crate::circuit_input_builder::{ExecStep, TransactionContext};
     use eth_types::evm_types::StackAddress;
-    use eth_types::{word, Word};
+    use eth_types::{bytecode, word, Word};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -61,8 +57,9 @@ mod stackonlyop_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+        );
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -78,8 +75,7 @@ mod stackonlyop_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref =
-            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Read a
         state_ref.push_stack_op(
@@ -121,8 +117,9 @@ mod stackonlyop_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+        );
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -138,8 +135,7 @@ mod stackonlyop_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref =
-            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         let last_stack_pointer = StackAddress(1022);
         let second_last_stack_pointer = StackAddress(1023);
@@ -151,11 +147,7 @@ mod stackonlyop_tests {
         state_ref.push_stack_op(RW::READ, last_stack_pointer, stack_value_a);
 
         // Manage second stack read at second latest stack position
-        state_ref.push_stack_op(
-            RW::READ,
-            second_last_stack_pointer,
-            stack_value_b,
-        );
+        state_ref.push_stack_op(RW::READ, second_last_stack_pointer, stack_value_b);
 
         // Add StackOp associated to the 0x80 push at the latest Stack pos.
         state_ref.push_stack_op(RW::WRITE, second_last_stack_pointer, sum);
@@ -187,8 +179,9 @@ mod stackonlyop_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+        );
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -204,32 +197,15 @@ mod stackonlyop_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref =
-            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Read a, b, n
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress(1024 - 3),
-            Word::from(0x12345),
-        );
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress(1024 - 2),
-            Word::from(0x6789a),
-        );
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress(1024 - 1),
-            Word::from(0xbcdef),
-        );
+        state_ref.push_stack_op(RW::READ, StackAddress(1024 - 3), Word::from(0x12345));
+        state_ref.push_stack_op(RW::READ, StackAddress(1024 - 2), Word::from(0x6789a));
+        state_ref.push_stack_op(RW::READ, StackAddress(1024 - 1), Word::from(0xbcdef));
 
         // Write a + b % n
-        state_ref.push_stack_op(
-            RW::WRITE,
-            StackAddress(1024 - 1),
-            Word::from(0x79bdf),
-        );
+        state_ref.push_stack_op(RW::WRITE, StackAddress(1024 - 1), Word::from(0x79bdf));
 
         tx.steps_mut().push(step);
         test_builder.block.txs_mut().push(tx);

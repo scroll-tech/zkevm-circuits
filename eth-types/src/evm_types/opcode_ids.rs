@@ -316,20 +316,17 @@ pub enum OpcodeId {
 impl OpcodeId {
     /// Returns `true` if the `OpcodeId` is a `PUSHn`.
     pub fn is_push(&self) -> bool {
-        self.as_u8() >= Self::PUSH1.as_u8()
-            && self.as_u8() <= Self::PUSH32.as_u8()
+        self.as_u8() >= Self::PUSH1.as_u8() && self.as_u8() <= Self::PUSH32.as_u8()
     }
 
     /// Returns `true` if the `OpcodeId` is a `DUPn`.
     pub fn is_dup(&self) -> bool {
-        self.as_u8() >= Self::DUP1.as_u8()
-            && self.as_u8() <= Self::DUP16.as_u8()
+        self.as_u8() >= Self::DUP1.as_u8() && self.as_u8() <= Self::DUP16.as_u8()
     }
 
     /// Returns `true` if the `OpcodeId` is a `SWAPn`.
     pub fn is_swap(&self) -> bool {
-        self.as_u8() >= Self::SWAP1.as_u8()
-            && self.as_u8() <= Self::SWAP16.as_u8()
+        self.as_u8() >= Self::SWAP1.as_u8() && self.as_u8() <= Self::SWAP16.as_u8()
     }
 }
 
@@ -501,7 +498,7 @@ impl OpcodeId {
             OpcodeId::SMOD => GasCost::FAST,
             OpcodeId::ADDMOD => GasCost::MID,
             OpcodeId::MULMOD => GasCost::MID,
-            OpcodeId::EXP => GasCost::ZERO,
+            OpcodeId::EXP => GasCost::SLOW,
             OpcodeId::SIGNEXTEND => GasCost::FAST,
             OpcodeId::LT => GasCost::FASTEST,
             OpcodeId::GT => GasCost::FASTEST,
@@ -789,15 +786,13 @@ impl FromStr for OpcodeId {
             _ => {
                 // Parse an invalid opcode value as reported by geth
                 lazy_static! {
-                    static ref RE: Regex =
-                        Regex::new("opcode 0x([[:xdigit:]]{1,2}) not defined")
-                            .expect("invalid regex");
+                    static ref RE: Regex = Regex::new("opcode 0x([[:xdigit:]]{1,2}) not defined")
+                        .expect("invalid regex");
                 }
                 if let Some(cap) = RE.captures(s) {
                     if let Some(byte_hex) = cap.get(1).map(|m| m.as_str()) {
                         return Ok(OpcodeId::INVALID(
-                            u8::from_str_radix(byte_hex, 16)
-                                .expect("invalid hex byte from regex"),
+                            u8::from_str_radix(byte_hex, 16).expect("invalid hex byte from regex"),
                         ));
                     }
                 }

@@ -125,11 +125,7 @@ impl StateDB {
     /// in the state, a zero [`Account`] will be inserted, a zero value will
     /// be inserted at `key` in its storage, and the value will be returned
     /// along with false.
-    pub fn get_storage_mut(
-        &mut self,
-        addr: &Address,
-        key: &Word,
-    ) -> (bool, &mut Word) {
+    pub fn get_storage_mut(&mut self, addr: &Address, key: &Word) -> (bool, &mut Word) {
         let (_, acc) = self.get_account_mut(addr);
         let found = if acc.storage.contains_key(key) {
             true

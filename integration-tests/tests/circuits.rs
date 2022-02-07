@@ -62,8 +62,7 @@ mod test_evm_circuit {
 
                     for tx in txs.iter() {
                         for row in tx.table_assignments(randomness) {
-                            for (column, value) in self.tx_table.iter().zip(row)
-                            {
+                            for (column, value) in self.tx_table.iter().zip(row) {
                                 region.assign_advice(
                                     || format!("tx table row {}", offset),
                                     *column,
@@ -100,10 +99,8 @@ mod test_evm_circuit {
                     offset += 1;
 
                     for rw in rws.iter() {
-                        for (column, value) in self
-                            .rw_table
-                            .iter()
-                            .zip(rw.table_assignment(randomness))
+                        for (column, value) in
+                            self.rw_table.iter().zip(rw.table_assignment(randomness))
                         {
                             region.assign_advice(
                                 || format!("rw table row {}", offset),
@@ -141,9 +138,7 @@ mod test_evm_circuit {
 
                     for bytecode in bytecodes.iter() {
                         for row in bytecode.table_assignments(randomness) {
-                            for (column, value) in
-                                self.bytecode_table.iter().zip(row)
-                            {
+                            for (column, value) in self.bytecode_table.iter().zip(row) {
                                 region.assign_advice(
                                     || format!("bytecode table row {}", offset),
                                     *column,
@@ -194,9 +189,8 @@ mod test_evm_circuit {
                 let mut power_of_randomness = None;
 
                 meta.create_gate("", |meta| {
-                    power_of_randomness = Some(columns.map(|column| {
-                        meta.query_instance(column, Rotation::cur())
-                    }));
+                    power_of_randomness =
+                        Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
 
                     [Expression::Constant(F::zero())]
                 });
@@ -224,25 +218,12 @@ mod test_evm_circuit {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            config.evm_circuit.load_fixed_table(
-                &mut layouter,
-                self.fixed_table_tags.clone(),
-            )?;
-            config.load_txs(
-                &mut layouter,
-                &self.block.txs,
-                self.block.randomness,
-            )?;
-            config.load_rws(
-                &mut layouter,
-                &self.block.rws,
-                self.block.randomness,
-            )?;
-            config.load_bytecodes(
-                &mut layouter,
-                &self.block.bytecodes,
-                self.block.randomness,
-            )?;
+            config
+                .evm_circuit
+                .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
+            config.load_txs(&mut layouter, &self.block.txs, self.block.randomness)?;
+            config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
+            config.load_bytecodes(&mut layouter, &self.block.bytecodes, self.block.randomness)?;
             config.evm_circuit.assign_block(&mut layouter, &self.block)
         }
     }
@@ -257,9 +238,7 @@ mod test_evm_circuit {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let log2_ceil = |n| {
-            u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32
-        };
+        let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
         let k = log2_ceil(
             64 + fixed_table_tags
@@ -275,16 +254,13 @@ mod test_evm_circuit {
                 .sum::<usize>(),
         ));
 
-        let randomness =
-            vec![
-                block.randomness;
-                block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>()
-                    * STEP_HEIGHT
-            ];
+        let randomness = vec![
+            block.randomness;
+            block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>() * STEP_HEIGHT
+        ];
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
 
-        let prover =
-            MockProver::<F>::run(k, &circuit, vec![randomness]).unwrap();
+        let prover = MockProver::<F>::run(k, &circuit, vec![randomness]).unwrap();
         prover.verify()
     }
 }
@@ -306,8 +282,7 @@ async fn test_evm_circuit_block(block_num: u64) {
         .get(&code_hash)
         .expect("code_hash not found");
     let block = block_convert(Fr::rand(), bytecode, &builder.block);
-    run_test_circuit_complete_fixed_table(block)
-        .expect("evm_circuit verification failed");
+    run_test_circuit_complete_fixed_table(block).expect("evm_circuit verification failed");
 }
 
 #[tokio::test]
@@ -347,8 +322,7 @@ async fn test_state_circuit_block(block_num: u64) {
     const MEMORY_ROWS_MAX: usize = 1 << (DEGREE - 2);
     const STACK_ROWS_MAX: usize = 1 << (DEGREE - 2);
     const STORAGE_ROWS_MAX: usize = 1 << (DEGREE - 2);
-    const GLOBAL_COUNTER_MAX: usize =
-        MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
+    const GLOBAL_COUNTER_MAX: usize = MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
 
     let circuit = StateCircuit::<
         Fr,
@@ -367,8 +341,7 @@ async fn test_state_circuit_block(block_num: u64) {
     };
 
     use pairing::bn256::Fr as Fp;
-    let prover =
-        MockProver::<Fp>::run(DEGREE as u32, &circuit, vec![]).unwrap();
+    let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, vec![]).unwrap();
     prover.verify().expect("state_circuit verification failed");
 }
 

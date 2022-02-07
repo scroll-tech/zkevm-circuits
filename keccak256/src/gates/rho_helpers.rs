@@ -79,12 +79,10 @@ pub const STEP3_RANGE: u64 = 169;
 /// overflow detector to be 170.
 ///
 /// This would fail the final overflow detector check.
-pub fn get_overflow_detector(
-    b13_chunks: [u8; BASE_NUM_OF_CHUNKS as usize],
-) -> u32 {
+pub fn get_overflow_detector(b13_chunks: [u8; BASE_NUM_OF_CHUNKS as usize]) -> u32 {
     // could be 0, 1, 2, 3, 4
-    let non_zero_chunk_count = BASE_NUM_OF_CHUNKS as usize
-        - b13_chunks.iter().take_while(|x| **x == 0).count();
+    let non_zero_chunk_count =
+        BASE_NUM_OF_CHUNKS as usize - b13_chunks.iter().take_while(|x| **x == 0).count();
     // could be 0, 0, 1, 13, 170
     OVERFLOW_TRANSFORM[non_zero_chunk_count]
 }
@@ -138,7 +136,7 @@ pub struct RhoLane {
 
 impl RhoLane {
     pub fn new(input: BigUint, rotation: u32) -> Self {
-        assert!(
+        debug_assert!(
             input.lt(&BigUint::from(B13).pow(RHO_LANE_SIZE as u32)),
             "lane too big"
         );
@@ -147,14 +145,13 @@ impl RhoLane {
         let chunks: [u8; RHO_LANE_SIZE] = chunks.try_into().unwrap();
         let special_high = *chunks.get(64).unwrap();
         let special_low = *chunks.get(0).unwrap();
-        assert!(special_high + special_low < B13, "invalid Rho input lane");
+        debug_assert!(special_high + special_low < B13, "invalid Rho input lane");
         let output = convert_b13_lane_to_b9(input.clone(), rotation);
-        let output_b2 =
-            *BigUint::from_radix_le(&output.to_radix_le(B9.into()), B2.into())
-                .unwrap_or_default()
-                .to_u64_digits()
-                .first()
-                .unwrap_or(&0);
+        let output_b2 = *BigUint::from_radix_le(&output.to_radix_le(B9.into()), B2.into())
+            .unwrap_or_default()
+            .to_u64_digits()
+            .first()
+            .unwrap_or(&0);
 
         Self {
             input,
@@ -180,8 +177,7 @@ impl RhoLane {
                     .get(chunk_idx as usize..(chunk_idx + step) as usize)
                     .unwrap();
                 let input = {
-                    let coef = BigUint::from_radix_le(chunks, B13.into())
-                        .unwrap_or_default();
+                    let coef = BigUint::from_radix_le(chunks, B13.into()).unwrap_or_default();
                     let power_of_base = BigUint::from(B13).pow(chunk_idx);
                     let pre_acc = input_acc.clone();
                     input_acc -= &coef * &power_of_base;
@@ -192,13 +188,10 @@ impl RhoLane {
                     }
                 };
                 let output = {
-                    let converted_chunks = chunks
-                        .iter()
-                        .map(|&x| convert_b13_coef(x))
-                        .collect_vec();
+                    let converted_chunks =
+                        chunks.iter().map(|&x| convert_b13_coef(x)).collect_vec();
                     let coef =
-                        BigUint::from_radix_le(&converted_chunks, B9.into())
-                            .unwrap_or_default();
+                        BigUint::from_radix_le(&converted_chunks, B9.into()).unwrap_or_default();
                     let power = (chunk_idx + self.rotation) % LANE_SIZE;
                     let power_of_base = BigUint::from(B9).pow(power);
                     let pre_acc = output_acc.clone();
@@ -215,8 +208,7 @@ impl RhoLane {
                     v.resize(BASE_NUM_OF_CHUNKS as usize, 0);
                     // to big endian
                     v.reverse();
-                    let chunks_be: [u8; BASE_NUM_OF_CHUNKS as usize] =
-                        v.try_into().unwrap();
+                    let chunks_be: [u8; BASE_NUM_OF_CHUNKS as usize] = v.try_into().unwrap();
                     let value = get_overflow_detector(chunks_be);
                     match step {
                         2 => step2_acc += value,
@@ -242,10 +234,9 @@ impl RhoLane {
         let special = {
             let input = input_acc;
             let output_acc_pre = output_acc;
-            let output_coef =
-                convert_b13_coef(self.special_high + self.special_low);
-            let output_acc_post = &output_acc_pre
-                + output_coef * BigUint::from(B9 as u64).pow(self.rotation);
+            let output_coef = convert_b13_coef(self.special_high + self.special_low);
+            let output_acc_post =
+                &output_acc_pre + output_coef * BigUint::from(B9 as u64).pow(self.rotation);
             Special {
                 input,
                 output_acc_pre,
@@ -263,13 +254,9 @@ impl RhoLane {
         let expect = (self.special_low as u64)
             + (self.special_high as u64) * BigUint::from(B13).pow(LANE_SIZE);
         assert_eq!(
-            *input_acc,
-            expect,
+            *input_acc, expect,
             "input_acc got: {:?}  expect: {:?} = low({:?}) + high({:?}) * 13**64",
-            input_acc,
-            expect,
-            self.special_low,
-            self.special_high,
+            input_acc, expect, self.special_low, self.special_high,
         );
     }
 }
@@ -328,8 +315,7 @@ mod tests {
         // The special chunks transformed (high+low) value is 0 too
         let rho_arith_input_chunks = [0, 5, 4, 3, 2, 1];
         let rho_arith_lane =
-            BigUint::from_radix_le(&rho_arith_input_chunks, B13.into())
-                .unwrap_or_default();
+            BigUint::from_radix_le(&rho_arith_input_chunks, B13.into()).unwrap_or_default();
         let rho_chunks_transformed_no_special = [5, 4, 3, 2, 1]
             .iter()
             .map(|&x| convert_b13_coef(x))
@@ -337,11 +323,10 @@ mod tests {
         assert_eq!(rho_chunks_transformed_no_special, [1, 0, 1, 0, 1]);
         // We need to add back the transformed value of special chunks.
         let rho_chunks_transformed = [0, 1, 0, 1, 0, 1];
-        let rho_bin_input: u64 =
-            BigUint::from_radix_le(&rho_chunks_transformed, B2.into())
-                .unwrap_or_default()
-                .iter_u64_digits()
-                .collect_vec()[0];
+        let rho_bin_input: u64 = BigUint::from_radix_le(&rho_chunks_transformed, B2.into())
+            .unwrap_or_default()
+            .iter_u64_digits()
+            .collect_vec()[0];
         assert_eq!(rho_bin_input, 42);
 
         let rotation = 5;

@@ -60,13 +60,9 @@ impl Opcode for Mload {
 #[cfg(test)]
 mod mload_tests {
     use super::*;
-    use crate::{
-        bytecode,
-        circuit_input_builder::{ExecStep, TransactionContext},
-        mock,
-    };
+    use crate::circuit_input_builder::{ExecStep, TransactionContext};
     use eth_types::evm_types::StackAddress;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -81,8 +77,9 @@ mod mload_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+        );
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -98,22 +95,13 @@ mod mload_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref =
-            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add StackOp associated to the 0x40 read from the latest Stack pos.
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress::from(1023),
-            Word::from(0x40),
-        );
+        state_ref.push_stack_op(RW::READ, StackAddress::from(1023), Word::from(0x40));
 
         // Add the last Stack write
-        state_ref.push_stack_op(
-            RW::WRITE,
-            StackAddress::from(1023),
-            Word::from(0x80),
-        );
+        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1023), Word::from(0x80));
 
         // Add the 32 MemoryOp generated from the Memory read at addr
         // 0x40<->0x80 for each byte.

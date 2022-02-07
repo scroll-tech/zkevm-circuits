@@ -4,9 +4,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use halo2::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     dev::MockProver,
-    plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed,
-    },
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
 
@@ -33,9 +31,7 @@ enum ReadWrite<F: FieldExt> {
 impl<F: FieldExt> ReadWrite<F> {
     fn global_counter(&self) -> GlobalCounter {
         match self {
-            Self::Read(global_counter, _) | Self::Write(global_counter, _) => {
-                *global_counter
-            }
+            Self::Read(global_counter, _) | Self::Write(global_counter, _) => *global_counter,
         }
     }
 
@@ -85,8 +81,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
             meta.lookup_any(|meta| {
                 let q_target = meta.query_fixed(q_target, Rotation::cur());
                 let flag = meta.query_advice(flag, Rotation::cur());
-                let binary_table =
-                    meta.query_fixed(binary_table, Rotation::cur());
+                let binary_table = meta.query_fixed(binary_table, Rotation::cur());
 
                 vec![(q_target * flag, binary_table)]
             });
@@ -117,10 +112,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         }
     }
 
-    pub(crate) fn load(
-        &self,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error> {
+    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "binary table",
             |mut region| {
@@ -138,11 +130,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
     }
 
     /// Assign cells.
-    pub(crate) fn assign(
-        &self,
-        mut layouter: impl Layouter<F>,
-        ops: Vec<MemoryOp<F>>,
-    ) {
+    pub(crate) fn assign(&self, mut layouter: impl Layouter<F>, ops: Vec<MemoryOp<F>>) {
         layouter
             .assign_region(
                 || "Memory operations",
@@ -164,12 +152,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
                         offset += 1;
 
                         for global_counter in op.global_counters.iter() {
-                            self.assign_per_counter(
-                                &mut region,
-                                offset,
-                                address,
-                                global_counter,
-                            );
+                            self.assign_per_counter(&mut region, offset, address, global_counter);
 
                             region.assign_fixed(
                                 || "Memory selector",
@@ -195,12 +178,7 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         address: MemoryAddress<F>,
     ) -> Result<(), Error> {
         // Assign `address`
-        region.assign_advice(
-            || "init address",
-            self.address,
-            offset,
-            || Ok(address.0),
-        )?;
+        region.assign_advice(|| "init address", self.address, offset, || Ok(address.0))?;
 
         // Assign `global_counter`
         region.assign_advice(
@@ -211,20 +189,10 @@ impl<F: FieldExt, const LOOKUP: bool> Config<F, LOOKUP> {
         )?;
 
         // Assign `value`
-        region.assign_advice(
-            || "init value",
-            self.value,
-            offset,
-            || Ok(F::zero()),
-        )?;
+        region.assign_advice(|| "init value", self.value, offset, || Ok(F::zero()))?;
 
         // Assign memory_flag
-        region.assign_advice(
-            || "init memory",
-            self.flag,
-            offset,
-            || Ok(F::one()),
-        )?;
+        region.assign_advice(|| "init memory", self.flag, offset, || Ok(F::one()))?;
 
         Ok(())
     }
@@ -316,14 +284,8 @@ macro_rules! test_state_circuit {
             let op = MemoryOp {
                 address: MemoryAddress(Fp::zero()),
                 global_counters: vec![
-                    Some(ReadWrite::Write(
-                        GlobalCounter(12),
-                        Value(Fp::from(12)),
-                    )),
-                    Some(ReadWrite::Read(
-                        GlobalCounter(24),
-                        Value(Fp::from(12)),
-                    )),
+                    Some(ReadWrite::Write(GlobalCounter(12), Value(Fp::from(12)))),
+                    Some(ReadWrite::Read(GlobalCounter(24), Value(Fp::from(12)))),
                 ],
             };
             ops.push(op);

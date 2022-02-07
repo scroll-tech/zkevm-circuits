@@ -63,8 +63,8 @@ impl StateBigInt {
 impl Index<(usize, usize)> for StateBigInt {
     type Output = BigUint;
     fn index(&self, xy: (usize, usize)) -> &Self::Output {
-        assert!(xy.0 < 5);
-        assert!(xy.1 < 5);
+        debug_assert!(xy.0 < 5);
+        debug_assert!(xy.1 < 5);
 
         &self.xy[xy.0 * 5 + xy.1]
     }
@@ -72,8 +72,8 @@ impl Index<(usize, usize)> for StateBigInt {
 
 impl IndexMut<(usize, usize)> for StateBigInt {
     fn index_mut(&mut self, xy: (usize, usize)) -> &mut Self::Output {
-        assert!(xy.0 < 5);
-        assert!(xy.1 < 5);
+        debug_assert!(xy.0 < 5);
+        debug_assert!(xy.1 < 5);
 
         &mut self.xy[xy.0 * 5 + xy.1]
     }
@@ -113,7 +113,7 @@ pub fn convert_b2_to_b9(a: u64) -> Lane9 {
 /// For example, if we have 5 bits set and 7 bits unset, then we have `x` as 5
 /// and the xor result to be 1.
 pub fn convert_b13_coef(x: u8) -> u8 {
-    assert!(x < 13);
+    debug_assert!(x < 13);
     x & 1
 }
 
@@ -123,7 +123,7 @@ pub fn convert_b13_coef(x: u8) -> u8 {
 /// The input `x` is a chunk of a base 9 number and it represents the arithmatic
 /// result of `2*a + b + 3*c + 2*d`, where `a`, `b`, `c`, and `d` each is a bit.
 pub fn convert_b9_coef(x: u8) -> u8 {
-    assert!(x < 9);
+    debug_assert!(x < 9);
     let bit_table: [u8; 9] = [0, 0, 1, 1, 0, 0, 1, 1, 0];
     bit_table[x as usize]
 }
@@ -151,20 +151,13 @@ pub fn convert_b13_lane_to_b9(x: Lane13, rot: u32) -> Lane9 {
     BigUint::from_radix_le(&rotated, B9.into()).unwrap_or_default()
 }
 
-pub fn convert_lane<F>(
-    lane: BigUint,
-    from_base: u8,
-    to_base: u8,
-    coef_transform: F,
-) -> BigUint
+pub fn convert_lane<F>(lane: BigUint, from_base: u8, to_base: u8, coef_transform: F) -> BigUint
 where
     F: Fn(u8) -> u8,
 {
     let chunks = lane.to_radix_be(from_base.into());
-    let converted_chunks: Vec<u8> =
-        chunks.iter().map(|&x| coef_transform(x)).collect();
-    BigUint::from_radix_be(&converted_chunks, to_base.into())
-        .unwrap_or_default()
+    let converted_chunks: Vec<u8> = chunks.iter().map(|&x| coef_transform(x)).collect();
+    BigUint::from_radix_be(&converted_chunks, to_base.into()).unwrap_or_default()
 }
 
 pub fn convert_b9_lane_to_b13(x: Lane9) -> Lane13 {
@@ -192,8 +185,7 @@ pub fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
 pub fn inspect(x: BigUint, name: &str, base: u8) {
     let mut chunks = x.to_radix_le(base.into());
     chunks.resize(65, 0);
-    let info: Vec<(usize, u8)> =
-        (0..65).zip(chunks.iter().copied()).collect_vec();
+    let info: Vec<(usize, u8)> = (0..65).zip(chunks.iter().copied()).collect_vec();
     println!("inspect {} {} info {:?}", name, x, info);
 }
 
@@ -207,9 +199,7 @@ pub fn state_to_biguint<F: FieldExt>(state: [F; 25]) -> StateBigInt {
     }
 }
 
-pub fn state_to_state_bigint<F: FieldExt, const N: usize>(
-    state: [F; N],
-) -> State {
+pub fn state_to_state_bigint<F: FieldExt, const N: usize>(state: [F; N]) -> State {
     let mut matrix = [[0u64; 5]; 5];
 
     let mut elems: Vec<u64> = state
@@ -219,23 +209,21 @@ pub fn state_to_state_bigint<F: FieldExt, const N: usize>(
         // and refactoring `State` will be done once the
         // keccak_all_togheter is done.
         .map(|bytes| {
-            assert!(bytes[8..32] == vec![0u8; 24]);
+            debug_assert!(bytes[8..32] == vec![0u8; 24]);
             let mut arr = [0u8; 8];
             arr.copy_from_slice(&bytes[0..8]);
             u64::from_le_bytes(arr)
         })
         .collect();
     elems.extend(vec![0u64; 25 - N]);
-    (0..5).into_iter().for_each(|idx| {
-        matrix[idx].copy_from_slice(&elems[5 * idx..(5 * idx + 5)])
-    });
+    (0..5)
+        .into_iter()
+        .for_each(|idx| matrix[idx].copy_from_slice(&elems[5 * idx..(5 * idx + 5)]));
 
     matrix
 }
 
-pub fn state_bigint_to_field<F: FieldExt, const N: usize>(
-    state: StateBigInt,
-) -> [F; N] {
+pub fn state_bigint_to_field<F: FieldExt, const N: usize>(state: StateBigInt) -> [F; N] {
     let mut arr = [F::zero(); N];
     let vector: Vec<F> = state
         .xy

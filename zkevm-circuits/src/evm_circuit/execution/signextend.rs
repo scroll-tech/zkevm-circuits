@@ -6,9 +6,7 @@ use crate::{
         util::{
             and,
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
             select, sum, Cell, Word,
         },
@@ -47,14 +45,12 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
         // need to do any changes. So just sum all the non-LSB byte
         // values here and then check if it's non-zero so we can use
         // that as an additional condition to enable the selector.
-        let is_msb_sum_zero =
-            IsZeroGadget::construct(cb, sum::expr(&index.cells[1..32]));
+        let is_msb_sum_zero = IsZeroGadget::construct(cb, sum::expr(&index.cells[1..32]));
 
         // Check if this byte is selected looking only at the LSB of the index
         // word
-        let is_byte_selected = array_init(|idx| {
-            IsEqualGadget::construct(cb, index.cells[0].expr(), idx.expr())
-        });
+        let is_byte_selected =
+            array_init(|idx| IsEqualGadget::construct(cb, index.cells[0].expr(), idx.expr()));
 
         // We need to find the byte we have to get the sign from so we can
         // extend correctly. We go byte by byte and check if `idx ==
@@ -69,14 +65,10 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
             // Check if this byte is selected
             // The additional condition for this is that none of the non-LSB
             // bytes are non-zero (see above).
-            let is_selected = and::expr(&[
-                is_byte_selected[idx].expr(),
-                is_msb_sum_zero.expr(),
-            ]);
+            let is_selected = and::expr(&[is_byte_selected[idx].expr(), is_msb_sum_zero.expr()]);
 
             // Add the byte to the sum when this byte is selected
-            selected_byte =
-                selected_byte + (is_selected.clone() * value.cells[idx].expr());
+            selected_byte = selected_byte + (is_selected.clone() * value.cells[idx].expr());
 
             // Verify the selector.
             // Cells are used here to store intermediate results, otherwise
@@ -144,12 +136,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
             ..Default::default()
         };
         let opcode = cb.query_cell();
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -180,11 +167,9 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
         self.value.assign(region, offset, Some(value))?;
 
         // Generate the selectors
-        let msb_sum_zero = self.is_msb_sum_zero.assign(
-            region,
-            offset,
-            sum::value(&index[1..32]),
-        )?;
+        let msb_sum_zero =
+            self.is_msb_sum_zero
+                .assign(region, offset, sum::value(&index[1..32]))?;
         let mut previous_selector_value: F = 0.into();
         for i in 0..31 {
             let selected = and::value(vec![
@@ -219,8 +204,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignextendGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
-    use bus_mapping::bytecode;
-    use eth_types::{ToLittleEndian, Word};
+    use eth_types::{bytecode, ToLittleEndian, Word};
 
     fn test_ok(index: Word, value: Word, _result: Word) {
         let bytecode = bytecode! {
@@ -240,10 +224,9 @@ mod test {
             2.into(),
             0xF00201.into(),
             Word::from_little_endian(&[
-                0x01, 0x02, 0xF0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                0xFF, 0xFF,
+                0x01, 0x02, 0xF0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                0xFF, 0xFF, 0xFF, 0xFF,
             ]),
         );
         // Extend byte 0 (positive)
@@ -283,24 +266,14 @@ mod test {
         let pos_extend = 0u8;
         let neg_extend = 0xFFu8;
 
-        for (value, byte_extend) in
-            vec![(pos_value, pos_extend), (neg_value, neg_extend)].iter()
-        {
+        for (value, byte_extend) in vec![(pos_value, pos_extend), (neg_value, neg_extend)].iter() {
             for idx in 0..33 {
                 test_ok(
                     (idx as u64).into(),
                     Word::from_little_endian(value),
                     Word::from_little_endian(
                         &(0..32)
-                            .map(
-                                |i| {
-                                    if i > idx {
-                                        *byte_extend
-                                    } else {
-                                        value[i]
-                                    }
-                                },
-                            )
+                            .map(|i| if i > idx { *byte_extend } else { value[i] })
                             .collect::<Vec<u8>>(),
                     ),
                 );

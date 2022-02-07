@@ -9,8 +9,7 @@ use ethers::{
     solc::Solc,
 };
 use integration_tests::{
-    get_provider, get_wallet, log_init, CompiledContract, GenDataOutput,
-    CONTRACTS, CONTRACTS_PATH,
+    get_provider, get_wallet, log_init, CompiledContract, GenDataOutput, CONTRACTS, CONTRACTS_PATH,
 };
 use log::{debug, info};
 use std::collections::HashMap;
@@ -20,18 +19,13 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
-async fn deploy<T, M>(
-    prov: Arc<M>,
-    compiled: &CompiledContract,
-    args: T,
-) -> Contract<M>
+async fn deploy<T, M>(prov: Arc<M>, compiled: &CompiledContract, args: T) -> Contract<M>
 where
     T: Tokenize,
     M: Middleware,
 {
     info!("Deploying {}...", compiled.name);
-    let factory =
-        ContractFactory::new(compiled.abi.clone(), compiled.bin.clone(), prov);
+    let factory = ContractFactory::new(compiled.abi.clone(), compiled.bin.clone(), prov);
     factory
         .deploy(args)
         .expect("cannot deploy")
@@ -64,8 +58,7 @@ async fn main() {
             .expect("contract not found");
         let abi = contract.abi.expect("no abi found").clone();
         let bin = contract.bin.expect("no bin found").clone();
-        let bin_runtime =
-            contract.bin_runtime.expect("no bin_runtime found").clone();
+        let bin_runtime = contract.bin_runtime.expect("no bin_runtime found").clone();
         let compiled_contract = CompiledContract {
             path: path_sol.to_str().expect("path is not str").to_string(),
             name: name.to_string(),
@@ -130,8 +123,7 @@ async fn main() {
         .expect("cannot send tx")
         .await
         .expect("cannot confirm tx");
-    let block_num =
-        prov.get_block_number().await.expect("cannot get block_num");
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
     blocks.insert("Transfer 0".to_string(), block_num.as_u64());
 
     // Deploy smart contracts
@@ -143,8 +135,7 @@ async fn main() {
         U256::from(42),
     )
     .await;
-    let block_num =
-        prov.get_block_number().await.expect("cannot get block_num");
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
     blocks.insert("Deploy Greeter".to_string(), block_num.as_u64());
     deployments.insert(
         "Greeter".to_string(),

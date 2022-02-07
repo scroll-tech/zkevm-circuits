@@ -68,20 +68,15 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag));
-        let [tx_gas_price, tx_value] =
-            [TxContextFieldTag::GasPrice, TxContextFieldTag::Value].map(
-                |field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag),
-            );
+        let [tx_gas_price, tx_value] = [TxContextFieldTag::GasPrice, TxContextFieldTag::Value]
+            .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag));
 
         // Add first step constraint to have both rw_counter and tx_id to be 1
         cb.add_constraint_first_step(
             "rw_counter is initialized to be 1",
             1.expr() - cb.curr.state.rw_counter.expr(),
         );
-        cb.add_constraint_first_step(
-            "tx_id is initialized to be 1",
-            1.expr() - tx_id.expr(),
-        );
+        cb.add_constraint_first_step("tx_id is initialized to be 1", 1.expr() - tx_id.expr());
 
         // Increase caller's nonce.
         // (tx caller's nonce always increases even tx ends with error)
@@ -95,12 +90,8 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO: Implement EIP 1559 (currently it only supports legacy
         // transaction format)
         // Calculate transaction gas fee
-        let mul_gas_fee_by_gas = MulWordByU64Gadget::construct(
-            cb,
-            tx_gas_price.clone(),
-            tx_gas.clone(),
-            true,
-        );
+        let mul_gas_fee_by_gas =
+            MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.clone(), true);
 
         // TODO: Take gas cost of access list (EIP 2930) into consideration.
         // Use intrinsic gas
@@ -112,22 +103,11 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Check gas_left is sufficient
         let gas_left = tx_gas.expr() - intrinsic_gas_cost;
-        let sufficient_gas_left =
-            RangeCheckGadget::construct(cb, gas_left.clone());
+        let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
         // Prepare access list of caller and callee
-        cb.account_access_list_write(
-            tx_id.expr(),
-            tx_caller_address.expr(),
-            1.expr(),
-            0.expr(),
-        );
-        cb.account_access_list_write(
-            tx_id.expr(),
-            tx_callee_address.expr(),
-            1.expr(),
-            0.expr(),
-        );
+        cb.account_access_list_write(tx_id.expr(), tx_caller_address.expr(), 1.expr(), 0.expr());
+        cb.account_access_list_write(tx_id.expr(), tx_callee_address.expr(), 1.expr(), 0.expr());
 
         // Transfer value from caller to callee
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
@@ -239,58 +219,32 @@ impl<F: FieldExt> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_nonce
             .assign(region, offset, Some(F::from(tx.nonce)))?;
         self.tx_gas.assign(region, offset, Some(F::from(tx.gas)))?;
-        self.tx_gas_price.assign(
-            region,
-            offset,
-            Some(tx.gas_price.to_le_bytes()),
-        )?;
-        self.mul_gas_fee_by_gas.assign(
-            region,
-            offset,
-            tx.gas_price,
-            tx.gas,
-            gas_fee,
-        )?;
-        self.tx_caller_address.assign(
-            region,
-            offset,
-            tx.caller_address.to_scalar(),
-        )?;
-        self.tx_callee_address.assign(
-            region,
-            offset,
-            tx.callee_address.to_scalar(),
-        )?;
-        self.tx_is_create.assign(
-            region,
-            offset,
-            Some(F::from(tx.is_create as u64)),
-        )?;
+        self.tx_gas_price
+            .assign(region, offset, Some(tx.gas_price.to_le_bytes()))?;
+        self.mul_gas_fee_by_gas
+            .assign(region, offset, tx.gas_price, tx.gas, gas_fee)?;
+        self.tx_caller_address
+            .assign(region, offset, tx.caller_address.to_scalar())?;
+        self.tx_callee_address
+            .assign(region, offset, tx.callee_address.to_scalar())?;
+        self.tx_is_create
+            .assign(region, offset, Some(F::from(tx.is_create as u64)))?;
         self.tx_call_data_length.assign(
             region,
             offset,
             Some(F::from(tx.call_data_length as u64)),
         )?;
-        self.tx_call_data_gas_cost.assign(
-            region,
-            offset,
-            Some(F::from(tx.call_data_gas_cost)),
-        )?;
+        self.tx_call_data_gas_cost
+            .assign(region, offset, Some(F::from(tx.call_data_gas_cost)))?;
         self.rw_counter_end_of_reversion.assign(
             region,
             offset,
             Some(F::from(call.rw_counter_end_of_reversion as u64)),
         )?;
-        self.is_persistent.assign(
-            region,
-            offset,
-            Some(F::from(call.is_persistent as u64)),
-        )?;
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from(tx.gas - step.gas_cost),
-        )?;
+        self.is_persistent
+            .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
+        self.sufficient_gas_left
+            .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
         self.transfer_with_gas_fee.assign(
             region,
             offset,
@@ -365,11 +319,10 @@ mod test {
                     id: 1,
                     is_root: true,
                     is_create: false,
-                    opcode_source:
-                        RandomLinearCombination::random_linear_combine(
-                            bytecode.hash.to_le_bytes(),
-                            randomness,
-                        ),
+                    opcode_source: RandomLinearCombination::random_linear_combine(
+                        bytecode.hash.to_le_bytes(),
+                        randomness,
+                    ),
                     result: Word::from(result as usize),
                     rw_counter_end_of_reversion,
                     is_persistent: result,
@@ -377,8 +330,7 @@ mod test {
                 }],
                 steps: vec![
                     ExecStep {
-                        rw_indices: (0..16 + if result { 0 } else { 2 })
-                            .collect(),
+                        rw_indices: (0..16 + if result { 0 } else { 2 }).collect(),
                         execution_state: ExecutionState::BeginTx,
                         rw_counter: 1,
                         gas_cost: intrinsic_gas_cost,
@@ -524,9 +476,7 @@ mod test {
                         Rw::Account {
                             rw_counter: 19,
                             is_write: true,
-                            account_address: tx
-                                .to
-                                .unwrap_or_else(Address::zero),
+                            account_address: tx.to.unwrap_or_else(Address::zero),
                             field_tag: AccountFieldTag::Balance,
                             value: to_balance_prev,
                             value_prev: to_balance,
@@ -591,7 +541,7 @@ mod test {
         // Transfer random ether, successfully
         test_ok(
             mock_tx(
-                Some(Word::from(rand_range(0..=10u64.pow(20)))),
+                Some(Word::from(rand_range(0..=u64::MAX))),
                 None,
                 None,
                 vec![],
@@ -613,7 +563,7 @@ mod test {
         // Transfer random ether, tx reverts
         test_ok(
             mock_tx(
-                Some(Word::from(rand_range(0..=10u64.pow(20)))),
+                Some(Word::from(rand_range(0..=u64::MAX))),
                 None,
                 None,
                 vec![],

@@ -16,16 +16,19 @@
 pub mod macros;
 #[macro_use]
 pub mod error;
+#[macro_use]
+pub mod bytecode;
 pub mod evm_types;
+pub mod geth_types;
 
+pub use bytecode::Bytecode;
 pub use error::Error;
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
 use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 use ethers_core::types;
 pub use ethers_core::types::{
-    transaction::response::Transaction, Address, Block, Bytes, H160, H256,
-    U256, U64,
+    transaction::response::Transaction, Address, Block, Bytes, H160, H256, U256, U64,
 };
 use pairing::arithmetic::FieldExt;
 use serde::{de, Deserialize};
@@ -288,9 +291,7 @@ impl<'de> Deserialize<'de> for GethExecStep {
             gas_cost: s.gas_cost,
             depth: s.depth,
             error: s.error,
-            stack: Stack(
-                s.stack.iter().map(|dw| dw.to_word()).collect::<Vec<Word>>(),
-            ),
+            stack: Stack(s.stack.iter().map(|dw| dw.to_word()).collect::<Vec<Word>>()),
             memory: Memory::from(
                 s.memory
                     .iter()
@@ -473,8 +474,8 @@ mod tests {
     ]
   }
         "#;
-        let trace: GethExecTraceInternal = serde_json::from_str(trace_json)
-            .expect("json-deserialize GethExecTraceInternal");
+        let trace: GethExecTraceInternal =
+            serde_json::from_str(trace_json).expect("json-deserialize GethExecTraceInternal");
         assert_eq!(
             trace,
             GethExecTraceInternal {
@@ -499,17 +500,9 @@ mod tests {
                         gas_cost: GasCost(2100),
                         depth: 1,
                         error: None,
-                        stack: Stack(vec![
-                            word!("0x1003e2d2"),
-                            word!("0x2a"),
-                            word!("0x0")
-                        ]),
+                        stack: Stack(vec![word!("0x1003e2d2"), word!("0x2a"), word!("0x0")]),
                         storage: Storage(word_map!("0x0" => "0x6f")),
-                        memory: Memory::from(vec![
-                            word!("0x0"),
-                            word!("0x0"),
-                            word!("0x080")
-                        ]),
+                        memory: Memory::from(vec![word!("0x0"), word!("0x0"), word!("0x080")]),
                     }
                 ],
             }
@@ -528,19 +521,17 @@ mod eth_types_test {
     fn address() {
         // Test from_str
         assert_eq!(
-            Address::from_str("0x9a0C63EBb78B35D7c209aFbD299B056098b5439b")
-                .unwrap(),
+            Address::from_str("0x9a0C63EBb78B35D7c209aFbD299B056098b5439b").unwrap(),
             Address::from([
-                154, 12, 99, 235, 183, 139, 53, 215, 194, 9, 175, 189, 41, 155,
-                5, 96, 152, 181, 67, 155
+                154, 12, 99, 235, 183, 139, 53, 215, 194, 9, 175, 189, 41, 155, 5, 96, 152, 181,
+                67, 155
             ])
         );
         assert_eq!(
-            Address::from_str("9a0C63EBb78B35D7c209aFbD299B056098b5439b")
-                .unwrap(),
+            Address::from_str("9a0C63EBb78B35D7c209aFbD299B056098b5439b").unwrap(),
             Address::from([
-                154, 12, 99, 235, 183, 139, 53, 215, 194, 9, 175, 189, 41, 155,
-                5, 96, 152, 181, 67, 155
+                154, 12, 99, 235, 183, 139, 53, 215, 194, 9, 175, 189, 41, 155, 5, 96, 152, 181,
+                67, 155
             ])
         );
 
@@ -599,8 +590,7 @@ mod eth_types_test {
 
     #[test]
     fn word_from_str() -> Result<(), Error> {
-        let word_str =
-            "000000000000000000000000000000000000000000000000000c849c24f39248";
+        let word_str = "000000000000000000000000000000000000000000000000000c849c24f39248";
 
         let word_from_u128 = Word::from(3523505890234952u128);
         let word_from_str = Word::from_str(word_str).unwrap();

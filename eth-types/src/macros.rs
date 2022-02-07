@@ -134,10 +134,7 @@ macro_rules! define_range_index_variants {
             type Output = $output;
 
             #[inline]
-            fn index(
-                &self,
-                index: core::ops::Range<$out_range>,
-            ) -> &Self::Output {
+            fn index(&self, index: core::ops::Range<$out_range>) -> &Self::Output {
                 &self.0[..][convert_range(index)]
             }
         }
@@ -155,10 +152,7 @@ macro_rules! define_range_index_variants {
             type Output = $output;
 
             #[inline]
-            fn index(
-                &self,
-                index: core::ops::RangeTo<$out_range>,
-            ) -> &Self::Output {
+            fn index(&self, index: core::ops::RangeTo<$out_range>) -> &Self::Output {
                 &self.0[..][convert_range_to(index)]
             }
         }
@@ -167,31 +161,21 @@ macro_rules! define_range_index_variants {
             type Output = $output;
 
             #[inline]
-            fn index(
-                &self,
-                index: core::ops::RangeFrom<$out_range>,
-            ) -> &Self::Output {
+            fn index(&self, index: core::ops::RangeFrom<$out_range>) -> &Self::Output {
                 &self.0[..][convert_range_from(index)]
             }
         }
 
-        impl core::ops::Index<core::ops::RangeToInclusive<$out_range>>
-            for $struc
-        {
+        impl core::ops::Index<core::ops::RangeToInclusive<$out_range>> for $struc {
             type Output = $output;
 
             #[inline]
-            fn index(
-                &self,
-                index: core::ops::RangeToInclusive<$out_range>,
-            ) -> &Self::Output {
+            fn index(&self, index: core::ops::RangeToInclusive<$out_range>) -> &Self::Output {
                 &self.0[..][convert_range_to_inclusive(index)]
             }
         }
 
-        fn convert_range(
-            range: core::ops::Range<$out_range>,
-        ) -> core::ops::Range<$inner_range> {
+        fn convert_range(range: core::ops::Range<$out_range>) -> core::ops::Range<$inner_range> {
             core::ops::Range {
                 start: range.start.0,
                 end: range.end.0,

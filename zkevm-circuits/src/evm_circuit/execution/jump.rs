@@ -52,12 +52,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
             stack_pointer: Delta(1.expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -94,7 +89,7 @@ impl<F: FieldExt> ExecutionGadget<F> for JumpGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_range, test_util::run_test_circuits};
-    use bus_mapping::bytecode;
+    use eth_types::bytecode;
 
     fn test_ok(destination: usize) {
         assert!((34..(1 << 24) - 1).contains(&destination));

@@ -45,8 +45,7 @@ impl<F: FieldExt> RhoConfig<F> {
             .iter()
             .map(|config| config.overflow_detector)
             .collect();
-        let overflow_check_config =
-            OverflowCheckConfig::configure(meta, overflow_detector_cols);
+        let overflow_check_config = OverflowCheckConfig::configure(meta, overflow_detector_cols);
         Self {
             state,
             lane_configs,
@@ -65,8 +64,7 @@ impl<F: FieldExt> RhoConfig<F> {
             .iter()
             .zip(self.lane_configs.iter())
             .map(|(&lane, lane_config)| -> Result<R<F>, Error> {
-                let (out_lane, step2_od, step3_od) =
-                    lane_config.assign_region(layouter, lane)?;
+                let (out_lane, step2_od, step3_od) = lane_config.assign_region(layouter, lane)?;
                 Ok((out_lane, step2_od, step3_od))
             })
             .into_iter()
@@ -106,9 +104,7 @@ mod tests {
     use crate::arith_helpers::*;
     use crate::common::*;
     use crate::gates::gate_helpers::*;
-    use crate::gates::tables::{
-        Base13toBase9TableConfig, SpecialChunkTableConfig,
-    };
+    use crate::gates::tables::{Base13toBase9TableConfig, SpecialChunkTableConfig};
     use crate::keccak_arith::*;
     use halo2::circuit::Layouter;
     use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
@@ -140,14 +136,8 @@ mod tests {
                     .unwrap();
 
                 let base13_to_9 = Base13toBase9TableConfig::configure(meta);
-                let special_chunk_table =
-                    SpecialChunkTableConfig::configure(meta);
-                RhoConfig::configure(
-                    meta,
-                    state,
-                    base13_to_9,
-                    special_chunk_table,
-                )
+                let special_chunk_table = SpecialChunkTableConfig::configure(meta);
+                RhoConfig::configure(meta, state, base13_to_9, special_chunk_table)
             }
 
             fn synthesize(
@@ -181,8 +171,7 @@ mod tests {
                         Ok(state)
                     },
                 )?;
-                let next_state =
-                    config.assign_rotation_checks(&mut layouter, state)?;
+                let next_state = config.assign_rotation_checks(&mut layouter, state)?;
                 assert_eq!(next_state.map(|lane| lane.1), self.out_state);
                 Ok(())
             }
@@ -219,8 +208,7 @@ mod tests {
         {
             use plotters::prelude::*;
             let root =
-                BitMapBackend::new("rho-test-circuit.png", (16384, 65536))
-                    .into_drawing_area();
+                BitMapBackend::new("rho-test-circuit.png", (16384, 65536)).into_drawing_area();
             root.fill(&WHITE).unwrap();
             let root = root.titled("Rho", ("sans-serif", 60)).unwrap();
             halo2::dev::CircuitLayout::default()

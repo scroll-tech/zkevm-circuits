@@ -43,11 +43,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
                 // stack write each byte for mstore
                 let bytes = value.to_be_bytes();
                 for (i, byte) in bytes.iter().enumerate() {
-                    state.push_memory_op(
-                        RW::WRITE,
-                        offset_addr.map(|a| a + i),
-                        *byte,
-                    );
+                    state.push_memory_op(RW::WRITE, offset_addr.map(|a| a + i), *byte);
                 }
             }
         }
@@ -59,13 +55,9 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
 #[cfg(test)]
 mod mstore_tests {
     use super::*;
-    use crate::{
-        bytecode,
-        circuit_input_builder::{ExecStep, TransactionContext},
-        mock,
-    };
+    use crate::circuit_input_builder::{ExecStep, TransactionContext};
     use eth_types::evm_types::{MemoryAddress, StackAddress};
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -80,8 +72,9 @@ mod mstore_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+        );
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -97,30 +90,17 @@ mod mstore_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref =
-            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add StackOps associated to the 0x100, 0x1234 reads starting from last
         // stack position.
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress::from(1022),
-            Word::from(0x100),
-        );
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress::from(1023),
-            Word::from(0x1234),
-        );
+        state_ref.push_stack_op(RW::READ, StackAddress::from(1022), Word::from(0x100));
+        state_ref.push_stack_op(RW::READ, StackAddress::from(1023), Word::from(0x1234));
 
         // Add the 32 MemoryOp generated from the Memory write at addr
         // 0x100..0x120 for each byte.
         for (i, byte) in Word::from(0x1234).to_be_bytes().iter().enumerate() {
-            state_ref.push_memory_op(
-                RW::WRITE,
-                MemoryAddress(0x100 + i),
-                *byte,
-            );
+            state_ref.push_memory_op(RW::WRITE, MemoryAddress(0x100 + i), *byte);
         }
 
         tx.steps_mut().push(step);
@@ -150,8 +130,9 @@ mod mstore_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block =
-            mock::BlockData::new_single_tx_trace_code_at_start(&code).unwrap();
+        let block = crate::mock::BlockData::new_from_geth_data(
+            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+        );
 
         let mut builder = block.new_circuit_input_builder();
         builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
@@ -167,21 +148,12 @@ mod mstore_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref =
-            test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
 
         // Add StackOps associated to the 0x100, 0x12 reads starting from last
         // stack position.
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress::from(1022),
-            Word::from(0x100),
-        );
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress::from(1023),
-            Word::from(0x1234),
-        );
+        state_ref.push_stack_op(RW::READ, StackAddress::from(1022), Word::from(0x100));
+        state_ref.push_stack_op(RW::READ, StackAddress::from(1023), Word::from(0x1234));
 
         // Add 1 MemoryOp generated from the Memory write at addr 0x100.
         state_ref.push_memory_op(RW::WRITE, MemoryAddress(0x100), 0x34);

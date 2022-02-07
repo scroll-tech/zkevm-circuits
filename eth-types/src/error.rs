@@ -6,6 +6,10 @@ use std::error::Error as StdError;
 /// Error type for any BusMapping related failure.
 #[derive(Debug)]
 pub enum Error {
+    /// Serde de/serialization error.
+    SerdeError(serde_json::error::Error),
+    /// Error while generating a trace.
+    TracingError,
     /// Error while parsing an `Instruction/Opcode`.
     OpcodeParsing,
     /// Error while parsing a `MemoryAddress`.

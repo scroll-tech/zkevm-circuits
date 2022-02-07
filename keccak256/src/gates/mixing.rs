@@ -57,25 +57,16 @@ impl<F: FieldExt> MixingConfig<F> {
         let round_constants_b13 = meta.instance_column();
 
         // We mix -> Flag = true
-        let iota_b9_config = IotaB9Config::configure(
-            meta,
-            state,
-            round_ctant_b9,
-            round_constants_b9,
-        );
+        let iota_b9_config =
+            IotaB9Config::configure(meta, state, round_ctant_b9, round_constants_b9);
         // We don't mix -> Flag = false
         let absorb_config = AbsorbConfig::configure(meta, state);
         meta.enable_equality(flag.into());
         let base_info = table.get_base_info(false);
-        let base_conv_config =
-            StateBaseConversion::configure(meta, state, base_info, flag);
+        let base_conv_config = StateBaseConversion::configure(meta, state, base_info, flag);
 
-        let iota_b13_config = IotaB13Config::configure(
-            meta,
-            state,
-            round_ctant_b13,
-            round_constants_b13,
-        );
+        let iota_b13_config =
+            IotaB13Config::configure(meta, state, round_ctant_b13, round_constants_b13);
 
         MixingConfig {
             iota_b9_config,
@@ -104,42 +95,31 @@ impl<F: FieldExt> MixingConfig<F> {
             |mut region| {
                 let offset: usize = 0;
                 // Witness `is_mixing` flag.
-                let cell = region.assign_advice(
-                    || "witness is_mixing",
-                    self.flag,
-                    offset,
-                    || Ok(val),
-                )?;
+                let cell =
+                    region.assign_advice(|| "witness is_mixing", self.flag, offset, || Ok(val))?;
                 Ok((cell, val))
             },
         )?;
 
         // If we mix:
-        let mix_res = self.iota_b9_config.last_round(
-            layouter,
-            in_state,
-            out_state,
-            absolute_row,
-            flag_cell,
-        );
+        let mix_res =
+            self.iota_b9_config
+                .last_round(layouter, in_state, out_state, absolute_row, flag_cell);
 
         // If we don't mix:
         // Absorb
-        let (out_state_absorb_cells, flag_cell) =
-            self.absorb_config.copy_state_flag_next_inputs(
-                layouter,
-                in_state,
-                out_absorb_state.unwrap_or_default(),
-                next_mixing.unwrap_or_default(),
-                flag_cell,
-            )?;
-
-        // Base conversion assign
-        let base_conv_cells = self.base_conv_config.assign_region(
+        let (out_state_absorb_cells, flag_cell) = self.absorb_config.copy_state_flag_next_inputs(
             layouter,
-            out_state_absorb_cells,
+            in_state,
+            out_absorb_state.unwrap_or_default(),
+            next_mixing.unwrap_or_default(),
             flag_cell,
         )?;
+
+        // Base conversion assign
+        let base_conv_cells =
+            self.base_conv_config
+                .assign_region(layouter, out_state_absorb_cells, flag_cell)?;
 
         // IotaB13
         let non_mix_res = self.iota_b13_config.copy_state_flag_and_assing_rc(
@@ -192,8 +172,7 @@ impl<F: FieldExt> MixingConfig<F> {
             (in_state, out_state, Some(out_absorb), Some(next_inputs))
         } else {
             // We don't mix, therefore we run IotaB9
-            let (in_state, out_state) =
-                IotaB9Config::compute_circ_states(in_state.into());
+            let (in_state, out_state) = IotaB9Config::compute_circ_states(in_state.into());
             (in_state, out_state, None, None)
         }
     }
@@ -233,10 +212,7 @@ mod tests {
         }
 
         impl<F: FieldExt> MyConfig<F> {
-            pub fn load(
-                &self,
-                layouter: &mut impl Layouter<F>,
-            ) -> Result<(), Error> {
+            pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
                 self.table.load(layouter)?;
                 Ok(())
             }
@@ -272,8 +248,7 @@ mod tests {
                     |mut region| {
                         // Witness `state`
                         let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> =
-                                Vec::with_capacity(25);
+                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -321,8 +296,7 @@ mod tests {
         let (in_state, out_mixing_state, out_absorb, next_mixing) =
             MixingConfig::compute_circ_states(input1, Some(next_input));
 
-        let (_, out_non_mixing_state, _, _) =
-            MixingConfig::compute_circ_states(input1, None);
+        let (_, out_non_mixing_state, _, _) = MixingConfig::compute_circ_states(input1, None);
 
         let constants_b13: Vec<Fp> = ROUND_CONSTANTS
             .iter()
@@ -410,12 +384,8 @@ mod tests {
                 round_ctant: PERMUTATION - 1,
             };
 
-            let prover = MockProver::<Fp>::run(
-                17,
-                &circuit,
-                vec![constants_b9, constants_b13],
-            )
-            .unwrap();
+            let prover =
+                MockProver::<Fp>::run(17, &circuit, vec![constants_b9, constants_b13]).unwrap();
 
             assert!(prover.verify().is_err());
         }

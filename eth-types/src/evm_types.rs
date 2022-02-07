@@ -15,9 +15,7 @@ pub use {
 };
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
-#[derive(
-    Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord,
-)]
+#[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct ProgramCounter(pub usize);
 
 impl fmt::Debug for ProgramCounter {
@@ -53,9 +51,7 @@ impl ProgramCounter {
 }
 
 /// Defines the gas left to perate.
-#[derive(
-    Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Gas(pub u64);
 
 impl fmt::Debug for Gas {
@@ -65,9 +61,7 @@ impl fmt::Debug for Gas {
 }
 
 /// Defines the gas consumption.
-#[derive(
-    Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct GasCost(pub u64);
 
 impl fmt::Debug for GasCost {

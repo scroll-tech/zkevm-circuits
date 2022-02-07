@@ -27,16 +27,11 @@ impl<F: FieldExt> ThetaConfig<F> {
             let q_enable = meta.query_selector(q_enable);
             let column_sum: Vec<Expression<F>> = (0..5)
                 .map(|x| {
-                    let state_x0 =
-                        meta.query_advice(state[5 * x], Rotation::cur());
-                    let state_x1 =
-                        meta.query_advice(state[5 * x + 1], Rotation::cur());
-                    let state_x2 =
-                        meta.query_advice(state[5 * x + 2], Rotation::cur());
-                    let state_x3 =
-                        meta.query_advice(state[5 * x + 3], Rotation::cur());
-                    let state_x4 =
-                        meta.query_advice(state[5 * x + 4], Rotation::cur());
+                    let state_x0 = meta.query_advice(state[5 * x], Rotation::cur());
+                    let state_x1 = meta.query_advice(state[5 * x + 1], Rotation::cur());
+                    let state_x2 = meta.query_advice(state[5 * x + 2], Rotation::cur());
+                    let state_x3 = meta.query_advice(state[5 * x + 3], Rotation::cur());
+                    let state_x4 = meta.query_advice(state[5 * x + 4], Rotation::cur());
                     state_x0 + state_x1 + state_x2 + state_x3 + state_x4
                 })
                 .collect::<Vec<_>>();
@@ -44,10 +39,8 @@ impl<F: FieldExt> ThetaConfig<F> {
             (0..5)
                 .cartesian_product(0..5)
                 .map(|(x, y)| {
-                    let new_state =
-                        meta.query_advice(state[5 * x + y], Rotation::next());
-                    let old_state =
-                        meta.query_advice(state[5 * x + y], Rotation::cur());
+                    let new_state = meta.query_advice(state[5 * x + y], Rotation::next());
+                    let old_state = meta.query_advice(state[5 * x + y], Rotation::cur());
                     let right = old_state
                         + column_sum[(x + 4) % 5].clone()
                         + Expression::Constant(F::from(B13.into()))
@@ -164,8 +157,7 @@ mod tests {
                     |mut region| {
                         // Witness `state`
                         let in_state: [(Cell, F); 25] = {
-                            let mut state: Vec<(Cell, F)> =
-                                Vec::with_capacity(25);
+                            let mut state: Vec<(Cell, F)> = Vec::with_capacity(25);
                             for (idx, val) in self.in_state.iter().enumerate() {
                                 let cell = region.assign_advice(
                                     || "witness input state",
@@ -181,11 +173,7 @@ mod tests {
                     },
                 )?;
 
-                let _ = config.assign_state(
-                    &mut layouter,
-                    in_state,
-                    self.out_state,
-                );
+                let _ = config.assign_state(&mut layouter, in_state, self.out_state);
 
                 Ok(())
             }

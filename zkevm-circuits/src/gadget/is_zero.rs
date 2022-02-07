@@ -1,8 +1,6 @@
 use halo2::{
     circuit::{Chip, Region},
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, VirtualCells,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -93,8 +91,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
     ) -> Result<(), Error> {
         let config = self.config();
 
-        let value_invert =
-            value.map(|value| value.invert().unwrap_or(F::zero()));
+        let value_invert = value.map(|value| value.invert().unwrap_or(F::zero()));
         region.assign_advice(
             || "witness inverse of value",
             config.value_inv,
@@ -202,10 +199,8 @@ mod test {
                     meta,
                     |meta| meta.query_selector(q_enable),
                     |meta| {
-                        let value_prev =
-                            meta.query_advice(value, Rotation::prev());
-                        let value_cur =
-                            meta.query_advice(value, Rotation::cur());
+                        let value_prev = meta.query_advice(value, Rotation::prev());
+                        let value_cur = meta.query_advice(value, Rotation::cur());
                         value_cur - value_prev
                     },
                     value_diff_inv,
@@ -222,14 +217,9 @@ mod test {
                     let q_enable = meta.query_selector(q_enable);
 
                     // This verifies is_zero is calculated correctly
-                    let check =
-                        meta.query_advice(config.check, Rotation::cur());
+                    let check = meta.query_advice(config.check, Rotation::cur());
 
-                    vec![
-                        q_enable
-                            * (config.is_zero.is_zero_expression.clone()
-                                - check),
-                    ]
+                    vec![q_enable * (config.is_zero.is_zero_expression.clone() - check)]
                 });
 
                 config
@@ -245,9 +235,7 @@ mod test {
                 let values: Vec<_> = self
                     .values
                     .as_ref()
-                    .map(|values| {
-                        values.iter().map(|value| F::from(*value)).collect()
-                    })
+                    .map(|values| values.iter().map(|value| F::from(*value)).collect())
                     .ok_or(Error::Synthesis)?;
                 let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
                 let (first_value, values) = values.split_at(1);
@@ -264,9 +252,7 @@ mod test {
                         )?;
 
                         let mut value_prev = first_value;
-                        for (idx, (value, check)) in
-                            values.iter().zip(checks).enumerate()
-                        {
+                        for (idx, (value, check)) in values.iter().zip(checks).enumerate() {
                             region.assign_advice(
                                 || "check",
                                 config.check,
@@ -281,11 +267,7 @@ mod test {
                             )?;
 
                             config.q_enable.enable(&mut region, idx + 1)?;
-                            chip.assign(
-                                &mut region,
-                                idx + 1,
-                                Some(*value - value_prev),
-                            )?;
+                            chip.assign(&mut region, idx + 1, Some(*value - value_prev))?;
 
                             value_prev = *value;
                         }
@@ -308,14 +290,8 @@ mod test {
             Ok(())
         );
         // error
-        try_test_circuit_error!(
-            vec![1, 2, 3, 4, 5],
-            vec![true, true, true, true]
-        );
-        try_test_circuit_error!(
-            vec![1, 2, 2, 3, 3],
-            vec![true, false, true, false]
-        );
+        try_test_circuit_error!(vec![1, 2, 3, 4, 5], vec![true, true, true, true]);
+        try_test_circuit_error!(vec![1, 2, 2, 3, 3], vec![true, false, true, false]);
     }
 
     #[test]
@@ -347,8 +323,7 @@ mod test {
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.complex_selector();
-                let (value_a, value_b) =
-                    (meta.advice_column(), meta.advice_column());
+                let (value_a, value_b) = (meta.advice_column(), meta.advice_column());
                 let value_diff_inv = meta.advice_column();
                 let check = meta.advice_column();
 
@@ -356,10 +331,8 @@ mod test {
                     meta,
                     |meta| meta.query_selector(q_enable),
                     |meta| {
-                        let value_a =
-                            meta.query_advice(value_a, Rotation::cur());
-                        let value_b =
-                            meta.query_advice(value_b, Rotation::cur());
+                        let value_a = meta.query_advice(value_a, Rotation::cur());
+                        let value_b = meta.query_advice(value_b, Rotation::cur());
                         value_a - value_b
                     },
                     value_diff_inv,
@@ -377,14 +350,9 @@ mod test {
                     let q_enable = meta.query_selector(q_enable);
 
                     // This verifies is_zero is calculated correctly
-                    let check =
-                        meta.query_advice(config.check, Rotation::cur());
+                    let check = meta.query_advice(config.check, Rotation::cur());
 
-                    vec![
-                        q_enable
-                            * (config.is_zero.is_zero_expression.clone()
-                                - check),
-                    ]
+                    vec![q_enable * (config.is_zero.is_zero_expression.clone() - check)]
                 });
 
                 config
@@ -403,9 +371,7 @@ mod test {
                     .map(|values| {
                         values
                             .iter()
-                            .map(|(value_a, value_b)| {
-                                (F::from(*value_a), F::from(*value_b))
-                            })
+                            .map(|(value_a, value_b)| (F::from(*value_a), F::from(*value_b)))
                             .collect()
                     })
                     .ok_or(Error::Synthesis)?;
@@ -437,11 +403,7 @@ mod test {
                             )?;
 
                             config.q_enable.enable(&mut region, idx + 1)?;
-                            chip.assign(
-                                &mut region,
-                                idx + 1,
-                                Some(*value_a - *value_b),
-                            )?;
+                            chip.assign(&mut region, idx + 1, Some(*value_a - *value_b))?;
                         }
 
                         Ok(())
@@ -462,13 +424,7 @@ mod test {
             Ok(())
         );
         // error
-        try_test_circuit_error!(
-            vec![(1, 2), (3, 4), (5, 6)],
-            vec![true, true, true]
-        );
-        try_test_circuit_error!(
-            vec![(1, 1), (3, 4), (6, 6)],
-            vec![false, true, false]
-        );
+        try_test_circuit_error!(vec![(1, 2), (3, 4), (5, 6)], vec![true, true, true]);
+        try_test_circuit_error!(vec![(1, 1), (3, 4), (6, 6)], vec![false, true, false]);
     }
 }

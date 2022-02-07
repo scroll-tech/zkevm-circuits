@@ -4,9 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget, LtGadget},
             select, Word,
@@ -50,8 +48,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // The Signed Comparator gadget is used for both opcodes SLT and SGT.
         // Depending on whether the opcode is SLT or SGT, we
         // swap the order in which the inputs are placed on the stack.
-        let is_sgt =
-            IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::SGT.expr());
+        let is_sgt = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::SGT.expr());
 
         // Both a and b are to be treated as two's complement signed 256-bit
         // (32 cells) integers. This means, the first bit denotes the sign
@@ -59,10 +56,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // number is negative if the most significant cell >= 128
         // (0b10000000). a and b being in the little-endian notation, the
         // most-significant byte is the last byte.
-        let sign_check_a =
-            LtGadget::construct(cb, a.cells[31].expr(), 128.expr());
-        let sign_check_b =
-            LtGadget::construct(cb, b.cells[31].expr(), 128.expr());
+        let sign_check_a = LtGadget::construct(cb, a.cells[31].expr(), 128.expr());
+        let sign_check_b = LtGadget::construct(cb, b.cells[31].expr(), 128.expr());
 
         // sign_check_a_lt expression implies a is positive since its MSB < 2**7
         // sign_check_b_lt expression implies b is positive since its MSB < 2**7
@@ -112,8 +107,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         //   a_neg_b_pos => result = 1
         //   b_neg_a_pos => result = 0
         //   1 - a_neg_b_pos - b_neg_a_pos => result = a_lt_b
-        let result = a_neg_b_pos.clone()
-            + (1.expr() - a_neg_b_pos - b_neg_a_pos) * a_lt_b;
+        let result = a_neg_b_pos.clone() + (1.expr() - a_neg_b_pos - b_neg_a_pos) * a_lt_b;
 
         // Pop a and b from the stack, push the result on the stack.
         cb.stack_pop(select::expr(is_sgt.expr(), b.expr(), a.expr()));
@@ -130,12 +124,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
             stack_pointer: Transition::Delta(1.expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            None,
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
 
         Self {
             same_context,
@@ -174,23 +163,14 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
         } else {
             [step.rw_indices[0], step.rw_indices[1]]
         };
-        let [a, b] =
-            indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
+        let [a, b] = indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
 
         // Assign to the sign check gadgets. Since both a and b are in the
         // little-endian form, the most significant byte is the last byte.
-        self.sign_check_a.assign(
-            region,
-            offset,
-            F::from(a[31] as u64),
-            F::from(128u64),
-        )?;
-        self.sign_check_b.assign(
-            region,
-            offset,
-            F::from(b[31] as u64),
-            F::from(128u64),
-        )?;
+        self.sign_check_a
+            .assign(region, offset, F::from(a[31] as u64), F::from(128u64))?;
+        self.sign_check_b
+            .assign(region, offset, F::from(b[31] as u64), F::from(128u64))?;
 
         // Assign to the comparison gadgets. The first 16 bytes are assigned to
         // the `lo` less-than gadget while the last 16 bytes are assigned to
@@ -217,9 +197,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SignedComparatorGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use bus_mapping::bytecode;
     use eth_types::evm_types::OpcodeId;
-    use eth_types::Word;
+    use eth_types::{bytecode, Word};
 
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
 

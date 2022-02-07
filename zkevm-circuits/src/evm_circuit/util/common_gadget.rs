@@ -3,9 +3,7 @@ use crate::{
         param::N_BYTES_GAS,
         table::{AccountFieldTag, FixedTableTag, Lookup},
         util::{
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition,
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             math_gadget::{AddWordsGadget, RangeCheckGadget},
             Cell, Word,
         },
@@ -63,10 +61,8 @@ impl<F: FieldExt> SameContextGadget<F> {
         }
 
         // Check gas_left is sufficient
-        let sufficient_gas_left = RangeCheckGadget::construct(
-            cb,
-            cb.curr.state.gas_left.expr() - gas_cost.clone(),
-        );
+        let sufficient_gas_left =
+            RangeCheckGadget::construct(cb, cb.curr.state.gas_left.expr() - gas_cost.clone());
 
         // Set state transition of gas_left if it's default value
         if matches!(step_state_transition.gas_left, Transition::Same)
@@ -124,20 +120,16 @@ impl<F: FieldExt> TransferWithGasFeeGadget<F> {
         let receiver_balance_prev = cb.query_word();
 
         // Subtract sender balance by value and gas_fee
-        let sub_sender_balance = AddWordsGadget::construct(
-            cb,
-            [sender_balance.clone(), value.clone(), gas_fee],
-        );
+        let sub_sender_balance =
+            AddWordsGadget::construct(cb, [sender_balance.clone(), value.clone(), gas_fee]);
         cb.require_zero(
             "Sender has sufficient balance",
             sub_sender_balance.carry().expr(),
         );
 
         // Add receiver balance by value
-        let add_receiver_balance = AddWordsGadget::construct(
-            cb,
-            [receiver_balance_prev.clone(), value],
-        );
+        let add_receiver_balance =
+            AddWordsGadget::construct(cb, [receiver_balance_prev.clone(), value]);
         cb.require_zero(
             "Receiver has too much balance",
             add_receiver_balance.carry().expr(),
