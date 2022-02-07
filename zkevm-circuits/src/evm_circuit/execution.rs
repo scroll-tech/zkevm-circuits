@@ -242,7 +242,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             msize_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
             timestamp_gadget: configure_gadget!(),
-            sload_gadget: SloadGadget<F>,
+            sload_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
