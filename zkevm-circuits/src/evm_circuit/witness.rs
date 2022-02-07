@@ -683,7 +683,7 @@ fn step_convert(
                     bus_mapping::operation::Target::Memory => index + stack_ops_len,
                     bus_mapping::operation::Target::Storage => {
                         index + stack_ops_len + memory_ops_len
-                    },
+                    }
                     bus_mapping::operation::Target::TxAccessListAccountStorage => {
                         index + stack_ops_len + memory_ops_len + txaccesslist_storage_ops_len
                     }
@@ -766,7 +766,12 @@ pub fn block_convert(
                     randomness,
                     &bytecode,
                     tx,
-                    (stack_ops.len(), memory_ops.len(), storage_ops.len(), txaccesslist_storage_ops.len()),
+                    (
+                        stack_ops.len(),
+                        memory_ops.len(),
+                        storage_ops.len(),
+                        txaccesslist_storage_ops.len(),
+                    ),
                 )
             })
             .collect(),
@@ -800,17 +805,19 @@ pub fn block_convert(
             tx_id: 1usize,             // TODO:
             committed_value: 0.into(), // TODO:
         }));
-    block
-        .rws
-        .extend(txaccesslist_storage_ops.iter().map(|s| Rw::TxAccessListStorageSlot {
-            rw_counter: s.rwc().into(),
-            is_write: s.op().rw().is_write(),
-            tx_id:  s.op().tx_id(), // by default 1 for now           
-            address: *s.op().address(),
-            key: *s.op().key(),
-            value: s.op().value(),
-            value_prev: s.op().value_prev(),
-        }));
+    block.rws.extend(
+        txaccesslist_storage_ops
+            .iter()
+            .map(|s| Rw::TxAccessListStorageSlot {
+                rw_counter: s.rwc().into(),
+                is_write: s.op().rw().is_write(),
+                tx_id: s.op().tx_id(), // by default 1 for now
+                address: *s.op().address(),
+                key: *s.op().key(),
+                value: s.op().value(),
+                value_prev: s.op().value_prev(),
+            }),
+    );
 
     block
 }

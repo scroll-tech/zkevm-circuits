@@ -122,10 +122,14 @@ impl OperationContainer {
         self.storage.iter().sorted().cloned().collect()
     }
 
-    /// Returns a sorted vector of all of the [`TxAccessListAccountStorageOp`]s contained inside of
-    /// the container.
+    /// Returns a sorted vector of all of the [`TxAccessListAccountStorageOp`]s
+    /// contained inside of the container.
     pub fn sorted_txaccesslist_storage(&self) -> Vec<Operation<TxAccessListAccountStorageOp>> {
-        self.tx_access_list_storage_slot.iter().sorted().cloned().collect()
+        self.tx_access_list_storage_slot
+            .iter()
+            .sorted()
+            .cloned()
+            .collect()
     }
 }
 
