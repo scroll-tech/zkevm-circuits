@@ -668,9 +668,9 @@ impl From<&eth_types::Bytecode> for Bytecode {
 
 fn step_convert(
     step: &bus_mapping::circuit_input_builder::ExecStep,
-    ops_len: (usize, usize, usize),
+    ops_len: (usize, usize, usize, usize),
 ) -> ExecStep {
-    let (stack_ops_len, memory_ops_len, _storage_ops_len) = ops_len;
+    let (stack_ops_len, memory_ops_len, _storage_ops_len, txaccesslist_storage_ops_len) = ops_len;
     // TODO: call_index is not set in the ExecStep
     let result = ExecStep {
         rw_indices: step
@@ -683,6 +683,9 @@ fn step_convert(
                     bus_mapping::operation::Target::Memory => index + stack_ops_len,
                     bus_mapping::operation::Target::Storage => {
                         index + stack_ops_len + memory_ops_len
+                    },
+                    bus_mapping::operation::Target::TxAccessListAccountStorage => {
+                        index + stack_ops_len + memory_ops_len + txaccesslist_storage_ops_len
                     }
                     _ => unimplemented!(),
                 }
@@ -705,7 +708,7 @@ fn tx_convert(
     randomness: Fp,
     bytecode: &Bytecode,
     tx: &bus_mapping::circuit_input_builder::Transaction,
-    ops_len: (usize, usize, usize),
+    ops_len: (usize, usize, usize, usize),
 ) -> Transaction<Fp> {
     Transaction::<Fp> {
         calls: vec![Call {
@@ -763,7 +766,7 @@ pub fn block_convert(
                     randomness,
                     &bytecode,
                     tx,
-                    (stack_ops.len(), memory_ops.len(), storage_ops.len()),
+                    (stack_ops.len(), memory_ops.len(), storage_ops.len(), txaccesslist_storage_ops.len()),
                 )
             })
             .collect(),
