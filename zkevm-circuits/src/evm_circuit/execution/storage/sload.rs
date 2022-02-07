@@ -55,19 +55,19 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         // TODO:
         let tx_callee_address = 0;
-        let tx_id = 0;
+        let tx_id = 1;
 
         let key = cb.query_word();
         // Pop the key from the stack
         cb.stack_pop(key.expr());
 
         let is_warm = cb.query_bool();
-        // cb.storage_slot_access_list_read(
-        //     tx_id.expr(),
-        //     tx_callee_address.expr(),
-        //     key.expr(),
-        //     is_warm.expr(),
-        // );
+        cb.storage_slot_access_list_read(
+            tx_id.expr(),
+            tx_callee_address.expr(),
+            key.expr(),
+            is_warm.expr(),
+        );
 
         let gas = SloadGasGadget::construct(cb, is_warm.expr());
 
@@ -81,20 +81,20 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             committed_value.expr(),
         );
 
-        // cb.storage_slot_access_list_write_with_reversion(
-        //     tx_id.expr(),
-        //     tx_callee_address.expr(),
-        //     key.expr(),
-        //     1.expr(),
-        //     is_warm.expr(),
-        //     is_persistent.expr(),
-        //     rw_counter_end_of_reversion.expr(),
-        // );
+        cb.storage_slot_access_list_write_with_reversion(
+            tx_id.expr(),
+            tx_callee_address.expr(),
+            key.expr(),
+            1.expr(),
+            is_warm.expr(),
+            true.expr(), // TODO: is_persistent.expr(),
+            0.expr(), // TODO: rw_counter_end_of_reversion.expr(),
+        );
 
         cb.stack_push(value.expr());
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(3.expr()),      // TODO:
+            rw_counter: Delta(5.expr()),      // TODO:
             program_counter: Delta(1.expr()), // TODO:
             ..Default::default()
         };
