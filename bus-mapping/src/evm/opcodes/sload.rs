@@ -29,10 +29,10 @@ impl Opcode for Sload {
         // TxAccessList AccountStorage read
         state.push_op(TxAccessListAccountStorageOp::new(
             RW::READ,
-            1usize, // TODO:
+            1usize, // TODO: tx_id
             state.call().address,
             stack_value_read,
-            true, // TODO: always assume is_warm
+            true, // TODO: assume is_warm for now
             true,
         ));
 
@@ -47,10 +47,9 @@ impl Opcode for Sload {
         ));
 
         // TxAccessList AccountStorage write
-        // TODO: revert?
         state.push_op(TxAccessListAccountStorageOp::new(
             RW::WRITE,
-            1usize, // TODO:
+            1usize, // TODO: tx_id
             state.call().address,
             stack_value_read,
             true,
@@ -113,10 +112,10 @@ mod sload_tests {
         // read.
         state_ref.push_op(TxAccessListAccountStorageOp::new(
             RW::READ,
-            1usize, // TODO:
+            1usize, // TODO: tx_id
             state_ref.tx.calls()[0].address,
             Word::from(0x0u32),
-            true,
+            true, // TODO: assume is_warm for now
             true,
         ));
         // Add StorageOp associated to the storage read.
@@ -131,7 +130,7 @@ mod sload_tests {
         // write.
         state_ref.push_op(TxAccessListAccountStorageOp::new(
             RW::WRITE,
-            1usize, // TODO:
+            1usize, // TODO: tx_id
             state_ref.tx.calls()[0].address,
             Word::from(0x0u32),
             true,
