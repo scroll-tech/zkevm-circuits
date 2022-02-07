@@ -170,8 +170,8 @@ impl<F: FieldExt> SloadGasGadget<F> {
 mod test {
     use crate::evm_circuit::{test::rand_word, witness};
     use crate::test_util::run_test_circuits;
-    use bus_mapping::{bytecode, evm::OpcodeId};
-    use eth_types::Word;
+    use bus_mapping::evm::OpcodeId;
+    use eth_types::{bytecode, Word};
 
     fn test_ok(key: Word, _value: Word) {
         let bytecode = bytecode! {
