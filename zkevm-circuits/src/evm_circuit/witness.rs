@@ -377,6 +377,11 @@ pub enum Rw {
     TxAccessListStorageSlot {
         rw_counter: usize,
         is_write: bool,
+        tx_id: usize,
+        address: Address,
+        key: Word,
+        value: bool,
+        value_prev: bool,
     },
     TxRefund {
         rw_counter: usize,
@@ -460,6 +465,26 @@ impl Rw {
                 F::from(*tx_id as u64),
                 account_address.to_scalar().unwrap(),
                 F::zero(),
+                F::from(*value as u64),
+                F::from(*value_prev as u64),
+                F::zero(),
+                F::zero(),
+            ],
+            Self::TxAccessListStorageSlot {
+                rw_counter,
+                is_write,
+                tx_id,
+                address,
+                key,
+                value,
+                value_prev,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::TxAccessListStorageSlot as u64),
+                F::from(*tx_id as u64),
+                address.to_scalar().unwrap(),
+                key.to_scalar().unwrap(),
                 F::from(*value as u64),
                 F::from(*value_prev as u64),
                 F::zero(),
@@ -717,6 +742,8 @@ pub fn block_convert(
     memory_ops.sort_by_key(|s| usize::from(s.rwc()));
     let mut storage_ops = b.container.sorted_storage();
     storage_ops.sort_by_key(|s| usize::from(s.rwc()));
+    let mut txaccesslist_storage_ops = b.container.sorted_txaccesslist_storage();
+    txaccesslist_storage_ops.sort_by_key(|s| usize::from(s.rwc()));
 
     // converting to block context
     let context = BlockContext {
@@ -769,6 +796,17 @@ pub fn block_convert(
             value_prev: *s.op().value_prev(),
             tx_id: 1usize,             // TODO:
             committed_value: 0.into(), // TODO:
+        }));
+    block
+        .rws
+        .extend(txaccesslist_storage_ops.iter().map(|s| Rw::TxAccessListStorageSlot {
+            rw_counter: s.rwc().into(),
+            is_write: s.op().rw().is_write(),
+            tx_id:  s.op().tx_id(), // by default 1 for now           
+            address: *s.op().address(),
+            key: *s.op().key(),
+            value: s.op().value(),
+            value_prev: s.op().value_prev(),
         }));
 
     block

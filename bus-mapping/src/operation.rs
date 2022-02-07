@@ -448,6 +448,42 @@ impl TxAccessListAccountStorageOp {
             value_prev,
         }
     }
+
+    /// Returns the internal [`RW`] which says whether the operation corresponds
+    /// to a Read or a Write into storage_slot access_list.
+    pub const fn rw(&self) -> RW {
+        self.rw
+    }
+
+    /// Returns the [`Target`] (operation type) of this operation.
+    pub const fn target(&self) -> Target {
+        Target::TxAccessListAccountStorage
+    }
+
+    /// Returns the [`TxID`] corresponding to this operation.
+    pub const fn tx_id(&self) -> usize {
+        self.tx_id
+    }
+
+    /// Returns the [`Address`] corresponding to this operation.
+    pub const fn address(&self) -> &Address {
+        &self.address
+    }
+
+    /// Returns the [`Word`] used as key for this operation.
+    pub const fn key(&self) -> &Word {
+        &self.key
+    }
+
+    /// Returns the [`bool`] read or written by this operation.
+    pub const fn value(&self) -> bool {
+        self.value
+    }
+
+    /// Returns the [`bool`] at key found previous to this operation.
+    pub const fn value_prev(&self) -> bool {
+        self.value_prev
+    }
 }
 
 impl fmt::Debug for TxAccessListAccountStorageOp {
