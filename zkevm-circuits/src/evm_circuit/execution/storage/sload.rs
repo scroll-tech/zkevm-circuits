@@ -43,13 +43,13 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let opcode = cb.query_cell();
 
         // Use rw_counter of the step which triggers next call as its call_id.
-        // let call_id = cb.curr.state.rw_counter.clone();
-        // let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
-        //     CallContextFieldTag::TxId,
-        //     CallContextFieldTag::RwCounterEndOfReversion,
-        //     CallContextFieldTag::IsPersistent,
-        // ]
-        // .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
+        let call_id = cb.curr.state.rw_counter.clone();
+        let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
+            CallContextFieldTag::TxId,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            CallContextFieldTag::IsPersistent,
+        ]
+        .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
         // let tx_callee_address =
         //     cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
 
@@ -95,7 +95,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         cb.stack_push(value.expr());
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(5.expr()),      // TODO:
+            rw_counter: Delta(8.expr()),      // TODO:
             program_counter: Delta(1.expr()), // TODO:
             ..Default::default()
         };
@@ -128,7 +128,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [key, value] =
-            [step.rw_indices[0], step.rw_indices[4]].map(|idx| block.rws[idx].stack_value());
+            [step.rw_indices[3], step.rw_indices[7]].map(|idx| block.rws[idx].stack_value());
         self.key.assign(region, offset, Some(key.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
@@ -249,27 +249,27 @@ mod test {
             }],
             rws: [
                 vec![
-                    // Rw::CallContext {
-                    //     rw_counter: 1,
-                    //     is_write: false,
-                    //     call_id: 1,
-                    //     field_tag: CallContextFieldTag::TxId,
-                    //     value: Word::one(),
-                    // },
-                    // Rw::CallContext {
-                    //     rw_counter: 2,
-                    //     is_write: false,
-                    //     call_id: 1,
-                    //     field_tag: CallContextFieldTag::RwCounterEndOfReversion,
-                    //     value: Word::from(rw_counter_end_of_reversion),
-                    // },
-                    // Rw::CallContext {
-                    //     rw_counter: 3,
-                    //     is_write: false,
-                    //     call_id: 1,
-                    //     field_tag: CallContextFieldTag::IsPersistent,
-                    //     value: Word::from(result as u64),
-                    // },
+                    Rw::CallContext {
+                        rw_counter: 1,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::TxId,
+                        value: Word::one(),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 2,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::RwCounterEndOfReversion,
+                        value: Word::from(rw_counter_end_of_reversion),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 3,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::IsPersistent,
+                        value: Word::from(result as u64),
+                    },
                     // Rw::Account {
                     //     rw_counter: 4,
                     //     is_write: true,
