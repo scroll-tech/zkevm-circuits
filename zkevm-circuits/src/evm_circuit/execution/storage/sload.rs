@@ -217,23 +217,23 @@ mod test {
                     ..Default::default()
                 }],
                 steps: vec![
-                    // ExecStep {
-                    //     rw_indices: (0..16 + if result { 0 } else { 2 }).collect(),
-                    //     execution_state: ExecutionState::BeginTx,
-                    //     rw_counter: 1,
-                    //     gas_cost: intrinsic_gas_cost,
-                    //     ..Default::default()
-                    // },
-                    // ExecStep {
-                    //     execution_state: ExecutionState::STOP,
-                    //     rw_counter: 17,
-                    //     program_counter: 0,
-                    //     stack_pointer: STACK_CAPACITY,
-                    //     gas_left: 0,
-                    //     opcode: Some(OpcodeId::STOP),
-                    //     state_write_counter: 2,
-                    //     ..Default::default()
-                    // },
+                    ExecStep {
+                        rw_indices: (8..17 + if result { 0 } else { 2 }).collect(),
+                        execution_state: ExecutionState::SLOAD,
+                        rw_counter: 9,
+                        program_counter: 33,
+                        ..Default::default()
+                    },
+                    ExecStep {
+                        execution_state: ExecutionState::STOP, // TODO: revert?
+                        rw_counter: 17,
+                        program_counter: 34,
+                        stack_pointer: STACK_CAPACITY,
+                        gas_left: 0,
+                        opcode: Some(OpcodeId::STOP), // TODO:
+                        state_write_counter: 1,
+                        ..Default::default()
+                    },
                 ],
             }],
             rws: [
