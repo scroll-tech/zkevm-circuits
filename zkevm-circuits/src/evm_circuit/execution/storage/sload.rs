@@ -91,6 +91,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(8.expr()),      // TODO:
             program_counter: Delta(1.expr()), // TODO:
+            state_write_counter: To(1.expr()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(
@@ -227,6 +228,7 @@ mod test {
                         execution_state: ExecutionState::SLOAD,
                         rw_counter: 9,
                         program_counter: 33,
+                        stack_pointer: STACK_CAPACITY,
                         opcode: Some(OpcodeId::SLOAD), // TODO:
                         ..Default::default()
                     },
