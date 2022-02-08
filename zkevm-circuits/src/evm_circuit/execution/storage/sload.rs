@@ -54,7 +54,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         //     cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
 
         // TODO:
-        let tx_callee_address = 0;
+        let tx_callee_address = cb.query_word();
         let tx_id = 1;
 
         let key = cb.query_word();
@@ -86,7 +86,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             tx_id.expr(),
             tx_callee_address.expr(),
             key.expr(),
-            1.expr(),
+            true.expr(),
             is_warm.expr(),
             true.expr(), // TODO: is_persistent.expr(),
             0.expr(), // TODO: rw_counter_end_of_reversion.expr(),

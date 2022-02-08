@@ -53,7 +53,7 @@ impl Opcode for Sload {
             state.call().address,
             stack_value_read,
             true,
-            true,
+            true, // TODO: assume always is_warm for now
         ));
 
         // First stack write
