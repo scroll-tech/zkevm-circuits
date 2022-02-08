@@ -326,15 +326,17 @@ mod test {
             ..Default::default()
         };
 
-        // assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
     fn mock_tx() -> eth_types::Transaction {
         let from = address!("0x00000000000000000000000000000000000000fe");
         let to = address!("0x00000000000000000000000000000000000000ff");
+        let minimal_gas = Word::from(21000);
         eth_types::Transaction {
             from,
             to: Some(to),
+            // gas: minimal_gas, // TODO:
             ..Default::default()
         }
     }
