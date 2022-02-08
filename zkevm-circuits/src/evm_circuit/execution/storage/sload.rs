@@ -176,7 +176,7 @@ mod test {
     use eth_types::{address, bytecode, Address, ToLittleEndian, Word};
     use std::convert::TryInto;
 
-    fn test_ok(tx: eth_types::Transaction, key: Word, _value: Word, result: bool) {
+    fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, result: bool) {
         let rw_counter_end_of_reversion = if result { 0 } else { 19 };
 
         // TODO:
@@ -279,6 +279,16 @@ mod test {
                         key: key,
                         value: true,
                         value_prev: true,
+                    },
+                    Rw::AccountStorage {
+                        rw_counter: 14,
+                        is_write: false,
+                        address: tx.to.unwrap_or_else(Address::zero),
+                        key: key,
+                        value: value,
+                        value_prev: value,
+                        tx_id: 1,
+                        committed_value: Word::zero(),
                     },
                 ],
                 if result {
