@@ -290,6 +290,22 @@ mod test {
                         tx_id: 1,
                         committed_value: Word::zero(),
                     },
+                    Rw::TxAccessListStorageSlot {
+                        rw_counter: 15,
+                        is_write: true,
+                        tx_id: 1,
+                        address: tx.to.unwrap_or_else(Address::zero),
+                        key: key,
+                        value: true,
+                        value_prev: true,
+                    },
+                    Rw::Stack {
+                        rw_counter: 16,
+                        is_write: true,
+                        call_id: 1,
+                        stack_pointer: STACK_CAPACITY,
+                        value: value,
+                    },
                 ],
                 if result {
                     vec![]
