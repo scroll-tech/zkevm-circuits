@@ -178,13 +178,14 @@ mod test {
     };
     use crate::test_util::run_test_circuits;
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{address, Address, bytecode, ToLittleEndian, Word};
+    use eth_types::{address, bytecode, Address, ToLittleEndian, Word};
     use std::convert::TryInto;
 
     fn test_ok(tx: eth_types::Transaction, key: Word, _value: Word, result: bool) {
         // TODO:
         let rw_counter_end_of_reversion = if result { 0 } else { 19 };
 
+        // TODO:
         let call_data_gas_cost = tx
             .input
             .0
