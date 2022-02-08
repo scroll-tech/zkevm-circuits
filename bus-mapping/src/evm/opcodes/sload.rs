@@ -46,15 +46,15 @@ impl Opcode for Sload {
             storage_value_read,
         ));
 
-        // // TxAccessList AccountStorage write
-        // state.push_op(TxAccessListAccountStorageOp::new(
-        //     RW::WRITE,
-        //     1usize, // TODO: tx_id
-        //     state.call().address,
-        //     stack_value_read,
-        //     true,
-        //     true,
-        // ));
+        // TxAccessList AccountStorage write
+        state.push_op(TxAccessListAccountStorageOp::new(
+            RW::WRITE,
+            1usize, // TODO: tx_id
+            state.call().address,
+            stack_value_read,
+            true,
+            true, // TODO: assume always is_warm for now
+        ));
 
         // First stack write
         state.push_stack_op(RW::WRITE, stack_position, storage_value_read);

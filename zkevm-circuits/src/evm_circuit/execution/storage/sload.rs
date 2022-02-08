@@ -82,20 +82,20 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             committed_value.expr(),
         );
 
-        // cb.storage_slot_access_list_write_with_reversion(
-        //     tx_id.expr(),
-        //     tx_callee_address.expr(),
-        //     key.expr(),
-        //     1.expr(),
-        //     is_warm.expr(),
-        //     true.expr(), // TODO: is_persistent.expr(),
-        //     0.expr(), // TODO: rw_counter_end_of_reversion.expr(),
-        // );
+        cb.storage_slot_access_list_write_with_reversion(
+            tx_id.expr(),
+            tx_callee_address.expr(),
+            key.expr(),
+            true.expr(),
+            is_warm.expr(),
+            true.expr(), // TODO: is_persistent.expr(),
+            0.expr(), // TODO: rw_counter_end_of_reversion.expr(),
+        );
 
         cb.stack_push(value.expr());
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(4.expr()),      // TODO:
+            rw_counter: Delta(5.expr()),      // TODO:
             program_counter: Delta(1.expr()), // TODO:
             ..Default::default()
         };
@@ -128,7 +128,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [key, value] =
-            [step.rw_indices[0], step.rw_indices[3]].map(|idx| block.rws[idx].stack_value());
+            [step.rw_indices[0], step.rw_indices[4]].map(|idx| block.rws[idx].stack_value());
         self.key.assign(region, offset, Some(key.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
