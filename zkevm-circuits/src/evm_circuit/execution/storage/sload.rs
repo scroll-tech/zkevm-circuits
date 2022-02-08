@@ -223,7 +223,7 @@ mod test {
                 }],
                 steps: vec![
                     ExecStep {
-                        rw_indices: (8..17 + if result { 0 } else { 2 }).collect(),
+                        rw_indices: (0..9 + if result { 0 } else { 2 }).collect(),
                         execution_state: ExecutionState::SLOAD,
                         rw_counter: 9,
                         program_counter: 33,
