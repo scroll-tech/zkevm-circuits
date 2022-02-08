@@ -170,16 +170,26 @@ impl<F: FieldExt> SloadGasGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::{
-        test::{rand_word, rand_fp, run_test_circuit_incomplete_fixed_table},
-        witness::{self, Block, Bytecode},
+        param::STACK_CAPACITY,
+        step::ExecutionState,
+        test::{rand_fp, rand_word, run_test_circuit_incomplete_fixed_table},
+        util::RandomLinearCombination,
+        witness::{self, Block, Bytecode, Call, ExecStep, Rw, Transaction},
     };
     use crate::test_util::run_test_circuits;
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{address, bytecode, Word};
+    use eth_types::{address, Address, bytecode, ToLittleEndian, Word};
+    use std::convert::TryInto;
 
-    fn test_ok(_tx: eth_types::Transaction, key: Word, _value: Word, result: bool) {
+    fn test_ok(tx: eth_types::Transaction, key: Word, _value: Word, result: bool) {
         // TODO:
-        let rw_counter_end_of_reversion = if result { 0 } else { 20 };
+        let rw_counter_end_of_reversion = if result { 0 } else { 19 };
+
+        let call_data_gas_cost = tx
+            .input
+            .0
+            .iter()
+            .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 });
 
         let randomness = rand_fp();
         let bytecode = Bytecode::from(&bytecode! {
@@ -279,17 +289,15 @@ mod test {
                 if result {
                     vec![]
                 } else {
-                    vec![
-                        Rw::TxAccessListStorageSlot {
-                            rw_counter: 19,
-                            is_write: true,
-                            tx_id: 1usize,
-                            address: tx.to.unwrap_or_else(Address::zero),
-                            key: key,
-                            value: true,
-                            value_prev: true,
-                        },
-                    ]
+                    vec![Rw::TxAccessListStorageSlot {
+                        rw_counter: 19,
+                        is_write: true,
+                        tx_id: 1usize,
+                        address: tx.to.unwrap_or_else(Address::zero),
+                        key: key,
+                        value: true,
+                        value_prev: true,
+                    }]
                 },
             ]
             .concat(),
