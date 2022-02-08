@@ -89,7 +89,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             true.expr(),
             is_warm.expr(),
             true.expr(), // TODO: is_persistent.expr(),
-            0.expr(), // TODO: rw_counter_end_of_reversion.expr(),
+            0.expr(),    // TODO: rw_counter_end_of_reversion.expr(),
         );
 
         cb.stack_push(value.expr());
@@ -169,33 +169,248 @@ impl<F: FieldExt> SloadGasGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{test::rand_word, witness};
+    use crate::evm_circuit::{
+        test::{rand_word, rand_fp, run_test_circuit_incomplete_fixed_table},
+        witness::{self, Block, Bytecode},
+    };
     use crate::test_util::run_test_circuits;
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{bytecode, Word};
+    use eth_types::{address, bytecode, Word};
 
-    fn test_ok(key: Word, _value: Word) {
-        let bytecode = bytecode! {
+    fn test_ok(_tx: eth_types::Transaction, key: Word, _value: Word, result: bool) {
+        // TODO:
+        let rw_counter_end_of_reversion = if result { 0 } else { 20 };
+
+        let randomness = rand_fp();
+        let bytecode = Bytecode::from(&bytecode! {
             // TODO: SSTORE first
             PUSH32(key)
             #[start]
             SLOAD
             STOP
+        });
+        let block = Block {
+            randomness,
+            txs: vec![Transaction {
+                id: 1,
+                nonce: tx.nonce.try_into().unwrap(),
+                gas: tx.gas.try_into().unwrap(),
+                gas_price: tx.gas_price.unwrap_or_else(Word::zero),
+                caller_address: tx.from,
+                callee_address: tx.to.unwrap_or_else(Address::zero),
+                is_create: tx.to.is_none(),
+                value: tx.value,
+                call_data: tx.input.to_vec(),
+                call_data_length: tx.input.0.len(),
+                call_data_gas_cost,
+                calls: vec![Call {
+                    id: 1,
+                    is_root: true,
+                    is_create: false,
+                    opcode_source: RandomLinearCombination::random_linear_combine(
+                        bytecode.hash.to_le_bytes(),
+                        randomness,
+                    ),
+                    result: Word::from(result as usize),
+                    rw_counter_end_of_reversion,
+                    is_persistent: result,
+                    ..Default::default()
+                }],
+                steps: vec![
+                    // ExecStep {
+                    //     rw_indices: (0..16 + if result { 0 } else { 2 }).collect(),
+                    //     execution_state: ExecutionState::BeginTx,
+                    //     rw_counter: 1,
+                    //     gas_cost: intrinsic_gas_cost,
+                    //     ..Default::default()
+                    // },
+                    // ExecStep {
+                    //     execution_state: ExecutionState::STOP,
+                    //     rw_counter: 17,
+                    //     program_counter: 0,
+                    //     stack_pointer: STACK_CAPACITY,
+                    //     gas_left: 0,
+                    //     opcode: Some(OpcodeId::STOP),
+                    //     state_write_counter: 2,
+                    //     ..Default::default()
+                    // },
+                ],
+            }],
+            rws: [
+                vec![
+                    // Rw::CallContext {
+                    //     rw_counter: 1,
+                    //     is_write: false,
+                    //     call_id: 1,
+                    //     field_tag: CallContextFieldTag::TxId,
+                    //     value: Word::one(),
+                    // },
+                    // Rw::CallContext {
+                    //     rw_counter: 2,
+                    //     is_write: false,
+                    //     call_id: 1,
+                    //     field_tag: CallContextFieldTag::RwCounterEndOfReversion,
+                    //     value: Word::from(rw_counter_end_of_reversion),
+                    // },
+                    // Rw::CallContext {
+                    //     rw_counter: 3,
+                    //     is_write: false,
+                    //     call_id: 1,
+                    //     field_tag: CallContextFieldTag::IsPersistent,
+                    //     value: Word::from(result as u64),
+                    // },
+                    // Rw::Account {
+                    //     rw_counter: 4,
+                    //     is_write: true,
+                    //     account_address: tx.from,
+                    //     field_tag: AccountFieldTag::Nonce,
+                    //     value: tx.nonce + Word::one(),
+                    //     value_prev: tx.nonce,
+                    // },
+                    // Rw::TxAccessListAccount {
+                    //     rw_counter: 5,
+                    //     is_write: true,
+                    //     tx_id: 1,
+                    //     account_address: tx.from,
+                    //     value: true,
+                    //     value_prev: false,
+                    // },
+                    // Rw::TxAccessListAccount {
+                    //     rw_counter: 6,
+                    //     is_write: true,
+                    //     tx_id: 1,
+                    //     account_address: tx.to.unwrap(),
+                    //     value: true,
+                    //     value_prev: false,
+                    // },
+                    // Rw::Account {
+                    //     rw_counter: 7,
+                    //     is_write: true,
+                    //     account_address: tx.from,
+                    //     field_tag: AccountFieldTag::Balance,
+                    //     value: from_balance,
+                    //     value_prev: from_balance_prev,
+                    // },
+                    // Rw::Account {
+                    //     rw_counter: 8,
+                    //     is_write: true,
+                    //     account_address: tx.to.unwrap_or_else(Address::zero),
+                    //     field_tag: AccountFieldTag::Balance,
+                    //     value: to_balance,
+                    //     value_prev: to_balance_prev,
+                    // },
+                    // Rw::Account {
+                    //     rw_counter: 9,
+                    //     is_write: false,
+                    //     account_address: tx.to.unwrap_or_else(Address::zero),
+                    //     field_tag: AccountFieldTag::CodeHash,
+                    //     value: bytecode.hash,
+                    //     value_prev: bytecode.hash,
+                    // },
+                    // Rw::CallContext {
+                    //     rw_counter: 10,
+                    //     is_write: false,
+                    //     call_id: 1,
+                    //     field_tag: CallContextFieldTag::Depth,
+                    //     value: Word::one(),
+                    // },
+                    // Rw::CallContext {
+                    //     rw_counter: 11,
+                    //     is_write: false,
+                    //     call_id: 1,
+                    //     field_tag: CallContextFieldTag::CallerAddress,
+                    //     value: tx.from.to_word(),
+                    // },
+                    // Rw::CallContext {
+                    //     rw_counter: 12,
+                    //     is_write: false,
+                    //     call_id: 1,
+                    //     field_tag: CallContextFieldTag::CalleeAddress,
+                    //     value: tx.to.unwrap_or_else(Address::zero).to_word(),
+                    // },
+                    // Rw::CallContext {
+                    //     rw_counter: 13,
+                    //     is_write: false,
+                    //     call_id: 1,
+                    //     field_tag: CallContextFieldTag::CallDataOffset,
+                    //     value: Word::zero(),
+                    // },
+                    // Rw::CallContext {
+                    //     rw_counter: 14,
+                    //     is_write: false,
+                    //     call_id: 1,
+                    //     field_tag: CallContextFieldTag::CallDataLength,
+                    //     value: tx.input.0.len().into(),
+                    // },
+                    // Rw::CallContext {
+                    //     rw_counter: 15,
+                    //     is_write: false,
+                    //     call_id: 1,
+                    //     field_tag: CallContextFieldTag::Value,
+                    //     value: tx.value,
+                    // },
+                    // Rw::CallContext {
+                    //     rw_counter: 16,
+                    //     is_write: false,
+                    //     call_id: 1,
+                    //     field_tag: CallContextFieldTag::IsStatic,
+                    //     value: Word::zero(),
+                    // },
+                ],
+                if result {
+                    vec![]
+                } else {
+                    vec![
+                        // Rw::Account {
+                        //     rw_counter: 19,
+                        //     is_write: true,
+                        //     account_address: tx.to.unwrap_or_else(Address::zero),
+                        //     field_tag: AccountFieldTag::Balance,
+                        //     value: to_balance_prev,
+                        //     value_prev: to_balance,
+                        // },
+                        // Rw::Account {
+                        //     rw_counter: 20,
+                        //     is_write: true,
+                        //     account_address: tx.from,
+                        //     field_tag: AccountFieldTag::Balance,
+                        //     value: from_balance_prev,
+                        //     value_prev: from_balance,
+                        // },
+                    ]
+                },
+            ]
+            .concat(),
+            bytecodes: vec![bytecode],
+            ..Default::default()
         };
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
+
+        // assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+    }
+
+    fn mock_tx() -> eth_types::Transaction {
+        let from = address!("0x00000000000000000000000000000000000000fe");
+        let to = address!("0x00000000000000000000000000000000000000ff");
+        eth_types::Transaction {
+            from,
+            to: Some(to),
+            ..Default::default()
+        }
     }
 
     #[test]
     fn sload_gadget_simple() {
-        test_ok(0x030201.into(), 0x060504.into());
-        test_ok(0x090705.into(), 0x060504.into());
+        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true);
+        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), true);
+        // TODO: false
     }
 
     #[test]
     fn sload_gadget_rand() {
         let key = rand_word();
         let value = rand_word();
-        test_ok(key, value);
-        test_ok(key, value);
+        test_ok(mock_tx(), key, value, true);
+        test_ok(mock_tx(), key, value, true);
+        // TODO: false
     }
 }
