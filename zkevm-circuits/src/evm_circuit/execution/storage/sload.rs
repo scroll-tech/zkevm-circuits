@@ -227,6 +227,7 @@ mod test {
                         execution_state: ExecutionState::SLOAD,
                         rw_counter: 9,
                         program_counter: 33,
+                        opcode: Some(OpcodeId::SLOAD), // TODO:
                         ..Default::default()
                     },
                     ExecStep {
