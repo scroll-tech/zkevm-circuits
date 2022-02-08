@@ -361,22 +361,15 @@ mod test {
                     vec![]
                 } else {
                     vec![
-                        // Rw::Account {
-                        //     rw_counter: 19,
-                        //     is_write: true,
-                        //     account_address: tx.to.unwrap_or_else(Address::zero),
-                        //     field_tag: AccountFieldTag::Balance,
-                        //     value: to_balance_prev,
-                        //     value_prev: to_balance,
-                        // },
-                        // Rw::Account {
-                        //     rw_counter: 20,
-                        //     is_write: true,
-                        //     account_address: tx.from,
-                        //     field_tag: AccountFieldTag::Balance,
-                        //     value: from_balance_prev,
-                        //     value_prev: from_balance,
-                        // },
+                        Rw::TxAccessListStorageSlot {
+                            rw_counter: 19,
+                            is_write: true,
+                            tx_id: 1usize,
+                            address: tx.to.unwrap_or_else(Address::zero),
+                            key: key,
+                            value: true,
+                            value_prev: true,
+                        },
                     ]
                 },
             ]
