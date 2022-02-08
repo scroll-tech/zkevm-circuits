@@ -244,42 +244,42 @@ mod test {
             rws: [
                 vec![
                     Rw::CallContext {
-                        rw_counter: 1,
+                        rw_counter: 9,
                         is_write: false,
                         call_id: 1,
                         field_tag: CallContextFieldTag::TxId,
                         value: Word::one(),
                     },
                     Rw::CallContext {
-                        rw_counter: 2,
+                        rw_counter: 10,
                         is_write: false,
                         call_id: 1,
                         field_tag: CallContextFieldTag::RwCounterEndOfReversion,
                         value: Word::from(rw_counter_end_of_reversion),
                     },
                     Rw::CallContext {
-                        rw_counter: 3,
+                        rw_counter: 11,
                         is_write: false,
                         call_id: 1,
                         field_tag: CallContextFieldTag::IsPersistent,
                         value: Word::from(result as u64),
                     },
-                    /* Rw::Account {
-                     *     rw_counter: 4,
-                     *     is_write: true,
-                     *     account_address: tx.from,
-                     *     field_tag: AccountFieldTag::Nonce,
-                     *     value: tx.nonce + Word::one(),
-                     *     value_prev: tx.nonce,
-                     * },
-                     * Rw::TxAccessListAccount {
-                     *     rw_counter: 5,
-                     *     is_write: true,
-                     *     tx_id: 1,
-                     *     account_address: tx.from,
-                     *     value: true,
-                     *     value_prev: false,
-                     * }, */
+                    Rw::Stack {
+                        rw_counter: 12,
+                        is_write: false,
+                        call_id: 1,
+                        stack_pointer: STACK_CAPACITY,
+                        value: key,
+                    },
+                    Rw::TxAccessListStorageSlot {
+                        rw_counter: 13,
+                        is_write: false,
+                        tx_id: 1,
+                        address: tx.to.unwrap_or_else(Address::zero),
+                        key: key,
+                        value: true,
+                        value_prev: true,
+                    },
                 ],
                 if result {
                     vec![]
