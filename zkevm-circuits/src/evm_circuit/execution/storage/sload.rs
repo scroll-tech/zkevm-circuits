@@ -172,6 +172,7 @@ mod test {
     use crate::evm_circuit::{
         param::STACK_CAPACITY,
         step::ExecutionState,
+        table::CallContextFieldTag,
         test::{rand_fp, rand_word, run_test_circuit_incomplete_fixed_table},
         util::RandomLinearCombination,
         witness::{self, Block, Bytecode, Call, ExecStep, Rw, Transaction},
@@ -270,22 +271,22 @@ mod test {
                         field_tag: CallContextFieldTag::IsPersistent,
                         value: Word::from(result as u64),
                     },
-                    // Rw::Account {
-                    //     rw_counter: 4,
-                    //     is_write: true,
-                    //     account_address: tx.from,
-                    //     field_tag: AccountFieldTag::Nonce,
-                    //     value: tx.nonce + Word::one(),
-                    //     value_prev: tx.nonce,
-                    // },
-                    // Rw::TxAccessListAccount {
-                    //     rw_counter: 5,
-                    //     is_write: true,
-                    //     tx_id: 1,
-                    //     account_address: tx.from,
-                    //     value: true,
-                    //     value_prev: false,
-                    // },
+                    /* Rw::Account {
+                     *     rw_counter: 4,
+                     *     is_write: true,
+                     *     account_address: tx.from,
+                     *     field_tag: AccountFieldTag::Nonce,
+                     *     value: tx.nonce + Word::one(),
+                     *     value_prev: tx.nonce,
+                     * },
+                     * Rw::TxAccessListAccount {
+                     *     rw_counter: 5,
+                     *     is_write: true,
+                     *     tx_id: 1,
+                     *     account_address: tx.from,
+                     *     value: true,
+                     *     value_prev: false,
+                     * }, */
                 ],
                 if result {
                     vec![]
