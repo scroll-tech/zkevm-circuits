@@ -50,16 +50,10 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             CallContextFieldTag::IsPersistent,
         ]
         .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
-        // let tx_callee_address =
-        //     cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
-
-        // TODO:
-        let tx_callee_address = cb.query_word();
-        let tx_id = 1;
+        let tx_callee_address = cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
 
         let key = cb.query_word();
         // Pop the key from the stack
-        // TODO: 74
         cb.stack_pop(key.expr());
 
         let is_warm = cb.query_bool();
@@ -88,8 +82,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             key.expr(),
             true.expr(),
             is_warm.expr(),
-            true.expr(), // TODO: is_persistent.expr(),
-            0.expr(),    // TODO: rw_counter_end_of_reversion.expr(),
+            is_persistent.expr(),
+            rw_counter_end_of_reversion.expr(),
         );
 
         cb.stack_push(value.expr());
