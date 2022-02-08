@@ -177,7 +177,6 @@ mod test {
     use std::convert::TryInto;
 
     fn test_ok(tx: eth_types::Transaction, key: Word, _value: Word, result: bool) {
-        // TODO:
         let rw_counter_end_of_reversion = if result { 0 } else { 19 };
 
         // TODO:
