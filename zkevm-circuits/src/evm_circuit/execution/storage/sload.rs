@@ -43,7 +43,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let opcode = cb.query_cell();
 
         // Use rw_counter of the step which triggers next call as its call_id.
-        let call_id = cb.curr.state.rw_counter.clone();
+        // TODO: let call_id = cb.curr.state.rw_counter.clone();
+        let call_id = 1;
         let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
             CallContextFieldTag::TxId,
             CallContextFieldTag::RwCounterEndOfReversion,
