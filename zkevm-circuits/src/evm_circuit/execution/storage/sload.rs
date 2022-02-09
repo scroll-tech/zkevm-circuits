@@ -85,8 +85,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             tx_id.expr(),
             tx_callee_address.expr(),
             key.expr(),
-            true.expr(),
-            true.expr(), // TODO: is_warm.expr(),
+            false.expr(), // TODO:
+            false.expr(), // TODO: is_warm.expr(),
             is_persistent.expr(),
             rw_counter_end_of_reversion.expr(),
         );
@@ -316,8 +316,8 @@ mod test {
                         tx_id: 1,
                         address: Address::zero(), // TODO:
                         key: key,
-                        value: true,
-                        value_prev: true,
+                        value: false, // TODO:
+                        value_prev: false, // TODO:
                     },
                     Rw::Stack {
                         rw_counter: 16,
