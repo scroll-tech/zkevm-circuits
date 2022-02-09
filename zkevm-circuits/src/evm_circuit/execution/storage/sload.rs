@@ -50,7 +50,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             CallContextFieldTag::IsPersistent,
         ]
         .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
-        let tx_callee_address = cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
+        // TODO: let tx_callee_address = cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
+        let tx_callee_address = 0;
 
         let key = cb.query_word();
         // Pop the key from the stack
@@ -278,7 +279,7 @@ mod test {
                         rw_counter: 13,
                         is_write: false,
                         tx_id: 1,
-                        address: tx.to.unwrap_or_else(Address::zero),
+                        address: Address::zero(), // TODO:
                         key: key,
                         value: true,
                         value_prev: true,
@@ -286,7 +287,7 @@ mod test {
                     Rw::AccountStorage {
                         rw_counter: 14,
                         is_write: false,
-                        address: tx.to.unwrap_or_else(Address::zero),
+                        address: Address::zero(), // TODO:
                         key: key,
                         value: value,
                         value_prev: value,
@@ -297,7 +298,7 @@ mod test {
                         rw_counter: 15,
                         is_write: true,
                         tx_id: 1,
-                        address: tx.to.unwrap_or_else(Address::zero),
+                        address: Address::zero(), // TODO:
                         key: key,
                         value: true,
                         value_prev: true,
