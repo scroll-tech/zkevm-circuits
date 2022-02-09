@@ -28,6 +28,7 @@ use halo2::{
 pub(crate) struct SloadGadget<F> {
     same_context: SameContextGadget<F>,
     tx_id: Cell<F>,
+    is_persistent: Cell<F>,
     key: Word<F>,
     value: Word<F>,
     // committed_value: Word<F>,
@@ -107,6 +108,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         Self {
             same_context: same_context,
             tx_id: tx_id,
+            is_persistent: is_persistent,
             key: key,
             value: value,
             // committed_value: committed_value,
@@ -120,13 +122,15 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction<F>,
-        _call: &Call<F>,
+        call: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
+        self.is_persistent
+            .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
 
         let [key, value] =
             [step.rw_indices[3], step.rw_indices[7]].map(|idx| block.rws[idx].stack_value());
