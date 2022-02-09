@@ -86,7 +86,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             tx_callee_address.expr(),
             key.expr(),
             true.expr(),
-            is_warm.expr(),
+            true.expr(), // TODO: is_warm.expr(),
             is_persistent.expr(),
             rw_counter_end_of_reversion.expr(),
         );
