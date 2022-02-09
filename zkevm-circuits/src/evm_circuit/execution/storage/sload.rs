@@ -27,6 +27,7 @@ use halo2::{
 #[derive(Clone, Debug)]
 pub(crate) struct SloadGadget<F> {
     same_context: SameContextGadget<F>,
+    call_id: Cell<F>,
     tx_id: Cell<F>,
     rw_counter_end_of_reversion: Cell<F>,
     is_persistent: Cell<F>,
@@ -45,8 +46,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let opcode = cb.query_cell();
 
         // Use rw_counter of the step which triggers next call as its call_id.
-        // TODO: let call_id = cb.curr.state.rw_counter.clone();
-        let call_id = 1;
+        let call_id = cb.query_cell();
         let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
             CallContextFieldTag::TxId,
             CallContextFieldTag::RwCounterEndOfReversion,
@@ -108,6 +108,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         Self {
             same_context: same_context,
+            call_id: call_id,
             tx_id: tx_id,
             rw_counter_end_of_reversion: rw_counter_end_of_reversion,
             is_persistent: is_persistent,
@@ -128,6 +129,9 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
+
+        self.call_id
+            .assign(region, offset, Some(F::from(call.id as u64)))?;
 
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
@@ -197,7 +201,6 @@ mod test {
     fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, result: bool) {
         let rw_counter_end_of_reversion = if result { 0 } else { 19 };
 
-        // TODO:
         let call_data_gas_cost = tx
             .input
             .0
