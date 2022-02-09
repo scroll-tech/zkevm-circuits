@@ -98,7 +98,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             cb,
             opcode,
             step_state_transition,
-            Some(gas.gas_cost().expr()),
+            None, // TODO: Some(gas.gas_cost().expr()),
         );
 
         Self {
