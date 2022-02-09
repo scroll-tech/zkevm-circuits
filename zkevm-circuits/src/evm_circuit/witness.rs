@@ -442,6 +442,15 @@ impl Rw {
         }
     }
 
+    pub fn aux_pair(&self) -> (usize, Word) {
+        match self {
+            Self::AccountStorage {
+                tx_id, committed_value, ..
+            } => (*tx_id, *committed_value),
+            _ => unreachable!(),
+        }
+    }
+
     pub fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,

@@ -33,7 +33,7 @@ pub(crate) struct SloadGadget<F> {
     is_persistent: Cell<F>,
     key: Word<F>,
     value: Word<F>,
-    // committed_value: Word<F>,
+    committed_value: Word<F>,
     gas: SloadGasGadget<F>,
 }
 
@@ -113,7 +113,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             is_persistent: is_persistent,
             key: key,
             value: value,
-            // committed_value: committed_value,
+            committed_value: committed_value,
             gas: gas,
         }
     }
@@ -147,6 +147,10 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         self.key.assign(region, offset, Some(key.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
+
+        let (_, committed_value) = block.rws[step.rw_indices[5]].aux_pair();
+        self.committed_value
+            .assign(region, offset, Some(committed_value.to_le_bytes()))?;
 
         // TODO:
         // self.gas.assign(region, offset,
