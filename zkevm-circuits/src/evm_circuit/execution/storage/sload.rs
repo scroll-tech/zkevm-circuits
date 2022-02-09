@@ -27,7 +27,7 @@ use halo2::{
 #[derive(Clone, Debug)]
 pub(crate) struct SloadGadget<F> {
     same_context: SameContextGadget<F>,
-    // tx_id: Cell<F>,
+    tx_id: Cell<F>,
     key: Word<F>,
     value: Word<F>,
     // committed_value: Word<F>,
@@ -106,7 +106,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         Self {
             same_context: same_context,
-            // tx_id: tx_id,
+            tx_id: tx_id,
             key: key,
             value: value,
             // committed_value: committed_value,
@@ -119,11 +119,14 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        _tx: &Transaction<F>,
+        tx: &Transaction<F>,
         _call: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
+
+        self.tx_id
+            .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
         let [key, value] =
             [step.rw_indices[3], step.rw_indices[7]].map(|idx| block.rws[idx].stack_value());
