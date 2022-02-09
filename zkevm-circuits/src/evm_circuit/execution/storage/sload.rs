@@ -28,6 +28,7 @@ use halo2::{
 pub(crate) struct SloadGadget<F> {
     same_context: SameContextGadget<F>,
     tx_id: Cell<F>,
+    rw_counter_end_of_reversion: Cell<F>,
     is_persistent: Cell<F>,
     key: Word<F>,
     value: Word<F>,
@@ -108,6 +109,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         Self {
             same_context: same_context,
             tx_id: tx_id,
+            rw_counter_end_of_reversion: rw_counter_end_of_reversion,
             is_persistent: is_persistent,
             key: key,
             value: value,
@@ -129,6 +131,11 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Some(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
         self.is_persistent
             .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
 
