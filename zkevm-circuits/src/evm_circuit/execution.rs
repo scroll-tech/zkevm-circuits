@@ -20,6 +20,7 @@ mod add;
 mod begin_tx;
 mod bitwise;
 mod byte;
+mod callvalue;
 mod coinbase;
 mod comparator;
 mod dup;
@@ -44,6 +45,7 @@ use add::AddGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
+use callvalue::CallvalueGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
 use dup::DupGadget;
@@ -109,6 +111,7 @@ pub(crate) struct ExecutionConfig<F> {
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
     msize_gadget: MsizeGadget<F>,
+    callvalue_gadget: CallvalueGadget<F>,
     coinbase_gadget: CoinbaseGadget<F>,
     timestamp_gadget: TimestampGadget<F>,
 }
@@ -239,6 +242,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             msize_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
             timestamp_gadget: configure_gadget!(),
+            callvalue_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
@@ -471,6 +475,7 @@ impl<F: FieldExt> ExecutionConfig<F> {
             ExecutionState::SCMP => {
                 assign_exec_step!(self.signed_comparator_gadget)
             }
+            ExecutionState::CALLVALUE => assign_exec_step!(self.callvalue_gadget),
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
