@@ -369,7 +369,10 @@ mod test {
     #[test]
     fn sload_gadget_simple() {
         test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true);
+        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false);
+
         test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), true);
+        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), false);
         // TODO: false
     }
 
@@ -378,7 +381,8 @@ mod test {
         let key = rand_word();
         let value = rand_word();
         test_ok(mock_tx(), key, value, true);
-        test_ok(mock_tx(), key, value, true);
+        test_ok(mock_tx(), key, value, false);
+
         // TODO: false
     }
 }
