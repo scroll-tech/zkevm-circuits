@@ -536,21 +536,21 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn storage_slot_access_list_read(
+    pub(crate) fn account_storage_access_list_read(
         &mut self,
         tx_id: Expression<F>,
         account_address: Expression<F>,
-        storage_slot: Expression<F>,
+        key: Expression<F>,
         value: Expression<F>,
     ) {
         self.rw_lookup(
-            "storage_slot_access_list_read",
+            "account_storage_access_list_read",
             false.expr(),
             RwTableTag::TxAccessListStorageSlot,
             [
                 tx_id,
                 account_address,
-                storage_slot,
+                key,
                 value.clone(),
                 value,
                 0.expr(),
@@ -559,23 +559,23 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn storage_slot_access_list_write_with_reversion(
+    pub(crate) fn account_storage_access_list_write_with_reversion(
         &mut self,
         tx_id: Expression<F>,
         account_address: Expression<F>,
-        storage_slot: Expression<F>,
+        key: Expression<F>,
         value: Expression<F>,
         value_prev: Expression<F>,
         is_persistent: Expression<F>,
         rw_counter_end_of_reversion: Expression<F>,
     ) {
         self.state_write_with_reversion(
-            "storage_slot_access_list_write_with_reversion",
+            "account_storage_access_list_write_with_reversion",
             RwTableTag::TxAccessListStorageSlot,
             [
                 tx_id,
                 account_address,
-                storage_slot,
+                key,
                 value,
                 value_prev,
                 0.expr(),

@@ -61,7 +61,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         cb.stack_pop(key.expr());
 
         let is_warm = cb.query_bool();
-        cb.storage_slot_access_list_read(
+        cb.account_storage_access_list_read(
             tx_id.expr(),
             tx_callee_address.expr(),
             key.expr(),
@@ -80,7 +80,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             committed_value.expr(),
         );
 
-        cb.storage_slot_access_list_write_with_reversion(
+        cb.account_storage_access_list_write_with_reversion(
             tx_id.expr(),
             tx_callee_address.expr(),
             key.expr(),
