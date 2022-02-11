@@ -661,21 +661,21 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Account Storage
 
-    pub(crate) fn storage_slot_read(
+    pub(crate) fn account_storage_read(
         &mut self,
         account_address: Expression<F>,
-        storage_slot: Expression<F>,
+        key: Expression<F>,
         value: Expression<F>,
         tx_id: Expression<F>,
         committed_value: Expression<F>,
     ) {
         self.rw_lookup(
-            "storage_slot_read",
+            "account_storage_read",
             false.expr(),
             RwTableTag::AccountStorage,
             [
                 account_address,
-                storage_slot,
+                key,
                 0.expr(),
                 value.clone(),
                 value,

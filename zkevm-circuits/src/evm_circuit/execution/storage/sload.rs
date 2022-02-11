@@ -72,7 +72,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         let value = cb.query_word();
         let committed_value = cb.query_word();
-        cb.storage_slot_read(
+        cb.account_storage_read(
             tx_callee_address.expr(),
             key.expr(),
             value.expr(),
