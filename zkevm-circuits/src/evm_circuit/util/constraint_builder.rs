@@ -536,29 +536,6 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn account_storage_access_list_read(
-        &mut self,
-        tx_id: Expression<F>,
-        account_address: Expression<F>,
-        key: Expression<F>,
-        value: Expression<F>,
-    ) {
-        self.rw_lookup(
-            "account_storage_access_list_read",
-            false.expr(),
-            RwTableTag::TxAccessListAccountStorage,
-            [
-                tx_id,
-                account_address,
-                key,
-                value.clone(),
-                value,
-                0.expr(),
-                0.expr(),
-            ],
-        );
-    }
-
     pub(crate) fn account_storage_access_list_write_with_reversion(
         &mut self,
         tx_id: Expression<F>,

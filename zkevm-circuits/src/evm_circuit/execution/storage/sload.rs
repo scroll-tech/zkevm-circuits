@@ -60,16 +60,6 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         // Pop the key from the stack
         cb.stack_pop(key.expr());
 
-        let is_warm = cb.query_bool();
-        cb.account_storage_access_list_read(
-            tx_id.expr(),
-            tx_callee_address.expr(),
-            key.expr(),
-            is_warm.expr(),
-        );
-
-        let gas = SloadGasGadget::construct(cb, is_warm.expr());
-
         let value = cb.query_word();
         let committed_value = cb.query_word();
         cb.account_storage_read(
@@ -80,6 +70,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             committed_value.expr(),
         );
 
+        let is_warm = cb.query_bool();
         cb.account_storage_access_list_write_with_reversion(
             tx_id.expr(),
             tx_callee_address.expr(),
@@ -92,8 +83,10 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         cb.stack_push(value.expr());
 
+        let gas = SloadGasGadget::construct(cb, is_warm.expr());
+
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(8.expr()),      // TODO:
+            rw_counter: Delta(7.expr()),      // TODO:
             program_counter: Delta(1.expr()), // TODO:
             state_write_counter: To(1.expr()),
             ..Default::default()
@@ -143,12 +136,12 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
 
         let [key, value] =
-            [step.rw_indices[3], step.rw_indices[7]].map(|idx| block.rws[idx].stack_value());
+            [step.rw_indices[3], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
         self.key.assign(region, offset, Some(key.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        let (_, committed_value) = block.rws[step.rw_indices[5]].aux_pair();
+        let (_, committed_value) = block.rws[step.rw_indices[4]].aux_pair();
         self.committed_value
             .assign(region, offset, Some(committed_value.to_le_bytes()))?;
 
@@ -247,7 +240,7 @@ mod test {
                 }],
                 steps: vec![
                     ExecStep {
-                        rw_indices: (0..9 + if result { 0 } else { 2 }).collect(),
+                        rw_indices: (0..8 + if result { 0 } else { 2 }).collect(),
                         execution_state: ExecutionState::SLOAD,
                         rw_counter: 9,
                         program_counter: 33,
@@ -257,7 +250,7 @@ mod test {
                     },
                     ExecStep {
                         execution_state: ExecutionState::STOP, // TODO: revert?
-                        rw_counter: 17,
+                        rw_counter: 16,
                         program_counter: 34,
                         stack_pointer: STACK_CAPACITY,
                         gas_left: 0,
@@ -297,17 +290,8 @@ mod test {
                         stack_pointer: STACK_CAPACITY,
                         value: key,
                     },
-                    Rw::TxAccessListAccountStorage {
-                        rw_counter: 13,
-                        is_write: false,
-                        tx_id: 1,
-                        address: Address::zero(), // TODO:
-                        key: key,
-                        value: true,
-                        value_prev: true,
-                    },
                     Rw::AccountStorage {
-                        rw_counter: 14,
+                        rw_counter: 13,
                         is_write: false,
                         address: Address::zero(), // TODO:
                         key: key,
@@ -317,7 +301,7 @@ mod test {
                         committed_value: Word::zero(),
                     },
                     Rw::TxAccessListAccountStorage {
-                        rw_counter: 15,
+                        rw_counter: 14,
                         is_write: true,
                         tx_id: 1,
                         address: Address::zero(), // TODO:
@@ -326,7 +310,7 @@ mod test {
                         value_prev: false, // TODO:
                     },
                     Rw::Stack {
-                        rw_counter: 16,
+                        rw_counter: 15,
                         is_write: true,
                         call_id: 1,
                         stack_pointer: STACK_CAPACITY,
@@ -337,7 +321,7 @@ mod test {
                     vec![]
                 } else {
                     vec![Rw::TxAccessListAccountStorage {
-                        rw_counter: 19,
+                        rw_counter: 18,
                         is_write: true,
                         tx_id: 1usize,
                         address: tx.to.unwrap_or_else(Address::zero),
