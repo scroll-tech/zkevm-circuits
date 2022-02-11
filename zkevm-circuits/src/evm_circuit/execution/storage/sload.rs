@@ -97,7 +97,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             cb,
             opcode,
             step_state_transition,
-            Some(gas.gas_cost()),
+            Some(gas.expr()),
         );
 
         Self {
@@ -181,7 +181,7 @@ impl<F: FieldExt> SloadGasGadget<F> {
         }
     }
 
-    pub(crate) fn gas_cost(&self) -> Expression<F> {
+    pub(crate) fn expr(&self) -> Expression<F> {
         // Return the gas cost
         self.gas_cost.clone()
     }
