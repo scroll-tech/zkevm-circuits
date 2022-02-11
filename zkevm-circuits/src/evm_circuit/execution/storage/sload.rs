@@ -31,6 +31,7 @@ pub(crate) struct SloadGadget<F> {
     tx_id: Cell<F>,
     rw_counter_end_of_reversion: Cell<F>,
     is_persistent: Cell<F>,
+    callee_address: Cell<F>,
     key: Word<F>,
     value: Word<F>,
     committed_value: Word<F>,
@@ -47,14 +48,13 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.query_cell();
-        let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
+        let [tx_id, rw_counter_end_of_reversion, is_persistent, callee_address] = [
             CallContextFieldTag::TxId,
             CallContextFieldTag::RwCounterEndOfReversion,
             CallContextFieldTag::IsPersistent,
+            CallContextFieldTag::CalleeAddress,
         ]
         .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
-        // TODO: let tx_callee_address = cb.tx_context(tx_id.expr(), TxContextFieldTag::CalleeAddress);
-        let tx_callee_address = 0;
 
         let key = cb.query_word();
         // Pop the key from the stack
@@ -63,7 +63,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let value = cb.query_word();
         let committed_value = cb.query_word();
         cb.account_storage_read(
-            tx_callee_address.expr(),
+            callee_address.expr(),
             key.expr(),
             value.expr(),
             tx_id.expr(),
@@ -73,7 +73,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let is_warm = cb.query_bool();
         cb.account_storage_access_list_write_with_reversion(
             tx_id.expr(),
-            tx_callee_address.expr(),
+            callee_address.expr(),
             key.expr(),
             false.expr(), // TODO:
             false.expr(), // TODO: is_warm.expr(),
@@ -86,7 +86,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let gas = SloadGasGadget::construct(cb, is_warm.expr());
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(7.expr()),      // TODO:
+            rw_counter: Delta(8.expr()),      // TODO:
             program_counter: Delta(1.expr()), // TODO:
             state_write_counter: To(1.expr()),
             ..Default::default()
@@ -104,6 +104,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             tx_id: tx_id,
             rw_counter_end_of_reversion: rw_counter_end_of_reversion,
             is_persistent: is_persistent,
+            callee_address: callee_address,
             key: key,
             value: value,
             committed_value: committed_value,
@@ -134,14 +135,16 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         )?;
         self.is_persistent
             .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
+        self.callee_address
+            .assign(region, offset, call.callee_address.to_scalar())?;
 
         let [key, value] =
-            [step.rw_indices[3], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
+            [step.rw_indices[4], step.rw_indices[7]].map(|idx| block.rws[idx].stack_value());
         self.key.assign(region, offset, Some(key.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        let (_, committed_value) = block.rws[step.rw_indices[4]].aux_pair();
+        let (_, committed_value) = block.rws[step.rw_indices[5]].aux_pair();
         self.committed_value
             .assign(region, offset, Some(committed_value.to_le_bytes()))?;
 
@@ -191,10 +194,11 @@ mod test {
     };
     use crate::test_util::run_test_circuits;
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{address, bytecode, Address, ToLittleEndian, Word};
+    use eth_types::{address, bytecode, Address, ToLittleEndian, ToWord, Word};
     use std::convert::TryInto;
 
     fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, result: bool) {
+        // TODO:
         let rw_counter_end_of_reversion = if result { 0 } else { 19 };
 
         let call_data_gas_cost = tx
@@ -236,10 +240,12 @@ mod test {
                     result: Word::from(result as usize),
                     rw_counter_end_of_reversion,
                     is_persistent: result,
+                    callee_address: tx.to.unwrap_or_else(Address::zero),
                     ..Default::default()
                 }],
                 steps: vec![
                     ExecStep {
+                        // TODO:
                         rw_indices: (0..8 + if result { 0 } else { 2 }).collect(),
                         execution_state: ExecutionState::SLOAD,
                         rw_counter: 9,
@@ -250,7 +256,7 @@ mod test {
                     },
                     ExecStep {
                         execution_state: ExecutionState::STOP, // TODO: revert?
-                        rw_counter: 16,
+                        rw_counter: 17,
                         program_counter: 34,
                         stack_pointer: STACK_CAPACITY,
                         gas_left: 0,
@@ -283,17 +289,24 @@ mod test {
                         field_tag: CallContextFieldTag::IsPersistent,
                         value: Word::from(result as u64),
                     },
-                    Rw::Stack {
+                    Rw::CallContext {
                         rw_counter: 12,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::CalleeAddress,
+                        value: tx.to.unwrap().to_word(),
+                    },
+                    Rw::Stack {
+                        rw_counter: 13,
                         is_write: false,
                         call_id: 1,
                         stack_pointer: STACK_CAPACITY,
                         value: key,
                     },
                     Rw::AccountStorage {
-                        rw_counter: 13,
+                        rw_counter: 14,
                         is_write: false,
-                        address: Address::zero(), // TODO:
+                        address: tx.to.unwrap(),
                         key: key,
                         value: value,
                         value_prev: value,
@@ -301,16 +314,16 @@ mod test {
                         committed_value: Word::zero(),
                     },
                     Rw::TxAccessListAccountStorage {
-                        rw_counter: 14,
+                        rw_counter: 15,
                         is_write: true,
                         tx_id: 1,
-                        address: Address::zero(), // TODO:
+                        address: tx.to.unwrap(),
                         key: key,
                         value: false, // TODO:
                         value_prev: false, // TODO:
                     },
                     Rw::Stack {
-                        rw_counter: 15,
+                        rw_counter: 16,
                         is_write: true,
                         call_id: 1,
                         stack_pointer: STACK_CAPACITY,
@@ -321,7 +334,7 @@ mod test {
                     vec![]
                 } else {
                     vec![Rw::TxAccessListAccountStorage {
-                        rw_counter: 18,
+                        rw_counter: 19,
                         is_write: true,
                         tx_id: 1usize,
                         address: tx.to.unwrap_or_else(Address::zero),
