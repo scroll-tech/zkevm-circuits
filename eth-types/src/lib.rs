@@ -36,7 +36,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
-/// Trait used to define types that can be converted to a 256 bit scalar value.
+/// Trait used to define types that can be converted to a scalar value.
 pub trait ToScalar<F: FieldExt> {
     /// Convert the type to a scalar value.
     fn to_scalar(&self) -> Option<F>;
@@ -60,7 +60,7 @@ pub trait ToBigEndian {
     fn to_be_bytes(&self) -> [u8; 32];
 }
 
-/// Trait uset do convert a scalar value to a 32 byte array in little endian.
+/// Trait used do convert a scalar value to a 32 byte array in little endian.
 pub trait ToLittleEndian {
     /// Convert the value to a 32 byte array in little endian.
     fn to_le_bytes(&self) -> [u8; 32];
