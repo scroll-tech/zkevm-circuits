@@ -96,7 +96,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             cb,
             opcode,
             step_state_transition,
-            None, // TODO: Some(gas.gas_cost().expr()),
+            Some(gas.gas_cost().expr()),
         );
 
         Self {
@@ -252,6 +252,8 @@ mod test {
                         rw_counter: 9,
                         program_counter: 33,
                         stack_pointer: STACK_CAPACITY,
+                        gas_left: 2100, // TODO:
+                        gas_cost: 2100, // TODO:
                         opcode: Some(OpcodeId::SLOAD), // TODO:
                         ..Default::default()
                     },
@@ -360,7 +362,6 @@ mod test {
         eth_types::Transaction {
             from,
             to: Some(to),
-            // gas: minimal_gas, // TODO:
             ..Default::default()
         }
     }
