@@ -35,6 +35,7 @@ pub(crate) struct SloadGadget<F> {
     key: Word<F>,
     value: Word<F>,
     committed_value: Word<F>,
+    is_warm: Cell<F>,
     gas: SloadGasGadget<F>,
 }
 
@@ -87,7 +88,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let gas = SloadGasGadget::construct(cb, is_warm.expr());
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(8.expr()),      // TODO:
+            rw_counter: Delta(8.expr()),
             program_counter: Delta(1.expr()),
             state_write_counter: To(1.expr()),
             ..Default::default()
@@ -96,7 +97,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             cb,
             opcode,
             step_state_transition,
-            Some(gas.gas_cost().expr()),
+            Some(gas.gas_cost()),
         );
 
         Self {
@@ -109,6 +110,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             key: key,
             value: value,
             committed_value: committed_value,
+            is_warm: is_warm,
             gas: gas,
         }
     }
@@ -149,9 +151,11 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         self.committed_value
             .assign(region, offset, Some(committed_value.to_le_bytes()))?;
 
-        // TODO:
-        // self.gas.assign(region, offset,
-        // ???
+        let (_, is_warm) = block.rws[step.rw_indices[6]].accesslist_value_pair();
+        self.is_warm
+            .assign(region, offset, Some(F::from(is_warm as u64)))?;
+
+        // self.gas.assign(region, offset, Some(F::from(is_warm as u64)))?;
 
         Ok(())
     }
@@ -195,11 +199,10 @@ mod test {
     };
     use crate::test_util::run_test_circuits;
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{address, bytecode, Address, ToLittleEndian, ToWord, Word};
+    use eth_types::{address, bytecode, evm_types::GasCost, Address, ToLittleEndian, ToWord, Word};
     use std::convert::TryInto;
 
-    fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, result: bool) {
-        // TODO:
+    fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, is_warm: bool, result: bool) {
         let rw_counter_end_of_reversion = if result { 0 } else { 19 };
 
         let call_data_gas_cost = tx
@@ -252,8 +255,16 @@ mod test {
                         rw_counter: 9,
                         program_counter: 33,
                         stack_pointer: STACK_CAPACITY,
-                        gas_left: 2100, // TODO:
-                        gas_cost: 2100, // TODO:
+                        gas_left: if is_warm {
+                            GasCost::WARM_STORAGE_READ_COST.as_u64()
+                        } else {
+                            GasCost::COLD_SLOAD_COST.as_u64()
+                        },
+                        gas_cost: if is_warm {
+                            GasCost::WARM_STORAGE_READ_COST.as_u64()
+                        } else {
+                            GasCost::COLD_SLOAD_COST.as_u64()
+                        },
                         opcode: Some(OpcodeId::SLOAD), // TODO:
                         ..Default::default()
                     },
@@ -322,7 +333,7 @@ mod test {
                         tx_id: 1,
                         address: Address::zero(), // TODO: tx.to.unwrap(),
                         key: key,
-                        value: false, // TODO:
+                        value: false,      // TODO:
                         value_prev: false, // TODO:
                     },
                     Rw::Stack {
@@ -368,21 +379,24 @@ mod test {
 
     #[test]
     fn sload_gadget_simple() {
-        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true);
-        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false);
+        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true, true);
+        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true, false);
+        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false, true);
+        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false, false);
 
-        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), true);
-        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), false);
-        // TODO: false
+        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), true, true);
+        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), true, false);
+        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), false, true);
+        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), false, false);
     }
 
     #[test]
     fn sload_gadget_rand() {
         let key = rand_word();
         let value = rand_word();
-        test_ok(mock_tx(), key, value, true);
-        test_ok(mock_tx(), key, value, false);
-
-        // TODO: false
+        test_ok(mock_tx(), key, value, true, true);
+        test_ok(mock_tx(), key, value, true, false);
+        test_ok(mock_tx(), key, value, false, true);
+        test_ok(mock_tx(), key, value, false, false);
     }
 }

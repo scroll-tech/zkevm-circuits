@@ -445,7 +445,9 @@ impl Rw {
     pub fn aux_pair(&self) -> (usize, Word) {
         match self {
             Self::AccountStorage {
-                tx_id, committed_value, ..
+                tx_id,
+                committed_value,
+                ..
             } => (*tx_id, *committed_value),
             _ => unreachable!(),
         }
@@ -454,6 +456,18 @@ impl Rw {
     pub fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn accesslist_value_pair(&self) -> (bool, bool) {
+        match self {
+            Self::TxAccessListAccount {
+                value, value_prev, ..
+            } => (*value, *value_prev),
+            Self::TxAccessListAccountStorage {
+                value, value_prev, ..
+            } => (*value, *value_prev),
             _ => unreachable!(),
         }
     }
