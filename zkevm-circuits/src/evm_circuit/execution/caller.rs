@@ -65,7 +65,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallerGadget<F> {
         // endian encoding the EVM uses.
         let mut le_bytes = call.caller_address.0;
         le_bytes.reverse();
-        
+
         self.caller.assign(region, offset, Some(le_bytes))?;
 
         Ok(())
