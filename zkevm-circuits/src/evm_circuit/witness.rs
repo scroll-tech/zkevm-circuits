@@ -374,7 +374,7 @@ pub enum Rw {
         value: bool,
         value_prev: bool,
     },
-    TxAccessListStorageSlot {
+    TxAccessListAccountStorage {
         rw_counter: usize,
         is_write: bool,
         tx_id: usize,
@@ -479,7 +479,7 @@ impl Rw {
                 F::zero(),
                 F::zero(),
             ],
-            Self::TxAccessListStorageSlot {
+            Self::TxAccessListAccountStorage {
                 rw_counter,
                 is_write,
                 tx_id,
@@ -490,7 +490,7 @@ impl Rw {
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
-                F::from(RwTableTag::TxAccessListStorageSlot as u64),
+                F::from(RwTableTag::TxAccessListAccountStorage as u64),
                 F::from(*tx_id as u64),
                 F::zero(), // address.to_scalar().unwrap(),
                 RandomLinearCombination::random_linear_combine(key.to_le_bytes(), randomness),
@@ -817,7 +817,7 @@ pub fn block_convert(
     block.rws.extend(
         txaccesslist_storage_ops
             .iter()
-            .map(|s| Rw::TxAccessListStorageSlot {
+            .map(|s| Rw::TxAccessListAccountStorage {
                 rw_counter: s.rwc().into(),
                 is_write: s.op().rw().is_write(),
                 tx_id: s.op().tx_id(), // by default 1 for now

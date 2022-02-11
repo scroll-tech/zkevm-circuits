@@ -297,7 +297,7 @@ mod test {
                         stack_pointer: STACK_CAPACITY,
                         value: key,
                     },
-                    Rw::TxAccessListStorageSlot {
+                    Rw::TxAccessListAccountStorage {
                         rw_counter: 13,
                         is_write: false,
                         tx_id: 1,
@@ -316,7 +316,7 @@ mod test {
                         tx_id: 1,
                         committed_value: Word::zero(),
                     },
-                    Rw::TxAccessListStorageSlot {
+                    Rw::TxAccessListAccountStorage {
                         rw_counter: 15,
                         is_write: true,
                         tx_id: 1,
@@ -336,7 +336,7 @@ mod test {
                 if result {
                     vec![]
                 } else {
-                    vec![Rw::TxAccessListStorageSlot {
+                    vec![Rw::TxAccessListAccountStorage {
                         rw_counter: 19,
                         is_write: true,
                         tx_id: 1usize,

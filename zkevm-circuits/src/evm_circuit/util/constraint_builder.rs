@@ -546,7 +546,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.rw_lookup(
             "account_storage_access_list_read",
             false.expr(),
-            RwTableTag::TxAccessListStorageSlot,
+            RwTableTag::TxAccessListAccountStorage,
             [
                 tx_id,
                 account_address,
@@ -571,7 +571,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
     ) {
         self.state_write_with_reversion(
             "account_storage_access_list_write_with_reversion",
-            RwTableTag::TxAccessListStorageSlot,
+            RwTableTag::TxAccessListAccountStorage,
             [
                 tx_id,
                 account_address,

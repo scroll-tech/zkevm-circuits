@@ -130,7 +130,7 @@ pub enum BlockContextFieldTag {
 #[derive(Clone, Copy, Debug)]
 pub enum RwTableTag {
     TxAccessListAccount = 1,
-    TxAccessListStorageSlot,
+    TxAccessListAccountStorage,
     TxRefund,
     Account,
     AccountStorage,
@@ -145,7 +145,7 @@ impl RwTableTag {
         return matches!(
             self,
             RwTableTag::TxAccessListAccount
-                | RwTableTag::TxAccessListStorageSlot
+                | RwTableTag::TxAccessListAccountStorage
                 | RwTableTag::TxRefund
                 | RwTableTag::Account
                 | RwTableTag::AccountStorage
