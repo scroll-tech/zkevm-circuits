@@ -46,6 +46,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
+        // TODO:
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.query_cell();
         let [tx_id, rw_counter_end_of_reversion, is_persistent, callee_address] = [
@@ -73,7 +74,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let is_warm = cb.query_bool();
         cb.account_storage_access_list_write_with_reversion(
             tx_id.expr(),
-            callee_address.expr(),
+            0.expr(), // TODO: callee_address.expr(),
             key.expr(),
             false.expr(), // TODO:
             false.expr(), // TODO: is_warm.expr(),
@@ -87,7 +88,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(8.expr()),      // TODO:
-            program_counter: Delta(1.expr()), // TODO:
+            program_counter: Delta(1.expr()),
             state_write_counter: To(1.expr()),
             ..Default::default()
         };
@@ -317,7 +318,7 @@ mod test {
                         rw_counter: 15,
                         is_write: true,
                         tx_id: 1,
-                        address: tx.to.unwrap(),
+                        address: Address::zero(), // TODO: tx.to.unwrap(),
                         key: key,
                         value: false, // TODO:
                         value_prev: false, // TODO:
