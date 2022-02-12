@@ -36,7 +36,6 @@ pub(crate) struct SloadGadget<F> {
     value: Word<F>,
     committed_value: Word<F>,
     is_warm: Cell<F>,
-    gas: SloadGasGadget<F>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
@@ -85,19 +84,18 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
 
         cb.stack_push(value.expr());
 
-        let gas = SloadGasGadget::construct(cb, is_warm.expr());
-
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(8.expr()),
             program_counter: Delta(1.expr()),
             state_write_counter: To(1.expr()),
             ..Default::default()
         };
+        let gas_cost = SloadGasGadget::construct(cb, is_warm.expr());
         let same_context = SameContextGadget::construct(
             cb,
             opcode,
             step_state_transition,
-            Some(gas.expr()),
+            Some(gas_cost.expr()),
         );
 
         Self {
@@ -111,7 +109,6 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             value: value,
             committed_value: committed_value,
             is_warm: is_warm,
-            gas: gas,
         }
     }
 
@@ -154,8 +151,6 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let (_, is_warm) = block.rws[step.rw_indices[6]].accesslist_value_pair();
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
-
-        // self.gas.assign(region, offset, Some(F::from(is_warm as u64)))?;
 
         Ok(())
     }
@@ -383,11 +378,6 @@ mod test {
         test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true, false);
         test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false, true);
         test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false, false);
-
-        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), true, true);
-        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), true, false);
-        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), false, true);
-        test_ok(mock_tx(), 0x090705.into(), 0x060504.into(), false, false);
     }
 
     #[test]
