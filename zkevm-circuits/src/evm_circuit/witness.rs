@@ -506,7 +506,7 @@ impl Rw {
                 F::from(*is_write as u64),
                 F::from(RwTableTag::TxAccessListAccountStorage as u64),
                 F::from(*tx_id as u64),
-                F::zero(), // address.to_scalar().unwrap(),
+                address.to_scalar().unwrap(),
                 RandomLinearCombination::random_linear_combine(key.to_le_bytes(), randomness),
                 F::zero(), // F::from(*value as u64),
                 F::zero(), // F::from(*value_prev as u64),

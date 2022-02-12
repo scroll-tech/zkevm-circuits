@@ -74,7 +74,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
         let is_warm = cb.query_bool();
         cb.account_storage_access_list_write_with_reversion(
             tx_id.expr(),
-            0.expr(), // TODO: callee_address.expr(),
+            callee_address.expr(),
             key.expr(),
             false.expr(), // TODO:
             false.expr(), // TODO: is_warm.expr(),
@@ -326,7 +326,7 @@ mod test {
                         rw_counter: 15,
                         is_write: true,
                         tx_id: 1,
-                        address: Address::zero(), // TODO: tx.to.unwrap(),
+                        address: tx.to.unwrap(),
                         key: key,
                         value: false,      // TODO:
                         value_prev: false, // TODO:
