@@ -76,8 +76,8 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
             tx_id.expr(),
             callee_address.expr(),
             key.expr(),
-            false.expr(), // TODO:
-            false.expr(), // TODO: is_warm.expr(),
+            true.expr(),
+            is_warm.expr(),
             is_persistent.expr(),
             rw_counter_end_of_reversion.expr(),
         );
@@ -244,7 +244,6 @@ mod test {
                 }],
                 steps: vec![
                     ExecStep {
-                        // TODO:
                         rw_indices: (0..8 + if result { 0 } else { 2 }).collect(),
                         execution_state: ExecutionState::SLOAD,
                         rw_counter: 9,
@@ -328,8 +327,8 @@ mod test {
                         tx_id: 1,
                         address: tx.to.unwrap(),
                         key: key,
-                        value: false,      // TODO:
-                        value_prev: false, // TODO:
+                        value: true,
+                        value_prev: is_warm,
                     },
                     Rw::Stack {
                         rw_counter: 16,
@@ -348,8 +347,8 @@ mod test {
                         tx_id: 1usize,
                         address: tx.to.unwrap_or_else(Address::zero),
                         key: key,
-                        value: true,
-                        value_prev: true,
+                        value: is_warm,
+                        value_prev: is_warm,
                     }]
                 },
             ]
