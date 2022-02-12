@@ -46,8 +46,6 @@ impl<F: FieldExt> ExecutionGadget<F> for SloadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        // TODO:
-        // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.query_cell();
         let [tx_id, rw_counter_end_of_reversion, is_persistent, callee_address] = [
             CallContextFieldTag::TxId,
