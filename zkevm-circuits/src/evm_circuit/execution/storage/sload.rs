@@ -257,16 +257,16 @@ mod test {
                         } else {
                             GasCost::COLD_SLOAD_COST.as_u64()
                         },
-                        opcode: Some(OpcodeId::SLOAD), // TODO:
+                        opcode: Some(OpcodeId::SLOAD),
                         ..Default::default()
                     },
                     ExecStep {
-                        execution_state: ExecutionState::STOP, // TODO: revert?
+                        execution_state: ExecutionState::STOP,
                         rw_counter: 17,
                         program_counter: 34,
                         stack_pointer: STACK_CAPACITY,
                         gas_left: 0,
-                        opcode: Some(OpcodeId::STOP), // TODO:
+                        opcode: Some(OpcodeId::STOP),
                         state_write_counter: 1,
                         ..Default::default()
                     },
@@ -346,7 +346,7 @@ mod test {
                         address: tx.to.unwrap_or_else(Address::zero),
                         key: key,
                         value: is_warm,
-                        value_prev: is_warm,
+                        value_prev: true,
                     }]
                 },
             ]
