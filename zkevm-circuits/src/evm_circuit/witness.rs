@@ -677,7 +677,7 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             OpcodeId::COINBASE => ExecutionState::COINBASE,
             OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
             OpcodeId::GAS => ExecutionState::GAS,
-            OpcodeId::SLOAD => ExecutionState::SLOAD,
+            OpcodeId::SSTORE => ExecutionState::SSTORE,
             _ => unimplemented!("unimplemented opcode {:?}", step.op),
         }
     }
