@@ -216,7 +216,7 @@ mod test {
                 gas: tx.gas.try_into().unwrap(),
                 gas_price: tx.gas_price.unwrap_or_else(Word::zero),
                 caller_address: tx.from,
-                callee_address: tx.to.unwrap_or_else(Address::zero),
+                callee_address: tx.to.unwrap(),
                 is_create: tx.to.is_none(),
                 value: tx.value,
                 call_data: tx.input.to_vec(),
@@ -233,7 +233,7 @@ mod test {
                     result: Word::from(result as usize),
                     rw_counter_end_of_reversion,
                     is_persistent: result,
-                    callee_address: tx.to.unwrap_or_else(Address::zero),
+                    callee_address: tx.to.unwrap(),
                     ..Default::default()
                 }],
                 steps: vec![
@@ -339,7 +339,7 @@ mod test {
                         rw_counter: 19,
                         is_write: true,
                         tx_id: 1usize,
-                        address: tx.to.unwrap_or_else(Address::zero),
+                        address: tx.to.unwrap(),
                         key,
                         value: is_warm,
                         value_prev: true,
