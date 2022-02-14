@@ -175,3 +175,199 @@ impl<F: FieldExt> SstoreTxRefundGadget<F> {
         self.gas_cost.clone()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::evm_circuit::{
+        param::STACK_CAPACITY,
+        step::ExecutionState,
+        table::CallContextFieldTag,
+        test::{rand_fp, rand_word, run_test_circuit_incomplete_fixed_table},
+        util::RandomLinearCombination,
+        witness::{Block, Bytecode, Call, ExecStep, Rw, Transaction},
+    };
+
+    use bus_mapping::evm::OpcodeId;
+    use eth_types::{address, bytecode, evm_types::GasCost, Address, ToLittleEndian, ToWord, Word};
+    use std::convert::TryInto;
+
+    fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, is_warm: bool, result: bool) {
+        let rw_counter_end_of_reversion = if result { 0 } else { 19 };
+
+        let call_data_gas_cost = tx
+            .input
+            .0
+            .iter()
+            .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 });
+
+        let randomness = rand_fp();
+        let bytecode = Bytecode::from(&bytecode! {
+            PUSH32(key)
+            #[start]
+            SLOAD
+            STOP
+        });
+        let block = Block {
+            randomness,
+            txs: vec![Transaction {
+                id: 1,
+                nonce: tx.nonce.try_into().unwrap(),
+                gas: tx.gas.try_into().unwrap(),
+                gas_price: tx.gas_price.unwrap_or_else(Word::zero),
+                caller_address: tx.from,
+                callee_address: tx.to.unwrap_or_else(Address::zero),
+                is_create: tx.to.is_none(),
+                value: tx.value,
+                call_data: tx.input.to_vec(),
+                call_data_length: tx.input.0.len(),
+                call_data_gas_cost,
+                calls: vec![Call {
+                    id: 1,
+                    is_root: true,
+                    is_create: false,
+                    opcode_source: RandomLinearCombination::random_linear_combine(
+                        bytecode.hash.to_le_bytes(),
+                        randomness,
+                    ),
+                    result: Word::from(result as usize),
+                    rw_counter_end_of_reversion,
+                    is_persistent: result,
+                    callee_address: tx.to.unwrap_or_else(Address::zero),
+                    ..Default::default()
+                }],
+                steps: vec![
+                    ExecStep {
+                        rw_indices: (0..8 + if result { 0 } else { 2 }).collect(),
+                        execution_state: ExecutionState::SLOAD,
+                        rw_counter: 9,
+                        program_counter: 33,
+                        stack_pointer: STACK_CAPACITY,
+                        gas_left: if is_warm {
+                            GasCost::WARM_STORAGE_READ_COST.as_u64()
+                        } else {
+                            GasCost::COLD_SLOAD_COST.as_u64()
+                        },
+                        gas_cost: if is_warm {
+                            GasCost::WARM_STORAGE_READ_COST.as_u64()
+                        } else {
+                            GasCost::COLD_SLOAD_COST.as_u64()
+                        },
+                        opcode: Some(OpcodeId::SLOAD),
+                        ..Default::default()
+                    },
+                    ExecStep {
+                        execution_state: ExecutionState::STOP,
+                        rw_counter: 17,
+                        program_counter: 34,
+                        stack_pointer: STACK_CAPACITY,
+                        gas_left: 0,
+                        opcode: Some(OpcodeId::STOP),
+                        state_write_counter: 1,
+                        ..Default::default()
+                    },
+                ],
+            }],
+            rws: [
+                vec![
+                    Rw::CallContext {
+                        rw_counter: 9,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::TxId,
+                        value: Word::one(),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 10,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::RwCounterEndOfReversion,
+                        value: Word::from(rw_counter_end_of_reversion),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 11,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::IsPersistent,
+                        value: Word::from(result as u64),
+                    },
+                    Rw::CallContext {
+                        rw_counter: 12,
+                        is_write: false,
+                        call_id: 1,
+                        field_tag: CallContextFieldTag::CalleeAddress,
+                        value: tx.to.unwrap().to_word(),
+                    },
+                    Rw::Stack {
+                        rw_counter: 13,
+                        is_write: false,
+                        call_id: 1,
+                        stack_pointer: STACK_CAPACITY,
+                        value: key,
+                    },
+                    Rw::AccountStorage {
+                        rw_counter: 14,
+                        is_write: false,
+                        address: tx.to.unwrap(),
+                        key,
+                        value,
+                        value_prev: value,
+                        tx_id: 1,
+                        committed_value: Word::zero(),
+                    },
+                    Rw::TxAccessListAccountStorage {
+                        rw_counter: 15,
+                        is_write: true,
+                        tx_id: 1,
+                        address: tx.to.unwrap(),
+                        key,
+                        value: true,
+                        value_prev: is_warm,
+                    },
+                    Rw::Stack {
+                        rw_counter: 16,
+                        is_write: true,
+                        call_id: 1,
+                        stack_pointer: STACK_CAPACITY,
+                        value,
+                    },
+                ],
+                if result {
+                    vec![]
+                } else {
+                    vec![Rw::TxAccessListAccountStorage {
+                        rw_counter: 19,
+                        is_write: true,
+                        tx_id: 1usize,
+                        address: tx.to.unwrap_or_else(Address::zero),
+                        key,
+                        value: is_warm,
+                        value_prev: true,
+                    }]
+                },
+            ]
+            .concat(),
+            bytecodes: vec![bytecode],
+            ..Default::default()
+        };
+
+        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+    }
+
+    fn mock_tx() -> eth_types::Transaction {
+        let from = address!("0x00000000000000000000000000000000000000fe");
+        let to = address!("0x00000000000000000000000000000000000000ff");
+        eth_types::Transaction {
+            from,
+            to: Some(to),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn sstore_gadget_simple() {
+        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true, true);
+        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true, false);
+        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false, true);
+        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false, false);
+    }
+}
