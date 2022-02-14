@@ -202,9 +202,10 @@ mod test {
 
         let randomness = rand_fp();
         let bytecode = Bytecode::from(&bytecode! {
+            PUSH32(value)
             PUSH32(key)
             #[start]
-            SLOAD
+            SSTORE
             STOP
         });
         let block = Block {
