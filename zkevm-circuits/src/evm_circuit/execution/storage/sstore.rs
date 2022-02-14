@@ -85,13 +85,14 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
             rw_counter_end_of_reversion.expr(),
         );
 
-        // TODO:
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(8.expr()),
+            rw_counter: Delta(10.expr()),
             program_counter: Delta(1.expr()),
-            state_write_counter: To(1.expr()),
+            stack_pointer: Delta(-2.expr()),
+            state_write_counter: To(3.expr()),
             ..Default::default()
         };
+        // TODO:
         let gas_cost = SstoreGasGadget::construct(cb, is_warm.expr());
         // TODO: gas_refund
         let same_context =
@@ -134,6 +135,31 @@ pub(crate) struct SstoreGasGadget<F> {
 
 // TODO:
 impl<F: FieldExt> SstoreGasGadget<F> {
+    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
+        let gas_cost = select::expr(
+            is_warm.expr(),
+            GasCost::WARM_STORAGE_READ_COST.expr(),
+            GasCost::COLD_SLOAD_COST.expr(),
+        );
+
+        Self { is_warm, gas_cost }
+    }
+
+    pub(crate) fn expr(&self) -> Expression<F> {
+        // Return the gas cost
+        self.gas_cost.clone()
+    }
+}
+
+// TODO:
+#[derive(Clone, Debug)]
+pub(crate) struct SstoreTxRefundGadget<F> {
+    is_warm: Expression<F>,
+    gas_cost: Expression<F>,
+}
+
+// TODO:
+impl<F: FieldExt> SstoreTxRefundGadget<F> {
     pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
         let gas_cost = select::expr(
             is_warm.expr(),
