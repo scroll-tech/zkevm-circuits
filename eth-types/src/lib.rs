@@ -60,7 +60,7 @@ pub trait ToBigEndian {
     fn to_be_bytes(&self) -> [u8; 32];
 }
 
-/// Trait used do convert a scalar value to a 32 byte array in little endian.
+/// Trait used to convert a scalar value to a 32 byte array in little endian.
 pub trait ToLittleEndian {
     /// Convert the value to a 32 byte array in little endian.
     fn to_le_bytes(&self) -> [u8; 32];

@@ -53,7 +53,7 @@ impl<F: FieldExt> ExecutionGadget<F> for CallvalueGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction<F>,
-        _call: &Call<F>,
+        _: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -103,7 +103,6 @@ mod test {
             randomness,
             txs: vec![Transaction {
                 id: tx_id,
-                // callee_address,
                 steps: vec![
                     ExecStep {
                         execution_state: ExecutionState::CALLVALUE,
@@ -129,7 +128,6 @@ mod test {
                     id: 1,
                     is_root: true,
                     is_create: false,
-                    // callee_address,
                     opcode_source: RandomLinearCombination::random_linear_combine(
                         bytecode.hash.to_le_bytes(),
                         randomness,
@@ -146,14 +144,6 @@ mod test {
                     field_tag: CallContextFieldTag::Value,
                     value: U256::from(call_value),
                 },
-                // Rw::Account {
-                //     rw_counter: 2,
-                //     is_write: false,
-                //     account_address: callee_address,
-                //     field_tag: AccountFieldTag::Balance,
-                //     value: Word::from(value),
-                //     value_prev: Word::from(value),
-                // },
                 Rw::Stack {
                     call_id,
                     rw_counter: 2,
