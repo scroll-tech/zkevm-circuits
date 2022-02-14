@@ -239,7 +239,7 @@ mod test {
                 steps: vec![
                     ExecStep {
                         rw_indices: (0..8 + if result { 0 } else { 2 }).collect(),
-                        execution_state: ExecutionState::SLOAD,
+                        execution_state: ExecutionState::SSTORE,
                         rw_counter: 9,
                         program_counter: 33,
                         stack_pointer: STACK_CAPACITY,
@@ -260,10 +260,10 @@ mod test {
                         execution_state: ExecutionState::STOP,
                         rw_counter: 17,
                         program_counter: 34,
-                        stack_pointer: STACK_CAPACITY,
+                        stack_pointer: STACK_CAPACITY-2,
                         gas_left: 0,
                         opcode: Some(OpcodeId::STOP),
-                        state_write_counter: 1,
+                        state_write_counter: 3,
                         ..Default::default()
                     },
                 ],
