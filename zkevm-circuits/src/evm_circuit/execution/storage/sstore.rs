@@ -32,6 +32,7 @@ pub(crate) struct SstoreGadget<F> {
     callee_address: Cell<F>,
     key: Word<F>,
     value: Word<F>,
+    value_prev: Word<F>,
     committed_value: Word<F>,
     is_warm: Cell<F>,
 }
@@ -118,6 +119,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
             callee_address,
             key,
             value,
+            value_prev,
             committed_value,
             is_warm,
         }
@@ -155,7 +157,9 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        let (_, committed_value) = block.rws[step.rw_indices[6]].aux_pair();
+        let (_, value_prev, _, committed_value) = block.rws[step.rw_indices[6]].storage_value_aux();
+        self.value_prev
+            .assign(region, offset, Some(value_prev.to_le_bytes()))?;
         self.committed_value
             .assign(region, offset, Some(committed_value.to_le_bytes()))?;
 

@@ -457,13 +457,15 @@ impl Rw {
         }
     }
 
-    pub fn aux_pair(&self) -> (usize, Word) {
+    pub fn storage_value_aux(&self) -> (Word, Word, usize, Word) {
         match self {
             Self::AccountStorage {
+                value,
+                value_prev,
                 tx_id,
                 committed_value,
                 ..
-            } => (*tx_id, *committed_value),
+            } => (*value, *value_prev, *tx_id, *committed_value),
             _ => unreachable!(),
         }
     }
