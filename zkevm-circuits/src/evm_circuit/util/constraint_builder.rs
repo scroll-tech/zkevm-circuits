@@ -564,6 +564,33 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    // TxRefund
+
+    pub(crate) fn tx_refund_write_with_reversion(
+        &mut self,
+        tx_id: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        is_persistent: Expression<F>,
+        rw_counter_end_of_reversion: Expression<F>,
+    ) {
+        self.state_write_with_reversion(
+            "tx_refund_write_with_reversion",
+            RwTableTag::TxRefund,
+            [
+                tx_id,
+                0.expr(),
+                0.expr(),
+                value,
+                value_prev,
+                0.expr(),
+                0.expr(),
+            ],
+            is_persistent,
+            rw_counter_end_of_reversion,
+        );
+    }
+
     // Account
 
     pub(crate) fn account_read(

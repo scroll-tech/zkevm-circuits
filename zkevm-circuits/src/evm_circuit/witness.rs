@@ -386,6 +386,9 @@ pub enum Rw {
     TxRefund {
         rw_counter: usize,
         is_write: bool,
+        tx_id: usize,
+        value: Word,
+        value_prev: Word,
     },
     Account {
         rw_counter: usize,
@@ -510,6 +513,27 @@ impl Rw {
                 RandomLinearCombination::random_linear_combine(key.to_le_bytes(), randomness),
                 F::from(*value as u64),
                 F::from(*value_prev as u64),
+                F::zero(),
+                F::zero(),
+            ],
+            Self::TxRefund {
+                rw_counter,
+                is_write,
+                tx_id,
+                value,
+                value_prev,
+            } => [
+                F::from(*rw_counter as u64),
+                F::from(*is_write as u64),
+                F::from(RwTableTag::TxRefund as u64),
+                F::from(*tx_id as u64),
+                F::zero(),
+                F::zero(),
+                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
+                RandomLinearCombination::random_linear_combine(
+                    value_prev.to_le_bytes(),
+                    randomness,
+                ),
                 F::zero(),
                 F::zero(),
             ],

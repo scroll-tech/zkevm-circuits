@@ -85,6 +85,21 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
             rw_counter_end_of_reversion.expr(),
         );
 
+        // TODO:
+        let gas_cost = SstoreGasGadget::construct(cb, is_warm.expr());
+
+
+        // TODO: TxRefund
+        let old_tx_refund = cb.query_bool();
+        let new_tx_refund = cb.query_bool();
+        cb.tx_refund_write_with_reversion(
+            tx_id.expr(),
+            old_tx_refund.expr(),
+            new_tx_refund.expr(),
+            is_persistent.expr(),
+            rw_counter_end_of_reversion.expr(),
+        );
+
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(10.expr()),
             program_counter: Delta(1.expr()),
@@ -92,9 +107,6 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
             state_write_counter: To(3.expr()),
             ..Default::default()
         };
-        // TODO:
-        let gas_cost = SstoreGasGadget::construct(cb, is_warm.expr());
-        // TODO: gas_refund
         let same_context =
             SameContextGadget::construct(cb, opcode, step_state_transition, Some(gas_cost.expr()));
 
@@ -345,10 +357,8 @@ mod test {
                         rw_counter: 10,
                         is_write: true,
                         tx_id: 1usize,
-                        address: tx.to.unwrap(),
-                        key,
-                        value: is_warm,
-                        value_prev: true,
+                        value: Word::from(0), // TODO:
+                        value_prev: Word::from(0), // TODO:
                     },
                 ],
                 if result {
@@ -357,11 +367,9 @@ mod test {
                     vec![Rw::TxRefund {
                         rw_counter: 13,
                         is_write: true,
-                        // tx_id: 1usize,
-                        // address: tx.to.unwrap(),
-                        // key,
-                        // value: is_warm,
-                        // value_prev: true,
+                        tx_id: 1usize,
+                        value: Word::from(0), // TODO:
+                        value_prev: Word::from(0), // TODO:
                     },
                     Rw::TxAccessListAccountStorage {
                         rw_counter: 14,
