@@ -52,11 +52,11 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
             CallContextFieldTag::CalleeAddress,
         ]
         .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
-        
+
         let key = cb.query_word();
         // Pop the key from the stack
         cb.stack_pop(key.expr());
-        
+
         let value = cb.query_word();
         // Pop the value from the stack
         cb.stack_pop(key.expr());
@@ -87,7 +87,6 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
 
         // TODO:
         let gas_cost = SstoreGasGadget::construct(cb, is_warm.expr());
-
 
         // TODO: TxRefund
         let old_tx_refund = cb.query_bool();
@@ -304,7 +303,7 @@ mod test {
                         execution_state: ExecutionState::STOP,
                         rw_counter: 11,
                         program_counter: 67,
-                        stack_pointer: STACK_CAPACITY-2,
+                        stack_pointer: STACK_CAPACITY - 2,
                         gas_left: 0,
                         opcode: Some(OpcodeId::STOP),
                         state_write_counter: 3,
@@ -389,39 +388,41 @@ mod test {
                         rw_counter: 10,
                         is_write: true,
                         tx_id: 1usize,
-                        value: Word::from(0), // TODO:
+                        value: Word::from(0),      // TODO:
                         value_prev: Word::from(0), // TODO:
                     },
                 ],
                 if result {
                     vec![]
                 } else {
-                    vec![Rw::TxRefund {
-                        rw_counter: 13,
-                        is_write: true,
-                        tx_id: 1usize,
-                        value: Word::from(0), // TODO:
-                        value_prev: Word::from(0), // TODO:
-                    },
-                    Rw::TxAccessListAccountStorage {
-                        rw_counter: 14,
-                        is_write: true,
-                        tx_id: 1usize,
-                        address: tx.to.unwrap(),
-                        key,
-                        value: is_warm,
-                        value_prev: true,
-                    },
-                    Rw::AccountStorage {
-                        rw_counter: 15,
-                        is_write: true,
-                        address: tx.to.unwrap(),
-                        key,
-                        value: value,
-                        value_prev: value, // TODO:
-                        tx_id: 1usize,
-                        committed_value: value, // TODO:
-                    }]
+                    vec![
+                        Rw::TxRefund {
+                            rw_counter: 13,
+                            is_write: true,
+                            tx_id: 1usize,
+                            value: Word::from(0),      // TODO:
+                            value_prev: Word::from(0), // TODO:
+                        },
+                        Rw::TxAccessListAccountStorage {
+                            rw_counter: 14,
+                            is_write: true,
+                            tx_id: 1usize,
+                            address: tx.to.unwrap(),
+                            key,
+                            value: is_warm,
+                            value_prev: true,
+                        },
+                        Rw::AccountStorage {
+                            rw_counter: 15,
+                            is_write: true,
+                            address: tx.to.unwrap(),
+                            key,
+                            value: value,
+                            value_prev: value, // TODO:
+                            tx_id: 1usize,
+                            committed_value: value, // TODO:
+                        },
+                    ]
                 },
             ]
             .concat(),
