@@ -59,7 +59,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
 
         let value = cb.query_word();
         // Pop the value from the stack
-        cb.stack_pop(key.expr());
+        cb.stack_pop(value.expr()); // TODO: 79
 
         let value_prev = cb.query_word();
         let committed_value = cb.query_word();
@@ -345,14 +345,14 @@ mod test {
                         rw_counter: 5,
                         is_write: false,
                         call_id: 1,
-                        stack_pointer: STACK_CAPACITY, // TODO:
+                        stack_pointer: STACK_CAPACITY,
                         value: key,
                     },
                     Rw::Stack {
                         rw_counter: 6,
                         is_write: false,
                         call_id: 1,
-                        stack_pointer: STACK_CAPACITY, // TODO:
+                        stack_pointer: STACK_CAPACITY + 1,
                         value: value,
                     },
                     Rw::AccountStorage {
