@@ -133,7 +133,42 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
         call: &Call<F>,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        self.same_context.assign_exec_step(region, offset, step)?;
+
+        self.call_id
+            .assign(region, offset, Some(F::from(call.id as u64)))?;
+
+        self.tx_id
+            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Some(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
+        self.is_persistent
+            .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
+        self.callee_address
+            .assign(region, offset, call.callee_address.to_scalar())?;
+
         // TODO:
+        let [key, value] =
+            [step.rw_indices[4], step.rw_indices[7]].map(|idx| block.rws[idx].stack_value());
+        self.key.assign(region, offset, Some(key.to_le_bytes()))?;
+        self.value
+            .assign(region, offset, Some(value.to_le_bytes()))?;
+
+        // TODO:
+        let (_, committed_value) = block.rws[step.rw_indices[5]].aux_pair();
+        self.committed_value
+            .assign(region, offset, Some(committed_value.to_le_bytes()))?;
+
+        // TODO:
+        let (_, is_warm) = block.rws[step.rw_indices[6]].accesslist_value_pair();
+        self.is_warm
+            .assign(region, offset, Some(F::from(is_warm as u64)))?;
+
+        // TODO: TxRefund
+
         Ok(())
     }
 }
@@ -252,8 +287,8 @@ mod test {
                     ExecStep {
                         rw_indices: (0..8 + if result { 0 } else { 2 }).collect(),
                         execution_state: ExecutionState::SSTORE,
-                        rw_counter: 9,
-                        program_counter: 33,
+                        rw_counter: 1,
+                        program_counter: 66,
                         stack_pointer: STACK_CAPACITY,
                         gas_left: if is_warm {
                             GasCost::WARM_STORAGE_READ_COST.as_u64()
@@ -265,13 +300,13 @@ mod test {
                         } else {
                             GasCost::COLD_SLOAD_COST.as_u64()
                         },
-                        opcode: Some(OpcodeId::SLOAD),
+                        opcode: Some(OpcodeId::SSTORE),
                         ..Default::default()
                     },
                     ExecStep {
                         execution_state: ExecutionState::STOP,
-                        rw_counter: 17,
-                        program_counter: 34,
+                        rw_counter: 11,
+                        program_counter: 67,
                         stack_pointer: STACK_CAPACITY-2,
                         gas_left: 0,
                         opcode: Some(OpcodeId::STOP),
