@@ -150,20 +150,17 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
         self.callee_address
             .assign(region, offset, call.callee_address.to_scalar())?;
 
-        // TODO:
         let [key, value] =
-            [step.rw_indices[4], step.rw_indices[7]].map(|idx| block.rws[idx].stack_value());
+            [step.rw_indices[4], step.rw_indices[5]].map(|idx| block.rws[idx].stack_value());
         self.key.assign(region, offset, Some(key.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        // TODO:
-        let (_, committed_value) = block.rws[step.rw_indices[5]].aux_pair();
+        let (_, committed_value) = block.rws[step.rw_indices[9]].aux_pair();
         self.committed_value
             .assign(region, offset, Some(committed_value.to_le_bytes()))?;
 
-        // TODO:
-        let (_, is_warm) = block.rws[step.rw_indices[6]].accesslist_value_pair();
+        let (_, is_warm) = block.rws[step.rw_indices[10]].accesslist_value_pair();
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 
