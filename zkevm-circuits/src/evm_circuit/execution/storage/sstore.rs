@@ -192,7 +192,7 @@ mod test {
     use std::convert::TryInto;
 
     fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, is_warm: bool, result: bool) {
-        let rw_counter_end_of_reversion = if result { 0 } else { 19 };
+        let rw_counter_end_of_reversion = if result { 0 } else { 15 };
 
         let call_data_gas_cost = tx
             .input
@@ -271,78 +271,116 @@ mod test {
             rws: [
                 vec![
                     Rw::CallContext {
-                        rw_counter: 9,
+                        rw_counter: 1,
                         is_write: false,
                         call_id: 1,
                         field_tag: CallContextFieldTag::TxId,
                         value: Word::one(),
                     },
                     Rw::CallContext {
-                        rw_counter: 10,
+                        rw_counter: 2,
                         is_write: false,
                         call_id: 1,
                         field_tag: CallContextFieldTag::RwCounterEndOfReversion,
                         value: Word::from(rw_counter_end_of_reversion),
                     },
                     Rw::CallContext {
-                        rw_counter: 11,
+                        rw_counter: 3,
                         is_write: false,
                         call_id: 1,
                         field_tag: CallContextFieldTag::IsPersistent,
                         value: Word::from(result as u64),
                     },
                     Rw::CallContext {
-                        rw_counter: 12,
+                        rw_counter: 4,
                         is_write: false,
                         call_id: 1,
                         field_tag: CallContextFieldTag::CalleeAddress,
                         value: tx.to.unwrap().to_word(),
                     },
                     Rw::Stack {
-                        rw_counter: 13,
+                        rw_counter: 5,
                         is_write: false,
                         call_id: 1,
-                        stack_pointer: STACK_CAPACITY,
+                        stack_pointer: STACK_CAPACITY, // TODO:
                         value: key,
                     },
+                    Rw::Stack {
+                        rw_counter: 6,
+                        is_write: false,
+                        call_id: 1,
+                        stack_pointer: STACK_CAPACITY, // TODO:
+                        value: value,
+                    },
                     Rw::AccountStorage {
-                        rw_counter: 14,
+                        rw_counter: 7,
                         is_write: false,
                         address: tx.to.unwrap(),
                         key,
-                        value,
-                        value_prev: value,
-                        tx_id: 1,
-                        committed_value: Word::zero(),
+                        value: value,
+                        value_prev: value, // TODO:
+                        tx_id: 1usize,
+                        committed_value: value, // TODO:
+                    },
+                    Rw::AccountStorage {
+                        rw_counter: 8,
+                        is_write: true,
+                        address: tx.to.unwrap(),
+                        key,
+                        value: value,
+                        value_prev: value, // TODO:
+                        tx_id: 1usize,
+                        committed_value: value, // TODO:
                     },
                     Rw::TxAccessListAccountStorage {
-                        rw_counter: 15,
+                        rw_counter: 9,
                         is_write: true,
-                        tx_id: 1,
+                        tx_id: 1usize,
                         address: tx.to.unwrap(),
                         key,
                         value: true,
                         value_prev: is_warm,
                     },
-                    Rw::Stack {
-                        rw_counter: 16,
-                        is_write: true,
-                        call_id: 1,
-                        stack_pointer: STACK_CAPACITY,
-                        value,
-                    },
-                ],
-                if result {
-                    vec![]
-                } else {
-                    vec![Rw::TxAccessListAccountStorage {
-                        rw_counter: 19,
+                    Rw::TxRefund {
+                        rw_counter: 10,
                         is_write: true,
                         tx_id: 1usize,
                         address: tx.to.unwrap(),
                         key,
                         value: is_warm,
                         value_prev: true,
+                    },
+                ],
+                if result {
+                    vec![]
+                } else {
+                    vec![Rw::TxRefund {
+                        rw_counter: 13,
+                        is_write: true,
+                        // tx_id: 1usize,
+                        // address: tx.to.unwrap(),
+                        // key,
+                        // value: is_warm,
+                        // value_prev: true,
+                    },
+                    Rw::TxAccessListAccountStorage {
+                        rw_counter: 14,
+                        is_write: true,
+                        tx_id: 1usize,
+                        address: tx.to.unwrap(),
+                        key,
+                        value: is_warm,
+                        value_prev: true,
+                    },
+                    Rw::AccountStorage {
+                        rw_counter: 15,
+                        is_write: true,
+                        address: tx.to.unwrap(),
+                        key,
+                        value: value,
+                        value_prev: value, // TODO:
+                        tx_id: 1usize,
+                        committed_value: value, // TODO:
                     }]
                 },
             ]
