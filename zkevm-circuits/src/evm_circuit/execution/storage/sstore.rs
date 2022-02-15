@@ -100,7 +100,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
         );
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(10.expr()),
+            rw_counter: Delta(9.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(-2.expr()),
             state_write_counter: To(3.expr()),
@@ -159,7 +159,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
         self.committed_value
             .assign(region, offset, Some(committed_value.to_le_bytes()))?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[8]].accesslist_value_pair();
+        let (_, is_warm) = block.rws[step.rw_indices[7]].accesslist_value_pair();
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 
@@ -235,7 +235,7 @@ mod test {
     use std::convert::TryInto;
 
     fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, is_warm: bool, result: bool) {
-        let rw_counter_end_of_reversion = if result { 0 } else { 15 };
+        let rw_counter_end_of_reversion = if result { 0 } else { 14 };
 
         let call_data_gas_cost = tx
             .input
@@ -281,7 +281,7 @@ mod test {
                 }],
                 steps: vec![
                     ExecStep {
-                        rw_indices: (0..10 + if result { 0 } else { 2 }).collect(),
+                        rw_indices: (0..9 + if result { 0 } else { 2 }).collect(),
                         execution_state: ExecutionState::SSTORE,
                         rw_counter: 1,
                         program_counter: 66,
@@ -301,7 +301,7 @@ mod test {
                     },
                     ExecStep {
                         execution_state: ExecutionState::STOP,
-                        rw_counter: 11,
+                        rw_counter: 10,
                         program_counter: 67,
                         stack_pointer: STACK_CAPACITY - 2,
                         gas_left: 0,
@@ -357,16 +357,6 @@ mod test {
                     },
                     Rw::AccountStorage {
                         rw_counter: 7,
-                        is_write: false,
-                        address: tx.to.unwrap(),
-                        key,
-                        value: value,
-                        value_prev: value, // TODO:
-                        tx_id: 1usize,
-                        committed_value: value, // TODO:
-                    },
-                    Rw::AccountStorage {
-                        rw_counter: 8,
                         is_write: true,
                         address: tx.to.unwrap(),
                         key,
@@ -376,7 +366,7 @@ mod test {
                         committed_value: value, // TODO:
                     },
                     Rw::TxAccessListAccountStorage {
-                        rw_counter: 9,
+                        rw_counter: 8,
                         is_write: true,
                         tx_id: 1usize,
                         address: tx.to.unwrap(),
@@ -385,7 +375,7 @@ mod test {
                         value_prev: is_warm,
                     },
                     Rw::TxRefund {
-                        rw_counter: 10,
+                        rw_counter: 9,
                         is_write: true,
                         tx_id: 1usize,
                         value: Word::from(0),      // TODO:
@@ -397,14 +387,14 @@ mod test {
                 } else {
                     vec![
                         Rw::TxRefund {
-                            rw_counter: 13,
+                            rw_counter: 12,
                             is_write: true,
                             tx_id: 1usize,
                             value: Word::from(0),      // TODO:
                             value_prev: Word::from(0), // TODO:
                         },
                         Rw::TxAccessListAccountStorage {
-                            rw_counter: 14,
+                            rw_counter: 13,
                             is_write: true,
                             tx_id: 1usize,
                             address: tx.to.unwrap(),
@@ -413,7 +403,7 @@ mod test {
                             value_prev: true,
                         },
                         Rw::AccountStorage {
-                            rw_counter: 15,
+                            rw_counter: 14,
                             is_write: true,
                             address: tx.to.unwrap(),
                             key,
