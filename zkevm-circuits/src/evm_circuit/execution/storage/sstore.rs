@@ -225,25 +225,42 @@ impl<F: FieldExt> SstoreGasGadget<F> {
 // TODO:
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreTxRefundGadget<F> {
+    value: Expression<F>,
+    value_prev: Expression<F>,
+    committed_value: Expression<F>,
     is_warm: Expression<F>,
-    gas_cost: Expression<F>,
+    tx_refund_old: Expression<F>,
+    tx_refund_new: Expression<F>,
 }
 
 // TODO:
 impl<F: FieldExt> SstoreTxRefundGadget<F> {
-    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
-        let gas_cost = select::expr(
+    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, 
+        _value: Expression<F>,
+        _value_prev: Expression<F>,
+        _committed_value: Expression<F>,
+        tx_refund_old: Expression<F>,
+        is_warm: Expression<F>,
+    ) -> Self {
+        let tx_refund_new = select::expr(
             is_warm.expr(),
             GasCost::WARM_STORAGE_READ_COST.expr(),
             GasCost::COLD_SLOAD_COST.expr(),
         );
 
-        Self { is_warm, gas_cost }
+        Self {
+            value: _value,
+            value_prev: _value_prev,
+            committed_value: _committed_value,
+            is_warm,
+            tx_refund_old,
+            tx_refund_new,
+        }
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
-        // Return the gas cost
-        self.gas_cost.clone()
+        // Return the new tx_refund
+        self.tx_refund_new.clone()
     }
 }
 
