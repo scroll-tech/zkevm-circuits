@@ -235,7 +235,8 @@ pub(crate) struct SstoreTxRefundGadget<F> {
 
 // TODO:
 impl<F: FieldExt> SstoreTxRefundGadget<F> {
-    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, 
+    pub(crate) fn construct(
+        _cb: &mut ConstraintBuilder<F>,
         _value: Expression<F>,
         _value_prev: Expression<F>,
         _committed_value: Expression<F>,
