@@ -420,7 +420,7 @@ mod test {
                         rw_counter: 9,
                         is_write: true,
                         tx_id: 1usize,
-                        value: Word::from(0),      // TODO:
+                        value: Word::from(0), // TODO:
                         value_prev: Word::from(998),
                     },
                 ],
