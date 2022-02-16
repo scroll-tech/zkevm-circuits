@@ -447,6 +447,14 @@ impl Rw {
             _ => unreachable!(),
         }
     }
+    pub fn tx_refund_value_pair(&self) -> (Word, Word) {
+        match self {
+            Self::TxRefund {
+                value, value_prev, ..
+            } => (*value, *value_prev),
+            _ => unreachable!(),
+        }
+    }
 
     pub fn account_value_pair(&self) -> (Word, Word) {
         match self {

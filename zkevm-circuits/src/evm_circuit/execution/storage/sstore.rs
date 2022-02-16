@@ -35,6 +35,7 @@ pub(crate) struct SstoreGadget<F> {
     value_prev: Word<F>,
     committed_value: Word<F>,
     is_warm: Cell<F>,
+    tx_refund_prev: Word<F>,
 }
 
 impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
@@ -95,12 +96,12 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
         );
 
         // TODO: TxRefund
-        let old_tx_refund = cb.query_bool();
-        let new_tx_refund = cb.query_bool();
+        let tx_refund_prev = cb.query_word();
+        let tx_refund = cb.query_word();
         cb.tx_refund_write_with_reversion(
             tx_id.expr(),
-            old_tx_refund.expr(),
-            new_tx_refund.expr(),
+            tx_refund.expr(),
+            tx_refund_prev.expr(),
             is_persistent.expr(),
             rw_counter_end_of_reversion.expr(),
         );
@@ -127,6 +128,7 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
             value_prev,
             committed_value,
             is_warm,
+            tx_refund_prev,
         }
     }
 
@@ -172,7 +174,9 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 
-        // TODO: TxRefund
+        let (_, tx_refund_prev) = block.rws[step.rw_indices[8]].tx_refund_value_pair();
+        self.tx_refund_prev
+            .assign(region, offset, Some(tx_refund_prev.to_le_bytes()))?;
 
         Ok(())
     }
@@ -417,7 +421,7 @@ mod test {
                         is_write: true,
                         tx_id: 1usize,
                         value: Word::from(0),      // TODO:
-                        value_prev: Word::from(0), // TODO:
+                        value_prev: Word::from(998),
                     },
                 ],
                 if result {
@@ -428,7 +432,7 @@ mod test {
                             rw_counter: 12,
                             is_write: true,
                             tx_id: 1usize,
-                            value: Word::from(0),      // TODO:
+                            value: Word::from(998),
                             value_prev: Word::from(0), // TODO:
                         },
                         Rw::TxAccessListAccountStorage {
@@ -473,6 +477,7 @@ mod test {
 
     #[test]
     fn sstore_gadget_warm() {
+        // persist cases
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -482,6 +487,8 @@ mod test {
             true,
             true,
         );
+
+        // revert cases
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -495,6 +502,7 @@ mod test {
 
     #[test]
     fn sstore_gadget_cold() {
+        // persist cases
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -504,6 +512,8 @@ mod test {
             false,
             true,
         );
+
+        // revert cases
         test_ok(
             mock_tx(),
             0x030201.into(),
