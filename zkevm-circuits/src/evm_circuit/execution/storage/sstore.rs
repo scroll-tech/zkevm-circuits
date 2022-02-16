@@ -238,7 +238,16 @@ mod test {
     use eth_types::{address, bytecode, evm_types::GasCost, Address, ToLittleEndian, ToWord, Word};
     use std::convert::TryInto;
 
-    fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, gas: u64, is_warm: bool, result: bool) {
+    fn test_ok(
+        tx: eth_types::Transaction,
+        key: Word,
+        value: Word,
+        value_prev: Word,
+        committed_value: Word,
+        gas: u64,
+        is_warm: bool,
+        result: bool,
+    ) {
         let rw_counter_end_of_reversion = if result { 0 } else { 14 };
 
         let call_data_gas_cost = tx
@@ -357,9 +366,9 @@ mod test {
                         address: tx.to.unwrap(),
                         key,
                         value: value,
-                        value_prev: value, // TODO:
+                        value_prev: value_prev,
                         tx_id: 1usize,
-                        committed_value: value, // TODO:
+                        committed_value: committed_value,
                     },
                     Rw::TxAccessListAccountStorage {
                         rw_counter: 8,
@@ -404,9 +413,9 @@ mod test {
                             address: tx.to.unwrap(),
                             key,
                             value: value,
-                            value_prev: value, // TODO:
+                            value_prev: value_prev,
                             tx_id: 1usize,
-                            committed_value: value, // TODO:
+                            committed_value: committed_value,
                         },
                     ]
                 },
@@ -435,6 +444,8 @@ mod test {
             mock_tx(),
             0x030201.into(),
             0x060504.into(),
+            0x060504.into(),
+            0x060504.into(),
             GasCost::WARM_STORAGE_READ_COST.as_u64(),
             true,
             true,
@@ -442,6 +453,8 @@ mod test {
         test_ok(
             mock_tx(),
             0x030201.into(),
+            0x060504.into(),
+            0x060504.into(),
             0x060504.into(),
             GasCost::WARM_STORAGE_READ_COST.as_u64(),
             true,
@@ -455,6 +468,8 @@ mod test {
             mock_tx(),
             0x030201.into(),
             0x060504.into(),
+            0x060504.into(),
+            0x060504.into(),
             GasCost::COLD_SLOAD_COST.as_u64(),
             false,
             true,
@@ -462,6 +477,8 @@ mod test {
         test_ok(
             mock_tx(),
             0x030201.into(),
+            0x060504.into(),
+            0x060504.into(),
             0x060504.into(),
             GasCost::COLD_SLOAD_COST.as_u64(),
             false,
