@@ -238,16 +238,29 @@ mod test {
     use eth_types::{address, bytecode, evm_types::GasCost, Address, ToLittleEndian, ToWord, Word};
     use std::convert::TryInto;
 
+    fn calc_expected_gas_cost(
+        value: Word,
+        value_prev: Word,
+        committed_value: Word,
+        is_warm: bool,
+    ) -> u64 {
+        if is_warm {
+            return GasCost::WARM_STORAGE_READ_COST.as_u64();
+        } else {
+            return GasCost::COLD_SLOAD_COST.as_u64();
+        }
+    }
+
     fn test_ok(
         tx: eth_types::Transaction,
         key: Word,
         value: Word,
         value_prev: Word,
         committed_value: Word,
-        gas: u64,
         is_warm: bool,
         result: bool,
     ) {
+        let gas = calc_expected_gas_cost(value, value_prev, committed_value, is_warm);
         let rw_counter_end_of_reversion = if result { 0 } else { 14 };
 
         let call_data_gas_cost = tx
@@ -446,7 +459,6 @@ mod test {
             0x060504.into(),
             0x060504.into(),
             0x060504.into(),
-            GasCost::WARM_STORAGE_READ_COST.as_u64(),
             true,
             true,
         );
@@ -456,7 +468,6 @@ mod test {
             0x060504.into(),
             0x060504.into(),
             0x060504.into(),
-            GasCost::WARM_STORAGE_READ_COST.as_u64(),
             true,
             false,
         );
@@ -470,7 +481,6 @@ mod test {
             0x060504.into(),
             0x060504.into(),
             0x060504.into(),
-            GasCost::COLD_SLOAD_COST.as_u64(),
             false,
             true,
         );
@@ -480,7 +490,6 @@ mod test {
             0x060504.into(),
             0x060504.into(),
             0x060504.into(),
-            GasCost::COLD_SLOAD_COST.as_u64(),
             false,
             false,
         );
