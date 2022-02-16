@@ -238,7 +238,7 @@ mod test {
     use eth_types::{address, bytecode, evm_types::GasCost, Address, ToLittleEndian, ToWord, Word};
     use std::convert::TryInto;
 
-    fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, is_warm: bool, result: bool) {
+    fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, gas: u64, is_warm: bool, result: bool) {
         let rw_counter_end_of_reversion = if result { 0 } else { 14 };
 
         let call_data_gas_cost = tx
@@ -290,16 +290,8 @@ mod test {
                         rw_counter: 1,
                         program_counter: 66,
                         stack_pointer: STACK_CAPACITY,
-                        gas_left: if is_warm {
-                            GasCost::WARM_STORAGE_READ_COST.as_u64()
-                        } else {
-                            GasCost::COLD_SLOAD_COST.as_u64()
-                        },
-                        gas_cost: if is_warm {
-                            GasCost::WARM_STORAGE_READ_COST.as_u64()
-                        } else {
-                            GasCost::COLD_SLOAD_COST.as_u64()
-                        },
+                        gas_left: gas,
+                        gas_cost: gas,
                         opcode: Some(OpcodeId::SSTORE),
                         ..Default::default()
                     },
@@ -438,10 +430,42 @@ mod test {
     }
 
     #[test]
-    fn sstore_gadget_simple() {
-        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true, true);
-        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true, false);
-        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false, true);
-        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false, false);
+    fn sstore_gadget_warm() {
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            GasCost::WARM_STORAGE_READ_COST.as_u64(),
+            true,
+            true,
+        );
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            GasCost::WARM_STORAGE_READ_COST.as_u64(),
+            true,
+            false,
+        );
+    }
+
+    #[test]
+    fn sstore_gadget_cold() {
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            GasCost::COLD_SLOAD_COST.as_u64(),
+            false,
+            true,
+        );
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            GasCost::COLD_SLOAD_COST.as_u64(),
+            false,
+            false,
+        );
     }
 }
