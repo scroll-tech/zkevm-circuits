@@ -86,8 +86,13 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
             rw_counter_end_of_reversion.expr(),
         );
 
-        // TODO:
-        let gas_cost = SstoreGasGadget::construct(cb, is_warm.expr());
+        let gas_cost = SstoreGasGadget::construct(
+            cb,
+            value.expr(),
+            value_prev.expr(),
+            committed_value.expr(),
+            is_warm.expr(),
+        );
 
         // TODO: TxRefund
         let old_tx_refund = cb.query_bool();
@@ -176,20 +181,35 @@ impl<F: FieldExt> ExecutionGadget<F> for SstoreGadget<F> {
 // TODO:
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreGasGadget<F> {
+    value: Expression<F>,
+    value_prev: Expression<F>,
+    committed_value: Expression<F>,
     is_warm: Expression<F>,
     gas_cost: Expression<F>,
 }
 
 // TODO:
 impl<F: FieldExt> SstoreGasGadget<F> {
-    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
+    pub(crate) fn construct(
+        _cb: &mut ConstraintBuilder<F>,
+        _value: Expression<F>,
+        _value_prev: Expression<F>,
+        _committed_value: Expression<F>,
+        is_warm: Expression<F>,
+    ) -> Self {
         let gas_cost = select::expr(
             is_warm.expr(),
             GasCost::WARM_STORAGE_READ_COST.expr(),
             GasCost::COLD_SLOAD_COST.expr(),
         );
 
-        Self { is_warm, gas_cost }
+        Self {
+            value: _value,
+            value_prev: _value_prev,
+            committed_value: _committed_value,
+            is_warm,
+            gas_cost,
+        }
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
