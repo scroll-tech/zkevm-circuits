@@ -164,6 +164,7 @@ pub enum AccountFieldTag {
     Nonce = 1,
     Balance,
     CodeHash,
+    CodeSize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

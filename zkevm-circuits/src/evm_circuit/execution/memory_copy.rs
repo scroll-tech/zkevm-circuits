@@ -167,13 +167,28 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let StepAuxiliaryData::CopyToMemory {
-            src_addr,
-            dst_addr,
-            bytes_left,
-            src_addr_end,
-            from_tx,
-        } = step.aux_data.as_ref().unwrap();
+        let (src_addr, dst_addr, bytes_left, src_addr_end, from_tx) =
+            if let StepAuxiliaryData::CopyToMemory {
+                src_addr,
+                dst_addr,
+                bytes_left,
+                src_addr_end,
+                from_tx,
+            } = step
+                .aux_data
+                .as_ref()
+                .expect("could not find aux_data for COPYTOMEMORY")
+            {
+                (
+                    src_addr,
+                    dst_addr,
+                    bytes_left,
+                    src_addr_end,
+                    from_tx,
+                )
+            } else {
+                panic!("could not find CopyToMemory aux_data for COPYTOMEMORY");
+            };
 
         self.src_addr
             .assign(region, offset, Some(F::from(*src_addr)))?;

@@ -159,6 +159,19 @@ pub enum StepAuxiliaryData {
         /// Indicate if copy from transaction call data
         from_tx: bool,
     },
+    /// Auxiliary data of Copy Code To Memory
+    CopyCodeToMemory {
+        /// Source start address
+        src_addr: u64,
+        /// Destination address
+        dst_addr: u64,
+        /// Bytes left
+        bytes_left: u64,
+        /// Source end address
+        src_addr_end: u64,
+        /// Bytecode to be copied
+        code: eth_types::Bytecode,
+    },
 }
 
 /// An execution step of the EVM.

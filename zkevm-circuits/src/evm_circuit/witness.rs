@@ -309,7 +309,7 @@ impl ExecStep {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Bytecode {
     pub hash: Word,
     pub bytes: Vec<u8>,
@@ -687,7 +687,9 @@ impl Rw {
                 value_prev,
             } => {
                 let to_scalar = |value: &Word| match field_tag {
-                    AccountFieldTag::Nonce => value.to_scalar().unwrap(),
+                    AccountFieldTag::Nonce | AccountFieldTag::CodeSize => {
+                        value.to_scalar().unwrap()
+                    }
                     _ => RandomLinearCombination::random_linear_combine(
                         value.to_le_bytes(),
                         randomness,

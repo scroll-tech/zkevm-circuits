@@ -21,6 +21,7 @@ pub enum ExecutionState {
     BeginTx,
     EndTx,
     EndBlock,
+    CopyCodeToMemory,
     CopyToMemory,
     // Opcode successful cases
     STOP,
@@ -140,6 +141,7 @@ impl ExecutionState {
             Self::BeginTx,
             Self::EndTx,
             Self::EndBlock,
+            Self::CopyCodeToMemory,
             Self::CopyToMemory,
             Self::STOP,
             Self::ADD,

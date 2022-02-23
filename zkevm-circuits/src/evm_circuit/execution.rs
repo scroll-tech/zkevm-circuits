@@ -26,8 +26,10 @@ mod calldataload;
 mod calldatasize;
 mod caller;
 mod callvalue;
+mod codecopy;
 mod coinbase;
 mod comparator;
+mod copy_code_to_memory;
 mod dup;
 mod end_block;
 mod end_tx;
@@ -62,8 +64,10 @@ use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
 use callvalue::CallValueGadget;
+use codecopy::CodeCopyGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
+use copy_code_to_memory::CopyCodeToMemoryGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
@@ -124,7 +128,9 @@ pub(crate) struct ExecutionConfig<F> {
     calldatasize_gadget: CallDataSizeGadget<F>,
     caller_gadget: CallerGadget<F>,
     call_value_gadget: CallValueGadget<F>,
+    codecopy_gadget: CodeCopyGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
+    copy_code_to_memory_gadget: CopyCodeToMemoryGadget<F>,
     dup_gadget: DupGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
     end_tx_gadget: EndTxGadget<F>,
@@ -339,7 +345,9 @@ impl<F: Field> ExecutionConfig<F> {
             calldatasize_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
             call_value_gadget: configure_gadget!(),
+            codecopy_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
+            copy_code_to_memory_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
@@ -649,6 +657,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLDATASIZE => {
                 assign_exec_step!(self.calldatasize_gadget)
             }
+            ExecutionState::CODECOPY => assign_exec_step!(self.codecopy_gadget),
+            ExecutionState::CopyCodeToMemory => assign_exec_step!(self.copy_code_to_memory_gadget),
             _ => unimplemented!(),
         }
 
