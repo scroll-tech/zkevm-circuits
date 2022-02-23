@@ -4007,6 +4007,7 @@ dependencies = [
  "eth-types",
  "ff 0.11.0",
  "halo2",
+ "hex",
  "itertools",
  "keccak256",
  "mock",
