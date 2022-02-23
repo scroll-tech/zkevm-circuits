@@ -284,6 +284,14 @@ pub enum StepAuxiliaryData {
         from_tx: bool,
         selectors: Vec<u8>,
     },
+    CopyCodeToMemory {
+        src_addr: u64,
+        dst_addr: u64,
+        bytes_left: u64,
+        src_addr_end: u64,
+        code: Bytecode,
+        selectors: Vec<u8>,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -324,7 +332,7 @@ impl ExecStep {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Bytecode {
     pub hash: Word,
     pub bytes: Vec<u8>,
@@ -643,7 +651,9 @@ impl Rw {
                 value_prev,
             } => {
                 let to_scalar = |value: &Word| match field_tag {
-                    AccountFieldTag::Nonce => value.to_scalar().unwrap(),
+                    AccountFieldTag::Nonce | AccountFieldTag::CodeSize => {
+                        value.to_scalar().unwrap()
+                    }
                     _ => RandomLinearCombination::random_linear_combine(
                         value.to_le_bytes(),
                         randomness,
@@ -683,7 +693,9 @@ impl Rw {
                             randomness,
                         )
                     }
-                    CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
+                    CallContextFieldTag::CallerAddress
+                    | CallContextFieldTag::CalleeAddress
+                    | CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
                     _ => F::from(value.low_u64()),
                 },
                 F::zero(),

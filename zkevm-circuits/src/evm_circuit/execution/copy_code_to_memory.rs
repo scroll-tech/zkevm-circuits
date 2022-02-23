@@ -1,104 +1,122 @@
+use array_init::array_init;
+use eth_types::ToLittleEndian;
+use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+
 use crate::{
     evm_circuit::{
-        execution::ExecutionGadget,
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
-        table::TxContextFieldTag,
         util::{
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             math_gadget::ComparisonGadget,
             memory_gadget::BufferReaderGadget,
-            Cell,
+            Cell, Word,
         },
         witness::{Block, Call, ExecStep, StepAuxiliaryData, Transaction},
     },
     util::Expr,
 };
-use eth_types::Field;
-use halo2_proofs::{circuit::Region, plonk::Error};
 
-// The max number of bytes that can be copied in a step limited by the number
-// of cells in a step
-const MAX_COPY_BYTES: usize = 71;
+use super::ExecutionGadget;
 
-/// Multi-step gadget for copying data from memory or Tx calldata to memory
+/// Maximum number of bytes that can be copied in one iteration of this gadget.
+/// We are bounded because of the limitation on the number of cells we can
+/// assign to in one iteration.
+const MAX_COPY_BYTES: usize = 54;
+
 #[derive(Clone, Debug)]
-pub(crate) struct CopyToMemoryGadget<F> {
-    // The src memory address to copy from
+/// This gadget is responsible for copying bytes from an account's code to
+/// memory. This is an internal gadget used by the `CodeCopyGadget`.
+pub(crate) struct CopyCodeToMemoryGadget<F> {
+    /// Offset in the source (bytecode) to read from.
     src_addr: Cell<F>,
-    // The dst memory address to copy to
+    /// Offset in the destination (memory) to write to.
     dst_addr: Cell<F>,
-    // The number of bytes left to copy
+    /// Number of bytes left to be copied in this iteration.
     bytes_left: Cell<F>,
-    // The src address bound of the buffer
+    /// Source (bytecode) bytes end here.
     src_addr_end: Cell<F>,
-    // Indicate whether src is from Tx Calldata
-    from_tx: Cell<F>,
-    // Transaction ID, optional, only used when src_is_tx == 1
-    tx_id: Cell<F>,
-    // Buffer reader gadget
+    /// Keccak-256 hash of the bytecode.
+    code_hash: Word<F>,
+    /// Array of booleans to mark whether or not the byte in question is an
+    /// opcode byte or an argument that follows the opcode. For example,
+    /// `is_code = true` for `POP`, `is_code = true` for `PUSH32`, but
+    /// `is_code = false` for the 32 bytes that follow the `PUSH32` opcode.
+    is_codes: [Cell<F>; MAX_COPY_BYTES],
+    /// Gadget to assign bytecode to buffer and read byte-by-byte.
     buffer_reader: BufferReaderGadget<F, MAX_COPY_BYTES, N_BYTES_MEMORY_ADDRESS>,
-    // The comparison gadget between num bytes copied and bytes_left
+    /// Comparison gadget to conditionally stop this iterative internal step
+    /// once all the bytes have been copied.
     finish_gadget: ComparisonGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
-impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
-    const NAME: &'static str = "COPYTOMEMORY";
+impl<F: FieldExt> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
+    const NAME: &'static str = "COPYCODETOMEMORY";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::CopyToMemory;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::CopyCodeToMemory;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+        // Query cells for the internal step's auxiliary data and construct the buffer
+        // reader.
         let src_addr = cb.query_cell();
         let dst_addr = cb.query_cell();
         let bytes_left = cb.query_cell();
         let src_addr_end = cb.query_cell();
-        let from_tx = cb.query_bool();
-        let tx_id = cb.query_cell();
+        let code_hash = cb.query_word();
+        let is_codes = array_init(|_| cb.query_bool());
         let buffer_reader = BufferReaderGadget::construct(cb, &src_addr, &src_addr_end);
-        let from_memory = 1.expr() - from_tx.expr();
 
-        // Copy bytes from src and dst
-        for i in 0..MAX_COPY_BYTES {
-            let read_flag = buffer_reader.read_flag(i);
-            // Read bytes[i] from memory
-            cb.condition(from_memory.clone() * read_flag.clone(), |cb| {
-                cb.memory_lookup(0.expr(), src_addr.expr() + i.expr(), buffer_reader.byte(i))
+        // For every byte in the bytecode's span covered in this iteration.
+        for (idx, is_code) in is_codes.iter().enumerate() {
+            // Lookup the bytecode table for the byte value read at the appropriate source
+            // memory address from the buffer.
+            cb.condition(buffer_reader.read_flag(idx), |cb| {
+                cb.bytecode_lookup(
+                    code_hash.expr(),
+                    src_addr.expr() + idx.expr(),
+                    buffer_reader.byte(idx),
+                    is_code.expr(),
+                );
             });
-            // Read bytes[i] from Tx
-            cb.condition(from_tx.expr() * read_flag.clone(), |cb| {
-                cb.tx_context_lookup(
-                    tx_id.expr(),
-                    TxContextFieldTag::CallData,
-                    Some(src_addr.expr() + i.expr()),
-                    buffer_reader.byte(i),
-                )
-            });
-            // Write bytes[i] to memory when selectors[i] != 0
-            cb.condition(buffer_reader.has_data(i), |cb| {
-                cb.memory_lookup(1.expr(), dst_addr.expr() + i.expr(), buffer_reader.byte(i))
+            // Lookup the RW table for a memory write operation at the appropriate
+            // destination memory address.
+            cb.condition(buffer_reader.has_data(idx), |cb| {
+                cb.memory_lookup(
+                    1.expr(),
+                    dst_addr.expr() + idx.expr(),
+                    buffer_reader.byte(idx),
+                );
             });
         }
 
+        // Construct the comparison gadget using the number of bytes copied in this
+        // iteration and the number bytes that were left to be copied before the
+        // start of this iteration.
         let copied_size = buffer_reader.num_bytes();
         let finish_gadget = ComparisonGadget::construct(cb, copied_size.clone(), bytes_left.expr());
         let (lt, finished) = finish_gadget.expr();
-        // Constrain lt == 1 or finished == 1
+
+        // We should have continued only until there were no more bytes left to be
+        // copied. In case the copied size was less than the number of bytes
+        // left, the iterative process should not be finished.
         cb.add_constraint(
             "Constrain num_bytes <= bytes_left",
             (1.expr() - lt) * (1.expr() - finished.clone()),
         );
 
-        // When finished == 0, constraint the CopyToMemory state in next step
+        // If the iterative process has not yet finished, we constrain the next step to
+        // be another `CopyCodeToMemory` while adding some additional
+        // constraints to the auxiliary data.
         cb.constrain_next_step(
-            ExecutionState::CopyToMemory,
+            ExecutionState::CopyCodeToMemory,
             Some(1.expr() - finished),
             |cb| {
                 let next_src_addr = cb.query_cell();
                 let next_dst_addr = cb.query_cell();
                 let next_bytes_left = cb.query_cell();
                 let next_src_addr_end = cb.query_cell();
-                let next_from_tx = cb.query_cell();
-                let next_tx_id = cb.query_cell();
+                let next_code_hash = cb.query_word();
+
                 cb.require_equal(
                     "next_src_addr == src_addr + copied_size",
                     next_src_addr.expr(),
@@ -120,17 +138,18 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
                     src_addr_end.expr(),
                 );
                 cb.require_equal(
-                    "next_from_tx == from_tx",
-                    next_from_tx.expr(),
-                    from_tx.expr(),
+                    "next_code_hash == code_hash",
+                    next_code_hash.expr(),
+                    code_hash.expr(),
                 );
-                cb.require_equal("next_tx_id == tx_id", next_tx_id.expr(), tx_id.expr());
             },
         );
 
-        // State transition
+        // Since this is an internal step for `CODECOPY` opcode, we only increment the
+        // RW counter. The program counter, stack pointer, and other fields do
+        // not change.
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(cb.rw_counter_offset()),
+            rw_counter: Transition::Delta(cb.rw_counter_offset()),
             ..Default::default()
         };
         cb.require_step_state_transition(step_state_transition);
@@ -140,8 +159,8 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             dst_addr,
             bytes_left,
             src_addr_end,
-            from_tx,
-            tx_id,
+            code_hash,
+            is_codes,
             buffer_reader,
             finish_gadget,
         }
@@ -152,35 +171,37 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction,
-        _: &Call,
+        _tx: &Transaction,
+        _call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let (src_addr, dst_addr, bytes_left, src_addr_end, from_tx, selectors) =
-            if let StepAuxiliaryData::CopyToMemory {
+        // Read the auxiliary data.
+        let (src_addr, dst_addr, bytes_left, src_addr_end, code, selectors) =
+            if let StepAuxiliaryData::CopyCodeToMemory {
                 src_addr,
                 dst_addr,
                 bytes_left,
                 src_addr_end,
-                from_tx,
+                code,
                 selectors,
             } = step
                 .aux_data
                 .as_ref()
-                .expect("could not find aux_data for COPYTOMEMORY")
+                .expect("could not find aux_data for COPYCODETOMEMORY")
             {
                 (
                     src_addr,
                     dst_addr,
                     bytes_left,
                     src_addr_end,
-                    from_tx,
+                    code,
                     selectors,
                 )
             } else {
-                panic!("could not find CopyToMemory aux_data for COPYTOMEMORY");
+                panic!("could not find CopyCodeToMemory aux_data for COPYCODETOMEMORY");
             };
 
+        // Assign to the appropriate cells.
         self.src_addr
             .assign(region, offset, Some(F::from(*src_addr)))?;
         self.dst_addr
@@ -189,38 +210,43 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
             .assign(region, offset, Some(F::from(*bytes_left)))?;
         self.src_addr_end
             .assign(region, offset, Some(F::from(*src_addr_end)))?;
-        self.from_tx
-            .assign(region, offset, Some(F::from(*from_tx as u64)))?;
-        self.tx_id
-            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+        self.code_hash
+            .assign(region, offset, Some(code.hash.to_le_bytes()))?;
 
-        // Retrieve the bytes
+        // Initialise selectors and bytes for the buffer reader.
         assert_eq!(selectors.len(), MAX_COPY_BYTES);
-        let mut rw_idx = 0;
         let mut bytes = vec![0u8; MAX_COPY_BYTES];
-        for (idx, selector) in selectors.iter().enumerate() {
+        for (idx, (selector, code_it)) in selectors
+            .iter()
+            .zip(
+                code.table_assignments(block.randomness)
+                    .skip(*src_addr as usize)
+                    .take(MAX_COPY_BYTES),
+            )
+            .enumerate()
+        {
             let addr = *src_addr as usize + idx;
             bytes[idx] = if *selector == 1 && addr < *src_addr_end as usize {
-                if *from_tx {
-                    assert!(addr < tx.call_data.len());
-                    tx.call_data[addr]
-                } else {
-                    rw_idx += 1;
-                    block.rws[step.rw_indices[rw_idx]].memory_value()
-                }
+                assert!(addr < code.bytes.len());
+                code.bytes[addr]
             } else {
                 0
             };
-            if *selector == 1 {
-                // increase rw_idx for writing back to memory
-                rw_idx += 1
-            }
+
+            // The last entry (index = 3) from the table assignments for bytecode represents
+            // whether or not it is an opcode byte or an opcode argument.
+            self.is_codes[idx].assign(region, offset, Some(code_it[3]))?;
         }
 
+        // Assign the buffer reader.
         self.buffer_reader
             .assign(region, offset, *src_addr, *src_addr_end, &bytes, selectors)?;
 
-        let num_bytes_copied = selectors.iter().fold(0, |acc, s| acc + (*s as u64));
+        // The number of bytes copied here will be the sum of 1s over the selector
+        // vector.
+        let num_bytes_copied = selectors.iter().sum::<u8>() as u64;
+
+        // Assign the comparison gadget.
         self.finish_gadget.assign(
             region,
             offset,
@@ -233,57 +259,50 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
 }
 
 #[cfg(test)]
-pub mod test {
+pub(crate) mod test {
+    use super::MAX_COPY_BYTES;
+    use std::collections::HashMap;
+
+    use bus_mapping::evm::OpcodeId;
+    use eth_types::{bytecode, Word};
+    use halo2::arithmetic::BaseExt;
+    use pairing::bn256::Fr;
+
     use crate::evm_circuit::{
-        execution::memory_copy::MAX_COPY_BYTES,
         step::ExecutionState,
         table::RwTableTag,
-        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
+        test::run_test_circuit_incomplete_fixed_table,
         witness::{
             Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, StepAuxiliaryData, Transaction,
         },
     };
-    //use crate::evm_circuit::witness::RwMap;
-    use eth_types::evm_types::OpcodeId;
-    use halo2_proofs::arithmetic::BaseExt;
-    use pairing::bn256::Fr as Fp;
-    use std::collections::HashMap;
 
     #[allow(clippy::too_many_arguments)]
-    fn make_memory_copy_step(
+    pub(crate) fn make_copy_code_step(
         call_id: usize,
         src_addr: u64,
         dst_addr: u64,
         src_addr_end: u64,
         bytes_left: usize,
-        from_tx: bool,
         program_counter: u64,
         stack_pointer: usize,
         memory_size: u64,
         rw_counter: usize,
         rws: &mut RwMap,
         bytes_map: &HashMap<u64, u8>,
+        code: &Bytecode,
     ) -> (ExecStep, usize) {
         let mut selectors = vec![0u8; MAX_COPY_BYTES];
-        let mut rw_offset: usize = 0;
+        let mut rw_offset = 0usize;
         let memory_rws: &mut Vec<_> = rws.0.entry(RwTableTag::Memory).or_insert_with(Vec::new);
         let rw_idx_start = memory_rws.len();
+
         for (idx, selector) in selectors.iter_mut().enumerate() {
             if idx < bytes_left {
                 *selector = 1;
                 let addr = src_addr + idx as u64;
                 let byte = if addr < src_addr_end {
                     assert!(bytes_map.contains_key(&addr));
-                    if !from_tx {
-                        memory_rws.push(Rw::Memory {
-                            rw_counter: rw_counter + rw_offset,
-                            is_write: false,
-                            call_id,
-                            memory_address: src_addr + idx as u64,
-                            byte: bytes_map[&addr],
-                        });
-                        rw_offset += 1;
-                    }
                     bytes_map[&addr]
                 } else {
                     0
@@ -298,17 +317,18 @@ pub mod test {
                 rw_offset += 1;
             }
         }
+
         let rw_idx_end = rws.0[&RwTableTag::Memory].len();
-        let aux_data = StepAuxiliaryData::CopyToMemory {
+        let aux_data = StepAuxiliaryData::CopyCodeToMemory {
             src_addr,
             dst_addr,
             bytes_left: bytes_left as u64,
             src_addr_end,
-            from_tx,
+            code: code.clone(),
             selectors,
         };
         let step = ExecStep {
-            execution_state: ExecutionState::CopyToMemory,
+            execution_state: ExecutionState::CopyCodeToMemory,
             rw_indices: (rw_idx_start..rw_idx_end)
                 .map(|idx| (RwTableTag::Memory, idx))
                 .collect(),
@@ -320,18 +340,17 @@ pub mod test {
             aux_data: Some(aux_data),
             ..Default::default()
         };
+
         (step, rw_offset)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn make_memory_copy_steps(
+    pub(crate) fn make_copy_code_steps(
         call_id: usize,
-        buffer: &[u8],
-        buffer_addr: u64, // buffer base address, use 0 for tx calldata
+        code: &Bytecode,
         src_addr: u64,
         dst_addr: u64,
         length: usize,
-        from_tx: bool,
         program_counter: u64,
         stack_pointer: usize,
         memory_size: u64,
@@ -339,26 +358,25 @@ pub mod test {
         rws: &mut RwMap,
         steps: &mut Vec<ExecStep>,
     ) {
-        let buffer_addr_end = buffer_addr + buffer.len() as u64;
-        let bytes_map = (buffer_addr..buffer_addr_end)
-            .zip(buffer.iter().copied())
+        let bytes_map = (0..(code.bytes.len() as u64))
+            .zip(code.bytes.iter().copied())
             .collect();
 
         let mut copied = 0;
         while copied < length {
-            let (step, rw_offset) = make_memory_copy_step(
+            let (step, rw_offset) = make_copy_code_step(
                 call_id,
                 src_addr + copied as u64,
                 dst_addr + copied as u64,
-                buffer_addr_end,
+                code.bytes.len() as u64,
                 length - copied,
-                from_tx,
                 program_counter,
                 stack_pointer,
                 memory_size,
                 *rw_counter,
                 rws,
                 &bytes_map,
+                code,
             );
             steps.push(step);
             *rw_counter += rw_offset;
@@ -366,26 +384,42 @@ pub mod test {
         }
     }
 
-    fn test_ok_from_memory(src_addr: u64, dst_addr: u64, src_addr_end: u64, length: usize) {
-        let randomness = Fp::rand();
-        let bytecode = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
+    fn test_ok(src_addr: u64, dst_addr: u64, length: usize) {
+        let randomness = Fr::rand();
         let call_id = 1;
-        let mut rws = RwMap(Default::default());
+        let mut rws = RwMap::default();
         let mut rw_counter = 1;
         let mut steps = Vec::new();
-        let buffer = rand_bytes((src_addr_end - src_addr) as usize);
         let memory_size = (dst_addr + length as u64 + 31) / 32 * 32;
 
-        make_memory_copy_steps(
+        // generate random bytecode longer than `src_addr_end`
+        let code = bytecode! {
+            #[start]
+            PUSH32(Word::from(0x123))
+            POP
+            PUSH32(Word::from(0x213))
+            POP
+            PUSH32(Word::from(0x321))
+            POP
+            PUSH32(Word::from(0x12349AB))
+            POP
+            PUSH32(Word::from(0x1928835))
+            POP
+        };
+        let code = Bytecode::new(code.to_vec());
+
+        let dummy_code = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
+
+        let program_counter = 0;
+        let stack_pointer = 1024;
+        make_copy_code_steps(
             call_id,
-            &buffer,
-            src_addr,
+            &code,
             src_addr,
             dst_addr,
             length,
-            false,
-            0,
-            1024,
+            program_counter,
+            stack_pointer,
             memory_size,
             &mut rw_counter,
             &mut rws,
@@ -395,8 +429,8 @@ pub mod test {
         steps.push(ExecStep {
             execution_state: ExecutionState::STOP,
             rw_counter,
-            program_counter: 0,
-            stack_pointer: 1024,
+            program_counter,
+            stack_pointer,
             memory_size,
             opcode: Some(OpcodeId::STOP),
             ..Default::default()
@@ -410,94 +444,45 @@ pub mod test {
                     id: call_id,
                     is_root: true,
                     is_create: false,
-                    code_source: CodeSource::Account(bytecode.hash),
+                    code_source: CodeSource::Account(dummy_code.hash),
                     ..Default::default()
                 }],
                 steps,
                 ..Default::default()
             }],
             rws,
-            bytecodes: vec![bytecode],
+            bytecodes: vec![dummy_code, code],
             ..Default::default()
         };
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
-    fn test_ok_from_tx(calldata_length: usize, src_addr: u64, dst_addr: u64, length: usize) {
-        let randomness = Fp::rand();
-        let bytecode = Bytecode::new(vec![OpcodeId::STOP.as_u8(), OpcodeId::STOP.as_u8()]);
-        let call_id = 1;
-        let mut rws = RwMap(Default::default());
-        let mut rw_counter = 1;
-        let calldata: Vec<u8> = rand_bytes(calldata_length);
-        let mut steps = Vec::new();
-        let memory_size = (dst_addr + length as u64 + 31) / 32 * 32;
-
-        make_memory_copy_steps(
-            call_id,
-            &calldata,
-            0,
-            src_addr,
-            dst_addr,
-            length,
-            true,
-            0,
-            1024,
-            memory_size,
-            &mut rw_counter,
-            &mut rws,
-            &mut steps,
+    #[test]
+    fn copy_code_to_memory_single_step() {
+        test_ok(
+            0x00, // src_addr
+            0x00, // dst_addr
+            54,   // length
         );
-
-        steps.push(ExecStep {
-            execution_state: ExecutionState::STOP,
-            rw_counter,
-            program_counter: 0,
-            stack_pointer: 1024,
-            memory_size,
-            opcode: Some(OpcodeId::STOP),
-            ..Default::default()
-        });
-
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                id: 1,
-                call_data: calldata,
-                call_data_length: calldata_length,
-                calls: vec![Call {
-                    id: call_id,
-                    is_root: true,
-                    is_create: false,
-                    code_source: CodeSource::Account(bytecode.hash),
-                    ..Default::default()
-                }],
-                steps,
-                ..Default::default()
-            }],
-            rws,
-            bytecodes: vec![bytecode],
-            ..Default::default()
-        };
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
     #[test]
-    fn copy_to_memory_simple() {
-        test_ok_from_memory(0x40, 0xA0, 0x70, 5);
-        test_ok_from_tx(32, 5, 0x40, 5);
+    fn copy_code_to_memory_multi_step() {
+        test_ok(
+            0x00, // src_addr
+            0x40, // dst_addr
+            123,  // length
+        );
     }
 
     #[test]
-    fn copy_to_memory_multi_step() {
-        test_ok_from_memory(0x20, 0xA0, 0x80, 80);
-        test_ok_from_tx(128, 10, 0x40, 90);
-    }
-
-    #[test]
-    fn copy_to_memory_out_of_bound() {
-        test_ok_from_memory(0x40, 0xA0, 0x60, 45);
-        test_ok_from_tx(32, 5, 0x40, 45);
-        test_ok_from_tx(32, 40, 0x40, 5);
+    fn copy_code_to_memory_oob() {
+        // since the bytecode we construct above is (34 * 5) = 170 bytes long, copying
+        // 200 bytes means we go out-of-bounds.
+        test_ok(
+            0x10, // src_addr
+            0x20, // dst_addr
+            200,  // length
+        );
     }
 }

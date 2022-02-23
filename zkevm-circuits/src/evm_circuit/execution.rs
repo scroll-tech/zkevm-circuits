@@ -25,8 +25,10 @@ mod calldatacopy;
 mod calldatasize;
 mod caller;
 mod callvalue;
+mod codecopy;
 mod coinbase;
 mod comparator;
+mod copy_code_to_memory;
 mod dup;
 mod error_oog_pure_memory;
 mod gas;
@@ -55,8 +57,10 @@ use calldatacopy::CallDataCopyGadget;
 use calldatasize::CallDataSizeGadget;
 use caller::CallerGadget;
 use callvalue::CallValueGadget;
+use codecopy::CodeCopyGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
+use copy_code_to_memory::CopyCodeToMemoryGadget;
 use dup::DupGadget;
 use error_oog_pure_memory::ErrorOOGPureMemoryGadget;
 use gas::GasGadget;
@@ -110,7 +114,9 @@ pub(crate) struct ExecutionConfig<F> {
     calldatasize_gadget: CallDataSizeGadget<F>,
     caller_gadget: CallerGadget<F>,
     call_value_gadget: CallValueGadget<F>,
+    codecopy_gadget: CodeCopyGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
+    copy_code_to_memory_gadget: CopyCodeToMemoryGadget<F>,
     dup_gadget: DupGadget<F>,
     error_oog_pure_memory_gadget: ErrorOOGPureMemoryGadget<F>,
     jump_gadget: JumpGadget<F>,
@@ -244,7 +250,9 @@ impl<F: Field> ExecutionConfig<F> {
             calldatasize_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
             call_value_gadget: configure_gadget!(),
+            codecopy_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
+            copy_code_to_memory_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             error_oog_pure_memory_gadget: configure_gadget!(),
             jump_gadget: configure_gadget!(),
@@ -531,6 +539,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLDATASIZE => {
                 assign_exec_step!(self.calldatasize_gadget)
             }
+            ExecutionState::CODECOPY => assign_exec_step!(self.codecopy_gadget),
+            ExecutionState::CopyCodeToMemory => assign_exec_step!(self.copy_code_to_memory_gadget),
             _ => unimplemented!(),
         }
 

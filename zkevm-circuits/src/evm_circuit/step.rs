@@ -19,6 +19,7 @@ use std::collections::VecDeque;
 pub enum ExecutionState {
     // Internal state
     BeginTx,
+    CopyCodeToMemory,
     CopyToMemory,
     // Opcode successful cases
     STOP,
@@ -133,6 +134,7 @@ impl ExecutionState {
     pub(crate) fn iterator() -> impl Iterator<Item = Self> {
         [
             Self::BeginTx,
+            Self::CopyCodeToMemory,
             Self::CopyToMemory,
             Self::STOP,
             Self::ADD,

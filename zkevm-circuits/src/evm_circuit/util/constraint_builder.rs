@@ -514,6 +514,26 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    // Bytecode table
+
+    pub(crate) fn bytecode_lookup(
+        &mut self,
+        code_hash: Expression<F>,
+        index: Expression<F>,
+        value: Expression<F>,
+        is_code: Expression<F>,
+    ) {
+        self.add_lookup(
+            "Bytecode lookup",
+            Lookup::Bytecode {
+                hash: code_hash,
+                index,
+                value,
+                is_code,
+            },
+        )
+    }
+
     // Tx context
 
     pub(crate) fn tx_context(
