@@ -5,20 +5,20 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget::MulWordsGadget,
+            math_gadget::ExtendMulWordsGadget,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::Field;
+use eth_types::{Field, Word};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
 // MulGadget verifies MUL: a * b mod 2^256 is equal to c,
 #[derive(Clone, Debug)]
 pub(crate) struct MulGadget<F> {
     same_context: SameContextGadget<F>,
-    mul_words: MulWordsGadget<F>,
+    mul_words: ExtendMulWordsGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for MulGadget<F> {
@@ -29,14 +29,11 @@ impl<F: Field> ExecutionGadget<F> for MulGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
-
         // Pop a and b from the stack, push product on the stack
-        cb.stack_pop(a.expr());
-        cb.stack_pop(b.expr());
-        let mul_words = MulWordsGadget::construct(cb, a, b);
-        cb.stack_push(mul_words.product().expr());
+        let mul_words = ExtendMulWordsGadget::construct(cb, 0.expr());
+        cb.stack_pop(mul_words.a());
+        cb.stack_pop(mul_words.b());
+        cb.stack_push(mul_words.product());
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -68,7 +65,9 @@ impl<F: Field> ExecutionGadget<F> for MulGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
         let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
         let [a, b, c] = indices.map(|idx| block.rws[idx].stack_value());
-        self.mul_words.assign(region, offset, a, b, c)
+        let zero = Word::from_big_endian(&[0u8; 32]);
+        self.mul_words
+            .assign(region, offset, [c, a, b, zero], false)
     }
 }
 

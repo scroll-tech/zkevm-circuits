@@ -27,6 +27,7 @@ mod caller;
 mod callvalue;
 mod coinbase;
 mod comparator;
+mod div;
 mod dup;
 mod error_oog_pure_memory;
 mod gas;
@@ -35,6 +36,7 @@ mod jumpdest;
 mod jumpi;
 mod memory;
 mod memory_copy;
+mod modulo;
 mod msize;
 mod mul;
 mod pc;
@@ -57,6 +59,7 @@ use caller::CallerGadget;
 use callvalue::CallValueGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
+use div::DivGadget;
 use dup::DupGadget;
 use error_oog_pure_memory::ErrorOOGPureMemoryGadget;
 use gas::GasGadget;
@@ -65,6 +68,7 @@ use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
 use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
+use modulo::ModGadget;
 use msize::MsizeGadget;
 use mul::MulGadget;
 use pc::PcGadget;
@@ -130,6 +134,8 @@ pub(crate) struct ExecutionConfig<F> {
     coinbase_gadget: CoinbaseGadget<F>,
     timestamp_gadget: TimestampGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
+    div_gadget: DivGadget<F>,
+    mod_gadget: ModGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -264,6 +270,8 @@ impl<F: Field> ExecutionConfig<F> {
             msize_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
             timestamp_gadget: configure_gadget!(),
+            div_gadget: configure_gadget!(),
+            mod_gadget: configure_gadget!(),
             step: step_curr,
             presets_map,
         };
@@ -531,6 +539,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLDATASIZE => {
                 assign_exec_step!(self.calldatasize_gadget)
             }
+            ExecutionState::DIV => assign_exec_step!(self.div_gadget),
+            ExecutionState::MOD => assign_exec_step!(self.mod_gadget),
             _ => unimplemented!(),
         }
 
