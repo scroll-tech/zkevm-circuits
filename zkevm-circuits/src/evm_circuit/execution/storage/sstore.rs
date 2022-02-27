@@ -315,11 +315,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         committed_value: Word<F>,
         is_warm: Cell<F>,
     ) -> Self {
-        let tx_refund_new = select::expr(
-            is_warm.expr(),
-            GasCost::WARM_STORAGE_READ_COST.expr(),
-            GasCost::COLD_SLOAD_COST.expr(),
-        );
+        let tx_refund_new = tx_refund_old.expr();
 
         Self {
             value,
