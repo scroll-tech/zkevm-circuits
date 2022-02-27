@@ -203,6 +203,7 @@ pub(crate) struct SstoreGasGadget<F> {
     is_warm: Cell<F>,
     gas_cost: Expression<F>,
     value_eq_prev: IsEqualGadget<F>,
+    original_eq_prev: IsEqualGadget<F>,
 }
 
 // TODO:
@@ -215,7 +216,13 @@ impl<F: Field> SstoreGasGadget<F> {
         is_warm: Cell<F>,
     ) -> Self {
         let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
-        let warm_case_gas = select::expr(value_eq_prev.expr(), GasCost::SLOAD_GAS.expr(), 0.expr());
+        let original_eq_prev =
+            IsEqualGadget::construct(cb, committed_value.expr(), value_prev.expr());
+        let warm_case_gas = select::expr(
+            value_eq_prev.expr(),
+            GasCost::SLOAD_GAS.expr(),
+            select::expr(original_eq_prev.expr(), 0.expr(), GasCost::SLOAD_GAS.expr()),
+        );
         let gas_cost = select::expr(
             is_warm.expr(),
             warm_case_gas.expr(),
@@ -229,6 +236,7 @@ impl<F: Field> SstoreGasGadget<F> {
             is_warm,
             gas_cost,
             value_eq_prev,
+            original_eq_prev,
         }
     }
 
@@ -259,6 +267,12 @@ impl<F: Field> SstoreGasGadget<F> {
             region,
             offset,
             Word::random_linear_combine(value.to_le_bytes(), randomness),
+            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
+        )?;
+        self.original_eq_prev.assign(
+            region,
+            offset,
+            Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
             Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
         )?;
         Ok(())
@@ -331,8 +345,10 @@ mod test {
     ) -> u64 {
         let warm_case_gas = if value_prev == value {
             GasCost::SLOAD_GAS.as_u64()
-        } else {
+        } else if committed_value == value_prev {
             0
+        } else {
+            GasCost::SLOAD_GAS.as_u64()
         };
         if is_warm {
             return warm_case_gas;
@@ -597,6 +613,7 @@ mod test {
     #[test]
     fn sstore_gadget_warm() {
         // persist cases
+        // value_prev == value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -606,6 +623,7 @@ mod test {
             true,
             true,
         );
+        // value_prev != value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -617,6 +635,7 @@ mod test {
         );
 
         // revert cases
+        // value_prev == value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -626,6 +645,7 @@ mod test {
             true,
             false,
         );
+        // value_prev != value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -640,6 +660,7 @@ mod test {
     #[test]
     fn sstore_gadget_cold() {
         // persist cases
+        // value_prev == value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -649,6 +670,7 @@ mod test {
             false,
             true,
         );
+        // value_prev != value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -660,6 +682,7 @@ mod test {
         );
 
         // revert cases
+        // value_prev == value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -669,6 +692,7 @@ mod test {
             false,
             false,
         );
+        // value_prev != value
         test_ok(
             mock_tx(),
             0x030201.into(),
