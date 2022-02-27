@@ -194,7 +194,6 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
     }
 }
 
-// TODO:
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreGasGadget<F> {
     value: Word<F>,
@@ -207,7 +206,6 @@ pub(crate) struct SstoreGasGadget<F> {
     original_is_zero: IsZeroGadget<F>,
 }
 
-// TODO:
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
@@ -360,20 +358,20 @@ mod test {
         is_warm: bool,
     ) -> u64 {
         let warm_case_gas = if value_prev == value {
-            GasCost::SLOAD_GAS.as_u64()
+            GasCost::SLOAD_GAS
         } else if committed_value == value_prev {
             if committed_value == Word::from(0) {
-                GasCost::SSTORE_SET_GAS.as_u64()
+                GasCost::SSTORE_SET_GAS
             } else {
-                GasCost::SSTORE_RESET_GAS.as_u64()
+                GasCost::SSTORE_RESET_GAS
             }
         } else {
-            GasCost::SLOAD_GAS.as_u64()
+            GasCost::SLOAD_GAS
         };
         if is_warm {
-            warm_case_gas
+            warm_case_gas.as_u64()
         } else {
-            warm_case_gas + GasCost::COLD_SLOAD_COST.as_u64()
+            warm_case_gas.as_u64() + GasCost::COLD_SLOAD_COST.as_u64()
         }
     }
 
