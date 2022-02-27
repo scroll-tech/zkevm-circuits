@@ -223,7 +223,15 @@ impl<F: Field> SstoreGasGadget<F> {
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
             GasCost::SLOAD_GAS.expr(),
-            select::expr(original_eq_prev.expr(), 0.expr(), GasCost::SLOAD_GAS.expr()),
+            select::expr(
+                original_eq_prev.expr(),
+                select::expr(
+                    original_is_zero.expr(),
+                    GasCost::SSTORE_SET_GAS.expr(),
+                    GasCost::SSTORE_RESET_GAS.expr(),
+                ),
+                GasCost::SLOAD_GAS.expr(),
+            ),
         );
         let gas_cost = select::expr(
             is_warm.expr(),
