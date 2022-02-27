@@ -9,8 +9,8 @@ use crate::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            select, Cell, Word,
             math_gadget::IsEqualGadget,
+            select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -180,8 +180,15 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.tx_refund_prev
             .assign(region, offset, Some(tx_refund_prev.to_le_bytes()))?;
 
-        self.gas_cost
-            .assign(region, offset, value, value_prev, committed_value, is_warm)?;
+        self.gas_cost.assign(
+            region,
+            offset,
+            value,
+            value_prev,
+            committed_value,
+            is_warm,
+            block.randomness,
+        )?;
 
         Ok(())
     }
@@ -238,6 +245,7 @@ impl<F: Field> SstoreGasGadget<F> {
         value_prev: eth_types::Word,
         committed_value: eth_types::Word,
         is_warm: bool,
+        randomness: F,
     ) -> Result<(), Error> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
@@ -250,8 +258,8 @@ impl<F: Field> SstoreGasGadget<F> {
         self.value_eq_prev.assign(
             region,
             offset,
-            value.to_le_bytes(),
-            value_prev.to_le_bytes(),
+            Word::random_linear_combine(value.to_le_bytes(), randomness),
+            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
         )?;
         Ok(())
     }
@@ -322,7 +330,7 @@ mod test {
         is_warm: bool,
     ) -> u64 {
         let warm_case_gas = if value_prev == value {
-            GasCost::SLOAD_GAS.as_u64();
+            GasCost::SLOAD_GAS.as_u64()
         } else {
             0
         };
