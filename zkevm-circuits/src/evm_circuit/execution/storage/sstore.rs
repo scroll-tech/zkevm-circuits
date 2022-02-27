@@ -375,6 +375,16 @@ mod test {
         }
     }
 
+    fn calc_expected_tx_refund(
+        old_tx_refund: u64,
+        value: Word,
+        value_prev: Word,
+        committed_value: Word,
+        is_warm: bool,
+    ) -> u64 {
+        old_tx_refund
+    }
+
     fn test_ok(
         tx: eth_types::Transaction,
         key: Word,
@@ -385,6 +395,9 @@ mod test {
         result: bool,
     ) {
         let gas = calc_expected_gas_cost(value, value_prev, committed_value, is_warm);
+        let old_tx_refund = GasCost::SLOAD_GAS.as_u64();
+        let new_tx_refund =
+            calc_expected_tx_refund(old_tx_refund, value, value_prev, committed_value, is_warm);
         let rw_counter_end_of_reversion = if result { 0 } else { 14 };
 
         let call_data_gas_cost = tx
@@ -558,8 +571,8 @@ mod test {
                                 rw_counter: 9,
                                 is_write: true,
                                 tx_id: 1usize,
-                                value: Word::from(0), // TODO:
-                                value_prev: Word::from(998),
+                                value: Word::from(old_tx_refund),
+                                value_prev: Word::from(new_tx_refund),
                             }],
                             if result {
                                 vec![]
@@ -568,8 +581,8 @@ mod test {
                                     rw_counter: rw_counter_end_of_reversion - 2,
                                     is_write: true,
                                     tx_id: 1usize,
-                                    value: Word::from(998),
-                                    value_prev: Word::from(0), // TODO:
+                                    value: Word::from(new_tx_refund),
+                                    value_prev: Word::from(old_tx_refund),
                                 }]
                             },
                         ]
