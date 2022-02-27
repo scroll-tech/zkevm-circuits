@@ -422,6 +422,32 @@ mod test {
     ) -> u64 {
         let mut tx_refund_new = tx_refund_old;
 
+        if value_prev != value {
+            if committed_value == value_prev {
+                if (committed_value != Word::from(0)) && (value == Word::from(0)) {
+                    tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
+                }
+            } else {
+                if committed_value != Word::from(0) {
+                    if committed_value == Word::from(0) {
+                        tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+                    }
+                    if committed_value == Word::from(0) {
+                        tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+                    }
+                }
+                if committed_value == value {
+                    if committed_value == Word::from(0) {
+                        tx_refund_new = tx_refund_new + GasCost::SSTORE_SET_GAS.as_u64()
+                            - GasCost::SLOAD_GAS.as_u64();
+                    } else {
+                        tx_refund_new = tx_refund_new + GasCost::SSTORE_RESET_GAS.as_u64()
+                            - GasCost::SLOAD_GAS.as_u64();
+                    }
+                }
+            }
+        }
+
         tx_refund_new
     }
 
