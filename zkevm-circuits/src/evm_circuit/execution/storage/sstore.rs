@@ -195,9 +195,9 @@ pub(crate) struct SstoreGasGadget<F> {
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
         _cb: &mut ConstraintBuilder<F>,
-        _value: Expression<F>,
-        _value_prev: Expression<F>,
-        _committed_value: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        committed_value: Expression<F>,
         is_warm: Expression<F>,
     ) -> Self {
         let gas_cost = select::expr(
@@ -207,9 +207,9 @@ impl<F: Field> SstoreGasGadget<F> {
         );
 
         Self {
-            value: _value,
-            value_prev: _value_prev,
-            committed_value: _committed_value,
+            value,
+            value_prev,
+            committed_value,
             is_warm,
             gas_cost,
         }
@@ -236,9 +236,9 @@ pub(crate) struct SstoreTxRefundGadget<F> {
 impl<F: Field> SstoreTxRefundGadget<F> {
     pub(crate) fn construct(
         _cb: &mut ConstraintBuilder<F>,
-        _value: Expression<F>,
-        _value_prev: Expression<F>,
-        _committed_value: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        committed_value: Expression<F>,
         tx_refund_old: Expression<F>,
         is_warm: Expression<F>,
     ) -> Self {
@@ -249,9 +249,9 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         );
 
         Self {
-            value: _value,
-            value_prev: _value_prev,
-            committed_value: _committed_value,
+            value,
+            value_prev,
+            committed_value,
             is_warm,
             tx_refund_old,
             tx_refund_new,
