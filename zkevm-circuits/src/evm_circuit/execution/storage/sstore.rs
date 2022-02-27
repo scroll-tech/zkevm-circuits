@@ -321,11 +321,13 @@ pub(crate) struct SstoreTxRefundGadget<F> {
     committed_value: Word<F>,
     is_warm: Cell<F>,
     tx_refund_new: Expression<F>,
+    value_prev_is_zero: IsZeroGadget<F>,
+    value_is_zero: IsZeroGadget<F>,
 }
 
 impl<F: Field> SstoreTxRefundGadget<F> {
     pub(crate) fn construct(
-        _cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F>,
         tx_refund_old: Word<F>,
         value: Word<F>,
         value_prev: Word<F>,
@@ -334,6 +336,19 @@ impl<F: Field> SstoreTxRefundGadget<F> {
     ) -> Self {
         let tx_refund_new = tx_refund_old.expr();
 
+        let value_prev_is_zero = IsZeroGadget::construct(cb, value_prev.expr());
+        let value_is_zero = IsZeroGadget::construct(cb, value.expr());
+
+        let nz_allne_case_refund = select::expr(
+            value_prev_is_zero.expr(),
+            tx_refund_old.expr() - GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+            select::expr(
+                value_is_zero.expr(),
+                tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+                tx_refund_old.expr(),
+            ),
+        );
+
         Self {
             value,
             value_prev,
@@ -341,6 +356,8 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             is_warm,
             tx_refund_old,
             tx_refund_new,
+            value_prev_is_zero,
+            value_is_zero,
         }
     }
 
@@ -371,6 +388,16 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             .assign(region, offset, Some(committed_value.to_le_bytes()))?;
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
+        self.value_prev_is_zero.assign(
+            region,
+            offset,
+            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
+        )?;
+        self.value_is_zero.assign(
+            region,
+            offset,
+            Word::random_linear_combine(value.to_le_bytes(), randomness),
+        )?;
         Ok(())
     }
 }
