@@ -9,7 +9,7 @@ use crate::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::IsEqualGadget,
+            math_gadget::{IsEqualGadget, IsZeroGadget},
             select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -204,6 +204,7 @@ pub(crate) struct SstoreGasGadget<F> {
     gas_cost: Expression<F>,
     value_eq_prev: IsEqualGadget<F>,
     original_eq_prev: IsEqualGadget<F>,
+    original_is_zero: IsZeroGadget<F>,
 }
 
 // TODO:
@@ -218,6 +219,7 @@ impl<F: Field> SstoreGasGadget<F> {
         let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
         let original_eq_prev =
             IsEqualGadget::construct(cb, committed_value.expr(), value_prev.expr());
+        let original_is_zero = IsZeroGadget::construct(cb, committed_value.expr());
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
             GasCost::SLOAD_GAS.expr(),
@@ -237,6 +239,7 @@ impl<F: Field> SstoreGasGadget<F> {
             gas_cost,
             value_eq_prev,
             original_eq_prev,
+            original_is_zero,
         }
     }
 
@@ -274,6 +277,11 @@ impl<F: Field> SstoreGasGadget<F> {
             offset,
             Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
             Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
+        )?;
+        self.original_is_zero.assign(
+            region,
+            offset,
+            Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
         )?;
         Ok(())
     }
@@ -346,7 +354,11 @@ mod test {
         let warm_case_gas = if value_prev == value {
             GasCost::SLOAD_GAS.as_u64()
         } else if committed_value == value_prev {
-            0
+            if committed_value == Word::from(0) {
+                GasCost::SSTORE_SET_GAS.as_u64()
+            } else {
+                GasCost::SSTORE_RESET_GAS.as_u64()
+            }
         } else {
             GasCost::SLOAD_GAS.as_u64()
         };
@@ -623,6 +635,16 @@ mod test {
             true,
             true,
         );
+        // value_prev != value, original_value == value_prev
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060505.into(),
+            true,
+            true,
+        );
         // value_prev != value, original_value != value_prev
         test_ok(
             mock_tx(),
@@ -642,6 +664,16 @@ mod test {
             0x060504.into(),
             0x060504.into(),
             0x060504.into(),
+            true,
+            false,
+        );
+        // value_prev != value, original_value == value_prev
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060505.into(),
             true,
             false,
         );
@@ -670,6 +702,16 @@ mod test {
             false,
             true,
         );
+        // value_prev != value, original_value == value_prev
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060505.into(),
+            false,
+            true,
+        );
         // value_prev != value, original_value != value_prev
         test_ok(
             mock_tx(),
@@ -689,6 +731,16 @@ mod test {
             0x060504.into(),
             0x060504.into(),
             0x060504.into(),
+            false,
+            false,
+        );
+        // value_prev != value, original_value == value_prev
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060505.into(),
             false,
             false,
         );
