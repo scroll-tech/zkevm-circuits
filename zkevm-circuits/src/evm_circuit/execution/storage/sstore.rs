@@ -297,11 +297,11 @@ impl<F: Field> SstoreGasGadget<F> {
 // TODO:
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreTxRefundGadget<F> {
-    value: Expression<F>,
-    value_prev: Expression<F>,
-    committed_value: Expression<F>,
-    is_warm: Expression<F>,
-    tx_refund_old: Expression<F>,
+    tx_refund_old: Cell<F>,
+    value: Word<F>,
+    value_prev: Word<F>,
+    committed_value: Word<F>,
+    is_warm: Cell<F>,
     tx_refund_new: Expression<F>,
 }
 
@@ -309,11 +309,11 @@ pub(crate) struct SstoreTxRefundGadget<F> {
 impl<F: Field> SstoreTxRefundGadget<F> {
     pub(crate) fn construct(
         _cb: &mut ConstraintBuilder<F>,
-        value: Expression<F>,
-        value_prev: Expression<F>,
-        committed_value: Expression<F>,
-        tx_refund_old: Expression<F>,
-        is_warm: Expression<F>,
+        tx_refund_old: Cell<F>,
+        value: Word<F>,
+        value_prev: Word<F>,
+        committed_value: Word<F>,
+        is_warm: Cell<F>,
     ) -> Self {
         let tx_refund_new = select::expr(
             is_warm.expr(),
@@ -334,6 +334,31 @@ impl<F: Field> SstoreTxRefundGadget<F> {
     pub(crate) fn expr(&self) -> Expression<F> {
         // Return the new tx_refund
         self.tx_refund_new.clone()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        tx_refund_old: u64,
+        value: eth_types::Word,
+        value_prev: eth_types::Word,
+        committed_value: eth_types::Word,
+        is_warm: bool,
+        randomness: F,
+    ) -> Result<(), Error> {
+        self.tx_refund_old
+            .assign(region, offset, Some(F::from(tx_refund_old as u64)))?;
+        self.value
+            .assign(region, offset, Some(value.to_le_bytes()))?;
+        self.value_prev
+            .assign(region, offset, Some(value_prev.to_le_bytes()))?;
+        self.committed_value
+            .assign(region, offset, Some(committed_value.to_le_bytes()))?;
+        self.is_warm
+            .assign(region, offset, Some(F::from(is_warm as u64)))?;
+        Ok(())
     }
 }
 
