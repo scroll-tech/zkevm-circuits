@@ -325,6 +325,8 @@ pub(crate) struct SstoreTxRefundGadget<F> {
     value_is_zero: IsZeroGadget<F>,
     original_is_zero: IsZeroGadget<F>,
     original_eq_value: IsEqualGadget<F>,
+    prev_eq_value: IsEqualGadget<F>,
+    original_eq_prev: IsEqualGadget<F>,
 }
 
 impl<F: Field> SstoreTxRefundGadget<F> {
@@ -336,12 +338,13 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         committed_value: Word<F>,
         is_warm: Cell<F>,
     ) -> Self {
-        let tx_refund_new = tx_refund_old.expr();
-
         let value_prev_is_zero = IsZeroGadget::construct(cb, value_prev.expr());
         let value_is_zero = IsZeroGadget::construct(cb, value.expr());
         let original_is_zero = IsZeroGadget::construct(cb, committed_value.expr());
         let original_eq_value = IsEqualGadget::construct(cb, committed_value.expr(), value.expr());
+        let prev_eq_value = IsEqualGadget::construct(cb, value_prev.expr(), value.expr());
+        let original_eq_prev = IsEqualGadget::construct(cb, committed_value.expr(), value_prev.expr());
+
         // original_value, value_prev, value all are different; original_value!=0
         let nz_allne_case_refund = select::expr(
             value_prev_is_zero.expr(),
@@ -369,6 +372,19 @@ impl<F: Field> SstoreTxRefundGadget<F> {
                 tx_refund_old.expr(),
             ),
         );
+        let tx_refund_new = select::expr(
+            prev_eq_value.expr(),
+            tx_refund_old.expr(),
+            select::expr(
+                original_eq_prev.expr(),
+                select::expr(
+                    1.expr(), // TODO:
+                    tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr() ,
+                    tx_refund_old.expr(),
+                ),
+                ne_ne_case_refund.expr(),
+            ),
+        );
 
         Self {
             value,
@@ -381,6 +397,8 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             value_is_zero,
             original_is_zero,
             original_eq_value,
+            prev_eq_value,
+            original_eq_prev,
         }
     }
 
@@ -431,6 +449,18 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             offset,
             Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
             Word::random_linear_combine(value.to_le_bytes(), randomness),
+        )?;
+        self.prev_eq_value.assign(
+            region,
+            offset,
+            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
+            Word::random_linear_combine(value.to_le_bytes(), randomness),
+        )?;
+        self.original_eq_prev.assign(
+            region,
+            offset,
+            Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
+            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
         )?;
         Ok(())
     }
