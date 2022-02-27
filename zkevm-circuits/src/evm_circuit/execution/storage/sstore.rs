@@ -429,10 +429,10 @@ mod test {
                 }
             } else {
                 if committed_value != Word::from(0) {
-                    if committed_value == Word::from(0) {
+                    if value_prev == Word::from(0) {
                         tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
                     }
-                    if committed_value == Word::from(0) {
+                    if value == Word::from(0) {
                         tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
                     }
                 }
