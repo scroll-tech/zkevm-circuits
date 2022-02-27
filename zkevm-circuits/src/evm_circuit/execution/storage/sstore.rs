@@ -357,7 +357,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             nz_allne_case_refund.expr(),
             nz_allne_case_refund.expr()
                 + GasCost::SSTORE_RESET_GAS.expr()
-                + GasCost::SLOAD_GAS.expr(),
+                - GasCost::SLOAD_GAS.expr(),
         );
 
         Self {
