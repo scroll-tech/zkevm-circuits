@@ -629,8 +629,7 @@ mod test {
     }
 
     #[test]
-    fn sstore_gadget_warm() {
-        // persist cases
+    fn sstore_gadget_warm_persist() {
         // value_prev == value
         test_ok(
             mock_tx(),
@@ -671,8 +670,9 @@ mod test {
             true,
             true,
         );
+    }
 
-        // revert cases
+    fn sstore_gadget_warm_revert() {
         // value_prev == value
         test_ok(
             mock_tx(),
@@ -716,8 +716,7 @@ mod test {
     }
 
     #[test]
-    fn sstore_gadget_cold() {
-        // persist cases
+    fn sstore_gadget_cold_persist() {
         // value_prev == value
         test_ok(
             mock_tx(),
@@ -758,8 +757,10 @@ mod test {
             false,
             true,
         );
+    }
 
-        // revert cases
+    #[test]
+    fn sstore_gadget_cold_revert() {
         // value_prev == value
         test_ok(
             mock_tx(),
