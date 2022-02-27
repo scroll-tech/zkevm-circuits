@@ -110,7 +110,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(9.expr()),
             program_counter: Delta(1.expr()),
-            stack_pointer: Delta(-2.expr()),
+            stack_pointer: Delta(-(2.expr())),
             state_write_counter: To(3.expr()),
             ..Default::default()
         };
@@ -248,6 +248,7 @@ impl<F: Field> SstoreGasGadget<F> {
         self.gas_cost.clone()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign(
         &self,
         region: &mut Region<'_, F>,
@@ -336,13 +337,12 @@ mod test {
         param::STACK_CAPACITY,
         step::ExecutionState,
         table::{CallContextFieldTag, RwTableTag},
-        test::{rand_fp, rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
+        test::{rand_fp, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
 
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{address, bytecode, evm_types::GasCost, Address, ToLittleEndian, ToWord, Word};
+    use eth_types::{address, bytecode, evm_types::GasCost, ToWord, Word};
     use std::convert::TryInto;
 
     fn calc_expected_gas_cost(
@@ -363,9 +363,9 @@ mod test {
             GasCost::SLOAD_GAS.as_u64()
         };
         if is_warm {
-            return warm_case_gas;
+            warm_case_gas
         } else {
-            return warm_case_gas + GasCost::COLD_SLOAD_COST.as_u64();
+            warm_case_gas + GasCost::COLD_SLOAD_COST.as_u64()
         }
     }
 
@@ -495,10 +495,10 @@ mod test {
                                 is_write: true,
                                 account_address: tx.to.unwrap(),
                                 storage_key: key,
-                                value: value,
-                                value_prev: value_prev,
+                                value,
+                                value_prev,
                                 tx_id: 1usize,
-                                committed_value: committed_value,
+                                committed_value,
                             }],
                             if result {
                                 vec![]
@@ -511,7 +511,7 @@ mod test {
                                     value: value_prev,
                                     value_prev: value,
                                     tx_id: 1usize,
-                                    committed_value: committed_value,
+                                    committed_value,
                                 }]
                             },
                         ]

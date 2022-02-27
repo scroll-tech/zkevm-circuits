@@ -830,6 +830,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn account_storage_write_with_reversion(
         &mut self,
         account_address: Expression<F>,
