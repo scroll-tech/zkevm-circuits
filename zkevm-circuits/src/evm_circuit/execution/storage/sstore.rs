@@ -606,6 +606,15 @@ mod test {
             true,
             true,
         );
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060504.into(),
+            true,
+            true,
+        );
 
         // revert cases
         test_ok(
@@ -613,6 +622,15 @@ mod test {
             0x030201.into(),
             0x060504.into(),
             0x060504.into(),
+            0x060504.into(),
+            true,
+            false,
+        );
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
             0x060504.into(),
             true,
             false,
@@ -631,6 +649,15 @@ mod test {
             false,
             true,
         );
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060504.into(),
+            false,
+            true,
+        );
 
         // revert cases
         test_ok(
@@ -638,6 +665,15 @@ mod test {
             0x030201.into(),
             0x060504.into(),
             0x060504.into(),
+            0x060504.into(),
+            false,
+            false,
+        );
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
             0x060504.into(),
             false,
             false,
