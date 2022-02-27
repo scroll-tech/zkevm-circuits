@@ -9,6 +9,7 @@ use crate::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
+            math_gadget::{IsEqualGadget, IsZeroGadget},
             select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -35,6 +36,7 @@ pub(crate) struct SstoreGadget<F> {
     committed_value: Word<F>,
     is_warm: Cell<F>,
     tx_refund_prev: Word<F>,
+    gas_cost: SstoreGasGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
@@ -88,10 +90,10 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         let gas_cost = SstoreGasGadget::construct(
             cb,
-            value.expr(),
-            value_prev.expr(),
-            committed_value.expr(),
-            is_warm.expr(),
+            value.clone(),
+            value_prev.clone(),
+            committed_value.clone(),
+            is_warm.clone(),
         );
 
         // TODO: TxRefund
@@ -108,7 +110,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(9.expr()),
             program_counter: Delta(1.expr()),
-            stack_pointer: Delta(-2.expr()),
+            stack_pointer: Delta(-(2.expr())),
             state_write_counter: To(3.expr()),
             ..Default::default()
         };
@@ -128,6 +130,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             committed_value,
             is_warm,
             tx_refund_prev,
+            gas_cost,
         }
     }
 
@@ -177,47 +180,117 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.tx_refund_prev
             .assign(region, offset, Some(tx_refund_prev.to_le_bytes()))?;
 
+        self.gas_cost.assign(
+            region,
+            offset,
+            value,
+            value_prev,
+            committed_value,
+            is_warm,
+            block.randomness,
+        )?;
+
         Ok(())
     }
 }
 
-// TODO:
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreGasGadget<F> {
-    value: Expression<F>,
-    value_prev: Expression<F>,
-    committed_value: Expression<F>,
-    is_warm: Expression<F>,
+    value: Word<F>,
+    value_prev: Word<F>,
+    committed_value: Word<F>,
+    is_warm: Cell<F>,
     gas_cost: Expression<F>,
+    value_eq_prev: IsEqualGadget<F>,
+    original_eq_prev: IsEqualGadget<F>,
+    original_is_zero: IsZeroGadget<F>,
 }
 
-// TODO:
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
-        _cb: &mut ConstraintBuilder<F>,
-        _value: Expression<F>,
-        _value_prev: Expression<F>,
-        _committed_value: Expression<F>,
-        is_warm: Expression<F>,
+        cb: &mut ConstraintBuilder<F>,
+        value: Word<F>,
+        value_prev: Word<F>,
+        committed_value: Word<F>,
+        is_warm: Cell<F>,
     ) -> Self {
+        let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
+        let original_eq_prev =
+            IsEqualGadget::construct(cb, committed_value.expr(), value_prev.expr());
+        let original_is_zero = IsZeroGadget::construct(cb, committed_value.expr());
+        let warm_case_gas = select::expr(
+            value_eq_prev.expr(),
+            GasCost::SLOAD_GAS.expr(),
+            select::expr(
+                original_eq_prev.expr(),
+                select::expr(
+                    original_is_zero.expr(),
+                    GasCost::SSTORE_SET_GAS.expr(),
+                    GasCost::SSTORE_RESET_GAS.expr(),
+                ),
+                GasCost::SLOAD_GAS.expr(),
+            ),
+        );
         let gas_cost = select::expr(
             is_warm.expr(),
-            GasCost::WARM_STORAGE_READ_COST.expr(),
-            GasCost::COLD_SLOAD_COST.expr(),
+            warm_case_gas.expr(),
+            warm_case_gas + GasCost::COLD_SLOAD_COST.expr(),
         );
 
         Self {
-            value: _value,
-            value_prev: _value_prev,
-            committed_value: _committed_value,
+            value,
+            value_prev,
+            committed_value,
             is_warm,
             gas_cost,
+            value_eq_prev,
+            original_eq_prev,
+            original_is_zero,
         }
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
         // Return the gas cost
         self.gas_cost.clone()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        value: eth_types::Word,
+        value_prev: eth_types::Word,
+        committed_value: eth_types::Word,
+        is_warm: bool,
+        randomness: F,
+    ) -> Result<(), Error> {
+        self.value
+            .assign(region, offset, Some(value.to_le_bytes()))?;
+        self.value_prev
+            .assign(region, offset, Some(value_prev.to_le_bytes()))?;
+        self.committed_value
+            .assign(region, offset, Some(committed_value.to_le_bytes()))?;
+        self.is_warm
+            .assign(region, offset, Some(F::from(is_warm as u64)))?;
+        self.value_eq_prev.assign(
+            region,
+            offset,
+            Word::random_linear_combine(value.to_le_bytes(), randomness),
+            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
+        )?;
+        self.original_eq_prev.assign(
+            region,
+            offset,
+            Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
+            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
+        )?;
+        self.original_is_zero.assign(
+            region,
+            offset,
+            Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
+        )?;
+        Ok(())
     }
 }
 
@@ -236,9 +309,9 @@ pub(crate) struct SstoreTxRefundGadget<F> {
 impl<F: Field> SstoreTxRefundGadget<F> {
     pub(crate) fn construct(
         _cb: &mut ConstraintBuilder<F>,
-        _value: Expression<F>,
-        _value_prev: Expression<F>,
-        _committed_value: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        committed_value: Expression<F>,
         tx_refund_old: Expression<F>,
         is_warm: Expression<F>,
     ) -> Self {
@@ -249,9 +322,9 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         );
 
         Self {
-            value: _value,
-            value_prev: _value_prev,
-            committed_value: _committed_value,
+            value,
+            value_prev,
+            committed_value,
             is_warm,
             tx_refund_old,
             tx_refund_new,
@@ -270,13 +343,12 @@ mod test {
         param::STACK_CAPACITY,
         step::ExecutionState,
         table::{CallContextFieldTag, RwTableTag},
-        test::{rand_fp, rand_word, run_test_circuit_incomplete_fixed_table},
-        util::RandomLinearCombination,
+        test::{rand_fp, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
 
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{address, bytecode, evm_types::GasCost, Address, ToLittleEndian, ToWord, Word};
+    use eth_types::{address, bytecode, evm_types::GasCost, ToWord, Word};
     use std::convert::TryInto;
 
     fn calc_expected_gas_cost(
@@ -285,10 +357,21 @@ mod test {
         committed_value: Word,
         is_warm: bool,
     ) -> u64 {
-        if is_warm {
-            return GasCost::WARM_STORAGE_READ_COST.as_u64();
+        let warm_case_gas = if value_prev == value {
+            GasCost::SLOAD_GAS
+        } else if committed_value == value_prev {
+            if committed_value == Word::from(0) {
+                GasCost::SSTORE_SET_GAS
+            } else {
+                GasCost::SSTORE_RESET_GAS
+            }
         } else {
-            return GasCost::COLD_SLOAD_COST.as_u64();
+            GasCost::SLOAD_GAS
+        };
+        if is_warm {
+            warm_case_gas.as_u64()
+        } else {
+            warm_case_gas.as_u64() + GasCost::COLD_SLOAD_COST.as_u64()
         }
     }
 
@@ -418,10 +501,10 @@ mod test {
                                 is_write: true,
                                 account_address: tx.to.unwrap(),
                                 storage_key: key,
-                                value: value,
-                                value_prev: value_prev,
+                                value,
+                                value_prev,
                                 tx_id: 1usize,
-                                committed_value: committed_value,
+                                committed_value,
                             }],
                             if result {
                                 vec![]
@@ -434,7 +517,7 @@ mod test {
                                     value: value_prev,
                                     value_prev: value,
                                     tx_id: 1usize,
-                                    committed_value: committed_value,
+                                    committed_value,
                                 }]
                             },
                         ]
@@ -548,6 +631,7 @@ mod test {
     #[test]
     fn sstore_gadget_warm() {
         // persist cases
+        // value_prev == value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -557,13 +641,74 @@ mod test {
             true,
             true,
         );
+        // value_prev != value, original_value == value_prev, original_value != 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060505.into(),
+            true,
+            true,
+        );
+        // value_prev != value, original_value == value_prev, original_value == 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0.into(),
+            0.into(),
+            true,
+            true,
+        );
+        // value_prev != value, original_value != value_prev
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060504.into(),
+            true,
+            true,
+        );
 
         // revert cases
+        // value_prev == value
         test_ok(
             mock_tx(),
             0x030201.into(),
             0x060504.into(),
             0x060504.into(),
+            0x060504.into(),
+            true,
+            false,
+        );
+        // value_prev != value, original_value == value_prev, original_value != 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060505.into(),
+            true,
+            false,
+        );
+        // value_prev != value, original_value == value_prev, original_value == 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0.into(),
+            0.into(),
+            true,
+            false,
+        );
+        // value_prev != value, original_value != value_prev
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
             0x060504.into(),
             true,
             false,
@@ -573,6 +718,7 @@ mod test {
     #[test]
     fn sstore_gadget_cold() {
         // persist cases
+        // value_prev == value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -582,13 +728,74 @@ mod test {
             false,
             true,
         );
+        // value_prev != value, original_value == value_prev, original_value != 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060505.into(),
+            false,
+            true,
+        );
+        // value_prev != value, original_value == value_prev, original_value == 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0.into(),
+            0.into(),
+            false,
+            true,
+        );
+        // value_prev != value, original_value != value_prev
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060504.into(),
+            false,
+            true,
+        );
 
         // revert cases
+        // value_prev == value
         test_ok(
             mock_tx(),
             0x030201.into(),
             0x060504.into(),
             0x060504.into(),
+            0x060504.into(),
+            false,
+            false,
+        );
+        // value_prev != value, original_value == value_prev, original_value != 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060505.into(),
+            false,
+            false,
+        );
+        // value_prev != value, original_value == value_prev, original_value == 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0.into(),
+            0.into(),
+            false,
+            false,
+        );
+        // value_prev != value, original_value != value_prev
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
             0x060504.into(),
             false,
             false,
