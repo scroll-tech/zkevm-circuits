@@ -643,13 +643,23 @@ mod test {
             true,
             true,
         );
-        // value_prev != value, original_value == value_prev
+        // value_prev != value, original_value == value_prev, original_value != 0
         test_ok(
             mock_tx(),
             0x030201.into(),
             0x060504.into(),
             0x060505.into(),
             0x060505.into(),
+            true,
+            true,
+        );
+        // value_prev != value, original_value == value_prev, original_value == 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0.into(),
+            0.into(),
             true,
             true,
         );
@@ -675,13 +685,23 @@ mod test {
             true,
             false,
         );
-        // value_prev != value, original_value == value_prev
+        // value_prev != value, original_value == value_prev, original_value != 0
         test_ok(
             mock_tx(),
             0x030201.into(),
             0x060504.into(),
             0x060505.into(),
             0x060505.into(),
+            true,
+            false,
+        );
+        // value_prev != value, original_value == value_prev, original_value == 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0.into(),
+            0.into(),
             true,
             false,
         );
@@ -710,13 +730,23 @@ mod test {
             false,
             true,
         );
-        // value_prev != value, original_value == value_prev
+        // value_prev != value, original_value == value_prev, original_value != 0
         test_ok(
             mock_tx(),
             0x030201.into(),
             0x060504.into(),
             0x060505.into(),
             0x060505.into(),
+            false,
+            true,
+        );
+        // value_prev != value, original_value == value_prev, original_value == 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0.into(),
+            0.into(),
             false,
             true,
         );
@@ -742,13 +772,23 @@ mod test {
             false,
             false,
         );
-        // value_prev != value, original_value == value_prev
+        // value_prev != value, original_value == value_prev, original_value != 0
         test_ok(
             mock_tx(),
             0x030201.into(),
             0x060504.into(),
             0x060505.into(),
             0x060505.into(),
+            false,
+            false,
+        );
+        // value_prev != value, original_value == value_prev, original_value == 0
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0.into(),
+            0.into(),
             false,
             false,
         );
