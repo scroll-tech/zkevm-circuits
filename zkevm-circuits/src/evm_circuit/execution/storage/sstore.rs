@@ -10,6 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             select, Cell, Word,
+            math_gadget::IsEqualGadget,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -179,7 +180,8 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.tx_refund_prev
             .assign(region, offset, Some(tx_refund_prev.to_le_bytes()))?;
 
-        self.gas_cost.assign(region, offset, value, value_prev, committed_value, is_warm)?;
+        self.gas_cost
+            .assign(region, offset, value, value_prev, committed_value, is_warm)?;
 
         Ok(())
     }
@@ -193,18 +195,20 @@ pub(crate) struct SstoreGasGadget<F> {
     committed_value: Word<F>,
     is_warm: Cell<F>,
     gas_cost: Expression<F>,
+    value_eq_prev: IsEqualGadget<F>,
 }
 
 // TODO:
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
-        _cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F>,
         value: Word<F>,
         value_prev: Word<F>,
         committed_value: Word<F>,
         is_warm: Cell<F>,
     ) -> Self {
-        let warm_case_gas = GasCost::WARM_STORAGE_READ_COST.expr();
+        let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
+        let warm_case_gas = select::expr(value_eq_prev.expr(), GasCost::SLOAD_GAS.expr(), 0.expr());
         let gas_cost = select::expr(
             is_warm.expr(),
             warm_case_gas.expr(),
@@ -217,6 +221,7 @@ impl<F: Field> SstoreGasGadget<F> {
             committed_value,
             is_warm,
             gas_cost,
+            value_eq_prev,
         }
     }
 
@@ -224,7 +229,7 @@ impl<F: Field> SstoreGasGadget<F> {
         // Return the gas cost
         self.gas_cost.clone()
     }
-    
+
     pub(crate) fn assign(
         &self,
         region: &mut Region<'_, F>,
@@ -242,6 +247,12 @@ impl<F: Field> SstoreGasGadget<F> {
             .assign(region, offset, Some(committed_value.to_le_bytes()))?;
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
+        self.value_eq_prev.assign(
+            region,
+            offset,
+            value.to_le_bytes(),
+            value_prev.to_le_bytes(),
+        )?;
         Ok(())
     }
 }
@@ -310,7 +321,11 @@ mod test {
         committed_value: Word,
         is_warm: bool,
     ) -> u64 {
-        let warm_case_gas = GasCost::WARM_STORAGE_READ_COST.as_u64();
+        let warm_case_gas = if value_prev == value {
+            GasCost::SLOAD_GAS.as_u64();
+        } else {
+            0
+        };
         if is_warm {
             return warm_case_gas;
         } else {
