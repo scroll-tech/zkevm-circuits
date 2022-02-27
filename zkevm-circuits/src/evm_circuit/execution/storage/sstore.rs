@@ -376,13 +376,13 @@ mod test {
     }
 
     fn calc_expected_tx_refund(
-        old_tx_refund: u64,
+        tx_refund_old: u64,
         value: Word,
         value_prev: Word,
         committed_value: Word,
         is_warm: bool,
     ) -> u64 {
-        old_tx_refund
+        tx_refund_old
     }
 
     fn test_ok(
@@ -395,9 +395,9 @@ mod test {
         result: bool,
     ) {
         let gas = calc_expected_gas_cost(value, value_prev, committed_value, is_warm);
-        let old_tx_refund = GasCost::SLOAD_GAS.as_u64();
-        let new_tx_refund =
-            calc_expected_tx_refund(old_tx_refund, value, value_prev, committed_value, is_warm);
+        let tx_refund_old = GasCost::SLOAD_GAS.as_u64();
+        let tx_refund_new =
+            calc_expected_tx_refund(tx_refund_old, value, value_prev, committed_value, is_warm);
         let rw_counter_end_of_reversion = if result { 0 } else { 14 };
 
         let call_data_gas_cost = tx
@@ -571,8 +571,8 @@ mod test {
                                 rw_counter: 9,
                                 is_write: true,
                                 tx_id: 1usize,
-                                value: Word::from(old_tx_refund),
-                                value_prev: Word::from(new_tx_refund),
+                                value: Word::from(tx_refund_old),
+                                value_prev: Word::from(tx_refund_new),
                             }],
                             if result {
                                 vec![]
@@ -581,8 +581,8 @@ mod test {
                                     rw_counter: rw_counter_end_of_reversion - 2,
                                     is_write: true,
                                     tx_id: 1usize,
-                                    value: Word::from(new_tx_refund),
-                                    value_prev: Word::from(old_tx_refund),
+                                    value: Word::from(tx_refund_new),
+                                    value_prev: Word::from(tx_refund_old),
                                 }]
                             },
                         ]
