@@ -343,7 +343,8 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         let original_is_zero = IsZeroGadget::construct(cb, committed_value.expr());
         let original_eq_value = IsEqualGadget::construct(cb, committed_value.expr(), value.expr());
         let prev_eq_value = IsEqualGadget::construct(cb, value_prev.expr(), value.expr());
-        let original_eq_prev = IsEqualGadget::construct(cb, committed_value.expr(), value_prev.expr());
+        let original_eq_prev =
+            IsEqualGadget::construct(cb, committed_value.expr(), value_prev.expr());
 
         // original_value, value_prev, value all are different; original_value!=0
         let nz_allne_case_refund = select::expr(
@@ -379,7 +380,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
                 original_eq_prev.expr(),
                 select::expr(
                     not::expr(original_is_zero.expr()) * value_is_zero.expr(),
-                    tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr() ,
+                    tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
                     tx_refund_old.expr(),
                 ),
                 ne_ne_case_refund.expr(),
