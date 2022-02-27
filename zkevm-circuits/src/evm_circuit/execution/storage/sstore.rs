@@ -378,7 +378,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             select::expr(
                 original_eq_prev.expr(),
                 select::expr(
-                    1.expr(), // TODO:
+                    not::expr(original_is_zero.expr()) * value_is_zero.expr(),
                     tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr() ,
                     tx_refund_old.expr(),
                 ),
