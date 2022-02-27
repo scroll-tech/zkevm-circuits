@@ -204,10 +204,11 @@ impl<F: Field> SstoreGasGadget<F> {
         committed_value: Word<F>,
         is_warm: Cell<F>,
     ) -> Self {
+        let warm_case_gas = GasCost::WARM_STORAGE_READ_COST.expr();
         let gas_cost = select::expr(
             is_warm.expr(),
-            GasCost::WARM_STORAGE_READ_COST.expr(),
-            GasCost::COLD_SLOAD_COST.expr(),
+            warm_case_gas.expr(),
+            warm_case_gas + GasCost::COLD_SLOAD_COST.expr(),
         );
 
         Self {
@@ -309,10 +310,11 @@ mod test {
         committed_value: Word,
         is_warm: bool,
     ) -> u64 {
+        let warm_case_gas = GasCost::WARM_STORAGE_READ_COST.as_u64();
         if is_warm {
-            return GasCost::WARM_STORAGE_READ_COST.as_u64();
+            return warm_case_gas;
         } else {
-            return GasCost::COLD_SLOAD_COST.as_u64();
+            return warm_case_gas + GasCost::COLD_SLOAD_COST.as_u64();
         }
     }
 
