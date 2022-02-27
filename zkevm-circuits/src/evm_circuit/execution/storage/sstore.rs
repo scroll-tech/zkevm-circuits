@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            select, Cell, Word, not,
+            not, select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -323,6 +323,7 @@ pub(crate) struct SstoreTxRefundGadget<F> {
     tx_refund_new: Expression<F>,
     value_prev_is_zero: IsZeroGadget<F>,
     value_is_zero: IsZeroGadget<F>,
+    original_is_zero: IsZeroGadget<F>,
     original_eq_value: IsEqualGadget<F>,
 }
 
@@ -339,7 +340,8 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
         let value_prev_is_zero = IsZeroGadget::construct(cb, value_prev.expr());
         let value_is_zero = IsZeroGadget::construct(cb, value.expr());
-
+        let original_is_zero = IsZeroGadget::construct(cb, committed_value.expr());
+        let original_eq_value = IsEqualGadget::construct(cb, committed_value.expr(), value.expr());
         // original_value, value_prev, value all are different; original_value!=0
         let nz_allne_case_refund = select::expr(
             value_prev_is_zero.expr(),
@@ -351,13 +353,21 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             ),
         );
         // original_value!=value_prev, value_prev!=value, original_value!=0
-        let original_eq_value = IsEqualGadget::construct(cb, committed_value.expr(), value.expr());
         let nz_ne_ne_case_refund = select::expr(
             not::expr(original_eq_value.expr()),
             nz_allne_case_refund.expr(),
-            nz_allne_case_refund.expr()
-                + GasCost::SSTORE_RESET_GAS.expr()
+            nz_allne_case_refund.expr() + GasCost::SSTORE_RESET_GAS.expr()
                 - GasCost::SLOAD_GAS.expr(),
+        );
+        // original_value!=value_prev, value_prev!=value
+        let ne_ne_case_refund = select::expr(
+            not::expr(original_is_zero.expr()),
+            nz_ne_ne_case_refund.expr(),
+            select::expr(
+                original_eq_value.expr(),
+                tx_refund_old.expr() + GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr(),
+                tx_refund_old.expr(),
+            ),
         );
 
         Self {
@@ -369,6 +379,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             tx_refund_new,
             value_prev_is_zero,
             value_is_zero,
+            original_is_zero,
             original_eq_value,
         }
     }
@@ -409,6 +420,11 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             region,
             offset,
             Word::random_linear_combine(value.to_le_bytes(), randomness),
+        )?;
+        self.original_is_zero.assign(
+            region,
+            offset,
+            Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
         )?;
         self.original_eq_value.assign(
             region,
