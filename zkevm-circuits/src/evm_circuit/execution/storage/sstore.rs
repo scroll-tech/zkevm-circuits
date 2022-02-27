@@ -361,7 +361,8 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         is_warm: bool,
         randomness: F,
     ) -> Result<(), Error> {
-        self.tx_refund_old.assign(region, offset, Some(tx_refund_old.to_le_bytes()))?;
+        self.tx_refund_old
+            .assign(region, offset, Some(tx_refund_old.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
         self.value_prev
@@ -419,7 +420,9 @@ mod test {
         committed_value: Word,
         is_warm: bool,
     ) -> u64 {
-        tx_refund_old
+        let mut tx_refund_new = tx_refund_old;
+
+        tx_refund_new
     }
 
     fn test_ok(
