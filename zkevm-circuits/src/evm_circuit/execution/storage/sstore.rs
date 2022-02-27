@@ -438,11 +438,11 @@ mod test {
                 }
                 if committed_value == value {
                     if committed_value == Word::from(0) {
-                        tx_refund_new = tx_refund_new + GasCost::SSTORE_SET_GAS.as_u64()
-                            - GasCost::SLOAD_GAS.as_u64();
+                        tx_refund_new +=
+                            (GasCost::SSTORE_SET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64());
                     } else {
-                        tx_refund_new = tx_refund_new + GasCost::SSTORE_RESET_GAS.as_u64()
-                            - GasCost::SLOAD_GAS.as_u64();
+                        tx_refund_new +=
+                            (GasCost::SSTORE_RESET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64());
                     }
                 }
             }
