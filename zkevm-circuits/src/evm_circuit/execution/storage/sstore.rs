@@ -35,6 +35,7 @@ pub(crate) struct SstoreGadget<F> {
     committed_value: Word<F>,
     is_warm: Cell<F>,
     tx_refund_prev: Word<F>,
+    gas_cost: SstoreGasGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
@@ -88,10 +89,10 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         let gas_cost = SstoreGasGadget::construct(
             cb,
-            value.expr(),
-            value_prev.expr(),
-            committed_value.expr(),
-            is_warm.expr(),
+            value.clone(),
+            value_prev.clone(),
+            committed_value.clone(),
+            is_warm.clone(),
         );
 
         // TODO: TxRefund
@@ -128,6 +129,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             committed_value,
             is_warm,
             tx_refund_prev,
+            gas_cost,
         }
     }
 
@@ -177,6 +179,8 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.tx_refund_prev
             .assign(region, offset, Some(tx_refund_prev.to_le_bytes()))?;
 
+        self.gas_cost.assign(region, offset, value, value_prev, committed_value, is_warm)?;
+
         Ok(())
     }
 }
@@ -184,10 +188,10 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 // TODO:
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreGasGadget<F> {
-    value: Expression<F>,
-    value_prev: Expression<F>,
-    committed_value: Expression<F>,
-    is_warm: Expression<F>,
+    value: Word<F>,
+    value_prev: Word<F>,
+    committed_value: Word<F>,
+    is_warm: Cell<F>,
     gas_cost: Expression<F>,
 }
 
@@ -195,10 +199,10 @@ pub(crate) struct SstoreGasGadget<F> {
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
         _cb: &mut ConstraintBuilder<F>,
-        value: Expression<F>,
-        value_prev: Expression<F>,
-        committed_value: Expression<F>,
-        is_warm: Expression<F>,
+        value: Word<F>,
+        value_prev: Word<F>,
+        committed_value: Word<F>,
+        is_warm: Cell<F>,
     ) -> Self {
         let gas_cost = select::expr(
             is_warm.expr(),
@@ -218,6 +222,26 @@ impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn expr(&self) -> Expression<F> {
         // Return the gas cost
         self.gas_cost.clone()
+    }
+    
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        value: eth_types::Word,
+        value_prev: eth_types::Word,
+        committed_value: eth_types::Word,
+        is_warm: bool,
+    ) -> Result<(), Error> {
+        self.value
+            .assign(region, offset, Some(value.to_le_bytes()))?;
+        self.value_prev
+            .assign(region, offset, Some(value_prev.to_le_bytes()))?;
+        self.committed_value
+            .assign(region, offset, Some(committed_value.to_le_bytes()))?;
+        self.is_warm
+            .assign(region, offset, Some(F::from(is_warm as u64)))?;
+        Ok(())
     }
 }
 
