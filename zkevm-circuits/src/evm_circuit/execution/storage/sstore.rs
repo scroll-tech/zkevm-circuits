@@ -363,29 +363,32 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             nz_allne_case_refund.expr() + GasCost::SSTORE_RESET_GAS.expr()
                 - GasCost::SLOAD_GAS.expr(),
         );
+        // original_value!=value_prev, value_prev!=value, original_value==0
+        let iz_ne_ne_case_refund = cb.copy(select::expr(
+            original_eq_value.expr(),
+            tx_refund_old.expr() + GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr(),
+            tx_refund_old.expr(),
+        ));
         // original_value!=value_prev, value_prev!=value
         let ne_ne_case_refund = select::expr(
             not::expr(original_is_zero.expr()),
             nz_ne_ne_case_refund.expr(),
-            select::expr(
-                original_eq_value.expr(),
-                tx_refund_old.expr() + GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr(),
-                tx_refund_old.expr(),
-            ),
+            iz_ne_ne_case_refund.expr(),
         );
         let original_eq_prev_ne_value_refund = cb.copy(select::expr(
             not::expr(original_is_zero.expr()) * value_is_zero.expr(),
             tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
             tx_refund_old.expr(),
         ));
+        let prev_ne_value_refund = cb.copy(select::expr(
+            original_eq_prev.expr(),
+            original_eq_prev_ne_value_refund.expr(),
+            ne_ne_case_refund.expr(),
+        ));
         let tx_refund_new = select::expr(
             prev_eq_value.expr(),
             tx_refund_old.expr(),
-            select::expr(
-                original_eq_prev.expr(),
-                original_eq_prev_ne_value_refund.expr(),
-                ne_ne_case_refund.expr(),
-            ),
+            prev_ne_value_refund.expr(),
         );
 
         Self {
