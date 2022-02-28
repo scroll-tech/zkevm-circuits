@@ -660,7 +660,17 @@ mod test {
             true,
             true,
         );
-        // value_prev != value, original_value != value_prev
+        // value_prev != value, original_value != value_prev, value != original_value
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060506.into(),
+            true,
+            true,
+        );
+        // value_prev != value, original_value != value_prev, value == original_value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -703,7 +713,17 @@ mod test {
             true,
             false,
         );
-        // value_prev != value, original_value != value_prev
+        // value_prev != value, original_value != value_prev, value != original_value
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060506.into(),
+            true,
+            false,
+        );
+        // value_prev != value, original_value != value_prev, value == original_value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -747,7 +767,17 @@ mod test {
             false,
             true,
         );
-        // value_prev != value, original_value != value_prev
+        // value_prev != value, original_value != value_prev, value != original_value
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060506.into(),
+            false,
+            true,
+        );
+        // value_prev != value, original_value != value_prev, value == original_value
         test_ok(
             mock_tx(),
             0x030201.into(),
@@ -791,7 +821,17 @@ mod test {
             false,
             false,
         );
-        // value_prev != value, original_value != value_prev
+        // value_prev != value, original_value != value_prev, value != original_value
+        test_ok(
+            mock_tx(),
+            0x030201.into(),
+            0x060504.into(),
+            0x060505.into(),
+            0x060506.into(),
+            false,
+            false,
+        );
+        // value_prev != value, original_value != value_prev, value == original_value
         test_ok(
             mock_tx(),
             0x030201.into(),
