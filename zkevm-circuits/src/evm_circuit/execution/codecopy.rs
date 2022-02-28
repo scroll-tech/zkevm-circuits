@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
-use eth_types::{ToLittleEndian, ToScalar};
-use halo2::{arithmetic::FieldExt, circuit::Region, plonk::Error};
+use eth_types::{Field, ToLittleEndian, ToScalar};
+use halo2_proofs::{circuit::Region, plonk::Error};
 
 use crate::{
     evm_circuit::{
@@ -42,7 +42,7 @@ pub(crate) struct CodeCopyGadget<F> {
     memory_copier_gas: MemoryCopierGasGadget<F>,
 }
 
-impl<F: FieldExt> ExecutionGadget<F> for CodeCopyGadget<F> {
+impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
     const NAME: &'static str = "CODECOPY";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CODECOPY;
@@ -227,7 +227,7 @@ mod tests {
 
     use bus_mapping::evm::OpcodeId;
     use eth_types::{bytecode, Address, ToWord, Word};
-    use halo2::arithmetic::BaseExt;
+    use halo2_proofs::arithmetic::BaseExt;
     use num::Zero;
     use pairing::bn256::Fr;
 
