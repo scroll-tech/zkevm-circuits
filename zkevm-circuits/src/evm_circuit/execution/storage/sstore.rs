@@ -373,16 +373,17 @@ impl<F: Field> SstoreTxRefundGadget<F> {
                 tx_refund_old.expr(),
             ),
         );
+        let original_eq_prev_ne_value_refund = select::expr(
+            not::expr(original_is_zero.expr()) * value_is_zero.expr(),
+            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+            tx_refund_old.expr(),
+        );
         let tx_refund_new = select::expr(
             prev_eq_value.expr(),
             tx_refund_old.expr(),
             select::expr(
                 original_eq_prev.expr(),
-                select::expr(
-                    not::expr(original_is_zero.expr()) * value_is_zero.expr(),
-                    tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-                    tx_refund_old.expr(),
-                ),
+                original_eq_prev_ne_value_refund,
                 ne_ne_case_refund.expr(),
             ),
         );
