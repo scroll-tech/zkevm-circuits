@@ -346,15 +346,18 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         let original_eq_prev =
             IsEqualGadget::construct(cb, committed_value.expr(), value_prev.expr());
 
+        // original_value, value_prev, value all are different; original_value!=0,
+        // value_prev!=0
+        let nz_nz_allne_case_refund = cb.copy(select::expr(
+            value_is_zero.expr(),
+            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+            tx_refund_old.expr(),
+        ));
         // original_value, value_prev, value all are different; original_value!=0
         let nz_allne_case_refund = select::expr(
             value_prev_is_zero.expr(),
             tx_refund_old.expr() - GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-            select::expr(
-                value_is_zero.expr(),
-                tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-                tx_refund_old.expr(),
-            ),
+            nz_nz_allne_case_refund.expr(),
         );
         // original_value!=value_prev, value_prev!=value, original_value!=0
         let nz_ne_ne_case_refund = select::expr(
@@ -375,20 +378,20 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             nz_ne_ne_case_refund.expr(),
             iz_ne_ne_case_refund.expr(),
         );
-        let original_eq_prev_ne_value_refund = cb.copy(select::expr(
+        let original_eq_prev_ne_value_case_refund = cb.copy(select::expr(
             not::expr(original_is_zero.expr()) * value_is_zero.expr(),
             tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
             tx_refund_old.expr(),
         ));
-        let prev_ne_value_refund = cb.copy(select::expr(
+        let prev_ne_value_case_refund = cb.copy(select::expr(
             original_eq_prev.expr(),
-            original_eq_prev_ne_value_refund.expr(),
+            original_eq_prev_ne_value_case_refund.expr(),
             ne_ne_case_refund.expr(),
         ));
         let tx_refund_new = select::expr(
             prev_eq_value.expr(),
             tx_refund_old.expr(),
-            prev_ne_value_refund.expr(),
+            prev_ne_value_case_refund.expr(),
         );
 
         Self {
