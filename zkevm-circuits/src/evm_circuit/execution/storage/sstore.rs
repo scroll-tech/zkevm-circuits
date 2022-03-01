@@ -505,6 +505,24 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             )),
         )?;
 
+        // original_eq_prev_ne_value_case_refund,
+        // prev_ne_value_case_refund,
+
+        let iz_ne_ne_case_refund = if committed_value == value {
+            tx_refund_old + eth_types::Word::from(GasCost::SSTORE_CLEARS_SCHEDULE.as_u64())
+                - eth_types::Word::from(GasCost::SLOAD_GAS.as_u64())
+        } else {
+            tx_refund_old
+        };
+        self.iz_ne_ne_case_refund.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                iz_ne_ne_case_refund.to_le_bytes(),
+                randomness,
+            )),
+        )?;
+
         Ok(())
     }
 }
