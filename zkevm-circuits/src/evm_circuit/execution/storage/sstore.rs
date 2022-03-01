@@ -35,7 +35,7 @@ pub(crate) struct SstoreGadget<F> {
     value_prev: Word<F>,
     committed_value: Word<F>,
     is_warm: Cell<F>,
-    tx_refund_prev: Word<F>,
+    tx_refund_prev: Cell<F>,
     gas_cost: SstoreGasGadget<F>,
     tx_refund: SstoreTxRefundGadget<F>,
 }
@@ -97,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             is_warm.clone(),
         );
 
-        let tx_refund_prev = cb.query_word();
+        let tx_refund_prev = cb.query_cell();
         let tx_refund = SstoreTxRefundGadget::construct(
             cb,
             tx_refund_prev.clone(),
@@ -185,8 +185,14 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 
         let (_, tx_refund_prev) = block.rws[step.rw_indices[8]].tx_refund_value_pair();
-        self.tx_refund_prev
-            .assign(region, offset, Some(tx_refund_prev.to_le_bytes()))?;
+        self.tx_refund_prev.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                tx_refund_prev.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
 
         self.gas_cost.assign(
             region,
@@ -315,7 +321,7 @@ impl<F: Field> SstoreGasGadget<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreTxRefundGadget<F> {
-    tx_refund_old: Word<F>,
+    tx_refund_old: Cell<F>,
     value: Word<F>,
     value_prev: Word<F>,
     committed_value: Word<F>,
@@ -327,12 +333,16 @@ pub(crate) struct SstoreTxRefundGadget<F> {
     original_eq_value: IsEqualGadget<F>,
     prev_eq_value: IsEqualGadget<F>,
     original_eq_prev: IsEqualGadget<F>,
+    nz_nz_allne_case_refund: Cell<F>,
+    iz_ne_ne_case_refund: Cell<F>,
+    original_eq_prev_ne_value_case_refund: Cell<F>,
+    prev_ne_value_case_refund: Cell<F>,
 }
 
 impl<F: Field> SstoreTxRefundGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
-        tx_refund_old: Word<F>,
+        tx_refund_old: Cell<F>,
         value: Word<F>,
         value_prev: Word<F>,
         committed_value: Word<F>,
@@ -407,6 +417,10 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             original_eq_value,
             prev_eq_value,
             original_eq_prev,
+            nz_nz_allne_case_refund,
+            iz_ne_ne_case_refund,
+            original_eq_prev_ne_value_case_refund,
+            prev_ne_value_case_refund,
         }
     }
 
@@ -427,8 +441,14 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         is_warm: bool,
         randomness: F,
     ) -> Result<(), Error> {
-        self.tx_refund_old
-            .assign(region, offset, Some(tx_refund_old.to_le_bytes()))?;
+        self.tx_refund_old.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                tx_refund_old.to_le_bytes(),
+                randomness,
+            )),
+        )?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
         self.value_prev
