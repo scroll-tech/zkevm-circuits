@@ -490,6 +490,21 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
             Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
         )?;
+
+        let nz_nz_allne_case_refund = if value == eth_types::Word::from(0) {
+            tx_refund_old + eth_types::Word::from(GasCost::SSTORE_CLEARS_SCHEDULE.as_u64())
+        } else {
+            tx_refund_old
+        };
+        self.nz_nz_allne_case_refund.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                nz_nz_allne_case_refund.to_le_bytes(),
+                randomness,
+            )),
+        )?;
+
         Ok(())
     }
 }
