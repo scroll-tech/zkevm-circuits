@@ -505,8 +505,18 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             )),
         )?;
 
-        // original_eq_prev_ne_value_case_refund,
-        // prev_ne_value_case_refund,
+        let nz_allne_case_refund = if value_prev == eth_types::Word::from(0) {
+            tx_refund_old - eth_types::Word::from(GasCost::SSTORE_CLEARS_SCHEDULE.as_u64())
+        } else {
+            nz_nz_allne_case_refund
+        };
+
+        let nz_ne_ne_case_refund = if committed_value != value {
+            nz_allne_case_refund
+        } else {
+            nz_allne_case_refund + eth_types::Word::from(GasCost::SSTORE_RESET_GAS.as_u64())
+                - eth_types::Word::from(GasCost::SLOAD_GAS.as_u64())
+        };
 
         let iz_ne_ne_case_refund = if committed_value == value {
             tx_refund_old + eth_types::Word::from(GasCost::SSTORE_CLEARS_SCHEDULE.as_u64())
@@ -523,6 +533,12 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             )),
         )?;
 
+        let ne_ne_case_refund = if committed_value != eth_types::Word::from(0) {
+            nz_ne_ne_case_refund
+        } else {
+            iz_ne_ne_case_refund
+        };
+
         let original_eq_prev_ne_value_case_refund = if (committed_value != eth_types::Word::from(0))
             && (value == eth_types::Word::from(0))
         {
@@ -535,6 +551,20 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             offset,
             Some(Word::random_linear_combine(
                 original_eq_prev_ne_value_case_refund.to_le_bytes(),
+                randomness,
+            )),
+        )?;
+
+        let prev_ne_value_case_refund = if committed_value == value_prev {
+            original_eq_prev_ne_value_case_refund
+        } else {
+            ne_ne_case_refund
+        };
+        self.prev_ne_value_case_refund.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                prev_ne_value_case_refund.to_le_bytes(),
                 randomness,
             )),
         )?;
