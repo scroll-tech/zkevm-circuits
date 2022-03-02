@@ -281,3 +281,12 @@ pub(crate) fn split_u256(value: &U256) -> (U256, U256) {
         U256([value.0[2], value.0[3], 0, 0]),
     )
 }
+
+pub(crate) fn split_u256_limb64(value: &U256) -> [U256; 4] {
+    [
+        U256([value.0[0], 0, 0, 0]),
+        U256([value.0[1], 0, 0, 0]),
+        U256([value.0[2], 0, 0, 0]),
+        U256([value.0[3], 0, 0, 0]),
+    ]
+}
