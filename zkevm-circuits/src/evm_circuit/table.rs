@@ -4,6 +4,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use strum_macros::EnumIter;
 
 pub trait LookupTable<F: FieldExt, const W: usize> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W];
@@ -127,9 +128,10 @@ pub enum BlockContextFieldTag {
     BlockHash,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum RwTableTag {
-    Memory = 2,
+    Start = 1, // mason: fix this to match the order in specs?
+    Memory,
     Stack,
     AccountStorage,
     TxAccessListAccount,

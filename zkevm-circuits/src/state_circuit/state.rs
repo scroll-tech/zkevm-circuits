@@ -3,7 +3,7 @@ use crate::{
         table::RwTableTag,
         util::{
             constraint_builder::BaseConstraintBuilder,
-            math_gadget::generate_lagrange_base_polynomial,
+            math_gadget::{generate_lagrange_base_polynomial, RangeCheckGadget},
         },
         witness::{RwMap, RwRow},
     },
@@ -12,6 +12,7 @@ use crate::{
         monotone::{MonotoneChip, MonotoneConfig},
         Variable,
     },
+    util::Expr,
 };
 use bus_mapping::operation::{MemoryOp, Operation, OperationContainer, StackOp, StorageOp};
 use eth_types::Field;
@@ -20,6 +21,7 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use strum::IntoEnumIterator;
 
 use crate::evm_circuit::witness::Rw;
 use pairing::arithmetic::FieldExt;
@@ -59,6 +61,10 @@ const START_TAG: usize = 1;
 const MEMORY_TAG: usize = RwTableTag::Memory as usize;
 const STACK_TAG: usize = RwTableTag::Stack as usize;
 const STORAGE_TAG: usize = RwTableTag::AccountStorage as usize;
+
+// const MAX_KEY0: u = 10
+// const MAX_KEY1 = 2**16 - 1 // Maximum number of calls in a block
+// const MAX_KEY3 = 2**40 - 1 //   Maximum value for Memory Address
 
 const MAX_DEGREE: usize = 15;
 
@@ -169,6 +175,7 @@ impl<
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
 
         let tag = keys[0];
+        let call_index = keys[1];
         let address = keys[3];
         let account_addr = keys[2];
         let storage_key = keys[4];
@@ -287,8 +294,17 @@ impl<
             cb.condition(s_enable, |cb| {
                 cb.require_boolean("is_write should be boolean", is_write.clone())
             });
+
+            cb.require_in_set(
+                "tag in RwTableTag range",
+                meta.query_advice(tag, Rotation::cur()),
+                RwTableTag::iter().map(|x| x.expr()).collect(),
+            );
             cb.constraints
         });
+
+        // meta.lookup("0 <= call index < 2^16", );
+        // meta.lookup("0 <= call id in range", );
 
         // A gate for the first row (does not need Rotation::prev).
         meta.create_gate("First memory row operation", |meta| {
