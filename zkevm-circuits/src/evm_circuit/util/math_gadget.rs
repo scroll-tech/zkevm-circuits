@@ -428,8 +428,6 @@ impl<F: Field> LtWordGadget<F> {
     ) -> Result<(), Error> {
         let (lhs_lo, lhs_hi) = split_u256(&lhs);
         let (rhs_lo, rhs_hi) = split_u256(&rhs);
-        println!("lhs_hi = {:?}", lhs_hi);
-        println!("rhs_hi = {:?}", rhs_hi);
         self.comparison_hi.assign(
             region,
             offset,
