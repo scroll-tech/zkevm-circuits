@@ -389,12 +389,11 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             nz_ne_ne_case_refund.expr(),
             iz_ne_ne_case_refund.expr(),
         );
-        let original_eq_prev_ne_value_case_refund = cb.query_cell();
-        // let original_eq_prev_ne_value_case_refund = cb.copy(select::expr(
-        //     not::expr(original_is_zero.expr()) * value_is_zero.expr(),
-        //     tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-        //     tx_refund_old.expr(),
-        // ));
+        let original_eq_prev_ne_value_case_refund = cb.copy(select::expr(
+            not::expr(original_is_zero.expr()) * value_is_zero.expr(),
+            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+            tx_refund_old.expr(),
+        ));
         let prev_ne_value_case_refund = cb.query_cell();
         // let prev_ne_value_case_refund = cb.copy(select::expr(
         //     original_eq_prev.expr(),
