@@ -358,12 +358,11 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
         // original_value, value_prev, value all are different; original_value!=0,
         // value_prev!=0
-        let nz_nz_allne_case_refund = cb.query_cell();
-        // let nz_nz_allne_case_refund = cb.copy(select::expr(
-        //     value_is_zero.expr(),
-        //     tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-        //     tx_refund_old.expr(),
-        // ));
+        let nz_nz_allne_case_refund = cb.copy(select::expr(
+            value_is_zero.expr(),
+            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+            tx_refund_old.expr(),
+        ));
         // original_value, value_prev, value all are different; original_value!=0
         let nz_allne_case_refund = select::expr(
             value_prev_is_zero.expr(),
