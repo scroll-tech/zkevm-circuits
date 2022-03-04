@@ -522,7 +522,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         };
 
         let iz_ne_ne_case_refund = if committed_value == value {
-            tx_refund_old + eth_types::Word::from(GasCost::SSTORE_CLEARS_SCHEDULE.as_u64())
+            tx_refund_old + eth_types::Word::from(GasCost::SSTORE_SET_GAS.as_u64())
                 - eth_types::Word::from(GasCost::SLOAD_GAS.as_u64())
         } else {
             tx_refund_old
