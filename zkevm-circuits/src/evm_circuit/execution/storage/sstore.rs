@@ -358,11 +358,12 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
         // original_value, value_prev, value all are different; original_value!=0,
         // value_prev!=0
-        let nz_nz_allne_case_refund = cb.copy(select::expr(
-            value_is_zero.expr(),
-            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-            tx_refund_old.expr(),
-        ));
+        let nz_nz_allne_case_refund = cb.query_cell();
+        // let nz_nz_allne_case_refund = cb.copy(select::expr(
+        //     value_is_zero.expr(),
+        //     tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+        //     tx_refund_old.expr(),
+        // ));
         // original_value, value_prev, value all are different; original_value!=0
         let nz_allne_case_refund = select::expr(
             value_prev_is_zero.expr(),
@@ -377,27 +378,30 @@ impl<F: Field> SstoreTxRefundGadget<F> {
                 - GasCost::SLOAD_GAS.expr(),
         );
         // original_value!=value_prev, value_prev!=value, original_value==0
-        let iz_ne_ne_case_refund = cb.copy(select::expr(
-            original_eq_value.expr(),
-            tx_refund_old.expr() + GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr(),
-            tx_refund_old.expr(),
-        ));
+        let iz_ne_ne_case_refund = cb.query_cell();
+        // let iz_ne_ne_case_refund = cb.copy(select::expr(
+        //     original_eq_value.expr(),
+        //     tx_refund_old.expr() + GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr(),
+        //     tx_refund_old.expr(),
+        // ));
         // original_value!=value_prev, value_prev!=value
         let ne_ne_case_refund = select::expr(
             not::expr(original_is_zero.expr()),
             nz_ne_ne_case_refund.expr(),
             iz_ne_ne_case_refund.expr(),
         );
-        let original_eq_prev_ne_value_case_refund = cb.copy(select::expr(
-            not::expr(original_is_zero.expr()) * value_is_zero.expr(),
-            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-            tx_refund_old.expr(),
-        ));
-        let prev_ne_value_case_refund = cb.copy(select::expr(
-            original_eq_prev.expr(),
-            original_eq_prev_ne_value_case_refund.expr(),
-            ne_ne_case_refund.expr(),
-        ));
+        let original_eq_prev_ne_value_case_refund = cb.query_cell();
+        // let original_eq_prev_ne_value_case_refund = cb.copy(select::expr(
+        //     not::expr(original_is_zero.expr()) * value_is_zero.expr(),
+        //     tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+        //     tx_refund_old.expr(),
+        // ));
+        let prev_ne_value_case_refund = cb.query_cell();
+        // let prev_ne_value_case_refund = cb.copy(select::expr(
+        //     original_eq_prev.expr(),
+        //     original_eq_prev_ne_value_case_refund.expr(),
+        //     ne_ne_case_refund.expr(),
+        // ));
         let tx_refund_new = select::expr(
             prev_eq_value.expr(),
             tx_refund_old.expr(),
@@ -659,7 +663,7 @@ mod test {
         result: bool,
     ) {
         let gas = calc_expected_gas_cost(value, value_prev, committed_value, is_warm);
-        let tx_refund_old = GasCost::SLOAD_GAS.as_u64();
+        let tx_refund_old = GasCost::SSTORE_SET_GAS.as_u64();
         let tx_refund_new =
             calc_expected_tx_refund(tx_refund_old, value, value_prev, committed_value, is_warm);
         let rw_counter_end_of_reversion = if result { 0 } else { 14 };
@@ -835,8 +839,8 @@ mod test {
                                 rw_counter: 9,
                                 is_write: true,
                                 tx_id: 1usize,
-                                value: Word::from(tx_refund_old),
-                                value_prev: Word::from(tx_refund_new),
+                                value: Word::from(tx_refund_new),
+                                value_prev: Word::from(tx_refund_old),
                             }],
                             if result {
                                 vec![]
@@ -845,8 +849,8 @@ mod test {
                                     rw_counter: rw_counter_end_of_reversion - 2,
                                     is_write: true,
                                     tx_id: 1usize,
-                                    value: Word::from(tx_refund_new),
-                                    value_prev: Word::from(tx_refund_old),
+                                    value: Word::from(tx_refund_old),
+                                    value_prev: Word::from(tx_refund_new),
                                 }]
                             },
                         ]
