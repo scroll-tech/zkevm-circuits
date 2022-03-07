@@ -553,7 +553,7 @@ mod test {
         result: bool,
     ) {
         let gas = calc_expected_gas_cost(value, value_prev, committed_value, is_warm);
-        let tx_refund_old = GasCost::SLOAD_GAS.as_u64();
+        let tx_refund_old = GasCost::SSTORE_SET_GAS.as_u64();
         let tx_refund_new =
             calc_expected_tx_refund(tx_refund_old, value, value_prev, committed_value, is_warm);
         let rw_counter_end_of_reversion = if result { 0 } else { 14 };
@@ -729,8 +729,8 @@ mod test {
                                 rw_counter: 9,
                                 is_write: true,
                                 tx_id: 1usize,
-                                value: Word::from(tx_refund_old),
-                                value_prev: Word::from(tx_refund_new),
+                                value: Word::from(tx_refund_new),
+                                value_prev: Word::from(tx_refund_old),
                             }],
                             if result {
                                 vec![]
@@ -739,8 +739,8 @@ mod test {
                                     rw_counter: rw_counter_end_of_reversion - 2,
                                     is_write: true,
                                     tx_id: 1usize,
-                                    value: Word::from(tx_refund_new),
-                                    value_prev: Word::from(tx_refund_old),
+                                    value: Word::from(tx_refund_old),
+                                    value_prev: Word::from(tx_refund_new),
                                 }]
                             },
                         ]
