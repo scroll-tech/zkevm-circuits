@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for MulGadget<F> {
 
         // Pop a and b from the stack, push result on the stack
         // The first pop is multiplier for MUL and dividend for DIV/MOD
-        // The seoncd pop is multiplicand for MUL and divosr for DIV/MOD
+        // The second pop is multiplicand for MUL and divsor for DIV/MOD
         // The push is product for MUL, quotient for DIV, and residue for MOD
         // Note that for DIV/MOD, when divisor == 0, the push value is also 0.
         cb.stack_pop(select::expr(
@@ -82,7 +82,7 @@ impl<F: Field> ExecutionGadget<F> for MulGadget<F> {
                 "residue < divisor when divisor != 0 for opcode DIV/MOD",
                 (1.expr() - lt_word.expr()) * (1.expr() - divisor_is_zero.expr()),
             );
-            cb.add_constraint("overflow == 0 for opcode DIV/MOD", mul_add_words.overflow());
+            cb.require_zero("overflow == 0 for opcode DIV/MOD", mul_add_words.overflow());
         });
 
         // State transition
@@ -162,13 +162,12 @@ mod test {
 
     #[test]
     fn mul_gadget_overflow() {
-        let a = Word::from_dec_str("3402823669209384634633746074317682114560").unwrap(); //2**128 * 10
-        let b = Word::from_dec_str("34028236692093846346337460743176821145600").unwrap(); //2**128 * 100
+        let a = Word::from_dec_str("3402823669209384634633746074317682114560").unwrap(); // 2**128 * 10
+        let b = Word::from_dec_str("34028236692093846346337460743176821145600").unwrap(); // 2**128 * 100
         test_ok(OpcodeId::MUL, a, b);
 
-        let a = Word::from_dec_str("3402823669209384634633746074317682114560").unwrap(); //2**128 * 10
-        let b = Word::from_dec_str("34028236692093846346337460743176821145500").unwrap(); //(2**128
-                                                                                          //(2**128 - 1) * 100
+        let a = Word::from_dec_str("3402823669209384634633746074317682114560").unwrap(); // 2**128 * 10
+        let b = Word::from_dec_str("34028236692093846346337460743176821145500").unwrap(); // (2**128 - 1) * 100
         test_ok(OpcodeId::MUL, a, b);
     }
 

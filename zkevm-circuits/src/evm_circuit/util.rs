@@ -282,6 +282,7 @@ pub(crate) fn split_u256(value: &U256) -> (U256, U256) {
     )
 }
 
+/// Split a U256 value into 4 64-bit limbs stored in U256 type.
 pub(crate) fn split_u256_limb64(value: &U256) -> [U256; 4] {
     [
         U256([value.0[0], 0, 0, 0]),

@@ -684,7 +684,7 @@ pub(crate) fn generate_lagrange_base_polynomial<
 
 /// Construct the gadget that checks a * b + c == d (modulo 2**256),
 /// where a, b, c, d are 256-bit words. This can be used by opcode MUL, DIV,
-/// and MOD. For opcdoe MUL, set c to 0. For opcode DIV and MOD, treat c as
+/// and MOD. For opcode MUL, set c to 0. For opcode DIV and MOD, treat c as
 /// residue and d as dividend.
 ///
 /// We execute a multi-limb multiplication as follows:
@@ -696,7 +696,7 @@ pub(crate) fn generate_lagrange_base_polynomial<
 ///   t3 = a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2, contribute to above 192 bit
 ///
 /// so t0 ~ t1 include all contributions to the low 256-bit of product, with
-/// a maxium 68-bit radix (the part higher than 256-bit), denoted as carry_hi
+/// a maximum 68-bit radix (the part higher than 256-bit), denoted as carry_hi
 /// Similarly, we define carry_lo as the radix of contributions to the low
 /// 128-bit of the product.
 /// We can slightly relax the constraint of carry_lo/carry_hi to 72-bit and
@@ -710,7 +710,8 @@ pub(crate) fn generate_lagrange_base_polynomial<
 /// into overflow
 ///   overflow = carry_hi + a1 * b3 + a2 * b2 + a3 * b1 + a2 * b3 + a3 * b2
 ///              + a3 * b3
-/// In the case of DIV and MOD, we need to check the overflow == 0.
+/// In the cases of DIV and MOD, we need to constrain overflow == 0 outside the
+/// MulAddWordsGadget.
 #[derive(Clone, Debug)]
 pub(crate) struct MulAddWordsGadget<F> {
     pub a: util::Word<F>,
