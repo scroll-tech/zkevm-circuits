@@ -16,7 +16,7 @@ use std::convert::TryInto;
 // It aims to cap `extended_k` to 4, which allows constraint degree to 2^4+1,
 // but each ExecutionGadget has implicit selector degree 2, so here it only
 // allows 2^4+1-2 = 15.
-const MAX_DEGREE: usize = 15;
+const MAX_DEGREE: usize = 31;
 // Implicit degree added to input expressions of lookups. It assumes blind
 // factors have been disabled, and table expressions with degree 1.
 const LOOKUP_DEGREE: usize = 2;
