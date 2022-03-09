@@ -947,7 +947,6 @@ mod test {
             false,
             true,
         );
-
         // value_prev != value, original_value != value_prev, value == original_value
         test_ok(
             mock_tx(),
