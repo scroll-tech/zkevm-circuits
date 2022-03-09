@@ -255,7 +255,6 @@ impl<F: Field> LaneRotateConversionConfig<F> {
         ),
         Error,
     > {
-        // TODO: Handle this better once AssignedCell has the API to do so.
         let (conversions, special) = RhoLane::new(
             f_to_biguint(*lane_base_13.value().unwrap_or(&F::zero())),
             self.rotation,
@@ -433,7 +432,6 @@ impl<F: Field> SumConfig<F> {
                     self.q_enable.enable(&mut region, offset)?;
                     xs_item.copy_advice(|| "x", &mut region, self.x, offset)?;
                     region.assign_advice(|| "sum", self.sum, offset, || Ok(sum))?;
-                    // TODO: Handle this better once AssignedCell has the API to do so
                     sum += xs_item.value().unwrap_or(&F::zero());
                     offset += 1;
                 }

@@ -747,7 +747,7 @@ impl FromStr for OpcodeId {
             "RETURN" => OpcodeId::RETURN,
             "REVERT" => OpcodeId::REVERT,
             "INVALID" => OpcodeId::INVALID(0xfe),
-            "SHA3" => OpcodeId::SHA3,
+            "SHA3" | "KECCAK256" => OpcodeId::SHA3,
             "ADDRESS" => OpcodeId::ADDRESS,
             "BALANCE" => OpcodeId::BALANCE,
             "SELFBALANCE" => OpcodeId::SELFBALANCE,
