@@ -30,10 +30,10 @@ pub(crate) struct SstoreGadget<F> {
     rw_counter_end_of_reversion: Cell<F>,
     is_persistent: Cell<F>,
     callee_address: Cell<F>,
-    key: Word<F>,
-    value: Word<F>,
-    value_prev: Word<F>,
-    committed_value: Word<F>,
+    key: Cell<F>,
+    value: Cell<F>,
+    value_prev: Cell<F>,
+    committed_value: Cell<F>,
     is_warm: Cell<F>,
     tx_refund_prev: Cell<F>,
     gas_cost: SstoreGasGadget<F>,
@@ -57,16 +57,16 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         ]
         .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
 
-        let key = cb.query_word();
+        let key = cb.query_cell();
         // Pop the key from the stack
         cb.stack_pop(key.expr());
 
-        let value = cb.query_word();
+        let value = cb.query_cell();
         // Pop the value from the stack
-        cb.stack_pop(value.expr()); // TODO: 79
+        cb.stack_pop(value.expr());
 
-        let value_prev = cb.query_word();
-        let committed_value = cb.query_word();
+        let value_prev = cb.query_cell();
+        let committed_value = cb.query_cell();
         cb.account_storage_write_with_reversion(
             callee_address.expr(),
             key.expr(),
@@ -170,15 +170,40 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         let [key, value] =
             [step.rw_indices[4], step.rw_indices[5]].map(|idx| block.rws[idx].stack_value());
-        self.key.assign(region, offset, Some(key.to_le_bytes()))?;
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
+        self.key.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                key.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
+        self.value.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                value.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
 
         let (_, value_prev, _, committed_value) = block.rws[step.rw_indices[6]].storage_value_aux();
-        self.value_prev
-            .assign(region, offset, Some(value_prev.to_le_bytes()))?;
-        self.committed_value
-            .assign(region, offset, Some(committed_value.to_le_bytes()))?;
+        self.value_prev.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                value_prev.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
+        self.committed_value.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                committed_value.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
 
         let (_, is_warm) = block.rws[step.rw_indices[7]].tx_access_list_value_pair();
         self.is_warm
@@ -215,9 +240,9 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreGasGadget<F> {
-    value: Word<F>,
-    value_prev: Word<F>,
-    committed_value: Word<F>,
+    value: Cell<F>,
+    value_prev: Cell<F>,
+    committed_value: Cell<F>,
     is_warm: Cell<F>,
     gas_cost: Expression<F>,
     value_eq_prev: IsEqualGadget<F>,
@@ -228,9 +253,9 @@ pub(crate) struct SstoreGasGadget<F> {
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
-        value: Word<F>,
-        value_prev: Word<F>,
-        committed_value: Word<F>,
+        value: Cell<F>,
+        value_prev: Cell<F>,
+        committed_value: Cell<F>,
         is_warm: Cell<F>,
     ) -> Self {
         let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
@@ -284,12 +309,27 @@ impl<F: Field> SstoreGasGadget<F> {
         is_warm: bool,
         randomness: F,
     ) -> Result<(), Error> {
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
-        self.value_prev
-            .assign(region, offset, Some(value_prev.to_le_bytes()))?;
-        self.committed_value
-            .assign(region, offset, Some(committed_value.to_le_bytes()))?;
+        self.value.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(value.to_le_bytes(), randomness)),
+        )?;
+        self.value_prev.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                value_prev.to_le_bytes(),
+                randomness,
+            )),
+        )?;
+        self.committed_value.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                committed_value.to_le_bytes(),
+                randomness,
+            )),
+        )?;
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
         self.value_eq_prev.assign(
@@ -316,9 +356,9 @@ impl<F: Field> SstoreGasGadget<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreTxRefundGadget<F> {
     tx_refund_old: Cell<F>,
-    value: Word<F>,
-    value_prev: Word<F>,
-    committed_value: Word<F>,
+    value: Cell<F>,
+    value_prev: Cell<F>,
+    committed_value: Cell<F>,
     is_warm: Cell<F>,
     tx_refund_new: Expression<F>,
     value_prev_is_zero: IsZeroGadget<F>,
@@ -333,9 +373,9 @@ impl<F: Field> SstoreTxRefundGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         tx_refund_old: Cell<F>,
-        value: Word<F>,
-        value_prev: Word<F>,
-        committed_value: Word<F>,
+        value: Cell<F>,
+        value_prev: Cell<F>,
+        committed_value: Cell<F>,
         is_warm: Cell<F>,
     ) -> Self {
         let value_prev_is_zero = IsZeroGadget::construct(cb, value_prev.expr());
@@ -422,12 +462,27 @@ impl<F: Field> SstoreTxRefundGadget<F> {
     ) -> Result<(), Error> {
         self.tx_refund_old
             .assign(region, offset, Some(F::from(tx_refund_old)))?;
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
-        self.value_prev
-            .assign(region, offset, Some(value_prev.to_le_bytes()))?;
-        self.committed_value
-            .assign(region, offset, Some(committed_value.to_le_bytes()))?;
+        self.value.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(value.to_le_bytes(), randomness)),
+        )?;
+        self.value_prev.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                value_prev.to_le_bytes(),
+                randomness,
+            )),
+        )?;
+        self.committed_value.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                committed_value.to_le_bytes(),
+                randomness,
+            )),
+        )?;
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
         self.value_prev_is_zero.assign(
