@@ -350,11 +350,11 @@ impl<F: Field> SstoreGasGadget<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreTxRefundGadget<F> {
     tx_refund_old: Cell<F>,
+    tx_refund_new: Expression<F>,
     value: Cell<F>,
     value_prev: Cell<F>,
     committed_value: Cell<F>,
     is_warm: Cell<F>,
-    tx_refund_new: Expression<F>,
     value_prev_is_zero: IsZeroGadget<F>,
     value_is_zero: IsZeroGadget<F>,
     original_is_zero: IsZeroGadget<F>,
