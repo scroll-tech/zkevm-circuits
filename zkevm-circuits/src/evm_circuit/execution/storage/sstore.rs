@@ -510,7 +510,6 @@ mod test {
         value: Word,
         value_prev: Word,
         committed_value: Word,
-        is_warm: bool,
     ) -> u64 {
         let mut tx_refund_new = tx_refund_old;
 
@@ -555,7 +554,7 @@ mod test {
         let gas = calc_expected_gas_cost(value, value_prev, committed_value, is_warm);
         let tx_refund_old = GasCost::SSTORE_SET_GAS.as_u64();
         let tx_refund_new =
-            calc_expected_tx_refund(tx_refund_old, value, value_prev, committed_value, is_warm);
+            calc_expected_tx_refund(tx_refund_old, value, value_prev, committed_value);
         let rw_counter_end_of_reversion = if result { 0 } else { 14 };
 
         let call_data_gas_cost = tx
@@ -908,7 +907,6 @@ mod test {
 
     #[test]
     fn sstore_gadget_cold_persist() {
-        
         // value_prev == value
         test_ok(
             mock_tx(),
@@ -949,7 +947,7 @@ mod test {
             false,
             true,
         );
-        
+
         // value_prev != value, original_value != value_prev, value == original_value
         test_ok(
             mock_tx(),
