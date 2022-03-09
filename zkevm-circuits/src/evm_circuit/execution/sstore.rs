@@ -102,7 +102,6 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             value.clone(),
             value_prev.clone(),
             committed_value.clone(),
-            is_warm.clone(),
         );
         cb.tx_refund_write_with_reversion(
             tx_id.expr(),
@@ -224,7 +223,6 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             value,
             value_prev,
             committed_value,
-            is_warm,
             block.randomness,
         )?;
 
@@ -354,7 +352,6 @@ pub(crate) struct SstoreTxRefundGadget<F> {
     value: Cell<F>,
     value_prev: Cell<F>,
     committed_value: Cell<F>,
-    is_warm: Cell<F>,
     value_prev_is_zero: IsZeroGadget<F>,
     value_is_zero: IsZeroGadget<F>,
     original_is_zero: IsZeroGadget<F>,
@@ -370,7 +367,6 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         value: Cell<F>,
         value_prev: Cell<F>,
         committed_value: Cell<F>,
-        is_warm: Cell<F>,
     ) -> Self {
         let value_prev_is_zero = IsZeroGadget::construct(cb, value_prev.expr());
         let value_is_zero = IsZeroGadget::construct(cb, value.expr());
@@ -425,7 +421,6 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             value,
             value_prev,
             committed_value,
-            is_warm,
             tx_refund_old,
             tx_refund_new,
             value_prev_is_zero,
@@ -451,7 +446,6 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         value: eth_types::Word,
         value_prev: eth_types::Word,
         committed_value: eth_types::Word,
-        is_warm: bool,
         randomness: F,
     ) -> Result<(), Error> {
         self.tx_refund_old
@@ -477,8 +471,6 @@ impl<F: Field> SstoreTxRefundGadget<F> {
                 randomness,
             )),
         )?;
-        self.is_warm
-            .assign(region, offset, Some(F::from(is_warm as u64)))?;
         self.value_prev_is_zero.assign(
             region,
             offset,
