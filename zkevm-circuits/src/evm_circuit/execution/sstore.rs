@@ -362,6 +362,7 @@ pub(crate) struct SstoreTxRefundGadget<F> {
     prev_eq_value: IsEqualGadget<F>,
     original_eq_prev: IsEqualGadget<F>,
     nz_nz_allne_case_refund: Cell<F>,
+    ez_ne_ne_case_refund: Cell<F>,
 }
 
 impl<F: Field> SstoreTxRefundGadget<F> {
@@ -388,7 +389,6 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
             tx_refund_old.expr(),
         ));
-
         // original_value, value_prev, value all are different; original_value!=0
         let nz_allne_case_refund = select::expr(
             value_prev_is_zero.expr(),
@@ -402,15 +402,17 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             nz_allne_case_refund.expr() + GasCost::SSTORE_RESET_GAS.expr()
                 - GasCost::SLOAD_GAS.expr(),
         );
+        // original_value!=value_prev, value_prev!=value, original_value==0
+        let ez_ne_ne_case_refund = cb.copy(select::expr(
+            original_eq_value.expr(),
+            tx_refund_old.expr() + GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr(),
+            tx_refund_old.expr(),
+        ));
         // original_value!=value_prev, value_prev!=value
         let ne_ne_case_refund = select::expr(
             not::expr(original_is_zero.expr()),
             nz_ne_ne_case_refund.expr(),
-            select::expr(
-                original_eq_value.expr(),
-                tx_refund_old.expr() + GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr(),
-                tx_refund_old.expr(),
-            ),
+            ez_ne_ne_case_refund.expr(),
         );
         let tx_refund_new = select::expr(
             prev_eq_value.expr(),
@@ -440,6 +442,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             prev_eq_value,
             original_eq_prev,
             nz_nz_allne_case_refund,
+            ez_ne_ne_case_refund,
         }
     }
 
@@ -529,6 +532,14 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             offset,
             Some(F::from(nz_nz_allne_case_refund)),
         )?;
+
+        let ez_ne_ne_case_refund = if committed_value == value {
+            tx_refund_old + GasCost::SSTORE_SET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64()
+        } else {
+            tx_refund_old
+        };
+        self.ez_ne_ne_case_refund
+            .assign(region, offset, Some(F::from(ez_ne_ne_case_refund)))?;
 
         Ok(())
     }
