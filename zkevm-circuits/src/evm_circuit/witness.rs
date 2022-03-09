@@ -683,11 +683,8 @@ impl Rw {
                 F::from(*tx_id as u64),
                 F::zero(),
                 F::zero(),
-                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
-                RandomLinearCombination::random_linear_combine(
-                    value_prev.to_le_bytes(),
-                    randomness,
-                ),
+                F::from(value.as_u64()),
+                F::from(value_prev.as_u64()),
                 F::zero(),
                 F::zero(),
             ]

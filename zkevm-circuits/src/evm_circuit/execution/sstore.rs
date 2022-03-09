@@ -202,14 +202,8 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 
         let (_, tx_refund_prev) = block.rws[step.rw_indices[8]].tx_refund_value_pair();
-        self.tx_refund_prev.assign(
-            region,
-            offset,
-            Some(Word::random_linear_combine(
-                tx_refund_prev.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.tx_refund_prev
+            .assign(region, offset, Some(F::from(tx_refund_prev.as_u64())))?;
 
         self.gas_cost.assign(
             region,
