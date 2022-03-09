@@ -589,7 +589,6 @@ impl Rw {
         }
     }
 
-    // TODO: merge with aux_pair
     pub fn storage_value_aux(&self) -> (Word, Word, usize, Word) {
         match self {
             Self::AccountStorage {
