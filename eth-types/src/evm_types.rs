@@ -111,7 +111,6 @@ impl GasCost {
     pub const SSTORE_RESET_GAS: Self = Self(2900);
     /// Constant cost for a storage clear
     pub const SSTORE_CLEARS_SCHEDULE: Self = Self(15000);
-
     /// Constant cost for a non-creation transaction
     pub const TX: Self = Self(21000);
     /// Constant cost for creation transaction
