@@ -360,6 +360,7 @@ pub(crate) struct SstoreTxRefundGadget<F> {
     original_eq_prev: IsEqualGadget<F>,
     nz_nz_allne_case_refund: Cell<F>,
     ez_ne_ne_case_refund: Cell<F>,
+    eq_ne_case_refund: Cell<F>,
 }
 
 impl<F: Field> SstoreTxRefundGadget<F> {
@@ -410,16 +411,18 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             nz_ne_ne_case_refund.expr(),
             ez_ne_ne_case_refund.expr(),
         );
+        // original_value==value_prev, value_prev!=value
+        let eq_ne_case_refund = cb.copy(select::expr(
+            not::expr(original_is_zero.expr()) * value_is_zero.expr(),
+            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+            tx_refund_old.expr(),
+        ));
         let tx_refund_new = select::expr(
             prev_eq_value.expr(),
             tx_refund_old.expr(),
             select::expr(
                 original_eq_prev.expr(),
-                select::expr(
-                    not::expr(original_is_zero.expr()) * value_is_zero.expr(),
-                    tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-                    tx_refund_old.expr(),
-                ),
+                eq_ne_case_refund.expr(),
                 ne_ne_case_refund.expr(),
             ),
         );
@@ -438,6 +441,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             original_eq_prev,
             nz_nz_allne_case_refund,
             ez_ne_ne_case_refund,
+            eq_ne_case_refund,
         }
     }
 
@@ -532,6 +536,15 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         };
         self.ez_ne_ne_case_refund
             .assign(region, offset, Some(F::from(ez_ne_ne_case_refund)))?;
+
+        let eq_ne_case_refund =
+            if (committed_value != eth_types::Word::zero()) && (value == eth_types::Word::zero()) {
+                tx_refund_old + GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+            } else {
+                tx_refund_old
+            };
+        self.eq_ne_case_refund
+            .assign(region, offset, Some(F::from(eq_ne_case_refund)))?;
 
         Ok(())
     }
