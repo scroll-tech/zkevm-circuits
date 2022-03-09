@@ -354,13 +354,14 @@ pub(crate) struct SstoreTxRefundGadget<F> {
     value: Cell<F>,
     value_prev: Cell<F>,
     committed_value: Cell<F>,
-    is_warm: Cell<F>,
+    is_warm: Cell<F>, // TODO: remove
     value_prev_is_zero: IsZeroGadget<F>,
     value_is_zero: IsZeroGadget<F>,
     original_is_zero: IsZeroGadget<F>,
     original_eq_value: IsEqualGadget<F>,
     prev_eq_value: IsEqualGadget<F>,
     original_eq_prev: IsEqualGadget<F>,
+    nz_nz_allne_case_refund: Cell<F>,
 }
 
 impl<F: Field> SstoreTxRefundGadget<F> {
@@ -380,15 +381,19 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         let original_eq_prev =
             IsEqualGadget::construct(cb, committed_value.expr(), value_prev.expr());
 
+        // original_value, value_prev, value all are different;
+        // original_value!=0&&value_prev!=0
+        let nz_nz_allne_case_refund = cb.copy(select::expr(
+            value_is_zero.expr(),
+            tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
+            tx_refund_old.expr(),
+        ));
+
         // original_value, value_prev, value all are different; original_value!=0
         let nz_allne_case_refund = select::expr(
             value_prev_is_zero.expr(),
             tx_refund_old.expr() - GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-            select::expr(
-                value_is_zero.expr(),
-                tx_refund_old.expr() + GasCost::SSTORE_CLEARS_SCHEDULE.expr(),
-                tx_refund_old.expr(),
-            ),
+            nz_nz_allne_case_refund.expr(),
         );
         // original_value!=value_prev, value_prev!=value, original_value!=0
         let nz_ne_ne_case_refund = select::expr(
@@ -434,6 +439,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             original_eq_value,
             prev_eq_value,
             original_eq_prev,
+            nz_nz_allne_case_refund,
         }
     }
 
@@ -512,6 +518,18 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             Word::random_linear_combine(committed_value.to_le_bytes(), randomness),
             Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
         )?;
+
+        let nz_nz_allne_case_refund = if value == eth_types::Word::zero() {
+            tx_refund_old + GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
+        } else {
+            tx_refund_old
+        };
+        self.nz_nz_allne_case_refund.assign(
+            region,
+            offset,
+            Some(F::from(nz_nz_allne_case_refund)),
+        )?;
+
         Ok(())
     }
 }
