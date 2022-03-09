@@ -1198,9 +1198,9 @@ mod tests {
                 address!("0x0000000000000000000000000000000000000001"),
                 Word::from(0x40),
                 Word::from(32),
-                Word::from(0),
+                Word::zero(),
                 1usize,
-                Word::from(0),
+                Word::zero(),
             ),
         );
         let storage_op_1 = Operation::new(
@@ -1362,9 +1362,9 @@ mod tests {
                 address!("0x0000000000000000000000000000000000000002"),
                 Word::from(0x40),
                 Word::from(32),
-                Word::from(0),
+                Word::zero(),
                 1usize,
-                Word::from(0),
+                Word::zero(),
             ),
         );
         let storage_op_1 = Operation::new(
@@ -1376,9 +1376,9 @@ mod tests {
                 address!("0x0000000000000000000000000000000000000002"),
                 Word::from(0x41),
                 Word::from(32),
-                Word::from(0),
+                Word::zero(),
                 1usize,
-                Word::from(0),
+                Word::zero(),
             ),
         );
 
@@ -1393,9 +1393,9 @@ mod tests {
                 /* Intentionally different storage key as the last one in the previous ops to
                 have two conditions met. */
                 Word::from(32),
-                Word::from(0),
+                Word::zero(),
                 1usize,
-                Word::from(0),
+                Word::zero(),
             ),
         );
 
@@ -1589,9 +1589,9 @@ mod tests {
                 address!("0x0000000000000000000000000000000000000001"),
                 Word::from(0x40),
                 Word::from(32),
-                Word::from(0),
+                Word::zero(),
                 1usize,
-                Word::from(0),
+                Word::zero(),
             ),
         );
         let storage_op_1 = Operation::new(
@@ -1601,9 +1601,9 @@ mod tests {
                 address!("0x0000000000000000000000000000000000000001"),
                 Word::from(0x40),
                 Word::from(32),
-                Word::from(0),
+                Word::zero(),
                 1usize,
-                Word::from(0),
+                Word::zero(),
             ),
         );
         let storage_op_2 = Operation::new(
@@ -1616,9 +1616,9 @@ mod tests {
                 address!("0x0000000000000000000000000000000000000001"),
                 Word::from(0x40),
                 Word::from(32),
-                Word::from(0),
+                Word::zero(),
                 1usize,
-                Word::from(0),
+                Word::zero(),
             ),
         );
         let storage_op_3 = Operation::new(
@@ -1646,9 +1646,9 @@ mod tests {
                 address!("0x0000000000000000000000000000000000000002"),
                 Word::from(0x41),
                 Word::from(32),
-                Word::from(0),
+                Word::zero(),
                 1usize,
-                Word::from(0),
+                Word::zero(),
             ),
         );
 
@@ -1740,9 +1740,9 @@ mod tests {
                 address!("0x0000000000000000000000000000000000000001"),
                 Word::from(0x40),
                 Word::from(32),
-                Word::from(0),
+                Word::zero(),
                 1usize,
-                Word::from(0),
+                Word::zero(),
             ),
         );
         let storage_op_1 = Operation::new(
@@ -1755,9 +1755,9 @@ mod tests {
                                  * and not the same
                                  * value as in the previous
                                  * row. */
-                Word::from(0),
+                Word::zero(),
                 1usize,
-                Word::from(0),
+                Word::zero(),
             ),
         );
         let storage_op_2 = Operation::new(
@@ -1767,11 +1767,11 @@ mod tests {
                 address!("0x0000000000000000000000000000000000000001"),
                 Word::from(0x40),
                 Word::from(32),
-                Word::from(0), /* Fails because not the same
-                                * as value in the previous row - note: this
-                                * is WRITE. */
+                Word::zero(), /* Fails because not the same
+                               * as value in the previous row - note: this
+                               * is WRITE. */
                 1usize,
-                Word::from(0),
+                Word::zero(),
             ),
         );
         let storage_op_3 = Operation::new(

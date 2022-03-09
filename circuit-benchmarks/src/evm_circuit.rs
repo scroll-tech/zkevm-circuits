@@ -115,7 +115,7 @@ mod evm_circ_benches {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[],
+            &[&[]],
             &mut verifier_transcript,
         )
         .unwrap();

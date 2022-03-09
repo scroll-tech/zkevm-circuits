@@ -8,7 +8,7 @@ clippy: ## Run clippy checks over all workspace members
 	@cargo clippy --all-features --all-targets -- -D clippy::all
 
 doc: ## Generate and tests docs including private items
-	@cargo doc --all --document-private-items
+	@cargo doc --no-deps --all --document-private-items
 
 fmt: ## Check whether the code is formated correctly
 	@cargo check --all-features

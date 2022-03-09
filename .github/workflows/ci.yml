@@ -183,7 +183,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: doc
-          args: --all --document-private-items
+          args: --no-deps --all --document-private-items
 
   fmt:
     if: github.event.pull_request.draft == false

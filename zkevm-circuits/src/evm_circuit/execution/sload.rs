@@ -24,14 +24,13 @@ use halo2_proofs::{
 #[derive(Clone, Debug)]
 pub(crate) struct SloadGadget<F> {
     same_context: SameContextGadget<F>,
-    call_id: Cell<F>,
     tx_id: Cell<F>,
     rw_counter_end_of_reversion: Cell<F>,
     is_persistent: Cell<F>,
     callee_address: Cell<F>,
-    key: Word<F>,
-    value: Word<F>,
-    committed_value: Word<F>,
+    key: Cell<F>,
+    value: Cell<F>,
+    committed_value: Cell<F>,
     is_warm: Cell<F>,
 }
 
@@ -43,21 +42,20 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let call_id = cb.query_cell();
         let [tx_id, rw_counter_end_of_reversion, is_persistent, callee_address] = [
             CallContextFieldTag::TxId,
             CallContextFieldTag::RwCounterEndOfReversion,
             CallContextFieldTag::IsPersistent,
             CallContextFieldTag::CalleeAddress,
         ]
-        .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
+        .map(|field_tag| cb.call_context(None, field_tag));
 
-        let key = cb.query_word();
+        let key = cb.query_cell();
         // Pop the key from the stack
         cb.stack_pop(key.expr());
 
-        let value = cb.query_word();
-        let committed_value = cb.query_word();
+        let value = cb.query_cell();
+        let committed_value = cb.query_cell();
         cb.account_storage_read(
             callee_address.expr(),
             key.expr(),
@@ -91,7 +89,6 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
 
         Self {
             same_context,
-            call_id,
             tx_id,
             rw_counter_end_of_reversion,
             is_persistent,
@@ -114,9 +111,6 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        self.call_id
-            .assign(region, offset, Some(F::from(call.id as u64)))?;
-
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
         self.rw_counter_end_of_reversion.assign(
@@ -131,13 +125,32 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
 
         let [key, value] =
             [step.rw_indices[4], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
-        self.key.assign(region, offset, Some(key.to_le_bytes()))?;
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
+        self.key.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                key.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
+        self.value.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                value.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
 
         let (_, committed_value) = block.rws[step.rw_indices[5]].aux_pair();
-        self.committed_value
-            .assign(region, offset, Some(committed_value.to_le_bytes()))?;
+        self.committed_value.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                committed_value.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
 
         let (_, is_warm) = block.rws[step.rw_indices[7]].tx_access_list_value_pair();
         self.is_warm
@@ -184,8 +197,14 @@ mod test {
     use eth_types::{address, bytecode, evm_types::GasCost, ToWord, Word};
     use std::convert::TryInto;
 
-    fn test_ok(tx: eth_types::Transaction, key: Word, value: Word, is_warm: bool, result: bool) {
-        let rw_counter_end_of_reversion = if result { 0 } else { 19 };
+    fn test_ok(
+        tx: eth_types::Transaction,
+        key: Word,
+        value: Word,
+        is_warm: bool,
+        is_persistent: bool,
+    ) {
+        let rw_counter_end_of_reversion = if is_persistent { 0 } else { 19 };
 
         let call_data_gas_cost = tx
             .input
@@ -220,8 +239,8 @@ mod test {
                     is_create: false,
                     code_source: CodeSource::Account(bytecode.hash),
                     rw_counter_end_of_reversion,
-                    is_persistent: result,
-                    is_success: result,
+                    is_persistent,
+                    is_success: is_persistent,
                     callee_address: tx.to.unwrap(),
                     ..Default::default()
                 }],
@@ -238,7 +257,7 @@ mod test {
                                 (RwTableTag::Stack, 1),
                                 (RwTableTag::TxAccessListAccountStorage, 0),
                             ],
-                            if result {
+                            if is_persistent {
                                 vec![]
                             } else {
                                 vec![(RwTableTag::TxAccessListAccountStorage, 1)]
@@ -320,7 +339,7 @@ mod test {
                                 value: true,
                                 value_prev: is_warm,
                             }],
-                            if result {
+                            if is_persistent {
                                 vec![]
                             } else {
                                 vec![Rw::TxAccessListAccountStorage {
@@ -358,7 +377,7 @@ mod test {
                                 is_write: false,
                                 call_id: 1,
                                 field_tag: CallContextFieldTag::IsPersistent,
-                                value: Word::from(result as u64),
+                                value: Word::from(is_persistent as u64),
                             },
                             Rw::CallContext {
                                 rw_counter: 12,
