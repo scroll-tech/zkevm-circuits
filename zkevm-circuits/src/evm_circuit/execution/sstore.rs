@@ -186,7 +186,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         let (_, tx_refund_prev) = block.rws[step.rw_indices[8]].tx_refund_value_pair();
         self.tx_refund_prev
-            .assign(region, offset, Some(F::from(tx_refund_prev.as_u64())))?;
+            .assign(region, offset, Some(F::from(tx_refund_prev)))?;
 
         self.gas_cost.assign(
             region,
@@ -201,7 +201,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.tx_refund.assign(
             region,
             offset,
-            tx_refund_prev.as_u64(),
+            tx_refund_prev,
             value,
             value_prev,
             committed_value,
@@ -728,8 +728,8 @@ mod test {
                                 rw_counter: 9,
                                 is_write: true,
                                 tx_id: 1usize,
-                                value: Word::from(tx_refund_new),
-                                value_prev: Word::from(tx_refund_old),
+                                value: tx_refund_new,
+                                value_prev: tx_refund_old,
                             }],
                             if result {
                                 vec![]
@@ -738,8 +738,8 @@ mod test {
                                     rw_counter: rw_counter_end_of_reversion - 2,
                                     is_write: true,
                                     tx_id: 1usize,
-                                    value: Word::from(tx_refund_old),
-                                    value_prev: Word::from(tx_refund_new),
+                                    value: tx_refund_old,
+                                    value_prev: tx_refund_new,
                                 }]
                             },
                         ]

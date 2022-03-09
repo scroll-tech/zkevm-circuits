@@ -465,8 +465,8 @@ pub enum Rw {
         rw_counter: usize,
         is_write: bool,
         tx_id: usize,
-        value: Word,
-        value_prev: Word,
+        value: u64,
+        value_prev: u64,
     },
     Account {
         rw_counter: usize,
@@ -560,7 +560,7 @@ impl Rw {
         }
     }
 
-    pub fn tx_refund_value_pair(&self) -> (Word, Word) {
+    pub fn tx_refund_value_pair(&self) -> (u64, u64) {
         match self {
             Self::TxRefund {
                 value, value_prev, ..
@@ -683,8 +683,8 @@ impl Rw {
                 F::from(*tx_id as u64),
                 F::zero(),
                 F::zero(),
-                F::from(value.as_u64()),
-                F::from(value_prev.as_u64()),
+                F::from(*value),
+                F::from(*value_prev),
                 F::zero(),
                 F::zero(),
             ]

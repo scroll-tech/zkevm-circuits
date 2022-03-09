@@ -482,9 +482,9 @@ pub struct TxRefundOp {
     /// Transaction ID: Transaction index in the block starting at 1.
     pub tx_id: usize,
     /// Refund Value after the operation
-    pub value: Word,
+    pub value: u64,
     /// Refund Value before the operation
-    pub value_prev: Word,
+    pub value_prev: u64,
 }
 
 impl fmt::Debug for TxRefundOp {
