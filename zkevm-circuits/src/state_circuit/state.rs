@@ -154,17 +154,6 @@ impl<
 
         let one = Expression::Constant(F::from(1));
 
-        let q_tag_is = |meta: &mut VirtualCells<F>, tag_value: usize| {
-            let tag_cur = meta.query_advice(tag, Rotation::cur());
-            generate_lagrange_base_polynomial(
-                tag_cur,
-                tag_value,
-                RwTableTag::iter().map(|x| x as usize),
-            )
-        };
-        let q_stack = |meta: &mut VirtualCells<F>| q_tag_is(meta, STACK_TAG);
-        let q_storage = |meta: &mut VirtualCells<F>| q_tag_is(meta, STORAGE_TAG);
-
         let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
             IsZeroChip::configure(
                 meta,
@@ -326,24 +315,22 @@ impl<
                 "if address changes, operation is always a write",
                 q_not_all_keys_same(meta) * q_read,
             );
-            cb.gate(s_enable * q_stack(meta))
+            cb.gate(s_enable * newer_cb.q_tag_is(meta, RwTableTag::Stack))
         });
 
         // 2. stack_ptr in range
         meta.lookup_any("Stack address in allowed range", |meta| {
-            let q_stack = q_stack(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
             let stack_address_table_zero =
                 meta.query_fixed(stack_address_table_zero, Rotation::cur());
 
-            vec![(q_stack * address_cur, stack_address_table_zero)]
+            vec![(newer_cb.q_tag_is(meta, RwTableTag::Stack) * address_cur, stack_address_table_zero)]
         });
 
         // 3. stack_ptr only increases by 0 or 1
         meta.create_gate("Stack pointer diff be 0 or 1", |meta| {
             let mut cb = new_cb();
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-            let q_stack = q_stack(meta);
             let tag_is_same_with_prev = key_is_same_with_prev[0].is_zero_expression.clone();
             let call_id_same_with_prev = key_is_same_with_prev[1].is_zero_expression.clone();
             let stack_ptr = meta.query_advice(keys[3], Rotation::cur());
@@ -352,14 +339,13 @@ impl<
                 "stack pointer only increases by 0 or 1",
                 stack_ptr - stack_ptr_prev,
             );
-            cb.gate(s_enable * q_stack * tag_is_same_with_prev * call_id_same_with_prev)
+            cb.gate(s_enable * newer_cb.q_tag_is(meta, RwTableTag::Stack) * tag_is_same_with_prev * call_id_same_with_prev)
         });
 
         ///////////////////////// Storage related constraints /////////////////////////
 
         meta.create_gate("Storage Operation", |meta| {
             let mut cb = new_cb();
-            let q_storage = q_storage(meta);
 
             let is_write = meta.query_advice(is_write, Rotation::cur());
             let q_read = one.clone() - is_write;
@@ -391,7 +377,7 @@ impl<
                 q_not_all_keys_same(meta) * rw_counter,
             );
 
-            cb.gate(s_enable * q_storage)
+            cb.gate(s_enable * newer_cb.q_tag_is(meta, RwTableTag::Storage))
         });
 
         Config {
