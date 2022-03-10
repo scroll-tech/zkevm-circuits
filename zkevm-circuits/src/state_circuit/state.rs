@@ -2,10 +2,7 @@ use super::constraint_builder::ConstraintBuilder;
 use crate::{
     evm_circuit::{
         table::RwTableTag,
-        util::{
-            constraint_builder::BaseConstraintBuilder,
-            math_gadget::generate_lagrange_base_polynomial,
-        },
+        util::constraint_builder::BaseConstraintBuilder,
         witness::{RwMap, RwRow},
     },
     gadget::{
@@ -17,7 +14,7 @@ use crate::{
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, VirtualCells},
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
@@ -113,9 +110,6 @@ impl<
         const ROWS_MAX: usize,
     > Config<F, SANITY_CHECK, RW_COUNTER_MAX, MEMORY_ADDRESS_MAX, STACK_ADDRESS_MAX, ROWS_MAX>
 {
-    fn tag(&self) -> Column<Advice> {
-        self.keys[0]
-    }
     fn account_addr(&self) -> Column<Advice> {
         self.keys[2]
     }
@@ -146,13 +140,10 @@ impl<
         let memory_value_table = meta.fixed_column();
 
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
-        let newer_cb = ConstraintBuilder::<F>::new(meta, keys);
+        let qb = ConstraintBuilder::<F>::new(meta, keys);
 
         // alias keys for later use
-        let tag = keys[0];
         let address = keys[3];
-
-        let one = Expression::Constant(F::from(1));
 
         let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
             IsZeroChip::configure(
@@ -189,7 +180,7 @@ impl<
             // 0. tag in RwTableTag range
             cb.require_in_set(
                 "tag in RwTableTag range",
-                meta.query_advice(tag, Rotation::cur()),
+                qb.tag(meta),
                 RwTableTag::iter().map(|x| x.expr()).collect(),
             );
 
@@ -244,7 +235,7 @@ impl<
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let value_cur = meta.query_advice(value, Rotation::cur());
             let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = one.clone() - is_write;
+            let q_read = 1.expr() - is_write;
 
             // 0. Unused keys are 0
             let key2 = meta.query_advice(keys[2], Rotation::cur());
@@ -261,7 +252,7 @@ impl<
                 q_not_all_keys_same(meta) * q_read * value_cur,
             );
 
-            cb.gate(s_enable * newer_cb.q_tag_is(meta, RwTableTag::Memory))
+            cb.gate(s_enable * qb.tag_is(meta, RwTableTag::Memory))
         });
 
         // 2. mem_addr in range
@@ -272,7 +263,7 @@ impl<
                 meta.query_fixed(memory_address_table_zero, Rotation::cur());
 
             vec![(
-                newer_cb.q_tag_is(meta, RwTableTag::Memory) * address_cur,
+                qb.tag_is(meta, RwTableTag::Memory) * address_cur,
                 memory_address_table_zero,
             )]
         });
@@ -284,7 +275,7 @@ impl<
             let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
 
             vec![(
-                newer_cb.q_tag_is(meta, RwTableTag::Memory) * value,
+                qb.tag_is(meta, RwTableTag::Memory) * value,
                 memory_value_table,
             )]
         });
@@ -296,7 +287,7 @@ impl<
 
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = one.clone() - is_write;
+            let q_read = 1.expr() - is_write;
             let key2 = meta.query_advice(keys[2], Rotation::cur());
             let key4 = meta.query_advice(keys[4], Rotation::cur());
 
@@ -315,7 +306,7 @@ impl<
                 "if address changes, operation is always a write",
                 q_not_all_keys_same(meta) * q_read,
             );
-            cb.gate(s_enable * newer_cb.q_tag_is(meta, RwTableTag::Stack))
+            cb.gate(s_enable * qb.tag_is(meta, RwTableTag::Stack))
         });
 
         // 2. stack_ptr in range
@@ -324,7 +315,10 @@ impl<
             let stack_address_table_zero =
                 meta.query_fixed(stack_address_table_zero, Rotation::cur());
 
-            vec![(newer_cb.q_tag_is(meta, RwTableTag::Stack) * address_cur, stack_address_table_zero)]
+            vec![(
+                qb.tag_is(meta, RwTableTag::Stack) * address_cur,
+                stack_address_table_zero,
+            )]
         });
 
         // 3. stack_ptr only increases by 0 or 1
@@ -339,7 +333,12 @@ impl<
                 "stack pointer only increases by 0 or 1",
                 stack_ptr - stack_ptr_prev,
             );
-            cb.gate(s_enable * newer_cb.q_tag_is(meta, RwTableTag::Stack) * tag_is_same_with_prev * call_id_same_with_prev)
+            cb.gate(
+                s_enable
+                    * qb.tag_is(meta, RwTableTag::Stack)
+                    * tag_is_same_with_prev
+                    * call_id_same_with_prev,
+            )
         });
 
         ///////////////////////// Storage related constraints /////////////////////////
@@ -348,7 +347,7 @@ impl<
             let mut cb = new_cb();
 
             let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = one.clone() - is_write;
+            let q_read = 1.expr() - is_write;
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
             let key1 = meta.query_advice(keys[1], Rotation::cur());
@@ -377,7 +376,7 @@ impl<
                 q_not_all_keys_same(meta) * rw_counter,
             );
 
-            cb.gate(s_enable * newer_cb.q_tag_is(meta, RwTableTag::Storage))
+            cb.gate(s_enable * qb.tag_is(meta, RwTableTag::AccountStorage))
         });
 
         Config {

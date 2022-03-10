@@ -52,7 +52,7 @@ impl<F> Default for Transition<F> {
     }
 }
 
-// Maybe this should be QueryBuilder?
+// Rename to QueryBuilder?
 pub(crate) struct ConstraintBuilder<F: FieldExt> {
     cb: BaseConstraintBuilder<F>,
     rw_counter: Column<Advice>,
@@ -90,8 +90,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
         }
     }
 
-    fn tag(&self) -> Column<Advice> {
-        self.keys[0]
+    pub(super) fn tag(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_advice(self.keys[0], Rotation::cur())
     }
     fn account_addr(&self) -> Column<Advice> {
         self.keys[2]
@@ -103,111 +103,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
         self.keys[4]
     }
 
-    pub(super) fn q_tag_is(&self, meta: &mut VirtualCells<F>, tag: RwTableTag) -> Expression<F> {
+    pub(super) fn tag_is(&self, meta: &mut VirtualCells<F>, tag: RwTableTag) -> Expression<F> {
         generate_lagrange_base_polynomial(
-            meta.query_advice(self.tag(), Rotation::cur()),
+            self.tag(meta),
             tag as usize,
             RwTableTag::iter().map(|x| x as usize),
         )
     }
-    // let q_stack = |meta: &mut VirtualCells<F>| q_tag_is(meta, STACK_TAG);
-    // let q_storage = |meta: &mut VirtualCells<F>| q_tag_is(meta, STORAGE_TAG);
-
-    // #[allow(clippy::type_complexity)]
-    // pub(crate) fn build(self) -> Vec<(&'static str, Expression<F>)> {
-    //     let mut constraints = self.cb.constraints;
-    //     for (row, usage) in
-    // self.curr.rows.iter().zip(self.curr_row_usages.iter()) {         if
-    // usage.is_byte_lookup_enabled {             constraints.push(("Enable byte
-    // lookup", row.qs_byte_lookup.expr() - 1.expr()));         }
-    //     }
-    //     constraints
-    // }
-    //
-    // pub(crate) fn query_bool(&mut self) -> Cell<F> {
-    //     let [cell] = self.query_cells::<1>(false);
-    //     self.require_boolean("Constrain cell to be a bool", cell.expr());
-    //     cell
-    // }
-    //
-    // pub(crate) fn query_byte(&mut self) -> Cell<F> {
-    //     let [cell] = self.query_cells::<1>(true);
-    //     cell
-    // }
-    //
-    // pub(crate) fn query_cell(&mut self) -> Cell<F> {
-    //     let [cell] = self.query_cells::<1>(false);
-    //     cell
-    // }
-    //
-    // pub(crate) fn query_word(&mut self) -> Word<F> {
-    //     self.query_rlc()
-    // }
-    //
-    // pub(crate) fn query_rlc<const N: usize>(&mut self) ->
-    // RandomLinearCombination<F, N> {     RandomLinearCombination::<F,
-    // N>::new(self.query_bytes(), self.power_of_randomness) }
-    //
-    // pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
-    //     self.query_cells::<N>(true)
-    // }
-    //
-    // fn query_cells<const N: usize>(&mut self, is_byte: bool) -> [Cell<F>; N] {
-    //     let mut cells = Vec::with_capacity(N);
-    //     let rows = &self.curr.rows;
-    //     let row_usages = &mut self.curr_row_usages;
-    //
-    //     // Iterate rows to find cell that matches the is_byte requirement.
-    //     for (row, usage) in rows.iter().zip(row_usages.iter_mut()) {
-    //         // If this row doesn't match the is_byte requirement and is already
-    //         // used, skip this row.
-    //         if usage.is_byte_lookup_enabled != is_byte && usage.next_idx > 0 {
-    //             continue;
-    //         }
-    //
-    //         // Enable the byte range lookup for this row if queried cells are
-    //         // required to be bytes.
-    //         if usage.next_idx == 0 && is_byte {
-    //             usage.is_byte_lookup_enabled = true;
-    //         }
-    //
-    //         let n = row.cells.len().min(usage.next_idx + N - cells.len());
-    //         cells.extend(row.cells[usage.next_idx..n].iter().cloned());
-    //         usage.next_idx = n;
-    //
-    //         if cells.len() == N {
-    //             return cells.try_into().unwrap();
-    //         }
-    //     }
-    //
-    //     unreachable!("not enough cells for query")
-    // }
-    //
-    // // Common
-    //
-    // pub(crate) fn require_zero(&mut self, name: &'static str, constraint:
-    // Expression<F>) {     self.cb.require_zero(name, constraint);
-    // }
-    //
-    // pub(crate) fn require_equal(
-    //     &mut self,
-    //     name: &'static str,
-    //     lhs: Expression<F>,
-    //     rhs: Expression<F>,
-    // ) {
-    //     self.cb.require_equal(name, lhs, rhs);
-    // }
-    //
-    // pub(crate) fn require_boolean(&mut self, name: &'static str, value:
-    // Expression<F>) {     self.cb.require_boolean(name, value);
-    // }
-    //
-    // pub(crate) fn require_in_set(
-    //     &mut self,
-    //     name: &'static str,
-    //     value: Expression<F>,
-    //     set: Vec<Expression<F>>,
-    // ) {
-    //     self.cb.require_in_set(name, value, set);
-    // }
 }
