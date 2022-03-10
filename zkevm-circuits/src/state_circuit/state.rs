@@ -11,6 +11,7 @@ use crate::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
         Variable,
     },
+    util::Expr,
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -18,7 +19,7 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-
+use strum::IntoEnumIterator;
 use pairing::arithmetic::FieldExt;
 
 /*
@@ -191,6 +192,13 @@ impl<
             let is_read = one.clone() - is_write.clone();
             let value_cur = meta.query_advice(value, Rotation::cur());
             let value_prev = meta.query_advice(value, Rotation::prev());
+
+            // 1. tag in RwTableTag range
+            cb.require_in_set(
+                "tag in RwTableTag range",
+                meta.query_advice(tag, Rotation::cur()),
+                RwTableTag::iter().map(|x| x.expr()).collect(),
+            );
 
             // 3. is_write is boolean
             cb.require_boolean("is_write should be boolean", is_write);
