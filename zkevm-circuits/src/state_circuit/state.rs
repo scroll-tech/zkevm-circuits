@@ -294,7 +294,10 @@ impl<
             let value = meta.query_advice(value, Rotation::cur());
             let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
 
-            vec![(newer_cb.q_tag_is(meta, RwTableTag::Memory) * value, memory_value_table)]
+            vec![(
+                newer_cb.q_tag_is(meta, RwTableTag::Memory) * value,
+                memory_value_table,
+            )]
         });
 
         ///////////////////////// Stack related constraints /////////////////////////
@@ -411,56 +414,50 @@ impl<
 
     /// Load lookup table / other fixed constants for this configuration.
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter
-            .assign_region(
-                || "rw counter table",
-                |mut region| {
-                    for idx in 0..=RW_COUNTER_MAX {
-                        region.assign_fixed(
-                            || "rw counter table",
-                            self.rw_counter_table,
-                            idx,
-                            || Ok(F::from(idx as u64)),
-                        )?;
-                    }
-                    Ok(())
-                },
-            )
-            .ok();
+        layouter.assign_region(
+            || "rw counter table",
+            |mut region| {
+                for idx in 0..=RW_COUNTER_MAX {
+                    region.assign_fixed(
+                        || "rw counter table",
+                        self.rw_counter_table,
+                        idx,
+                        || Ok(F::from(idx as u64)),
+                    )?;
+                }
+                Ok(())
+            },
+        )?;
 
-        layouter
-            .assign_region(
-                || "memory value table",
-                |mut region| {
-                    for idx in 0..=255 {
-                        region.assign_fixed(
-                            || "memory value table",
-                            self.memory_value_table,
-                            idx,
-                            || Ok(F::from(idx as u64)),
-                        )?;
-                    }
-                    Ok(())
-                },
-            )
-            .ok();
+        layouter.assign_region(
+            || "memory value table",
+            |mut region| {
+                for idx in 0..=255 {
+                    region.assign_fixed(
+                        || "memory value table",
+                        self.memory_value_table,
+                        idx,
+                        || Ok(F::from(idx as u64)),
+                    )?;
+                }
+                Ok(())
+            },
+        )?;
 
-        layouter
-            .assign_region(
-                || "memory address table with zero",
-                |mut region| {
-                    for idx in 0..=MEMORY_ADDRESS_MAX {
-                        region.assign_fixed(
-                            || "memory address table with zero",
-                            self.memory_address_table_zero,
-                            idx,
-                            || Ok(F::from(idx as u64)),
-                        )?;
-                    }
-                    Ok(())
-                },
-            )
-            .ok();
+        layouter.assign_region(
+            || "memory address table with zero",
+            |mut region| {
+                for idx in 0..=MEMORY_ADDRESS_MAX {
+                    region.assign_fixed(
+                        || "memory address table with zero",
+                        self.memory_address_table_zero,
+                        idx,
+                        || Ok(F::from(idx as u64)),
+                    )?;
+                }
+                Ok(())
+            },
+        )?;
 
         layouter.assign_region(
             || "stack address table with zero",
