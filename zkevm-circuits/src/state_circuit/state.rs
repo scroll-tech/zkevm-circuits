@@ -1,11 +1,11 @@
 use super::constraint_builder::ConstraintBuilder;
-use super::params::N_LIMBS_WORD;
+use super::params::N_LIMBS_ACCOUNT_ADDRESS;
 use crate::{
     evm_circuit::{
         table::RwTableTag,
         util::constraint_builder::BaseConstraintBuilder,
         witness::{RwMap, RwRow},
-        params::N_BYTES_WORD,
+        param::N_BYTES_WORD,
     },
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
@@ -177,7 +177,8 @@ impl<
             cb.require_equal(
                 "account address is RLC encoding of its limbs",
                 qb.account_address(meta),
-                RandomLinearCombination::random_linear_combine_expr(,
+                qb.account_address(meta),
+                // RandomLinearCombination::random_linear_combine_expr(,
             );
 
             // 2. key4 is RLC encoded

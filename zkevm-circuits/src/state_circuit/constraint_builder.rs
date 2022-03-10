@@ -7,10 +7,12 @@ use crate::{
             AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup, RwTableTag,
             TxContextFieldTag,
         },
+        param::N_BYTES_WORD,
         util::{Cell, RandomLinearCombination, Word},
     },
     util::Expr,
 };
+use super::params::N_LIMBS_ACCOUNT_ADDRESS;
 use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Fixed, VirtualCells};
 use halo2_proofs::poly::Rotation;
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
@@ -60,8 +62,8 @@ pub(crate) struct ConstraintBuilder<F: FieldExt> {
     is_write: Column<Advice>,
     keys: [Column<Advice>; 5],
     keys_diff_inv: [Column<Advice>; 5],
-    key2_limbs: [Column<Advice>; 8],
-    key4_bytes: [Column<Advice>; 32],
+    key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
+    key4_bytes: [Column<Advice>; N_BYTES_WORD],
     value: Column<Advice>,
     auxs: [Column<Advice>; 2],
     rw_counter_table: Column<Fixed>,
@@ -78,8 +80,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
             is_write: meta.advice_column(),
             keys,
             keys_diff_inv: [(); 5].map(|_| meta.advice_column()),
-            key2_limbs: [(); 10].map(|_| meta.advice_column()),
-            key4_bytes: [(); 32].map(|_| meta.advice_column()),
+            key2_limbs: [(); N_LIMBS_ACCOUNT_ADDRESS].map(|_| meta.advice_column()),
+            key4_bytes: [(); N_BYTES_WORD].map(|_| meta.advice_column()),
             auxs: [(); 2].map(|_| meta.advice_column()),
             s_enable: meta.fixed_column(),
             value: meta.advice_column(),
