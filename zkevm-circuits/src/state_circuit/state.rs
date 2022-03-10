@@ -96,8 +96,8 @@ pub struct Config<
 
     // range tables here, TODO: organize them to a single struct?
     rw_counter_table: Column<Fixed>,
-    stack_address_table_zero: Column<Fixed>,
-    memory_address_table_zero: Column<Fixed>,
+    allowed_stack_addresses: Column<Fixed>,
+    allowed_memory_addresses: Column<Fixed>,
     memory_value_table: Column<Fixed>,
 }
 
@@ -110,16 +110,6 @@ impl<
         const ROWS_MAX: usize,
     > Config<F, SANITY_CHECK, RW_COUNTER_MAX, MEMORY_ADDRESS_MAX, STACK_ADDRESS_MAX, ROWS_MAX>
 {
-    fn account_addr(&self) -> Column<Advice> {
-        self.keys[2]
-    }
-    fn address(&self) -> Column<Advice> {
-        self.keys[3]
-    }
-    fn storage_key(&self) -> Column<Advice> {
-        self.keys[4]
-    }
-
     /// Set up custom gates and lookup arguments for this configuration.
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let rw_counter = meta.advice_column();
@@ -135,15 +125,15 @@ impl<
         let value = meta.advice_column();
 
         let rw_counter_table = meta.fixed_column();
-        let memory_address_table_zero = meta.fixed_column();
-        let stack_address_table_zero = meta.fixed_column();
+        let allowed_memory_addresses = meta.fixed_column();
+        let allowed_stack_addresses = meta.fixed_column();
         let memory_value_table = meta.fixed_column();
 
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
         let qb = ConstraintBuilder::<F>::new(meta, keys);
 
         // alias keys for later use
-        let address = keys[3];
+        // let address = keys[3];
 
         let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
             IsZeroChip::configure(
@@ -258,13 +248,12 @@ impl<
         // 2. mem_addr in range
         // TODO: rewrite this using range check gates instead of lookup
         meta.lookup_any("Memory address in allowed range", |meta| {
-            let address_cur = meta.query_advice(address, Rotation::cur());
-            let memory_address_table_zero =
-                meta.query_fixed(memory_address_table_zero, Rotation::cur());
+            let allowed_memory_addresses =
+                meta.query_fixed(allowed_memory_addresses, Rotation::cur());
 
             vec![(
-                qb.tag_is(meta, RwTableTag::Memory) * address_cur,
-                memory_address_table_zero,
+                qb.tag_is(meta, RwTableTag::Memory) * qb.address(meta),
+                allowed_memory_addresses,
             )]
         });
 
@@ -311,13 +300,12 @@ impl<
 
         // 2. stack_ptr in range
         meta.lookup_any("Stack address in allowed range", |meta| {
-            let address_cur = meta.query_advice(address, Rotation::cur());
-            let stack_address_table_zero =
-                meta.query_fixed(stack_address_table_zero, Rotation::cur());
+            let allowed_stack_addresses =
+                meta.query_fixed(allowed_stack_addresses, Rotation::cur());
 
             vec![(
-                qb.tag_is(meta, RwTableTag::Stack) * address_cur,
-                stack_address_table_zero,
+                qb.tag_is(meta, RwTableTag::Stack) * qb.address(meta),
+                allowed_stack_addresses,
             )]
         });
 
@@ -391,8 +379,8 @@ impl<
             s_enable,
             key_is_same_with_prev,
             rw_counter_table,
-            memory_address_table_zero,
-            stack_address_table_zero,
+            allowed_memory_addresses,
+            allowed_stack_addresses,
             memory_value_table,
         }
     }
@@ -435,7 +423,7 @@ impl<
                 for idx in 0..=MEMORY_ADDRESS_MAX {
                     region.assign_fixed(
                         || "memory address table with zero",
-                        self.memory_address_table_zero,
+                        self.allowed_memory_addresses,
                         idx,
                         || Ok(F::from(idx as u64)),
                     )?;
@@ -450,7 +438,7 @@ impl<
                 for idx in 0..=STACK_ADDRESS_MAX {
                     region.assign_fixed(
                         || "stack address table with zero",
-                        self.stack_address_table_zero,
+                        self.allowed_stack_addresses,
                         idx,
                         || Ok(F::from(idx as u64)),
                     )?;

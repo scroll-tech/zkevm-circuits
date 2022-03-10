@@ -96,8 +96,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
     fn account_addr(&self) -> Column<Advice> {
         self.keys[2]
     }
-    fn address(&self) -> Column<Advice> {
-        self.keys[3]
+    pub(super) fn address(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_advice(self.keys[3], Rotation::cur())
     }
     fn storage_key(&self) -> Column<Advice> {
         self.keys[4]
