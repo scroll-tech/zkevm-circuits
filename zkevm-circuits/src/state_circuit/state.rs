@@ -1,3 +1,4 @@
+use super::constraint_builder::ConstraintBuilder;
 use crate::{
     evm_circuit::{
         table::RwTableTag,
@@ -19,8 +20,8 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use strum::IntoEnumIterator;
 use pairing::arithmetic::FieldExt;
+use strum::IntoEnumIterator;
 
 /*
 (FIXME) Example state table:
@@ -48,8 +49,8 @@ use pairing::arithmetic::FieldExt;
 // 3 - stack
 // 4 - storage
 
-const EMPTY_TAG: usize = 0;
-const START_TAG: usize = 1;
+// const EMPTY_TAG: usize = 0;
+// const START_TAG: usize = 1;
 const MEMORY_TAG: usize = RwTableTag::Memory as usize;
 const STACK_TAG: usize = RwTableTag::Stack as usize;
 const STORAGE_TAG: usize = RwTableTag::AccountStorage as usize;
@@ -145,6 +146,7 @@ impl<
         let memory_value_table = meta.fixed_column();
 
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
+        let newer_cb = ConstraintBuilder::<F>::new(meta, keys);
 
         // alias keys for later use
         let tag = keys[0];
@@ -154,10 +156,12 @@ impl<
 
         let q_tag_is = |meta: &mut VirtualCells<F>, tag_value: usize| {
             let tag_cur = meta.query_advice(tag, Rotation::cur());
-            let all_possible_values = EMPTY_TAG..=STORAGE_TAG;
-            generate_lagrange_base_polynomial(tag_cur, tag_value, all_possible_values)
+            generate_lagrange_base_polynomial(
+                tag_cur,
+                tag_value,
+                RwTableTag::iter().map(|x| x as usize),
+            )
         };
-        let q_memory = |meta: &mut VirtualCells<F>| q_tag_is(meta, MEMORY_TAG);
         let q_stack = |meta: &mut VirtualCells<F>| q_tag_is(meta, STACK_TAG);
         let q_storage = |meta: &mut VirtualCells<F>| q_tag_is(meta, STORAGE_TAG);
 
@@ -181,7 +185,7 @@ impl<
                 * key_is_same_with_prev[3].is_zero_expression.clone()
                 * key_is_same_with_prev[4].is_zero_expression.clone()
         };
-        let q_not_all_keys_same = |meta: &mut VirtualCells<F>| one.clone() - q_all_keys_same(meta);
+        let q_not_all_keys_same = |meta: &mut VirtualCells<F>| 1.expr() - q_all_keys_same(meta);
 
         ///////////////////////// General constraints /////////////////////////////////
 
@@ -189,19 +193,31 @@ impl<
             let mut cb = new_cb();
             let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let is_write = meta.query_advice(is_write, Rotation::cur());
-            let is_read = one.clone() - is_write.clone();
+            let is_read = 1.expr() - is_write.clone();
             let value_cur = meta.query_advice(value, Rotation::cur());
             let value_prev = meta.query_advice(value, Rotation::prev());
 
-            // 1. tag in RwTableTag range
+            // 0. tag in RwTableTag range
             cb.require_in_set(
                 "tag in RwTableTag range",
                 meta.query_advice(tag, Rotation::cur()),
                 RwTableTag::iter().map(|x| x.expr()).collect(),
             );
 
+            // 1. key2 is linear combination of 10 x 16bit limbs and also in range
+            // TODO(mason)
+
+            // 2. key4 is RLC encoded
+            // TODO(mason)
+
             // 3. is_write is boolean
             cb.require_boolean("is_write should be boolean", is_write);
+
+            // 4. Keys are sorted in lexicographic order for same Tag
+            // TODO(mason)
+
+            // 5. RWC is monotonically strictly increasing for a set of all keys
+            // TODO(mason)
 
             // 6. Read consistency
             // When a row is READ
@@ -227,10 +243,7 @@ impl<
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
 
             vec![(
-                s_enable * q_all_keys_same(meta)
-                    * (rw_counter - rw_counter_prev - one.clone()), /*
-                                                                     * - 1 because it needs to
-                                                                     *   be strictly monotone */
+                s_enable * q_all_keys_same(meta) * (rw_counter - rw_counter_prev - 1.expr()),
                 rw_counter_table,
             )]
         });
@@ -259,28 +272,29 @@ impl<
                 q_not_all_keys_same(meta) * q_read * value_cur,
             );
 
-            cb.gate(s_enable * q_memory(meta))
+            cb.gate(s_enable * newer_cb.q_tag_is(meta, RwTableTag::Memory))
         });
 
         // 2. mem_addr in range
         // TODO: rewrite this using range check gates instead of lookup
         meta.lookup_any("Memory address in allowed range", |meta| {
-            let q_memory = q_memory(meta);
             let address_cur = meta.query_advice(address, Rotation::cur());
             let memory_address_table_zero =
                 meta.query_fixed(memory_address_table_zero, Rotation::cur());
 
-            vec![(q_memory * address_cur, memory_address_table_zero)]
+            vec![(
+                newer_cb.q_tag_is(meta, RwTableTag::Memory) * address_cur,
+                memory_address_table_zero,
+            )]
         });
 
         // 3. value is a byte
         // Memory value is in the allowed range.
         meta.lookup_any("Memory value in allowed range", |meta| {
-            let q_memory = q_memory(meta);
             let value = meta.query_advice(value, Rotation::cur());
             let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
 
-            vec![(q_memory * value, memory_value_table)]
+            vec![(newer_cb.q_tag_is(meta, RwTableTag::Memory) * value, memory_value_table)]
         });
 
         ///////////////////////// Stack related constraints /////////////////////////
@@ -437,7 +451,7 @@ impl<
                 |mut region| {
                     for idx in 0..=MEMORY_ADDRESS_MAX {
                         region.assign_fixed(
-                            || "address table with zero",
+                            || "memory address table with zero",
                             self.memory_address_table_zero,
                             idx,
                             || Ok(F::from(idx as u64)),
