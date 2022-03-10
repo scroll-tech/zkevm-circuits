@@ -1,9 +1,11 @@
 use super::constraint_builder::ConstraintBuilder;
+use super::params::N_LIMBS_WORD;
 use crate::{
     evm_circuit::{
         table::RwTableTag,
         util::constraint_builder::BaseConstraintBuilder,
         witness::{RwMap, RwRow},
+        params::N_BYTES_WORD,
     },
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
@@ -86,8 +88,8 @@ pub struct Config<
     // helper column used for IsZero chip
     keys_diff_inv: [Column<Advice>; 5],
 
-    key2_limbs: [Column<Advice>; 8],
-    key4_bytes: [Column<Advice>; 32],
+    key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
+    key4_bytes: [Column<Advice>; N_BYTES_WORD],
     value: Column<Advice>,
     auxs: [Column<Advice>; 2],
 
@@ -116,8 +118,8 @@ impl<
         let is_write = meta.advice_column();
         let keys = [(); 5].map(|_| meta.advice_column());
         let keys_diff_inv = [(); 5].map(|_| meta.advice_column());
-        let key2_limbs = [(); 8].map(|_| meta.advice_column());
-        let key4_bytes = [(); 32].map(|_| meta.advice_column());
+        let key2_limbs = [(); N_LIMBS_ACCOUNT_ADDRESS].map(|_| meta.advice_column());
+        let key4_bytes = [(); N_BYTES_WORD].map(|_| meta.advice_column());
         let auxs = [(); 2].map(|_| meta.advice_column());
 
         let s_enable = meta.fixed_column();
@@ -131,9 +133,6 @@ impl<
 
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
         let qb = ConstraintBuilder::<F>::new(meta, keys);
-
-        // alias keys for later use
-        // let address = keys[3];
 
         let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
             IsZeroChip::configure(
@@ -175,7 +174,11 @@ impl<
             );
 
             // 1. key2 is linear combination of 10 x 16bit limbs and also in range
-            // TODO(mason)
+            cb.require_equal(
+                "account address is RLC encoding of its limbs",
+                qb.account_address(meta),
+                RandomLinearCombination::random_linear_combine_expr(,
+            );
 
             // 2. key4 is RLC encoded
             // TODO(mason)
@@ -228,10 +231,8 @@ impl<
             let q_read = 1.expr() - is_write;
 
             // 0. Unused keys are 0
-            let key2 = meta.query_advice(keys[2], Rotation::cur());
-            let key4 = meta.query_advice(keys[4], Rotation::cur());
-            cb.require_zero("key2 is 0", key2);
-            cb.require_zero("key4 is 0", key4);
+            cb.require_zero("key2 is 0", qb.account_address(meta));
+            cb.require_zero("key4 is 0", qb.storage_key(meta));
 
             // 1. First access for a set of all keys
             //

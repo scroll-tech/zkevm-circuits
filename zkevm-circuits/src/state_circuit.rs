@@ -2,7 +2,7 @@
 
 // TODO: clean up module structure.
 pub(super) mod constraint_builder;
-// pub(super) mod util;
+pub(super) mod params;
 
 pub(crate) mod state;
 pub use state::StateCircuit;

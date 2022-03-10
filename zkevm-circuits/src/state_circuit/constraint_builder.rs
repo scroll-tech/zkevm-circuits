@@ -78,7 +78,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
             is_write: meta.advice_column(),
             keys,
             keys_diff_inv: [(); 5].map(|_| meta.advice_column()),
-            key2_limbs: [(); 8].map(|_| meta.advice_column()),
+            key2_limbs: [(); 10].map(|_| meta.advice_column()),
             key4_bytes: [(); 32].map(|_| meta.advice_column()),
             auxs: [(); 2].map(|_| meta.advice_column()),
             s_enable: meta.fixed_column(),
@@ -93,14 +93,23 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
     pub(super) fn tag(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
         meta.query_advice(self.keys[0], Rotation::cur())
     }
-    fn account_addr(&self) -> Column<Advice> {
-        self.keys[2]
+    // This is TxId or CallId if applicable. 0 otherwise.
+    fn id(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_advice(self.keys[1], Rotation::cur())
     }
+    pub(super) fn account_address(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_advice(self.keys[2], Rotation::cur())
+    }
+
+    pub(super) fn account_address_limbs(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_advice(self.keys[2], Rotation::cur())
+    }
+
     pub(super) fn address(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
         meta.query_advice(self.keys[3], Rotation::cur())
     }
-    fn storage_key(&self) -> Column<Advice> {
-        self.keys[4]
+    pub(super) fn storage_key(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_advice(self.keys[4], Rotation::cur())
     }
 
     pub(super) fn tag_is(&self, meta: &mut VirtualCells<F>, tag: RwTableTag) -> Expression<F> {
