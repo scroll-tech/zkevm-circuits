@@ -35,6 +35,8 @@ impl Opcode for Sload {
                 stack_value_read,
                 storage_value_read,
                 storage_value_read,
+                state.tx_ctx.id(),
+                storage_value_read, // TODO: committed_value
             ),
         );
 
@@ -99,6 +101,8 @@ mod sload_tests {
                 Address::from([0u8; 20]),
                 Word::from(0x0u32),
                 Word::from(0x6fu32),
+                Word::from(0x6fu32),
+                1usize,
                 Word::from(0x6fu32),
             ),
         );

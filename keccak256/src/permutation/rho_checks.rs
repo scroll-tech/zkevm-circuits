@@ -32,8 +32,8 @@
 //! circuit we have to do a lookup check for that
 //!
 //! The lookup is more efficient when we lookup
-//! multiple([`crate::gates::rho_helpers::BASE_NUM_OF_CHUNKS`]) chunks at a
-//! time.
+//! multiple([`crate::permutation::rho_helpers::BASE_NUM_OF_CHUNKS`]) chunks at
+//! a time.
 //!
 //! ## Checks
 //!
@@ -46,8 +46,8 @@
 //! - We run down the input accumulator by subtracting each `input_coef *
 //!   power_of_13`
 //! - We run up the output accumulator by adding up `output_coef * power_of_9`
-//! - We lookup [`crate::gates::tables::Base13toBase9TableConfig`] and check the
-//!   conversion between `input_coef` and `output_coef` is valid
+//! - We lookup [`crate::permutation::tables::Base13toBase9TableConfig`] and
+//!   check the conversion between `input_coef` and `output_coef` is valid
 //!
 //! We have the copy constraint to glue input accumulator to input lane and the
 //! output accumulator to output lane
@@ -61,13 +61,13 @@
 //! output chunk. We call the 0th input chunk the `low_value` and the 64th input
 //! chunk the `high_value`. A the end of the running down input accumulator, the
 //! remaining value is `low_value + high_value * 13**64` We lookup [`crate::
-//! gates::tables::SpecialChunkTableConfig`] to convert it to
+//! permutation::tables::SpecialChunkTableConfig`] to convert it to
 //! `convert_b13_coef(low_value + high_value)`.
 //!
 //! ### Overflow Checks
 //!
-//! The [`crate::gates::tables::Base13toBase9TableConfig`] table is built to
-//! lookup 4 chunks. But we have chunks that are step 1, step 2, and step 3,
+//! The [`crate::permutation::tables::Base13toBase9TableConfig`] table is built
+//! to lookup 4 chunks. But we have chunks that are step 1, step 2, and step 3,
 //! which means they suppose to have the last 1, 2, or 3 chunks to be 0.
 //! If a step 1 step is witnessed with 2, 3, or 4 non-zero input chunks, then
 //! it's a malicious overflow and we have to provent the prover from doing that.
@@ -75,9 +75,9 @@
 //! Doing range check for each of non-4chunks steps would be inefficient,
 //! instead we use the following technique.
 //!
-//! We define the [`crate::gates::rho_helpers::OVERFLOW_TRANSFORM`] to map
+//! We define the [`crate::permutation::rho_helpers::OVERFLOW_TRANSFORM`] to map
 //! `step` to a value `overflow_detector`. We also add a column in
-//! [`crate::gates::tables::Base13toBase9TableConfig`] to lookup
+//! [`crate::permutation::tables::Base13toBase9TableConfig`] to lookup
 //! `overflow_detector`. We sum up all the overflow_detectors across 25 lanes,
 //! for each step 1, step 2, and step 3. At the end of the Rho step we perform
 //! the final overflow detector range check in [`OverflowCheckConfig`].
@@ -90,24 +90,24 @@
 //!
 //! The sum of the step 1 should be 0.
 //! So that if prover witness any more than 1 non-zero chunks, the
-//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a overflow
+//! [`crate::permutation::tables::Base13toBase9TableConfig`] returns a overflow
 //! detector 1, 13, or 170 and fail the final sum check.
 //!
 //! The sum of the step 2 should be less than or equal to 1 times all numbers of
 //! step 2, which can be counted at setup time to be 12. So that if prover
 //! witness any more than 2 non-zero chunks, the
-//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a overflow
+//! [`crate::permutation::tables::Base13toBase9TableConfig`] returns a overflow
 //! detector 13 or 170 and fail the final sum check.
 //!
 //! The sum of the step 3 should be less than or equal to 13 times all numbers
 //! of step 3, which can be counted at setup time to be 13. So that if prover
 //! witness any more than 3 non-zero chunks, the
-//! [`crate::gates::tables::Base13toBase9TableConfig`] returns a overflow
+//! [`crate::permutation::tables::Base13toBase9TableConfig`] returns a overflow
 //! detector 170 and fail the final sum check.
 use crate::arith_helpers::*;
 use crate::common::ROTATION_CONSTANTS;
-use crate::gates::{
-    gate_helpers::*,
+use crate::gate_helpers::{biguint_to_f, f_to_biguint};
+use crate::permutation::{
     rho_helpers::*,
     tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
 };

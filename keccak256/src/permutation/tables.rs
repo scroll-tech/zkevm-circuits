@@ -1,17 +1,15 @@
 use crate::arith_helpers::{convert_b13_coef, convert_b9_coef, f_from_radix_be, B13, B2, B9};
 use crate::common::LANE_SIZE;
-use crate::gates::rho_helpers::{get_overflow_detector, BASE_NUM_OF_CHUNKS};
+use crate::gate_helpers::f_to_biguint;
+use crate::permutation::rho_helpers::{get_overflow_detector, BASE_NUM_OF_CHUNKS};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::Layouter,
     plonk::{ConstraintSystem, Error, TableColumn},
 };
+use itertools::Itertools;
 use std::convert::TryInto;
 use std::marker::PhantomData;
-
-use itertools::Itertools;
-
-use crate::gates::gate_helpers::f_to_biguint;
 
 const MAX_CHUNKS: usize = 64;
 const NUM_OF_BINARY_CHUNKS: usize = 16;

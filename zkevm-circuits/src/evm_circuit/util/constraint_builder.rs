@@ -677,6 +677,34 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value - value_prev
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn account_storage_access_list_write_with_reversion(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        key: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        is_persistent: Expression<F>,
+        rw_counter_end_of_reversion: Expression<F>,
+    ) {
+        self.state_write_with_reversion(
+            "account_storage_access_list_write_with_reversion",
+            RwTableTag::TxAccessListAccountStorage,
+            [
+                tx_id,
+                account_address,
+                key,
+                value,
+                value_prev,
+                0.expr(),
+                0.expr(),
+            ],
+            is_persistent,
+            rw_counter_end_of_reversion,
+        );
+    }
+
     // Account
 
     pub(crate) fn account_read(
@@ -750,6 +778,32 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             ],
             is_persistent,
             rw_counter_end_of_reversion,
+        );
+    }
+
+    // Account Storage
+
+    pub(crate) fn account_storage_read(
+        &mut self,
+        account_address: Expression<F>,
+        key: Expression<F>,
+        value: Expression<F>,
+        tx_id: Expression<F>,
+        committed_value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "account_storage_read",
+            false.expr(),
+            RwTableTag::AccountStorage,
+            [
+                account_address,
+                key,
+                0.expr(),
+                value.clone(),
+                value,
+                tx_id,
+                committed_value,
+            ],
         );
     }
 

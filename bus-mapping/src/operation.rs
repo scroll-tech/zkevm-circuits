@@ -286,14 +286,18 @@ pub struct StorageOp {
     pub value: Word,
     /// Storage Value before the operation
     pub value_prev: Word,
+    /// Transaction ID: Transaction index in the block starting at 1.
+    pub tx_id: usize,
+    /// Storage Value before the transaction
+    pub committed_value: Word,
 }
 
 impl fmt::Debug for StorageOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("StorageOp { ")?;
         f.write_fmt(format_args!(
-            "addr: {:?}, key: {:?}, val_prev: 0x{:x}, val: 0x{:x}",
-            self.address, self.key, self.value_prev, self.value,
+            "tx_id: {:?}, addr: {:?}, key: {:?}, committed_val: 0x{:x}, val_prev: 0x{:x}, val: 0x{:x}",
+            self.tx_id, self.address, self.key, self.committed_value, self.value_prev, self.value
         ))?;
         f.write_str(" }")
     }
@@ -301,12 +305,21 @@ impl fmt::Debug for StorageOp {
 
 impl StorageOp {
     /// Create a new instance of a `StorageOp` from it's components.
-    pub const fn new(address: Address, key: Word, value: Word, value_prev: Word) -> StorageOp {
+    pub const fn new(
+        address: Address,
+        key: Word,
+        value: Word,
+        value_prev: Word,
+        tx_id: usize,
+        committed_value: Word,
+    ) -> StorageOp {
         StorageOp {
             address,
             key,
             value,
             value_prev,
+            tx_id,
+            committed_value,
         }
     }
 

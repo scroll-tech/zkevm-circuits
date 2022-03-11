@@ -1,3 +1,4 @@
+use crate::arith_helpers::*;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
@@ -5,55 +6,51 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::{convert::TryInto, marker::PhantomData};
+use std::convert::TryInto;
+use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
-pub struct XiConfig<F> {
-    #[allow(dead_code)]
+pub struct ThetaConfig<F> {
     q_enable: Selector,
-    state: [Column<Advice>; 25],
+    pub(crate) state: [Column<Advice>; 25],
     _marker: PhantomData<F>,
 }
 
-impl<F: Field> XiConfig<F> {
+impl<F: Field> ThetaConfig<F> {
     pub const OFFSET: usize = 2;
-    // We assume state is recieved in base-9.
     pub fn configure(
         q_enable: Selector,
         meta: &mut ConstraintSystem<F>,
         state: [Column<Advice>; 25],
-    ) -> XiConfig<F> {
-        meta.create_gate("xi", |meta| {
-            //  state in base 9, coefficient in 0~1
-            //  def xi(state: List[List[int]]):
-            //      new_state = [[0 for x in range(5)] for y in range(5)]
-            //      # Xi step
-            //      for x in range(5):
-            //          for y in range(5):
-            //              # a, b, c, d are base9, coefficient in 0~1
-            //              a = state[x][y]
-            //              b = state[(x + 1) % 5][y]
-            //              c = state[(x + 2) % 5][y]
-            //              # coefficient in 0~6
-            //              new_state[x][y] = 2*a + b + 3*c
-            //      return new_state
+    ) -> ThetaConfig<F> {
+        meta.create_gate("theta", |meta| {
+            let q_enable = meta.query_selector(q_enable);
+            let column_sum: Vec<Expression<F>> = (0..5)
+                .map(|x| {
+                    let state_x0 = meta.query_advice(state[5 * x], Rotation::cur());
+                    let state_x1 = meta.query_advice(state[5 * x + 1], Rotation::cur());
+                    let state_x2 = meta.query_advice(state[5 * x + 2], Rotation::cur());
+                    let state_x3 = meta.query_advice(state[5 * x + 3], Rotation::cur());
+                    let state_x4 = meta.query_advice(state[5 * x + 4], Rotation::cur());
+                    state_x0 + state_x1 + state_x2 + state_x3 + state_x4
+                })
+                .collect::<Vec<_>>();
+
             (0..5)
-                .cartesian_product(0..5usize)
+                .cartesian_product(0..5)
                 .map(|(x, y)| {
-                    let a = meta.query_advice(state[5 * x + y], Rotation::cur());
-                    let b = meta.query_advice(state[5 * ((x + 1) % 5) + y], Rotation::cur());
-                    let c = meta.query_advice(state[5 * ((x + 2) % 5) + y], Rotation::cur());
-                    let next_lane = meta.query_advice(state[5 * x + y], Rotation::next());
-                    meta.query_selector(q_enable)
-                        * ((Expression::Constant(F::from(2)) * a
-                            + b
-                            + Expression::Constant(F::from(3)) * c)
-                            - next_lane)
+                    let new_state = meta.query_advice(state[5 * x + y], Rotation::next());
+                    let old_state = meta.query_advice(state[5 * x + y], Rotation::cur());
+                    let right = old_state
+                        + column_sum[(x + 4) % 5].clone()
+                        + Expression::Constant(F::from(B13.into()))
+                            * column_sum[(x + 1) % 5].clone();
+                    q_enable.clone() * (new_state - right)
                 })
                 .collect::<Vec<_>>()
         });
 
-        XiConfig {
+        ThetaConfig {
             q_enable,
             state,
             _marker: PhantomData,
@@ -67,12 +64,13 @@ impl<F: Field> XiConfig<F> {
         out_state: [F; 25],
     ) -> Result<[AssignedCell<F, F>; 25], Error> {
         layouter.assign_region(
-            || "Xi assignation",
+            || "Theta gate",
             |mut region| {
                 let offset = 0;
                 self.q_enable.enable(&mut region, offset)?;
-                for (idx, state_item) in state.iter().enumerate() {
-                    state_item.copy_advice(
+
+                for (idx, state) in state.iter().enumerate() {
+                    state.copy_advice(
                         || format!("assign state {}", idx),
                         &mut region,
                         self.state[idx],
@@ -102,29 +100,29 @@ impl<F: Field> XiConfig<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arith_helpers::*;
     use crate::common::*;
-    use crate::gates::gate_helpers::biguint_to_f;
+    use crate::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
-    use halo2_proofs::circuit::Layouter;
-    use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
-    use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use halo2_proofs::{
+        circuit::{Layouter, SimpleFloorPlanner},
+        dev::MockProver,
+        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+    };
     use itertools::Itertools;
     use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
     use std::marker::PhantomData;
 
     #[test]
-    fn test_xi_gate() {
+    fn test_theta_gates() {
         #[derive(Default)]
         struct MyCircuit<F> {
             in_state: [F; 25],
             out_state: [F; 25],
             _marker: PhantomData<F>,
         }
-
         impl<F: Field> Circuit<F> for MyCircuit<F> {
-            type Config = XiConfig<F>;
+            type Config = ThetaConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -144,7 +142,7 @@ mod tests {
                     .try_into()
                     .unwrap();
 
-                XiConfig::configure(q_enable, meta, state)
+                ThetaConfig::configure(q_enable, meta, state)
             }
 
             fn synthesize(
@@ -175,13 +173,14 @@ mod tests {
                 )?;
 
                 config.assign_state(&mut layouter, &in_state, self.out_state)?;
+
                 Ok(())
             }
         }
 
         let input1: State = [
             [1, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0],
+            [0, 0, 0, 9223372036854775808, 0],
             [0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0],
@@ -190,14 +189,15 @@ mod tests {
         let mut in_state: [Fp; 25] = [Fp::zero(); 25];
 
         for (x, y) in (0..5).cartesian_product(0..5) {
-            in_biguint[(x, y)] = convert_b2_to_b9(input1[x][y]);
+            in_biguint[(x, y)] = convert_b2_to_b13(input1[x][y]);
             in_state[5 * x + y] = biguint_to_f(&in_biguint[(x, y)]);
         }
-        let s1_arith = KeccakFArith::xi(&in_biguint);
+        let s1_arith = KeccakFArith::theta(&in_biguint);
         let mut out_state: [Fp; 25] = [Fp::zero(); 25];
         for (x, y) in (0..5).cartesian_product(0..5) {
             out_state[5 * x + y] = biguint_to_f(&s1_arith[(x, y)]);
         }
+
         let circuit = MyCircuit::<Fp> {
             in_state,
             out_state,
@@ -208,5 +208,17 @@ mod tests {
         let prover = MockProver::<Fp>::run(9, &circuit, vec![]).unwrap();
 
         assert_eq!(prover.verify(), Ok(()));
+
+        let mut out_state2 = out_state;
+        out_state2[0] = Fp::from(5566u64);
+
+        let circuit2 = MyCircuit::<Fp> {
+            in_state,
+            out_state: out_state2,
+            _marker: PhantomData,
+        };
+
+        let prover = MockProver::<Fp>::run(9, &circuit2, vec![]).unwrap();
+        assert!(prover.verify().is_err());
     }
 }

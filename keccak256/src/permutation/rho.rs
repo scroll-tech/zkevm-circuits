@@ -1,4 +1,4 @@
-use crate::gates::{
+use crate::permutation::{
     rho_checks::{LaneRotateConversionConfig, OverflowCheckConfig},
     rho_helpers::{STEP2_RANGE, STEP3_RANGE},
     tables::{Base13toBase9TableConfig, RangeCheckConfig, SpecialChunkTableConfig},
@@ -120,7 +120,7 @@ mod tests {
     use super::*;
     use crate::arith_helpers::*;
     use crate::common::*;
-    use crate::gates::gate_helpers::*;
+    use crate::gate_helpers::biguint_to_f;
     use crate::keccak_arith::*;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Error};
@@ -128,6 +128,7 @@ mod tests {
     use itertools::Itertools;
     use pairing::bn256::Fr as Fp;
     use std::convert::TryInto;
+
     #[test]
     fn test_rho_gate() {
         #[derive(Default)]

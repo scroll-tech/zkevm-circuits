@@ -4,7 +4,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::gates::tables::BaseInfo;
+use super::tables::BaseInfo;
 use eth_types::Field;
 
 #[derive(Clone, Debug)]
@@ -163,10 +163,8 @@ impl<F: Field> BaseConversionConfig<F> {
 mod tests {
     use super::*;
     use crate::arith_helpers::{convert_b2_to_b13, convert_b9_lane_to_b13};
-    use crate::gates::{
-        gate_helpers::biguint_to_f,
-        tables::{FromBase9TableConfig, FromBinaryTableConfig},
-    };
+    use crate::gate_helpers::biguint_to_f;
+    use crate::permutation::tables::{FromBase9TableConfig, FromBinaryTableConfig};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,

@@ -5,7 +5,9 @@ use halo2_proofs::{
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use keccak256::{circuit::KeccakFConfig, common::NEXT_INPUTS_LANES, keccak_arith::KeccakFArith};
+use keccak256::{
+    common::NEXT_INPUTS_LANES, keccak_arith::KeccakFArith, permutation::circuit::KeccakFConfig,
+};
 
 #[derive(Default, Clone)]
 struct KeccakRoundTestCircuit<F> {
@@ -82,7 +84,7 @@ mod tests {
     use keccak256::{
         arith_helpers::*,
         common::{State, ROUND_CONSTANTS},
-        gates::gate_helpers::*,
+        gate_helpers::biguint_to_f,
     };
     use pairing::bn256::{Bn256, Fr, G1Affine};
     use rand::SeedableRng;

@@ -329,7 +329,7 @@ impl<F: Field> MixingConfig<F> {
 mod tests {
     use super::*;
     use crate::common::{State, PERMUTATION, ROUND_CONSTANTS};
-    use crate::gates::gate_helpers::biguint_to_f;
+    use crate::gate_helpers::biguint_to_f;
     use halo2_proofs::circuit::Layouter;
     use halo2_proofs::plonk::{ConstraintSystem, Error};
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};

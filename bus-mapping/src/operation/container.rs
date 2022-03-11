@@ -191,6 +191,8 @@ mod container_test {
                 Word::default(),
                 Word::from(0x1),
                 Word::default(),
+                1usize,
+                Word::default(),
             ),
         );
         let stack_ref = operation_container.insert(stack_operation.clone());
