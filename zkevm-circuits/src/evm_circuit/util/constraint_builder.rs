@@ -694,6 +694,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             [
                 tx_id,
                 account_address,
+                0.expr(),
                 key,
                 value,
                 value_prev,
@@ -796,9 +797,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             false.expr(),
             RwTableTag::AccountStorage,
             [
-                account_address,
-                key,
                 0.expr(),
+                account_address,
+                0.expr(),
+                key,
                 value.clone(),
                 value,
                 tx_id,
