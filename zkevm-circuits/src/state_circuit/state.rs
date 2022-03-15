@@ -2,10 +2,10 @@ use super::constraint_builder::ConstraintBuilder;
 use super::params::N_LIMBS_ACCOUNT_ADDRESS;
 use crate::{
     evm_circuit::{
+        param::N_BYTES_WORD,
         table::RwTableTag,
         util::constraint_builder::BaseConstraintBuilder,
         witness::{RwMap, RwRow},
-        param::N_BYTES_WORD,
     },
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
