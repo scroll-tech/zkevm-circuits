@@ -1,58 +1,22 @@
 use super::params::N_LIMBS_ACCOUNT_ADDRESS;
-use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
-use crate::evm_circuit::util::math_gadget::generate_lagrange_base_polynomial;
-use crate::{
-    evm_circuit::{
-        param::N_BYTES_WORD,
-        // step::{Preset, Step},
-        table::{
-            AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup, RwTableTag,
-            TxContextFieldTag,
-        },
-        util::{Cell, RandomLinearCombination, Word},
+use crate::evm_circuit::{
+    param::N_BYTES_WORD,
+    table::RwTableTag,
+    util::{
+        constraint_builder::BaseConstraintBuilder, math_gadget::generate_lagrange_base_polynomial,
     },
-    util::Expr,
 };
-use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Fixed, VirtualCells};
-use halo2_proofs::poly::Rotation;
-use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
-use std::convert::TryInto;
+use halo2_proofs::{
+    arithmetic::FieldExt,
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    poly::Rotation,
+};
 use strum::IntoEnumIterator;
 
 // TODO(mason) set these correctly
 const MAX_DEGREE: usize = 15;
 const LOOKUP_DEGREE: usize = 2;
 const WIDTH: usize = 10;
-
-pub(crate) enum Transition<T> {
-    Same,
-    Delta(T),
-    To(T),
-}
-
-#[derive(Clone, Debug, Default)]
-struct RowUsage {
-    next_idx: usize,
-    is_byte_lookup_enabled: bool,
-}
-
-#[derive(Clone, Debug)]
-struct Row<F> {
-    pub(crate) qs_byte_lookup: Cell<F>,
-    pub(crate) cells: [Cell<F>; WIDTH],
-}
-
-// rename this to RWTableRow?
-#[derive(Clone, Debug)]
-pub(crate) struct Step<F> {
-    rows: Vec<Row<F>>,
-}
-
-impl<F> Default for Transition<F> {
-    fn default() -> Self {
-        Self::Same
-    }
-}
 
 // Rename to QueryBuilder?
 pub(crate) struct ConstraintBuilder<F: FieldExt> {
