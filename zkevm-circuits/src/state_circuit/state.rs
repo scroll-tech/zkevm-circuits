@@ -13,12 +13,18 @@ use crate::{
     },
     util::Expr,
 };
+use bus_mapping::operation::{
+    MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
+};
 use eth_types::Field;
+use eth_types::U256;
+use eth_types::ToLittleEndian;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, VirtualCells},
     poly::Rotation,
 };
+use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
 use strum::IntoEnumIterator;
 
@@ -132,7 +138,7 @@ impl<
         let memory_value_table = meta.fixed_column();
 
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
-        let qb = ConstraintBuilder::<F>::new(meta, keys);
+        let qb = ConstraintBuilder::<F>::new(meta, keys, key2_limbs);
 
         let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
             IsZeroChip::configure(
@@ -173,16 +179,27 @@ impl<
                 RwTableTag::iter().map(|x| x.expr()).collect(),
             );
 
-            // 1. key2 is linear combination of 10 x 16bit limbs and also in range
+            // 1. key2 expands limbs and for each limb, 0 <= limb < 2**64
             cb.require_equal(
-                "account address is RLC encoding of its limbs",
+                "account address matches its limbs",
                 qb.account_address(meta),
-                qb.account_address(meta),
-                // RandomLinearCombination::random_linear_combine_expr(,
+                qb.account_address_limbs(meta)
+                    .iter()
+                    .fold(0.expr(), |result, limb| {
+                        (2_u64.pow(16)).expr() * result + limb.clone()
+                    }),
             );
+            // TODO(mason) range check for each limb.
 
             // 2. key4 is RLC encoded
-            // TODO(mason)
+            // cb.require_equal(
+            //     "storage key matches its RLC encoding",
+            //     qb.storage_key(meta),
+            //     from_bytes::expr(qb.storage_key_bytes()),
+            //     qb.account_address_limbs(meta)
+            //         .iter()
+            //         .fold(0.expr(), |result, limb| (2_u64.pow(16)).expr() * result +
+            // limb.clone()), );
 
             // 3. is_write is boolean
             cb.require_boolean("is_write should be boolean", is_write);
@@ -511,7 +528,7 @@ impl<
         row_prev: RwRow<F>,
         diff_is_zero_chips: &[IsZeroChip<F>; 5],
     ) -> Result<(), Error> {
-        let address = row.key3;
+        let memory_or_stack_address = row.key3;
         let rw_counter = row.rw_counter;
         let value = row.value;
         let is_write = row.is_write;
@@ -524,17 +541,17 @@ impl<
             if rw_counter > F::from(RW_COUNTER_MAX as u64) {
                 panic!("rw_counter out of range");
             }
-            if row.tag == F::from(STACK_TAG as u64) && address > F::from(STACK_ADDRESS_MAX as u64) {
+            if row.tag == F::from(STACK_TAG as u64) && memory_or_stack_address > F::from(STACK_ADDRESS_MAX as u64) {
                 panic!(
                     "stack address out of range {:?} > {}",
-                    address, STACK_ADDRESS_MAX
+                    memory_or_stack_address, STACK_ADDRESS_MAX
                 );
             }
-            if row.tag == F::from(MEMORY_TAG as u64) && address > F::from(MEMORY_ADDRESS_MAX as u64)
+            if row.tag == F::from(MEMORY_TAG as u64) && memory_or_stack_address > F::from(MEMORY_ADDRESS_MAX as u64)
             {
                 panic!(
                     "memory address out of range {:?} > {}",
-                    address, MEMORY_ADDRESS_MAX
+                    memory_or_stack_address, MEMORY_ADDRESS_MAX
                 );
             }
         }
@@ -562,6 +579,14 @@ impl<
             diff_is_zero_chip.assign(region, offset, Some(diff))?;
         }
 
+        // // TODO(rename key2 -> address)
+        // let address_bytes = U256::from(row.key2).to_le_bytes()[..20];
+        // let address_limbs = address_bytes.tuples();
+        //
+        // address_limbs.zip(self.key2_limbs).map(|(hi, lo), cell| {
+        //     region.assign_advice(|| "address limbs", cell, offset, || Ok(hi << 16 + lo));
+        // });
+
         Ok(())
     }
 }
@@ -580,6 +605,7 @@ pub struct StateCircuit<
     pub randomness: F,
     /// witness for rw map
     pub rw_map: RwMap,
+    // pub operations: OperationContainer,
 }
 
 impl<
@@ -597,6 +623,7 @@ impl<
         Self {
             randomness,
             rw_map: rw_map.clone(),
+            // operations,
         }
     }
 }

@@ -37,14 +37,18 @@ pub(crate) struct ConstraintBuilder<F: FieldExt> {
 }
 
 impl<'a, F: FieldExt> ConstraintBuilder<F> {
-    pub(crate) fn new(meta: &'a mut ConstraintSystem<F>, keys: [Column<Advice>; 5]) -> Self {
+    pub(crate) fn new(
+        meta: &'a mut ConstraintSystem<F>,
+        keys: [Column<Advice>; 5],
+        key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
+    ) -> Self {
         Self {
             cb: BaseConstraintBuilder::new(MAX_DEGREE),
             rw_counter: meta.advice_column(),
             is_write: meta.advice_column(),
             keys,
             keys_diff_inv: [(); 5].map(|_| meta.advice_column()),
-            key2_limbs: [(); N_LIMBS_ACCOUNT_ADDRESS].map(|_| meta.advice_column()),
+            key2_limbs,
             key4_bytes: [(); N_BYTES_WORD].map(|_| meta.advice_column()),
             auxs: [(); 2].map(|_| meta.advice_column()),
             s_enable: meta.fixed_column(),
@@ -67,8 +71,12 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
         meta.query_advice(self.keys[2], Rotation::cur())
     }
 
-    pub(super) fn account_address_limbs(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
-        meta.query_advice(self.keys[2], Rotation::cur())
+    pub(super) fn account_address_limbs(
+        &self,
+        meta: &mut VirtualCells<F>,
+    ) -> [Expression<F>; N_LIMBS_ACCOUNT_ADDRESS] {
+        self.key2_limbs
+            .map(|limb| meta.query_advice(limb, Rotation::cur()))
     }
 
     pub(super) fn address(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
