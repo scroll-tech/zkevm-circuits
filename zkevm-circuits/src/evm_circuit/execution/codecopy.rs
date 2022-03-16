@@ -62,7 +62,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         cb.stack_pop(size.expr());
 
         // Construct memory address in the destionation (memory) to which we copy code.
-        let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_memory_offset, size);
+        let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_memory_offset, size.clone());
 
         // Query additional fields for the account's code.
         let account = cb.call_context(None, CallContextFieldTag::CalleeAddress);
@@ -112,7 +112,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 cb.require_equal(
                     "next_bytes_left = length",
                     next_bytes_left.expr(),
-                    dst_memory_addr.length(),
+                    size.expr(),
                 );
                 cb.require_equal(
                     "next_src_addr_end == code_size",
