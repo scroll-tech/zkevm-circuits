@@ -36,6 +36,7 @@ pub enum FixedTableTag {
 }
 
 impl FixedTableTag {
+    // TODO(mason) derive with strum instead.
     pub fn iterator() -> impl Iterator<Item = Self> {
         [
             Self::Range16,
