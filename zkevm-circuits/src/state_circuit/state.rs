@@ -140,13 +140,14 @@ impl<
         let memory_value_table = meta.fixed_column();
 
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
-        let qb = ConstraintBuilder::<F>::new(meta, keys, key2_limbs);
+        let qb = ConstraintBuilder::<F>::new(meta, keys, key2_limbs, s_enable);
 
         let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
             IsZeroChip::configure(
                 meta,
                 |meta| meta.query_fixed(s_enable, Rotation::cur()),
                 |meta| {
+                    // do we need to pad this to prevent wraparound?
                     let value_cur = meta.query_advice(keys[idx], Rotation::cur());
                     let value_prev = meta.query_advice(keys[idx], Rotation::prev());
                     value_cur - value_prev
@@ -155,7 +156,7 @@ impl<
             )
         });
 
-        let q_all_keys_same = |_meta: &mut VirtualCells<F>| {
+        let q_all_keys_same = |_: &mut VirtualCells<F>| {
             key_is_same_with_prev[0].is_zero_expression.clone()
                 * key_is_same_with_prev[1].is_zero_expression.clone()
                 * key_is_same_with_prev[2].is_zero_expression.clone()
@@ -168,7 +169,6 @@ impl<
 
         meta.create_gate("General constraints", |meta| {
             let mut cb = new_cb();
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let is_write = meta.query_advice(is_write, Rotation::cur());
             let is_read = 1.expr() - is_write.clone();
             let value_cur = meta.query_advice(value, Rotation::cur());
@@ -222,7 +222,7 @@ impl<
                 q_all_keys_same(meta) * is_read * (value_cur - value_prev),
             );
 
-            cb.gate(s_enable)
+            cb.gate(qb.s_enable(meta))
         });
 
         // 5. RWC is monotonically strictly increasing for a set of all keys
@@ -231,13 +231,12 @@ impl<
         // - The corresponding rwc must be strictly increasing.
         // TODO: rewrite using range check gates rather than lookup
         meta.lookup_any("rw counter monotonicity", |meta| {
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
             let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
 
             vec![(
-                s_enable * q_all_keys_same(meta) * (rw_counter - rw_counter_prev - 1.expr()),
+                qb.s_enable(meta) * q_all_keys_same(meta) * (rw_counter - rw_counter_prev - 1.expr()),
                 rw_counter_table,
             )]
         });
@@ -246,7 +245,6 @@ impl<
 
         meta.create_gate("Memory operation", |meta| {
             let mut cb = new_cb();
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let value_cur = meta.query_advice(value, Rotation::cur());
             let is_write = meta.query_advice(is_write, Rotation::cur());
             let q_read = 1.expr() - is_write;
@@ -264,7 +262,7 @@ impl<
                 q_not_all_keys_same(meta) * q_read * value_cur,
             );
 
-            cb.gate(s_enable * qb.tag_is(meta, RwTableTag::Memory))
+            cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::Memory))
         });
 
         // 2. mem_addr in range
@@ -296,7 +294,6 @@ impl<
         meta.create_gate("Stack operation", |meta| {
             let mut cb = new_cb();
 
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let is_write = meta.query_advice(is_write, Rotation::cur());
             let q_read = 1.expr() - is_write;
             let key2 = meta.query_advice(keys[2], Rotation::cur());
@@ -317,7 +314,7 @@ impl<
                 "if address changes, operation is always a write",
                 q_not_all_keys_same(meta) * q_read,
             );
-            cb.gate(s_enable * qb.tag_is(meta, RwTableTag::Stack))
+            cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::Stack))
         });
 
         // 2. stack_ptr in range
@@ -334,7 +331,6 @@ impl<
         // 3. stack_ptr only increases by 0 or 1
         meta.create_gate("Stack pointer diff be 0 or 1", |meta| {
             let mut cb = new_cb();
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let tag_is_same_with_prev = key_is_same_with_prev[0].is_zero_expression.clone();
             let call_id_same_with_prev = key_is_same_with_prev[1].is_zero_expression.clone();
             let stack_ptr = meta.query_advice(keys[3], Rotation::cur());
@@ -344,7 +340,7 @@ impl<
                 stack_ptr - stack_ptr_prev,
             );
             cb.gate(
-                s_enable
+                qb.s_enable(meta)
                     * qb.tag_is(meta, RwTableTag::Stack)
                     * tag_is_same_with_prev
                     * call_id_same_with_prev,
@@ -358,7 +354,6 @@ impl<
 
             let is_write = meta.query_advice(is_write, Rotation::cur());
             let q_read = 1.expr() - is_write;
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
             let key1 = meta.query_advice(keys[1], Rotation::cur());
             let key3 = meta.query_advice(keys[3], Rotation::cur());
@@ -386,7 +381,7 @@ impl<
             //     q_not_all_keys_same(meta) * rw_counter,
             // );
 
-            cb.gate(s_enable * qb.tag_is(meta, RwTableTag::AccountStorage))
+            cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::AccountStorage))
         });
 
         Config {
@@ -616,14 +611,6 @@ impl<
             )?;
             diff_is_zero_chip.assign(region, offset, Some(diff))?;
         }
-
-        // // TODO(rename key2 -> address)
-        // let address_bytes = U256::from(row.key2).to_le_bytes()[..20];
-        // let address_limbs = address_bytes.tuples();
-        //
-        // address_limbs.zip(self.key2_limbs).map(|(hi, lo), cell| {
-        //     region.assign_advice(|| "address limbs", cell, offset, || Ok(hi << 16 +
-        // lo)); });
 
         Ok(())
     }

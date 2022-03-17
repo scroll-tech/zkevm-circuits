@@ -41,6 +41,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
         meta: &'a mut ConstraintSystem<F>,
         keys: [Column<Advice>; 5],
         key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
+        s_enable: Column<Fixed>,
     ) -> Self {
         Self {
             cb: BaseConstraintBuilder::new(MAX_DEGREE),
@@ -51,7 +52,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
             key2_limbs,
             key4_bytes: [(); N_BYTES_WORD].map(|_| meta.advice_column()),
             auxs: [(); 2].map(|_| meta.advice_column()),
-            s_enable: meta.fixed_column(),
+            s_enable,
             value: meta.advice_column(),
             rw_counter_table: meta.fixed_column(),
             memory_address_table_zero: meta.fixed_column(),
@@ -92,5 +93,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
             tag as usize,
             RwTableTag::iter().map(|x| x as usize),
         )
+    }
+
+    pub(super) fn s_enable(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_fixed(self.s_enable, Rotation::cur())
     }
 }
