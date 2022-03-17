@@ -13,6 +13,7 @@ use crate::{
     },
     util::Expr,
 };
+use crate::evm_circuit::witness::Rw;
 use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
 };
@@ -481,7 +482,7 @@ impl<
             || "State operations",
             |mut region| {
                 let mut offset = 1;
-                let mut rows: Vec<RwRow<F>> = [
+                let mut rows: Vec<(Rw, RwRow<F>)> = [
                     RwTableTag::Memory,
                     RwTableTag::Stack,
                     RwTableTag::AccountStorage,
@@ -490,25 +491,25 @@ impl<
                 .map(|tag| {
                     rw_map.0[tag]
                         .iter()
-                        .map(|rw| rw.table_assignment(randomness))
+                        .map(|rw| (rw.clone(), rw.table_assignment(randomness)))
                 })
                 .flatten()
                 .collect();
-                rows.sort_by_key(|rw| (rw.tag, rw.key1, rw.key2, rw.key3, rw.key4, rw.rw_counter));
+                rows.sort_by_key(|(_, rw)| (rw.tag, rw.key1, rw.key2, rw.key3, rw.key4, rw.rw_counter));
 
                 if rows.len() >= ROWS_MAX {
                     panic!("too many storage operations");
                 }
-                for (index, row) in rows.iter().enumerate() {
+                for (index, (rw, rw_row)) in rows.iter().enumerate() {
                     let row_prev = if index == 0 {
                         RwRow::default()
                     } else {
-                        rows[index - 1]
+                        rows[index - 1].1
                     };
                     self.assign_row(
                         &mut region,
                         offset,
-                        *row,
+                        *rw_row,
                         row_prev,
                         &key_is_same_with_prev_chips,
                     )?;
