@@ -65,7 +65,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
         meta.query_advice(self.keys[0], Rotation::cur())
     }
     // This is TxId or CallId if applicable. 0 otherwise.
-    fn id(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+    pub(super) fn id(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
         meta.query_advice(self.keys[1], Rotation::cur())
     }
     pub(super) fn account_address(&self, meta: &mut VirtualCells<F>) -> Expression<F> {

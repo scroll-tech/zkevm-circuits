@@ -355,15 +355,13 @@ impl<
             let is_write = meta.query_advice(is_write, Rotation::cur());
             let q_read = 1.expr() - is_write;
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
-            let key1 = meta.query_advice(keys[1], Rotation::cur());
-            let key3 = meta.query_advice(keys[3], Rotation::cur());
 
             // TODO: cold VS warm
             // TODO: connection to MPT on first and last access for each (address, key)
 
             // 0. Unused keys are 0
-            cb.require_zero("key1 is 0", key1);
-            cb.require_zero("key3 is 0", key3);
+            cb.require_zero("key1 is 0", qb.id(meta));
+            cb.require_zero("key3 is 0", qb.address(meta));
 
             // 1. First access for a set of all keys
             //
@@ -376,10 +374,10 @@ impl<
                 "First access for storage is write",
                 q_not_all_keys_same(meta) * q_read,
             );
-            // cb.require_zero(
-            //     "First access for storage has rw_counter as 0",
-            //     q_not_all_keys_same(meta) * rw_counter,
-            // );
+            cb.require_zero(
+                "First access for storage has rw_counter as 0",
+                q_not_all_keys_same(meta) * rw_counter,
+            );
 
             cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::AccountStorage))
         });
@@ -846,7 +844,7 @@ mod tests {
             RWCounter::from(18),
             RW::WRITE,
             StorageOp::new(
-                U256::from(234).to_address(),
+                U256::from(100).to_address(),
                 Word::from(0x40),
                 Word::from(32),
                 Word::from(32),
@@ -858,7 +856,7 @@ mod tests {
             RWCounter::from(19),
             RW::WRITE,
             StorageOp::new(
-                U256::from(999).to_address(),
+                U256::from(100).to_address(),
                 Word::from(0x40),
                 Word::from(32),
                 Word::from(32),
