@@ -1,5 +1,6 @@
 use super::constraint_builder::ConstraintBuilder;
 use super::params::N_LIMBS_ACCOUNT_ADDRESS;
+use crate::evm_circuit::witness::Rw;
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
@@ -13,13 +14,13 @@ use crate::{
     },
     util::Expr,
 };
-use crate::evm_circuit::witness::Rw;
 use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
 };
-use eth_types::Field;
-use eth_types::U256;
+use eth_types::Address;
+use eth_types::{Field, ToWord, ToScalar, ToAddress};
 use eth_types::ToLittleEndian;
+use eth_types::U256;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, VirtualCells},
@@ -180,16 +181,17 @@ impl<
                 RwTableTag::iter().map(|x| x.expr()).collect(),
             );
 
-            // 1. key2 expands limbs and for each limb, 0 <= limb < 2**64
+            // 1. key2 expands to its limbs and for each limb, 0 <= limb < 2^16
             cb.require_equal(
                 "account address matches its limbs",
                 qb.account_address(meta),
                 qb.account_address_limbs(meta)
                     .iter()
                     .fold(0.expr(), |result, limb| {
-                        (2_u64.pow(16)).expr() * result + limb.clone()
+                        limb.clone() + result * (1u64<<16).expr()
                     }),
             );
+            assert_eq!((2..=6).fold(0, |a, b| {10 * a + b}), 23456);
             // TODO(mason) range check for each limb.
 
             // 2. key4 is RLC encoded
@@ -379,10 +381,10 @@ impl<
                 "First access for storage is write",
                 q_not_all_keys_same(meta) * q_read,
             );
-            cb.require_zero(
-                "First access for storage has rw_counter as 0",
-                q_not_all_keys_same(meta) * rw_counter,
-            );
+            // cb.require_zero(
+            //     "First access for storage has rw_counter as 0",
+            //     q_not_all_keys_same(meta) * rw_counter,
+            // );
 
             cb.gate(s_enable * qb.tag_is(meta, RwTableTag::AccountStorage))
         });
@@ -495,7 +497,9 @@ impl<
                 })
                 .flatten()
                 .collect();
-                rows.sort_by_key(|(_, rw)| (rw.tag, rw.key1, rw.key2, rw.key3, rw.key4, rw.rw_counter));
+                rows.sort_by_key(|(_, rw)| {
+                    (rw.tag, rw.key1, rw.key2, rw.key3, rw.key4, rw.rw_counter)
+                });
 
                 if rows.len() >= ROWS_MAX {
                     panic!("too many storage operations");
@@ -513,6 +517,36 @@ impl<
                         row_prev,
                         &key_is_same_with_prev_chips,
                     )?;
+
+                    // move this match to witness.rs....
+                    match rw {
+                        Rw::TxAccessListAccount {
+                            account_address, ..
+                        }
+                        | Rw::TxAccessListAccountStorage {
+                            account_address, ..
+                        }
+                        | Rw::Account {
+                            account_address, ..
+                        }
+                        | Rw::AccountStorage {
+                            account_address, ..
+                        }
+                        | Rw::AccountDestructed {
+                            account_address, ..
+                        } => {
+                            assert_eq!(account_address.to_scalar(), Some(rw_row.key2));
+                            self.assign_address(&mut region, offset, *account_address);
+                            self.assign_address_limbs(&mut region, offset, *account_address);
+                        }
+                        Rw::CallContext { .. }
+                        | Rw::Stack { .. }
+                        | Rw::Memory { .. }
+                        | Rw::TxRefund { .. } => {
+                            assert_eq!(rw_row.key2.is_zero().unwrap_u8(), 1);
+                        },
+                    };
+
                     offset += 1;
                 }
 
@@ -542,13 +576,16 @@ impl<
             if rw_counter > F::from(RW_COUNTER_MAX as u64) {
                 panic!("rw_counter out of range");
             }
-            if row.tag == F::from(STACK_TAG as u64) && memory_or_stack_address > F::from(STACK_ADDRESS_MAX as u64) {
+            if row.tag == F::from(STACK_TAG as u64)
+                && memory_or_stack_address > F::from(STACK_ADDRESS_MAX as u64)
+            {
                 panic!(
                     "stack address out of range {:?} > {}",
                     memory_or_stack_address, STACK_ADDRESS_MAX
                 );
             }
-            if row.tag == F::from(MEMORY_TAG as u64) && memory_or_stack_address > F::from(MEMORY_ADDRESS_MAX as u64)
+            if row.tag == F::from(MEMORY_TAG as u64)
+                && memory_or_stack_address > F::from(MEMORY_ADDRESS_MAX as u64)
             {
                 panic!(
                     "memory address out of range {:?} > {}",
@@ -585,9 +622,54 @@ impl<
         // let address_limbs = address_bytes.tuples();
         //
         // address_limbs.zip(self.key2_limbs).map(|(hi, lo), cell| {
-        //     region.assign_advice(|| "address limbs", cell, offset, || Ok(hi << 16 + lo));
-        // });
+        //     region.assign_advice(|| "address limbs", cell, offset, || Ok(hi << 16 +
+        // lo)); });
 
+        Ok(())
+    }
+
+    fn assign_address(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        address: Address,
+    ) -> Result<(), Error> {
+        region.assign_advice(
+            || "key2 (account_address)",
+            self.keys[2],
+            offset,
+            || Ok(address.to_scalar().unwrap()), // is there a way to avoid the unwrap here?
+        )?;
+        Ok(())
+    }
+
+    fn assign_address_limbs(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        address: Address,
+    ) -> Result<(), Error> {
+        assert_eq!(1 << 4, 16);
+        dbg!(address);
+        dbg!(address.0);
+        let limbs: Vec<_> = address
+            .0
+            .iter()
+            .tuples()
+            .map(|(hi, lo)| u16::from_le_bytes([*lo, *hi]))
+            .collect();
+        dbg!(limbs.len());
+        dbg!(N_LIMBS_ACCOUNT_ADDRESS);
+
+        dbg!(limbs.clone());
+        for i in 0..N_LIMBS_ACCOUNT_ADDRESS {
+            region.assign_advice(
+                || "key2_limb",
+                self.key2_limbs[i],
+                offset,
+                || Ok(F::from(limbs[i].into())),
+            )?;
+        }
         Ok(())
     }
 }
@@ -765,7 +847,7 @@ mod tests {
             RWCounter::from(0),
             RW::WRITE,
             StorageOp::new(
-                address!("0x0000000000000000000000000000000000000001"),
+                U256::from(100).to_address(),
                 Word::from(0x40),
                 Word::from(32),
                 Word::zero(),
@@ -777,7 +859,7 @@ mod tests {
             RWCounter::from(18),
             RW::WRITE,
             StorageOp::new(
-                address!("0x0000000000000000000000000000000000000001"),
+                U256::from(234).to_address(),
                 Word::from(0x40),
                 Word::from(32),
                 Word::from(32),
@@ -789,7 +871,7 @@ mod tests {
             RWCounter::from(19),
             RW::WRITE,
             StorageOp::new(
-                address!("0x0000000000000000000000000000000000000001"),
+                U256::from(999).to_address(),
                 Word::from(0x40),
                 Word::from(32),
                 Word::from(32),
