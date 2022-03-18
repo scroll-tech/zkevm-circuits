@@ -128,7 +128,10 @@ mod test {
             evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Complete),
             ..Default::default()
         };
-        assert_eq!(test_circuits_using_bytecode(bytecode, test_config), Ok(()));
+        assert_eq!(
+            test_circuits_using_bytecode(bytecode, test_config, None),
+            Ok(())
+        );
     }
 
     #[test]

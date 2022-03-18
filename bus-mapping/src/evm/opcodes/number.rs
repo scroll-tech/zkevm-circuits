@@ -23,7 +23,9 @@ mod number_tests {
             BlockData::new_from_geth_data(new_single_tx_trace_code_at_start(&code).unwrap());
 
         let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
+        builder
+            .handle_tx(&block.eth_tx, &block.geth_trace)
+            .unwrap();
 
         let mut test_builder = block.new_circuit_input_builder();
         let mut tx = test_builder
@@ -38,11 +40,12 @@ mod number_tests {
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx);
 
         // Add the last Stack write
         let number = block.eth_block.number.unwrap().as_u64();
         state_ref.push_stack_op(
+            &mut step,
             RW::WRITE,
             StackAddress::from(1024 - 1),
             eth_types::U256::from(number),

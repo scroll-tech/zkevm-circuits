@@ -1,5 +1,5 @@
 use crate::{
-    circuit_input_builder::CircuitInputStateRef,
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     operation::{CallContextField, CallContextOp, RW},
     Error,
 };
@@ -14,11 +14,13 @@ pub(crate) struct Calldatasize;
 impl Opcode for Calldatasize {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
-        let value = steps[1].stack.last()?;
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
+        let value = geth_steps[1].stack.last()?;
         state.push_op(
+            &mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: state.call()?.call_id,
@@ -26,13 +28,19 @@ impl Opcode for Calldatasize {
                 value,
             },
         );
-        state.push_stack_op(RW::WRITE, step.stack.last_filled().map(|a| a - 1), value)?;
-        Ok(())
+        state.push_stack_op(
+            &mut exec_step,
+            RW::WRITE,
+            geth_step.stack.last_filled().map(|a| a - 1),
+            value,
+        )?;
+        Ok(vec![exec_step])
     }
 }
 
 #[cfg(test)]
 mod calldatasize_tests {
+    use crate::circuit_input_builder::ExecState;
     use crate::operation::{CallContextField, CallContextOp, StackOp, RW};
     use eth_types::{bytecode, evm_types::OpcodeId, evm_types::StackAddress};
     use pretty_assertions::assert_eq;
@@ -57,7 +65,7 @@ mod calldatasize_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == OpcodeId::CALLDATASIZE)
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATASIZE))
             .unwrap();
 
         let call_id = builder.block.txs()[0].calls()[0].call_id;

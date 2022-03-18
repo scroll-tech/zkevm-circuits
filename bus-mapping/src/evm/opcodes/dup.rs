@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::{operation::RW, Error};
 use eth_types::GethExecStep;
 
@@ -11,21 +11,23 @@ pub(crate) struct Dup<const N: usize>;
 impl<const N: usize> Opcode for Dup<N> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
 
-        let stack_value_read = step.stack.nth_last(N - 1)?;
-        let stack_position = step.stack.nth_last_filled(N - 1);
-        state.push_stack_op(RW::READ, stack_position, stack_value_read)?;
+        let stack_value_read = geth_step.stack.nth_last(N - 1)?;
+        let stack_position = geth_step.stack.nth_last_filled(N - 1);
+        state.push_stack_op(&mut exec_step, RW::READ, stack_position, stack_value_read)?;
 
         state.push_stack_op(
+            &mut exec_step,
             RW::WRITE,
-            step.stack.last_filled().map(|a| a - 1),
+            geth_step.stack.last_filled().map(|a| a - 1),
             stack_value_read,
         )?;
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 
@@ -69,7 +71,7 @@ mod dup_tests {
             let step = builder.block.txs()[0]
                 .steps()
                 .iter()
-                .filter(|step| step.op.is_dup())
+                .filter(|step| step.exec_state.is_dup())
                 .collect_vec()[i];
 
             assert_eq!(

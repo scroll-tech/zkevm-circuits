@@ -7,7 +7,7 @@ use crate::evm_circuit::{
     },
     util::RandomLinearCombination,
 };
-use bus_mapping::circuit_input_builder::{self, ExecError, OogError};
+use bus_mapping::circuit_input_builder::{self, ExecError, OogError, StepAuxiliaryData};
 use bus_mapping::operation::{self, AccountField, CallContextField};
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
@@ -269,18 +269,6 @@ pub struct Call {
     pub is_persistent: bool,
     /// Indicate if it's a static call
     pub is_static: bool,
-}
-
-#[derive(Clone, Debug)]
-pub enum StepAuxiliaryData {
-    CopyToMemory {
-        src_addr: u64,
-        dst_addr: u64,
-        bytes_left: u64,
-        src_addr_end: u64,
-        from_tx: bool,
-        selectors: Vec<u8>,
-    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1068,62 +1056,63 @@ impl From<&ExecError> for ExecutionState {
     }
 }
 
-impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
-    fn from(step: &bus_mapping::circuit_input_builder::ExecStep) -> Self {
+impl From<&circuit_input_builder::ExecStep> for ExecutionState {
+    fn from(step: &circuit_input_builder::ExecStep) -> Self {
         if let Some(error) = step.error.as_ref() {
             return error.into();
         }
-        if step.op.is_dup() {
-            return ExecutionState::DUP;
-        }
-        if step.op.is_push() {
-            return ExecutionState::PUSH;
-        }
-        if step.op.is_swap() {
-            return ExecutionState::SWAP;
-        }
-        match step.op {
+        match step.exec_state {
+            circuit_input_builder::ExecState::Op(op) => {
+                if op.is_dup() {
+                    return ExecutionState::DUP;
+                }
+                if op.is_push() {
+                    return ExecutionState::PUSH;
+                }
+                if op.is_swap() {
+                    return ExecutionState::SWAP;
+                }
+                match op {
             OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
             OpcodeId::ISZERO => ExecutionState::ISZERO,
-            OpcodeId::ADD => ExecutionState::ADD,
-            OpcodeId::MUL => ExecutionState::MUL,
-            OpcodeId::SUB => ExecutionState::ADD,
-            OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
-            OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
-            OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
-            // TODO: Convert REVERT and RETURN to their own ExecutionState.
-            OpcodeId::STOP | OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::STOP,
-            OpcodeId::AND => ExecutionState::BITWISE,
-            OpcodeId::XOR => ExecutionState::BITWISE,
-            OpcodeId::OR => ExecutionState::BITWISE,
-            OpcodeId::POP => ExecutionState::POP,
-            OpcodeId::PUSH32 => ExecutionState::PUSH,
-            OpcodeId::BYTE => ExecutionState::BYTE,
-            OpcodeId::MLOAD => ExecutionState::MEMORY,
-            OpcodeId::MSTORE => ExecutionState::MEMORY,
-            OpcodeId::MSTORE8 => ExecutionState::MEMORY,
-            OpcodeId::JUMPDEST => ExecutionState::JUMPDEST,
-            OpcodeId::JUMP => ExecutionState::JUMP,
-            OpcodeId::JUMPI => ExecutionState::JUMPI,
-            OpcodeId::PC => ExecutionState::PC,
-            OpcodeId::MSIZE => ExecutionState::MSIZE,
-            OpcodeId::CALLER => ExecutionState::CALLER,
-            OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
-            OpcodeId::COINBASE => ExecutionState::COINBASE,
-            OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
-            OpcodeId::NUMBER => ExecutionState::NUMBER,
-            OpcodeId::GAS => ExecutionState::GAS,
-            OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
-            OpcodeId::SLOAD => ExecutionState::SLOAD,
-            OpcodeId::SSTORE => ExecutionState::SSTORE,
-            // TODO: Use better way to convert BeginTx and EndTx.
-            OpcodeId::INVALID(_) if [19, 21].contains(&step.bus_mapping_instance.len()) => {
-                ExecutionState::BeginTx
+                    OpcodeId::ADD => ExecutionState::ADD,
+                    OpcodeId::MUL => ExecutionState::MUL,
+                    OpcodeId::SUB => ExecutionState::ADD,
+                    OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
+                    OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
+                    OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
+                    // TODO: Convert REVERT and RETURN to their own ExecutionState.
+                    OpcodeId::STOP | OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::STOP,
+                    OpcodeId::AND => ExecutionState::BITWISE,
+                    OpcodeId::XOR => ExecutionState::BITWISE,
+                    OpcodeId::OR => ExecutionState::BITWISE,
+                    OpcodeId::POP => ExecutionState::POP,
+                    OpcodeId::PUSH32 => ExecutionState::PUSH,
+                    OpcodeId::BYTE => ExecutionState::BYTE,
+                    OpcodeId::MLOAD => ExecutionState::MEMORY,
+                    OpcodeId::MSTORE => ExecutionState::MEMORY,
+                    OpcodeId::MSTORE8 => ExecutionState::MEMORY,
+                    OpcodeId::JUMPDEST => ExecutionState::JUMPDEST,
+                    OpcodeId::JUMP => ExecutionState::JUMP,
+                    OpcodeId::JUMPI => ExecutionState::JUMPI,
+                    OpcodeId::PC => ExecutionState::PC,
+                    OpcodeId::MSIZE => ExecutionState::MSIZE,
+                    OpcodeId::CALLER => ExecutionState::CALLER,
+                    OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
+                    OpcodeId::COINBASE => ExecutionState::COINBASE,
+                    OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
+                    OpcodeId::NUMBER => ExecutionState::NUMBER,
+                    OpcodeId::GAS => ExecutionState::GAS,
+                    OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
+                    OpcodeId::SLOAD => ExecutionState::SLOAD,
+                    OpcodeId::SSTORE => ExecutionState::SSTORE,
+                    OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
+                    _ => unimplemented!("unimplemented opcode {:?}", op),
+                }
             }
-            OpcodeId::INVALID(_) if [4, 5].contains(&step.bus_mapping_instance.len()) => {
-                ExecutionState::EndTx
-            }
-            _ => unimplemented!("unimplemented opcode {:?}", step.op),
+            circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
+            circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
+            circuit_input_builder::ExecState::CopyToMemory => ExecutionState::CopyToMemory,
         }
     }
 }
@@ -1163,10 +1152,13 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         stack_pointer: STACK_CAPACITY - step.stack_size,
         gas_left: step.gas_left.0,
         gas_cost: step.gas_cost.as_u64(),
-        opcode: Some(step.op),
+        opcode: match step.exec_state {
+            circuit_input_builder::ExecState::Op(op) => Some(op),
+            _ => None,
+        },
         memory_size: step.memory_size as u64,
         state_write_counter: step.swc,
-        aux_data: Default::default(),
+        aux_data: step.aux_data.clone().map(Into::into),
     }
 }
 

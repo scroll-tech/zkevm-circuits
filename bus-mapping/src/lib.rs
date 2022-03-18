@@ -107,7 +107,7 @@
 //!
 //! // We use some mock data as context for the trace
 //! let mut eth_block = mock::new_block();
-//! let eth_tx = mock::new_tx(&eth_block);
+//! let eth_tx = mock::new_tx(&eth_block, None);
 //! eth_block.transactions.push(eth_tx.clone());
 //! let mut sdb = StateDB::new();
 //! sdb.set_account(&eth_tx.from, state_db::Account::zero());

@@ -10,10 +10,11 @@ use crate::{
             memory_gadget::BufferReaderGadget,
             Cell,
         },
-        witness::{Block, Call, ExecStep, StepAuxiliaryData, Transaction},
+        witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
+use bus_mapping::circuit_input_builder::StepAuxiliaryData;
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -233,11 +234,9 @@ pub mod test {
         step::ExecutionState,
         table::RwTableTag,
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
-        witness::{
-            Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, StepAuxiliaryData, Transaction,
-        },
+        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
-    //use crate::evm_circuit::witness::RwMap;
+    use bus_mapping::circuit_input_builder::StepAuxiliaryData;
     use eth_types::evm_types::OpcodeId;
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr as Fp;

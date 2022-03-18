@@ -115,7 +115,7 @@ mod test {
         };
         let config = BytecodeTestConfig::default();
         let block_trace = BlockData::new_from_geth_data(
-            new_single_tx_trace_code_gas(&bytecode, Gas(config.gas_limit))
+            new_single_tx_trace_code_gas(&bytecode, Gas(config.gas_limit), None)
                 .expect("could not build block trace"),
         );
         let mut builder = block_trace.new_circuit_input_builder();

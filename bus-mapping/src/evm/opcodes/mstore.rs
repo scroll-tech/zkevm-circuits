@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::{operation::RW, Error};
 use core::convert::TryInto;
 use eth_types::evm_types::MemoryAddress;
@@ -14,18 +14,19 @@ pub(crate) struct Mstore<const IS_MSTORE8: bool>;
 impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
         // First stack read (offset)
-        let offset = step.stack.nth_last(0)?;
-        let offset_pos = step.stack.nth_last_filled(0);
-        state.push_stack_op(RW::READ, offset_pos, offset)?;
+        let offset = geth_step.stack.nth_last(0)?;
+        let offset_pos = geth_step.stack.nth_last_filled(0);
+        state.push_stack_op(&mut exec_step, RW::READ, offset_pos, offset)?;
 
         // Second stack read (value)
-        let value = step.stack.nth_last(1)?;
-        let value_pos = step.stack.nth_last_filled(1);
-        state.push_stack_op(RW::READ, value_pos, value)?;
+        let value = geth_step.stack.nth_last(1)?;
+        let value_pos = geth_step.stack.nth_last_filled(1);
+        state.push_stack_op(&mut exec_step, RW::READ, value_pos, value)?;
 
         // First mem write -> 32 MemoryOp generated.
         let offset_addr: MemoryAddress = offset.try_into()?;
@@ -34,6 +35,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
             true => {
                 // stack write operation for mstore8
                 state.push_memory_op(
+                    &mut exec_step,
                     RW::WRITE,
                     offset_addr,
                     *value.to_le_bytes().first().unwrap(),
@@ -43,18 +45,24 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
                 // stack write each byte for mstore
                 let bytes = value.to_be_bytes();
                 for (i, byte) in bytes.iter().enumerate() {
-                    state.push_memory_op(RW::WRITE, offset_addr.map(|a| a + i), *byte)?;
+                    state.push_memory_op(
+                        &mut exec_step,
+                        RW::WRITE,
+                        offset_addr.map(|a| a + i),
+                        *byte,
+                    )?;
                 }
             }
         }
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 
 #[cfg(test)]
 mod mstore_tests {
     use super::*;
+    use crate::circuit_input_builder::ExecState;
     use crate::operation::{MemoryOp, StackOp};
     use eth_types::bytecode;
     use eth_types::evm_types::{MemoryAddress, OpcodeId, StackAddress};
@@ -85,7 +93,7 @@ mod mstore_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .filter(|step| step.op == OpcodeId::MSTORE)
+            .filter(|step| step.exec_state == ExecState::Op(OpcodeId::MSTORE))
             .nth(1)
             .unwrap();
 
@@ -146,7 +154,7 @@ mod mstore_tests {
         let step = builder.block.txs()[0]
             .steps()
             .iter()
-            .find(|step| step.op == OpcodeId::MSTORE8)
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::MSTORE8))
             .unwrap();
 
         assert_eq!(

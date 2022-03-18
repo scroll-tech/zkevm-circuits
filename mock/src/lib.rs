@@ -64,8 +64,9 @@ pub fn new(
 pub fn new_single_tx_trace_accounts_gas(
     accounts: Vec<Account>,
     gas: Gas,
+    input: Option<Vec<u8>>,
 ) -> Result<GethData, Error> {
-    let mut eth_tx = new_tx(&new_block());
+    let mut eth_tx = new_tx(&new_block(), input);
     eth_tx.gas = Word::from(gas.0);
     new(accounts, vec![eth_tx])
 }
@@ -75,7 +76,7 @@ pub fn new_single_tx_trace_accounts_gas(
 /// The trace will be generated automatically with the external_tracer
 /// from the accounts code.
 pub fn new_single_tx_trace_accounts(accounts: Vec<Account>) -> Result<GethData, Error> {
-    new_single_tx_trace_accounts_gas(accounts, Gas(1_000_000u64))
+    new_single_tx_trace_accounts_gas(accounts, Gas(1_000_000u64), None)
 }
 
 /// Create a new block with a single tx that executes the code passed by
@@ -89,9 +90,13 @@ pub fn new_single_tx_trace_code(code: &Bytecode) -> Result<GethData, Error> {
 /// Create a new block with a single tx with the given gas limit that
 /// executes the code passed by argument.  The trace will be generated
 /// automatically with the external_tracer from the code.
-pub fn new_single_tx_trace_code_gas(code: &Bytecode, gas: Gas) -> Result<GethData, Error> {
+pub fn new_single_tx_trace_code_gas(
+    code: &Bytecode,
+    gas: Gas,
+    input: Option<Vec<u8>>,
+) -> Result<GethData, Error> {
     let tracer_account = new_tracer_account(code);
-    new_single_tx_trace_accounts_gas(vec![tracer_account], gas)
+    new_single_tx_trace_accounts_gas(vec![tracer_account], gas, input)
 }
 
 /// Create a new block with a single tx that executes the code_a passed by
@@ -133,7 +138,7 @@ pub fn new_block() -> Block<eth_types::Transaction> {
 }
 
 /// Generate a new mock transaction with preloaded data, useful for tests.
-pub fn new_tx<TX>(block: &Block<TX>) -> eth_types::Transaction {
+pub fn new_tx<TX>(block: &Block<TX>, input: Option<Vec<u8>>) -> eth_types::Transaction {
     eth_types::Transaction {
         hash: Hash::zero(),
         nonce: Word::zero(),
@@ -145,7 +150,10 @@ pub fn new_tx<TX>(block: &Block<TX>) -> eth_types::Transaction {
         value: Word::zero(),
         gas_price: Some(Word::zero()),
         gas: Word::from(1_000_000u64),
-        input: Bytes::default(),
+        input: match input {
+            Some(data) => Bytes::from(data),
+            None => Bytes::default(),
+        },
         v: U64::zero(),
         r: Word::zero(),
         s: Word::zero(),
