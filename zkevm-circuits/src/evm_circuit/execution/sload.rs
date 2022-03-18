@@ -5,10 +5,7 @@ use crate::{
         table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, To},
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
