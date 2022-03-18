@@ -1373,6 +1373,9 @@ impl<'a> CircuitInputBuilder {
             .steps
             .last()
             .expect("steps should have at least one BeginTx step");
+        if step_prev.gas_left.0 < step_prev.gas_cost.0 {
+            println!("end tx {} {}",  step_prev.gas_left.0, step_prev.gas_cost.0)
+        }
         let mut step = ExecStep {
             gas_left: Gas(step_prev.gas_left.0 - step_prev.gas_cost.0),
             rwc: self.block_ctx.rwc,
@@ -1731,7 +1734,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         block_num: u64,
     ) -> Result<(EthBlock, Vec<eth_types::GethExecTrace>), Error> {
         let eth_block = self.cli.get_block_by_number(block_num.into()).await?;
-        let geth_traces = self.cli.trace_block_by_number(block_num.into()).await?;
+        let geth_traces = self.cli.trace_block_by_number(block_num.into()).await.unwrap();
         Ok((eth_block, geth_traces))
     }
 

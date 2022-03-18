@@ -143,6 +143,67 @@ async fn main() {
         (block_num.as_u64(), contract.address()),
     );
 
+    let cli = get_client();
+
+    cli.miner_stop().await.expect("cannot stop miner");
+
+    // Make some contract calls
+    let mut call1 = contract
+    .method::<_, U256>("retrieve", ()).unwrap();
+    println!("tx old {:#?}", call1.tx);
+
+    call1.tx.set_gas(500000);
+    prov_wallet0.fill_transaction(&mut call1.tx, None).await.unwrap();
+    println!("tx new {:#?}", call1.tx);
+    
+    let p1 = prov_wallet0
+    .send_transaction(call1.tx.clone(), None)
+    .await.unwrap();
+
+    let mut call2 = contract
+    .method::<_, U256>("set_value", (U256::from(17),)).unwrap();
+
+    call2.tx.set_gas(500000);
+    call2.tx.set_nonce(call1.tx.nonce().unwrap() + 1);
+
+    println!("tx old {:#?}", call2.tx);
+    prov_wallet0.fill_transaction(&mut call2.tx, None).await.unwrap();
+    println!("tx new {:#?}", call2.tx);
+
+    let p2 = prov_wallet0
+    .send_transaction(call2.tx.clone(), None)
+    .await.unwrap();
+    /* 
+    let mut call3 = contract
+    .method::<_, U256>("retrieve", ()).unwrap();
+
+
+    call3.tx.set_gas(500000);
+    call3.tx.set_nonce(call1.tx.nonce().unwrap() + 2);
+
+    let p3 = prov_wallet0
+    .send_transaction(call3.tx.clone(), None)
+    .await.unwrap();
+*/
+    cli.miner_start().await.expect("cannot start miner");
+
+    println!("p1 {:#?}", p1.confirmations(0usize).await.unwrap());
+    println!("p2 {:#?}", p2.confirmations(0usize).await.unwrap());
+    //println!("p3 {:#?}", p3.confirmations(0usize).await.unwrap());
+
+
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Contract call".to_string(), block_num.as_u64());
+/* 
+// Non-constant methods are executed via the `send()` call on the method builder.
+let call = contract
+    .method::<_, H256>("setValue", "hi".to_owned())?;
+let pending_tx = call.send().await?;
+
+// `await`ing on the pending transaction resolves to a transaction receipt
+let receipt = pending_tx.confirmations(6).await?;
+*/
+
     // Generate a block with multiple transfers
     info!("Generating block with multiple transfers...");
     const NUM_TXS: usize = 4;
@@ -150,7 +211,6 @@ async fn main() {
         .map(|i| Arc::new(SignerMiddleware::new(get_provider(), get_wallet(i as u32))))
         .collect();
 
-    let cli = get_client();
 
     // Fund NUM_TXS wallets from coinbase
     cli.miner_stop().await.expect("cannot stop miner");

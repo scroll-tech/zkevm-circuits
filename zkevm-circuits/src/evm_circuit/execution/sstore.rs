@@ -472,7 +472,8 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
     pub(crate) fn expr(&self) -> Expression<F> {
         // Return the new tx_refund
-        self.tx_refund_new.clone()  - GasCost::SSTORE_CLEARS_SCHEDULE.as_u64().expr()
+       // self.tx_refund_new.clone()  - GasCost::SSTORE_CLEARS_SCHEDULE.as_u64().expr()
+       0.expr()
     }
 
     #[allow(clippy::too_many_arguments)]

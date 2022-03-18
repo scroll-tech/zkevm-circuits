@@ -1083,6 +1083,8 @@ impl From<&bus_mapping::circuit_input_builder::ExecStep> for ExecutionState {
             return ExecutionState::SWAP;
         }
         match step.op {
+            OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
+            OpcodeId::ISZERO => ExecutionState::ISZERO,
             OpcodeId::ADD => ExecutionState::ADD,
             OpcodeId::MUL => ExecutionState::MUL,
             OpcodeId::SUB => ExecutionState::ADD,
