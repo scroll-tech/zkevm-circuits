@@ -133,7 +133,7 @@ async fn main() {
     let contract = deploy(
         prov_wallet0.clone(),
         contracts.get("Greeter").expect("contract not found"),
-        U256::from(42),
+        U256::from(0),
     )
     .await;
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
@@ -148,8 +148,11 @@ async fn main() {
     cli.miner_stop().await.expect("cannot stop miner");
 
     // Make some contract calls
+
+    // write 
     let mut call1 = contract
-    .method::<_, U256>("retrieve", ()).unwrap();
+
+    .method::<_, U256>("set_value", (U256::from(17),)).unwrap();
     println!("tx old {:#?}", call1.tx);
 
     call1.tx.set_gas(500000);
@@ -161,8 +164,8 @@ async fn main() {
     .await.unwrap();
 
     let mut call2 = contract
-    .method::<_, U256>("set_value", (U256::from(17),)).unwrap();
 
+    .method::<_, U256>("retrieve", ()).unwrap();
     call2.tx.set_gas(500000);
     call2.tx.set_nonce(call1.tx.nonce().unwrap() + 1);
 

@@ -581,6 +581,7 @@ impl<F: Field> ExecutionConfig<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        println!("assign_exec_step {} {:?}", offset, step);
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
 

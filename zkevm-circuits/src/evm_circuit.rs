@@ -409,6 +409,9 @@ pub mod test {
                 .map(|bytecode| bytecode.bytes.len())
                 .sum::<usize>(),
         ));
+        let k = k.max(log2_ceil(
+            64 + block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>() * STEP_HEIGHT
+        ));
 
         let power_of_randomness = (1..32)
             .map(|exp| {

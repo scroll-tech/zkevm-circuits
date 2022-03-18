@@ -33,7 +33,7 @@ pub(crate) struct CallDataLoadGadget<F> {
     /// Gadget to constrain the same context.
     same_context: SameContextGadget<F>,
     /// Transaction id from the tx context.
-    tx_id: Cell<F>,
+    //tx_id: Cell<F>,
     /// The bytes offset in calldata, from which we load a 32-bytes word.
     offset: MemoryAddress<F>,
     /// The size of the call's data (tx input for a root call or calldata length
@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         cb.stack_pop(offset.expr());
 
         // Add a lookup constrain for TxId in the RW table.
-        let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        //let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
 
         let calldata_length = cb.query_cell();
         let calldata_offset = cb.query_cell();
@@ -74,12 +74,15 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let src_addr_end = calldata_length.expr() + calldata_offset.expr();
 
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
+            // FIXME
+            /* 
             cb.tx_context_lookup(
                 tx_id.expr(),
                 TxContextFieldTag::CallDataLength,
                 None,
                 calldata_length.expr(),
             );
+            */
             cb.require_equal(
                 "if is_root then calldata_offset == 0",
                 calldata_offset.expr(),
@@ -111,6 +114,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         let mut calldata_word = (0..N_BYTES_WORD)
             .map(|idx| {
+                /* 
                 // for a root call, the call data comes from tx's data field.
                 cb.condition(
                     cb.curr.state.is_root.expr() * buffer_reader.read_flag(idx),
@@ -123,6 +127,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                         );
                     },
                 );
+                */
                 // for an internal call, the call data comes from memory.
                 cb.condition(
                     (1.expr() - cb.curr.state.is_root.expr()) * buffer_reader.read_flag(idx),
@@ -152,9 +157,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         ));
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(cb.rw_counter_offset()),
+            //rw_counter: Delta(cb.rw_counter_offset()),
+            // FIXME
+            rw_counter: Delta(2.expr()), // only valid for root call
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(0.expr()),
+
             gas_left: Delta(-OpcodeId::CALLDATALOAD.constant_gas_cost().expr()),
             ..Default::default()
         };
@@ -167,7 +175,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             calldata_length,
             calldata_offset,
             caller_id,
-            tx_id,
+           // tx_id,
             buffer_reader,
         }
     }
@@ -199,10 +207,13 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         )?;
 
         // assign the tx id.
-        self.tx_id
-            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+       // self.tx_id
+         //   .assign(region, offset, Some(F::from(tx.id as u64)))?;
 
         // assign to the buffer reader gadget.
+        if !call.is_root {
+            panic!("fix");
+        }
         let (calldata_length, calldata_offset, caller_id) = if call.is_root {
             (tx.call_data_length as u64, 0u64, 0u64)
         } else {
@@ -447,6 +458,7 @@ mod test {
                 ..Default::default()
             },
         ];
+        println!("rw_counter becomes {}", rw_counter);
 
         let block = Block {
             randomness,
