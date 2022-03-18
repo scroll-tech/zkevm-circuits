@@ -1,13 +1,11 @@
 use super::constraint_builder::ConstraintBuilder;
 use super::params::N_LIMBS_ACCOUNT_ADDRESS;
-use crate::evm_circuit::util::RandomLinearCombination;
-use crate::evm_circuit::witness::Rw;
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
         table::RwTableTag,
-        util::constraint_builder::BaseConstraintBuilder,
-        witness::{RwMap, RwRow},
+        util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
+        witness::{RwMap, RwRow, Rw},
     },
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
@@ -15,18 +13,10 @@ use crate::{
     },
     util::Expr,
 };
-use bus_mapping::operation::{
-    MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
-};
-use eth_types::Address;
-use eth_types::ToLittleEndian;
-use eth_types::{Field, ToAddress, ToScalar, ToWord};
-use eth_types::{Word, U256};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
-    plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells,
-    },
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -527,15 +517,13 @@ impl<
                         &key_is_same_with_prev_chips,
                     )?;
 
-                    rw.account_address().map(|a| {
-                        self.assign_address(&mut region, offset, a);
-                        self.assign_address_limbs(&mut region, offset, a);
-                    });
+                    rw.account_address().map_or(Ok(()), |a| {
+                        self.assign_account_address_and_limbs(&mut region, offset, a)
+                    })?;
 
-                    rw.storage_key().map(|k| {
-                        self.assign_storage_key(&mut region, offset, randomness, k);
-                        self.assign_storage_key_bytes(&mut region, offset, k);
-                    });
+                    rw.storage_key().map_or(Ok(()), |k| {
+                        self.assign_storage_key_and_bytes(&mut region, offset, randomness, k)
+                    })?;
 
                     offset += 1;
                 }
@@ -610,52 +598,32 @@ impl<
         Ok(())
     }
 
-    fn assign_address(
+    fn assign_account_address_and_limbs(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         address: Address,
     ) -> Result<(), Error> {
+        let limbs = address
+            .0
+            .iter()
+            .tuples()
+            .map(|(hi, lo)| u16::from_le_bytes([*lo, *hi]));
+        for (limb, col) in limbs.zip(&self.key2_limbs) {
+            region.assign_advice(|| "key2_limb", *col, offset, || Ok(F::from(limb.into())))?;
+        }
+
         region.assign_advice(
             || "key2 (account_address)",
             self.keys[2],
             offset,
-            || Ok(address.to_scalar().unwrap()), // is there a way to avoid the unwrap here?
+            || Ok(address.to_scalar().unwrap()),
         )?;
+
         Ok(())
     }
 
-    fn assign_address_limbs(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        address: Address,
-    ) -> Result<(), Error> {
-        assert_eq!(1 << 4, 16);
-        dbg!(address);
-        dbg!(address.0);
-        let limbs: Vec<_> = address
-            .0
-            .iter()
-            .tuples()
-            .map(|(hi, lo)| u16::from_le_bytes([*lo, *hi]))
-            .collect();
-        dbg!(limbs.len());
-        dbg!(N_LIMBS_ACCOUNT_ADDRESS);
-
-        dbg!(limbs.clone());
-        for i in 0..N_LIMBS_ACCOUNT_ADDRESS {
-            region.assign_advice(
-                || "key2_limb",
-                self.key2_limbs[i],
-                offset,
-                || Ok(F::from(limbs[i].into())),
-            )?;
-        }
-        Ok(())
-    }
-
-    fn assign_storage_key(
+    fn assign_storage_key_and_bytes(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -673,15 +641,7 @@ impl<
                 ))
             },
         )?;
-        Ok(())
-    }
 
-    fn assign_storage_key_bytes(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        key: Word,
-    ) -> Result<(), Error> {
         // TODO: use array_zip if/when it stabilizes.
         for (col, byte) in self.key4_bytes.iter().zip(&key.to_le_bytes()) {
             region.assign_advice(
@@ -691,6 +651,7 @@ impl<
                 || Ok(F::from(*byte as u64)),
             )?;
         }
+
         Ok(())
     }
 }
@@ -793,7 +754,7 @@ mod tests {
         MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
     };
     use eth_types::evm_types::{MemoryAddress, StackAddress};
-    use eth_types::{address, bytecode, Word};
+    use eth_types::{address, bytecode, Word, U256, ToAddress};
     use halo2_proofs::arithmetic::BaseExt;
     use halo2_proofs::dev::MockProver;
     use pairing::bn256::Fr;

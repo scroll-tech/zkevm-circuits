@@ -98,10 +98,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
             .map(|limb| meta.query_advice(limb, Rotation::cur()))
     }
 
-    pub(super) fn power_of_randomness(
-        &self,
-        meta: &mut VirtualCells<F>,
-    ) -> &[Expression<F>] {
+    pub(super) fn power_of_randomness(&self, meta: &mut VirtualCells<F>) -> &[Expression<F>] {
         &self.power_of_randomness
     }
 
