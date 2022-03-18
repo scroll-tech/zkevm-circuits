@@ -34,6 +34,7 @@ pub(crate) struct ConstraintBuilder<F: FieldExt> {
     stack_address_table_zero: Column<Fixed>,
     memory_address_table_zero: Column<Fixed>,
     memory_value_table: Column<Fixed>,
+    power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
 }
 
 impl<'a, F: FieldExt> ConstraintBuilder<F> {
@@ -42,6 +43,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
         keys: [Column<Advice>; 5],
         key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
         s_enable: Column<Fixed>,
+        key4_bytes: [Column<Advice>; N_BYTES_WORD],
+        power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     ) -> Self {
         Self {
             cb: BaseConstraintBuilder::new(MAX_DEGREE),
@@ -50,7 +53,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
             keys,
             keys_diff_inv: [(); 5].map(|_| meta.advice_column()),
             key2_limbs,
-            key4_bytes: [(); N_BYTES_WORD].map(|_| meta.advice_column()),
+            key4_bytes,
             auxs: [(); 2].map(|_| meta.advice_column()),
             s_enable,
             value: meta.advice_column(),
@@ -58,6 +61,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
             memory_address_table_zero: meta.fixed_column(),
             stack_address_table_zero: meta.fixed_column(),
             memory_value_table: meta.fixed_column(),
+            power_of_randomness: power_of_randomness.clone(),
         }
     }
 
@@ -85,6 +89,20 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
     }
     pub(super) fn storage_key(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
         meta.query_advice(self.keys[4], Rotation::cur())
+    }
+    pub(super) fn storage_key_bytes(
+        &self,
+        meta: &mut VirtualCells<F>,
+    ) -> [Expression<F>; N_BYTES_WORD] {
+        self.key4_bytes
+            .map(|limb| meta.query_advice(limb, Rotation::cur()))
+    }
+
+    pub(super) fn power_of_randomness(
+        &self,
+        meta: &mut VirtualCells<F>,
+    ) -> &[Expression<F>] {
+        &self.power_of_randomness
     }
 
     pub(super) fn tag_is(&self, meta: &mut VirtualCells<F>, tag: RwTableTag) -> Expression<F> {

@@ -101,8 +101,7 @@ pub struct Config<
 
     key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
     key4_bytes: [Column<Advice>; N_BYTES_WORD],
-    // storage_key: RandomLinearCombination<F, N_BYTES_WORD>,
-    // power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
+    power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     value: Column<Advice>,
     auxs: [Column<Advice>; 2],
 
@@ -148,25 +147,14 @@ impl<
         let memory_value_table = meta.fixed_column();
 
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
-
-        // let power_of_randomness = {
-        //     let columns = [(); 31].map(|_| meta.instance_column());
-        //     let mut power_of_randomness = None;
-        //
-        //     meta.create_gate("", |meta| {
-        //         power_of_randomness =
-        //             Some(columns.map(|column| meta.query_instance(column,
-        // Rotation::cur())));
-        //
-        //         [0u64.expr()]
-        //     });
-        //
-        //     power_of_randomness.unwrap()
-        // };
-
-        // let storage_key = RandomLinearCombination::new(key4_bytes,
-        // &power_of_randomness);
-        let qb = ConstraintBuilder::<F>::new(meta, keys, key2_limbs, s_enable);
+        let qb = ConstraintBuilder::<F>::new(
+            meta,
+            keys,
+            key2_limbs,
+            s_enable,
+            key4_bytes,
+            power_of_randomness.clone(), // i don't think both of these need power_of_randomness
+        );
 
         let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
             IsZeroChip::configure(
@@ -220,14 +208,14 @@ impl<
             // TODO(mason) range check for each limb.
 
             // 2. key4 is RLC encoded
-            // cb.require_equal(
-            //     "storage key matches its RLC encoding",
-            //     qb.storage_key(meta),
-            //     from_bytes::expr(qb.storage_key_bytes()),
-            //     qb.account_address_limbs(meta)
-            //         .iter()
-            //         .fold(0.expr(), |result, limb| (2_u64.pow(16)).expr() * result +
-            // limb.clone()), );
+            cb.require_equal(
+                "storage key matches its RLC encoding",
+                qb.storage_key(meta),
+                RandomLinearCombination::random_linear_combine_expr(
+                    qb.storage_key_bytes(meta),
+                    qb.power_of_randomness(meta),
+                ),
+            );
 
             // 3. is_write is boolean
             cb.require_boolean("is_write should be boolean", is_write);
@@ -424,7 +412,7 @@ impl<
             allowed_memory_addresses,
             allowed_stack_addresses,
             memory_value_table,
-            // power_of_randomness,
+            power_of_randomness,
         }
     }
 
