@@ -86,7 +86,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(8.expr()),
             program_counter: Delta(1.expr()),
-            state_write_counter: To(1.expr()),
+            state_write_counter: Delta(1.expr()),
             gas_left: Delta(-gas_cost),
             ..Default::default()
         };

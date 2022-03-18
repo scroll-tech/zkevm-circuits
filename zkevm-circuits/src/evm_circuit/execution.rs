@@ -479,8 +479,8 @@ impl<F: Field> ExecutionConfig<F> {
         macro_rules! lookup {
             ($id:path, $table:ident, $descrip:expr) => {
                 if let Some(acc_lookups) = acc_lookups_of_table.remove(&$id) {
-                    for input_exprs in acc_lookups {
-                        meta.lookup_any(concat!("LOOKUP: ", stringify!($descrip)), |meta| {
+                    for (lookup_idx, input_exprs) in acc_lookups.into_iter().enumerate() {
+                        let idx = meta.lookup_any(concat!("LOOKUP: ", stringify!($descrip)), |meta| {
                             let q_step = meta.query_selector(q_step);
                             input_exprs
                                 .into_iter()
@@ -488,6 +488,7 @@ impl<F: Field> ExecutionConfig<F> {
                                 .map(|(input, table)| (q_step.clone() * input, table))
                                 .collect::<Vec<_>>()
                         });
+                        println!("LOOKUP TABLE {} <=> {} {}", idx, stringify!($descrip), lookup_idx);
                     }
                 }
             };

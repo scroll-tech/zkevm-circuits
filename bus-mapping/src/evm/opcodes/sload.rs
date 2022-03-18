@@ -1,10 +1,11 @@
 use super::Opcode;
 use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::operation::{CallContextField, CallContextOp};
 use crate::{
-    operation::{StorageOp, RW},
+    operation::{StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
 };
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, ToWord, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::SLOAD`](crate::evm::OpcodeId::SLOAD)
@@ -18,6 +19,39 @@ impl Opcode for Sload {
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let step = &steps[0];
+
+        state.push_op(
+            RW::READ,
+            CallContextOp {
+                call_id: state.call()?.call_id,
+                field: CallContextField::TxId,
+                value: Word::from(state.tx_ctx.id()),
+            },
+        );
+        state.push_op(
+            RW::READ,
+            CallContextOp {
+                call_id: state.call()?.call_id,
+                field: CallContextField::RwCounterEndOfReversion,
+                value: Word::from(state.call()?.rw_counter_end_of_reversion),
+            },
+        );
+        state.push_op(
+            RW::READ,
+            CallContextOp {
+                call_id: state.call()?.call_id,
+                field: CallContextField::IsPersistent,
+                value: Word::from(state.call()?.is_persistent as u8),
+            },
+        );
+        state.push_op(
+            RW::READ,
+            CallContextOp {
+                call_id: state.call()?.call_id,
+                field: CallContextField::CalleeAddress,
+                value: state.call()?.address.to_word(),
+            },
+        );
 
         // First stack read
         let stack_value_read = step.stack.last()?;
@@ -37,11 +71,23 @@ impl Opcode for Sload {
                 storage_value_read,
                 state.tx_ctx.id(),
                 storage_value_read, // TODO: committed_value
+
             ),
         );
 
         // First stack write
         state.push_stack_op(RW::WRITE, stack_position, storage_value_read)?;
+
+        state.push_op_reversible(
+            RW::WRITE,
+            TxAccessListAccountStorageOp {
+                tx_id: state.tx_ctx.id(),
+                address: state.call()?.address,
+                key: stack_value_read,
+                value: true,
+                value_prev: false, // TODO:
+            },
+        )?;
 
         Ok(())
     }
