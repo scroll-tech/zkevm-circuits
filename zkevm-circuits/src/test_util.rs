@@ -5,6 +5,7 @@ use crate::{
 use eth_types::evm_types::Gas;
 use halo2_proofs::dev::{MockProver, VerifyFailure};
 use pairing::bn256::Fr;
+use pairing::arithmetic::BaseExt;
 
 pub enum FixedTableConfig {
     Incomplete,
@@ -86,7 +87,17 @@ pub fn test_circuits_using_witness_block(
     if config.enable_state_circuit_test {
         let state_circuit =
             StateCircuit::<Fr, true, 2000, 100, 1023, 2000>::new(block.randomness, &block.rws);
-        let prover = MockProver::<Fr>::run(12, &state_circuit, vec![]).unwrap();
+
+        let power_of_randomness: Vec<_> = (1..32)
+            .map(|exp| {
+                vec![
+                    block.randomness.pow(&[exp, 0, 0, 0]);
+                    20 // what number is supposed to go here??? it's the max offset I think?
+                ]
+            })
+            .collect();
+
+        let prover = MockProver::<Fr>::run(12, &state_circuit, power_of_randomness).unwrap();
         prover.verify()?;
     }
 

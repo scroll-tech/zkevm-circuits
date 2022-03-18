@@ -1,5 +1,6 @@
 use super::constraint_builder::ConstraintBuilder;
 use super::params::N_LIMBS_ACCOUNT_ADDRESS;
+use crate::evm_circuit::util::RandomLinearCombination;
 use crate::evm_circuit::witness::Rw;
 use crate::{
     evm_circuit::{
@@ -18,12 +19,12 @@ use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
 };
 use eth_types::Address;
-use eth_types::{Field, ToWord, ToScalar, ToAddress};
 use eth_types::ToLittleEndian;
 use eth_types::U256;
+use eth_types::{Field, ToAddress, ToScalar, ToWord};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, VirtualCells},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, VirtualCells, Expression},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -98,6 +99,8 @@ pub struct Config<
 
     key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
     key4_bytes: [Column<Advice>; N_BYTES_WORD],
+    // storage_key: RandomLinearCombination<F, N_BYTES_WORD>,
+    // power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     value: Column<Advice>,
     auxs: [Column<Advice>; 2],
 
@@ -121,7 +124,10 @@ impl<
     > Config<F, SANITY_CHECK, RW_COUNTER_MAX, MEMORY_ADDRESS_MAX, STACK_ADDRESS_MAX, ROWS_MAX>
 {
     /// Set up custom gates and lookup arguments for this configuration.
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
+    pub(crate) fn configure(
+        meta: &mut ConstraintSystem<F>,
+        power_of_randomness: [Expression<F>; 31],
+    ) -> Self {
         let rw_counter = meta.advice_column();
         let is_write = meta.advice_column();
         let keys = [(); 5].map(|_| meta.advice_column());
@@ -140,6 +146,22 @@ impl<
         let memory_value_table = meta.fixed_column();
 
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
+
+        // let power_of_randomness = {
+        //     let columns = [(); 31].map(|_| meta.instance_column());
+        //     let mut power_of_randomness = None;
+        //
+        //     meta.create_gate("", |meta| {
+        //         power_of_randomness =
+        //             Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
+        //
+        //         [0u64.expr()]
+        //     });
+        //
+        //     power_of_randomness.unwrap()
+        // };
+
+        // let storage_key = RandomLinearCombination::new(key4_bytes, &power_of_randomness);
         let qb = ConstraintBuilder::<F>::new(meta, keys, key2_limbs, s_enable);
 
         let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
@@ -163,14 +185,14 @@ impl<
                 * key_is_same_with_prev[3].is_zero_expression.clone()
                 * key_is_same_with_prev[4].is_zero_expression.clone()
         };
-        let q_not_all_keys_same = |meta: &mut VirtualCells<F>| 1.expr() - q_all_keys_same(meta);
+        let q_not_all_keys_same = |meta: &mut VirtualCells<F>| 1u64.expr() - q_all_keys_same(meta);
 
         ///////////////////////// General constraints /////////////////////////////////
 
         meta.create_gate("General constraints", |meta| {
             let mut cb = new_cb();
             let is_write = meta.query_advice(is_write, Rotation::cur());
-            let is_read = 1.expr() - is_write.clone();
+            let is_read = 1u64.expr() - is_write.clone();
             let value_cur = meta.query_advice(value, Rotation::cur());
             let value_prev = meta.query_advice(value, Rotation::prev());
 
@@ -187,11 +209,10 @@ impl<
                 qb.account_address(meta),
                 qb.account_address_limbs(meta)
                     .iter()
-                    .fold(0.expr(), |result, limb| {
-                        limb.clone() + result * (1u64<<16).expr()
+                    .fold(0u64.expr(), |result, limb| {
+                        limb.clone() + result * (1u64 << 16).expr()
                     }),
             );
-            assert_eq!((2..=6).fold(0, |a, b| {10 * a + b}), 23456);
             // TODO(mason) range check for each limb.
 
             // 2. key4 is RLC encoded
@@ -236,7 +257,9 @@ impl<
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
 
             vec![(
-                qb.s_enable(meta) * q_all_keys_same(meta) * (rw_counter - rw_counter_prev - 1.expr()),
+                qb.s_enable(meta)
+                    * q_all_keys_same(meta)
+                    * (rw_counter - rw_counter_prev - 1u64.expr()),
                 rw_counter_table,
             )]
         });
@@ -247,7 +270,7 @@ impl<
             let mut cb = new_cb();
             let value_cur = meta.query_advice(value, Rotation::cur());
             let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = 1.expr() - is_write;
+            let q_read = 1u64.expr() - is_write;
 
             // 0. Unused keys are 0
             cb.require_zero("key2 is 0", qb.account_address(meta));
@@ -295,7 +318,7 @@ impl<
             let mut cb = new_cb();
 
             let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = 1.expr() - is_write;
+            let q_read = 1u64.expr() - is_write;
             let key2 = meta.query_advice(keys[2], Rotation::cur());
             let key4 = meta.query_advice(keys[4], Rotation::cur());
 
@@ -353,7 +376,7 @@ impl<
             let mut cb = new_cb();
 
             let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = 1.expr() - is_write;
+            let q_read = 1u64.expr() - is_write;
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
 
             // TODO: cold VS warm
@@ -397,6 +420,7 @@ impl<
             allowed_memory_addresses,
             allowed_stack_addresses,
             memory_value_table,
+            // power_of_randomness,
         }
     }
 
@@ -537,7 +561,20 @@ impl<
                         | Rw::Memory { .. }
                         | Rw::TxRefund { .. } => {
                             assert_eq!(rw_row.key2.is_zero().unwrap_u8(), 1);
-                        },
+                        }
+                    };
+
+                    // move this match to witness.rs....
+                    match rw {
+                        Rw::AccountStorage { storage_key, .. }
+                        | Rw::TxAccessListAccountStorage { storage_key, .. } => {}
+                        Rw::CallContext { .. }
+                        | Rw::Stack { .. }
+                        | Rw::Memory { .. }
+                        | Rw::TxRefund { .. }
+                        | Rw::Account { .. }
+                        | Rw::TxAccessListAccount { .. }
+                        | Rw::AccountDestructed { .. } => {}
                     };
 
                     offset += 1;
@@ -722,7 +759,21 @@ impl<
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        Config::configure(meta)
+        let power_of_randomness = {
+            let columns = [(); 31].map(|_| meta.instance_column());
+            let mut power_of_randomness = None;
+
+            meta.create_gate("", |meta| {
+                power_of_randomness =
+                    Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
+
+                [0.expr()]
+            });
+
+            power_of_randomness.unwrap()
+        };
+
+        Config::configure(meta, power_of_randomness)
     }
 
     fn synthesize(
@@ -765,7 +816,16 @@ mod tests {
                 { $memory_rows_max + $stack_rows_max + $storage_rows_max },
             >::new(Fr::rand(), &rw_map);
 
-            let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
+            let power_of_randomness: Vec<_> = (1..32)
+                .map(|exp| {
+                    vec![
+                        circuit.randomness.pow(&[exp, 0, 0, 0]);
+                        { $memory_rows_max + $stack_rows_max + $storage_rows_max } // I think this is the max offset?
+                    ]
+                })
+                .collect();
+
+            let prover = MockProver::<Fr>::run($k, &circuit, power_of_randomness).unwrap();
             let verify_result = prover.verify();
             assert!(verify_result.is_ok(), "verify err: {:#?}", verify_result);
         }};
@@ -788,7 +848,16 @@ mod tests {
                 { $memory_rows_max + $stack_rows_max + $storage_rows_max },
             >::new(Fr::rand(), &rw_map);
 
-            let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
+            let power_of_randomness: Vec<_> = (1..32)
+                .map(|exp| {
+                    vec![
+                        circuit.randomness.pow(&[exp, 0, 0, 0]);
+                        { $memory_rows_max + $stack_rows_max + $storage_rows_max } // I think this is the max offset?
+                    ]
+                })
+                .collect();
+
+            let prover = MockProver::<Fr>::run($k, &circuit, power_of_randomness).unwrap();
             assert!(prover.verify().is_err());
         }};
     }
