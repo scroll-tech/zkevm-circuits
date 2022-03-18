@@ -1448,9 +1448,11 @@ impl<'a> CircuitInputBuilder {
         // Generate EndTx step
         let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
         tx.steps.push(end_tx_step);
+        /* 
         if step_prev.gas_left.0 < step_prev.gas_cost.0 {
             println!("end tx {} {}",  step_prev.gas_left.0, step_prev.gas_cost.0)
         }
+        */
 
         self.block.txs.push(tx);
         self.sdb.clear_access_list_and_refund();
@@ -1949,6 +1951,7 @@ mod tracer_tests {
                 &GethExecTrace {
                     gas: Gas(0),
                     failed: false,
+                    return_value: "".to_owned(),
                     struct_logs: vec![geth_step.clone()],
                 },
                 false,

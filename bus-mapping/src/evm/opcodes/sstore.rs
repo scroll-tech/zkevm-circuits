@@ -1,13 +1,12 @@
 
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::operation::{CallContextField, CallContextOp, TxRefundOp};
 use crate::{
     operation::{StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
 };
 use eth_types::{GethExecStep, ToWord, Word, U256};
-
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::SSTORE`](crate::evm::OpcodeId::SSTORE)
@@ -19,11 +18,12 @@ impl Opcode for Sstore {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         steps: &[GethExecStep],
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<ExecStep>, Error> {
         let step = &steps[0];
 
+        let mut exec_step = state.new_step(step)?;
 
-        state.push_op(
+        state.push_op(&mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: state.call()?.call_id,
@@ -31,7 +31,7 @@ impl Opcode for Sstore {
                 value: Word::from(state.tx_ctx.id()),
             },
         );
-        state.push_op(
+        state.push_op(&mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: state.call()?.call_id,
@@ -39,7 +39,7 @@ impl Opcode for Sstore {
                 value: Word::from(state.call()?.rw_counter_end_of_reversion),
             },
         );
-        state.push_op(
+        state.push_op(&mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: state.call()?.call_id,
@@ -47,7 +47,7 @@ impl Opcode for Sstore {
                 value: Word::from(state.call()?.is_persistent as u8),
             },
         );
-        state.push_op(
+        state.push_op(&mut exec_step,
             RW::READ,
             CallContextOp {
                 call_id: state.call()?.call_id,
@@ -61,10 +61,10 @@ impl Opcode for Sstore {
         let value = step.stack.nth_last(1)?;
         let value_stack_position = step.stack.nth_last_filled(1);
 
-        state.push_stack_op(
+        state.push_stack_op(&mut exec_step,
             RW::READ,key_stack_position, key
         )?;
-        state.push_stack_op(
+        state.push_stack_op(&mut exec_step,
             RW::READ,
             value_stack_position,value
         )?;
@@ -75,12 +75,12 @@ impl Opcode for Sstore {
         
         let value_prev: U256  =unsafe {
         let ptr = steps.as_ptr();
-         (*ptr.sub(1)).storage.get(&key).cloned().unwrap_or(U256::from(0))
+         (*ptr.sub(1)).storage.get(&key).cloned().unwrap_or(U256::from(0i32))
         };
         
         println!("value {:?} value_prev {:?}", value, value_prev);
         //let value_prev = steps[1].storage.get_or_err(&key)?;
-        state.push_op_reversible(
+        state.push_op_reversible(&mut exec_step,
             RW::WRITE,
             StorageOp::new(
                 state.call()?.address,
@@ -93,7 +93,7 @@ impl Opcode for Sstore {
         )?;
 
 
-        state.push_op_reversible(
+        state.push_op_reversible(&mut exec_step,
             RW::WRITE,
             TxAccessListAccountStorageOp {
                 tx_id: state.tx_ctx.id(),
@@ -104,14 +104,14 @@ impl Opcode for Sstore {
             },
         )?;
 
-        state.push_op_reversible(RW::WRITE, TxRefundOp {
+        state.push_op_reversible(&mut exec_step,RW::WRITE, TxRefundOp {
 
             tx_id: state.tx_ctx.id(),
             value_prev: 0,//step.refund.0,
             value: 0,//steps[1].refund.0,
         })?;
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 

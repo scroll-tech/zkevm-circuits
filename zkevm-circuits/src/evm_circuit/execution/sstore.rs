@@ -1165,6 +1165,6 @@ mod test {
             enable_state_circuit_test: false,
             ..Default::default()
         };
-        assert_eq!(test_circuits_using_bytecode(bytecode, test_config), Ok(()));
+        assert_eq!(test_circuits_using_bytecode(bytecode, test_config, None), Ok(()));
     }
 }
