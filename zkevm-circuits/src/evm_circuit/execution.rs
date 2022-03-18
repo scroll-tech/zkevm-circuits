@@ -46,6 +46,7 @@ mod pc;
 mod pop;
 mod push;
 mod selfbalance;
+mod shr;
 mod signed_comparator;
 mod signextend;
 mod sload;
@@ -83,6 +84,7 @@ use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
 use selfbalance::SelfbalanceGadget;
+use shr::ShrGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use sload::SloadGadget;
@@ -143,6 +145,7 @@ pub(crate) struct ExecutionConfig<F> {
     push_gadget: PushGadget<F>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
+    shr_gadget: ShrGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
     msize_gadget: MsizeGadget<F>,
@@ -358,6 +361,7 @@ impl<F: Field> ExecutionConfig<F> {
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
+            shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             stop_gadget: configure_gadget!(),
@@ -639,6 +643,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
+            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
             ExecutionState::CALLDATACOPY => {
                 assign_exec_step!(self.calldatacopy_gadget)
