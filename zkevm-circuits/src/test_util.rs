@@ -4,8 +4,8 @@ use crate::{
 };
 use eth_types::evm_types::Gas;
 use halo2_proofs::dev::{MockProver, VerifyFailure};
-use pairing::bn256::Fr;
 use pairing::arithmetic::BaseExt;
+use pairing::bn256::Fr;
 
 pub enum FixedTableConfig {
     Incomplete,

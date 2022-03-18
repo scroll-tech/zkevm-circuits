@@ -20,11 +20,13 @@ use bus_mapping::operation::{
 };
 use eth_types::Address;
 use eth_types::ToLittleEndian;
-use eth_types::U256;
 use eth_types::{Field, ToAddress, ToScalar, ToWord};
+use eth_types::{Word, U256};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, VirtualCells, Expression},
+    plonk::{
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells,
+    },
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -153,7 +155,8 @@ impl<
         //
         //     meta.create_gate("", |meta| {
         //         power_of_randomness =
-        //             Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
+        //             Some(columns.map(|column| meta.query_instance(column,
+        // Rotation::cur())));
         //
         //         [0u64.expr()]
         //     });
@@ -161,7 +164,8 @@ impl<
         //     power_of_randomness.unwrap()
         // };
 
-        // let storage_key = RandomLinearCombination::new(key4_bytes, &power_of_randomness);
+        // let storage_key = RandomLinearCombination::new(key4_bytes,
+        // &power_of_randomness);
         let qb = ConstraintBuilder::<F>::new(meta, keys, key2_limbs, s_enable);
 
         let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
@@ -535,47 +539,15 @@ impl<
                         &key_is_same_with_prev_chips,
                     )?;
 
-                    // move this match to witness.rs....
-                    match rw {
-                        Rw::TxAccessListAccount {
-                            account_address, ..
-                        }
-                        | Rw::TxAccessListAccountStorage {
-                            account_address, ..
-                        }
-                        | Rw::Account {
-                            account_address, ..
-                        }
-                        | Rw::AccountStorage {
-                            account_address, ..
-                        }
-                        | Rw::AccountDestructed {
-                            account_address, ..
-                        } => {
-                            assert_eq!(account_address.to_scalar(), Some(rw_row.key2));
-                            self.assign_address(&mut region, offset, *account_address);
-                            self.assign_address_limbs(&mut region, offset, *account_address);
-                        }
-                        Rw::CallContext { .. }
-                        | Rw::Stack { .. }
-                        | Rw::Memory { .. }
-                        | Rw::TxRefund { .. } => {
-                            assert_eq!(rw_row.key2.is_zero().unwrap_u8(), 1);
-                        }
-                    };
+                    rw.account_address().map(|a| {
+                        self.assign_address(&mut region, offset, a);
+                        self.assign_address_limbs(&mut region, offset, a);
+                    });
 
-                    // move this match to witness.rs....
-                    match rw {
-                        Rw::AccountStorage { storage_key, .. }
-                        | Rw::TxAccessListAccountStorage { storage_key, .. } => {}
-                        Rw::CallContext { .. }
-                        | Rw::Stack { .. }
-                        | Rw::Memory { .. }
-                        | Rw::TxRefund { .. }
-                        | Rw::Account { .. }
-                        | Rw::TxAccessListAccount { .. }
-                        | Rw::AccountDestructed { .. } => {}
-                    };
+                    rw.storage_key().map(|k| {
+                        self.assign_storage_key(&mut region, offset, randomness, k);
+                        self.assign_storage_key_bytes(&mut region, offset, k);
+                    });
 
                     offset += 1;
                 }
@@ -690,6 +662,45 @@ impl<
                 self.key2_limbs[i],
                 offset,
                 || Ok(F::from(limbs[i].into())),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn assign_storage_key(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        randomness: F,
+        key: Word,
+    ) -> Result<(), Error> {
+        region.assign_advice(
+            || "key4 (storage_key)",
+            self.keys[4],
+            offset,
+            || {
+                Ok(RandomLinearCombination::random_linear_combine(
+                    key.to_le_bytes(),
+                    randomness,
+                ))
+            },
+        )?;
+        Ok(())
+    }
+
+    fn assign_storage_key_bytes(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        key: Word,
+    ) -> Result<(), Error> {
+        // TODO: use array_zip if/when it stabilizes.
+        for (col, byte) in self.key4_bytes.iter().zip(&key.to_le_bytes()) {
+            region.assign_advice(
+                || "storage key byte",
+                *col,
+                offset,
+                || Ok(F::from(*byte as u64)),
             )?;
         }
         Ok(())
