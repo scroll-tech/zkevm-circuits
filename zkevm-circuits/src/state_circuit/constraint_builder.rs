@@ -1,4 +1,4 @@
-use super::params::N_LIMBS_ACCOUNT_ADDRESS;
+use super::param::N_LIMBS_ACCOUNT_ADDRESS;
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::RwTableTag,
