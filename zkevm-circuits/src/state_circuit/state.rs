@@ -1,11 +1,12 @@
 use super::constraint_builder::ConstraintBuilder;
 use super::param::N_LIMBS_ACCOUNT_ADDRESS;
+use crate::state_circuit::fixed_table::FixedTable;
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
         table::RwTableTag,
         util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
-        witness::{RwMap, RwRow, Rw},
+        witness::{Rw, RwMap, RwRow},
     },
     gadget::{
         is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
@@ -49,8 +50,6 @@ use strum::IntoEnumIterator;
 // 3 - stack
 // 4 - storage
 
-// const EMPTY_TAG: usize = 0;
-// const START_TAG: usize = 1;
 const MEMORY_TAG: usize = RwTableTag::Memory as usize;
 const STACK_TAG: usize = RwTableTag::Stack as usize;
 const STORAGE_TAG: usize = RwTableTag::AccountStorage as usize;
@@ -103,6 +102,7 @@ pub struct Config<
     allowed_stack_addresses: Column<Fixed>,
     allowed_memory_addresses: Column<Fixed>,
     memory_value_table: Column<Fixed>,
+    // fixed_table: FixedTable,
 }
 
 impl<
@@ -119,6 +119,8 @@ impl<
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; 31],
     ) -> Self {
+        // let fixed_table = FixedTable::configure(meta);
+
         let rw_counter = meta.advice_column();
         let is_write = meta.advice_column();
         let keys = [(); 5].map(|_| meta.advice_column());
@@ -179,6 +181,7 @@ impl<
             let value_prev = meta.query_advice(value, Rotation::prev());
 
             // 0. tag in RwTableTag range
+            // TODO: check key1 and key3 ranges.
             cb.require_in_set(
                 "tag in RwTableTag range",
                 qb.tag(meta),
@@ -402,6 +405,7 @@ impl<
             allowed_memory_addresses,
             allowed_stack_addresses,
             memory_value_table,
+            // fixed_table,
             power_of_randomness,
         }
     }
@@ -742,6 +746,7 @@ impl<
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load(&mut layouter)?;
+        // config.fixed_table.load(&mut layouter)?;
         config.assign(layouter, self.randomness, &self.rw_map)?;
 
         Ok(())
@@ -754,7 +759,7 @@ mod tests {
         MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
     };
     use eth_types::evm_types::{MemoryAddress, StackAddress};
-    use eth_types::{address, bytecode, Word, U256, ToAddress};
+    use eth_types::{address, bytecode, ToAddress, Word, U256};
     use halo2_proofs::arithmetic::BaseExt;
     use halo2_proofs::dev::MockProver;
     use pairing::bn256::Fr;
