@@ -102,7 +102,7 @@ pub struct Config<
     allowed_stack_addresses: Column<Fixed>,
     allowed_memory_addresses: Column<Fixed>,
     memory_value_table: Column<Fixed>,
-    // fixed_table: FixedTable,
+    fixed_table: FixedTable,
 }
 
 impl<
@@ -119,7 +119,7 @@ impl<
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; 31],
     ) -> Self {
-        // let fixed_table = FixedTable::configure(meta);
+        let fixed_table = FixedTable::configure(meta);
 
         let rw_counter = meta.advice_column();
         let is_write = meta.advice_column();
@@ -405,7 +405,7 @@ impl<
             allowed_memory_addresses,
             allowed_stack_addresses,
             memory_value_table,
-            // fixed_table,
+            fixed_table,
             power_of_randomness,
         }
     }
@@ -746,7 +746,7 @@ impl<
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load(&mut layouter)?;
-        // config.fixed_table.load(&mut layouter)?;
+        config.fixed_table.load(&mut layouter)?;
         config.assign(layouter, self.randomness, &self.rw_map)?;
 
         Ok(())
