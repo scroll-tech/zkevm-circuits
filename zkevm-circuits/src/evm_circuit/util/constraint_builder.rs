@@ -3,8 +3,8 @@ use crate::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Preset, Step},
         table::{
-            AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup, RwTableTag,
-            TxContextFieldTag,
+            AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
+            RwTableTag, TxContextFieldTag,
         },
         util::{Cell, RandomLinearCombination, Word},
     },
@@ -502,9 +502,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             "Opcode lookup",
             Lookup::Bytecode {
                 hash: self.curr.state.code_source.expr(),
+                tag: BytecodeFieldTag::Byte.expr(),
                 index,
-                value: opcode,
                 is_code,
+                value: opcode,
             }
             .conditional(1.expr() - is_root_create),
         );
@@ -516,18 +517,34 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         code_hash: Expression<F>,
         index: Expression<F>,
-        value: Expression<F>,
         is_code: Expression<F>,
+        value: Expression<F>,
     ) {
         self.add_lookup(
-            "Bytecode lookup",
+            "Bytecode (byte) lookup",
             Lookup::Bytecode {
                 hash: code_hash,
+                tag: BytecodeFieldTag::Byte.expr(),
                 index,
-                value,
                 is_code,
+                value,
             },
         )
+    }
+
+    pub(crate) fn bytecode_length(&mut self, code_hash: Expression<F>) -> Cell<F> {
+        let cell = self.query_cell();
+        self.add_lookup(
+            "Bytecode (length)",
+            Lookup::Bytecode {
+                hash: code_hash,
+                tag: BytecodeFieldTag::Length.expr(),
+                index: 0.expr(),
+                is_code: 0.expr(),
+                value: cell.expr(),
+            },
+        );
+        cell
     }
 
     // Tx context

@@ -74,8 +74,8 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
                 cb.bytecode_lookup(
                     code_hash.expr(),
                     src_addr.expr() + idx.expr(),
-                    buffer_reader.byte(idx),
                     is_code.expr(),
+                    buffer_reader.byte(idx),
                 );
             });
             // Lookup the RW table for a memory write operation at the appropriate
@@ -221,7 +221,8 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             .iter()
             .zip(
                 code.table_assignments(block.randomness)
-                    .skip(*src_addr as usize)
+                    // add 1 since the first row is reserved for bytecode length.
+                    .skip(*src_addr as usize + 1)
                     .take(MAX_COPY_BYTES),
             )
             .enumerate()

@@ -353,7 +353,7 @@ impl Bytecode {
                 }
 
                 let idx = self.idx - 1;
-                let byte = self.bytes[self.idx];
+                let byte = self.bytes[idx];
                 let mut is_code = true;
                 if self.push_data_left > 0 {
                     is_code = false;

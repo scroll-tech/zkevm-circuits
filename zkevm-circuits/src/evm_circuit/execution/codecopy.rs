@@ -66,12 +66,13 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         // Query additional fields for the account's code.
         let account = cb.call_context(None, CallContextFieldTag::CalleeAddress);
-        let code_size = cb.query_cell();
         let code_hash = cb.curr.state.code_source.clone();
 
-        // Lookup the code hash and code size of the current environment's account.
-        cb.account_read(account.expr(), AccountFieldTag::CodeSize, code_size.expr());
+        // Lookup the code hash of the current environment's account.
         cb.account_read(account.expr(), AccountFieldTag::CodeHash, code_hash.expr());
+
+        // Fetch the bytecode length from the bytecode table.
+        let code_size = cb.bytecode_length(code_hash.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
@@ -187,7 +188,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         } else {
             unimplemented!("CODECOPY does not support internal calls yet");
         };
-        println!("account = {:?}", account);
         self.account.assign(region, offset, account.to_scalar())?;
 
         let code = block
@@ -324,18 +324,9 @@ mod tests {
                 (
                     RwTableTag::Account,
                     vec![
-                        // Code size lookup in CODECOPY.
-                        Rw::Account {
-                            rw_counter: 8,
-                            is_write: false,
-                            account_address: callee_addr,
-                            field_tag: AccountFieldTag::CodeSize,
-                            value: Word::from(code.bytes.len()),
-                            value_prev: Word::from(code.bytes.len()),
-                        },
                         // Code hash lookup in CODECOPY.
                         Rw::Account {
-                            rw_counter: 9,
+                            rw_counter: 8,
                             is_write: false,
                             account_address: callee_addr,
                             field_tag: AccountFieldTag::CodeHash,
@@ -401,7 +392,6 @@ mod tests {
                     (RwTableTag::Stack, 5),
                     (RwTableTag::CallContext, 0),
                     (RwTableTag::Account, 0),
-                    (RwTableTag::Account, 1),
                 ],
                 execution_state: ExecutionState::CODECOPY,
                 rw_counter: 4,
@@ -416,7 +406,7 @@ mod tests {
 
         let program_counter = 100;
         let stack_pointer = 1024;
-        let mut rw_counter = 10;
+        let mut rw_counter = 9;
         if !size.is_zero() {
             make_copy_code_steps(
                 call_id,
