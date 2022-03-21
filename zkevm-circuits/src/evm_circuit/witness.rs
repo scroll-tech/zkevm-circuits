@@ -3,7 +3,8 @@ use crate::evm_circuit::{
     param::{N_BYTES_WORD, STACK_CAPACITY},
     step::ExecutionState,
     table::{
-        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
+        AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
+        TxContextFieldTag,
     },
     util::RandomLinearCombination,
 };
@@ -324,7 +325,7 @@ impl Bytecode {
     pub fn table_assignments<'a, F: FieldExt>(
         &'a self,
         randomness: F,
-    ) -> impl Iterator<Item = [F; 4]> + '_ {
+    ) -> impl Iterator<Item = [F; 5]> + '_ {
         struct BytecodeIterator<'a, F> {
             idx: usize,
             push_data_left: usize,
@@ -333,10 +334,21 @@ impl Bytecode {
         }
 
         impl<'a, F: FieldExt> Iterator for BytecodeIterator<'a, F> {
-            type Item = [F; 4];
+            type Item = [F; 5];
 
             fn next(&mut self) -> Option<Self::Item> {
-                if self.idx == self.bytes.len() {
+                if self.idx == 0 {
+                    self.idx += 1;
+                    return Some([
+                        self.hash,
+                        F::from(BytecodeFieldTag::Length as u64),
+                        F::from(0),
+                        F::from(0),
+                        F::from(self.bytes.len() as u64),
+                    ]);
+                }
+
+                if self.idx > self.bytes.len() {
                     return None;
                 }
 
@@ -355,9 +367,10 @@ impl Bytecode {
 
                 Some([
                     self.hash,
+                    F::from(BytecodeFieldTag::Byte as u64),
                     F::from(idx as u64),
-                    F::from(byte as u64),
                     F::from(is_code as u64),
+                    F::from(byte as u64),
                 ])
             }
         }
