@@ -45,10 +45,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
         s_enable: Column<Fixed>,
         key4_bytes: [Column<Advice>; N_BYTES_WORD],
         power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
+        rw_counter: Column<Advice>,
     ) -> Self {
         Self {
             cb: BaseConstraintBuilder::new(MAX_DEGREE),
-            rw_counter: meta.advice_column(),
+            rw_counter,
             is_write: meta.advice_column(),
             keys,
             keys_diff_inv: [(); 5].map(|_| meta.advice_column()),
@@ -112,5 +113,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
 
     pub(super) fn s_enable(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
         meta.query_fixed(self.s_enable, Rotation::cur())
+    }
+
+    pub(super) fn rw_counter(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_advice(self.rw_counter, Rotation::cur())
+    }
+
+    pub(super) fn rw_counter_delta(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        self.rw_counter(meta) - meta.query_advice(self.rw_counter, Rotation::prev())
     }
 }

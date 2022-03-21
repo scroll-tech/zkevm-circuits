@@ -140,6 +140,7 @@ impl<
             s_enable,
             key4_bytes,
             power_of_randomness.clone(), // i don't think both of these need power_of_randomness
+            rw_counter,
         );
 
         let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
@@ -147,7 +148,6 @@ impl<
                 meta,
                 |meta| meta.query_fixed(s_enable, Rotation::cur()),
                 |meta| {
-                    // do we need to pad this to prevent wraparound?
                     let value_cur = meta.query_advice(keys[idx], Rotation::cur());
                     let value_prev = meta.query_advice(keys[idx], Rotation::prev());
                     value_cur - value_prev
@@ -225,19 +225,27 @@ impl<
             cb.gate(qb.s_enable(meta))
         });
 
+        // Check that storage key bytes are between 0 and 255.
+        // TODO: move this into constraint builder
+        for i in 0..N_BYTES_WORD {
+            meta.lookup_any("storage key byte is between 0 and 255", |meta| {
+                vec![(
+                    qb.s_enable(meta) * qb.storage_key_bytes(meta)[i].clone(),
+                    fixed_table.u8(meta),
+                )]
+            });
+        }
+
         // 5. RWC is monotonically strictly increasing for a set of all keys
         //
         // When tag is not Start and all the keys are equal in two consecutive a rows:
         // - The corresponding rwc must be strictly increasing.
         // TODO: rewrite using range check gates rather than lookup
         meta.lookup_any("rw counter monotonicity", |meta| {
-            let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
-            let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
-
             vec![(
                 qb.s_enable(meta)
                     * q_all_keys_same(meta)
-                    * (rw_counter - rw_counter_prev - 1u64.expr()),
+                    * (qb.rw_counter_delta(meta) - 1u64.expr()),
                 fixed_table.u10(meta),
             )]
         });
@@ -283,7 +291,7 @@ impl<
             let value = meta.query_advice(value, Rotation::cur());
             vec![(
                 qb.tag_is(meta, RwTableTag::Memory) * value,
-                fixed_table.u8(meta)
+                fixed_table.u8(meta),
             )]
         });
 
@@ -349,7 +357,6 @@ impl<
 
             let is_write = meta.query_advice(is_write, Rotation::cur());
             let q_read = 1u64.expr() - is_write;
-            let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
 
             // TODO: cold VS warm
             // TODO: connection to MPT on first and last access for each (address, key)
@@ -371,7 +378,7 @@ impl<
             );
             cb.require_zero(
                 "First access for storage has rw_counter as 0",
-                q_not_all_keys_same(meta) * rw_counter,
+                q_not_all_keys_same(meta) * qb.rw_counter(meta),
             );
 
             cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::AccountStorage))
