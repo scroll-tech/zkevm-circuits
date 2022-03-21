@@ -98,10 +98,7 @@ pub struct Config<
     key_is_same_with_prev: [IsZeroConfig<F>; 5],
 
     // range tables here, TODO: organize them to a single struct?
-    rw_counter_table: Column<Fixed>,
-    allowed_stack_addresses: Column<Fixed>,
-    allowed_memory_addresses: Column<Fixed>,
-    memory_value_table: Column<Fixed>,
+    allowed_memory_addresses: Column<Fixed>, // u32
     fixed_table: FixedTable,
 }
 
@@ -133,10 +130,7 @@ impl<
 
         let value = meta.advice_column();
 
-        let rw_counter_table = meta.fixed_column();
         let allowed_memory_addresses = meta.fixed_column();
-        let allowed_stack_addresses = meta.fixed_column();
-        let memory_value_table = meta.fixed_column();
 
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
         let qb = ConstraintBuilder::<F>::new(
@@ -237,7 +231,6 @@ impl<
         // - The corresponding rwc must be strictly increasing.
         // TODO: rewrite using range check gates rather than lookup
         meta.lookup_any("rw counter monotonicity", |meta| {
-            let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
             let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
             let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
 
@@ -245,7 +238,7 @@ impl<
                 qb.s_enable(meta)
                     * q_all_keys_same(meta)
                     * (rw_counter - rw_counter_prev - 1u64.expr()),
-                rw_counter_table,
+                fixed_table.u10(meta),
             )]
         });
 
@@ -285,15 +278,12 @@ impl<
             )]
         });
 
-        // 3. value is a byte
-        // Memory value is in the allowed range.
-        meta.lookup_any("Memory value in allowed range", |meta| {
+        // 3. value is a byte when tag is Memory
+        meta.lookup_any("value is a byte when tag is Memory", |meta| {
             let value = meta.query_advice(value, Rotation::cur());
-            let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
-
             vec![(
                 qb.tag_is(meta, RwTableTag::Memory) * value,
-                memory_value_table,
+                fixed_table.u8(meta)
             )]
         });
 
@@ -327,12 +317,9 @@ impl<
 
         // 2. stack_ptr in range
         meta.lookup_any("Stack address in allowed range", |meta| {
-            let allowed_stack_addresses =
-                meta.query_fixed(allowed_stack_addresses, Rotation::cur());
-
             vec![(
                 qb.tag_is(meta, RwTableTag::Stack) * qb.address(meta),
-                allowed_stack_addresses,
+                fixed_table.u10(meta),
             )]
         });
 
@@ -401,10 +388,7 @@ impl<
             auxs,
             s_enable,
             key_is_same_with_prev,
-            rw_counter_table,
             allowed_memory_addresses,
-            allowed_stack_addresses,
-            memory_value_table,
             fixed_table,
             power_of_randomness,
         }
@@ -413,57 +397,12 @@ impl<
     /// Load lookup table / other fixed constants for this configuration.
     pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
-            || "rw counter table",
-            |mut region| {
-                for idx in 0..=RW_COUNTER_MAX {
-                    region.assign_fixed(
-                        || "rw counter table",
-                        self.rw_counter_table,
-                        idx,
-                        || Ok(F::from(idx as u64)),
-                    )?;
-                }
-                Ok(())
-            },
-        )?;
-
-        layouter.assign_region(
-            || "memory value table",
-            |mut region| {
-                for idx in 0..=255 {
-                    region.assign_fixed(
-                        || "memory value table",
-                        self.memory_value_table,
-                        idx,
-                        || Ok(F::from(idx as u64)),
-                    )?;
-                }
-                Ok(())
-            },
-        )?;
-
-        layouter.assign_region(
             || "memory address table with zero",
             |mut region| {
                 for idx in 0..=MEMORY_ADDRESS_MAX {
                     region.assign_fixed(
                         || "memory address table with zero",
                         self.allowed_memory_addresses,
-                        idx,
-                        || Ok(F::from(idx as u64)),
-                    )?;
-                }
-                Ok(())
-            },
-        )?;
-
-        layouter.assign_region(
-            || "stack address table with zero",
-            |mut region| {
-                for idx in 0..=STACK_ADDRESS_MAX {
-                    region.assign_fixed(
-                        || "stack address table with zero",
-                        self.allowed_stack_addresses,
                         idx,
                         || Ok(F::from(idx as u64)),
                     )?;

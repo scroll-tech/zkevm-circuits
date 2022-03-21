@@ -1,6 +1,8 @@
 use crate::impl_expr;
 use halo2_proofs::circuit::Layouter;
 use halo2_proofs::plonk::{Column, ConstraintSystem, Error, Expression, Fixed};
+use halo2_proofs::poly::Rotation;
+use halo2_proofs::plonk::VirtualCells;
 use strum_macros::EnumIter;
 use pairing::arithmetic::FieldExt;
 
@@ -15,9 +17,9 @@ impl_expr!(FixedTableTag);
 
 #[derive(Clone, Copy, Debug)]
 pub struct FixedTable {
-    pub u8: Column<Fixed>,
-    pub u10: Column<Fixed>,
-    pub u16: Column<Fixed>,
+    u8: Column<Fixed>,
+    u10: Column<Fixed>,
+    u16: Column<Fixed>,
 }
 
 impl FixedTable {
@@ -27,6 +29,18 @@ impl FixedTable {
             u10: meta.fixed_column(),
             u16: meta.fixed_column(),
         }
+    }
+
+    pub(crate) fn u8<F: FieldExt>(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_fixed(self.u8, Rotation::cur())
+    }
+
+    pub(crate) fn u10<F: FieldExt>(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_fixed(self.u10, Rotation::cur())
+    }
+
+    pub(crate) fn u16<F: FieldExt>(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_fixed(self.u16, Rotation::cur())
     }
 
     pub(crate) fn load<F: FieldExt> (&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
