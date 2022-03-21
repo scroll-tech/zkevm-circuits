@@ -102,17 +102,6 @@ impl<F: Field> Config<F> {
             push_rindex_inv,
         );
 
-        // Did the previous row have bytecode field tag == Length?
-        let is_prev_row_tag_length = |meta: &mut VirtualCells<F>| {
-            and::expr(vec![
-                not::expr(meta.query_fixed(q_first, Rotation::cur())),
-                {
-                    let prev_row_tag = meta.query_advice(tag, Rotation::prev());
-                    prev_row_tag.expr() * (BytecodeFieldTag::Byte.expr() - prev_row_tag.expr())
-                },
-            ])
-        };
-
         // Does the current row have bytecode field tag == Length?
         let is_row_tag_length = |meta: &mut VirtualCells<F>| {
             let row_tag = meta.query_advice(tag, Rotation::cur());
@@ -130,7 +119,7 @@ impl<F: Field> Config<F> {
         // For a row tagged Length, is the length (value) zero?
         let length_is_zero = IsZeroChip::configure(
             meta,
-            |meta| meta.query_selector(q_enable),
+            |meta| meta.query_selector(q_enable) * is_row_tag_length(meta),
             |meta| meta.query_advice(value, Rotation::cur()),
             length_inv,
         );
@@ -147,8 +136,20 @@ impl<F: Field> Config<F> {
 
         meta.create_gate("continue", |meta| {
             let mut cb = BaseConstraintBuilder::default();
+
+            // Did the previous row have bytecode field tag == Length?
+            let is_prev_row_tag_length = |meta: &mut VirtualCells<F>| {
+                and::expr(vec![
+                    not::expr(meta.query_fixed(q_first, Rotation::cur())),
+                    {
+                        let prev_row_tag = meta.query_advice(tag, Rotation::prev());
+                        prev_row_tag.expr() * (BytecodeFieldTag::Byte.expr() - prev_row_tag.expr())
+                    },
+                ])
+            };
+
             cb.require_equal(
-                "if prev_row_tag == Length: index == 0 else index == index + 1",
+                "if prev_row.tag == Length: index == 0 else index == index + 1",
                 meta.query_advice(index, Rotation::cur()),
                 select::expr(
                     is_prev_row_tag_length(meta),
@@ -198,17 +199,26 @@ impl<F: Field> Config<F> {
         meta.create_gate("start of bytecode", |meta| {
             let mut cb = BaseConstraintBuilder::default();
             cb.require_equal(
-                "next row is tagged Length if length of current bytecode == 0",
+                "next_row.tag == (tag.Length or tag.Padding) if length == 0 else tag.Byte",
                 meta.query_advice(tag, Rotation::next()),
                 select::expr(
                     length_is_zero.clone().is_zero_expression,
+                    select::expr(
+                        meta.query_advice(padding, Rotation::next()),
+                        0.expr(), // Padding is 0
+                        BytecodeFieldTag::Length.expr(),
+                    ),
                     BytecodeFieldTag::Byte.expr(),
-                    BytecodeFieldTag::Length.expr(),
                 ),
+            );
+            cb.require_equal(
+                "if row.tag == tag.Length: value == row.hash_length",
+                meta.query_advice(value, Rotation::cur()),
+                meta.query_advice(hash_length, Rotation::cur()),
             );
             cb.condition(length_is_zero.clone().is_zero_expression, |cb| {
                 cb.require_equal(
-                    "if length == 0: hash == EMPTY_HASH",
+                    "if length == 0: hash == RLC(EMPTY_HASH, randomness)",
                     meta.query_advice(hash, Rotation::cur()),
                     Expression::Constant(keccak(&[], r)),
                 );
@@ -225,9 +235,10 @@ impl<F: Field> Config<F> {
 
         meta.create_gate("start of padding", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-            cb.require_zero(
-                "row needs to be marked as padding row",
+            cb.require_equal(
+                "row needs to be marked as padding",
                 meta.query_advice(padding, Rotation::cur()),
+                1.expr(),
             );
             // Conditions:
             // - Not Continuing
@@ -241,13 +252,16 @@ impl<F: Field> Config<F> {
 
         meta.create_gate("length needs to be correct", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-            cb.require_equal(
-                "index + 1 needs to equal hash_length",
-                meta.query_advice(index, Rotation::cur()) + 1.expr(),
-                meta.query_advice(hash_length, Rotation::cur()),
-            );
+            cb.condition(1.expr() - length_is_zero.clone().is_zero_expression, |cb| {
+                cb.require_equal(
+                    "index + 1 needs to equal hash_length",
+                    meta.query_advice(index, Rotation::cur()) + 1.expr(),
+                    meta.query_advice(hash_length, Rotation::cur()),
+                );
+            });
             // Conditions:
             // - On the row with the last byte (`is_final == 1`)
+            // - Of bytecode with length > 0
             // - Not padding
             cb.gate(and::expr(vec![
                 meta.query_selector(q_enable),
@@ -433,7 +447,7 @@ impl<F: Field> Config<F> {
                                 hash_rlc,
                                 hash_length,
                                 F::from(byte_push_size as u64),
-                                row.index == hash_length,
+                                idx == bytecode.bytes.len(),
                                 false,
                                 F::from(push_rindex_prev),
                             )?;
@@ -458,7 +472,7 @@ impl<F: Field> Config<F> {
                             F::zero(),
                             0,
                             F::zero(),
-                            F::one(),
+                            F::zero(),
                             F::zero(),
                             true,
                             true,
@@ -800,7 +814,6 @@ mod tests {
             },
             unrolled,
         );
-        println!("reached here");
         // Verify the unrolling in the circuit
         verify::<Fr>(k, vec![unrolled], true);
     }
@@ -813,12 +826,24 @@ mod tests {
         verify::<Fr>(k, vec![unroll(vec![], r)], true);
     }
 
+    #[test]
+    fn bytecode_simple() {
+        let k = 9;
+        let r = MyCircuit::r();
+        let bytecodes = vec![
+            unroll(vec![7u8], r),
+            unroll(vec![6u8], r),
+            unroll(vec![5u8], r),
+        ];
+        verify::<Fr>(k, bytecodes, true);
+    }
+
     /// Tests a fully full circuit
     #[test]
     fn bytecode_full() {
         let k = 9;
         let r = MyCircuit::r();
-        verify::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 6], r)], true);
+        verify::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 7], r)], true);
     }
 
     /// Tests a circuit with incomplete bytecode
@@ -920,7 +945,7 @@ mod tests {
         // Change the first byte
         {
             let mut invalid = unrolled.clone();
-            invalid.rows[0].value = Fr::from(9u64);
+            invalid.rows[1].value = Fr::from(9u64);
             verify::<Fr>(k, vec![invalid], false);
         }
         // Change a byte on another position
@@ -956,19 +981,19 @@ mod tests {
         // Mark the 3rd byte as code (is push data from the first PUSH1)
         {
             let mut invalid = unrolled.clone();
-            invalid.rows[2].is_code = Fr::one();
+            invalid.rows[3].is_code = Fr::one();
             verify::<Fr>(k, vec![invalid], false);
         }
         // Mark the 4rd byte as data (is code)
         {
             let mut invalid = unrolled.clone();
-            invalid.rows[3].is_code = Fr::zero();
+            invalid.rows[4].is_code = Fr::zero();
             verify::<Fr>(k, vec![invalid], false);
         }
         // Mark the 7th byte as code (is data for the PUSH7)
         {
             let mut invalid = unrolled;
-            invalid.rows[6].is_code = Fr::one();
+            invalid.rows[7].is_code = Fr::one();
             verify::<Fr>(k, vec![invalid], false);
         }
     }

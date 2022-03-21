@@ -352,19 +352,16 @@ impl Bytecode {
                     return None;
                 }
 
-                let idx = self.idx;
+                let idx = self.idx - 1;
                 let byte = self.bytes[self.idx];
                 let mut is_code = true;
-
                 if self.push_data_left > 0 {
                     is_code = false;
                     self.push_data_left -= 1;
                 } else if (OpcodeId::PUSH1.as_u8()..=OpcodeId::PUSH32.as_u8()).contains(&byte) {
                     self.push_data_left = byte as usize - (OpcodeId::PUSH1.as_u8() - 1) as usize;
                 }
-
                 self.idx += 1;
-
                 Some([
                     self.hash,
                     F::from(BytecodeFieldTag::Byte as u64),
