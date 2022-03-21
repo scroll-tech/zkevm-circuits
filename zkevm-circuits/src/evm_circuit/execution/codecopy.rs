@@ -1,14 +1,13 @@
 use std::convert::TryInto;
 
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, ToScalar};
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
 use crate::{
     evm_circuit::{
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
-        table::{AccountFieldTag, CallContextFieldTag},
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
@@ -30,8 +29,6 @@ pub(crate) struct CodeCopyGadget<F> {
     code_offset: MemoryAddress<F>,
     /// Holds the size of the current environment's bytecode.
     code_size: Cell<F>,
-    /// Holds the current environment's address from where we wish to read code.
-    account: Cell<F>,
     /// The code from current environment is copied to memory. To verify this
     /// copy operation we need the MemoryAddressGadget.
     dst_memory_addr: MemoryAddressGadget<F>,
@@ -64,15 +61,11 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         // Construct memory address in the destionation (memory) to which we copy code.
         let dst_memory_addr = MemoryAddressGadget::construct(cb, dest_memory_offset, size.clone());
 
-        // Query additional fields for the account's code.
-        let account = cb.call_context(None, CallContextFieldTag::CalleeAddress);
-        let code_hash = cb.curr.state.code_source.clone();
-
-        // Lookup the code hash of the current environment's account.
-        cb.account_read(account.expr(), AccountFieldTag::CodeHash, code_hash.expr());
+        // Fetch the source code running in current environment.
+        let code_source = cb.curr.state.code_source.clone();
 
         // Fetch the bytecode length from the bytecode table.
-        let code_size = cb.bytecode_length(code_hash.expr());
+        let code_size = cb.bytecode_length(code_source.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
@@ -98,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 let next_dst_addr = cb.query_cell();
                 let next_bytes_left = cb.query_cell();
                 let next_src_addr_end = cb.query_cell();
-                let next_code_hash = cb.query_word();
+                let next_code_source = cb.query_word();
 
                 cb.require_equal(
                     "next_src_addr == code_offset",
@@ -121,9 +114,9 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                     code_size.expr(),
                 );
                 cb.require_equal(
-                    "next_code_hash == code_hash",
-                    next_code_hash.expr(),
-                    code_hash.expr(),
+                    "next_code_source == code_source",
+                    next_code_source.expr(),
+                    code_source.expr(),
                 );
             },
         );
@@ -145,7 +138,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             same_context,
             code_offset,
             code_size,
-            account,
             dst_memory_addr,
             memory_expansion,
             memory_copier_gas,
@@ -183,19 +175,12 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             ),
         )?;
 
-        let account = if call.is_root {
-            call.callee_address
-        } else {
-            unimplemented!("CODECOPY does not support internal calls yet");
-        };
-        self.account.assign(region, offset, account.to_scalar())?;
-
         let code = block
             .bytecodes
             .iter()
             .find(|b| {
-                let CodeSource::Account(code_hash) = &call.code_source;
-                b.hash == *code_hash
+                let CodeSource::Account(code_source) = &call.code_source;
+                b.hash == *code_source
             })
             .expect("could not find current environment's bytecode");
         self.code_size
@@ -225,7 +210,7 @@ mod tests {
     use std::ops::Sub;
 
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{bytecode, Address, ToWord, Word};
+    use eth_types::{bytecode, Word};
     use halo2_proofs::arithmetic::BaseExt;
     use num::Zero;
     use pairing::bn256::Fr;
@@ -233,7 +218,7 @@ mod tests {
     use crate::evm_circuit::{
         execution::copy_code_to_memory::test::make_copy_code_steps,
         step::ExecutionState,
-        table::{AccountFieldTag, CallContextFieldTag, RwTableTag},
+        table::RwTableTag,
         test::{calc_memory_copier_gas_cost, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
@@ -241,7 +226,6 @@ mod tests {
     fn test_ok(src_addr: u64, dst_addr: u64, size: usize) {
         let randomness = Fr::rand();
         let call_id = 1;
-        let callee_addr = Address::random();
 
         let code = bytecode! {
             #[start]
@@ -254,88 +238,59 @@ mod tests {
         let code = Bytecode::new(code.to_vec());
 
         let mut rws_map = RwMap(
-            [
-                (
-                    RwTableTag::Stack,
-                    vec![
-                        // Stack item written by PUSH32.
-                        Rw::Stack {
-                            rw_counter: 1,
-                            is_write: true,
-                            call_id,
-                            stack_pointer: 1023,
-                            value: Word::from(size),
-                        },
-                        // Stack item written by PUSH32.
-                        Rw::Stack {
-                            rw_counter: 2,
-                            is_write: true,
-                            call_id,
-                            stack_pointer: 1022,
-                            value: Word::from(src_addr),
-                        },
-                        // Stack item written by PUSH32.
-                        Rw::Stack {
-                            rw_counter: 3,
-                            is_write: true,
-                            call_id,
-                            stack_pointer: 1021,
-                            value: Word::from(dst_addr),
-                        },
-                        // First stack item read by CODECOPY.
-                        Rw::Stack {
-                            rw_counter: 4,
-                            is_write: false,
-                            call_id,
-                            stack_pointer: 1021,
-                            value: Word::from(dst_addr),
-                        },
-                        // Second stack item read by CODECOPY.
-                        Rw::Stack {
-                            rw_counter: 5,
-                            is_write: false,
-                            call_id,
-                            stack_pointer: 1022,
-                            value: Word::from(src_addr),
-                        },
-                        // Third stack item read by CODECOPY.
-                        Rw::Stack {
-                            rw_counter: 6,
-                            is_write: false,
-                            call_id,
-                            stack_pointer: 1023,
-                            value: Word::from(size),
-                        },
-                    ],
-                ),
-                (
-                    RwTableTag::CallContext,
-                    vec![
-                        // Callee address lookup in CODECOPY.
-                        Rw::CallContext {
-                            rw_counter: 7,
-                            call_id,
-                            is_write: false,
-                            field_tag: CallContextFieldTag::CalleeAddress,
-                            value: callee_addr.to_word(),
-                        },
-                    ],
-                ),
-                (
-                    RwTableTag::Account,
-                    vec![
-                        // Code hash lookup in CODECOPY.
-                        Rw::Account {
-                            rw_counter: 8,
-                            is_write: false,
-                            account_address: callee_addr,
-                            field_tag: AccountFieldTag::CodeHash,
-                            value: code.hash,
-                            value_prev: code.hash,
-                        },
-                    ],
-                ),
-            ]
+            [(
+                RwTableTag::Stack,
+                vec![
+                    // Stack item written by PUSH32.
+                    Rw::Stack {
+                        rw_counter: 1,
+                        is_write: true,
+                        call_id,
+                        stack_pointer: 1023,
+                        value: Word::from(size),
+                    },
+                    // Stack item written by PUSH32.
+                    Rw::Stack {
+                        rw_counter: 2,
+                        is_write: true,
+                        call_id,
+                        stack_pointer: 1022,
+                        value: Word::from(src_addr),
+                    },
+                    // Stack item written by PUSH32.
+                    Rw::Stack {
+                        rw_counter: 3,
+                        is_write: true,
+                        call_id,
+                        stack_pointer: 1021,
+                        value: Word::from(dst_addr),
+                    },
+                    // First stack item read by CODECOPY.
+                    Rw::Stack {
+                        rw_counter: 4,
+                        is_write: false,
+                        call_id,
+                        stack_pointer: 1021,
+                        value: Word::from(dst_addr),
+                    },
+                    // Second stack item read by CODECOPY.
+                    Rw::Stack {
+                        rw_counter: 5,
+                        is_write: false,
+                        call_id,
+                        stack_pointer: 1022,
+                        value: Word::from(src_addr),
+                    },
+                    // Third stack item read by CODECOPY.
+                    Rw::Stack {
+                        rw_counter: 6,
+                        is_write: false,
+                        call_id,
+                        stack_pointer: 1023,
+                        value: Word::from(size),
+                    },
+                ],
+            )]
             .into(),
         );
 
@@ -390,8 +345,6 @@ mod tests {
                     (RwTableTag::Stack, 3),
                     (RwTableTag::Stack, 4),
                     (RwTableTag::Stack, 5),
-                    (RwTableTag::CallContext, 0),
-                    (RwTableTag::Account, 0),
                 ],
                 execution_state: ExecutionState::CODECOPY,
                 rw_counter: 4,
@@ -406,7 +359,7 @@ mod tests {
 
         let program_counter = 100;
         let stack_pointer = 1024;
-        let mut rw_counter = 9;
+        let mut rw_counter = 7;
         if !size.is_zero() {
             make_copy_code_steps(
                 call_id,
@@ -441,7 +394,6 @@ mod tests {
                     is_root: true,
                     is_create: false,
                     code_source: CodeSource::Account(code.hash),
-                    callee_address: callee_addr,
                     ..Default::default()
                 }],
                 steps,
