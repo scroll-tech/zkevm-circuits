@@ -177,27 +177,19 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         // Read the auxiliary data.
-        let (src_addr, dst_addr, bytes_left, src_addr_end, code, selectors) =
+        let (src_addr, dst_addr, bytes_left, src_addr_end, code) =
             if let StepAuxiliaryData::CopyCodeToMemory {
                 src_addr,
                 dst_addr,
                 bytes_left,
                 src_addr_end,
                 code,
-                selectors,
             } = step
                 .aux_data
                 .as_ref()
                 .expect("could not find aux_data for COPYCODETOMEMORY")
             {
-                (
-                    src_addr,
-                    dst_addr,
-                    bytes_left,
-                    src_addr_end,
-                    code,
-                    selectors,
-                )
+                (src_addr, dst_addr, bytes_left, src_addr_end, code)
             } else {
                 panic!("could not find CopyCodeToMemory aux_data for COPYCODETOMEMORY");
             };
@@ -215,38 +207,37 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             .assign(region, offset, Some(code.hash.to_le_bytes()))?;
 
         // Initialise selectors and bytes for the buffer reader.
-        assert_eq!(selectors.len(), MAX_COPY_BYTES);
+        let mut new_selectors = vec![0u8; MAX_COPY_BYTES];
         let mut bytes = vec![0u8; MAX_COPY_BYTES];
-        for (idx, (selector, code_it)) in selectors
-            .iter()
-            .zip(
-                code.table_assignments(block.randomness)
-                    // add 1 since the first row is reserved for bytecode length.
-                    .skip(*src_addr as usize + 1)
-                    .take(MAX_COPY_BYTES),
-            )
-            .enumerate()
-        {
+        let is_codes = code
+            .table_assignments(block.randomness)
+            .skip(1)
+            .map(|c| c[3])
+            .collect::<Vec<F>>();
+        for idx in 0..std::cmp::min(*bytes_left as usize, MAX_COPY_BYTES) {
+            new_selectors[idx] = 1u8;
             let addr = *src_addr as usize + idx;
-            bytes[idx] = if *selector == 1 && addr < *src_addr_end as usize {
+            bytes[idx] = if addr < *src_addr_end as usize {
                 assert!(addr < code.bytes.len());
+                self.is_codes[idx].assign(region, offset, Some(is_codes[addr]))?;
                 code.bytes[addr]
             } else {
                 0
             };
-
-            // The last entry (index = 3) from the table assignments for bytecode represents
-            // whether or not it is an opcode byte or an opcode argument.
-            self.is_codes[idx].assign(region, offset, Some(code_it[3]))?;
         }
 
-        // Assign the buffer reader.
-        self.buffer_reader
-            .assign(region, offset, *src_addr, *src_addr_end, &bytes, selectors)?;
+        self.buffer_reader.assign(
+            region,
+            offset,
+            *src_addr,
+            *src_addr_end,
+            &bytes,
+            &new_selectors,
+        )?;
 
         // The number of bytes copied here will be the sum of 1s over the selector
         // vector.
-        let num_bytes_copied = selectors.iter().sum::<u8>() as u64;
+        let num_bytes_copied = std::cmp::min(*bytes_left, MAX_COPY_BYTES as u64);
 
         // Assign the comparison gadget.
         self.finish_gadget.assign(
@@ -294,30 +285,26 @@ pub(crate) mod test {
         bytes_map: &HashMap<u64, u8>,
         code: &Bytecode,
     ) -> (ExecStep, usize) {
-        let mut selectors = vec![0u8; MAX_COPY_BYTES];
         let mut rw_offset = 0usize;
         let memory_rws: &mut Vec<_> = rws.0.entry(RwTableTag::Memory).or_insert_with(Vec::new);
         let rw_idx_start = memory_rws.len();
 
-        for (idx, selector) in selectors.iter_mut().enumerate() {
-            if idx < bytes_left {
-                *selector = 1;
-                let addr = src_addr + idx as u64;
-                let byte = if addr < src_addr_end {
-                    assert!(bytes_map.contains_key(&addr));
-                    bytes_map[&addr]
-                } else {
-                    0
-                };
-                memory_rws.push(Rw::Memory {
-                    rw_counter: rw_counter + rw_offset,
-                    is_write: true,
-                    call_id,
-                    memory_address: dst_addr + idx as u64,
-                    byte,
-                });
-                rw_offset += 1;
-            }
+        for idx in 0..std::cmp::min(bytes_left, MAX_COPY_BYTES) {
+            let addr = src_addr + idx as u64;
+            let byte = if addr < src_addr_end {
+                assert!(bytes_map.contains_key(&addr));
+                bytes_map[&addr]
+            } else {
+                0
+            };
+            memory_rws.push(Rw::Memory {
+                rw_counter: rw_counter + rw_offset,
+                is_write: true,
+                call_id,
+                memory_address: dst_addr + idx as u64,
+                byte,
+            });
+            rw_offset += 1;
         }
 
         let rw_idx_end = rws.0[&RwTableTag::Memory].len();
@@ -327,7 +314,6 @@ pub(crate) mod test {
             bytes_left: bytes_left as u64,
             src_addr_end,
             code: code.clone(),
-            selectors,
         };
         let step = ExecStep {
             execution_state: ExecutionState::CopyCodeToMemory,
