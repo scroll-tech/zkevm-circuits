@@ -226,6 +226,17 @@ impl<
             cb.gate(qb.s_enable(meta))
         });
 
+        // Check that account address limbs are between 0 and 2^16 - 1.
+        // TODO: move this into constraint builder
+        for i in 0..N_LIMBS_ACCOUNT_ADDRESS {
+            meta.lookup_any("account address key limb is between 0 and 2^16 - 1", |meta| {
+                vec![(
+                    qb.s_enable(meta) * qb.account_address_limbs(meta)[i].clone(),
+                    fixed_table.u16(meta),
+                )]
+            });
+        }
+
         // Check that storage key bytes are between 0 and 255.
         // TODO: move this into constraint builder
         for i in 0..N_BYTES_WORD {
@@ -247,6 +258,7 @@ impl<
                 qb.s_enable(meta)
                     * q_all_keys_same(meta)
                     * (qb.rw_counter_delta(meta) - 1u64.expr()),
+                // TODO(mason) fix this! this should be two u16 limbs.
                 fixed_table.u10(meta),
             )]
         });
