@@ -89,6 +89,7 @@ pub struct Config<
     keys_diff_inv: [Column<Advice>; 5],
 
     key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
+    key3_limbs: [Column<Advice>; 2],
     key4_bytes: [Column<Advice>; N_BYTES_WORD],
     power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     value: Column<Advice>,
@@ -846,7 +847,7 @@ mod tests {
         );
 
         test_state_circuit_ok!(
-            12,
+            17,
             2000,
             100,
             2,
@@ -897,7 +898,7 @@ mod tests {
 
         const STACK_ROWS_MAX: usize = 2;
         test_state_circuit_ok!(
-            14,
+            17,
             2000,
             100,
             STACK_ROWS_MAX,
@@ -949,7 +950,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 7;
         test_state_circuit_error!(
-            14,
+            17,
             2000,
             MEMORY_ROWS_MAX,
             1000,
@@ -1019,7 +1020,7 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
         test_state_circuit_error!(
-            14,
+            17,
             2000,
             MEMORY_ROWS_MAX,
             1000,
@@ -1094,7 +1095,7 @@ mod tests {
         const STACK_ADDRESS_MAX: usize = 1023;
 
         test_state_circuit_error!(
-            16,
+            17,
             RW_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
@@ -1150,7 +1151,7 @@ mod tests {
         const STACK_ADDRESS_MAX: usize = 1023;
 
         test_state_circuit_error!(
-            16,
+            17,
             RW_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
@@ -1272,7 +1273,7 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 100;
         const STACK_ROWS_MAX: usize = 100;
         test_state_circuit_error!(
-            15,
+            17,
             10000,
             MEMORY_ROWS_MAX,
             10000,
@@ -1336,7 +1337,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 10;
         test_state_circuit_error!(
-            14,
+            17,
             10000,
             MEMORY_ROWS_MAX,
             10000,
@@ -1410,7 +1411,7 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
         test_state_circuit_error!(
-            14,
+            17,
             2000,
             MEMORY_ROWS_MAX,
             1000,
@@ -1445,7 +1446,7 @@ mod tests {
         let storage_ops = builder.block.container.sorted_storage();
 
         test_state_circuit_ok!(
-            14,
+            17,
             2000,
             100,
             0x80,
