@@ -1,4 +1,5 @@
 use array_init::array_init;
+use bus_mapping::circuit_input_builder::StepAuxiliaryData;
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -12,7 +13,7 @@ use crate::{
             memory_gadget::BufferReaderGadget,
             Cell, Word,
         },
-        witness::{Block, Call, ExecStep, StepAuxiliaryData, Transaction},
+        witness::{Block, Bytecode, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -189,7 +190,13 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
                 .as_ref()
                 .expect("could not find aux_data for COPYCODETOMEMORY")
             {
-                (src_addr, dst_addr, bytes_left, src_addr_end, code)
+                (
+                    src_addr,
+                    dst_addr,
+                    bytes_left,
+                    src_addr_end,
+                    Bytecode::new(code.to_vec()),
+                )
             } else {
                 panic!("could not find CopyCodeToMemory aux_data for COPYCODETOMEMORY");
             };
@@ -207,7 +214,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             .assign(region, offset, Some(code.hash.to_le_bytes()))?;
 
         // Initialise selectors and bytes for the buffer reader.
-        let mut new_selectors = vec![0u8; MAX_COPY_BYTES];
+        let mut selectors = vec![false; MAX_COPY_BYTES];
         let mut bytes = vec![0u8; MAX_COPY_BYTES];
         let is_codes = code
             .table_assignments(block.randomness)
@@ -215,7 +222,7 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             .map(|c| c[3])
             .collect::<Vec<F>>();
         for idx in 0..std::cmp::min(*bytes_left as usize, MAX_COPY_BYTES) {
-            new_selectors[idx] = 1u8;
+            selectors[idx] = true;
             let addr = *src_addr as usize + idx;
             bytes[idx] = if addr < *src_addr_end as usize {
                 assert!(addr < code.bytes.len());
@@ -226,14 +233,8 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
             };
         }
 
-        self.buffer_reader.assign(
-            region,
-            offset,
-            *src_addr,
-            *src_addr_end,
-            &bytes,
-            &new_selectors,
-        )?;
+        self.buffer_reader
+            .assign(region, offset, *src_addr, *src_addr_end, &bytes, &selectors)?;
 
         // The number of bytes copied here will be the sum of 1s over the selector
         // vector.
@@ -256,7 +257,7 @@ pub(crate) mod test {
     use super::MAX_COPY_BYTES;
     use std::collections::HashMap;
 
-    use bus_mapping::evm::OpcodeId;
+    use bus_mapping::{circuit_input_builder::StepAuxiliaryData, evm::OpcodeId};
     use eth_types::{bytecode, Word};
     use halo2_proofs::arithmetic::BaseExt;
     use pairing::bn256::Fr;
@@ -265,9 +266,7 @@ pub(crate) mod test {
         step::ExecutionState,
         table::RwTableTag,
         test::run_test_circuit_incomplete_fixed_table,
-        witness::{
-            Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, StepAuxiliaryData, Transaction,
-        },
+        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
 
     #[allow(clippy::too_many_arguments)]
@@ -283,7 +282,7 @@ pub(crate) mod test {
         rw_counter: usize,
         rws: &mut RwMap,
         bytes_map: &HashMap<u64, u8>,
-        code: &Bytecode,
+        code: &eth_types::Bytecode,
     ) -> (ExecStep, usize) {
         let mut rw_offset = 0usize;
         let memory_rws: &mut Vec<_> = rws.0.entry(RwTableTag::Memory).or_insert_with(Vec::new);
@@ -335,7 +334,7 @@ pub(crate) mod test {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_copy_code_steps(
         call_id: usize,
-        code: &Bytecode,
+        code: &eth_types::Bytecode,
         src_addr: u64,
         dst_addr: u64,
         length: usize,
@@ -346,8 +345,8 @@ pub(crate) mod test {
         rws: &mut RwMap,
         steps: &mut Vec<ExecStep>,
     ) {
-        let bytes_map = (0..(code.bytes.len() as u64))
-            .zip(code.bytes.iter().copied())
+        let bytes_map = (0..(code.code().len() as u64))
+            .zip(code.code().iter().copied())
             .collect();
 
         let mut copied = 0;
@@ -356,7 +355,7 @@ pub(crate) mod test {
                 call_id,
                 src_addr + copied as u64,
                 dst_addr + copied as u64,
-                code.bytes.len() as u64,
+                code.code().len() as u64,
                 length - copied,
                 program_counter,
                 stack_pointer,
@@ -394,7 +393,6 @@ pub(crate) mod test {
             PUSH32(Word::from(0x1928835))
             POP
         };
-        let code = Bytecode::new(code.to_vec());
 
         let dummy_code = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
 
@@ -424,6 +422,7 @@ pub(crate) mod test {
             ..Default::default()
         });
 
+        let code = Bytecode::new(code.to_vec());
         let block = Block {
             randomness,
             txs: vec![Transaction {

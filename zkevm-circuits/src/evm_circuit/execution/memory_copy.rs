@@ -179,13 +179,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
                 .as_ref()
                 .expect("could not find aux_data for COPYTOMEMORY")
             {
-                (
-                    src_addr,
-                    dst_addr,
-                    bytes_left,
-                    src_addr_end,
-                    from_tx,
-                )
+                (src_addr, dst_addr, bytes_left, src_addr_end, from_tx)
             } else {
                 panic!("could not find CopyToMemory aux_data for COPYTOMEMORY");
             };

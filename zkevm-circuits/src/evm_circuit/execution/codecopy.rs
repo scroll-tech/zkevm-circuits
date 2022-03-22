@@ -235,7 +235,6 @@ mod tests {
             CODECOPY
             STOP
         };
-        let code = Bytecode::new(code.to_vec());
 
         let mut rws_map = RwMap(
             [(
@@ -385,6 +384,7 @@ mod tests {
             ..Default::default()
         });
 
+        let code = Bytecode::new(code.to_vec());
         let block = Block {
             randomness,
             txs: vec![Transaction {
