@@ -24,6 +24,7 @@ mod mload;
 mod mstore;
 mod selfbalance;
 mod sload;
+mod sstore;
 mod stackonlyop;
 mod stop;
 mod swap;
@@ -37,6 +38,7 @@ use mload::Mload;
 use mstore::Mstore;
 use selfbalance::Selfbalance;
 use sload::Sload;
+use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
@@ -127,7 +129,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
         OpcodeId::MSTORE8 => Mstore::<true>::gen_associated_ops,
         OpcodeId::SLOAD => Sload::gen_associated_ops,
-        // OpcodeId::SSTORE => {},
+        OpcodeId::SSTORE => Sstore::gen_associated_ops,
         OpcodeId::JUMP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
         OpcodeId::JUMPI => StackOnlyOpcode::<2, 0>::gen_associated_ops,
         OpcodeId::PC => StackOnlyOpcode::<0, 1>::gen_associated_ops,
