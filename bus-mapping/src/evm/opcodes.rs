@@ -19,6 +19,7 @@ mod calldatacopy;
 mod calldatasize;
 mod caller;
 mod callvalue;
+mod codecopy;
 mod dup;
 mod mload;
 mod mstore;
@@ -32,6 +33,7 @@ use calldatacopy::Calldatacopy;
 use calldatasize::Calldatasize;
 use caller::Caller;
 use callvalue::Callvalue;
+use codecopy::Codecopy;
 use dup::Dup;
 use mload::Mload;
 use mstore::Mstore;
@@ -106,7 +108,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CALLDATALOAD => StackOnlyOpcode::<1, 1>::gen_associated_ops,
         OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops,
         // OpcodeId::CODESIZE => {},
-        // OpcodeId::CODECOPY => {},
+        OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         // OpcodeId::GASPRICE => {},
         // OpcodeId::EXTCODESIZE => {},
         // OpcodeId::EXTCODECOPY => {},
