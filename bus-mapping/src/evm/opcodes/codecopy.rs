@@ -104,7 +104,7 @@ fn gen_memory_copy_steps(
     let mut steps = vec![];
     while copied < length {
         let mut exec_step = state.new_step(&geth_steps[1])?;
-        exec_step.exec_state = ExecState::CopyToMemory;
+        exec_step.exec_state = ExecState::CopyCodeToMemory;
         gen_memory_copy_step(
             state,
             &mut exec_step,

@@ -112,6 +112,8 @@ pub enum ExecState {
     EndTx,
     /// Virtual step Copy To Memory
     CopyToMemory,
+    /// Virtal step Copy Code To Memory
+    CopyCodeToMemory,
 }
 
 impl ExecState {

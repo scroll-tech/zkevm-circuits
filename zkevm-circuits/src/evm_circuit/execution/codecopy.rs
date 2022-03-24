@@ -215,12 +215,15 @@ mod tests {
     use num::Zero;
     use pairing::bn256::Fr;
 
-    use crate::evm_circuit::{
-        execution::copy_code_to_memory::test::make_copy_code_steps,
-        step::ExecutionState,
-        table::RwTableTag,
-        test::{calc_memory_copier_gas_cost, run_test_circuit_incomplete_fixed_table},
-        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
+    use crate::{
+        evm_circuit::{
+            execution::copy_code_to_memory::test::make_copy_code_steps,
+            step::ExecutionState,
+            table::RwTableTag,
+            test::{calc_memory_copier_gas_cost, run_test_circuit_incomplete_fixed_table},
+            witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
+        },
+        test_util::run_test_circuits,
     };
 
     fn test_ok(src_addr: u64, dst_addr: u64, size: usize) {
@@ -419,5 +422,23 @@ mod tests {
     #[test]
     fn codecopy_gadget_oob() {
         test_ok(0x10, 0x20, 200);
+    }
+
+    fn test_busmapping(memory_offset: usize, code_offset: usize, size: usize) {
+        let code = bytecode! {
+            PUSH32(Word::from(size))
+            PUSH32(Word::from(code_offset))
+            PUSH32(Word::from(memory_offset))
+            CODECOPY
+            STOP
+        };
+        assert!(run_test_circuits(code).is_ok());
+    }
+
+    #[test]
+    fn codecopy_gadget_busmapping() {
+        test_busmapping(0x00, 0x00, 54);
+        test_busmapping(0x20, 0x30, 0x20);
+        test_busmapping(0x10, 0x20, 0x40);
     }
 }
