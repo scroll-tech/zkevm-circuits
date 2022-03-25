@@ -785,6 +785,44 @@ impl Rw {
             _ => unimplemented!(),
         }
     }
+
+    pub fn account_address(&self) -> Option<Address> {
+        match self {
+            Self::TxAccessListAccount {
+                account_address, ..
+            }
+            | Self::TxAccessListAccountStorage {
+                account_address, ..
+            }
+            | Self::Account {
+                account_address, ..
+            }
+            | Self::AccountStorage {
+                account_address, ..
+            }
+            | Self::AccountDestructed {
+                account_address, ..
+            } => Some(*account_address),
+            Self::CallContext { .. }
+            | Self::Stack { .. }
+            | Self::Memory { .. }
+            | Self::TxRefund { .. } => None,
+        }
+    }
+
+    pub fn storage_key(&self) -> Option<Word> {
+        match self {
+            Self::AccountStorage { storage_key, .. }
+            | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
+            Self::CallContext { .. }
+            | Self::Stack { .. }
+            | Self::Memory { .. }
+            | Self::TxRefund { .. }
+            | Self::Account { .. }
+            | Self::TxAccessListAccount { .. }
+            | Self::AccountDestructed { .. } => None,
+        }
+    }
 }
 
 impl From<&circuit_input_builder::Block> for BlockContext {
