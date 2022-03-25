@@ -62,7 +62,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
             memory_address_table_zero: meta.fixed_column(),
             stack_address_table_zero: meta.fixed_column(),
             memory_value_table: meta.fixed_column(),
-            power_of_randomness: power_of_randomness.clone(),
+            power_of_randomness,
         }
     }
 
@@ -99,7 +99,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
             .map(|limb| meta.query_advice(limb, Rotation::cur()))
     }
 
-    pub(super) fn power_of_randomness(&self, meta: &mut VirtualCells<F>) -> &[Expression<F>] {
+    pub(super) fn power_of_randomness(&self, _meta: &mut VirtualCells<F>) -> &[Expression<F>] {
         &self.power_of_randomness
     }
 
