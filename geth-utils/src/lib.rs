@@ -57,18 +57,22 @@ mod test {
         for config in [
             // Minimal call tx with gas_limit = 21000
             r#"{
-                "transaction": {
-                    "from": "0x00000000000000000000000000000000000000fe",
-                    "to": "0x00000000000000000000000000000000000000ff",
-                    "gas_limit": "0x5208"
-                }
+                "transactions": [
+                    {
+                        "from": "0x00000000000000000000000000000000000000fe",
+                        "to": "0x00000000000000000000000000000000000000ff",
+                        "gas_limit": "0x5208"
+                    }
+                ]
             }"#,
             // Minimal creation tx with gas_limit = 53000
             r#"{
-                "transaction": {
-                    "from": "0x00000000000000000000000000000000000000fe",
-                    "gas_limit": "0xcf08"
-                }
+                "transactions": [
+                    {
+                        "from": "0x00000000000000000000000000000000000000fe",
+                        "gas_limit": "0xcf08"
+                    }
+                ]
             }"#,
             // Normal call tx with gas_limit = 21000 and gas_price = 2 Gwei
             r#"{
@@ -77,12 +81,14 @@ mod test {
                         "balance": "0x2632e314a000"
                     }
                 },
-                "transaction": {
-                    "from": "0x00000000000000000000000000000000000000fe",
-                    "to": "0x00000000000000000000000000000000000000ff",
-                    "gas_limit": "0x5208",
-                    "gas_price": "0x77359400"
-                }
+                "transactions": [
+                    {
+                        "from": "0x00000000000000000000000000000000000000fe",
+                        "to": "0x00000000000000000000000000000000000000ff",
+                        "gas_limit": "0x5208",
+                        "gas_price": "0x77359400"
+                    }
+                ]
             }"#,
         ] {
             assert!(trace(config).is_ok());
@@ -94,28 +100,34 @@ mod test {
         for config in [
             // Insufficient gas for intrinsic usage
             r#"{
-                "transaction": {
-                    "from": "0x00000000000000000000000000000000000000fe",
-                    "to": "0x00000000000000000000000000000000000000ff"
-                }
+                "transactions": [
+                    {
+                        "from": "0x00000000000000000000000000000000000000fe",
+                        "to": "0x00000000000000000000000000000000000000ff"
+                    }
+                ]
             }"#,
             // Insufficient balance to buy gas
             r#"{
-                "transaction": {
-                    "from": "0x00000000000000000000000000000000000000fe",
-                    "to": "0x00000000000000000000000000000000000000ff",
-                    "gas_limit": "0x5208",
-                    "gas_price": "0x1111"
-                }
+                "transactions": [
+                    {
+                        "from": "0x00000000000000000000000000000000000000fe",
+                        "to": "0x00000000000000000000000000000000000000ff",
+                        "gas_limit": "0x5208",
+                        "gas_price": "0x1111"
+                    }
+                ]
             }"#,
             // Insufficient balance to do the first transfer
             r#"{
-                "transaction": {
-                    "from": "0x00000000000000000000000000000000000000fe",
-                    "to": "0x00000000000000000000000000000000000000ff",
-                    "value": "0x100",
-                    "gas_limit": "0x5208"
-                }
+                "transactions": [
+                    {
+                        "from": "0x00000000000000000000000000000000000000fe",
+                        "to": "0x00000000000000000000000000000000000000ff",
+                        "value": "0x100",
+                        "gas_limit": "0x5208"
+                    }
+                ]
             }"#,
         ] {
             assert!(trace(config).is_err())

@@ -23,7 +23,7 @@ use halo2_proofs::{circuit::Region, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct AddGadget<F> {
     same_context: SameContextGadget<F>,
-    add_words: AddWordsGadget<F, 2>,
+    add_words: AddWordsGadget<F, 2, false>,
     is_sub: PairSelectGadget<F>,
 }
 
@@ -37,8 +37,8 @@ impl<F: Field> ExecutionGadget<F> for AddGadget<F> {
 
         let a = cb.query_word();
         let b = cb.query_word();
-        let add_words = AddWordsGadget::construct(cb, [a.clone(), b.clone()]);
-        let c = add_words.sum();
+        let c = cb.query_word();
+        let add_words = AddWordsGadget::construct(cb, [a.clone(), b.clone()], c.clone());
 
         // Swap a and c if opcode is SUB
         let is_sub = PairSelectGadget::construct(
@@ -59,9 +59,10 @@ impl<F: Field> ExecutionGadget<F> for AddGadget<F> {
             rw_counter: Delta(3.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(1.expr()),
-            ..Default::default()
+            gas_left: Delta(-OpcodeId::ADD.constant_gas_cost().expr()),
+            ..StepStateTransition::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -112,7 +113,6 @@ mod test {
         let bytecode = bytecode! {
             PUSH32(a)
             PUSH32(b)
-            #[start]
             .write_op(opcode)
             STOP
         };

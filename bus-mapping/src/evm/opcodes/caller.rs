@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::operation::{CallContextField, CallContextOp, RW};
 use crate::Error;
 use eth_types::GethExecStep;
@@ -12,91 +12,91 @@ pub(crate) struct Caller;
 impl Opcode for Caller {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
         // Get caller_address result from next step
-        let value = steps[1].stack.last()?;
+        let value = geth_steps[1].stack.last()?;
         // CallContext read of the caller_address
         state.push_op(
+            &mut exec_step,
             RW::READ,
             CallContextOp {
-                call_id: state.call().call_id,
+                call_id: state.call()?.call_id,
                 field: CallContextField::CallerAddress,
                 value,
             },
         );
         // Stack write of the caller_address
-        state.push_stack_op(RW::WRITE, step.stack.last_filled().map(|a| a - 1), value);
+        state.push_stack_op(
+            &mut exec_step,
+            RW::WRITE,
+            geth_step.stack.last_filled().map(|a| a - 1),
+            value,
+        )?;
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 
 #[cfg(test)]
 mod caller_tests {
-    use super::*;
-    use crate::circuit_input_builder::{ExecStep, TransactionContext};
-    use eth_types::{bytecode, evm_types::StackAddress, ToWord};
+    use crate::circuit_input_builder::ExecState;
+    use crate::operation::{CallContextField, CallContextOp, StackOp, RW};
+    use eth_types::{bytecode, evm_types::OpcodeId, evm_types::StackAddress, ToWord};
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn caller_opcode_impl() -> Result<(), Error> {
+    fn caller_opcode_impl() {
         let code = bytecode! {
-            #[start]
             CALLER
             STOP
         };
 
         // Get the execution steps from the external tracer
         let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+            mock::new_single_tx_trace_code(&code).unwrap(),
         );
 
         let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-        let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
-        // Generate step corresponding to CALLER
-        let mut step = ExecStep::new(
-            &block.geth_trace.struct_logs[0],
-            0,
-            test_builder.block_ctx.rwc,
-            0,
-        );
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let step = builder.block.txs()[0]
+            .steps()
+            .iter()
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLER))
+            .unwrap();
 
-        let caller_address = block.eth_tx.from.to_word();
-
-        // Add the CallContext read
-        state_ref.push_op(
-            RW::READ,
-            CallContextOp {
-                call_id: state_ref.call().call_id,
-                field: CallContextField::CallerAddress,
-                value: caller_address,
-            },
-        );
-        // Add the Stack write
-        state_ref.push_stack_op(RW::WRITE, StackAddress::from(1024 - 1), caller_address);
-
-        tx.steps_mut().push(step);
-        test_builder.block.txs_mut().push(tx);
-
-        // Compare first step bus mapping instance
+        let call_id = builder.block.txs()[0].calls()[0].call_id;
+        let caller_address = block.eth_block.transactions[0].from.to_word();
         assert_eq!(
-            builder.block.txs()[0].steps()[0].bus_mapping_instance,
-            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            {
+                let operation =
+                    &builder.block.container.call_context[step.bus_mapping_instance[0].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::READ,
+                &CallContextOp {
+                    call_id,
+                    field: CallContextField::CallerAddress,
+                    value: caller_address,
+                }
+            )
         );
-
-        // Compare containers
-        assert_eq!(builder.block.container, test_builder.block.container);
-
-        Ok(())
+        assert_eq!(
+            {
+                let operation =
+                    &builder.block.container.stack[step.bus_mapping_instance[1].as_usize()];
+                (operation.rw(), operation.op())
+            },
+            (
+                RW::WRITE,
+                &StackOp::new(1, StackAddress::from(1023), caller_address)
+            )
+        );
     }
 }

@@ -13,8 +13,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::Field;
-use eth_types::ToLittleEndian;
+use bus_mapping::evm::OpcodeId;
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{circuit::Region, plonk::Error};
 use std::convert::TryInto;
 
@@ -50,9 +50,10 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
             rw_counter: Delta(2.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta((-1).expr()),
+            gas_left: Delta(-OpcodeId::CALLER.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -94,7 +95,6 @@ mod test {
 
     fn test_ok() {
         let bytecode = bytecode! {
-            #[start]
             CALLER
             STOP
         };

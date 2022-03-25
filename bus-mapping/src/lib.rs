@@ -106,8 +106,9 @@
 //! "#;
 //!
 //! // We use some mock data as context for the trace
-//! let eth_block = mock::new_block();
-//! let eth_tx = mock::new_tx(&eth_block);
+//! let mut eth_block = mock::new_block();
+//! let eth_tx = mock::new_tx(&eth_block, None);
+//! eth_block.transactions.push(eth_tx.clone());
 //! let mut sdb = StateDB::new();
 //! sdb.set_account(&eth_tx.from, state_db::Account::zero());
 //! sdb.set_account(&Address::zero(), state_db::Account::zero());
@@ -115,7 +116,7 @@
 //! let mut builder = CircuitInputBuilder::new(
 //!     sdb,
 //!     CodeDB::new(),
-//!     Block::new::<()>(0.into(), Vec::new(), &eth_block).unwrap(),
+//!     Block::new(0.into(), Vec::new(), &eth_block).unwrap(),
 //! );
 //!
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
@@ -125,7 +126,7 @@
 //!     struct_logs: geth_steps,
 //! };
 //! // Here we update the circuit input with the data from the transaction trace.
-//! builder.handle_tx(&eth_tx, &geth_trace).unwrap();
+//! builder.handle_block(&eth_block, &[geth_trace]).unwrap();
 //!
 //! // Get an ordered vector with all of the Stack operations of this trace.
 //! let stack_ops = builder.block.container.sorted_stack();

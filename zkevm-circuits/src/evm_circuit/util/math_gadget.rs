@@ -90,18 +90,27 @@ impl<F: FieldExt> IsEqualGadget<F> {
 /// Construction of 2 256-bit words addition and result, which is useful for
 /// opcode ADD, SUB and balance operation
 #[derive(Clone, Debug)]
-pub(crate) struct AddWordsGadget<F, const N: usize> {
-    addends: [util::Word<F>; N],
+pub(crate) struct AddWordsGadget<F, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool> {
+    addends: [util::Word<F>; N_ADDENDS],
     sum: util::Word<F>,
     carry_lo: Cell<F>,
-    carry_hi: Cell<F>,
+    carry_hi: Option<Cell<F>>,
 }
 
-impl<F: Field, const N: usize> AddWordsGadget<F, N> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, addends: [util::Word<F>; N]) -> Self {
-        let sum = cb.query_word();
+impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
+    AddWordsGadget<F, N_ADDENDS, CHECK_OVREFLOW>
+{
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        addends: [util::Word<F>; N_ADDENDS],
+        sum: util::Word<F>,
+    ) -> Self {
         let carry_lo = cb.query_cell();
-        let carry_hi = cb.query_cell();
+        let carry_hi = if CHECK_OVREFLOW {
+            None
+        } else {
+            Some(cb.query_cell())
+        };
 
         let addends_lo = &addends
             .iter()
@@ -120,16 +129,28 @@ impl<F: Field, const N: usize> AddWordsGadget<F, N> {
             sum_lo + carry_lo.expr() * pow_of_two_expr(128),
         );
         cb.require_equal(
-            "sum(addends_hi) + carry_lo == sum_hi + carry_hi ⋅ 2^128",
+            if CHECK_OVREFLOW {
+                "sum(addends_hi) + carry_lo == sum_hi"
+            } else {
+                "sum(addends_hi) + carry_lo == sum_hi + carry_hi ⋅ 2^128"
+            },
             sum::expr(addends_hi) + carry_lo.expr(),
-            sum_hi + carry_hi.expr() * pow_of_two_expr(128),
+            if CHECK_OVREFLOW {
+                sum_hi
+            } else {
+                sum_hi + carry_hi.as_ref().unwrap().expr() * pow_of_two_expr(128)
+            },
         );
 
-        for carry in [&carry_lo, &carry_hi] {
+        for carry in if CHECK_OVREFLOW {
+            vec![&carry_lo]
+        } else {
+            vec![&carry_lo, carry_hi.as_ref().unwrap()]
+        } {
             cb.require_in_set(
-                "carry_lo in 0..N",
+                "carry_lo in 0..N_ADDENDS",
                 carry.expr(),
-                (0..N).map(|idx| idx.expr()).collect(),
+                (0..N_ADDENDS).map(|idx| idx.expr()).collect(),
             );
         }
 
@@ -145,7 +166,7 @@ impl<F: Field, const N: usize> AddWordsGadget<F, N> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        addends: [Word; N],
+        addends: [Word; N_ADDENDS],
         sum: Word,
     ) -> Result<(), Error> {
         for (word, value) in self.addends.iter().zip(addends.iter()) {
@@ -164,9 +185,15 @@ impl<F: Field, const N: usize> AddWordsGadget<F, N> {
             .fold(Word::zero(), |acc, addend_hi| acc + addend_hi);
 
         let carry_lo = (sum_of_addends_lo - sum_lo) >> 128;
-        let carry_hi = (sum_of_addends_hi + carry_lo - sum_hi) >> 128;
         self.carry_lo.assign(region, offset, carry_lo.to_scalar())?;
-        self.carry_hi.assign(region, offset, carry_hi.to_scalar())?;
+
+        if !CHECK_OVREFLOW {
+            let carry_hi = (sum_of_addends_hi + carry_lo - sum_hi) >> 128;
+            self.carry_hi
+                .as_ref()
+                .unwrap()
+                .assign(region, offset, carry_hi.to_scalar())?;
+        }
 
         Ok(())
     }
@@ -175,7 +202,7 @@ impl<F: Field, const N: usize> AddWordsGadget<F, N> {
         &self.sum
     }
 
-    pub(crate) fn carry(&self) -> &util::Cell<F> {
+    pub(crate) fn carry(&self) -> &Option<util::Cell<F>> {
         &self.carry_hi
     }
 }
@@ -364,29 +391,25 @@ impl<F: FieldExt> MulWordsGadget<F> {
     }
 }
 
-/// Construction of 256-bit product by 256-bit multiplicand * 64-bit multiplier.
+/// Construction of 256-bit product by 256-bit multiplicand * 64-bit multiplier,
+/// which disallows overflow.
 #[derive(Clone, Debug)]
 pub(crate) struct MulWordByU64Gadget<F> {
     multiplicand: util::Word<F>,
-    multiplier: util::Cell<F>,
     product: util::Word<F>,
     carry_lo: [util::Cell<F>; 8],
-    carry_hi: [util::Cell<F>; 8],
 }
 
 impl<F: FieldExt> MulWordByU64Gadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         multiplicand: util::Word<F>,
-        multiplier: util::Cell<F>,
-        check_overflow: bool,
+        multiplier: Expression<F>,
     ) -> Self {
         let gadget = Self {
             multiplicand,
-            multiplier,
             product: cb.query_word(),
             carry_lo: cb.query_bytes(),
-            carry_hi: cb.query_bytes(),
         };
 
         let multiplicand_lo = from_bytes::expr(&gadget.multiplicand.cells[..16]);
@@ -396,23 +419,18 @@ impl<F: FieldExt> MulWordByU64Gadget<F> {
         let product_hi = from_bytes::expr(&gadget.product.cells[16..]);
 
         let carry_lo = from_bytes::expr(&gadget.carry_lo[..8]);
-        let carry_hi = from_bytes::expr(&gadget.carry_hi[8..]);
 
         cb.require_equal(
             "multiplicand_lo ⋅ multiplier == carry_lo ⋅ 2^128 + product_lo",
-            multiplicand_lo * gadget.multiplier.expr(),
+            multiplicand_lo * multiplier.expr(),
             carry_lo.clone() * pow_of_two_expr(128) + product_lo,
         );
 
         cb.require_equal(
-            "multiplicand_hi ⋅ multiplier + carry_lo == carry_hi ⋅ 2^128 + product_hi",
-            multiplicand_hi * gadget.multiplier.expr() + carry_lo,
-            carry_hi.clone() * pow_of_two_expr(128) + product_hi,
+            "multiplicand_hi ⋅ multiplier + carry_lo == product_hi",
+            multiplicand_hi * multiplier.expr() + carry_lo,
+            product_hi,
         );
-
-        if check_overflow {
-            cb.require_zero("carry_hi == 0", carry_hi);
-        }
 
         gadget
     }
@@ -429,38 +447,25 @@ impl<F: FieldExt> MulWordByU64Gadget<F> {
             .assign(region, offset, Some(multiplicand.to_le_bytes()))?;
         self.product
             .assign(region, offset, Some(product.to_le_bytes()))?;
-        self.multiplier
-            .assign(region, offset, Some(multiplier.into()))?;
 
-        let (multiplicand_lo, multiplicand_hi) = split_u256(&multiplicand);
-        let (product_lo, product_hi) = split_u256(&product);
-
-        let mut assign_quotient = |cells: &[Cell<F>], value: Word| -> Result<(), Error> {
-            for (cell, byte) in cells.iter().zip(
-                u64::try_from(value)
-                    .map_err(|_| Error::Synthesis)?
-                    .to_le_bytes()
-                    .iter(),
-            ) {
-                cell.assign(region, offset, Some(F::from(*byte as u64)))?;
-            }
-            Ok(())
-        };
+        let (multiplicand_lo, _) = split_u256(&multiplicand);
+        let (product_lo, _) = split_u256(&product);
 
         let carry_lo = (multiplicand_lo * multiplier - product_lo) >> 128;
-        let carry_hi = (multiplicand_hi * multiplier - product_hi + carry_lo) >> 128;
-        assign_quotient(&self.carry_lo, carry_lo)?;
-        assign_quotient(&self.carry_hi, carry_hi)?;
+        for (cell, byte) in self.carry_lo.iter().zip(
+            u64::try_from(carry_lo)
+                .map_err(|_| Error::Synthesis)?
+                .to_le_bytes()
+                .iter(),
+        ) {
+            cell.assign(region, offset, Some(F::from(*byte as u64)))?;
+        }
 
         Ok(())
     }
 
     pub(crate) fn product(&self) -> &util::Word<F> {
         &self.product
-    }
-
-    pub(crate) fn carry(&self) -> &[util::Cell<F>; 8] {
-        &self.carry_hi
     }
 }
 

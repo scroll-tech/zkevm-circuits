@@ -13,6 +13,7 @@ use crate::{
     util::Expr,
 };
 use array_init::array_init;
+use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use eth_types::ToLittleEndian;
 use halo2_proofs::{circuit::Region, plonk::Error};
@@ -74,10 +75,11 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
             rw_counter: Delta(3.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(1.expr()),
+            gas_left: Delta(-OpcodeId::BYTE.constant_gas_cost().expr()),
             ..Default::default()
         };
         let opcode = cb.query_cell();
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -132,7 +134,6 @@ mod test {
         let bytecode = bytecode! {
             PUSH32(value)
             PUSH32(index)
-            #[start]
             BYTE
             STOP
         };

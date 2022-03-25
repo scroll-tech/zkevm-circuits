@@ -1,7 +1,7 @@
 // Step dimension
 pub(crate) const STEP_WIDTH: usize = 32;
 /// Step height
-pub const STEP_HEIGHT: usize = 14;
+pub const STEP_HEIGHT: usize = 16;
 pub(crate) const N_CELLS_STEP_STATE: usize = 10;
 
 /// Maximum number of bytes that an integer can fit in field without wrapping

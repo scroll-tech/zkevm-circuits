@@ -17,7 +17,7 @@ use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
-pub(crate) struct ErrorOOGPureMemoryGadget<F> {
+pub(crate) struct ErrorOOGStaticMemoryGadget<F> {
     opcode: Cell<F>,
     address: Word<F>,
     address_in_range: IsZeroGadget<F>,
@@ -35,10 +35,10 @@ pub(crate) struct ErrorOOGPureMemoryGadget<F> {
     is_mstore8: IsEqualGadget<F>,
 }
 
-impl<F: Field> ExecutionGadget<F> for ErrorOOGPureMemoryGadget<F> {
-    const NAME: &'static str = "ErrorOutOfGasPureMemory";
+impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
+    const NAME: &'static str = "ErrorOutOfGasStaticMemoryExpansion";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasPureMemory;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasStaticMemoryExpansion;
 
     // Support other OOG due to pure memory including CREATE, RETURN and REVERT
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {

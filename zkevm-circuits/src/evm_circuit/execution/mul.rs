@@ -11,6 +11,7 @@ use crate::{
     },
     util::Expr,
 };
+use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -43,12 +44,10 @@ impl<F: Field> ExecutionGadget<F> for MulGadget<F> {
             rw_counter: Delta(3.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(1.expr()),
-            // Setting gas_left as default (SAME), SameContextGadget would
-            // deduce the gas cost from OPCODE automatically
-            // gas_left: Delta(-GasCost::FAST.as_usize().expr()),
+            gas_left: Delta(-OpcodeId::MUL.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -82,7 +81,6 @@ mod test {
         let bytecode = bytecode! {
             PUSH32(a)
             PUSH32(b)
-            #[start]
             .write_op(opcode)
             STOP
         };

@@ -49,9 +49,10 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
             rw_counter: Delta(1.expr()),
             program_counter: To(from_bytes::expr(&destination.cells)),
             stack_pointer: Delta(1.expr()),
+            gas_left: Delta(-OpcodeId::JUMP.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -95,7 +96,6 @@ mod test {
 
         let mut bytecode = bytecode! {
             PUSH32(destination)
-            #[start]
             JUMP
         };
         for _ in 0..(destination - 34) {

@@ -3,7 +3,7 @@ use crate::{
         param::N_BYTES_GAS,
         table::{AccountFieldTag, FixedTableTag, Lookup},
         util::{
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+            constraint_builder::{ConstraintBuilder, ReversionInfo, StepStateTransition},
             math_gadget::{AddWordsGadget, RangeCheckGadget},
             Cell, Word,
         },
@@ -16,6 +16,7 @@ use halo2_proofs::{
     circuit::Region,
     plonk::{Error, Expression},
 };
+use std::convert::TryInto;
 
 /// Construction of execution state that stays in the same call context, which
 /// lookups the opcode and verifies the execution state is responsible for it,
@@ -30,8 +31,7 @@ impl<F: Field> SameContextGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         opcode: Cell<F>,
-        mut step_state_transition: StepStateTransition<F>,
-        dynamic_gas_cost: Option<Expression<F>>,
+        step_state_transition: StepStateTransition<F>,
     ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
         cb.add_lookup(
@@ -46,29 +46,8 @@ impl<F: Field> SameContextGadget<F> {
             },
         );
 
-        let mut gas_cost = cb
-            .execution_state()
-            .responsible_opcodes()
-            .first()
-            .expect("Execution state in SameContextGadget should be responsible to some opcodes")
-            .constant_gas_cost()
-            .as_u64()
-            .expr();
-
-        if let Some(dynamic_gas_cost) = dynamic_gas_cost {
-            gas_cost = gas_cost + dynamic_gas_cost;
-        }
-
         // Check gas_left is sufficient
-        let sufficient_gas_left =
-            RangeCheckGadget::construct(cb, cb.curr.state.gas_left.expr() - gas_cost.clone());
-
-        // Set state transition of gas_left if it's default value
-        if matches!(step_state_transition.gas_left, Transition::Same)
-            && !matches!(gas_cost, Expression::Constant(constant) if constant.is_zero_vartime())
-        {
-            step_state_transition.gas_left = Transition::Delta(-gas_cost);
-        }
+        let sufficient_gas_left = RangeCheckGadget::construct(cb, cb.next.state.gas_left.expr());
 
         // State transition
         cb.require_step_state_transition(step_state_transition);
@@ -100,9 +79,69 @@ impl<F: Field> SameContextGadget<F> {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct UpdateBalanceGadget<F, const N_ADDENDS: usize, const INCREASE: bool> {
+    add_words: AddWordsGadget<F, N_ADDENDS, true>,
+}
+
+impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
+    UpdateBalanceGadget<F, N_ADDENDS, INCREASE>
+{
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        address: Expression<F>,
+        updates: Vec<Word<F>>,
+        reversion_info: Option<ReversionInfo<F>>,
+    ) -> Self {
+        debug_assert!(updates.len() == N_ADDENDS - 1);
+
+        let balance_addend = cb.query_word();
+        let balance_sum = cb.query_word();
+
+        let [value, value_prev] = if INCREASE {
+            [balance_sum.expr(), balance_addend.expr()]
+        } else {
+            [balance_addend.expr(), balance_sum.expr()]
+        };
+
+        let add_words = AddWordsGadget::construct(
+            cb,
+            std::iter::once(balance_addend)
+                .chain(updates.to_vec())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            balance_sum,
+        );
+
+        cb.account_write(
+            address,
+            AccountFieldTag::Balance,
+            value,
+            value_prev,
+            reversion_info,
+        );
+
+        Self { add_words }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        addends: Vec<U256>,
+        sum: U256,
+    ) -> Result<(), Error> {
+        debug_assert!(addends.len() == N_ADDENDS);
+
+        self.add_words
+            .assign(region, offset, addends.try_into().unwrap(), sum)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct TransferWithGasFeeGadget<F> {
-    sub_sender_balance: AddWordsGadget<F, 3>,
-    add_receiver_balance: AddWordsGadget<F, 2>,
+    sender: UpdateBalanceGadget<F, 3, false>,
+    receiver: UpdateBalanceGadget<F, 2, true>,
 }
 
 impl<F: Field> TransferWithGasFeeGadget<F> {
@@ -115,47 +154,20 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         is_persistent: Expression<F>,
         rw_counter_end_of_reversion: Expression<F>,
     ) -> Self {
-        let sender_balance = cb.query_word();
-        let receiver_balance_prev = cb.query_word();
-
-        // Subtract sender balance by value and gas_fee
-        let sub_sender_balance =
-            AddWordsGadget::construct(cb, [sender_balance.clone(), value.clone(), gas_fee]);
-        cb.require_zero(
-            "Sender has sufficient balance",
-            sub_sender_balance.carry().expr(),
+        let sender = UpdateBalanceGadget::construct(
+            cb,
+            sender_address,
+            vec![value.clone(), gas_fee],
+            Some((&is_persistent, &rw_counter_end_of_reversion).into()),
+        );
+        let receiver = UpdateBalanceGadget::construct(
+            cb,
+            receiver_address,
+            vec![value],
+            Some((is_persistent, rw_counter_end_of_reversion - 1.expr()).into()),
         );
 
-        // Add receiver balance by value
-        let add_receiver_balance =
-            AddWordsGadget::construct(cb, [receiver_balance_prev.clone(), value]);
-        cb.require_zero(
-            "Receiver has too much balance",
-            add_receiver_balance.carry().expr(),
-        );
-
-        let sender_balance_prev = sub_sender_balance.sum();
-        let receiver_balance = add_receiver_balance.sum();
-
-        // Write with possible reversion
-        for (address, balance, balance_prev) in [
-            (sender_address, &sender_balance, sender_balance_prev),
-            (receiver_address, receiver_balance, &receiver_balance_prev),
-        ] {
-            cb.account_write_with_reversion(
-                address,
-                AccountFieldTag::Balance,
-                balance.expr(),
-                balance_prev.expr(),
-                is_persistent.clone(),
-                rw_counter_end_of_reversion.clone(),
-            );
-        }
-
-        Self {
-            sub_sender_balance,
-            add_receiver_balance,
-        }
+        Self { sender, receiver }
     }
 
     pub(crate) fn assign(
@@ -167,16 +179,16 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         value: U256,
         gas_fee: U256,
     ) -> Result<(), Error> {
-        self.sub_sender_balance.assign(
+        self.sender.assign(
             region,
             offset,
-            [sender_balance, value, gas_fee],
+            vec![sender_balance, value, gas_fee],
             sender_balance_prev,
         )?;
-        self.add_receiver_balance.assign(
+        self.receiver.assign(
             region,
             offset,
-            [receiver_balance_prev, value],
+            vec![receiver_balance_prev, value],
             receiver_balance,
         )?;
         Ok(())

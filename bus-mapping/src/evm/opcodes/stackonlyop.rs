@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::circuit_input_builder::CircuitInputStateRef;
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::{operation::RW, Error};
 use eth_types::GethExecStep;
 
@@ -10,221 +10,157 @@ use eth_types::GethExecStep;
 /// - N = 2: BinaryOpcode
 /// - N = 3: TernaryOpcode
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct StackOnlyOpcode<const N: usize>;
+pub(crate) struct StackOnlyOpcode<const N_POP: usize, const N_PUSH: usize>;
 
-impl<const N: usize> Opcode for StackOnlyOpcode<N> {
+impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, N_PUSH> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
-    ) -> Result<(), Error> {
-        let step = &steps[0];
-        // N stack reads
-        for i in 0..N {
+        geth_steps: &[GethExecStep],
+    ) -> Result<Vec<ExecStep>, Error> {
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
+        // N_POP stack reads
+        for i in 0..N_POP {
             state.push_stack_op(
+                &mut exec_step,
                 RW::READ,
-                step.stack.nth_last_filled(i),
-                step.stack.nth_last(i)?,
-            );
+                geth_step.stack.nth_last_filled(i),
+                geth_step.stack.nth_last(i)?,
+            )?;
         }
 
-        // Get operator result from next step and do stack write
-        let result_value = steps[1].stack.last()?;
-        state.push_stack_op(
-            RW::WRITE,
-            step.stack.last_filled().map(|a| a - 1 + N),
-            result_value,
-        );
+        // N_PUSH stack writes
+        for i in 0..N_PUSH {
+            state.push_stack_op(
+                &mut exec_step,
+                RW::WRITE,
+                geth_steps[1].stack.nth_last_filled(N_PUSH - 1 - i),
+                geth_steps[1].stack.nth_last(N_PUSH - 1 - i)?,
+            )?;
+        }
 
-        Ok(())
+        Ok(vec![exec_step])
     }
 }
 
 #[cfg(test)]
 mod stackonlyop_tests {
     use super::*;
-    use crate::circuit_input_builder::{ExecStep, TransactionContext};
-    use eth_types::evm_types::StackAddress;
-    use eth_types::{bytecode, word, Word};
+    use crate::circuit_input_builder::ExecState;
+    use crate::operation::StackOp;
+    use eth_types::bytecode;
+    use eth_types::evm_types::{OpcodeId, StackAddress};
+    use eth_types::{bytecode::Bytecode, word, Word};
+    use itertools::Itertools;
     use pretty_assertions::assert_eq;
 
-    #[test]
-    fn not_opcode_impl() -> Result<(), Error> {
-        let code = bytecode! {
-            PUSH32(word!("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"))
-            #[start]
-            NOT
-            STOP
-        };
-
+    fn stack_only_opcode_impl<const N_POP: usize, const N_PUSH: usize>(
+        opcode: OpcodeId,
+        code: Bytecode,
+        pops: Vec<StackOp>,
+        pushes: Vec<StackOp>,
+    ) {
         // Get the execution steps from the external tracer
         let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+            mock::new_single_tx_trace_code(&code).unwrap(),
         );
 
         let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-        let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed)
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
-        // Generate step corresponding to NOT
-        let mut step = ExecStep::new(
-            &block.geth_trace.struct_logs[0],
-            0,
-            test_builder.block_ctx.rwc,
-            0,
-        );
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let step = builder.block.txs()[0]
+            .steps()
+            .iter()
+            .find(|step| step.exec_state == ExecState::Op(opcode))
+            .unwrap();
 
-        // Read a
-        state_ref.push_stack_op(
-            RW::READ,
-            StackAddress(1024 - 1),
-            word!("0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"),
-        );
-
-        // Write ~a
-        state_ref.push_stack_op(
-            RW::WRITE,
-            StackAddress(1024 - 1),
-            word!("0xfffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0"),
-        );
-
-        tx.steps_mut().push(step);
-        test_builder.block.txs_mut().push(tx);
-
-        // Compare first step bus mapping instance
         assert_eq!(
-            builder.block.txs()[0].steps()[0].bus_mapping_instance,
-            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
+            (0..N_POP)
+                .map(|idx| {
+                    &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()]
+                })
+                .map(|operation| (operation.rw(), operation.op().clone()))
+                .collect_vec(),
+            pops.into_iter().map(|pop| (RW::READ, pop)).collect_vec()
         );
-
-        // Compare containers
-        assert_eq!(builder.block.container, test_builder.block.container);
-
-        Ok(())
+        assert_eq!(
+            (0..N_PUSH)
+                .map(|idx| {
+                    &builder.block.container.stack
+                        [step.bus_mapping_instance[N_POP + idx].as_usize()]
+                })
+                .map(|operation| (operation.rw(), operation.op().clone()))
+                .collect_vec(),
+            pushes
+                .into_iter()
+                .map(|push| (RW::WRITE, push))
+                .collect_vec()
+        );
     }
 
     #[test]
-    fn add_opcode_impl() -> Result<(), Error> {
-        let code = bytecode! {
-            PUSH1(0x80u64)
-            PUSH1(0x80u64)
-            #[start]
-            ADD
-            STOP
-        };
-
-        // Get the execution steps from the external tracer
-        let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+    fn not_opcode_impl() {
+        stack_only_opcode_impl::<1, 1>(
+            OpcodeId::NOT,
+            bytecode! {
+                PUSH32(word!("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"))
+                NOT
+                STOP
+            },
+            vec![StackOp::new(
+                1,
+                StackAddress(1023),
+                word!("0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"),
+            )],
+            vec![StackOp::new(
+                1,
+                StackAddress(1023),
+                word!("0xfffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0"),
+            )],
         );
-
-        let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-        let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed)
-            .unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
-
-        // Generate step corresponding to ADD
-        let mut step = ExecStep::new(
-            &block.geth_trace.struct_logs[0],
-            0,
-            test_builder.block_ctx.rwc,
-            0,
-        );
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
-
-        let last_stack_pointer = StackAddress(1022);
-        let second_last_stack_pointer = StackAddress(1023);
-        let stack_value_a = Word::from(0x80);
-        let stack_value_b = Word::from(0x80);
-        let sum = Word::from(0x100);
-
-        // Manage first stack read at latest stack position
-        state_ref.push_stack_op(RW::READ, last_stack_pointer, stack_value_a);
-
-        // Manage second stack read at second latest stack position
-        state_ref.push_stack_op(RW::READ, second_last_stack_pointer, stack_value_b);
-
-        // Add StackOp associated to the 0x80 push at the latest Stack pos.
-        state_ref.push_stack_op(RW::WRITE, second_last_stack_pointer, sum);
-
-        tx.steps_mut().push(step);
-        test_builder.block.txs_mut().push(tx);
-
-        // Compare first step bus mapping instance
-        assert_eq!(
-            builder.block.txs()[0].steps()[0].bus_mapping_instance,
-            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
-        );
-
-        // Compare containers
-        assert_eq!(builder.block.container, test_builder.block.container);
-
-        Ok(())
     }
 
     #[test]
-    fn addmod_opcode_impl() -> Result<(), Error> {
-        let code = bytecode! {
-            PUSH3(0xbcdef)
-            PUSH3(0x6789a)
-            PUSH3(0x12345)
-            #[start]
-            ADDMOD
-            STOP
-        };
-
-        // Get the execution steps from the external tracer
-        let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code_at_start(&code).unwrap(),
+    fn add_opcode_impl() {
+        stack_only_opcode_impl::<2, 1>(
+            OpcodeId::ADD,
+            bytecode! {
+                PUSH1(0x80u64)
+                PUSH1(0x60u64)
+                ADD
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1022), Word::from(0x60)),
+                StackOp::new(1, StackAddress(1023), Word::from(0x80)),
+            ],
+            vec![StackOp::new(
+                1,
+                StackAddress(1023),
+                Word::from(0x60) + Word::from(0x80),
+            )],
         );
+    }
 
-        let mut builder = block.new_circuit_input_builder();
-        builder.handle_tx(&block.eth_tx, &block.geth_trace).unwrap();
-
-        let mut test_builder = block.new_circuit_input_builder();
-        let mut tx = test_builder
-            .new_tx(&block.eth_tx, !block.geth_trace.failed)
-            .unwrap();
-        let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
-
-        // Generate step corresponding to ADDMOD
-        let mut step = ExecStep::new(
-            &block.geth_trace.struct_logs[0],
-            0,
-            test_builder.block_ctx.rwc,
-            0,
+    #[test]
+    fn addmod_opcode_impl() {
+        stack_only_opcode_impl::<3, 1>(
+            OpcodeId::ADDMOD,
+            bytecode! {
+                PUSH3(0xbcdef)
+                PUSH3(0x6789a)
+                PUSH3(0x12345)
+                ADDMOD
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1021), Word::from(0x12345)),
+                StackOp::new(1, StackAddress(1022), Word::from(0x6789a)),
+                StackOp::new(1, StackAddress(1023), Word::from(0xbcdef)),
+            ],
+            vec![StackOp::new(1, StackAddress(1023), Word::from(0x79bdf))],
         );
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
-
-        // Read a, b, n
-        state_ref.push_stack_op(RW::READ, StackAddress(1024 - 3), Word::from(0x12345));
-        state_ref.push_stack_op(RW::READ, StackAddress(1024 - 2), Word::from(0x6789a));
-        state_ref.push_stack_op(RW::READ, StackAddress(1024 - 1), Word::from(0xbcdef));
-
-        // Write a + b % n
-        state_ref.push_stack_op(RW::WRITE, StackAddress(1024 - 1), Word::from(0x79bdf));
-
-        tx.steps_mut().push(step);
-        test_builder.block.txs_mut().push(tx);
-
-        // Compare first step bus mapping instance
-        assert_eq!(
-            builder.block.txs()[0].steps()[0].bus_mapping_instance,
-            test_builder.block.txs()[0].steps()[0].bus_mapping_instance,
-        );
-
-        // Compare containers
-        assert_eq!(builder.block.container, test_builder.block.container);
-
-        Ok(())
     }
 }

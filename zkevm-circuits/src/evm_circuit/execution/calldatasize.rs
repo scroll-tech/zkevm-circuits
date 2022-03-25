@@ -1,23 +1,22 @@
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{circuit::Region, plonk::Error};
-use std::convert::TryInto;
-
 use crate::{
     evm_circuit::{
+        execution::ExecutionGadget,
         param::N_BYTES_CALLDATASIZE,
         step::ExecutionState,
         table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-
-use super::ExecutionGadget;
+use bus_mapping::evm::OpcodeId;
+use eth_types::{Field, ToLittleEndian};
+use halo2_proofs::{circuit::Region, plonk::Error};
+use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataSizeGadget<F> {
@@ -46,13 +45,14 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
         cb.stack_push(call_data_size.expr());
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(2.expr()),
-            program_counter: Transition::Delta(1.expr()),
-            stack_pointer: Transition::Delta((-1).expr()),
+            rw_counter: Delta(2.expr()),
+            program_counter: Delta(1.expr()),
+            stack_pointer: Delta((-1).expr()),
+            gas_left: Delta(-OpcodeId::CALLDATASIZE.constant_gas_cost().expr()),
             ..Default::default()
         };
 
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -106,7 +106,6 @@ mod test {
     fn test_ok(call_data_size: usize, is_root: bool) {
         let randomness = Fr::rand();
         let bytecode = bytecode! {
-            #[start]
             CALLDATASIZE
             STOP
         };

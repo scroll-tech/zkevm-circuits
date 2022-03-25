@@ -19,6 +19,8 @@ use std::collections::VecDeque;
 pub enum ExecutionState {
     // Internal state
     BeginTx,
+    EndTx,
+    EndBlock,
     CopyToMemory,
     // Opcode successful cases
     STOP,
@@ -98,25 +100,28 @@ pub enum ExecutionState {
     ErrorDepth,
     ErrorInsufficientBalance,
     ErrorContractAddressCollision,
-    ErrorMaxCodeSizeExceeded,
     ErrorInvalidCreationCode,
-    ErrorReverted,
+    ErrorMaxCodeSizeExceeded,
     ErrorInvalidJump,
     ErrorReturnDataOutOfBound,
     ErrorOutOfGasConstant,
-    ErrorOutOfGasPureMemory,
+    ErrorOutOfGasStaticMemoryExpansion,
+    ErrorOutOfGasDynamicMemoryExpansion,
+    ErrorOutOfGasMemoryCopy,
+    ErrorOutOfGasAccountAccess,
     ErrorOutOfGasCodeStore,
-    ErrorOutOfGasSHA3,
-    ErrorOutOfGasCALLDATACOPY,
-    ErrorOutOfGasCODECOPY,
-    ErrorOutOfGasEXTCODECOPY,
-    ErrorOutOfGasRETURNDATACOPY,
     ErrorOutOfGasLOG,
+    ErrorOutOfGasEXP,
+    ErrorOutOfGasSHA3,
+    ErrorOutOfGasEXTCODECOPY,
+    ErrorOutOfGasSLOAD,
+    ErrorOutOfGasSSTORE,
     ErrorOutOfGasCALL,
     ErrorOutOfGasCALLCODE,
     ErrorOutOfGasDELEGATECALL,
     ErrorOutOfGasCREATE2,
     ErrorOutOfGasSTATICCALL,
+    ErrorOutOfGasSELFDESTRUCT,
 }
 
 impl Default for ExecutionState {
@@ -133,6 +138,8 @@ impl ExecutionState {
     pub(crate) fn iterator() -> impl Iterator<Item = Self> {
         [
             Self::BeginTx,
+            Self::EndTx,
+            Self::EndBlock,
             Self::CopyToMemory,
             Self::STOP,
             Self::ADD,
@@ -210,25 +217,28 @@ impl ExecutionState {
             Self::ErrorDepth,
             Self::ErrorInsufficientBalance,
             Self::ErrorContractAddressCollision,
-            Self::ErrorMaxCodeSizeExceeded,
             Self::ErrorInvalidCreationCode,
-            Self::ErrorReverted,
+            Self::ErrorMaxCodeSizeExceeded,
             Self::ErrorInvalidJump,
             Self::ErrorReturnDataOutOfBound,
             Self::ErrorOutOfGasConstant,
-            Self::ErrorOutOfGasPureMemory,
+            Self::ErrorOutOfGasStaticMemoryExpansion,
+            Self::ErrorOutOfGasDynamicMemoryExpansion,
+            Self::ErrorOutOfGasMemoryCopy,
+            Self::ErrorOutOfGasAccountAccess,
             Self::ErrorOutOfGasCodeStore,
-            Self::ErrorOutOfGasSHA3,
-            Self::ErrorOutOfGasCALLDATACOPY,
-            Self::ErrorOutOfGasCODECOPY,
-            Self::ErrorOutOfGasEXTCODECOPY,
-            Self::ErrorOutOfGasRETURNDATACOPY,
             Self::ErrorOutOfGasLOG,
+            Self::ErrorOutOfGasEXP,
+            Self::ErrorOutOfGasSHA3,
+            Self::ErrorOutOfGasEXTCODECOPY,
+            Self::ErrorOutOfGasSLOAD,
+            Self::ErrorOutOfGasSSTORE,
             Self::ErrorOutOfGasCALL,
             Self::ErrorOutOfGasCALLCODE,
             Self::ErrorOutOfGasDELEGATECALL,
             Self::ErrorOutOfGasCREATE2,
             Self::ErrorOutOfGasSTATICCALL,
+            Self::ErrorOutOfGasSELFDESTRUCT,
         ]
         .iter()
         .copied()
@@ -236,6 +246,45 @@ impl ExecutionState {
 
     pub(crate) fn amount() -> usize {
         Self::iterator().count()
+    }
+
+    pub(crate) fn halts(&self) -> bool {
+        matches!(
+            self,
+            Self::STOP
+                | Self::RETURN
+                | Self::REVERT
+                | Self::SELFDESTRUCT
+                | Self::ErrorInvalidOpcode
+                | Self::ErrorStackOverflow
+                | Self::ErrorStackUnderflow
+                | Self::ErrorWriteProtection
+                | Self::ErrorDepth
+                | Self::ErrorInsufficientBalance
+                | Self::ErrorContractAddressCollision
+                | Self::ErrorInvalidCreationCode
+                | Self::ErrorMaxCodeSizeExceeded
+                | Self::ErrorInvalidJump
+                | Self::ErrorReturnDataOutOfBound
+                | Self::ErrorOutOfGasConstant
+                | Self::ErrorOutOfGasStaticMemoryExpansion
+                | Self::ErrorOutOfGasDynamicMemoryExpansion
+                | Self::ErrorOutOfGasMemoryCopy
+                | Self::ErrorOutOfGasAccountAccess
+                | Self::ErrorOutOfGasCodeStore
+                | Self::ErrorOutOfGasLOG
+                | Self::ErrorOutOfGasEXP
+                | Self::ErrorOutOfGasSHA3
+                | Self::ErrorOutOfGasEXTCODECOPY
+                | Self::ErrorOutOfGasSLOAD
+                | Self::ErrorOutOfGasSSTORE
+                | Self::ErrorOutOfGasCALL
+                | Self::ErrorOutOfGasCALLCODE
+                | Self::ErrorOutOfGasDELEGATECALL
+                | Self::ErrorOutOfGasCREATE2
+                | Self::ErrorOutOfGasSTATICCALL
+                | Self::ErrorOutOfGasSELFDESTRUCT
+        )
     }
 
     pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {
@@ -491,9 +540,13 @@ impl<F: FieldExt> Step<F> {
 
     pub(crate) fn execution_state_selector(
         &self,
-        execution_state: ExecutionState,
+        execution_states: impl IntoIterator<Item = ExecutionState>,
     ) -> Expression<F> {
-        self.state.execution_state[execution_state as usize].expr()
+        execution_states
+            .into_iter()
+            .map(|execution_state| self.state.execution_state[execution_state as usize].expr())
+            .reduce(|acc, expr| acc + expr)
+            .expect("Select some ExecutionStates")
     }
 
     pub(crate) fn assign_exec_step(

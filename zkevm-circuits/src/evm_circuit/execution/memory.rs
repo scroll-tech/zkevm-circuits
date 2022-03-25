@@ -112,19 +112,16 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // - `stack_pointer` needs to be increased by 2 when is_store, otherwise to be
         //   same
         // - `memory_size` needs to be set to `next_memory_size`
+        let gas_cost = OpcodeId::MLOAD.constant_gas_cost().expr() + memory_expansion.gas_cost();
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(34.expr() - is_mstore8.expr() * 31.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(is_store * 2.expr()),
+            gas_left: Delta(-gas_cost),
             memory_word_size: To(memory_expansion.next_memory_word_size()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            Some(memory_expansion.gas_cost()),
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -206,7 +203,6 @@ mod test {
         let bytecode = bytecode! {
             PUSH32(value)
             PUSH32(address)
-            #[start]
             .write_op(opcode)
             STOP
         };
@@ -221,7 +217,10 @@ mod test {
             enable_state_circuit_test: false,
             ..Default::default()
         };
-        assert_eq!(test_circuits_using_bytecode(bytecode, test_config), Ok(()));
+        assert_eq!(
+            test_circuits_using_bytecode(bytecode, test_config, None),
+            Ok(())
+        );
     }
 
     #[test]

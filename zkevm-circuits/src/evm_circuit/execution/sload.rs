@@ -5,10 +5,7 @@ use crate::{
         table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, To},
-            },
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -67,25 +64,30 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         cb.stack_push(value.expr());
 
         let is_warm = cb.query_bool();
-        cb.account_storage_access_list_write_with_reversion(
+        cb.account_storage_access_list_write(
             tx_id.expr(),
             callee_address.expr(),
             key.expr(),
             true.expr(),
             is_warm.expr(),
-            is_persistent.expr(),
-            rw_counter_end_of_reversion.expr(),
+            Some(
+                (
+                    &is_persistent,
+                    rw_counter_end_of_reversion.expr() - cb.curr.state.state_write_counter.expr(),
+                )
+                    .into(),
+            ),
         );
 
+        let gas_cost = SloadGasGadget::construct(cb, is_warm.expr()).expr();
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(8.expr()),
             program_counter: Delta(1.expr()),
-            state_write_counter: To(1.expr()),
+            state_write_counter: Delta(1.expr()),
+            gas_left: Delta(-gas_cost),
             ..Default::default()
         };
-        let gas_cost = SloadGasGadget::construct(cb, is_warm.expr());
-        let same_context =
-            SameContextGadget::construct(cb, opcode, step_state_transition, Some(gas_cost.expr()));
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,

@@ -20,11 +20,11 @@ pub struct TraceConfig {
     /// accounts
     pub accounts: HashMap<Address, Account>,
     /// transaction
-    pub transaction: Transaction,
+    pub transactions: Vec<Transaction>,
 }
 
 /// Creates a trace for the specified config
-pub fn trace(config: &TraceConfig) -> Result<GethExecTrace, Error> {
+pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
     // Get the trace
     let trace_string = geth_utils::trace(&serde_json::to_string(config).unwrap()).map_err(
         |error| match error {

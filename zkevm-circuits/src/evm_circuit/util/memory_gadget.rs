@@ -396,15 +396,17 @@ impl<F: Field> MemoryCopierGasGadget<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct BufferReaderGadget<F, const MAX_BYTES: usize, const N_BYTES_MEMORY_ADDRESS: usize>
 {
-    // The bytes read from buffer
+    /// The bytes read from buffer
     bytes: [Cell<F>; MAX_BYTES],
-    // The selectors that indicate if bytes contain real data
+    /// The selectors that indicate if the corrsponding byte contains real data
+    /// or is padded
     selectors: [Cell<F>; MAX_BYTES],
-    // bound_dist[i] = max(addr_end - addr_start - i, 0)
+    /// `bound_dist` is defined as `max(addr_end - addr_start - i, 0)` for `i`
+    /// in 0..MAX_BYTES
     bound_dist: [Cell<F>; MAX_BYTES],
-    // Check if bound_dist is zero
+    /// Check if bound_dist is zero
     bound_dist_is_zero: [IsZeroGadget<F>; MAX_BYTES],
-    // The min gadget to take the minimum of addr_start and addr_end
+    /// The min gadget to take the minimum of addr_start and addr_end
     min_gadget: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
 }
 
@@ -413,8 +415,8 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
 {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
-        addr_start: &Cell<F>,
-        addr_end: &Cell<F>,
+        addr_start: Expression<F>,
+        addr_end: Expression<F>,
     ) -> Self {
         let bytes = array_init(|_| cb.query_byte());
         let selectors = array_init(|_| cb.query_bool());
@@ -433,11 +435,11 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         // The constraints on bound_dist[0].
         //   bound_dist[0] == addr_end - addr_start if addr_start < addr_end
         //   bound_dist[0] == 0 if addr_start >= addr_end
-        let min_gadget = MinMaxGadget::construct(cb, addr_start.expr(), addr_end.expr());
+        let min_gadget = MinMaxGadget::construct(cb, addr_start, addr_end.clone());
         cb.require_equal(
             "bound_dist[0] == addr_end - min(addr_start, add_end)",
             bound_dist[0].expr(),
-            addr_end.expr() - min_gadget.min(),
+            addr_end - min_gadget.min(),
         );
         // Constraints on bound_dist[1..MAX_BYTES]
         //   diff = bound_dist[idx - 1] - bound_dist[idx]
@@ -492,7 +494,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         addr_start: u64,
         addr_end: u64,
         bytes: &[u8],
-        selectors: &[u8],
+        selectors: &[bool],
     ) -> Result<(), Error> {
         self.min_gadget
             .assign(region, offset, F::from(addr_start), F::from(addr_end))?;

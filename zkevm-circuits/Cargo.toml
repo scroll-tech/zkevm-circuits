@@ -28,6 +28,7 @@ keccak256 = { path = "../keccak256"}
 
 [dev-dependencies]
 criterion = "0.3"
+hex = "0.4.3"
 mock = { path = "../mock" }
 
 [[bench]]

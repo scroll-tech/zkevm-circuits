@@ -100,9 +100,10 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             rw_counter: Delta(1.expr()),
             program_counter: Delta(opcode.expr() - (OpcodeId::PUSH1.as_u64() - 2).expr()),
             stack_pointer: Delta((-1).expr()),
+            gas_left: Delta(-OpcodeId::PUSH1.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -151,7 +152,6 @@ mod test {
         assert!(bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,);
 
         let mut bytecode = bytecode! {
-            #[start]
             .write_op(opcode)
         };
         for b in bytes {

@@ -1,12 +1,13 @@
 //! Evm types needed for parsing instruction sets as well
 
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
 pub mod memory;
 pub mod opcode_ids;
 pub mod stack;
 pub mod storage;
 
-use serde::{Deserialize, Serialize};
-use std::fmt;
 pub use {
     memory::{Memory, MemoryAddress},
     opcode_ids::OpcodeId,
@@ -60,6 +61,9 @@ impl fmt::Debug for Gas {
     }
 }
 
+/// Quotient for max refund of gas used
+pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
+
 /// Defines the gas consumption.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct GasCost(pub u64);
@@ -103,6 +107,14 @@ impl GasCost {
     pub const COLD_ACCOUNT_ACCESS_COST: Self = Self(2600);
     /// Constant cost for a warm storage read
     pub const WARM_STORAGE_READ_COST: Self = Self(100);
+    /// Constant cost for a basic storage operation
+    pub const SLOAD_GAS: Self = Self(100);
+    /// Constant cost for a storage set
+    pub const SSTORE_SET_GAS: Self = Self(20000);
+    /// Constant cost for a storage reset
+    pub const SSTORE_RESET_GAS: Self = Self(2900);
+    /// Constant cost for a storage clear
+    pub const SSTORE_CLEARS_SCHEDULE: Self = Self(15000);
     /// Constant cost for a non-creation transaction
     pub const TX: Self = Self(21000);
     /// Constant cost for creation transaction

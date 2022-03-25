@@ -125,11 +125,9 @@ pub struct GethData {
     /// the lastest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
-    pub eth_block: Block<()>,
-    /// Transaction from geth
-    pub eth_tx: crate::Transaction,
+    pub eth_block: Block<crate::Transaction>,
     /// Execution Trace from geth
-    pub geth_trace: GethExecTrace,
+    pub geth_traces: Vec<GethExecTrace>,
     /// Accounts
     pub accounts: Vec<Account>,
 }

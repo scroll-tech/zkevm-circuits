@@ -1,5 +1,6 @@
 use crate::{
     evm_circuit::{
+        param::STACK_CAPACITY,
         step::{ExecutionState, Preset, Step},
         table::{
             AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup, RwTableTag,
@@ -31,6 +32,7 @@ pub(crate) enum Transition<T> {
     Same,
     Delta(T),
     To(T),
+    Any,
 }
 
 impl<F> Default for Transition<F> {
@@ -57,9 +59,39 @@ impl<F: FieldExt> StepStateTransition<F> {
     pub(crate) fn new_context() -> Self {
         Self {
             program_counter: Transition::To(0.expr()),
-            stack_pointer: Transition::To(1024.expr()),
+            stack_pointer: Transition::To(STACK_CAPACITY.expr()),
             memory_word_size: Transition::To(0.expr()),
-            ..Self::default()
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn any() -> Self {
+        Self {
+            rw_counter: Transition::Any,
+            call_id: Transition::Any,
+            is_root: Transition::Any,
+            is_create: Transition::Any,
+            code_source: Transition::Any,
+            program_counter: Transition::Any,
+            stack_pointer: Transition::Any,
+            gas_left: Transition::Any,
+            memory_word_size: Transition::Any,
+            state_write_counter: Transition::Any,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ReversionInfo<F> {
+    is_persistent: Expression<F>,
+    rw_counter: Expression<F>,
+}
+
+impl<F: FieldExt, E1: Expr<F>, E2: Expr<F>> From<(E1, E2)> for ReversionInfo<F> {
+    fn from((is_persistent, rw_counter): (E1, E2)) -> Self {
+        Self {
+            is_persistent: is_persistent.expr(),
+            rw_counter: rw_counter.expr(),
         }
     }
 }
@@ -174,8 +206,8 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     rw_counter_offset: Expression<F>,
     program_counter_offset: usize,
     stack_pointer_offset: i32,
-    state_write_counter_offset: usize,
     in_next_step: bool,
+    condition: Option<Expression<F>>,
 }
 
 impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
@@ -198,8 +230,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             rw_counter_offset: 0.expr(),
             program_counter_offset: 0,
             stack_pointer_offset: 0,
-            state_write_counter_offset: 0,
             in_next_step: false,
+            condition: None,
         }
     }
 
@@ -235,7 +267,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             ));
         }
 
-        let execution_state_selector = self.curr.execution_state_selector(self.execution_state);
+        let execution_state_selector = self.curr.execution_state_selector([self.execution_state]);
 
         (
             constraints
@@ -377,8 +409,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         self.cb.require_in_set(name, value, set);
     }
 
-    pub(crate) fn require_next_state(&mut self, exec_state: ExecutionState) {
-        let next_state = self.next.execution_state_selector(exec_state);
+    pub(crate) fn require_next_state(&mut self, execution_state: ExecutionState) {
+        let next_state = self.next.execution_state_selector([execution_state]);
         self.add_constraint(
             "Constrain next execution state",
             1.expr() - next_state.expr(),
@@ -389,82 +421,46 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         &mut self,
         step_state_transition: StepStateTransition<F>,
     ) {
-        for (name, curr, next, transition) in vec![
-            (
-                "State transition constrain of rw_counter",
-                &self.curr.state.rw_counter,
-                &self.next.state.rw_counter,
-                step_state_transition.rw_counter,
-            ),
-            (
-                "State transition constrain of call_id",
-                &self.curr.state.call_id,
-                &self.next.state.call_id,
-                step_state_transition.call_id,
-            ),
-            (
-                "State transition constrain of is_root",
-                &self.curr.state.is_root,
-                &self.next.state.is_root,
-                step_state_transition.is_root,
-            ),
-            (
-                "State transition constrain of is_create",
-                &self.curr.state.is_create,
-                &self.next.state.is_create,
-                step_state_transition.is_create,
-            ),
-            (
-                "State transition constrain of code_source",
-                &self.curr.state.code_source,
-                &self.next.state.code_source,
-                step_state_transition.code_source,
-            ),
-            (
-                "State transition constrain of program_counter",
-                &self.curr.state.program_counter,
-                &self.next.state.program_counter,
-                step_state_transition.program_counter,
-            ),
-            (
-                "State transition constrain of stack_pointer",
-                &self.curr.state.stack_pointer,
-                &self.next.state.stack_pointer,
-                step_state_transition.stack_pointer,
-            ),
-            (
-                "State transition constrain of gas_left",
-                &self.curr.state.gas_left,
-                &self.next.state.gas_left,
-                step_state_transition.gas_left,
-            ),
-            (
-                "State transition constrain of memory_word_size",
-                &self.curr.state.memory_word_size,
-                &self.next.state.memory_word_size,
-                step_state_transition.memory_word_size,
-            ),
-            (
-                "State transition constrain of state_write_counter",
-                &self.curr.state.state_write_counter,
-                &self.next.state.state_write_counter,
-                step_state_transition.state_write_counter,
-            ),
-        ] {
-            match transition {
-                Transition::Same => self.require_equal(name, next.expr(), curr.expr()),
-                Transition::Delta(delta) => {
-                    self.require_equal(name, next.expr(), curr.expr() + delta)
+        macro_rules! constrain {
+            ($name:tt) => {
+                match step_state_transition.$name {
+                    Transition::Same => self.require_equal(
+                        concat!("State transition constraint of ", stringify!($name)),
+                        self.next.state.$name.expr(),
+                        self.curr.state.$name.expr(),
+                    ),
+                    Transition::Delta(delta) => self.require_equal(
+                        concat!("State transition constraint of ", stringify!($name)),
+                        self.next.state.$name.expr(),
+                        self.curr.state.$name.expr() + delta,
+                    ),
+                    Transition::To(to) => self.require_equal(
+                        concat!("State transition constraint of ", stringify!($name)),
+                        self.next.state.$name.expr(),
+                        to,
+                    ),
+                    _ => {}
                 }
-                Transition::To(to) => self.require_equal(name, next.expr(), to),
-            }
+            };
         }
+
+        constrain!(rw_counter);
+        constrain!(call_id);
+        constrain!(is_root);
+        constrain!(is_create);
+        constrain!(code_source);
+        constrain!(program_counter);
+        constrain!(stack_pointer);
+        constrain!(gas_left);
+        constrain!(memory_word_size);
+        constrain!(state_write_counter);
     }
 
     // Fixed
 
     pub(crate) fn range_lookup(&mut self, value: Expression<F>, range: u64) {
         let (name, tag) = match range {
+            5 => ("Range5", FixedTableTag::Range5),
             16 => ("Range16", FixedTableTag::Range16),
             32 => ("Range32", FixedTableTag::Range32),
             256 => ("Range256", FixedTableTag::Range256),
@@ -616,37 +612,30 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             self.rw_counter_offset.clone() + self.cb.condition.clone().unwrap_or_else(|| 1.expr());
     }
 
-    fn state_write_with_reversion(
+    fn state_write(
         &mut self,
         name: &'static str,
         tag: RwTableTag,
         mut values: [Expression<F>; 8],
-        is_persistent: Expression<F>,
-        rw_counter_end_of_reversion: Expression<F>,
+        reversion_info: Option<ReversionInfo<F>>,
     ) {
+        debug_assert!(tag.is_reversible(), "Only reversible tags are state write");
+
         self.rw_lookup(name, true.expr(), tag, values.clone());
 
-        // Revert if is_persistent is 0
-        self.condition(1.expr() - is_persistent, |cb| {
-            // Calculate state_write_counter so far
-            let state_write_counter =
-                cb.curr.state.state_write_counter.expr() + cb.state_write_counter_offset.expr();
+        if let Some(ReversionInfo {
+            is_persistent,
+            rw_counter,
+        }) = reversion_info
+        {
+            // Revert if is_persistent is 0
+            self.condition(1.expr() - is_persistent, |cb| {
+                // Swap value and value_prev
+                values.swap(4, 5);
 
-            // Swap value and value_prev respect to tag
-            if tag.is_reversible() {
-                values.swap(4, 5)
-            };
-
-            cb.rw_lookup_with_counter(
-                name,
-                rw_counter_end_of_reversion - state_write_counter,
-                true.expr(),
-                tag,
-                values,
-            )
-        });
-
-        self.state_write_counter_offset += 1;
+                cb.rw_lookup_with_counter(name, rw_counter, true.expr(), tag, values)
+            });
+        }
     }
 
     // Access list
@@ -657,10 +646,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         account_address: Expression<F>,
         value: Expression<F>,
         value_prev: Expression<F>,
+        reversion_info: Option<ReversionInfo<F>>,
     ) -> Expression<F> {
-        self.rw_lookup(
+        self.state_write(
             "TxAccessListAccount write",
-            true.expr(),
             RwTableTag::TxAccessListAccount,
             [
                 tx_id,
@@ -672,37 +661,81 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
             ],
+            reversion_info,
         );
 
         value - value_prev
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn account_storage_access_list_write_with_reversion(
+    pub(crate) fn account_storage_access_list_write(
         &mut self,
         tx_id: Expression<F>,
         account_address: Expression<F>,
-        key: Expression<F>,
+        storage_key: Expression<F>,
         value: Expression<F>,
         value_prev: Expression<F>,
-        is_persistent: Expression<F>,
-        rw_counter_end_of_reversion: Expression<F>,
-    ) {
-        self.state_write_with_reversion(
-            "account_storage_access_list_write_with_reversion",
+        reversion_info: Option<ReversionInfo<F>>,
+    ) -> Expression<F> {
+        self.state_write(
+            "TxAccessListAccountStorage write",
             RwTableTag::TxAccessListAccountStorage,
             [
                 tx_id,
                 account_address,
                 0.expr(),
-                key,
+                storage_key,
+                value.clone(),
+                value_prev.clone(),
+                0.expr(),
+                0.expr(),
+            ],
+            reversion_info,
+        );
+
+        value - value_prev
+    }
+
+    // Tx Refund
+
+    pub(crate) fn tx_refund_read(&mut self, tx_id: Expression<F>, value: Expression<F>) {
+        self.rw_lookup(
+            "TxRefund read",
+            false.expr(),
+            RwTableTag::TxRefund,
+            [
+                tx_id,
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                value.clone(),
+                value,
+                0.expr(),
+                0.expr(),
+            ],
+        );
+    }
+
+    pub(crate) fn tx_refund_write(
+        &mut self,
+        tx_id: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        reversion_info: Option<ReversionInfo<F>>,
+    ) {
+        self.state_write(
+            "TxRefund write",
+            RwTableTag::TxRefund,
+            [
+                tx_id,
+                0.expr(),
+                0.expr(),
+                0.expr(),
                 value,
                 value_prev,
                 0.expr(),
                 0.expr(),
             ],
-            is_persistent,
-            rw_counter_end_of_reversion,
+            reversion_info,
         );
     }
 
@@ -737,34 +770,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         field_tag: AccountFieldTag,
         value: Expression<F>,
         value_prev: Expression<F>,
+        reversion_info: Option<ReversionInfo<F>>,
     ) {
-        self.rw_lookup(
-            "Account write",
-            true.expr(),
-            RwTableTag::Account,
-            [
-                0.expr(),
-                account_address,
-                field_tag.expr(),
-                0.expr(),
-                value,
-                value_prev,
-                0.expr(),
-                0.expr(),
-            ],
-        );
-    }
-
-    pub(crate) fn account_write_with_reversion(
-        &mut self,
-        account_address: Expression<F>,
-        field_tag: AccountFieldTag,
-        value: Expression<F>,
-        value_prev: Expression<F>,
-        is_persistent: Expression<F>,
-        rw_counter_end_of_reversion: Expression<F>,
-    ) {
-        self.state_write_with_reversion(
+        self.state_write(
             "Account write with reversion",
             RwTableTag::Account,
             [
@@ -777,8 +785,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
             ],
-            is_persistent,
-            rw_counter_end_of_reversion,
+            reversion_info,
         );
     }
 
@@ -806,6 +813,34 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
                 tx_id,
                 committed_value,
             ],
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn account_storage_write(
+        &mut self,
+        account_address: Expression<F>,
+        key: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        tx_id: Expression<F>,
+        committed_value: Expression<F>,
+        reversion_info: Option<ReversionInfo<F>>,
+    ) {
+        self.state_write(
+            "AccountStorage write",
+            RwTableTag::AccountStorage,
+            [
+                0.expr(),
+                account_address,
+                0.expr(),
+                key,
+                value,
+                value_prev,
+                tx_id,
+                committed_value,
+            ],
+            reversion_info,
         );
     }
 
@@ -887,13 +922,14 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         is_write: Expression<F>,
         memory_address: Expression<F>,
         byte: Expression<F>,
+        call_id: Option<Expression<F>>,
     ) {
         self.rw_lookup(
             "Memory lookup",
             is_write,
             RwTableTag::Memory,
             [
-                self.curr.state.call_id.expr(),
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 0.expr(),
                 memory_address,
                 0.expr(),

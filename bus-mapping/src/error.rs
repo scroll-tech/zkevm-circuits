@@ -20,6 +20,9 @@ pub enum Error {
     StorageKeyNotFound(Address, Word),
     /// Unable to figure out error at a [`GethExecStep`]
     UnexpectedExecStepError(&'static str, GethExecStep),
+    /// Invalid [`eth_types::GethExecTrace`] due to an invalid/unexpected value
+    /// in it.
+    InvalidGethExecTrace(&'static str),
     /// Invalid [`GethExecStep`] due to an invalid/unexpected value in it.
     InvalidGethExecStep(&'static str, GethExecStep),
     /// Eth type related error.

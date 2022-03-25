@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget, LtGadget},
             select, Cell, Word,
@@ -121,12 +121,13 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         // and the since the stack now has one less word, the stack pointer also
         // shifts by one.
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(3.expr()),
-            program_counter: Transition::Delta(1.expr()),
-            stack_pointer: Transition::Delta(1.expr()),
+            rw_counter: Delta(3.expr()),
+            program_counter: Delta(1.expr()),
+            stack_pointer: Delta(1.expr()),
+            gas_left: Delta(-OpcodeId::SLT.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -224,7 +225,7 @@ mod test {
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
 
     fn test_ok(pairs: Vec<(OpcodeId, Word, Word)>) {
-        let mut bytecode = bytecode! { #[start] };
+        let mut bytecode = bytecode! {};
         for (opcode, a, b) in pairs {
             bytecode.push(32, b);
             bytecode.push(32, a);

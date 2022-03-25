@@ -19,18 +19,16 @@ lazy_static! {
         address!("0x00000000000000000000000000000000c014ba5e");
 }
 
-/// Create a new block with a single tx that executes the code found in the
-/// account with address 0x0 (which can call code in the other accounts),
-/// with the given gas limit.
-/// The trace will be generated automatically with the external_tracer
-/// from the accounts code.
-pub fn new_single_tx_trace_accounts_gas(
+/// Create a new block with txs.
+pub fn new(
     accounts: Vec<Account>,
-    gas: Gas,
+    eth_txs: Vec<eth_types::Transaction>,
 ) -> Result<GethData, Error> {
-    let eth_block = new_block();
-    let mut eth_tx = new_tx(&eth_block);
-    eth_tx.gas = Word::from(gas.0);
+    let mut eth_block = new_block();
+    eth_block.transactions = eth_txs;
+    for (idx, tx) in eth_block.transactions.iter_mut().enumerate() {
+        tx.transaction_index = Some(idx.into())
+    }
 
     let trace_config = TraceConfig {
         chain_id: MOCK_CHAIN_ID.into(),
@@ -41,18 +39,36 @@ pub fn new_single_tx_trace_accounts_gas(
             .iter()
             .map(|account| (account.address, account.clone()))
             .collect(),
-        transaction: Transaction::from_eth_tx(&eth_tx),
+        transactions: eth_block
+            .transactions
+            .iter()
+            .map(Transaction::from_eth_tx)
+            .collect(),
     };
-    let geth_trace = trace(&trace_config)?;
+    let geth_traces = trace(&trace_config)?;
 
     Ok(GethData {
         chain_id: trace_config.chain_id,
         history_hashes: trace_config.history_hashes,
         eth_block,
-        eth_tx,
-        geth_trace,
+        geth_traces,
         accounts,
     })
+}
+
+/// Create a new block with a single tx that executes the code found in the
+/// account with address 0x0 (which can call code in the other accounts),
+/// with the given gas limit.
+/// The trace will be generated automatically with the external_tracer
+/// from the accounts code.
+pub fn new_single_tx_trace_accounts_gas(
+    accounts: Vec<Account>,
+    gas: Gas,
+    input: Option<Vec<u8>>,
+) -> Result<GethData, Error> {
+    let mut eth_tx = new_tx(&new_block(), input);
+    eth_tx.gas = Word::from(gas.0);
+    new(accounts, vec![eth_tx])
 }
 
 /// Create a new block with a single tx that executes the code found in the
@@ -60,7 +76,7 @@ pub fn new_single_tx_trace_accounts_gas(
 /// The trace will be generated automatically with the external_tracer
 /// from the accounts code.
 pub fn new_single_tx_trace_accounts(accounts: Vec<Account>) -> Result<GethData, Error> {
-    new_single_tx_trace_accounts_gas(accounts, Gas(1_000_000u64))
+    new_single_tx_trace_accounts_gas(accounts, Gas(1_000_000u64), None)
 }
 
 /// Create a new block with a single tx that executes the code passed by
@@ -74,9 +90,13 @@ pub fn new_single_tx_trace_code(code: &Bytecode) -> Result<GethData, Error> {
 /// Create a new block with a single tx with the given gas limit that
 /// executes the code passed by argument.  The trace will be generated
 /// automatically with the external_tracer from the code.
-pub fn new_single_tx_trace_code_gas(code: &Bytecode, gas: Gas) -> Result<GethData, Error> {
+pub fn new_single_tx_trace_code_gas(
+    code: &Bytecode,
+    gas: Gas,
+    input: Option<Vec<u8>>,
+) -> Result<GethData, Error> {
     let tracer_account = new_tracer_account(code);
-    new_single_tx_trace_accounts_gas(vec![tracer_account], gas)
+    new_single_tx_trace_accounts_gas(vec![tracer_account], gas, input)
 }
 
 /// Create a new block with a single tx that executes the code_a passed by
@@ -89,19 +109,8 @@ pub fn new_single_tx_trace_code_2(code_a: &Bytecode, code_b: &Bytecode) -> Resul
     new_single_tx_trace_accounts(vec![tracer_account_a, tracer_account_b])
 }
 
-/// Create a new block with a single tx that executes the code passed by
-/// argument.  The trace will be generated automatically with the
-/// external_tracer from the code.  The trace steps will start at the
-/// "start" position as tagged in the code.
-pub fn new_single_tx_trace_code_at_start(code: &Bytecode) -> Result<GethData, Error> {
-    let mut geth_data = new_single_tx_trace_code(code)?;
-    geth_data.geth_trace.struct_logs =
-        geth_data.geth_trace.struct_logs[code.get_pos("start")..].to_vec();
-    Ok(geth_data)
-}
-
 /// Generate a new mock block with preloaded data, useful for tests.
-pub fn new_block() -> Block<()> {
+pub fn new_block() -> Block<eth_types::Transaction> {
     eth_types::Block {
         hash: Some(Hash::zero()),
         parent_hash: Hash::zero(),
@@ -113,7 +122,7 @@ pub fn new_block() -> Block<()> {
         number: Some(U64([123456u64])),
         gas_used: Word::from(15_000_000u64),
         gas_limit: Word::from(15_000_000u64),
-        base_fee_per_gas: Some(Word::from(97u64)),
+        base_fee_per_gas: Some(Word::zero()),
         extra_data: Bytes::default(),
         logs_bloom: None,
         timestamp: Word::from(1633398551u64),
@@ -129,7 +138,7 @@ pub fn new_block() -> Block<()> {
 }
 
 /// Generate a new mock transaction with preloaded data, useful for tests.
-pub fn new_tx<TX>(block: &Block<TX>) -> eth_types::Transaction {
+pub fn new_tx<TX>(block: &Block<TX>, input: Option<Vec<u8>>) -> eth_types::Transaction {
     eth_types::Transaction {
         hash: Hash::zero(),
         nonce: Word::zero(),
@@ -141,7 +150,10 @@ pub fn new_tx<TX>(block: &Block<TX>) -> eth_types::Transaction {
         value: Word::zero(),
         gas_price: Some(Word::zero()),
         gas: Word::from(1_000_000u64),
-        input: Bytes::default(),
+        input: match input {
+            Some(data) => Bytes::from(data),
+            None => Bytes::default(),
+        },
         v: U64::zero(),
         r: Word::zero(),
         s: Word::zero(),

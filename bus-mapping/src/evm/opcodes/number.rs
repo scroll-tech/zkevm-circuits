@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod timestamp_tests {
+mod number_tests {
     use crate::{
         circuit_input_builder::{ExecStep, TransactionContext},
         mock::BlockData,
@@ -11,10 +11,10 @@ mod timestamp_tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn timestamp_opcode_impl() -> Result<(), Error> {
+    fn number_opcode_impl() -> Result<(), Error> {
         let code = bytecode! {
             #[start]
-            TIMESTAMP
+            NUMBER
             STOP
         };
 
@@ -31,20 +31,22 @@ mod timestamp_tests {
             .unwrap();
         let mut tx_ctx = TransactionContext::new(&block.eth_tx, &block.geth_trace).unwrap();
 
-        // Generate step corresponding to TIMESTAMP
+        // Generate step corresponding to NUMBER
         let mut step = ExecStep::new(
             &block.geth_trace.struct_logs[0],
             0,
             test_builder.block_ctx.rwc,
             0,
         );
-        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx, &mut step);
+        let mut state_ref = test_builder.state_ref(&mut tx, &mut tx_ctx);
 
         // Add the last Stack write
+        let number = block.eth_block.number.unwrap().as_u64();
         state_ref.push_stack_op(
+            &mut step,
             RW::WRITE,
             StackAddress::from(1024 - 1),
-            block.eth_block.timestamp,
+            eth_types::U256::from(number),
         );
 
         tx.steps_mut().push(step);

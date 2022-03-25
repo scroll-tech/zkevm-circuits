@@ -430,6 +430,7 @@ pub mod test {
         run_test_circuit(
             block,
             vec![
+                FixedTableTag::Range5,
                 FixedTableTag::Range16,
                 FixedTableTag::Range32,
                 FixedTableTag::Range256,

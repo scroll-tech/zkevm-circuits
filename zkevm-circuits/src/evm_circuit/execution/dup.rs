@@ -43,9 +43,10 @@ impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
             rw_counter: Delta(2.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta((-1).expr()),
+            gas_left: Delta(-OpcodeId::DUP1.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -94,7 +95,6 @@ mod test {
             bytecode.write_op(OpcodeId::DUP1);
         }
         bytecode.append(&bytecode! {
-            #[start]
             .write_op(opcode)
             STOP
         });

@@ -21,14 +21,14 @@ func CreateTrace(configStr *C.char) *C.char {
 		return C.CString(fmt.Sprintf("Failed to unmarshal config, err: %v", err))
 	}
 
-	executionResult, err := gethutil.TraceTx(config)
+	executionResults, err := gethutil.Trace(config)
 	if err != nil {
-		return C.CString(fmt.Sprintf("Failed to trace tx, err: %v", err))
+		return C.CString(fmt.Sprintf("Failed to run Trace, err: %v", err))
 	}
 
-	bytes, err := json.MarshalIndent(executionResult, "", "  ")
+	bytes, err := json.MarshalIndent(executionResults, "", "  ")
 	if err != nil {
-		return C.CString(fmt.Sprintf("Failed to marshal ExecutionResult, err: %v", err))
+		return C.CString(fmt.Sprintf("Failed to marshal []ExecutionResult, err: %v", err))
 	}
 
 	return C.CString(string(bytes))

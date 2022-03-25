@@ -118,10 +118,10 @@ type TraceConfig struct {
 	HistoryHashes []*hexutil.Big             `json:"history_hashes"`
 	Block         Block                      `json:"block_constants"`
 	Accounts      map[common.Address]Account `json:"accounts"`
-	Transaction   Transaction                `json:"transaction"`
+	Transactions  []Transaction              `json:"transactions"`
 }
 
-func TraceTx(config TraceConfig) (*ExecutionResult, error) {
+func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	chainConfig := params.ChainConfig{
 		ChainID:             toBigInt(config.ChainID),
 		HomesteadBlock:      big.NewInt(0),
@@ -140,11 +140,35 @@ func TraceTx(config TraceConfig) (*ExecutionResult, error) {
 		LondonBlock:         big.NewInt(0),
 	}
 
-	// If gas price is specified directly, the tx is treated as legacy one
-	if config.Transaction.GasPrice != nil {
-		config.Block.BaseFee = new(hexutil.Big)
-		config.Transaction.GasFeeCap = config.Transaction.GasPrice
-		config.Transaction.GasTipCap = config.Transaction.GasPrice
+	var blockGasLimit uint64
+	messages := make([]types.Message, len(config.Transactions))
+	for i, tx := range config.Transactions {
+		// If gas price is specified directly, the tx is treated as legacy type.
+		if tx.GasPrice != nil {
+			tx.GasFeeCap = tx.GasPrice
+			tx.GasTipCap = tx.GasPrice
+		}
+
+		txAccessList := make(types.AccessList, len(tx.AccessList))
+		for i, accessList := range tx.AccessList {
+			txAccessList[i].Address = accessList.Address
+			txAccessList[i].StorageKeys = accessList.StorageKeys
+		}
+		messages[i] = types.NewMessage(
+			tx.From,
+			tx.To,
+			uint64(tx.Nonce),
+			toBigInt(tx.Value),
+			uint64(tx.GasLimit),
+			toBigInt(tx.GasPrice),
+			toBigInt(tx.GasFeeCap),
+			toBigInt(tx.GasTipCap),
+			tx.CallData,
+			txAccessList,
+			false,
+		)
+
+		blockGasLimit += uint64(tx.GasLimit)
 	}
 
 	blockCtx := vm.BlockContext{
@@ -163,28 +187,8 @@ func TraceTx(config TraceConfig) (*ExecutionResult, error) {
 		Time:        toBigInt(config.Block.Timestamp),
 		Difficulty:  toBigInt(config.Block.Difficulty),
 		BaseFee:     toBigInt(config.Block.BaseFee),
-		GasLimit:    toBigInt(config.Block.GasLimit).Uint64(),
+		GasLimit:    blockGasLimit,
 	}
-
-	txAccessList := make(types.AccessList, len(config.Transaction.AccessList))
-	for i, accessList := range config.Transaction.AccessList {
-		txAccessList[i].Address = accessList.Address
-		txAccessList[i].StorageKeys = accessList.StorageKeys
-	}
-	message := types.NewMessage(
-		config.Transaction.From,
-		config.Transaction.To,
-		uint64(config.Transaction.Nonce),
-		toBigInt(config.Transaction.Value),
-		uint64(config.Transaction.GasLimit),
-		toBigInt(config.Transaction.GasPrice),
-		toBigInt(config.Transaction.GasFeeCap),
-		toBigInt(config.Transaction.GasTipCap),
-		config.Transaction.CallData,
-		txAccessList,
-		false,
-	)
-	txContext := core.NewEVMTxContext(message)
 
 	// Setup state db with accounts from argument
 	stateDB, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
@@ -198,20 +202,27 @@ func TraceTx(config TraceConfig) (*ExecutionResult, error) {
 			stateDB.SetState(address, key, value)
 		}
 	}
-	stateDB.Finalise(chainConfig.IsByzantium(blockCtx.BlockNumber))
+	stateDB.Finalise(true)
 
-	// Run the transaction with tracing enabled.
-	tracer := logger.NewStructLogger(&logger.Config{EnableMemory: true})
-	evm := vm.NewEVM(blockCtx, txContext, stateDB, &chainConfig, vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
-	result, err := core.ApplyMessage(evm, message, new(core.GasPool).AddGas(message.Gas()))
-	if err != nil {
-		return nil, err
+	// Run the transactions with tracing enabled.
+	executionResults := make([]*ExecutionResult, len(config.Transactions))
+	for i, message := range messages {
+		tracer := logger.NewStructLogger(&logger.Config{EnableMemory: true})
+		evm := vm.NewEVM(blockCtx, core.NewEVMTxContext(message), stateDB, &chainConfig, vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
+
+		result, err := core.ApplyMessage(evm, message, new(core.GasPool).AddGas(message.Gas()))
+		if err != nil {
+			return nil, fmt.Errorf("Failed to apply config.Transactions[%d]: %w", i, err)
+		}
+		stateDB.Finalise(true)
+
+		executionResults[i] = &ExecutionResult{
+			Gas:         result.UsedGas,
+			Failed:      result.Failed(),
+			ReturnValue: fmt.Sprintf("%x", result.ReturnData),
+			StructLogs:  FormatLogs(tracer.StructLogs()),
+		}
 	}
 
-	return &ExecutionResult{
-		Gas:         result.UsedGas,
-		Failed:      result.Failed(),
-		ReturnValue: fmt.Sprintf("%x", result.ReturnData),
-		StructLogs:  FormatLogs(tracer.StructLogs()),
-	}, nil
+	return executionResults, nil
 }

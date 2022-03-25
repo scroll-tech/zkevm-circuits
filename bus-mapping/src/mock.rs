@@ -20,11 +20,9 @@ pub struct BlockData {
     /// the lastest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block from geth
-    pub eth_block: eth_types::Block<()>,
-    /// Transaction from geth
-    pub eth_tx: eth_types::Transaction,
+    pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Execution Trace from geth
-    pub geth_trace: eth_types::GethExecTrace,
+    pub geth_traces: Vec<eth_types::GethExecTrace>,
 }
 
 impl BlockData {
@@ -44,7 +42,12 @@ impl BlockData {
         let mut code_db = CodeDB::new();
 
         sdb.set_account(&geth_data.eth_block.author, state_db::Account::zero());
-        sdb.set_account(&geth_data.eth_tx.from, state_db::Account::zero());
+        for tx in geth_data.eth_block.transactions.iter() {
+            sdb.set_account(&tx.from, state_db::Account::zero());
+            if let Some(to) = tx.to.as_ref() {
+                sdb.set_account(to, state_db::Account::zero());
+            }
+        }
 
         for account in geth_data.accounts {
             let code_hash = code_db.insert(account.code.to_vec());
@@ -58,14 +61,14 @@ impl BlockData {
                 },
             );
         }
+
         Self {
             sdb,
             code_db,
             chain_id: geth_data.chain_id,
             history_hashes: geth_data.history_hashes,
             eth_block: geth_data.eth_block,
-            eth_tx: geth_data.eth_tx,
-            geth_trace: geth_data.geth_trace,
+            geth_traces: geth_data.geth_traces,
         }
     }
 }

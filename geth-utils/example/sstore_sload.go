@@ -17,12 +17,12 @@ func main() {
 	accounts := map[common.Address]gethutil.Account{address: {Code: assembly.Bytecode()}}
 	tx := gethutil.Transaction{To: &address, GasLimit: 46000}
 
-	result, err := gethutil.TraceTx(gethutil.TraceConfig{Accounts: accounts, Transaction: tx})
+	result, err := gethutil.Trace(gethutil.TraceConfig{Accounts: accounts, Transactions: []gethutil.Transaction{tx}})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to trace tx, err: %v\n", err)
 	}
 
-	bytes, err := json.MarshalIndent(result.StructLogs, "", "  ")
+	bytes, err := json.MarshalIndent(result[0].StructLogs, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to marshal logs, err: %v\n", err)
 	}

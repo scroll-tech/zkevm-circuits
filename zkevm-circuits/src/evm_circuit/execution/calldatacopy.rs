@@ -18,6 +18,7 @@ use crate::{
     },
     util::Expr,
 };
+use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use eth_types::ToLittleEndian;
 use halo2_proofs::{circuit::Region, plonk::Error};
@@ -145,15 +146,13 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
+            gas_left: Delta(
+                -(OpcodeId::CALLDATACOPY.constant_gas_cost().expr() + memory_copier_gas.gas_cost()),
+            ),
             memory_word_size: To(memory_expansion.next_memory_word_size()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(
-            cb,
-            opcode,
-            step_state_transition,
-            Some(memory_copier_gas.gas_cost()),
-        );
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -235,7 +234,9 @@ mod test {
         test::{calc_memory_copier_gas_cost, rand_bytes, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
+    use crate::test_util::{test_circuits_using_bytecode, BytecodeTestConfig};
     use eth_types::{
+        bytecode,
         evm_types::{GasCost, OpcodeId},
         ToBigEndian, Word,
     };
@@ -243,140 +244,20 @@ mod test {
     use pairing::bn256::Fr as Fp;
 
     fn test_ok_root(call_data_length: usize, memory_offset: Word, data_offset: Word, length: Word) {
-        let randomness = Fp::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                length.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                data_offset.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                memory_offset.to_be_bytes().to_vec(),
-                vec![OpcodeId::CALLDATACOPY.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let call_id = 1;
-        let call_data: Vec<u8> = rand_bytes(call_data_length);
-
-        let mut rws = RwMap(
-            [
-                (
-                    RwTableTag::Stack,
-                    vec![
-                        Rw::Stack {
-                            rw_counter: 1,
-                            is_write: false,
-                            call_id,
-                            stack_pointer: 1021,
-                            value: memory_offset,
-                        },
-                        Rw::Stack {
-                            rw_counter: 2,
-                            is_write: false,
-                            call_id,
-                            stack_pointer: 1022,
-                            value: data_offset,
-                        },
-                        Rw::Stack {
-                            rw_counter: 3,
-                            is_write: false,
-                            call_id,
-                            stack_pointer: 1023,
-                            value: length,
-                        },
-                    ],
-                ),
-                (
-                    RwTableTag::CallContext,
-                    vec![Rw::CallContext {
-                        rw_counter: 4,
-                        is_write: false,
-                        call_id,
-                        field_tag: CallContextFieldTag::TxId,
-                        value: Word::one(),
-                    }],
-                ),
-            ]
-            .into(),
-        );
-        let mut rw_counter = 5;
-
-        let next_memory_word_size = if length.is_zero() {
-            0
-        } else {
-            (memory_offset.as_u64() + length.as_u64() + 31) / 32
+        let bytecode = bytecode! {
+            PUSH32(length)
+            PUSH32(data_offset)
+            PUSH32(memory_offset)
+            #[start]
+            CALLDATACOPY
+            STOP
         };
-        let gas_cost = GasCost::FASTEST.as_u64()
-            + calc_memory_copier_gas_cost(0, next_memory_word_size, length.as_u64());
-
-        let mut steps = vec![ExecStep {
-            rw_indices: vec![
-                (RwTableTag::Stack, 0),
-                (RwTableTag::Stack, 1),
-                (RwTableTag::Stack, 2),
-                (RwTableTag::CallContext, 0),
-            ],
-            execution_state: ExecutionState::CALLDATACOPY,
-            rw_counter: 1,
-            program_counter: 99,
-            stack_pointer: 1021,
-            gas_left: gas_cost,
-            gas_cost,
-            memory_size: 0,
-            opcode: Some(OpcodeId::CALLDATACOPY),
-            ..Default::default()
-        }];
-
-        if !length.is_zero() {
-            make_memory_copy_steps(
-                call_id,
-                &call_data,
-                0,
-                data_offset.as_u64(),
-                memory_offset.as_u64(),
-                length.as_usize(),
-                true,
-                100,
-                1024,
-                next_memory_word_size * 32,
-                &mut rw_counter,
-                &mut rws,
-                &mut steps,
-            );
-        }
-
-        steps.push(ExecStep {
-            execution_state: ExecutionState::STOP,
-            rw_counter,
-            program_counter: 100,
-            stack_pointer: 1024,
-            opcode: Some(OpcodeId::STOP),
-            memory_size: next_memory_word_size * 32,
-            ..Default::default()
-        });
-
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                id: 1,
-                call_data,
-                call_data_length,
-                calls: vec![Call {
-                    id: call_id,
-                    is_root: true,
-                    is_create: false,
-                    code_source: CodeSource::Account(bytecode.hash),
-                    ..Default::default()
-                }],
-                steps,
-                ..Default::default()
-            }],
-            rws,
-            bytecodes: vec![bytecode],
-            ..Default::default()
-        };
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+        let call_data = rand_bytes(call_data_length);
+        let test_config = BytecodeTestConfig::default();
+        assert_eq!(
+            test_circuits_using_bytecode(bytecode, test_config, Some(call_data)),
+            Ok(())
+        );
     }
 
     fn test_ok_internal(
@@ -562,6 +443,7 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_multi_step() {
+        test_ok_root(128, Word::from(0x40), Word::from(16), Word::from(90));
         test_ok_internal(
             Word::from(0x40),
             Word::from(128),

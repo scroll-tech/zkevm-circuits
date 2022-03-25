@@ -87,9 +87,10 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
             rw_counter: Delta(3.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(1.expr()),
+            gas_left: Delta(-OpcodeId::LT.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -175,7 +176,6 @@ mod test {
         let bytecode = bytecode! {
             PUSH32(b)
             PUSH32(a)
-            #[start]
             .write_op(opcode)
             STOP
         };

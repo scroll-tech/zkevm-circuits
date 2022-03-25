@@ -47,9 +47,10 @@ impl<F: Field> ExecutionGadget<F> for SwapGadget<F> {
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(4.expr()),
             program_counter: Delta(1.expr()),
+            gas_left: Delta(-OpcodeId::SWAP1.constant_gas_cost().expr()),
             ..Default::default()
         };
-        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition, None);
+        let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
@@ -104,7 +105,6 @@ mod test {
         }
         bytecode.append(&bytecode! {
             PUSH32(rhs)
-            #[start]
             .write_op(opcode)
             STOP
         });
