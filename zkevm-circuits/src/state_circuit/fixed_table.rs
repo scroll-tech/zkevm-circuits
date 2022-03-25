@@ -37,7 +37,7 @@ impl FixedTable {
         for (column, exponent) in [
             (self.u8, 8),
             (self.u10, 10),
-            // (self.u16, 16),
+            (self.u16, 16),
         ] {
             layouter.assign_region(
                 || format!("assign u{} fixed column", exponent),

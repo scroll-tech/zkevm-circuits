@@ -189,7 +189,6 @@ impl<
                         limb.clone() + result * (1u64 << 16).expr()
                     }),
             );
-            // TODO(mason) range check for each limb.
 
             // 2. key4 is RLC encoded
             cb.require_equal(
@@ -221,6 +220,16 @@ impl<
 
             cb.gate(qb.s_enable(meta))
         });
+
+        // TODO: move this into constraint builder
+        for i in 0..N_LIMBS_ACCOUNT_ADDRESS {
+            meta.lookup_any("address limbs fit into u16", |meta| {
+                vec![(
+                    qb.s_enable(meta) * qb.account_address_limbs(meta)[i].clone(),
+                    fixed_table.u16(meta),
+                )]
+            });
+        }
 
         // Check that storage key bytes are between 0 and 255.
         // TODO: move this into constraint builder
@@ -811,7 +820,7 @@ mod tests {
         );
 
         test_state_circuit_ok!(
-            12,
+            17,
             2000,
             100,
             2,
@@ -862,7 +871,7 @@ mod tests {
 
         const STACK_ROWS_MAX: usize = 2;
         test_state_circuit_ok!(
-            14,
+            17,
             2000,
             100,
             STACK_ROWS_MAX,
@@ -914,7 +923,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 7;
         test_state_circuit_error!(
-            14,
+            17,
             2000,
             MEMORY_ROWS_MAX,
             1000,
@@ -984,7 +993,7 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
         test_state_circuit_error!(
-            14,
+            17,
             2000,
             MEMORY_ROWS_MAX,
             1000,
@@ -1059,7 +1068,7 @@ mod tests {
         const STACK_ADDRESS_MAX: usize = 1023;
 
         test_state_circuit_error!(
-            16,
+            18,
             RW_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
@@ -1115,7 +1124,7 @@ mod tests {
         const STACK_ADDRESS_MAX: usize = 1023;
 
         test_state_circuit_error!(
-            16,
+            18,
             RW_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
@@ -1237,7 +1246,7 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 100;
         const STACK_ROWS_MAX: usize = 100;
         test_state_circuit_error!(
-            15,
+            17,
             10000,
             MEMORY_ROWS_MAX,
             10000,
@@ -1301,7 +1310,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 10;
         test_state_circuit_error!(
-            14,
+            18,
             10000,
             MEMORY_ROWS_MAX,
             10000,
@@ -1375,7 +1384,7 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
         test_state_circuit_error!(
-            14,
+            17,
             2000,
             MEMORY_ROWS_MAX,
             1000,
@@ -1411,7 +1420,7 @@ mod tests {
         let storage_ops = builder.block.container.sorted_storage();
 
         test_state_circuit_ok!(
-            14,
+            17,
             2000,
             100,
             0x80,
