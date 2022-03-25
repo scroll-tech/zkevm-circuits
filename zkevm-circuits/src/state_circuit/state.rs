@@ -207,7 +207,7 @@ impl<
             // TODO(mason)
 
             // 5. RWC is monotonically strictly increasing for a set of all keys
-            // TODO(mason)
+            // see below
 
             // 6. Read consistency
             // When a row is READ
@@ -252,6 +252,7 @@ impl<
                 qb.s_enable(meta)
                     * q_all_keys_same(meta)
                     * (qb.rw_counter_delta(meta) - 1u64.expr()),
+                // this isn't correct. The specs say this should be u32....
                 fixed_table.u10(meta),
             )]
         });
