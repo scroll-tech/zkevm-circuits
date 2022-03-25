@@ -97,8 +97,7 @@ pub struct Config<
     // helper chips here
     key_is_same_with_prev: [IsZeroConfig<F>; 5],
 
-    // range tables here, TODO: organize them to a single struct?
-    allowed_memory_addresses: Column<Fixed>, // u32
+    // Fixed columns for range lookups
     fixed_table: FixedTable,
 }
 
@@ -129,8 +128,6 @@ impl<
         let s_enable = meta.fixed_column();
 
         let value = meta.advice_column();
-
-        let allowed_memory_addresses = meta.fixed_column();
 
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
         let qb = ConstraintBuilder::<F>::new(
@@ -274,19 +271,7 @@ impl<
             cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::Memory))
         });
 
-        // 2. mem_addr in range
-        // TODO: rewrite this using range check gates instead of lookup
-        meta.lookup_any("Memory address in allowed range", |meta| {
-            let allowed_memory_addresses =
-                meta.query_fixed(allowed_memory_addresses, Rotation::cur());
-
-            vec![(
-                qb.tag_is(meta, RwTableTag::Memory) * qb.address(meta),
-                allowed_memory_addresses,
-            )]
-        });
-
-        // 3. value is a byte when tag is Memory
+        // 2. value is a byte when tag is Memory
         meta.lookup_any("value is a byte when tag is Memory", |meta| {
             let value = meta.query_advice(value, Rotation::cur());
             vec![(
@@ -395,28 +380,9 @@ impl<
             auxs,
             s_enable,
             key_is_same_with_prev,
-            allowed_memory_addresses,
             fixed_table,
             power_of_randomness,
         }
-    }
-
-    /// Load lookup table / other fixed constants for this configuration.
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_region(
-            || "memory address table with zero",
-            |mut region| {
-                for idx in 0..=MEMORY_ADDRESS_MAX {
-                    region.assign_fixed(
-                        || "memory address table with zero",
-                        self.allowed_memory_addresses,
-                        idx,
-                        || Ok(F::from(idx as u64)),
-                    )?;
-                }
-                Ok(())
-            },
-        )
     }
 
     /// Assign cells.
@@ -691,7 +657,6 @@ impl<
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.load(&mut layouter)?;
         config.fixed_table.load(&mut layouter)?;
         config.assign(layouter, self.randomness, &self.rw_map)?;
 
