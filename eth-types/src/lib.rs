@@ -40,10 +40,10 @@ use std::fmt;
 use std::str::FromStr;
 
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
-/// trait and it's repr.
+/// trait and its repr.
 pub trait Field: FieldExt + PrimeField<Repr = [u8; 32]> {}
 
-// Impl custom `Field` trait for BN256 Fr to be used and consistend with the
+// Impl custom `Field` trait for BN256 Fr to be used and consistent with the
 // rest of the workspace.
 impl Field for Fr {}
 
@@ -71,7 +71,7 @@ pub trait ToBigEndian {
     fn to_be_bytes(&self) -> [u8; 32];
 }
 
-/// Trait uset do convert a scalar value to a 32 byte array in little endian.
+/// Trait used to convert a scalar value to a 32 byte array in little endian.
 pub trait ToLittleEndian {
     /// Convert the value to a 32 byte array in little endian.
     fn to_le_bytes(&self) -> [u8; 32];

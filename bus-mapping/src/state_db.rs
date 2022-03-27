@@ -70,19 +70,13 @@ impl Account {
 }
 
 /// In-memory key-value database that represents the Ethereum State Trie.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct StateDB {
     state: HashMap<Address, Account>,
     // Fields with transaction lifespan, will be clear in `clear_access_list_and_refund`.
     access_list_account: HashSet<Address>,
     access_list_account_storage: HashSet<(Address, U256)>,
     refund: u64,
-}
-
-impl Default for StateDB {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl StateDB {

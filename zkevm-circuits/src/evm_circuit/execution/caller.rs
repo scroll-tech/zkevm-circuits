@@ -22,7 +22,7 @@ use std::convert::TryInto;
 pub(crate) struct CallerGadget<F> {
     same_context: SameContextGadget<F>,
     // Using RLC to match against rw_table->stack_op value
-    caller_address: RandomLinearCombination<F, 20>,
+    caller_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
@@ -31,7 +31,7 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLER;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let caller_address = cb.query_rlc::<N_BYTES_ACCOUNT_ADDRESS>();
+        let caller_address = cb.query_rlc();
 
         // Lookup rw_table -> call_context with caller address
         cb.call_context_lookup(

@@ -374,8 +374,8 @@ impl Ord for StorageOp {
 }
 
 /// Represents a change in the Account AccessList implied by a `BeginTx`,
-/// `EXTCODECOPY`, `EXTCODESIZE`, `BALANCE`, `SELFDESTRUCT`, `*CALL`* or
-/// `CREATE*` step.
+/// `EXTCODECOPY`, `EXTCODESIZE`, `EXTCODEHASH` `BALANCE`, `SELFDESTRUCT`,
+/// `*CALL`* or `CREATE*` step.
 #[derive(Clone, PartialEq, Eq)]
 pub struct TxAccessListAccountOp {
     /// Transaction ID: Transaction index in the block starting at 1.

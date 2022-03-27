@@ -21,6 +21,7 @@ mod calldatasize;
 mod caller;
 mod callvalue;
 mod dup;
+mod extcodehash;
 mod mload;
 mod mstore;
 mod selfbalance;
@@ -35,6 +36,7 @@ use calldatasize::Calldatasize;
 use caller::Caller;
 use callvalue::Callvalue;
 use dup::Dup;
+use extcodehash::Extcodehash;
 use mload::Mload;
 use mstore::Mstore;
 use selfbalance::Selfbalance;
@@ -114,7 +116,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::EXTCODECOPY => {},
         // OpcodeId::RETURNDATASIZE => {},
         // OpcodeId::RETURNDATACOPY => {},
-        // OpcodeId::EXTCODEHASH => {},
+        OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
         // OpcodeId::BLOCKHASH => {},
         OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::TIMESTAMP => StackOnlyOpcode::<0, 1>::gen_associated_ops,
