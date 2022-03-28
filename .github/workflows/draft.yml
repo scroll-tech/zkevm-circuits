@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - scroll-stable
+      - scroll-dev
 
 jobs:
   update_release_draft:

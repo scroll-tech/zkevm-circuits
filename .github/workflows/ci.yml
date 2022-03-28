@@ -6,6 +6,8 @@ on:
   push:
     branches:
       - main
+      - scroll-stable
+      - scroll-dev
 
 ## `actions-rs/toolchain@v1` overwrite set to false so that
 ## `rust-toolchain` is always used and the only source of truth.
