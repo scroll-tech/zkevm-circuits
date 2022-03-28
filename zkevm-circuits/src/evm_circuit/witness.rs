@@ -7,6 +7,7 @@ use crate::evm_circuit::{
     },
     util::RandomLinearCombination,
 };
+use eth_types::{U256, ToAddress};
 use bus_mapping::circuit_input_builder::{self, ExecError, OogError, StepAuxiliaryData};
 use bus_mapping::operation::{self, AccountField, CallContextField};
 use eth_types::evm_types::OpcodeId;
@@ -813,6 +814,75 @@ impl Rw {
             .into(),
             _ => unimplemented!(),
         }
+    }
+
+    pub fn tag(&self) -> RwTableTag {
+        match self {
+            Self::Memory { .. } => RwTableTag::Memory,
+            Self::Stack { .. } => RwTableTag::Stack,
+            Self::AccountStorage { .. } => RwTableTag::AccountStorage,
+            Self::TxAccessListAccount { .. } => RwTableTag::TxAccessListAccount,
+            Self::TxAccessListAccountStorage { .. } => RwTableTag::TxAccessListAccountStorage,
+            Self::TxRefund { .. } => RwTableTag::TxRefund,
+            Self::Account { .. } => RwTableTag::Account,
+            Self::AccountDestructed { .. } => RwTableTag::AccountDestructed,
+            Self::CallContext { .. } => RwTableTag::CallContext,
+        }
+    }
+
+    pub fn id(&self) -> Option<u64> {
+        Some(0u64)
+        // match self {
+        //     Self::AccountStorage { storage_key, .. }
+        //     | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
+        //     Self::CallContext { .. }
+        //     | Self::Stack { .. }
+        //     | Self::Memory { .. }
+        //     | Self::TxRefund { .. }
+        //     | Self::Account { .. }
+        //     | Self::TxAccessListAccount { .. }
+        //     | Self::AccountDestructed { .. } => None,
+        // }
+    }
+
+    pub fn address(&self) -> Option<Address> {
+        match self {
+            Self::TxAccessListAccount {
+                account_address, ..
+            }
+            | Self::TxAccessListAccountStorage {
+                account_address, ..
+            }
+            | Self::Account {
+                account_address, ..
+            }
+            | Self::AccountStorage {
+                account_address, ..
+            }
+            | Self::AccountDestructed {
+                account_address, ..
+            } => Some(*account_address),
+            Self::Memory { memory_address, .. } => {
+                Some(U256::from(*memory_address).to_address())
+            },
+            Self::Stack { stack_pointer, .. } => Some(U256::from(*stack_pointer as u64).to_address()),
+            Self::CallContext { .. } | Self::TxRefund { .. } => None,
+        }
+    }
+
+    pub fn field_tag(&self) -> Option<u64> {
+        Some(0)
+        // match self {
+        //     Self::Memory { .. } => RwTableTag::Memory,
+        //     Self::Stack { .. } => RwTableTag::Stack,
+        //     Self::AccountStorage { .. } => RwTableTag::AccountStorage,
+        //     Self::TxAccessListAccount { .. } => RwTableTag::TxAccessListAccount,
+        //     Self::TxAccessListAccountStorage { .. } => RwTableTag::TxAccessListAccountStorage,
+        //     Self::TxRefund { .. } => RwTableTag::TxRefund,
+        //     Self::Account { .. } => RwTableTag::Account,
+        //     Self::AccountDestructed { .. } => RwTableTag::AccountDestructed,
+        //     Self::CallContext { .. } => RwTableTag::CallContext,
+        // }
     }
 
     pub fn account_address(&self) -> Option<Address> {
