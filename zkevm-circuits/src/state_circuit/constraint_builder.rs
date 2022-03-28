@@ -79,20 +79,21 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
         meta.query_advice(self.keys[0], Rotation::cur())
     }
 
-    // This corresponds to TxId or CallId if applicable. 0 otherwise.
+    // tx_id or call_id if applicable. 0 otherwise.
     pub(super) fn id(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
         meta.query_advice(self.keys[1], Rotation::cur())
     }
 
-    pub(super) fn account_address(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+    // stack, memory, or account address depending on the row's tag. 0 otherwise.
+    pub(super) fn address(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
         meta.query_advice(self.keys[2], Rotation::cur())
     }
 
-    pub(super) fn field_tag(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
-        meta.query_advice(self.keys[3], Rotation::cur())
+    pub(super) fn address_delta(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        self.address(meta) - meta.query_advice(self.keys[2], Rotation::prev())
     }
 
-    pub(super) fn account_address_limbs(
+    pub(super) fn address_limbs(
         &self,
         meta: &mut VirtualCells<F>,
     ) -> [Expression<F>; N_LIMBS_ACCOUNT_ADDRESS] {
@@ -100,12 +101,12 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
             .map(|limb| meta.query_advice(limb, Rotation::cur()))
     }
 
-    pub(super) fn address(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
-        meta.query_advice(self.keys[3], Rotation::cur())
+    pub(super) fn address_from_limbs(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        from_digits(&self.address_limbs(meta), (1u64 << 16).expr())
     }
 
-    pub(super) fn address_from_limbs(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
-        from_digits(&self.account_address_limbs(meta), (1u64 << 16).expr())
+    pub(super) fn field_tag(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        meta.query_advice(self.keys[3], Rotation::cur())
     }
 
     pub(super) fn storage_key(&self, meta: &mut VirtualCells<F>) -> Expression<F> {

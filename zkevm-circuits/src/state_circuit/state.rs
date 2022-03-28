@@ -182,8 +182,8 @@ impl<
             // 1. key2 expands to its limbs and for each limb, 0 <= limb < 2^16
             cb.require_equal(
                 "account address matches its limbs",
-                qb.account_address(meta),
-                qb.account_address_limbs(meta)
+                qb.address(meta),
+                qb.address_limbs(meta)
                     .iter()
                     .fold(0u64.expr(), |result, limb| {
                         limb.clone() + result * (1u64 << 16).expr()
@@ -225,7 +225,7 @@ impl<
         for i in 0..N_LIMBS_ACCOUNT_ADDRESS {
             meta.lookup_any("address limbs fit into u16", |meta| {
                 vec![(
-                    qb.s_enable(meta) * qb.account_address_limbs(meta)[i].clone(),
+                    qb.s_enable(meta) * qb.address_limbs(meta)[i].clone(),
                     fixed_table.u16(meta),
                 )]
             });
@@ -266,8 +266,8 @@ impl<
             let q_read = 1u64.expr() - is_write;
 
             // 0. Unused keys are 0
-            cb.require_zero("key2 is 0", qb.account_address(meta));
-            cb.require_zero("key4 is 0", qb.storage_key(meta));
+            cb.require_zero("field tag is 0", qb.field_tag(meta));
+            cb.require_zero("storage key is 0", qb.storage_key(meta));
 
             // 1. First access for a set of all keys
             //
@@ -297,12 +297,10 @@ impl<
 
             let is_write = meta.query_advice(is_write, Rotation::cur());
             let q_read = 1u64.expr() - is_write;
-            let key2 = meta.query_advice(keys[2], Rotation::cur());
-            let key4 = meta.query_advice(keys[4], Rotation::cur());
 
             // 0. Unused keys are 0
-            cb.require_zero("key2 is 0", key2);
-            cb.require_zero("key4 is 0", key4);
+            cb.require_zero("field tag is 0", qb.field_tag(meta));
+            cb.require_zero("storage key is 0", qb.storage_key(meta));
 
             // 1. First access for a set of all keys
             //
@@ -331,11 +329,9 @@ impl<
             let mut cb = new_cb();
             let tag_is_same_with_prev = key_is_same_with_prev[0].is_zero_expression.clone();
             let call_id_same_with_prev = key_is_same_with_prev[1].is_zero_expression.clone();
-            let stack_ptr = meta.query_advice(keys[3], Rotation::cur());
-            let stack_ptr_prev = meta.query_advice(keys[3], Rotation::prev());
             cb.require_boolean(
                 "stack pointer only increases by 0 or 1",
-                stack_ptr - stack_ptr_prev,
+                qb.address_delta(meta),
             );
             cb.gate(
                 qb.s_enable(meta)
@@ -357,8 +353,8 @@ impl<
             // TODO: connection to MPT on first and last access for each (address, key)
 
             // 0. Unused keys are 0
-            cb.require_zero("key1 is 0", qb.id(meta));
-            cb.require_zero("key3 is 0", qb.address(meta));
+            // cb.require_zero("key1 is 0", qb.id(meta)); // moved from aux to key1
+            cb.require_zero("key3 is 0", qb.field_tag(meta));
 
             // 1. First access for a set of all keys
             //
@@ -443,8 +439,8 @@ impl<
                         &key_is_same_with_prev_chips,
                     )?;
 
-                    rw.account_address().map_or(Ok(()), |a| {
-                        self.assign_account_address_and_limbs(&mut region, offset, a)
+                    rw.address().map_or(Ok(()), |a| {
+                        self.assign_address_and_limbs(&mut region, offset, a)
                     })?;
 
                     rw.storage_key().map_or(Ok(()), |k| {
@@ -524,7 +520,7 @@ impl<
         Ok(())
     }
 
-    fn assign_account_address_and_limbs(
+    fn assign_address_and_limbs(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -540,7 +536,7 @@ impl<
         }
 
         region.assign_advice(
-            || "key2 (account_address)",
+            || "key2 (address)",
             self.keys[2],
             offset,
             || Ok(address.to_scalar().unwrap()),

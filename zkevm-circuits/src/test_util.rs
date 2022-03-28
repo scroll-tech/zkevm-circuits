@@ -101,7 +101,7 @@ pub fn test_circuits_using_witness_block(
             })
             .collect();
 
-        let prover = MockProver::<Fr>::run(12, &state_circuit, power_of_randomness).unwrap();
+        let prover = MockProver::<Fr>::run(17, &state_circuit, power_of_randomness).unwrap();
         prover.verify()?;
     }
 
