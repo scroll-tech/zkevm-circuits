@@ -34,11 +34,7 @@ impl FixedTable {
     }
 
     pub(crate) fn load<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        for (column, exponent) in [
-            (self.u8, 8),
-            (self.u10, 10),
-            (self.u16, 16),
-        ] {
+        for (column, exponent) in [(self.u8, 8), (self.u10, 10), (self.u16, 16)] {
             layouter.assign_region(
                 || format!("assign u{} fixed column", exponent),
                 |mut region| {
