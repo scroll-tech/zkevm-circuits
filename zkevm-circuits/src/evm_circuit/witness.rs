@@ -612,212 +612,6 @@ impl Rw {
     }
 
     pub fn table_assignment<F: Field>(&self, randomness: F) -> RwRow<F> {
-        match self {
-            Self::TxAccessListAccount {
-                rw_counter,
-                is_write,
-                tx_id,
-                account_address,
-                value,
-                value_prev,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::TxAccessListAccount as u64),
-                F::from(*tx_id as u64),
-                account_address.to_scalar().unwrap(),
-                F::zero(),
-                F::zero(),
-                F::from(*value as u64),
-                F::from(*value_prev as u64),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::TxAccessListAccountStorage {
-                rw_counter,
-                is_write,
-                tx_id,
-                account_address,
-                storage_key,
-                value,
-                value_prev,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::TxAccessListAccountStorage as u64),
-                F::from(*tx_id as u64),
-                account_address.to_scalar().unwrap(),
-                F::zero(),
-                RandomLinearCombination::random_linear_combine(
-                    storage_key.to_le_bytes(),
-                    randomness,
-                ),
-                F::from(*value as u64),
-                F::from(*value_prev as u64),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::TxRefund {
-                rw_counter,
-                is_write,
-                tx_id,
-                value,
-                value_prev,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::TxRefund as u64),
-                F::from(*tx_id as u64),
-                F::zero(),
-                F::zero(),
-                F::zero(),
-                F::from(*value),
-                F::from(*value_prev),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::Account {
-                rw_counter,
-                is_write,
-                account_address,
-                field_tag,
-                value,
-                value_prev,
-            } => {
-                let to_scalar = |value: &Word| match field_tag {
-                    AccountFieldTag::Nonce => value.to_scalar().unwrap(),
-                    _ => RandomLinearCombination::random_linear_combine(
-                        value.to_le_bytes(),
-                        randomness,
-                    ),
-                };
-                [
-                    F::from(*rw_counter as u64),
-                    F::from(*is_write as u64),
-                    F::from(RwTableTag::Account as u64),
-                    F::zero(),
-                    account_address.to_scalar().unwrap(),
-                    F::from(*field_tag as u64),
-                    F::zero(),
-                    to_scalar(value),
-                    to_scalar(value_prev),
-                    F::zero(),
-                    F::zero(),
-                ]
-                .into()
-            }
-            Self::CallContext {
-                rw_counter,
-                is_write,
-                call_id,
-                field_tag,
-                value,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::CallContext as u64),
-                F::from(*call_id as u64),
-                F::zero(),
-                F::from(*field_tag as u64),
-                F::zero(),
-                match field_tag {
-                    CallContextFieldTag::CodeSource | CallContextFieldTag::Value => {
-                        RandomLinearCombination::random_linear_combine(
-                            value.to_le_bytes(),
-                            randomness,
-                        )
-                    }
-                    CallContextFieldTag::CallerAddress
-                    | CallContextFieldTag::CalleeAddress
-                    | CallContextFieldTag::IsSuccess => value.to_scalar().unwrap(),
-                    _ => F::from(value.low_u64()),
-                },
-                F::zero(),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::Stack {
-                rw_counter,
-                is_write,
-                call_id,
-                stack_pointer,
-                value,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::Stack as u64),
-                F::from(*call_id as u64),
-                F::from(*stack_pointer as u64),
-                F::zero(),
-                F::zero(),
-                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
-                F::zero(),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::Memory {
-                rw_counter,
-                is_write,
-                call_id,
-                memory_address,
-                byte,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::Memory as u64),
-                F::from(*call_id as u64),
-                F::from(*memory_address),
-                F::zero(),
-                F::zero(),
-                F::from(*byte as u64),
-                F::zero(),
-                F::zero(),
-                F::zero(),
-            ]
-            .into(),
-            Self::AccountStorage {
-                rw_counter,
-                is_write,
-                account_address,
-                storage_key,
-                value,
-                value_prev,
-                tx_id,
-                committed_value,
-            } => [
-                F::from(*rw_counter as u64),
-                F::from(*is_write as u64),
-                F::from(RwTableTag::AccountStorage as u64),
-                F::from(*tx_id as u64),
-                account_address.to_scalar().unwrap(),
-                F::zero(),
-                RandomLinearCombination::random_linear_combine(
-                    storage_key.to_le_bytes(),
-                    randomness,
-                ),
-                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness),
-                RandomLinearCombination::random_linear_combine(
-                    value_prev.to_le_bytes(),
-                    randomness,
-                ),
-                F::zero(),
-                RandomLinearCombination::random_linear_combine(
-                    committed_value.to_le_bytes(),
-                    randomness,
-                ),
-            ]
-            .into(),
-            _ => unimplemented!(),
-        }
-    }
-
-    pub fn table_assignment_2<F: Field>(&self, randomness: F) -> RwRow<F> {
-        dbg!(self);
         RwRow {
             rw_counter: F::from(self.rw_counter() as u64),
             is_write: F::from(self.is_write() as u64),
@@ -831,7 +625,7 @@ impl Rw {
             ),
             value: self.value_assignment(randomness),
             value_prev: self.value_prev_assignment(randomness).unwrap_or_default(),
-            aux1: F::zero(), // only use AccountStorage::tx_id for, which moved to key1.
+            aux1: F::zero(), // only used for AccountStorage::tx_id, which moved to key1.
             aux2: self
                 .committed_value_assignment(randomness)
                 .unwrap_or_default(),
@@ -948,9 +742,23 @@ impl Rw {
 
     fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
+            Self::CallContext {
+                field_tag, value, ..
+            } => {
+                match field_tag {
+                    // Only these two tags have values that may not fit into a scalar, so we need to
+                    // RLC.
+                    CallContextFieldTag::CodeSource | CallContextFieldTag::Value => {
+                        RandomLinearCombination::random_linear_combine(
+                            value.to_le_bytes(),
+                            randomness,
+                        )
+                    }
+                    _ => value.to_scalar().unwrap(),
+                }
+            }
             Self::Account { value, .. }
             | Self::AccountStorage { value, .. }
-            | Self::CallContext { value, .. }
             | Self::Stack { value, .. } => {
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
             }
