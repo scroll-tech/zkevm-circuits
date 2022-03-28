@@ -83,3 +83,5 @@ jobs:
       # where Greeter.sol is deployed.
       # - run: ./run.sh --steps "tests" --tests "circuits"
       - run: ./run.sh --steps "cleanup"
+      - name: Show sccache stats
+        run: ~/.cargo/bin/sccache -s

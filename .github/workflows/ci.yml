@@ -74,6 +74,8 @@ jobs:
         with:
           command: test
           args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks
+      - name: Show sccache stats
+        run: ~/.cargo/bin/sccache -s
 
   build:
     if: github.event.pull_request.draft == false
@@ -135,6 +137,8 @@ jobs:
         with:
           command: test
           args: --verbose --release --all-features -p circuit-benchmarks --no-run
+      - name: Show sccache stats
+        run: ~/.cargo/bin/sccache -s
 
   bitrot:
     if: github.event.pull_request.draft == false
@@ -184,6 +188,8 @@ jobs:
         with:
           command: build
           args: --benches --examples --all-features
+      - name: Show sccache stats
+        run: ~/.cargo/bin/sccache -s
 
   doc-links:
     if: github.event.pull_request.draft == false
@@ -239,6 +245,8 @@ jobs:
         with:
           command: doc
           args: --no-deps --all --document-private-items
+      - name: Show sccache stats
+        run: ~/.cargo/bin/sccache -s
 
   fmt:
     if: github.event.pull_request.draft == false
@@ -292,3 +300,5 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
+      - name: Show sccache stats
+        run: ~/.cargo/bin/sccache -s

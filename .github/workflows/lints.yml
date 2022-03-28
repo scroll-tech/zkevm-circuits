@@ -70,3 +70,5 @@ jobs:
           name: Clippy
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features --all-targets -- -D warnings
+      - name: Show sccache stats
+        run: ~/.cargo/bin/sccache -s
