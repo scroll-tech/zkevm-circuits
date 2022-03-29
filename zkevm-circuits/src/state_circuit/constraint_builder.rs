@@ -198,7 +198,7 @@ fn sort_keys<F: FieldExt>(
 
     let mut key_0 = tag;
     key_0 = key_0 * (1u64 << N_BITS_ID).expr() + id;
-    key_0 = key_0 * (1u64 << N_BITS_ADDRESS / 4).expr().square().square() + address;
+    key_0 = key_0 * (1u64 << (N_BITS_ADDRESS / 4)).expr().square().square() + address;
     key_0 = key_0 * (1u64 << N_BITS_FIELD_TAG).expr() + field_tag;
     key_0 = key_0 * (1u64 << n_bits_remaining).expr()
         + from_digits(&storage_key_bytes[..n_bytes_remaining], (1u64 << 16).expr());

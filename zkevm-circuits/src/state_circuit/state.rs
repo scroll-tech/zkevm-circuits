@@ -15,7 +15,7 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -393,19 +393,12 @@ impl<
             || "State operations",
             |mut region| {
                 let mut offset = 1;
-                let mut rows: Vec<(Rw, RwRow<F>)> = [
-                    RwTableTag::Memory,
-                    RwTableTag::Stack,
-                    RwTableTag::AccountStorage,
-                ]
-                .iter()
-                .map(|tag| {
-                    rw_map.0[tag]
-                        .iter()
-                        .map(|rw| (rw.clone(), rw.table_assignment(randomness)))
-                })
-                .flatten()
-                .collect();
+                let mut rows: Vec<(Rw, RwRow<F>)> = rw_map
+                    .0
+                    .values()
+                    .flatten()
+                    .map(|row| (row.clone(), row.table_assignment(randomness)))
+                    .collect();
                 rows.sort_by_key(|(_, rw)| {
                     (rw.tag, rw.key1, rw.key2, rw.key3, rw.key4, rw.rw_counter)
                 });
@@ -414,21 +407,20 @@ impl<
                     panic!("too many storage operations");
                 }
                 for (index, (rw, rw_row)) in rows.iter().enumerate() {
-                    let row_prev = if index == 0 {
-                        RwRow::default()
-                    } else {
-                        rows[index - 1].1
-                    };
-                    self.assign_row(&mut region, offset, *rw_row, row_prev)?;
+                    self.assign_row(&mut region, offset, *rw_row)?;
 
-                    // these can be if lets?
-                    rw.address().map_or(Ok(()), |a| {
-                        self.assign_address_and_limbs(&mut region, offset, a)
-                    })?;
+                    if let Some(address) = rw.address() {
+                        self.assign_address_and_limbs(&mut region, offset, address)?;
+                    }
 
-                    rw.storage_key().map_or(Ok(()), |k| {
-                        self.assign_storage_key_and_bytes(&mut region, offset, randomness, k)
-                    })?;
+                    if let Some(storage_key) = rw.storage_key() {
+                        self.assign_storage_key_and_bytes(
+                            &mut region,
+                            offset,
+                            randomness,
+                            storage_key,
+                        )?;
+                    }
 
                     let (sort_key_0, sort_key_1): (F, F) = sort_key_values(
                         rw.tag(),
@@ -479,7 +471,6 @@ impl<
         region: &mut Region<'_, F>,
         offset: usize,
         row: RwRow<F>,
-        row_prev: RwRow<F>,
     ) -> Result<(), Error> {
         let memory_or_stack_address = row.key3;
         let rw_counter = row.rw_counter;
@@ -517,13 +508,13 @@ impl<
         region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
 
         for i in 0..5 {
-            let (value, diff) = match i {
+            let value = match i {
                 // FIXME: find a better way here
-                0 => (row.tag, row.tag - row_prev.tag),
-                1 => (row.key1, row.key1 - row_prev.key1),
-                2 => (row.key2, row.key2 - row_prev.key2),
-                3 => (row.key3, row.key3 - row_prev.key3),
-                4 => (row.key4, row.key4 - row_prev.key4),
+                0 => row.tag,
+                1 => row.key1,
+                2 => row.key2,
+                3 => row.key3,
+                4 => row.key4,
                 _ => unreachable!(),
             };
             region.assign_advice(
