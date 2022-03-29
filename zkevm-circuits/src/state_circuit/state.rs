@@ -93,10 +93,6 @@ pub struct Config<
     value: Column<Advice>,
     auxs: [Column<Advice>; 2],
 
-    // helper chips and columns here
-    key_is_same_with_prev: [IsZeroConfig<F>; 5],
-    keys_diff_inv: [Column<Advice>; 5],
-
     lexicographic_ordering: [IsZeroConfig<F>; 2],
 
     // Fixed columns for range lookups
@@ -122,7 +118,6 @@ impl<
         let rw_counter = meta.advice_column();
         let is_write = meta.advice_column();
         let keys = [(); 5].map(|_| meta.advice_column());
-        let keys_diff_inv = [(); 5].map(|_| meta.advice_column());
         let key2_limbs = [(); N_LIMBS_ACCOUNT_ADDRESS].map(|_| meta.advice_column());
         let key4_bytes = [(); N_BYTES_WORD].map(|_| meta.advice_column());
         let auxs = [(); 2].map(|_| meta.advice_column());
@@ -143,19 +138,6 @@ impl<
             rw_counter,
         );
 
-        let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
-            IsZeroChip::configure(
-                meta,
-                |meta| meta.query_fixed(s_enable, Rotation::cur()),
-                |meta| {
-                    let value_cur = meta.query_advice(keys[idx], Rotation::cur());
-                    let value_prev = meta.query_advice(keys[idx], Rotation::prev());
-                    value_cur - value_prev
-                },
-                keys_diff_inv[idx],
-            )
-        });
-
         let lexicographic_ordering =
             [(0, meta.advice_column()), (1, meta.advice_column())].map(|(i, advice_column)| {
                 IsZeroChip::configure(
@@ -167,11 +149,8 @@ impl<
             });
 
         let q_all_keys_same = |_: &mut VirtualCells<F>| {
-            key_is_same_with_prev[0].is_zero_expression.clone()
-                * key_is_same_with_prev[1].is_zero_expression.clone()
-                * key_is_same_with_prev[2].is_zero_expression.clone()
-                * key_is_same_with_prev[3].is_zero_expression.clone()
-                * key_is_same_with_prev[4].is_zero_expression.clone()
+            lexicographic_ordering[0].is_zero_expression.clone()
+                * lexicographic_ordering[1].is_zero_expression.clone()
         };
         let q_not_all_keys_same = |meta: &mut VirtualCells<F>| 1u64.expr() - q_all_keys_same(meta);
 
@@ -340,20 +319,13 @@ impl<
         });
 
         // 3. stack_ptr only increases by 0 or 1
-        meta.create_gate("Stack pointer diff be 0 or 1", |meta| {
+        meta.create_gate("Within a call, Stack pointer diff be 0 or 1", |meta| {
             let mut cb = new_cb();
-            let tag_is_same_with_prev = key_is_same_with_prev[0].is_zero_expression.clone();
-            let call_id_same_with_prev = key_is_same_with_prev[1].is_zero_expression.clone();
             cb.require_boolean(
                 "stack pointer only increases by 0 or 1",
                 qb.address_delta(meta),
             );
-            cb.gate(
-                qb.s_enable(meta)
-                    * qb.tag_is(meta, RwTableTag::Stack)
-                    * tag_is_same_with_prev
-                    * call_id_same_with_prev,
-            )
+            cb.gate(qb.s_enable(meta) * q_all_keys_same(meta) * qb.tag_is(meta, RwTableTag::Stack))
         });
 
         ///////////////////////// Storage related constraints /////////////////////////
@@ -395,12 +367,10 @@ impl<
             value,
             is_write,
             keys,
-            keys_diff_inv,
             key2_limbs,
             key4_bytes,
             auxs, // this is never assigned....
             s_enable,
-            key_is_same_with_prev,
             fixed_table,
             power_of_randomness,
             lexicographic_ordering,
@@ -414,9 +384,6 @@ impl<
         randomness: F,
         rw_map: &RwMap,
     ) -> Result<(), Error> {
-        let key_is_same_with_prev_chips: [IsZeroChip<F>; 5] = [0, 1, 2, 3, 4]
-            .map(|idx| IsZeroChip::construct(self.key_is_same_with_prev[idx].clone()));
-
         let sort_key_chips = self
             .lexicographic_ordering
             .clone()
@@ -452,13 +419,7 @@ impl<
                     } else {
                         rows[index - 1].1
                     };
-                    self.assign_row(
-                        &mut region,
-                        offset,
-                        *rw_row,
-                        row_prev,
-                        &key_is_same_with_prev_chips,
-                    )?;
+                    self.assign_row(&mut region, offset, *rw_row, row_prev)?;
 
                     // these can be if lets?
                     rw.address().map_or(Ok(()), |a| {
@@ -519,7 +480,6 @@ impl<
         offset: usize,
         row: RwRow<F>,
         row_prev: RwRow<F>,
-        diff_is_zero_chips: &[IsZeroChip<F>; 5],
     ) -> Result<(), Error> {
         let memory_or_stack_address = row.key3;
         let rw_counter = row.rw_counter;
@@ -556,7 +516,7 @@ impl<
         region.assign_advice(|| "value", self.value, offset, || Ok(value))?;
         region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
 
-        for (i, diff_is_zero_chip) in diff_is_zero_chips.iter().enumerate() {
+        for i in 0..5 {
             let (value, diff) = match i {
                 // FIXME: find a better way here
                 0 => (row.tag, row.tag - row_prev.tag),
@@ -572,7 +532,6 @@ impl<
                 offset,
                 || Ok(value),
             )?;
-            diff_is_zero_chip.assign(region, offset, Some(diff))?;
         }
 
         Ok(())
