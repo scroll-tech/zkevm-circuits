@@ -10,9 +10,7 @@ use crate::operation::{
 use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
-use eth_types::evm_types::{
-    Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress,
-};
+use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
 use eth_types::{
     self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, H160,
 };
