@@ -5,7 +5,7 @@ use crate::{
     operation::{StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
 };
-use eth_types::{GethExecStep, ToWord, Word, U256};
+use eth_types::{GethExecStep, ToWord, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::SLOAD`](crate::evm::OpcodeId::SLOAD)
@@ -19,7 +19,7 @@ impl Opcode for Sload {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let cur_step = &geth_steps[0];
-        let next_step = &geth_steps[1];
+        let _next_step = &geth_steps[1];
         let mut exec_step = state.new_step(cur_step)?;
 
         let call_id = state.call()?.call_id;
@@ -70,12 +70,18 @@ impl Opcode for Sload {
         state.push_stack_op(&mut exec_step, RW::READ, stack_position, key)?;
 
         // Storage read
-        let storage_value_read = next_step.storage.get_or_err(&key)?;
-        let (warm, _storage_value_prev) = match cur_step.storage.get(&key) {
-            Some(v) => (true, *v),
-            None => (false, U256::from(0)),
+        let storage_value_read = cur_step.storage.get_or_err(&key)?;
+
+        let warm = match state.tx.tx_storage.get(&(contract_addr, key)) {
+            Some(_v) => (true),
+            None => (false),
         };
-        let (_found, committed_value) = state.sdb.get_storage(&contract_addr, &key);
+        state
+            .tx
+            .tx_storage
+            .insert((contract_addr, key), storage_value_read);
+
+        let (_, committed_value) = state.sdb.get_storage(&contract_addr, &key);
         let committed_value = Word::from(committed_value);
         //assert!(found, "committed_value should be in state db");
 
@@ -91,8 +97,8 @@ impl Opcode for Sload {
                 committed_value,
             ),
         );
-        //println!("sload bus map {:?} {:?} {:?} {:?} {:?} {:?}",contract_addr, key,
-        // storage_value_read, storage_value_prev, state.tx_ctx.id(), committed_value);
+        println!("sload bus map contract_addr {:?} key {:?} storage_value_read {:?} txid {:?} committed_value {:?}",contract_addr, key,
+        storage_value_read, state.tx_ctx.id(), committed_value);
 
         // First stack write
         state.push_stack_op(

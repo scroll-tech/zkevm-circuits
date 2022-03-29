@@ -10,8 +10,12 @@ use crate::operation::{
 use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
-use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
-use eth_types::{self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word};
+use eth_types::evm_types::{
+    Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress,
+};
+use eth_types::{
+    self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, H160,
+};
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
 
@@ -615,9 +619,8 @@ pub struct Transaction {
     pub value: Word,
     /// Input / Call Data
     pub input: Vec<u8>,
-    /// storage state before tx, read only during execution. Used for gas
-    /// calculation in opcodes like sstore
-    pub sdb: StateDB,
+    /// storage db for this tx
+    pub tx_storage: HashMap<(H160, Word), Word>,
     /// Calls made in the transaction
     calls: Vec<Call>,
     /// Execution steps
@@ -680,7 +683,7 @@ impl Transaction {
         };
 
         Ok(Self {
-            sdb: sdb.clone(),
+            tx_storage: Default::default(),
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
@@ -1471,7 +1474,7 @@ impl<'a> CircuitInputBuilder {
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
-            log::debug!("handle opcode {:?}", geth_step.op);
+            log::debug!("handle {}th opcode {:?} ", index, geth_step.op);
             let exec_steps = gen_associated_ops(
                 &geth_step.op,
                 &mut state_ref,
@@ -1487,8 +1490,15 @@ impl<'a> CircuitInputBuilder {
         let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
         tx.steps.push(end_tx_step);
 
-        self.block.txs.push(tx);
         self.sdb.clear_access_list_and_refund();
+
+        let kv = tx.tx_storage.clone();
+        for ((addr, k), v) in kv {
+            let (_, ptr) = self.sdb.get_storage_mut(&addr, &k);
+            *ptr = v;
+        }
+
+        self.block.txs.push(tx);
 
         Ok(())
     }

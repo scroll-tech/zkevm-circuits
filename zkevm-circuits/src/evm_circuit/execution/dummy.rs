@@ -1,18 +1,13 @@
 use std::marker::PhantomData;
 
-use crate::{
-    evm_circuit::{
-        execution::ExecutionGadget,
-        step::ExecutionState,
-        util::{
-            constraint_builder::{ConstraintBuilder},
-        },
-        witness::{Block, Call, ExecStep, Transaction},
-    },
+use crate::evm_circuit::{
+    execution::ExecutionGadget,
+    step::ExecutionState,
+    util::constraint_builder::ConstraintBuilder,
+    witness::{Block, Call, ExecStep, Transaction},
 };
 
-
-use eth_types::{Field};
+use eth_types::Field;
 use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]

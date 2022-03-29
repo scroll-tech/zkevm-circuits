@@ -8,7 +8,7 @@ use lazy_static::lazy_static;
 use log::trace;
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{
-    test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
+    test::run_test_circuit_complete_fixed_table, witness::block_convert,
 };
 use zkevm_circuits::state_circuit::StateCircuit;
 
@@ -21,11 +21,9 @@ async fn test_evm_circuit_block(block_num: u64) {
     let cli = BuilderClient::new(cli).await.unwrap();
     let builder = cli.gen_inputs(block_num).await.unwrap();
 
-    //println!("builder block {:#?}", builder.block);
     let block = block_convert(&builder.block, &builder.code_db);
 
-    //println!("block {:#?}", block);
-    run_test_circuit_incomplete_fixed_table(block).expect("evm_circuit verification failed");
+    run_test_circuit_complete_fixed_table(block).expect("evm_circuit verification failed");
 }
 
 #[tokio::test]

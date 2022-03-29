@@ -7,7 +7,7 @@ use std::fmt;
 /// Represents a snapshot of the EVM stack state at a certain
 /// execution step height.
 #[derive(Clone, Eq, PartialEq)]
-pub struct Storage(pub(crate) HashMap<Word, Word>);
+pub struct Storage(pub HashMap<Word, Word>);
 
 impl<T: Into<HashMap<Word, Word>>> From<T> for Storage {
     fn from(map: T) -> Self {
@@ -49,5 +49,12 @@ impl Storage {
     /// is not found.
     pub fn get_or_err(&self, key: &Word) -> Result<Word, Error> {
         self.get(key).cloned().ok_or(Error::InvalidStorageKey)
+    }
+
+    /// todo
+    pub fn merge(&mut self, other: Storage) {
+        for (k, v) in other.0 {
+            self.0.insert(k, v);
+        }
     }
 }

@@ -20,7 +20,7 @@ impl Opcode for Sstore {
         steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let step = &steps[0];
-        let _next_step = &steps[1];
+        let next_step = &steps[1];
         let mut exec_step = state.new_step(step)?;
 
         let _call_id = state.call()?.call_id;
@@ -74,20 +74,22 @@ impl Opcode for Sstore {
         // Storage read
         //let storage_value_read = next_step.storage.get_or_err(&key)?;
 
-        let (warm, _) = match step.storage.get(&key) {
+        let (warm, value_prev) = match state.tx.tx_storage.get(&(contract_addr, key)) {
             Some(v) => (true, *v),
-            None => (false, U256::from(0)),
+            None => (false, U256::from(0u64)),
         };
+        state.tx.tx_storage.insert((contract_addr, key), value);
 
-        let (_, value_ptr) = state.sdb.get_storage_mut(&contract_addr, &key);
-        let value_prev = *value_ptr;
-        *value_ptr = value;
-
-        let (_, committed_value) = state.tx.sdb.get_storage(&state.call()?.address, &key);
+        let (_, committed_value) = state.sdb.get_storage(&contract_addr, &key);
         let committed_value = Word::from(committed_value);
         //assert!(found, "committed_value should be in state db");
 
-        println!("value {:?} value_prev {:?}", value, value_prev);
+        println!(
+            "busmap sstore key {:?} value {:?} value_prev {:?} committed_value {} warm {} gas {}",
+            key, value, value_prev, committed_value, warm, step.gas_cost.0
+        );
+        println!("storage {:?}", step.storage);
+        println!("next step storage {:?}", next_step.storage);
         //let value_prev = steps[1].storage.get_or_err(&key)?;
         state.push_op_reversible(
             &mut exec_step,

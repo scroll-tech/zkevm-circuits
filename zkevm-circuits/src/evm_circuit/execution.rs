@@ -136,7 +136,6 @@ pub(crate) struct ExecutionConfig<F> {
     dup_gadget: DupGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
     end_tx_gadget: EndTxGadget<F>,
-    is0_gadget: Is0Gadget<F>,
     error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
     jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
@@ -343,7 +342,6 @@ impl<F: Field> ExecutionConfig<F> {
             q_step,
             q_step_first,
             q_step_last,
-            is0_gadget: configure_gadget!(),
             add_gadget: configure_gadget!(),
             mul_gadget: configure_gadget!(),
             bitwise_gadget: configure_gadget!(),
@@ -630,7 +628,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SIGNEXTEND => {
                 assign_exec_step!(self.signextend_gadget)
             }
-            ExecutionState::ISZERO => assign_exec_step!(self.is0_gadget),
+            ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::SCMP => {
                 assign_exec_step!(self.signed_comparator_gadget)
@@ -684,7 +682,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLDATASIZE => {
                 assign_exec_step!(self.calldatasize_gadget)
             }
-            ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
             _ => unimplemented!(),
         }
 
