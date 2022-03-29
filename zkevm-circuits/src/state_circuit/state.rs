@@ -98,7 +98,6 @@ pub struct Config<
     keys_diff_inv: [Column<Advice>; 5],
 
     lexicographic_ordering: [IsZeroConfig<F>; 2],
-    lexicographic_ordering_diff_inv: [Column<Advice>; 2],
 
     // Fixed columns for range lookups
     fixed_table: FixedTable,
@@ -139,7 +138,8 @@ impl<
             key2_limbs,
             s_enable,
             key4_bytes,
-            power_of_randomness.clone(), // i don't think both of these need power_of_randomness
+            power_of_randomness.clone(), /* TODO: these don't both of these need
+                                          * power_of_randomness */
             rw_counter,
         );
 
@@ -156,21 +156,15 @@ impl<
             )
         });
 
-        let lexicographic_ordering_diff_inv = [meta.advice_column(), meta.advice_column()];
-        let lexicographic_ordering: [IsZeroConfig<F>; 2] = [
-            IsZeroChip::configure(
-                meta,
-                |meta| qb.s_enable(meta),
-                |meta| qb.sort_keys_delta(meta).0,
-                lexicographic_ordering_diff_inv[0],
-            ),
-            IsZeroChip::configure(
-                meta,
-                |meta| qb.s_enable(meta),
-                |meta| qb.sort_keys_delta(meta).1,
-                lexicographic_ordering_diff_inv[1],
-            ),
-        ];
+        let lexicographic_ordering =
+            [(0, meta.advice_column()), (1, meta.advice_column())].map(|(i, advice_column)| {
+                IsZeroChip::configure(
+                    meta,
+                    |meta| qb.s_enable(meta),
+                    |meta| qb.sort_keys_delta(meta)[i].clone(),
+                    advice_column,
+                )
+            });
 
         let q_all_keys_same = |_: &mut VirtualCells<F>| {
             key_is_same_with_prev[0].is_zero_expression.clone()
@@ -224,7 +218,7 @@ impl<
             cb.require_boolean("is_write should be boolean", is_write);
 
             // 4. Keys are sorted in lexicographic order for same Tag
-            // TODO(mason)
+            // see lexicographic_ordering chips
 
             // 5. RWC is monotonically strictly increasing for a set of all keys
             // see below
@@ -340,6 +334,7 @@ impl<
         meta.lookup_any("Stack address in allowed range", |meta| {
             vec![(
                 qb.tag_is(meta, RwTableTag::Stack) * qb.address(meta),
+                // todo: this should be u32, so we need to add two rw limb columns.
                 fixed_table.u10(meta),
             )]
         });
@@ -403,13 +398,12 @@ impl<
             keys_diff_inv,
             key2_limbs,
             key4_bytes,
-            auxs,
+            auxs, // this is never assigned....
             s_enable,
             key_is_same_with_prev,
             fixed_table,
             power_of_randomness,
             lexicographic_ordering,
-            lexicographic_ordering_diff_inv,
         }
     }
 
@@ -423,8 +417,10 @@ impl<
         let key_is_same_with_prev_chips: [IsZeroChip<F>; 5] = [0, 1, 2, 3, 4]
             .map(|idx| IsZeroChip::construct(self.key_is_same_with_prev[idx].clone()));
 
-        let sort_key_chips =
-            [0, 1].map(|i| IsZeroChip::construct(self.lexicographic_ordering[i].clone()));
+        let sort_key_chips = self
+            .lexicographic_ordering
+            .clone()
+            .map(|config| IsZeroChip::construct(config));
 
         layouter.assign_region(
             || "State operations",

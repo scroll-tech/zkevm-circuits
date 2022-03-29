@@ -17,15 +17,9 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use strum::IntoEnumIterator;
-// use core::cmp::max;
-// use core::ops::{Add, Mul};
-// use ff::Field;
-// use std::ops::{Neg, Sub};
 
-// TODO(mason) set these correctly
+// TODO(mason) set this correctly
 const MAX_DEGREE: usize = 15;
-const LOOKUP_DEGREE: usize = 2;
-const WIDTH: usize = 10;
 
 // Rename to QueryBuilder?
 pub(crate) struct ConstraintBuilder<F: FieldExt> {
@@ -144,10 +138,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
         self.rw_counter(meta) - meta.query_advice(self.rw_counter, Rotation::prev())
     }
 
-    pub(super) fn sort_keys_delta(
-        &self,
-        meta: &mut VirtualCells<F>,
-    ) -> (Expression<F>, Expression<F>) {
+    pub(super) fn sort_keys_delta(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; 2] {
         let sort_keys_curr = sort_keys(
             self.tag(meta),
             self.id(meta),
@@ -165,10 +156,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
                 .map(|byte| meta.query_advice(byte, Rotation::prev())),
         );
 
-        (
+        [
             sort_keys_curr.0 - sort_keys_prev.0,
             sort_keys_curr.1 - sort_keys_prev.1,
-        )
+        ]
     }
 }
 
