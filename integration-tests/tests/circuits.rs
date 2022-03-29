@@ -17,6 +17,7 @@ lazy_static! {
 }
 
 async fn test_evm_circuit_block(block_num: u64) {
+    log::info!("test evm circuit block {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
     let builder = cli.gen_inputs(block_num).await.unwrap();

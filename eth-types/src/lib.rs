@@ -418,7 +418,7 @@ impl<'de> Deserialize<'de> for GethExecTrace {
             mut struct_logs,
             return_value,
         } = GethExecTraceInternal::deserialize(deserializer)?;
-        println!("raw trace {:#?}", struct_logs);
+        //println!("raw trace {:#?}", struct_logs);
         fix_geth_trace_memory_size(&mut struct_logs);
         //fix_geth_trace_storage(&mut struct_logs);
         Ok(Self {

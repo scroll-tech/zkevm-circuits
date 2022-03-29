@@ -7,12 +7,12 @@ use halo2_proofs::{
     poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},
 };
-use pairing::bn256::{Fr, G1Affine};
+use pairing::bn256::{Bn256, Fr, G1Affine};
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 use std::env::var;
-use std::fs::File;
-use std::io::BufReader;
+
+
 use std::str::FromStr;
 use zkevm_circuits::evm_circuit::{
     table::FixedTableTag, test::TestCircuit, witness::block_convert,
@@ -44,15 +44,22 @@ async fn main() {
         .expect("RPC_URL env var")
         .parse()
         .expect("Cannot parse RPC_URL env var");
-    let params_path: String = var("PARAMS_PATH")
-        .expect("PARAMS_PATH env var")
-        .parse()
-        .expect("Cannot parse PARAMS_PATH env var");
+    /*
+        let params_path: String = var("PARAMS_PATH")
+            .expect("PARAMS_PATH env var")
+            .parse()
+            .expect("Cannot parse PARAMS_PATH env var");
 
-    // load polynomial commitment parameters
-    let params_fs = File::open(&params_path).expect("couldn't open params");
-    let params: Params<G1Affine> =
-        Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params");
+        // load polynomial commitment parameters
+        let params_fs = File::open(&params_path).expect("couldn't open params");
+        let params: Params<G1Affine> =
+            Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params");
+    */
+
+    let degree = 18;
+    log::info!("setup with degree {}", degree);
+    let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
+    log::info!("setup done");
 
     // request & build the inputs for the circuits
     let geth_client = GethClient::new(Http::from_str(&rpc_url).expect("GethClient from RPC_URL"));
@@ -69,6 +76,7 @@ async fn main() {
     let state_proof;
     let block = block_convert(&builder.block, &builder.code_db);
     {
+        log::info!("generate evm_circuit proof");
         // generate evm_circuit proof
         let circuit = TestCircuit::<Fr>::new(block.clone(), FixedTableTag::iterator().collect());
 
@@ -89,6 +97,8 @@ async fn main() {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
         create_proof(&params, &pk, &[circuit], &[], rng, &mut transcript).expect("evm proof");
         evm_proof = transcript.finalize();
+
+        log::info!("generate evm_circuit proof done");
     }
 
     {
