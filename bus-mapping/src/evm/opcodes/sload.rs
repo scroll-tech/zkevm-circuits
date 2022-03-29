@@ -72,13 +72,13 @@ impl Opcode for Sload {
         // Storage read
         let storage_value_read = cur_step.storage.get_or_err(&key)?;
 
-        let warm = match state.tx.tx_storage.get(&(contract_addr, key)) {
+        let warm = match state.tx.warm_storage.get(&(contract_addr, key)) {
             Some(_v) => (true),
             None => (false),
         };
         state
             .tx
-            .tx_storage
+            .warm_storage
             .insert((contract_addr, key), storage_value_read);
 
         let (_, committed_value) = state.sdb.get_storage(&contract_addr, &key);
@@ -97,8 +97,6 @@ impl Opcode for Sload {
                 committed_value,
             ),
         );
-        println!("sload bus map contract_addr {:?} key {:?} storage_value_read {:?} txid {:?} committed_value {:?}",contract_addr, key,
-        storage_value_read, state.tx_ctx.id(), committed_value);
 
         // First stack write
         state.push_stack_op(
@@ -164,7 +162,7 @@ mod sload_tests {
             .unwrap();
 
         assert_eq!(
-            [0, 2]
+            [4, 6]
                 .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op())),
             [
@@ -179,7 +177,7 @@ mod sload_tests {
             ]
         );
 
-        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[1].as_usize()];
+        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[5].as_usize()];
         assert_eq!(
             (storage_op.rw(), storage_op.op()),
             (
@@ -190,7 +188,7 @@ mod sload_tests {
                     Word::from(0x6fu32),
                     Word::from(0x6fu32),
                     1,
-                    Word::from(0x6fu32),
+                    Word::from(0x0u32),
                 )
             )
         )

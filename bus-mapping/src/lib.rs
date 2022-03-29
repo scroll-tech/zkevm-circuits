@@ -116,11 +116,12 @@
 //! let mut builder = CircuitInputBuilder::new(
 //!     sdb,
 //!     CodeDB::new(),
-//!     Block::new(0.into(), Vec::new(), &eth_block).unwrap(),
+//!     Block::new(0u64.into(), Vec::new(), &eth_block).unwrap(),
 //! );
 //!
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
 //! let geth_trace = GethExecTrace {
+//!     return_value: "".to_string(),
 //!     gas: Gas(eth_tx.gas.as_u64()),
 //!     failed: false,
 //!     struct_logs: geth_steps,

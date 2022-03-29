@@ -618,7 +618,7 @@ pub struct Transaction {
     /// Input / Call Data
     pub input: Vec<u8>,
     /// storage db for this tx
-    pub tx_storage: HashMap<(H160, Word), Word>,
+    pub warm_storage: HashMap<(H160, Word), Word>,
     /// Calls made in the transaction
     calls: Vec<Call>,
     /// Execution steps
@@ -681,7 +681,7 @@ impl Transaction {
         };
 
         Ok(Self {
-            tx_storage: Default::default(),
+            warm_storage: Default::default(),
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
@@ -1490,7 +1490,7 @@ impl<'a> CircuitInputBuilder {
 
         self.sdb.clear_access_list_and_refund();
 
-        let kv = tx.tx_storage.clone();
+        let kv = tx.warm_storage.clone();
         for ((addr, k), v) in kv {
             let (_, ptr) = self.sdb.get_storage_mut(&addr, &k);
             *ptr = v;

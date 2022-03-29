@@ -475,7 +475,6 @@ impl<F: Field> SstoreTxRefundGadget<F> {
     pub(crate) fn expr(&self) -> Expression<F> {
         // Return the new tx_refund
         self.tx_refund_new.clone() - GasCost::SSTORE_CLEARS_SCHEDULE.as_u64().expr()
-        //0.expr()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -560,9 +559,6 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
         let nz_allne_case_refund = if value_prev == eth_types::Word::zero() {
             tx_refund_old - GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
-            //let (result, _) =
-            // tx_refund_old.overflowing_sub(GasCost::SSTORE_CLEARS_SCHEDULE.
-            // as_u64()); result
         } else {
             nz_nz_allne_case_refund
         };
