@@ -1,5 +1,6 @@
 use super::constraint_builder::ConstraintBuilder;
 use super::param::N_LIMBS_ACCOUNT_ADDRESS;
+use crate::state_circuit::constraint_builder::sort_key_values;
 use crate::state_circuit::fixed_table::FixedTable;
 use crate::{
     evm_circuit::{
@@ -14,7 +15,7 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -22,6 +23,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
+use std::convert::TryInto;
 use strum::IntoEnumIterator;
 
 /*
@@ -85,17 +87,18 @@ pub struct Config<
     is_write: Column<Advice>,
     keys: [Column<Advice>; 5],
 
-    // helper column used for IsZero chip
-    keys_diff_inv: [Column<Advice>; 5],
-
     key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
     key4_bytes: [Column<Advice>; N_BYTES_WORD],
     power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     value: Column<Advice>,
     auxs: [Column<Advice>; 2],
 
-    // helper chips here
+    // helper chips and columns here
     key_is_same_with_prev: [IsZeroConfig<F>; 5],
+    keys_diff_inv: [Column<Advice>; 5],
+
+    lexicographic_ordering: [IsZeroConfig<F>; 2],
+    lexicographic_ordering_diff_inv: [Column<Advice>; 2],
 
     // Fixed columns for range lookups
     fixed_table: FixedTable,
@@ -153,6 +156,22 @@ impl<
             )
         });
 
+        let lexicographic_ordering_diff_inv = [meta.advice_column(), meta.advice_column()];
+        let lexicographic_ordering: [IsZeroConfig<F>; 2] = [
+            IsZeroChip::configure(
+                meta,
+                |meta| qb.s_enable(meta),
+                |meta| qb.sort_keys_delta(meta).0,
+                lexicographic_ordering_diff_inv[0],
+            ),
+            IsZeroChip::configure(
+                meta,
+                |meta| qb.s_enable(meta),
+                |meta| qb.sort_keys_delta(meta).1,
+                lexicographic_ordering_diff_inv[1],
+            ),
+        ];
+
         let q_all_keys_same = |_: &mut VirtualCells<F>| {
             key_is_same_with_prev[0].is_zero_expression.clone()
                 * key_is_same_with_prev[1].is_zero_expression.clone()
@@ -179,7 +198,7 @@ impl<
                 RwTableTag::iter().map(|x| x.expr()).collect(),
             );
 
-            // 1. key2 expands to its limbs and for each limb, 0 <= limb < 2^16
+            // 1. key2 expands to its limbs
             cb.require_equal(
                 "account address matches its limbs",
                 qb.address(meta),
@@ -188,6 +207,7 @@ impl<
                     .fold(0u64.expr(), |result, limb| {
                         limb.clone() + result * (1u64 << 16).expr()
                     }),
+                // qb.address_from_limbs(meta),
             );
 
             // 2. key4 is RLC encoded
@@ -388,6 +408,8 @@ impl<
             key_is_same_with_prev,
             fixed_table,
             power_of_randomness,
+            lexicographic_ordering,
+            lexicographic_ordering_diff_inv,
         }
     }
 
@@ -400,6 +422,9 @@ impl<
     ) -> Result<(), Error> {
         let key_is_same_with_prev_chips: [IsZeroChip<F>; 5] = [0, 1, 2, 3, 4]
             .map(|idx| IsZeroChip::construct(self.key_is_same_with_prev[idx].clone()));
+
+        let sort_key_chips =
+            [0, 1].map(|i| IsZeroChip::construct(self.lexicographic_ordering[i].clone()));
 
         layouter.assign_region(
             || "State operations",
@@ -439,6 +464,7 @@ impl<
                         &key_is_same_with_prev_chips,
                     )?;
 
+                    // these can be if lets?
                     rw.address().map_or(Ok(()), |a| {
                         self.assign_address_and_limbs(&mut region, offset, a)
                     })?;
@@ -446,6 +472,42 @@ impl<
                     rw.storage_key().map_or(Ok(()), |k| {
                         self.assign_storage_key_and_bytes(&mut region, offset, randomness, k)
                     })?;
+
+                    let (sort_key_0, sort_key_1): (F, F) = sort_key_values(
+                        rw.tag(),
+                        rw.id().unwrap_or_default().try_into().unwrap(),
+                        rw.address().unwrap_or_default(),
+                        rw.field_tag().unwrap_or_default(),
+                        rw.storage_key().unwrap_or_default().to_le_bytes(),
+                    );
+
+                    let mut sort_key_prev_0 = F::zero();
+                    let mut sort_key_prev_1 = F::zero();
+                    if index != 0 {
+                        let rw_prev = rows[index - 1].0.clone();
+
+                        let (a, b) = sort_key_values(
+                            rw_prev.tag(),
+                            rw_prev.id().unwrap_or_default().try_into().unwrap(),
+                            rw_prev.address().unwrap_or_default(),
+                            rw_prev.field_tag().unwrap_or_default(),
+                            rw_prev.storage_key().unwrap_or_default().to_le_bytes(),
+                        );
+
+                        sort_key_prev_0 = a;
+                        sort_key_prev_1 = b;
+                    }
+
+                    sort_key_chips[0].assign(
+                        &mut region,
+                        offset,
+                        Some(sort_key_0 - sort_key_prev_0),
+                    )?;
+                    sort_key_chips[1].assign(
+                        &mut region,
+                        offset,
+                        Some(sort_key_1 - sort_key_prev_1),
+                    )?;
 
                     offset += 1;
                 }
