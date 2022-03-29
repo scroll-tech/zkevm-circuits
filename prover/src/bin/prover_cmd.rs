@@ -12,7 +12,6 @@ use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 use std::env::var;
 
-
 use std::str::FromStr;
 use zkevm_circuits::evm_circuit::{
     table::FixedTableTag, test::TestCircuit, witness::block_convert,
