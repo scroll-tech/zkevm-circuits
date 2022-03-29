@@ -24,19 +24,14 @@ const MAX_DEGREE: usize = 15;
 // Rename to QueryBuilder?
 pub(crate) struct ConstraintBuilder<F: FieldExt> {
     cb: BaseConstraintBuilder<F>,
-    rw_counter: Column<Advice>,
     s_enable: Column<Fixed>,
+    rw_counter: Column<Advice>,
     is_write: Column<Advice>,
     keys: [Column<Advice>; 5],
-    keys_diff_inv: [Column<Advice>; 5],
     key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
     key4_bytes: [Column<Advice>; N_BYTES_WORD],
     value: Column<Advice>,
     auxs: [Column<Advice>; 2],
-    rw_counter_table: Column<Fixed>,
-    stack_address_table_zero: Column<Fixed>,
-    memory_address_table_zero: Column<Fixed>,
-    memory_value_table: Column<Fixed>,
     power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
 }
 
@@ -55,16 +50,11 @@ impl<'a, F: FieldExt> ConstraintBuilder<F> {
             rw_counter,
             is_write: meta.advice_column(),
             keys,
-            keys_diff_inv: [(); 5].map(|_| meta.advice_column()),
             key2_limbs,
             key4_bytes,
             auxs: [(); 2].map(|_| meta.advice_column()),
             s_enable,
             value: meta.advice_column(),
-            rw_counter_table: meta.fixed_column(),
-            memory_address_table_zero: meta.fixed_column(),
-            stack_address_table_zero: meta.fixed_column(),
-            memory_value_table: meta.fixed_column(),
             power_of_randomness,
         }
     }

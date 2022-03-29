@@ -88,10 +88,14 @@ pub struct Config<
     keys: [Column<Advice>; 5],
 
     key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
+    // Use WordConfig here instead.
     key4_bytes: [Column<Advice>; N_BYTES_WORD],
-    power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
+
     value: Column<Advice>,
-    auxs: [Column<Advice>; 2],
+
+    auxs: Column<Advice>,
+
+    power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
 
     lexicographic_ordering: [IsZeroConfig<F>; 2],
 
@@ -120,7 +124,7 @@ impl<
         let keys = [(); 5].map(|_| meta.advice_column());
         let key2_limbs = [(); N_LIMBS_ACCOUNT_ADDRESS].map(|_| meta.advice_column());
         let key4_bytes = [(); N_BYTES_WORD].map(|_| meta.advice_column());
-        let auxs = [(); 2].map(|_| meta.advice_column());
+        let auxs = meta.advice_column();
 
         let s_enable = meta.fixed_column();
 
@@ -203,8 +207,7 @@ impl<
             // see below
 
             // 6. Read consistency
-            // When a row is READ
-            // AND When all the keys are equal in two consecutive a rows:
+            // When a row is READ AND When all the keys are equal in two consecutive a rows:
             //- The corresponding value must be equal to the previous row
             cb.require_zero(
                 "if read and keys are same, value should be same with prev",
@@ -245,7 +248,7 @@ impl<
                 qb.s_enable(meta)
                     * q_all_keys_same(meta)
                     * (qb.rw_counter_delta(meta) - 1u64.expr()),
-                // this isn't correct. The specs say this should be u32....
+                // TODO(mason) this isn't correct. The specs say this should be u32....
                 fixed_table.u10(meta),
             )]
         });
@@ -369,7 +372,7 @@ impl<
             keys,
             key2_limbs,
             key4_bytes,
-            auxs, // this is never assigned....
+            auxs,
             s_enable,
             fixed_table,
             power_of_randomness,
