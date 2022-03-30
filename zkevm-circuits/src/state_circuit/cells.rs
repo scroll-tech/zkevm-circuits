@@ -86,7 +86,7 @@ pub struct Cells<F: FieldExt> {
     // address: MultiplePrecisionInteger<F, N_LIMBS_ACCOUNT_ADDRESS>,
     // field_tag: Cell<F>,
     // storage_key: RandomLinearCombination<F, N_BYTES_WORD>,
-    // value: Cell<F>,
+    pub(super) value: Domino<F>,
     power_of_randomness: [Expression<F>; 31],
     /* constraints: Vec<(&'static str, Expression<F>)>,
      * lookups: Vec<(&'static str, Lookup<F>)>, */
@@ -102,7 +102,7 @@ impl<F: FieldExt> Cells<F> {
             // address: MultiplePrecisionInteger::new(meta),
             // field_tag: new_cell(meta),
             // storage_key: RandomLinearCombination::new(new_cells(meta), &power_of_randomness),
-            // value: new_cell(meta),
+            value: new_domino(meta),
             power_of_randomness,
             /* constraints: vec![],
              * lookups: vec![], */
@@ -123,6 +123,14 @@ impl<F: FieldExt> Cells<F> {
 
     pub fn is_read(&self) -> Expression<F> {
         not::expr(self.is_write.expr())
+    }
+
+    pub fn value(&self) -> Expression<F> {
+        self.value.cur()
+    }
+
+    pub fn value_delta(&self) -> Expression<F> {
+        self.value.delta()
     }
 }
 

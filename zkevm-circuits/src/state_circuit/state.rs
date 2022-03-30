@@ -77,8 +77,6 @@ pub struct Config<
     // Use WordConfig here instead.
     key4_bytes: [Column<Advice>; N_BYTES_WORD],
 
-    value: Column<Advice>,
-
     auxs: Column<Advice>,
 
     power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
@@ -117,8 +115,6 @@ impl<
 
         let s_enable = meta.fixed_column();
 
-        let value = meta.advice_column();
-
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
         let qb = ConstraintBuilder::<F>::new(
             meta,
@@ -151,8 +147,6 @@ impl<
 
         meta.create_gate("General constraints", |meta| {
             let mut cb = new_cb();
-            let value_cur = meta.query_advice(value, Rotation::cur());
-            let value_prev = meta.query_advice(value, Rotation::prev());
 
             // 0. tag in RwTableTag range
             // TODO: check key1 and key3 ranges.
@@ -198,7 +192,7 @@ impl<
             //- The corresponding value must be equal to the previous row
             cb.require_zero(
                 "if read and keys are same, value should be same with prev",
-                q_all_keys_same(meta) * cells.is_read() * (value_cur - value_prev),
+                q_all_keys_same(meta) * cells.is_read() * (cells.value_delta()),
             );
 
             cb.gate(qb.s_enable(meta))
@@ -244,7 +238,6 @@ impl<
 
         meta.create_gate("Memory operation", |meta| {
             let mut cb = new_cb();
-            let value_cur = meta.query_advice(value, Rotation::cur());
 
             // 0. Unused keys are 0
             cb.require_zero("field tag is 0", qb.field_tag(meta));
@@ -256,7 +249,7 @@ impl<
             // - If READ, value must be 0
             cb.require_zero(
                 "if address changes, read value should be 0",
-                q_not_all_keys_same(meta) * cells.is_read() * value_cur,
+                q_not_all_keys_same(meta) * cells.is_read() * cells.value(),
             );
 
             cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::Memory))
@@ -264,9 +257,8 @@ impl<
 
         // 2. value is a byte when tag is Memory
         meta.lookup_any("value is a byte when tag is Memory", |meta| {
-            let value = meta.query_advice(value, Rotation::cur());
             vec![(
-                qb.tag_is(meta, RwTableTag::Memory) * value,
+                qb.tag_is(meta, RwTableTag::Memory) * cells.value(),
                 fixed_table.u8(meta),
             )]
         });
@@ -344,7 +336,6 @@ impl<
         });
 
         Config {
-            value,
             keys,
             key2_limbs,
             key4_bytes,
@@ -486,7 +477,7 @@ impl<
         self.cells
             .rw_counter
             .assign(region, offset, Some(rw_counter))?;
-        region.assign_advice(|| "value", self.value, offset, || Ok(value))?;
+        self.cells.value.assign(region, offset, Some(value))?;
         self.cells.is_write.assign(region, offset, Some(is_write))?;
 
         for i in 0..5 {
