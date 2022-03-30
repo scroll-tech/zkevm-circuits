@@ -1,4 +1,4 @@
-use super::constraint_builder::ConstraintBuilder;
+use super::constraint_builder::{ConstraintBuilder, NewConstraintBuilder};
 use super::param::N_LIMBS_ACCOUNT_ADDRESS;
 use crate::state_circuit::constraint_builder::sort_key_values;
 use crate::state_circuit::fixed_table::FixedTable;
@@ -58,17 +58,6 @@ const STORAGE_TAG: usize = RwTableTag::AccountStorage as usize;
 
 const MAX_DEGREE: usize = 15;
 
-/// A mapping derived from witnessed operations.
-#[derive(Clone, Debug)]
-pub(crate) struct BusMapping<F: FieldExt> {
-    rw_counter: Variable<F, F>,
-    target: Variable<F, F>,
-    is_write: Variable<F, F>,
-    address: Variable<F, F>,
-    value: Variable<F, F>,
-    storage_key: Variable<F, F>,
-}
-
 #[derive(Clone, Debug)]
 pub struct Config<
     F: FieldExt,
@@ -83,8 +72,7 @@ pub struct Config<
     const ROWS_MAX: usize,
 > {
     s_enable: Column<Fixed>,
-    rw_counter: Column<Advice>,
-    is_write: Column<Advice>,
+    // rw_counter: Column<Advice>,
     keys: [Column<Advice>; 5],
 
     key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
@@ -101,6 +89,8 @@ pub struct Config<
 
     // Fixed columns for range lookups
     fixed_table: FixedTable,
+
+    test_cb: NewConstraintBuilder<F>,
 }
 
 impl<
@@ -117,10 +107,11 @@ impl<
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; 31],
     ) -> Self {
+        let test_cb = NewConstraintBuilder::new(meta, power_of_randomness.clone());
+
         let fixed_table = FixedTable::configure(meta);
 
-        let rw_counter = meta.advice_column();
-        let is_write = meta.advice_column();
+        // let rw_counter = meta.advice_column();
         let keys = [(); 5].map(|_| meta.advice_column());
         let key2_limbs = [(); N_LIMBS_ACCOUNT_ADDRESS].map(|_| meta.advice_column());
         let key4_bytes = [(); N_BYTES_WORD].map(|_| meta.advice_column());
@@ -139,7 +130,7 @@ impl<
             key4_bytes,
             power_of_randomness.clone(), /* TODO: these don't both of these need
                                           * power_of_randomness */
-            rw_counter,
+                                         /* rw_counter, */
         );
 
         let lexicographic_ordering =
@@ -162,8 +153,6 @@ impl<
 
         meta.create_gate("General constraints", |meta| {
             let mut cb = new_cb();
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let is_read = 1u64.expr() - is_write.clone();
             let value_cur = meta.query_advice(value, Rotation::cur());
             let value_prev = meta.query_advice(value, Rotation::prev());
 
@@ -198,7 +187,7 @@ impl<
             );
 
             // 3. is_write is boolean
-            cb.require_boolean("is_write should be boolean", is_write);
+            cb.require_boolean("is_write should be boolean", test_cb.is_write());
 
             // 4. Keys are sorted in lexicographic order for same Tag
             // see lexicographic_ordering chips
@@ -211,7 +200,7 @@ impl<
             //- The corresponding value must be equal to the previous row
             cb.require_zero(
                 "if read and keys are same, value should be same with prev",
-                q_all_keys_same(meta) * is_read * (value_cur - value_prev),
+                q_all_keys_same(meta) * test_cb.is_read() * (value_cur - value_prev),
             );
 
             cb.gate(qb.s_enable(meta))
@@ -247,7 +236,7 @@ impl<
             vec![(
                 qb.s_enable(meta)
                     * q_all_keys_same(meta)
-                    * (qb.rw_counter_delta(meta) - 1u64.expr()),
+                    * (test_cb.rw_counter_delta() - 1u64.expr()),
                 // TODO(mason) this isn't correct. The specs say this should be u32....
                 fixed_table.u10(meta),
             )]
@@ -258,8 +247,6 @@ impl<
         meta.create_gate("Memory operation", |meta| {
             let mut cb = new_cb();
             let value_cur = meta.query_advice(value, Rotation::cur());
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = 1u64.expr() - is_write;
 
             // 0. Unused keys are 0
             cb.require_zero("field tag is 0", qb.field_tag(meta));
@@ -271,7 +258,7 @@ impl<
             // - If READ, value must be 0
             cb.require_zero(
                 "if address changes, read value should be 0",
-                q_not_all_keys_same(meta) * q_read * value_cur,
+                q_not_all_keys_same(meta) * test_cb.is_read() * value_cur,
             );
 
             cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::Memory))
@@ -291,9 +278,6 @@ impl<
         meta.create_gate("Stack operation", |meta| {
             let mut cb = new_cb();
 
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = 1u64.expr() - is_write;
-
             // 0. Unused keys are 0
             cb.require_zero("field tag is 0", qb.field_tag(meta));
             cb.require_zero("storage key is 0", qb.storage_key(meta));
@@ -307,7 +291,7 @@ impl<
             // - It must be a WRITE
             cb.require_zero(
                 "if address changes, operation is always a write",
-                q_not_all_keys_same(meta) * q_read,
+                q_not_all_keys_same(meta) * test_cb.is_read(),
             );
             cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::Stack))
         });
@@ -335,10 +319,6 @@ impl<
 
         meta.create_gate("Storage Operation", |meta| {
             let mut cb = new_cb();
-
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = 1u64.expr() - is_write;
-
             // TODO: cold VS warm
             // TODO: connection to MPT on first and last access for each (address, key)
 
@@ -355,20 +335,18 @@ impl<
             // - It must be a WRITE
             cb.require_zero(
                 "First access for storage is write",
-                q_not_all_keys_same(meta) * q_read,
+                q_not_all_keys_same(meta) * test_cb.is_read(),
             );
             cb.require_zero(
                 "First access for storage has rw_counter as 0",
-                q_not_all_keys_same(meta) * qb.rw_counter(meta),
+                q_not_all_keys_same(meta) * test_cb.rw_counter(),
             );
 
             cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::AccountStorage))
         });
 
         Config {
-            rw_counter,
             value,
-            is_write,
             keys,
             key2_limbs,
             key4_bytes,
@@ -377,6 +355,7 @@ impl<
             fixed_table,
             power_of_randomness,
             lexicographic_ordering,
+            test_cb,
         }
     }
 
@@ -506,9 +485,13 @@ impl<
             }
         }
         region.assign_fixed(|| "enable row", self.s_enable, offset, || Ok(F::one()))?;
-        region.assign_advice(|| "rw counter", self.rw_counter, offset, || Ok(rw_counter))?;
+        self.test_cb
+            .rw_counter
+            .assign(region, offset, Some(rw_counter))?;
         region.assign_advice(|| "value", self.value, offset, || Ok(value))?;
-        region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
+        self.test_cb
+            .is_write
+            .assign(region, offset, Some(is_write))?;
 
         for i in 0..5 {
             let value = match i {
