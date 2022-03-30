@@ -1,8 +1,8 @@
 use crate::evm_circuit::param::N_BYTES_WORD;
 use crate::evm_circuit::witness::RwMap;
+use eth_types::{Address, Field, ToScalar};
 use halo2_proofs::circuit::SimpleFloorPlanner;
 use halo2_proofs::plonk::Circuit;
-use eth_types::{Address, ToScalar, Field};
 use halo2_proofs::{
     circuit::Layouter,
     plonk::{ConstraintSystem, Error, Selector},
@@ -113,7 +113,9 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         || Ok(F::one()),
                     )?;
 
-                    config.rw_counter.assign(&mut region, offset, row.rw_counter() as u32);
+                    config
+                        .rw_counter
+                        .assign(&mut region, offset, row.rw_counter() as u32);
                     config
                         .is_write
                         .assign(&mut region, offset, F::from(row.is_write() as u64));
@@ -130,7 +132,9 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         offset,
                         F::from(row.field_tag().unwrap_or_default()),
                     );
-                    // self.address.assign(region, offset, rw.key_2);
+                    config
+                        .address
+                        .assign(&mut region, offset, row.address().unwrap_or_default());
                     // self.field_tag.assign(region, offset, rw.key_3);
                     // self.storage_key.assign(region, offset, rw.key_4);
 

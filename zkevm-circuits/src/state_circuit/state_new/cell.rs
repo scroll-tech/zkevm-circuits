@@ -1,4 +1,4 @@
-use eth_types::{Address, ToScalar, Field};
+use eth_types::{Address, Field, ToScalar};
 use halo2_proofs::{
     circuit::{AssignedCell, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance},

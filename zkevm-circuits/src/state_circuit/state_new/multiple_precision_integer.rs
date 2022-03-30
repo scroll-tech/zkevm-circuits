@@ -1,12 +1,10 @@
-use std::marker::PhantomData;
-use std::convert::TryInto;
-
-use itertools::Itertools;
-use eth_types::{Address, ToScalar, Field};
+use std::{marker::PhantomData, convert::TryInto};
+use eth_types::{Address, Field, ToScalar};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region},
     plonk::{ConstraintSystem, Error, Expression},
 };
+use itertools::Itertools;
 
 use crate::util::Expr;
 
@@ -36,20 +34,26 @@ pub struct Config<F: Field, T: ToLimbs, const N: usize> {
     _marker: PhantomData<T>,
 }
 
-// impl<F: Field, const N: usize> Config<F, Address, N> {
-//     pub fn assign(
-//         &self,
-//         region: &mut Region<'_, F>,
-//         offset: usize,
-//         value: Address,
-//     ) -> Result<AssignedCell<F, F>, Error> {
-//         self.value
-//             .assign(region, offset, value.to_scalar().unwrap())
-//         self.limbs.map(
-//             |limb| limb.assign()
-//         )
-//     }
-// }
+impl<F: Field, const N: usize> Config<F, Address, N> {
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        value: Address,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        let limbs = value
+            .0
+            .iter()
+            .rev()
+            .tuples()
+            .map(|(lo, hi)| u16::from_le_bytes([*lo, *hi]));
+        for (i, limb) in limbs.enumerate() {
+            self.limbs[i].assign(region, offset, F::from(limb as u64))?;
+        }
+        self.value
+            .assign(region, offset, value.to_scalar().unwrap())
+    }
+}
 
 impl<F: Field, const N: usize> Config<F, u32, N> {
     pub fn assign(
@@ -58,8 +62,10 @@ impl<F: Field, const N: usize> Config<F, u32, N> {
         offset: usize,
         value: u32,
     ) -> Result<AssignedCell<F, F>, Error> {
-        self.value
-            .assign(region, offset, F::from(value as u64))
+        for (i, &limb) in le_bytes_to_limbs(&value.to_le_bytes()).iter().enumerate() {
+            self.limbs[i].assign(region, offset, F::from(limb as u64))?;
+        }
+        self.value.assign(region, offset, F::from(value as u64))
     }
 }
 
@@ -81,17 +87,21 @@ impl<F: Field, T: ToLimbs, const N: usize> Chip<F, T, N> {
         let limbs = [0; N].map(|_| AdviceCell::new(meta));
 
         // Move these into a build function in a hypthetical ConstraintBuilder?
-        meta.lookup_any("mpi limbs fit into u16", |_| {
-            limbs
-                .iter()
-                .map(|limb| (limb.cur.clone(), u16_range.clone()))
-                .collect()
+        limbs.iter().map(|limb| {
+            meta.lookup_any("mpi limb fits into u16", |_| {
+                vec![(limb.cur.clone(), u16_range.clone())]
+            })
         });
+
         meta.create_gate("mpi value matches claimed limbs", |_| {
             vec![selector * (value.cur.clone() - value_from_limbs(&limbs))]
         });
 
-        Config { value, limbs, _marker: PhantomData }
+        Config {
+            value,
+            limbs,
+            _marker: PhantomData,
+        }
     }
 
     pub fn load(&self, _layouter: &mut impl Layouter<F>) -> Result<(), Error> {
@@ -103,13 +113,14 @@ fn le_bytes_to_limbs(bytes: &[u8]) -> Vec<u16> {
     bytes
         .iter()
         .tuples()
-        .map(|(hi, lo)| u16::from_le_bytes([*lo, *hi]))
+        .map(|(lo, hi)| u16::from_le_bytes([*lo, *hi]))
         .collect()
 }
 
 fn value_from_limbs<F: Field>(limbs: &[AdviceCell<F>]) -> Expression<F> {
     limbs
         .iter()
+        .rev()
         .map(|limb| &limb.cur)
         .fold(0u64.expr(), |result, limb| {
             limb.clone() + result * (1u64 << 16).expr()

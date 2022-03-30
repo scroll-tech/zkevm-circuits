@@ -35,7 +35,7 @@ mod tests {
             })
             .collect();
 
-        let prover = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
+        let prover = MockProver::<Fr>::run(18, &circuit, power_of_randomness).unwrap();
         let verify_result = prover.verify();
         assert_eq!(verify_result, Ok(()));
     }
