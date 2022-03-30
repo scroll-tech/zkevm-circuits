@@ -1696,6 +1696,13 @@ pub fn gen_state_access_trace<TX>(
         let i = Some(index);
         let (contract_address, code_source) = &call_stack[call_stack.len() - 1];
         let (contract_address, code_source) = (*contract_address, *code_source);
+
+        let (mut push_call_stack, mut pop_call_stack) = (false, false);
+        if let Some(next_step) = next_step {
+            push_call_stack = step.depth + 1 == next_step.depth;
+            pop_call_stack = step.depth - 1 == next_step.depth;
+        }
+
         match step.op {
             OpcodeId::SSTORE => {
                 let address = contract_address;
@@ -1744,23 +1751,29 @@ pub fn gen_state_access_trace<TX>(
                 accs.push(Access::new(i, WRITE, Account { address }));
             }
             OpcodeId::CREATE => {
-                // Find CREATE result
-                let address = get_call_result(&geth_trace.struct_logs[index..])
-                    .unwrap_or_else(Word::zero)
-                    .to_address();
-                if !address.is_zero() {
-                    accs.push(Access::new(i, WRITE, Account { address }));
-                    accs.push(Access::new(i, WRITE, Code { address }));
+                if push_call_stack {
+                    // Find CREATE result
+                    let address = get_call_result(&geth_trace.struct_logs[index..])
+                        .unwrap_or_else(Word::zero)
+                        .to_address();
+                    if !address.is_zero() {
+                        accs.push(Access::new(i, WRITE, Account { address }));
+                        accs.push(Access::new(i, WRITE, Code { address }));
+                    }
+                    call_stack.push((address, CodeSource::Address(address)));
                 }
             }
             OpcodeId::CREATE2 => {
-                // Find CREATE2 result
-                let address = get_call_result(&geth_trace.struct_logs[index..])
-                    .unwrap_or_else(Word::zero)
-                    .to_address();
-                if !address.is_zero() {
-                    accs.push(Access::new(i, WRITE, Account { address }));
-                    accs.push(Access::new(i, WRITE, Code { address }));
+                if push_call_stack {
+                    // Find CREATE2 result
+                    let address = get_call_result(&geth_trace.struct_logs[index..])
+                        .unwrap_or_else(Word::zero)
+                        .to_address();
+                    if !address.is_zero() {
+                        accs.push(Access::new(i, WRITE, Account { address }));
+                        accs.push(Access::new(i, WRITE, Code { address }));
+                    }
+                    call_stack.push((address, CodeSource::Address(address)));
                 }
             }
             OpcodeId::CALL => {
@@ -1770,7 +1783,9 @@ pub fn gen_state_access_trace<TX>(
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, WRITE, Account { address }));
                 accs.push(Access::new(i, READ, Code { address }));
-                call_stack.push((address, CodeSource::Address(address)));
+                if push_call_stack {
+                    call_stack.push((address, CodeSource::Address(address)));
+                }
             }
             OpcodeId::CALLCODE => {
                 let address = contract_address;
@@ -1779,31 +1794,34 @@ pub fn gen_state_access_trace<TX>(
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, WRITE, Account { address }));
                 accs.push(Access::new(i, READ, Code { address }));
-                call_stack.push((address, CodeSource::Address(address)));
+                if push_call_stack {
+                    call_stack.push((address, CodeSource::Address(address)));
+                }
             }
             OpcodeId::DELEGATECALL => {
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, READ, Code { address }));
-                call_stack.push((contract_address, CodeSource::Address(address)));
+                if push_call_stack {
+                    call_stack.push((contract_address, CodeSource::Address(address)));
+                }
             }
             OpcodeId::STATICCALL => {
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, READ, Code { address }));
-                call_stack.push((address, CodeSource::Address(address)));
+                if push_call_stack {
+                    call_stack.push((address, CodeSource::Address(address)));
+                }
             }
             _ => {}
         }
-        if let Some(next_step) = next_step {
-            // return from a *CALL*/CREATE*
-            if step.depth - 1 == next_step.depth {
-                if call_stack.len() == 1 {
-                    return Err(Error::InvalidGethExecStep(
-                        "gen_state_access_trace: call stack will be empty",
-                        step.clone(),
-                    ));
-                }
-                call_stack.pop().expect("call stack is empty");
+        if pop_call_stack {
+            if call_stack.len() == 1 {
+                return Err(Error::InvalidGethExecStep(
+                    "gen_state_access_trace: call stack will be empty",
+                    step.clone(),
+                ));
             }
+            call_stack.pop().expect("call stack is empty");
         }
     }
     Ok(accs)
@@ -3264,6 +3282,213 @@ mod tracer_tests {
                     (ADDR_0, HashSet::new()),
                     (*ADDR_A, HashSet::new()),
                     (*ADDR_B, HashSet::from_iter([Word::from(2), Word::from(3)]))
+                ]),
+                code: HashSet::from_iter([*ADDR_A, *ADDR_B]),
+            }
+        )
+    }
+
+    #[test]
+    fn test_gen_access_trace_call_EOA_no_new_stack_frame() {
+        use AccessValue::{Account, Code, Storage};
+        use RW::{READ, WRITE};
+        let ADDR_0 = address!("0x00000000000000000000000000000000c014ba5e");
+
+        // code calls an EOA with not code, so it won't push new stack frame.
+        let code = bytecode! {
+            PUSH1(0x0) // retLength
+            PUSH1(0x0) // retOffset
+            PUSH1(0x0) // argsLength
+            PUSH1(0x0) // argsOffset
+            PUSH1(0x0) // value
+            PUSH32(*WORD_ADDR_B) // addr
+            PUSH32(0x1_0000) // gas
+            CALL
+            PUSH1(0x01) // value
+            PUSH1(0x02) // key
+            SSTORE
+            PUSH1(0x03) // key
+            SLOAD
+
+            PUSH2(0xaa)
+        };
+        let block = mock::new_single_tx_trace_code(&code).unwrap();
+        let access_trace = gen_state_access_trace(
+            &block.eth_block,
+            &block.eth_block.transactions[0],
+            &block.geth_traces[0],
+        )
+        .unwrap();
+
+        assert_eq!(
+            access_trace,
+            vec![
+                Access {
+                    step_index: None,
+                    rw: WRITE,
+                    value: Account { address: ADDR_0 }
+                },
+                Access {
+                    step_index: None,
+                    rw: WRITE,
+                    value: Account { address: *ADDR_A }
+                },
+                Access {
+                    step_index: None,
+                    rw: READ,
+                    value: Code { address: *ADDR_A }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: WRITE,
+                    value: Account { address: *ADDR_A }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: WRITE,
+                    value: Account { address: *ADDR_B }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: READ,
+                    value: Code { address: *ADDR_B }
+                },
+                Access {
+                    step_index: Some(10),
+                    rw: WRITE,
+                    value: Storage {
+                        address: *ADDR_A,
+                        key: Word::from(2),
+                    }
+                },
+                Access {
+                    step_index: Some(12),
+                    rw: READ,
+                    value: Storage {
+                        address: *ADDR_A,
+                        key: Word::from(3),
+                    }
+                },
+            ]
+        );
+
+        let access_set = AccessSet::from(access_trace);
+        assert_eq!(
+            access_set,
+            AccessSet {
+                state: HashMap::from_iter([
+                    (ADDR_0, HashSet::new()),
+                    (*ADDR_A, HashSet::from_iter([Word::from(2), Word::from(3)])),
+                    (*ADDR_B, HashSet::new()),
+                ]),
+                code: HashSet::from_iter([*ADDR_A, *ADDR_B]),
+            }
+        );
+    }
+
+    #[test]
+    fn test_gen_access_trace_create_push_call_stack() {
+        use AccessValue::{Account, Code};
+        use RW::{READ, WRITE};
+
+        // revert
+        let code_creator = bytecode! {
+            PUSH1(0x00) // length
+            PUSH1(0x00) // offset
+            REVERT
+        };
+
+        // code_a calls code_b which executes code_creator in CREATE
+        let code_a = bytecode! {
+            PUSH1(0x0) // retLength
+            PUSH1(0x0) // retOffset
+            PUSH1(0x0) // argsLength
+            PUSH1(0x0) // argsOffset
+            PUSH1(0x0) // value
+            PUSH32(*WORD_ADDR_B) // addr
+            PUSH32(0x1_0000) // gas
+            CALL
+
+            PUSH2(0xaa)
+        };
+
+        let mut code_b = Bytecode::default();
+        // pad code_creator to multiple of 32 bytes
+        let len = code_creator.code().len();
+        let code_creator: Vec<u8> = code_creator
+            .code()
+            .iter()
+            .cloned()
+            .chain(0u8..((32 - len % 32) as u8))
+            .collect();
+        for (index, word) in code_creator.chunks(32).enumerate() {
+            code_b.push(32, Word::from_big_endian(word));
+            code_b.push(32, Word::from(index * 32));
+            code_b.write_op(OpcodeId::MSTORE);
+        }
+        let code_b_end = bytecode! {
+            PUSH1(len) // length
+            PUSH1(0x00) // offset
+            PUSH1(0x00) // value
+            CREATE
+
+            PUSH3(0xbb)
+        };
+        code_b.append(&code_b_end);
+
+        let ADDR_0 = address!("0x00000000000000000000000000000000c014ba5e");
+        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        let access_trace = gen_state_access_trace(
+            &block.eth_block,
+            &block.eth_block.transactions[0],
+            &block.geth_traces[0],
+        )
+        .unwrap();
+
+        assert_eq!(
+            access_trace,
+            vec![
+                Access {
+                    step_index: None,
+                    rw: WRITE,
+                    value: Account { address: ADDR_0 }
+                },
+                Access {
+                    step_index: None,
+                    rw: WRITE,
+                    value: Account { address: *ADDR_A }
+                },
+                Access {
+                    step_index: None,
+                    rw: READ,
+                    value: Code { address: *ADDR_A }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: WRITE,
+                    value: Account { address: *ADDR_A }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: WRITE,
+                    value: Account { address: *ADDR_B }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: READ,
+                    value: Code { address: *ADDR_B }
+                },
+            ]
+        );
+
+        let access_set = AccessSet::from(access_trace);
+        assert_eq!(
+            access_set,
+            AccessSet {
+                state: HashMap::from_iter([
+                    (ADDR_0, HashSet::new()),
+                    (*ADDR_A, HashSet::new()),
+                    (*ADDR_B, HashSet::new()),
                 ]),
                 code: HashSet::from_iter([*ADDR_A, *ADDR_B]),
             }
