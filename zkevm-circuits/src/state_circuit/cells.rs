@@ -1,6 +1,4 @@
-use super::param::{
-    N_BITS_ADDRESS, N_BITS_FIELD_TAG, N_BITS_ID, N_BITS_TAG, N_LIMBS_ACCOUNT_ADDRESS,
-};
+use super::param::N_LIMBS_ACCOUNT_ADDRESS;
 use crate::evm_circuit::param::N_BYTES_WORD;
 use crate::evm_circuit::util::{not, Cell};
 use crate::util::Expr;
