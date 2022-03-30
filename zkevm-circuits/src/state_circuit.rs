@@ -1,6 +1,8 @@
 //! The state circuit implementation.
 
 // TODO: clean up module structure.
+pub(super) mod cells;
+
 pub(super) mod constraint_builder;
 pub(super) mod fixed_table;
 pub(super) mod param;

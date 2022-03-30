@@ -1,4 +1,5 @@
-use super::constraint_builder::{ConstraintBuilder, NewConstraintBuilder};
+use super::cells::Cells;
+use super::constraint_builder::ConstraintBuilder;
 use super::param::N_LIMBS_ACCOUNT_ADDRESS;
 use crate::state_circuit::constraint_builder::sort_key_values;
 use crate::state_circuit::fixed_table::FixedTable;
@@ -9,10 +10,7 @@ use crate::{
         util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
         witness::{Rw, RwMap, RwRow},
     },
-    gadget::{
-        is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
-        Variable,
-    },
+    gadget::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     util::Expr,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
@@ -90,7 +88,7 @@ pub struct Config<
     // Fixed columns for range lookups
     fixed_table: FixedTable,
 
-    test_cb: NewConstraintBuilder<F>,
+    cells: Cells<F>,
 }
 
 impl<
@@ -107,7 +105,7 @@ impl<
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; 31],
     ) -> Self {
-        let test_cb = NewConstraintBuilder::new(meta, power_of_randomness.clone());
+        let cells = Cells::new(meta, power_of_randomness.clone());
 
         let fixed_table = FixedTable::configure(meta);
 
@@ -187,7 +185,7 @@ impl<
             );
 
             // 3. is_write is boolean
-            cb.require_boolean("is_write should be boolean", test_cb.is_write());
+            cb.require_boolean("is_write should be boolean", cells.is_write());
 
             // 4. Keys are sorted in lexicographic order for same Tag
             // see lexicographic_ordering chips
@@ -200,7 +198,7 @@ impl<
             //- The corresponding value must be equal to the previous row
             cb.require_zero(
                 "if read and keys are same, value should be same with prev",
-                q_all_keys_same(meta) * test_cb.is_read() * (value_cur - value_prev),
+                q_all_keys_same(meta) * cells.is_read() * (value_cur - value_prev),
             );
 
             cb.gate(qb.s_enable(meta))
@@ -236,7 +234,7 @@ impl<
             vec![(
                 qb.s_enable(meta)
                     * q_all_keys_same(meta)
-                    * (test_cb.rw_counter_delta() - 1u64.expr()),
+                    * (cells.rw_counter_delta() - 1u64.expr()),
                 // TODO(mason) this isn't correct. The specs say this should be u32....
                 fixed_table.u10(meta),
             )]
@@ -258,7 +256,7 @@ impl<
             // - If READ, value must be 0
             cb.require_zero(
                 "if address changes, read value should be 0",
-                q_not_all_keys_same(meta) * test_cb.is_read() * value_cur,
+                q_not_all_keys_same(meta) * cells.is_read() * value_cur,
             );
 
             cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::Memory))
@@ -291,7 +289,7 @@ impl<
             // - It must be a WRITE
             cb.require_zero(
                 "if address changes, operation is always a write",
-                q_not_all_keys_same(meta) * test_cb.is_read(),
+                q_not_all_keys_same(meta) * cells.is_read(),
             );
             cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::Stack))
         });
@@ -335,11 +333,11 @@ impl<
             // - It must be a WRITE
             cb.require_zero(
                 "First access for storage is write",
-                q_not_all_keys_same(meta) * test_cb.is_read(),
+                q_not_all_keys_same(meta) * cells.is_read(),
             );
             cb.require_zero(
                 "First access for storage has rw_counter as 0",
-                q_not_all_keys_same(meta) * test_cb.rw_counter(),
+                q_not_all_keys_same(meta) * cells.rw_counter(),
             );
 
             cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::AccountStorage))
@@ -355,7 +353,7 @@ impl<
             fixed_table,
             power_of_randomness,
             lexicographic_ordering,
-            test_cb,
+            cells,
         }
     }
 
@@ -485,13 +483,11 @@ impl<
             }
         }
         region.assign_fixed(|| "enable row", self.s_enable, offset, || Ok(F::one()))?;
-        self.test_cb
+        self.cells
             .rw_counter
             .assign(region, offset, Some(rw_counter))?;
         region.assign_advice(|| "value", self.value, offset, || Ok(value))?;
-        self.test_cb
-            .is_write
-            .assign(region, offset, Some(is_write))?;
+        self.cells.is_write.assign(region, offset, Some(is_write))?;
 
         for i in 0..5 {
             let value = match i {
