@@ -6,6 +6,7 @@ pub(super) mod cells;
 pub(super) mod constraint_builder;
 pub(super) mod fixed_table;
 pub(super) mod param;
+mod state_new;
 
 // mod account;
 // mod account_destructed;

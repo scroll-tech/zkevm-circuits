@@ -1,3 +1,7 @@
+use super::param::{
+    N_BITS_ADDRESS, N_BITS_FIELD_TAG, N_BITS_ID, N_BITS_TAG, N_LIMBS_ACCOUNT_ADDRESS,
+};
+use crate::evm_circuit::param::N_BYTES_WORD;
 use crate::evm_circuit::util::{not, Cell};
 use crate::util::Expr;
 use halo2_proofs::{
@@ -77,15 +81,40 @@ impl<F: FieldExt, const N: usize> MultiplePrecisionInteger<F, N> {
 }
 
 #[derive(Clone, Debug)]
+pub struct RandomLinearCombination<F: FieldExt, const N: usize> {
+    pub(crate) value: Cell<F>,
+    bytes: [Cell<F>; N],
+}
+
+impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
+    fn new(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            value: new_cell(meta),
+            bytes: new_cells(meta),
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        value: Option<F>,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        self.value.assign(region, offset, value)
+        // self.limbs.map(....)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Cells<F: FieldExt> {
     // cb: BaseConstraintBuilder<F>,
     pub rw_counter: MultiplePrecisionInteger<F, 2>,
     pub(super) is_write: Cell<F>,
-    // tag: Cell<F>,
-    // id: Cell<F>,
-    // address: MultiplePrecisionInteger<F, N_LIMBS_ACCOUNT_ADDRESS>,
-    // field_tag: Cell<F>,
-    // storage_key: RandomLinearCombination<F, N_BYTES_WORD>,
+    tag: Cell<F>,
+    id: Cell<F>,
+    address: MultiplePrecisionInteger<F, N_LIMBS_ACCOUNT_ADDRESS>,
+    field_tag: Cell<F>,
+    storage_key: RandomLinearCombination<F, N_BYTES_WORD>,
     pub(super) value: Domino<F>,
     power_of_randomness: [Expression<F>; 31],
     /* constraints: Vec<(&'static str, Expression<F>)>,
@@ -97,11 +126,11 @@ impl<F: FieldExt> Cells<F> {
         Self {
             rw_counter: MultiplePrecisionInteger::new(meta),
             is_write: new_cell(meta),
-            // tag: new_cell(meta),
-            // id: new_cell(meta),
-            // address: MultiplePrecisionInteger::new(meta),
-            // field_tag: new_cell(meta),
-            // storage_key: RandomLinearCombination::new(new_cells(meta), &power_of_randomness),
+            tag: new_cell(meta),
+            id: new_cell(meta),
+            address: MultiplePrecisionInteger::new(meta),
+            field_tag: new_cell(meta),
+            storage_key: RandomLinearCombination::new(meta),
             value: new_domino(meta),
             power_of_randomness,
             /* constraints: vec![],
@@ -123,6 +152,30 @@ impl<F: FieldExt> Cells<F> {
 
     pub fn is_read(&self) -> Expression<F> {
         not::expr(self.is_write.expr())
+    }
+
+    pub fn tag(&self) -> Expression<F> {
+        self.tag.expr()
+    }
+
+    pub fn id(&self) -> Expression<F> {
+        self.id.expr()
+    }
+
+    pub fn address(&self) -> Expression<F> {
+        self.address.value.cur()
+    }
+
+    pub fn address_limbs(&self) -> Expression<F> {
+        self.address.value.cur()
+    }
+
+    pub fn field_tag(&self) -> Expression<F> {
+        self.field_tag.expr()
+    }
+
+    pub fn storage_key(&self) -> Expression<F> {
+        self.storage_key.value.expr()
     }
 
     pub fn value(&self) -> Expression<F> {
