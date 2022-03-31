@@ -5,7 +5,7 @@ mod tests {
         MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
     };
     use eth_types::evm_types::{MemoryAddress, StackAddress};
-    use eth_types::{address, bytecode, ToAddress, Word, U256};
+    use eth_types::{ToAddress, Word, U256};
     use halo2_proofs::arithmetic::BaseExt;
     use halo2_proofs::dev::MockProver;
     use pairing::bn256::Fr;

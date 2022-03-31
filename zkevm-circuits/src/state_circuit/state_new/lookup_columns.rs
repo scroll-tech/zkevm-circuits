@@ -1,4 +1,4 @@
-use eth_types::{Address, Field, ToScalar};
+use eth_types::Field;
 use halo2_proofs::{
     circuit::Layouter,
     plonk::{ConstraintSystem, Error, Expression},

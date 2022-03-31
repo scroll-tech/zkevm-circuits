@@ -1,10 +1,10 @@
 use crate::evm_circuit::{param::N_BYTES_WORD, witness::RwMap};
-use eth_types::{Address, Field, ToScalar};
+use eth_types::{Address, Field};
 use halo2_proofs::{
     circuit::Layouter,
     circuit::SimpleFloorPlanner,
     plonk::Circuit,
-    plonk::{ConstraintSystem, Error, Selector},
+    plonk::{ConstraintSystem, Error},
 };
 
 mod cell;

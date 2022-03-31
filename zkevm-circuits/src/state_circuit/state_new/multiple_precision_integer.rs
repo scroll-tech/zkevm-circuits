@@ -4,7 +4,7 @@ use halo2_proofs::{
     plonk::{ConstraintSystem, Error, Expression},
 };
 use itertools::Itertools;
-use std::{convert::TryInto, marker::PhantomData};
+use std::marker::PhantomData;
 
 use crate::util::Expr;
 
