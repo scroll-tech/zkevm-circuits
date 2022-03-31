@@ -51,12 +51,7 @@ impl<F: Field> AdviceCell<F> {
         offset: usize,
         value: F,
     ) -> Result<AssignedCell<F, F>, Error> {
-        region.assign_advice(
-            || format!("assign advice cell"),
-            self.column,
-            offset,
-            || Ok(value),
-        )
+        region.assign_advice(|| "assign advice cell", self.column, offset, || Ok(value))
     }
 
     pub fn cur(&self) -> Expression<F> {

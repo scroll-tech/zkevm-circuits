@@ -221,7 +221,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 meta,
                 selector.cur.clone(),
                 lookup_columns.u8_range(),
-                &power_of_randomness.clone().map(|c| c.cur.clone()),
+                &power_of_randomness.clone().map(|c| c.cur),
             ),
             value: AdviceCell::new(meta),
             selector,

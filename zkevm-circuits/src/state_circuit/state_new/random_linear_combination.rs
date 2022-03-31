@@ -62,7 +62,7 @@ impl<F: Field, const N: usize> Chip<F, N> {
                 selector
                     * (encoded.clone().cur
                         - RLC::random_linear_combine_expr(
-                            bytes.clone().map(|byte| byte.cur.clone()),
+                            bytes.clone().map(|byte| byte.cur),
                             power_of_randomness,
                         )),
             ]
