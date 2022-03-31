@@ -1,7 +1,6 @@
 //! EVM byte code generator
 
-use crate::evm_types::OpcodeId;
-use crate::Word;
+use crate::{evm_types::OpcodeId, Bytes, Word};
 use std::collections::HashMap;
 
 /// EVM Bytecode
@@ -10,6 +9,12 @@ pub struct Bytecode {
     code: Vec<u8>,
     num_opcodes: usize,
     markers: HashMap<String, usize>,
+}
+
+impl From<Bytecode> for Bytes {
+    fn from(code: Bytecode) -> Self {
+        code.code.into()
+    }
 }
 
 impl Bytecode {

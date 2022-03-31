@@ -40,9 +40,18 @@ impl Opcode for Calldatasize {
 
 #[cfg(test)]
 mod calldatasize_tests {
-    use crate::circuit_input_builder::ExecState;
-    use crate::operation::{CallContextField, CallContextOp, StackOp, RW};
-    use eth_types::{bytecode, evm_types::OpcodeId, evm_types::StackAddress};
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{CallContextField, CallContextOp, StackOp, RW},
+    };
+    use eth_types::{
+        bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
+    };
+
+    use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -53,11 +62,16 @@ mod calldatasize_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code(&code).unwrap(),
-        );
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
-        let mut builder = block.new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();

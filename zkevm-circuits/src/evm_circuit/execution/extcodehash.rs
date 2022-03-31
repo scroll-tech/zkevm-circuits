@@ -221,10 +221,12 @@ mod test {
     };
     use bus_mapping::mock::BlockData;
     use eth_types::{
-        address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, U256,
+        address, bytecode,
+        geth_types::{Account, GethData},
+        Address, Bytecode, Bytes, ToWord, Word, U256,
     };
     use lazy_static::lazy_static;
-    use mock::new_single_tx_trace_accounts;
+    use mock::TestContext;
 
     lazy_static! {
         static ref EXTERNAL_ADDRESS: Address =
@@ -243,7 +245,7 @@ mod test {
         if is_warm {
             code.append(&bytecode! {
                 PUSH20(external_address.to_word())
-                EXTCODEHASH // TODO: change this to BALANCE once it's implemented
+                EXTCODEHASH // TODO: Change this to BALANCE once is implemented
                 POP
             });
         }
@@ -254,23 +256,38 @@ mod test {
             STOP
         });
 
-        let mut accounts = vec![Account {
-            address: Address::default(), // This is the address of the executing account
-            code: Bytes::from(code.to_vec()),
-            ..Default::default()
-        }];
-        if let Some(external_account) = external_account {
-            accounts.push(external_account)
-        }
+        // Execute the bytecode and get trace
+        let block: GethData = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(Word::from(1u64 << 20))
+                    .code(code);
 
-        // execute the bytecode and get trace
-        let geth_data = new_single_tx_trace_accounts(accounts).unwrap();
-        let block = BlockData::new_from_geth_data(geth_data);
+                accs[1].address(external_address);
+                if let Some(external_account) = external_account {
+                    accs[1]
+                        .balance(external_account.balance)
+                        .nonce(external_account.nonce)
+                        .code(external_account.code);
+                }
+                accs[2]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
-        let mut builder = block.new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
+            .expect("could not handle block tx");
 
         test_circuits_using_witness_block(
             block_convert(&builder.block, &builder.code_db),

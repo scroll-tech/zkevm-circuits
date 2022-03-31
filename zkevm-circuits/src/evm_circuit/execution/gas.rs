@@ -91,8 +91,8 @@ mod test {
         test_util::{run_test_circuits, BytecodeTestConfig},
     };
     use bus_mapping::mock::BlockData;
-    use eth_types::{bytecode, evm_types::Gas};
-    use mock::new_single_tx_trace_code_gas;
+    use eth_types::{address, bytecode, geth_types::GethData, Word};
+    use mock::TestContext;
 
     fn test_ok() {
         let bytecode = bytecode! {
@@ -113,14 +113,35 @@ mod test {
             GAS
             STOP
         };
+
         let config = BytecodeTestConfig::default();
-        let block_trace = BlockData::new_from_geth_data(
-            new_single_tx_trace_code_gas(&bytecode, Gas(config.gas_limit), None)
-                .expect("could not build block trace"),
-        );
-        let mut builder = block_trace.new_circuit_input_builder();
+
+        // Create a custom tx setting Gas to
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .balance(Word::from(1u64 << 20))
+                    .code(bytecode);
+                accs[1]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[1].address)
+                    .gas(Word::from(config.gas_limit));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
-            .handle_block(&block_trace.eth_block, &block_trace.geth_traces)
+            .handle_block(&block.eth_block, &block.geth_traces)
             .expect("could not handle block tx");
         let mut block = block_convert(&builder.block, &builder.code_db);
 
@@ -130,7 +151,6 @@ mod test {
         assert_eq!(block.txs.len(), 1);
         assert_eq!(block.txs[0].steps.len(), 5);
         block.txs[0].steps[2].gas_left -= 1;
-
         assert!(run_test_circuit(block, config.evm_circuit_lookup_tags).is_err());
     }
 }

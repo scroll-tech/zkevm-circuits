@@ -210,19 +210,11 @@ mod test {
     use crate::evm_circuit::{
         test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
     };
-    use eth_types::{self, address, geth_types::Account, Address, Word};
+    use eth_types::{self, address, geth_types::GethData, Word};
+    use mock::TestContext;
 
-    fn test_ok(txs: Vec<eth_types::Transaction>) {
-        let accounts = txs
-            .iter()
-            .map(|tx| Account {
-                address: tx.from,
-                balance: Word::from(10).pow(20.into()),
-                ..Default::default()
-            })
-            .collect::<Vec<_>>();
-        let block_data =
-            bus_mapping::mock::BlockData::new_from_geth_data(mock::new(accounts, txs).unwrap());
+    fn test_ok(block: GethData) {
+        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
         let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
@@ -230,19 +222,6 @@ mod test {
         let block = block_convert(&builder.block, &builder.code_db);
 
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
-    }
-
-    fn mock_tx(from: Address, gas: Option<u64>, gas_price: Option<Word>) -> eth_types::Transaction {
-        let to = address!("0x00000000000000000000000000000000000000ff");
-        let minimal_gas = Word::from(21000);
-        let two_gwei = Word::from(2_000_000_000);
-        eth_types::Transaction {
-            from,
-            to: Some(to),
-            gas: gas.map(Word::from).unwrap_or(minimal_gas),
-            gas_price: gas_price.or(Some(two_gwei)),
-            ..Default::default()
-        }
     }
 
     #[test]
@@ -260,18 +239,34 @@ mod test {
         //     Some(65000),
         //     None,
         // )]);
+
         // Multiple txs
-        test_ok(vec![
-            mock_tx(
-                address!("0x00000000000000000000000000000000000000fd"),
+        test_ok(
+            // Get the execution steps from the external tracer
+            TestContext::<2, 2>::new(
                 None,
-                None,
-            ),
-            mock_tx(
-                address!("0x00000000000000000000000000000000000000fe"),
-                None,
-                None,
-            ),
-        ]);
+                |accs| {
+                    accs[0]
+                        .address(address!("0x00000000000000000000000000000000000000fe"))
+                        .balance(Word::from(10u64.pow(19)));
+                    accs[1]
+                        .address(address!("0x00000000000000000000000000000000000000fd"))
+                        .balance(Word::from(10u64.pow(19)));
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(Word::from(10u64.pow(17)));
+                    txs[1]
+                        .to(accs[0].address)
+                        .from(accs[1].address)
+                        .value(Word::from(10u64.pow(17)));
+                },
+                |block, _tx| block.number(0xcafeu64),
+            )
+            .unwrap()
+            .into(),
+        );
     }
 }

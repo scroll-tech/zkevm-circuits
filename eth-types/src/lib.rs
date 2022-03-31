@@ -356,11 +356,12 @@ pub struct GethExecTraceInternal {
 /// before the step is executed.
 //#[derive(Clone, Debug, Eq, PartialEq,
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[doc(hidden)]
 pub struct GethExecTrace {
+    /// Used gas
     pub gas: Gas,
+    /// True when the transaction has failed.
     pub failed: bool,
-    // return_value is a hex encoded byte array
+    /// Vector of geth execution steps of the trace.
     //#[serde(rename = "returnValue")]
     pub return_value: String,
     pub struct_logs: Vec<GethExecStep>,

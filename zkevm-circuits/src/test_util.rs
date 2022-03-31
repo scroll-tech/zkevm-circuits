@@ -2,8 +2,10 @@ use crate::{
     evm_circuit::{table::FixedTableTag, witness::Block},
     state_circuit::StateCircuit,
 };
-use eth_types::evm_types::Gas;
+use bus_mapping::mock::BlockData;
+use eth_types::{address, geth_types::GethData, Bytes, Word};
 use halo2_proofs::dev::{MockProver, VerifyFailure};
+use mock::TestContext;
 use pairing::bn256::Fr;
 
 #[cfg(test)]
@@ -63,13 +65,33 @@ pub fn test_circuits_using_bytecode(
     config: BytecodeTestConfig,
     call_data: Option<Vec<u8>>,
 ) -> Result<(), Vec<VerifyFailure>> {
-    // execute the bytecode and get trace
-    let block_trace = bus_mapping::mock::BlockData::new_from_geth_data(
-        mock::new_single_tx_trace_code_gas(&bytecode, Gas(config.gas_limit), call_data).unwrap(),
-    );
-    let mut builder = block_trace.new_circuit_input_builder();
+    // Create a custom tx setting Gas to
+    let block: GethData = TestContext::<2, 1>::new(
+        None,
+        |accs| {
+            accs[0]
+                .address(address!("0x0000000000000000000000000000000000000010"))
+                .balance(Word::from(1u64 << 20))
+                .code(bytecode);
+            accs[1]
+                .address(address!("0x0000000000000000000000000000000000000000"))
+                .balance(Word::from(1u64 << 30));
+        },
+        |mut txs, accs| {
+            txs[0]
+                .to(accs[0].address)
+                .from(accs[1].address)
+                .gas(Word::from(config.gas_limit))
+                .input(Bytes::from(call_data.unwrap_or_default()));
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+    .into();
+
+    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
     builder
-        .handle_block(&block_trace.eth_block, &block_trace.geth_traces)
+        .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
 
     // build a witness block from trace result
