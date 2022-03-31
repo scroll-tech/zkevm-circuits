@@ -41,7 +41,7 @@ mod tests {
     }
 
     #[test]
-    fn asdfawefasfasdfasefasdf() {
+    fn state_circuit_simple_2() {
         let memory_op_0 = Operation::new(
             RWCounter::from(12),
             RW::WRITE,

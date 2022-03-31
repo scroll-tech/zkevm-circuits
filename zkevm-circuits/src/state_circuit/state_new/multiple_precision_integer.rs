@@ -29,8 +29,8 @@ impl ToLimbs for u32 {
 
 #[derive(Clone)]
 pub struct Config<F: Field, T: ToLimbs, const N: usize> {
-    value: AdviceCell<F>,
-    limbs: [AdviceCell<F>; N],
+    pub value: AdviceCell<F>,
+    pub limbs: [AdviceCell<F>; N],
     _marker: PhantomData<T>,
 }
 

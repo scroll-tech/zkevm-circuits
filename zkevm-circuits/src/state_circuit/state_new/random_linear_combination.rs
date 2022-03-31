@@ -9,8 +9,8 @@ use crate::state_circuit::state_new::cell::AdviceCell;
 
 #[derive(Clone, Debug)]
 pub struct Config<F: Field, const N: usize> {
-    encoded: AdviceCell<F>,
-    bytes: [AdviceCell<F>; N],
+    pub encoded: AdviceCell<F>,
+    pub bytes: [AdviceCell<F>; N],
 }
 
 impl<F: Field, const N: usize> Config<F, N> {

@@ -58,6 +58,18 @@ impl<F: Field> AdviceCell<F> {
             || Ok(value),
         )
     }
+
+    pub fn cur(&self) -> Expression<F> {
+        self.cur.clone()
+    }
+
+    pub fn prev(&self) -> Expression<F> {
+        self.prev.clone()
+    }
+
+    pub fn change(&self) -> Expression<F> {
+        self.cur() - self.prev()
+    }
 }
 
 impl<F: Field> FixedCell<F> {

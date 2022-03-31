@@ -1,11 +1,14 @@
-use crate::evm_circuit::{param::N_BYTES_WORD, witness::RwMap};
+use crate::evm_circuit::{
+    param::N_BYTES_WORD, table::RwTableTag, util::constraint_builder::BaseConstraintBuilder,
+    util::math_gadget::generate_lagrange_base_polynomial, witness::RwMap,
+};
+use crate::util::Expr;
 use eth_types::{Address, Field};
 use halo2_proofs::{
-    circuit::Layouter,
-    circuit::SimpleFloorPlanner,
-    plonk::Circuit,
-    plonk::{ConstraintSystem, Error},
+    circuit::{Layouter, SimpleFloorPlanner},
+    plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
+use strum::IntoEnumIterator;
 
 mod cell;
 mod lookup_columns;
@@ -38,6 +41,153 @@ struct StateConfig<F: Field> {
     // lexicographic_ordering config, etc.
 }
 
+impl<F: Field> StateConfig<F> {
+    pub fn matches(&self, tag: RwTableTag) -> Expression<F> {
+        generate_lagrange_base_polynomial(
+            self.tag.cur(),
+            tag as usize,
+            RwTableTag::iter().map(|x| x as usize),
+        )
+    }
+
+    fn add_general_constraints(&self, cb: &mut BaseConstraintBuilder<F>) {
+        cb.require_in_set(
+            "tag in RwTableTag range",
+            self.tag.cur.clone(),
+            RwTableTag::iter().map(|x| x.expr()).collect(),
+        );
+    }
+
+    fn configure_start(&self, cb: &mut BaseConstraintBuilder<F>) {
+        cb.require_zero("rw_counter starts at 0", self.rw_counter.value.cur());
+        cb.require_zero("tag is 0 at start", self.tag.cur())
+    }
+
+    fn configure_memory(&self, cb: &mut BaseConstraintBuilder<F>) {
+        cb.require_zero("field_tag is 0 for MemoryOp", self.field_tag.cur());
+        cb.require_zero(
+            "storage_key is 0 for MemoryOp",
+            self.storage_key.encoded.cur(),
+        );
+        // # 1. First access for a set of all keys
+        //  #
+        //  # When the set of all keys changes (first access of an address in a call)
+        //  # - If READ, value must be 0
+        for i in 2..N_LIMBS_ACCOUNT_ADDRESS {
+            cb.require_zero(
+                "memory address is at most 2 limbs",
+                self.address.limbs[i].cur(),
+            )
+        }
+        // lookup self.value.cur is in u8 range.
+    }
+
+    fn configure_stack(&self, cb: &mut BaseConstraintBuilder<F>) {
+        cb.require_zero("field_tag is 0 for StackOp", self.field_tag.cur.clone());
+        cb.require_zero(
+            "storage_key is 0 for StackOp",
+            self.storage_key.encoded.cur.clone(),
+        );
+        // # 1. First access for a set of all keys
+        //  #
+        //  # When the set of all keys changes (first access of an address in a call)
+        //  # - If READ, value must be 0
+        for i in 2..N_LIMBS_ACCOUNT_ADDRESS {
+            cb.require_zero(
+                "memory address is at most 2 limbs",
+                self.address.limbs[i].cur.clone(),
+            )
+        }
+        // lookup self.address.cur is in u10 range.
+
+        cb.require_boolean(
+            "stack pointer change is 0 or 1",
+            self.address.value.change(),
+        );
+    }
+
+    fn configure_account_storage(&self, cb: &mut BaseConstraintBuilder<F>) {
+        // Unused keys are 0
+        for (name, expression) in [
+            // Moved tx_id from aux to id column, so this no longer is true.
+            // ("0 id for Storage ", self.id.cur()),
+            ("0 field_tag for Storage", self.field_tag.cur()),
+        ] {
+            cb.require_zero(name, expression);
+        }
+    }
+
+    fn configure_call_context(&self, cb: &mut BaseConstraintBuilder<F>) {
+        // Unused keys are 0
+        for (name, expression) in [
+            ("0 address for Account ", self.address.value.cur()),
+            ("0 storage_key for Account", self.storage_key.encoded.cur()),
+        ] {
+            cb.require_zero(name, expression);
+        }
+    }
+
+    fn configure_account(&self, cb: &mut BaseConstraintBuilder<F>) {
+        // Unused keys are 0
+        for (name, expression) in [
+            ("0 id for Account ", self.id.cur()),
+            ("0 storage_key for Account", self.storage_key.encoded.cur()),
+        ] {
+            cb.require_zero(name, expression);
+        }
+    }
+
+    fn configure_tx_refund(&self, cb: &mut BaseConstraintBuilder<F>) {
+        // Unused keys are 0
+        for (name, expression) in [
+            ("0 address for TxRefund ", self.address.value.cur()),
+            ("0 field_tag for TxRefund", self.field_tag.cur()),
+            ("0 storage_key for TxRefund", self.storage_key.encoded.cur()),
+        ] {
+            cb.require_zero(name, expression);
+        }
+        // TODO: add more constraints in state spec.
+    }
+
+    fn configure_tx_access_list_account(&self, cb: &mut BaseConstraintBuilder<F>) {
+        // Unused keys are 0
+        for (name, expression) in [
+            ("0 field_tag for TxAccessListAccount", self.field_tag.cur()),
+            (
+                "0 storage_key for TxAccessListAccount",
+                self.storage_key.encoded.cur(),
+            ),
+        ] {
+            cb.require_zero(name, expression);
+        }
+        // TODO: add more constraints in state spec.
+    }
+
+    fn configure_tx_access_list_account_storage(&self, cb: &mut BaseConstraintBuilder<F>) {
+        // Unused key is 0
+        cb.require_zero(
+            "0 field_tag for TxAccessListAccountStorage",
+            self.storage_key.encoded.cur(),
+        );
+        // TODO: add more constraints in state spec.
+    }
+
+    fn configure_account_destructed(&self, cb: &mut BaseConstraintBuilder<F>) {
+        // Unused keys are 0
+        for (name, expression) in [
+            ("0 id for AccountDestructed", self.id.cur()),
+            ("0 address for AccountDestructed", self.address.value.cur()),
+            (
+                "0 storage_key for AccountDestructed",
+                self.storage_key.encoded.cur(),
+            ),
+        ] {
+            cb.require_zero(name, expression);
+        }
+        // TODO: add more constraints in state spec.
+    }
+}
+
 #[derive(Default)]
 struct StateCircuit<F: Field> {
     pub randomness: F,
@@ -57,7 +207,10 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| InstanceCell::new(meta));
         let selector = FixedCell::new(meta);
 
-        Self::Config {
+        // maybe this will not be needed with Selector instead of column<fixed>?
+        let selector_expression = selector.cur.clone();
+
+        let config = Self::Config {
             rw_counter: MpiChip::configure(meta, selector.cur.clone(), lookup_columns.u8_range()),
             is_write: AdviceCell::new(meta),
             tag: AdviceCell::new(meta),
@@ -68,13 +221,52 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 meta,
                 selector.cur.clone(),
                 lookup_columns.u8_range(),
-                &power_of_randomness.clone().map(|c| c.cur),
+                &power_of_randomness.clone().map(|c| c.cur.clone()),
             ),
             value: AdviceCell::new(meta),
             selector,
             lookup_columns,
             power_of_randomness,
-        }
+        };
+
+        let mut cb = BaseConstraintBuilder::new(30); // TODO: use correct max degree;
+        config.add_general_constraints(&mut cb);
+        cb.condition(config.matches(RwTableTag::Start), |cb| {
+            config.configure_start(cb)
+        });
+        cb.condition(config.matches(RwTableTag::Memory), |cb| {
+            config.configure_memory(cb)
+        });
+        cb.condition(config.matches(RwTableTag::Stack), |cb| {
+            config.configure_stack(cb)
+        });
+        cb.condition(config.matches(RwTableTag::AccountStorage), |cb| {
+            config.configure_account_storage(cb)
+        });
+        cb.condition(config.matches(RwTableTag::TxAccessListAccount), |cb| {
+            config.configure_tx_access_list_account(cb)
+        });
+        cb.condition(
+            config.matches(RwTableTag::TxAccessListAccountStorage),
+            |cb| config.configure_tx_access_list_account_storage(cb),
+        );
+        cb.condition(config.matches(RwTableTag::TxRefund), |cb| {
+            config.configure_tx_refund(cb)
+        });
+        cb.condition(config.matches(RwTableTag::Account), |cb| {
+            config.configure_account(cb)
+        });
+        cb.condition(config.matches(RwTableTag::AccountDestructed), |cb| {
+            config.configure_account_destructed(cb)
+        });
+        cb.condition(config.matches(RwTableTag::CallContext), |cb| {
+            config.configure_call_context(cb)
+        });
+        meta.create_gate("state circuit constraints", |_| {
+            cb.gate(selector_expression)
+        });
+
+        config
     }
 
     fn synthesize(
