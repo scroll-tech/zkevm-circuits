@@ -940,7 +940,7 @@ impl<'a> CircuitInputStateRef<'a> {
             CallKind::StaticCall => (
                 caller.address,
                 step.stack.nth_last(1)?.to_address(),
-                0.into(),
+                Word::zero(),
             ),
             CallKind::Create => (caller.address, self.create_address()?, step.stack.last()?),
             CallKind::Create2 => (
@@ -1679,6 +1679,13 @@ pub fn gen_state_access_trace<TX>(
         let i = Some(index);
         let (contract_address, code_source) = &call_stack[call_stack.len() - 1];
         let (contract_address, code_source) = (*contract_address, *code_source);
+
+        let (mut push_call_stack, mut pop_call_stack) = (false, false);
+        if let Some(next_step) = next_step {
+            push_call_stack = step.depth + 1 == next_step.depth;
+            pop_call_stack = step.depth - 1 == next_step.depth;
+        }
+
         match step.op {
             OpcodeId::SSTORE => {
                 let address = contract_address;
@@ -1727,23 +1734,29 @@ pub fn gen_state_access_trace<TX>(
                 accs.push(Access::new(i, WRITE, Account { address }));
             }
             OpcodeId::CREATE => {
-                // Find CREATE result
-                let address = get_call_result(&geth_trace.struct_logs[index..])
-                    .unwrap_or_else(Word::zero)
-                    .to_address();
-                if !address.is_zero() {
-                    accs.push(Access::new(i, WRITE, Account { address }));
-                    accs.push(Access::new(i, WRITE, Code { address }));
+                if push_call_stack {
+                    // Find CREATE result
+                    let address = get_call_result(&geth_trace.struct_logs[index..])
+                        .unwrap_or_else(Word::zero)
+                        .to_address();
+                    if !address.is_zero() {
+                        accs.push(Access::new(i, WRITE, Account { address }));
+                        accs.push(Access::new(i, WRITE, Code { address }));
+                    }
+                    call_stack.push((address, CodeSource::Address(address)));
                 }
             }
             OpcodeId::CREATE2 => {
-                // Find CREATE2 result
-                let address = get_call_result(&geth_trace.struct_logs[index..])
-                    .unwrap_or_else(Word::zero)
-                    .to_address();
-                if !address.is_zero() {
-                    accs.push(Access::new(i, WRITE, Account { address }));
-                    accs.push(Access::new(i, WRITE, Code { address }));
+                if push_call_stack {
+                    // Find CREATE2 result
+                    let address = get_call_result(&geth_trace.struct_logs[index..])
+                        .unwrap_or_else(Word::zero)
+                        .to_address();
+                    if !address.is_zero() {
+                        accs.push(Access::new(i, WRITE, Account { address }));
+                        accs.push(Access::new(i, WRITE, Code { address }));
+                    }
+                    call_stack.push((address, CodeSource::Address(address)));
                 }
             }
             OpcodeId::CALL => {
@@ -1753,7 +1766,9 @@ pub fn gen_state_access_trace<TX>(
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, WRITE, Account { address }));
                 accs.push(Access::new(i, READ, Code { address }));
-                call_stack.push((address, CodeSource::Address(address)));
+                if push_call_stack {
+                    call_stack.push((address, CodeSource::Address(address)));
+                }
             }
             OpcodeId::CALLCODE => {
                 let address = contract_address;
@@ -1762,31 +1777,34 @@ pub fn gen_state_access_trace<TX>(
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, WRITE, Account { address }));
                 accs.push(Access::new(i, READ, Code { address }));
-                call_stack.push((address, CodeSource::Address(address)));
+                if push_call_stack {
+                    call_stack.push((address, CodeSource::Address(address)));
+                }
             }
             OpcodeId::DELEGATECALL => {
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, READ, Code { address }));
-                call_stack.push((contract_address, CodeSource::Address(address)));
+                if push_call_stack {
+                    call_stack.push((contract_address, CodeSource::Address(address)));
+                }
             }
             OpcodeId::STATICCALL => {
                 let address = step.stack.nth_last(1)?.to_address();
                 accs.push(Access::new(i, READ, Code { address }));
-                call_stack.push((address, CodeSource::Address(address)));
+                if push_call_stack {
+                    call_stack.push((address, CodeSource::Address(address)));
+                }
             }
             _ => {}
         }
-        if let Some(next_step) = next_step {
-            // return from a *CALL*/CREATE*
-            if step.depth - 1 == next_step.depth {
-                if call_stack.len() == 1 {
-                    return Err(Error::InvalidGethExecStep(
-                        "gen_state_access_trace: call stack will be empty",
-                        step.clone(),
-                    ));
-                }
-                call_stack.pop().expect("call stack is empty");
+        if pop_call_stack {
+            if call_stack.len() == 1 {
+                return Err(Error::InvalidGethExecStep(
+                    "gen_state_access_trace: call stack will be empty",
+                    step.clone(),
+                ));
             }
+            call_stack.pop().expect("call stack is empty");
         }
     }
     Ok(accs)
@@ -1948,7 +1966,8 @@ mod tracer_tests {
     use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
     use eth_types::{address, bytecode, geth_types::GethData, word, Bytecode, ToWord, Word};
     use lazy_static::lazy_static;
-    use mock;
+    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::MOCK_COINBASE;
     use pretty_assertions::assert_eq;
     use std::iter::FromIterator;
 
@@ -2015,7 +2034,7 @@ mod tracer_tests {
             code_source: CodeSource::Memory,
             code_hash: Hash::zero(),
             depth: 2,
-            value: 0.into(),
+            value: Word::zero(),
             call_data_offset: 0,
             call_data_length: 0,
             return_data_offset: 0,
@@ -2059,8 +2078,30 @@ mod tracer_tests {
                  PUSH2(0xab)
                  STOP
         };
-        let block =
-            mock::new_single_tx_trace_code_gas(&code, Gas(1_000_000_000_000_000u64), None).unwrap();
+
+        // Create a custom tx setting Gas to
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(*ADDR_A)
+                    .balance(Word::from(1u64 << 20))
+                    .code(code);
+                accs[1]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .balance(Word::from(10u64.pow(19)));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[1].address)
+                    .gas(Word::from(10u64.pow(15)));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
         let struct_logs = &block.geth_traces[0].struct_logs;
 
         // get last CALL
@@ -2078,7 +2119,7 @@ mod tracer_tests {
         // Some sanity checks
         assert_eq!(struct_logs[index + 1].op, OpcodeId::PUSH2);
         assert_eq!(struct_logs[index + 1].depth, 1025u16);
-        assert_eq!(struct_logs[index + 1].stack, Stack(vec![Word::from(0)])); // success = 0
+        assert_eq!(struct_logs[index + 1].stack, Stack(vec![Word::zero()])); // success = 0
         assert_eq!(struct_logs[index + 2].op, OpcodeId::STOP);
         assert_eq!(struct_logs[index + 2].depth, 1025u16);
 
@@ -2112,7 +2153,32 @@ mod tracer_tests {
 
             PUSH3(0xbb)
         };
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1]
+                    .address(address!("0x000000000000000000000000000000000cafe001"))
+                    .code(code_b);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         // get last CALL
         let (index, step) = block.geth_traces[0]
@@ -2125,7 +2191,7 @@ mod tracer_tests {
         let next_step = block.geth_traces[0].struct_logs.get(index + 1);
         assert_eq!(step.error, None);
         assert_eq!(next_step.unwrap().op, OpcodeId::PUSH2);
-        assert_eq!(next_step.unwrap().stack, Stack(vec![Word::from(0)])); // success = 0
+        assert_eq!(next_step.unwrap().stack, Stack(vec![Word::zero()])); // success = 0
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         builder.builder.sdb.set_account(
@@ -2202,7 +2268,29 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1].address(*ADDR_B).code(code_b);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         // get last CREATE2
         let (index, step) = block.geth_traces[0]
@@ -2319,7 +2407,29 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1].address(*ADDR_B).code(code_b);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         // get last RETURN
         let (index, step) = block.geth_traces[0]
@@ -2403,7 +2513,29 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1].address(*ADDR_B).code(code_b);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         // get last RETURN
         let (index, step) = block.geth_traces[0]
@@ -2488,7 +2620,29 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1].address(*ADDR_B).code(code_b);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         // get last RETURN
         let (index, step) = block.geth_traces[0]
@@ -2560,7 +2714,31 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1]
+                    .address(address!("0x000000000000000000000000000000000cafe001"))
+                    .code(code_b);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         // get first STOP
         let (index, step) = block.geth_traces[0]
@@ -2612,7 +2790,25 @@ mod tracer_tests {
             STOP
         };
         let index = 1; // JUMP
-        let block = mock::new_single_tx_trace_code(&code).unwrap();
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .balance(Word::from(1u64 << 20))
+                    .code(code.clone());
+                accs[1]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[1].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
         assert_eq!(block.geth_traces[0].struct_logs.len(), 2);
         let step = &block.geth_traces[0].struct_logs[index];
         let next_step = block.geth_traces[0].struct_logs.get(index + 1);
@@ -2639,7 +2835,31 @@ mod tracer_tests {
             PUSH2(0xaa)
         };
         let index = 8; // JUMP
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code).unwrap();
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1].address(*ADDR_B).code(code);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
         let step = &block.geth_traces[0].struct_logs[index];
         let next_step = block.geth_traces[0].struct_logs.get(index + 1);
         assert!(check_err_invalid_jump(step, next_step));
@@ -2670,7 +2890,25 @@ mod tracer_tests {
             STOP
         };
         let index = 2; // REVERT
-        let block = mock::new_single_tx_trace_code(&code).unwrap();
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .balance(Word::from(1u64 << 20))
+                    .code(code.clone());
+                accs[1]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[1].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
         assert_eq!(block.geth_traces[0].struct_logs.len(), 3);
         let step = &block.geth_traces[0].struct_logs[index];
         let next_step = block.geth_traces[0].struct_logs.get(index + 1);
@@ -2698,7 +2936,31 @@ mod tracer_tests {
             PUSH2(0xaa)
         };
         let index = 10; // REVERT
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code).unwrap();
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1].address(*ADDR_B).code(code);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
         let step = &block.geth_traces[0].struct_logs[index];
         let next_step = block.geth_traces[0].struct_logs.get(index + 1);
         assert!(check_err_execution_reverted(step, next_step));
@@ -2735,7 +2997,31 @@ mod tracer_tests {
             PUSH2(0xaa)
         };
         let index = 10; // STOP
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code).unwrap();
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1].address(*ADDR_B).code(code);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
         let step = &block.geth_traces[0].struct_logs[index];
         let next_step = block.geth_traces[0].struct_logs.get(index + 1);
 
@@ -2786,7 +3072,31 @@ mod tracer_tests {
             PUSH1(0x00) // offset
             RETURN
         };
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1]
+                    .address(address!("0x000000000000000000000000000000000cafe001"))
+                    .code(code_b);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         // get last RETURNDATACOPY
         let (index, step) = block.geth_traces[0]
@@ -2820,7 +3130,24 @@ mod tracer_tests {
             PUSH32(0x100_0000_0000_0000_0000_u128) // offset
             MSTORE
         };
-        let block = mock::new_single_tx_trace_code(&code).unwrap();
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .balance(Word::from(1u64 << 20))
+                    .code(code);
+                accs[1]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[1].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         let index = 2; // MSTORE
         let step = &block.geth_traces[0].struct_logs[index];
@@ -2841,7 +3168,24 @@ mod tracer_tests {
         let mut code = bytecode::Bytecode::default();
         code.write_op(OpcodeId::PC);
         code.write(0x0f);
-        let block = mock::new_single_tx_trace_code(&code).unwrap();
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .balance(Word::from(1u64 << 20))
+                    .code(code);
+                accs[1]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[1].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         let index = block.geth_traces[0].struct_logs.len() - 1; // 0x0f
         let step = &block.geth_traces[0].struct_logs[index];
@@ -2876,7 +3220,29 @@ mod tracer_tests {
 
             PUSH3(0xbb)
         };
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1].address(*ADDR_B).code(code_b);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         let index = 9; // SSTORE
         let step = &block.geth_traces[0].struct_logs[index];
@@ -2899,7 +3265,7 @@ mod tracer_tests {
             code_source: CodeSource::Address(*ADDR_B),
             code_hash: Hash::zero(),
             depth: 2,
-            value: 0.into(),
+            value: Word::zero(),
             call_data_offset: 0,
             call_data_length: 0,
             return_data_offset: 0,
@@ -2920,7 +3286,20 @@ mod tracer_tests {
             PUSH1(0x1)
             PUSH1(0x2)
         };
-        let block = mock::new_single_tx_trace_code_gas(&code, Gas(21004), None).unwrap();
+        // Create a custom tx setting Gas to
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            |mut txs, accs| {
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[1].address)
+                    .gas(Word::from(21004u64));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
         let struct_logs = &block.geth_traces[0].struct_logs;
 
         assert_eq!(struct_logs[1].error, Some(GETH_ERR_OUT_OF_GAS.to_string()));
@@ -2933,7 +3312,14 @@ mod tracer_tests {
         for i in 0..1025 {
             code.push(2, Word::from(i));
         }
-        let block = mock::new_single_tx_trace_code(&code).unwrap();
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         let index = block.geth_traces[0].struct_logs.len() - 1; // PUSH2
         let step = &block.geth_traces[0].struct_logs[index];
@@ -2956,7 +3342,14 @@ mod tracer_tests {
         let code = bytecode! {
             SWAP5
         };
-        let block = mock::new_single_tx_trace_code(&code).unwrap();
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         let index = 0; // SWAP5
         let step = &block.geth_traces[0].struct_logs[index];
@@ -3027,7 +3420,29 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1].address(*ADDR_B).code(code_b);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         // get RETURN
         let (index_return, _) = block.geth_traces[0]
@@ -3109,7 +3524,29 @@ mod tracer_tests {
             PUSH3(0xbb)
         };
         code_b.append(&code_b_end);
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1].address(*ADDR_B).code(code_b);
+                accs[2]
+                    .address(address!("0x000000000000000000000000000000000cafe002"))
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
         // get last RETURN
         let (index_return, _) = block.geth_traces[0]
@@ -3178,7 +3615,29 @@ mod tracer_tests {
 
             PUSH3(0xbb)
         };
-        let block = mock::new_single_tx_trace_code_2(&code_a, &code_b).unwrap();
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .code(code_a);
+                accs[1].address(*ADDR_B).code(code_b);
+                accs[2].address(ADDR_0).balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
         let access_trace = gen_state_access_trace(
             &block.eth_block,
             &block.eth_block.transactions[0],
@@ -3248,6 +3707,259 @@ mod tracer_tests {
                     (*ADDR_B, HashSet::from_iter([Word::from(2), Word::from(3)]))
                 ]),
                 code: HashSet::from_iter([*ADDR_A, *ADDR_B]),
+            }
+        )
+    }
+
+    #[test]
+    fn test_gen_access_trace_call_EOA_no_new_stack_frame() {
+        use AccessValue::{Account, Code, Storage};
+        use RW::{READ, WRITE};
+
+        // code calls an EOA with not code, so it won't push new stack frame.
+        let code = bytecode! {
+            PUSH1(0x0) // retLength
+            PUSH1(0x0) // retOffset
+            PUSH1(0x0) // argsLength
+            PUSH1(0x0) // argsOffset
+            PUSH1(0x0) // value
+            PUSH32(*WORD_ADDR_B) // addr
+            PUSH32(0x1_0000) // gas
+            CALL
+            PUSH1(0x01) // value
+            PUSH1(0x02) // key
+            SSTORE
+            PUSH1(0x03) // key
+            SLOAD
+
+            PUSH2(0xaa)
+        };
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(*MOCK_COINBASE).code(code);
+                accs[1].address(*ADDR_B).balance(Word::from(1u64 << 30));
+            },
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let access_trace = gen_state_access_trace(
+            &block.eth_block,
+            &block.eth_block.transactions[0],
+            &block.geth_traces[0],
+        )
+        .unwrap();
+
+        assert_eq!(
+            access_trace,
+            vec![
+                Access {
+                    step_index: None,
+                    rw: WRITE,
+                    value: Account { address: *ADDR_B }
+                },
+                Access {
+                    step_index: None,
+                    rw: WRITE,
+                    value: Account {
+                        address: *MOCK_COINBASE
+                    }
+                },
+                Access {
+                    step_index: None,
+                    rw: READ,
+                    value: Code {
+                        address: *MOCK_COINBASE
+                    }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: WRITE,
+                    value: Account {
+                        address: *MOCK_COINBASE
+                    }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: WRITE,
+                    value: Account { address: *ADDR_B }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: READ,
+                    value: Code { address: *ADDR_B }
+                },
+                Access {
+                    step_index: Some(10),
+                    rw: WRITE,
+                    value: Storage {
+                        address: *MOCK_COINBASE,
+                        key: Word::from(2u64),
+                    }
+                },
+                Access {
+                    step_index: Some(12),
+                    rw: READ,
+                    value: Storage {
+                        address: *MOCK_COINBASE,
+                        key: Word::from(3u64),
+                    }
+                },
+            ]
+        );
+
+        let access_set = AccessSet::from(access_trace);
+        assert_eq!(
+            access_set,
+            AccessSet {
+                state: HashMap::from_iter([
+                    (
+                        *MOCK_COINBASE,
+                        HashSet::from_iter([Word::from(2u64), Word::from(3u64)])
+                    ),
+                    (*ADDR_B, HashSet::new()),
+                ]),
+                code: HashSet::from_iter([*ADDR_B, *MOCK_COINBASE]),
+            }
+        );
+    }
+
+    #[test]
+    fn test_gen_access_trace_create_push_call_stack() {
+        use AccessValue::{Account, Code};
+        use RW::{READ, WRITE};
+
+        // revert
+        let code_creator = bytecode! {
+            PUSH1(0x00) // length
+            PUSH1(0x00) // offset
+            REVERT
+        };
+
+        // code_a calls code_b which executes code_creator in CREATE
+        let code_a = bytecode! {
+            PUSH1(0x0) // retLength
+            PUSH1(0x0) // retOffset
+            PUSH1(0x0) // argsLength
+            PUSH1(0x0) // argsOffset
+            PUSH1(0x0) // value
+            PUSH32(*WORD_ADDR_B) // addr
+            PUSH32(0x1_0000) // gas
+            CALL
+
+            PUSH2(0xaa)
+        };
+
+        let mut code_b = Bytecode::default();
+        // pad code_creator to multiple of 32 bytes
+        let len = code_creator.code().len();
+        let code_creator: Vec<u8> = code_creator
+            .code()
+            .iter()
+            .cloned()
+            .chain(0u8..((32 - len % 32) as u8))
+            .collect();
+        for (index, word) in code_creator.chunks(32).enumerate() {
+            code_b.push(32, Word::from_big_endian(word));
+            code_b.push(32, Word::from(index * 32));
+            code_b.write_op(OpcodeId::MSTORE);
+        }
+        let code_b_end = bytecode! {
+            PUSH1(len) // length
+            PUSH1(0x00) // offset
+            PUSH1(0x00) // value
+            CREATE
+
+            PUSH3(0xbb)
+        };
+        code_b.append(&code_b_end);
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<3, 2>::new(
+            None,
+            |accs| {
+                accs[0].address(*MOCK_COINBASE).code(code_a);
+                accs[1].address(*ADDR_B).code(code_b);
+                accs[2].balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+                txs[1]
+                    .to(accs[1].address)
+                    .from(accs[2].address)
+                    .nonce(Word::one());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let access_trace = gen_state_access_trace(
+            &block.eth_block,
+            &block.eth_block.transactions[0],
+            &block.geth_traces[0],
+        )
+        .unwrap();
+
+        assert_eq!(
+            access_trace,
+            vec![
+                Access {
+                    step_index: None,
+                    rw: WRITE,
+                    value: Account {
+                        address: Address::zero()
+                    }
+                },
+                Access {
+                    step_index: None,
+                    rw: WRITE,
+                    value: Account {
+                        address: *MOCK_COINBASE
+                    }
+                },
+                Access {
+                    step_index: None,
+                    rw: READ,
+                    value: Code {
+                        address: *MOCK_COINBASE
+                    }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: WRITE,
+                    value: Account {
+                        address: *MOCK_COINBASE
+                    }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: WRITE,
+                    value: Account { address: *ADDR_B }
+                },
+                Access {
+                    step_index: Some(7),
+                    rw: READ,
+                    value: Code { address: *ADDR_B }
+                },
+            ]
+        );
+
+        let access_set = AccessSet::from(access_trace);
+        assert_eq!(
+            access_set,
+            AccessSet {
+                state: HashMap::from_iter([
+                    (*MOCK_COINBASE, HashSet::new()),
+                    (*ADDR_A, HashSet::new()),
+                    (*ADDR_B, HashSet::new()),
+                ]),
+                code: HashSet::from_iter([*MOCK_COINBASE, *ADDR_B]),
             }
         )
     }

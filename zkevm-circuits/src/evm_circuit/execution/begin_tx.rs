@@ -286,47 +286,56 @@ mod test {
         test::{rand_bytes, rand_range, run_test_circuit_incomplete_fixed_table},
         witness::block_convert,
     };
-    use bus_mapping::evm::OpcodeId;
-    use eth_types::{self, address, bytecode, evm_types::GasCost, geth_types::Account, Word};
+    use bus_mapping::{evm::OpcodeId, mock::BlockData};
+    use eth_types::{self, address, bytecode, evm_types::GasCost, geth_types::GethData, Word};
+    use mock::TestContext;
 
     fn test_ok(tx: eth_types::Transaction, is_success: bool) {
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(
-            mock::new(
-                vec![
-                    Account {
-                        address: tx.from,
-                        balance: Word::from(10).pow(20.into()),
-                        ..Default::default()
-                    },
-                    Account {
-                        address: tx.to.unwrap_or_default(),
-                        code: if is_success {
-                            bytecode! {
-                                PUSH1(0)
-                                PUSH1(0)
-                                RETURN
-                            }
-                            .to_vec()
-                            .into()
-                        } else {
-                            bytecode! {
-                                PUSH1(0)
-                                PUSH1(0)
-                                REVERT
-                            }
-                            .to_vec()
-                            .into()
-                        },
-                        ..Default::default()
-                    },
-                ],
-                vec![tx],
-            )
-            .unwrap(),
-        );
-        let mut builder = block_data.new_circuit_input_builder();
+        let code = if is_success {
+            bytecode! {
+                PUSH1(0)
+                PUSH1(0)
+                RETURN
+            }
+        } else {
+            bytecode! {
+                PUSH1(0)
+                PUSH1(0)
+                REVERT
+            }
+        };
+
+        let from = tx.from;
+        let to = tx.to.unwrap_or_default();
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(to)
+                    .balance(Word::from(10u64.pow(10)))
+                    .code(code);
+                accs[1].address(from).balance(Word::from(10u64.pow(19)));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .to(tx.to.unwrap())
+                    .from(tx.from)
+                    .gas_price(tx.gas_price.unwrap())
+                    .gas(tx.gas)
+                    .input(tx.input)
+                    .value(tx.value);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+
         builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert(&builder.block, &builder.code_db);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
@@ -342,12 +351,12 @@ mod test {
         let to = address!("0x00000000000000000000000000000000000000ff");
         let minimal_gas =
             Word::from(GasCost::TX.as_u64() + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64());
-        let one_ether = Word::from(10).pow(18.into());
+        let point_one_ether = Word::from(10u64.pow(17));
         let two_gwei = Word::from(2_000_000_000);
         eth_types::Transaction {
             from,
             to: Some(to),
-            value: value.unwrap_or(one_ether),
+            value: value.unwrap_or(point_one_ether),
             gas: gas.map(Word::from).unwrap_or(minimal_gas),
             gas_price: gas_price.or(Some(two_gwei)),
             input: calldata.into(),
@@ -372,12 +381,12 @@ mod test {
 
     #[test]
     fn begin_tx_gadget_rand() {
-        let one_hundred_ether = Word::from(10u8).pow(Word::from(20u8));
+        let point_one_ether = Word::from(10u8).pow(Word::from(17u8));
 
         // Transfer random ether, successfully
         test_ok(
             mock_tx(
-                Some(Word::from_little_endian(&rand_bytes(32)) % one_hundred_ether),
+                Some(Word::from_little_endian(&rand_bytes(32)) % point_one_ether),
                 None,
                 None,
                 vec![],
@@ -390,7 +399,7 @@ mod test {
             mock_tx(
                 None,
                 None,
-                Some(Word::from(rand_range(0..4712939160239931u64))),
+                Some(Word::from(rand_range(0..47619047619047u64))),
                 vec![],
             ),
             true,
@@ -399,7 +408,7 @@ mod test {
         // Transfer random ether, tx reverts
         test_ok(
             mock_tx(
-                Some(Word::from_little_endian(&rand_bytes(32)) % one_hundred_ether),
+                Some(Word::from_little_endian(&rand_bytes(32)) % point_one_ether),
                 None,
                 None,
                 vec![],
@@ -412,7 +421,7 @@ mod test {
             mock_tx(
                 None,
                 None,
-                Some(Word::from(rand_range(0..4712939160239931u64))),
+                Some(Word::from(rand_range(0..476190476190476u64))),
                 vec![],
             ),
             false,

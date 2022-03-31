@@ -678,13 +678,19 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bus_mapping::mock::BlockData;
     use bus_mapping::operation::{
         MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
     };
-    use eth_types::evm_types::{MemoryAddress, StackAddress};
-    use eth_types::{address, bytecode, Word};
+    use eth_types::{
+        address, bytecode,
+        evm_types::{MemoryAddress, StackAddress},
+        geth_types::GethData,
+        Word,
+    };
     use halo2_proofs::arithmetic::BaseExt;
     use halo2_proofs::dev::MockProver;
+    use mock::TestContext;
     use pairing::bn256::Fr;
 
     macro_rules! test_state_circuit_ok {
@@ -1392,10 +1398,28 @@ mod tests {
             MLOAD
             STOP
         };
-        let block = bus_mapping::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code(&bytecode).unwrap(),
-        );
-        let mut builder = block.new_circuit_input_builder();
+
+        // Create a custom tx setting Gas to
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .balance(Word::from(1u64 << 20))
+                    .code(bytecode);
+                accs[1]
+                    .address(address!("0x0000000000000000000000000000000000000000"))
+                    .balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[1].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();

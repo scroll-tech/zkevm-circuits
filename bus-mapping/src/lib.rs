@@ -48,11 +48,12 @@
 //! by the provided trace.
 //!
 //! ```rust
-//! use bus_mapping::Error;
+//! use bus_mapping::{Error, mock::BlockData};
 //! use bus_mapping::state_db::{self, StateDB, CodeDB};
 //! use eth_types::{
-//!     self, Address, Word, Hash, U64, GethExecTrace, GethExecStep
+//!     self, address, Address, Word, Hash, U64, GethExecTrace, GethExecStep, geth_types::GethData, bytecode
 //! };
+//! use mock::test_ctx::{TestContext, helpers::*};
 //! use eth_types::evm_types::Gas;
 //! use bus_mapping::circuit_input_builder::{Block, CircuitInputBuilder};
 //! use pairing::arithmetic::FieldExt;
@@ -105,28 +106,40 @@
 //! ]
 //! "#;
 //!
-//! // We use some mock data as context for the trace
-//! let mut eth_block = mock::new_block();
-//! let eth_tx = mock::new_tx(&eth_block, None);
-//! eth_block.transactions.push(eth_tx.clone());
-//! let mut sdb = StateDB::new();
-//! sdb.set_account(&eth_tx.from, state_db::Account::zero());
-//! sdb.set_account(&Address::zero(), state_db::Account::zero());
+//! // We use the [`TestContext`] struct to mock a block.
+//! let code = bytecode! {
+//!     // Write 0x6f to storage slot 0
+//!     PUSH1(0x6fu64)
+//!     PUSH1(0x00u64)
+//!     SSTORE
+//!     // Load storage slot 0
+//!     PUSH1(0x00u64)
+//!     SLOAD
+//!     STOP
+//! };
 //!
-//! let mut builder = CircuitInputBuilder::new(
-//!     sdb,
-//!     CodeDB::new(),
-//!     Block::new(0.into(), Vec::new(), &eth_block).unwrap(),
-//! );
+//! // Get the execution steps from the external tracer
+//! let block: GethData = TestContext::<2, 1>::new(
+//!     None,
+//!     account_0_code_account_1_no_code(code),
+//!     tx_from_1_to_0,
+//!     |block, _tx| block.number(0xcafeu64),
+//! )
+//! .unwrap()
+//! .into();
+//!
+//! // Here we update the circuit input with the data from the transaction trace.
+//! let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+//! builder
+//!     .handle_block(&block.eth_block, &block.geth_traces)
+//!     .unwrap();
 //!
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
 //! let geth_trace = GethExecTrace {
-//!     gas: Gas(eth_tx.gas.as_u64()),
+//!     gas: Gas(block.eth_block.transactions[0].gas.as_u64()),
 //!     failed: false,
 //!     struct_logs: geth_steps,
 //! };
-//! // Here we update the circuit input with the data from the transaction trace.
-//! builder.handle_block(&eth_block, &[geth_trace]).unwrap();
 //!
 //! // Get an ordered vector with all of the Stack operations of this trace.
 //! let stack_ops = builder.block.container.sorted_stack();
