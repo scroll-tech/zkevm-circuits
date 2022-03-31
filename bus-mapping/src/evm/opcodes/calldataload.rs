@@ -106,9 +106,13 @@ mod calldataload_tests {
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
         Word,
     };
-    use mock::new_single_tx_trace_code;
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
     use rand::random;
 
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
@@ -147,10 +151,18 @@ mod calldataload_tests {
             STOP
         };
 
-        let mut block = BlockData::new_from_geth_data(new_single_tx_trace_code(&code).unwrap());
-        block.eth_block.transactions[0].input = calldata.into();
+        // Get the execution steps from the external tracer
+        let mut block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
 
-        let mut builder = block.new_circuit_input_builder();
+        block.eth_block.transactions[0].input = calldata.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
