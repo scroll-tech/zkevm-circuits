@@ -6,6 +6,11 @@ use eth_types::evm_types::Gas;
 use halo2_proofs::dev::{MockProver, VerifyFailure};
 use pairing::bn256::Fr;
 
+#[cfg(test)]
+#[ctor::ctor]
+fn init_env_logger() {
+    env_logger::init();
+}
 pub enum FixedTableConfig {
     Incomplete,
     Complete,
