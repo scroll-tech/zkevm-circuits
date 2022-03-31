@@ -216,10 +216,6 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         )?;
 
         let (_, is_warm) = block.rws[step.rw_indices[7]].tx_access_list_value_pair();
-        println!(
-            "tx.id {} is warm {} key {} value_prev {} committed_value {} value {} gas cost {}",
-            tx.id, is_warm, key, value_prev, committed_value, value, step.gas_cost
-        );
         self.is_warm
             .assign(region, offset, Some(F::from(is_warm as u64)))?;
 
@@ -227,7 +223,6 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.tx_refund_prev
             .assign(region, offset, Some(F::from(tx_refund_prev)))?;
 
-        println!("refund prev {}", tx_refund_prev);
         self.gas_cost.assign(
             region,
             offset,
@@ -380,10 +375,6 @@ pub(crate) struct SstoreTxRefundGadget<F> {
     original_eq_value_gadget: IsEqualGadget<F>,
     prev_eq_value_gadget: IsEqualGadget<F>,
     original_eq_prev_gadget: IsEqualGadget<F>,
-    //nz_nz_allne_case_refund: Cell<F>,
-    //nz_ne_ne_case_refund: Cell<F>,
-    //ez_ne_ne_case_refund: Cell<F>,
-    //eq_ne_case_refund: Cell<F>,
 }
 
 impl<F: Field> SstoreTxRefundGadget<F> {
@@ -394,12 +385,12 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         value_prev: Cell<F>,
         committed_value: Cell<F>,
     ) -> Self {
-
         let value_prev_is_zero_gadget = IsZeroGadget::construct(cb, value_prev.expr());
         let value_is_zero_gadget = IsZeroGadget::construct(cb, value.expr());
         let original_is_zero_gadget = IsZeroGadget::construct(cb, committed_value.expr());
-        
-        let original_eq_value_gadget = IsEqualGadget::construct(cb, committed_value.expr(), value.expr());
+
+        let original_eq_value_gadget =
+            IsEqualGadget::construct(cb, committed_value.expr(), value.expr());
         let prev_eq_value_gadget = IsEqualGadget::construct(cb, value_prev.expr(), value.expr());
         let original_eq_prev_gadget =
             IsEqualGadget::construct(cb, committed_value.expr(), value_prev.expr());
@@ -412,22 +403,31 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         let prev_eq_value = prev_eq_value_gadget.expr();
         let original_eq_prev = original_eq_prev_gadget.expr();
 
-        // (value_prev != value) && (committed_value != Word::from(0)) && (value == Word::from(0))
-        let case_a = not::expr(prev_eq_value.clone()) * not::expr(original_is_zero.clone()) * value_is_zero;
-        // (value_prev != value) && (committed_value == value) && (committed_value != Word::from(0))
-        let case_b = not::expr(prev_eq_value.clone()) * original_eq_value.clone() * not::expr(original_is_zero.clone());
-         // (value_prev != value) && (committed_value == value) && (committed_value == Word::from(0))
-         let case_c = not::expr(prev_eq_value.clone()) * original_eq_value.clone() * (original_is_zero.clone());
-         // (value_prev != value) && (committed_value != value_prev) && (value_prev == Word::from(0)) 
-         let case_d = not::expr(prev_eq_value.clone()) * not::expr(original_eq_prev.clone()) * (value_prev_is_zero);
-         
-       
-        let tx_refund_new = 
-        tx_refund_old.expr()
-         + case_a * GasCost::SSTORE_CLEARS_SCHEDULE.expr()
-         + case_b * (GasCost::SSTORE_RESET_GAS.expr() - GasCost::SLOAD_GAS.expr())
-         + case_c * (GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr())
-         - case_d * (GasCost::SSTORE_CLEARS_SCHEDULE.expr());
+        // (value_prev != value) && (committed_value != Word::from(0)) && (value ==
+        // Word::from(0))
+        let case_a =
+            not::expr(prev_eq_value.clone()) * not::expr(original_is_zero.clone()) * value_is_zero;
+        // (value_prev != value) && (committed_value == value) && (committed_value !=
+        // Word::from(0))
+        let case_b = not::expr(prev_eq_value.clone())
+            * original_eq_value.clone()
+            * not::expr(original_is_zero.clone());
+        // (value_prev != value) && (committed_value == value) && (committed_value ==
+        // Word::from(0))
+        let case_c = not::expr(prev_eq_value.clone())
+            * original_eq_value
+            * (original_is_zero.clone());
+        // (value_prev != value) && (committed_value != value_prev) && (value_prev ==
+        // Word::from(0))
+        let case_d = not::expr(prev_eq_value)
+            * not::expr(original_eq_prev)
+            * (value_prev_is_zero);
+
+        let tx_refund_new = tx_refund_old.expr()
+            + case_a * GasCost::SSTORE_CLEARS_SCHEDULE.expr()
+            + case_b * (GasCost::SSTORE_RESET_GAS.expr() - GasCost::SLOAD_GAS.expr())
+            + case_c * (GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr())
+            - case_d * (GasCost::SSTORE_CLEARS_SCHEDULE.expr());
 
         Self {
             value,
@@ -561,7 +561,6 @@ mod test {
         }
     }
 
-
     fn calc_expected_tx_refund(
         tx_refund_old: u64,
         value: Word,
@@ -576,20 +575,18 @@ mod test {
                 tx_refund_new += GasCost::SSTORE_CLEARS_SCHEDULE.as_u64();
             }
             if committed_value == value {
-                if committed_value != Word::from(0) { 
+                if committed_value != Word::from(0) {
                     // CaseB
-                    tx_refund_new += GasCost::SSTORE_RESET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64();
-                }
-                else {
+                    tx_refund_new +=
+                        GasCost::SSTORE_RESET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64();
+                } else {
                     // CaseC
                     tx_refund_new += GasCost::SSTORE_SET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64();
-                } 
-            }
-            if committed_value != value_prev {
-                if value_prev == Word::from(0) {
-                    // CaseD
-                    tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
                 }
+            }
+            if committed_value != value_prev && value_prev == Word::from(0) {
+                // CaseD
+                tx_refund_new -= GasCost::SSTORE_CLEARS_SCHEDULE.as_u64()
             }
         }
 
@@ -1078,10 +1075,6 @@ mod test {
             SLOAD
             STOP
         };
-        /*
-        SSTORE
-        PUSH32(0x030201)
-        SLOAD */
 
         let test_config = BytecodeTestConfig {
             enable_state_circuit_test: false,

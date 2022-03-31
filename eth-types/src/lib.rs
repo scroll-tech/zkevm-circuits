@@ -354,16 +354,15 @@ pub struct GethExecTraceInternal {
 /// The deserialization truncates the memory of each step in `struct_logs` to
 /// the memory size before the expansion, so that it corresponds to the memory
 /// before the step is executed.
-//#[derive(Clone, Debug, Eq, PartialEq,
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GethExecTrace {
     /// Used gas
     pub gas: Gas,
     /// True when the transaction has failed.
     pub failed: bool,
-    /// Vector of geth execution steps of the trace.
-    //#[serde(rename = "returnValue")]
+    /// Return value of execution 
     pub return_value: String,
+    /// Vector of geth execution steps of the trace.
     pub struct_logs: Vec<GethExecStep>,
 }
 
