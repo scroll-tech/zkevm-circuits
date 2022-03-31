@@ -1,10 +1,9 @@
 use crate::evm_circuit::util::RandomLinearCombination as RLC;
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::{
-    circuit::{Chip as ChipTrait, Layouter},
+    circuit::{AssignedCell, Chip as ChipTrait, Layouter, Region},
     plonk::{ConstraintSystem, Error, Expression},
 };
-// use halo2_proofs::plonk::Expression;
 
 use crate::state_circuit::state_new::cell::AdviceCell;
 
@@ -12,6 +11,26 @@ use crate::state_circuit::state_new::cell::AdviceCell;
 pub struct Config<F: Field, const N: usize> {
     encoded: AdviceCell<F>,
     bytes: [AdviceCell<F>; N],
+}
+
+impl<F: Field, const N: usize> Config<F, N> {
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        randomness: F,
+        value: U256,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        let bytes = value.to_le_bytes();
+        for (i, byte) in bytes.iter().enumerate() {
+            self.bytes[i].assign(region, offset, F::from(*byte as u64))?;
+        }
+        self.encoded.assign(
+            region,
+            offset,
+            RLC::random_linear_combine(bytes, randomness),
+        )
+    }
 }
 
 pub struct Chip<F: Field, const N: usize> {
@@ -32,12 +51,11 @@ impl<F: Field, const N: usize> Chip<F, N> {
         let bytes = [0; N].map(|_| AdviceCell::new(meta));
         let encoded = AdviceCell::new(meta);
 
-        meta.lookup_any("rlc bytes fit into u8", |_| {
-            bytes
-                .iter()
-                .map(|byte| (byte.cur.clone(), u8_range.clone()))
-                .collect()
-        });
+        for byte in &bytes {
+            meta.lookup_any("rlc bytes fit into u8", |_| {
+                vec![(byte.cur.clone(), u8_range.clone())]
+            });
+        }
 
         meta.create_gate("rlc encoded value matches claimed bytes", |_| {
             vec![

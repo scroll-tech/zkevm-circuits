@@ -1,10 +1,9 @@
-use crate::evm_circuit::param::N_BYTES_WORD;
-use crate::evm_circuit::witness::RwMap;
+use crate::evm_circuit::{param::N_BYTES_WORD, witness::RwMap};
 use eth_types::{Address, Field, ToScalar};
-use halo2_proofs::circuit::SimpleFloorPlanner;
-use halo2_proofs::plonk::Circuit;
 use halo2_proofs::{
     circuit::Layouter,
+    circuit::SimpleFloorPlanner,
+    plonk::Circuit,
     plonk::{ConstraintSystem, Error, Selector},
 };
 
@@ -115,28 +114,32 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
 
                     config
                         .rw_counter
-                        .assign(&mut region, offset, row.rw_counter() as u32);
+                        .assign(&mut region, offset, row.rw_counter() as u32)?;
                     config
                         .is_write
-                        .assign(&mut region, offset, F::from(row.is_write() as u64));
+                        .assign(&mut region, offset, F::from(row.is_write() as u64))?;
                     config
                         .tag
-                        .assign(&mut region, offset, F::from(row.tag() as u64));
-                    config.id.assign(
-                        &mut region,
-                        offset,
-                        F::from(row.id().unwrap_or_default() as u64),
-                    );
-                    config.field_tag.assign(
-                        &mut region,
-                        offset,
-                        F::from(row.field_tag().unwrap_or_default()),
-                    );
-                    config
-                        .address
-                        .assign(&mut region, offset, row.address().unwrap_or_default());
-                    // self.field_tag.assign(region, offset, rw.key_3);
-                    // self.storage_key.assign(region, offset, rw.key_4);
+                        .assign(&mut region, offset, F::from(row.tag() as u64))?;
+                    if let Some(id) = row.id() {
+                        config.id.assign(&mut region, offset, F::from(id as u64))?;
+                    }
+                    if let Some(address) = row.address() {
+                        config.address.assign(&mut region, offset, address)?;
+                    }
+                    if let Some(field_tag) = row.field_tag() {
+                        config
+                            .field_tag
+                            .assign(&mut region, offset, F::from(field_tag))?;
+                    }
+                    if let Some(storage_key) = row.storage_key() {
+                        config.storage_key.assign(
+                            &mut region,
+                            offset,
+                            self.randomness,
+                            storage_key,
+                        )?;
+                    }
 
                     offset += 1;
                 }

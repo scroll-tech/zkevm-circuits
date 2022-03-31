@@ -1,10 +1,10 @@
-use std::{marker::PhantomData, convert::TryInto};
 use eth_types::{Address, Field, ToScalar};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region},
     plonk::{ConstraintSystem, Error, Expression},
 };
 use itertools::Itertools;
+use std::{convert::TryInto, marker::PhantomData};
 
 use crate::util::Expr;
 
@@ -87,11 +87,11 @@ impl<F: Field, T: ToLimbs, const N: usize> Chip<F, T, N> {
         let limbs = [0; N].map(|_| AdviceCell::new(meta));
 
         // Move these into a build function in a hypthetical ConstraintBuilder?
-        limbs.iter().map(|limb| {
+        for limb in &limbs {
             meta.lookup_any("mpi limb fits into u16", |_| {
                 vec![(limb.cur.clone(), u16_range.clone())]
-            })
-        });
+            });
+        }
 
         meta.create_gate("mpi value matches claimed limbs", |_| {
             vec![selector * (value.cur.clone() - value_from_limbs(&limbs))]
