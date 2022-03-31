@@ -1,7 +1,7 @@
 version: '3'
 services:
   geth0:
-    image: "ethereum/client-go:stable"
+    image: "ethereum/client-go:latest"
     container_name: zkevm-geth0
     ports:
       - 8545:8545

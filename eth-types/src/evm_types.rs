@@ -52,7 +52,7 @@ impl ProgramCounter {
 }
 
 /// Defines the gas left to perate.
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Gas(pub u64);
 
 impl fmt::Debug for Gas {

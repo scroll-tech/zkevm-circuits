@@ -414,8 +414,7 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             * not::expr(original_is_zero.clone());
         // (value_prev != value) && (committed_value == value) && (committed_value ==
         // Word::from(0))
-        let case_c =
-            not::expr(prev_eq_value.clone()) * original_eq_value * (original_is_zero);
+        let case_c = not::expr(prev_eq_value.clone()) * original_eq_value * (original_is_zero);
         // (value_prev != value) && (committed_value != value_prev) && (value_prev ==
         // Word::from(0))
         let case_d = not::expr(prev_eq_value) * not::expr(original_eq_prev) * (value_prev_is_zero);
