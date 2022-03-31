@@ -360,7 +360,7 @@ pub struct GethExecTrace {
     pub gas: Gas,
     /// True when the transaction has failed.
     pub failed: bool,
-    /// Return value of execution 
+    /// Return value of execution
     pub return_value: String,
     /// Vector of geth execution steps of the trace.
     pub struct_logs: Vec<GethExecStep>,

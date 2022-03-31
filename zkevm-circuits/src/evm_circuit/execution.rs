@@ -682,7 +682,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLDATASIZE => {
                 assign_exec_step!(self.calldatasize_gadget)
             }
-            ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
             _ => unimplemented!(),
         }
 
