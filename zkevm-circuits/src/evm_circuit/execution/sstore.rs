@@ -1060,16 +1060,36 @@ mod test {
         );
     }
 
+    // TODO: with modularize mock, we can test more cases using real trace later,
+    // including code/warm persistent/revert.
     #[test]
-    fn sstore_simple_with_busmapping() {
+    fn sstore_busmapping_simple() {
         let bytecode = bytecode! {
             #[start]
             PUSH32(0x030201) // value
             PUSH32(0x060504) // key
             SSTORE
-            PUSH32(0x030202)
-            SLOAD
             STOP
+        };
+
+        let test_config = BytecodeTestConfig {
+            enable_state_circuit_test: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            test_circuits_using_bytecode(bytecode, test_config, None),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn sstore_busmapping_revert() {
+        let bytecode = bytecode! {
+            #[start]
+            PUSH32(0x030201) // value
+            PUSH32(0x060504) // key
+            SSTORE
+            REVERT
         };
 
         let test_config = BytecodeTestConfig {

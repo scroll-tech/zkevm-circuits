@@ -805,11 +805,7 @@ impl<'a> CircuitInputStateRef<'a> {
         rw: RW,
         op: T,
     ) -> Result<(), Error> {
-        let op_ref = self.block.container.insert(Operation::new_reversible(
-            self.block_ctx.rwc.inc_pre(),
-            rw,
-            op,
-        ));
+        let op_ref = self.apply_op(false, rw, op.into_enum());
         step.bus_mapping_instance.push(op_ref);
 
         // Increase state_write_counter
@@ -1077,37 +1073,28 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Apply reverted op to state and push to container.
-    fn apply_reverted_op(&mut self, op: OpEnum) -> OperationRef {
-        match op {
+    fn apply_op(&mut self, is_revert: bool, rw: RW, op: OpEnum) -> OperationRef {
+        match &op {
             OpEnum::Storage(op) => {
-                let (_, account) = self.sdb.get_storage_mut(&op.address, &op.key);
-                *account = op.value;
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
+                self.sdb.set_storage(&op.address, &op.key, &op.value);
             }
             OpEnum::TxAccessListAccount(op) => {
-                if !op.value {
+                if !op.value_prev && op.value {
+                    self.sdb.add_account_to_access_list(op.address);
+                }
+                if op.value_prev && !op.value {
                     self.sdb.remove_account_from_access_list(&op.address);
                 }
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
             }
             OpEnum::TxAccessListAccountStorage(op) => {
-                if !op.value {
+                if !op.value_prev && op.value {
+                    self.sdb
+                        .add_account_storage_to_access_list((op.address, op.key));
+                }
+                if op.value_prev && !op.value {
                     self.sdb
                         .remove_account_storage_from_access_list(&(op.address, op.key));
                 }
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
             }
             OpEnum::Account(op) => {
                 let (_, account) = self.sdb.get_account_mut(&op.address);
@@ -1118,16 +1105,19 @@ impl<'a> CircuitInputStateRef<'a> {
                         account.code_hash = op.value.to_be_bytes().into();
                     }
                 }
-                self.block.container.insert(Operation::new(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    op,
-                ))
             }
-            OpEnum::TxRefund(_) => unimplemented!(),
+            OpEnum::TxRefund(op) => {
+                self.sdb.set_refund(op.value);
+            }
             OpEnum::AccountDestructed(_) => unimplemented!(),
             _ => unreachable!(),
+        };
+        if is_revert {
+            debug_assert!(rw == RW::WRITE, "revert read operation");
         }
+        self.block
+            .container
+            .insert_op_enum(self.block_ctx.rwc.inc_pre(), rw, !is_revert, op)
     }
 
     /// Handle a reversion group
@@ -1141,7 +1131,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // Apply reversions
         for (step_index, op_ref) in reversion_group.op_refs.into_iter().rev() {
             if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
-                let rev_op_ref = self.apply_reverted_op(op);
+                let rev_op_ref = self.apply_op(true, RW::WRITE, op);
                 self.tx.steps[step_index]
                     .bus_mapping_instance
                     .push(rev_op_ref);
@@ -1488,14 +1478,7 @@ impl<'a> CircuitInputBuilder {
         let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
         tx.steps.push(end_tx_step);
 
-        self.sdb.clear_access_list_and_refund();
-
-        let kv = tx.warm_storage.clone();
-        for ((addr, k), v) in kv {
-            let (_, ptr) = self.sdb.get_storage_mut(&addr, &k);
-            *ptr = v;
-        }
-
+        self.sdb.commit_tx();
         self.block.txs.push(tx);
 
         Ok(())

@@ -6,7 +6,7 @@ use crate::{
     Error,
 };
 
-use eth_types::{GethExecStep, ToWord, Word, U256};
+use eth_types::{GethExecStep, ToWord, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::SSTORE`](crate::evm::OpcodeId::SSTORE)
@@ -71,14 +71,14 @@ impl Opcode for Sstore {
         state.push_stack_op(&mut exec_step, RW::READ, key_stack_position, key)?;
         state.push_stack_op(&mut exec_step, RW::READ, value_stack_position, value)?;
 
-        let (warm, value_prev) = match state.tx.warm_storage.get(&(contract_addr, key)) {
-            Some(v) => (true, *v),
-            None => (false, U256::from(0u64)),
-        };
-        state.tx.warm_storage.insert((contract_addr, key), value);
+        let warm = state
+            .sdb
+            .check_account_storage_in_access_list(&(contract_addr, key));
 
-        let (_, committed_value) = state.sdb.get_storage(&contract_addr, &key);
-        let committed_value = Word::from(committed_value);
+        let (_, value_prev) = state.sdb.get_storage(&contract_addr, &key);
+        let value_prev = *value_prev;
+        let (_, committed_value) = state.sdb.get_committed_storage(&contract_addr, &key);
+        let committed_value = *committed_value;
 
         state.push_op_reversible(
             &mut exec_step,

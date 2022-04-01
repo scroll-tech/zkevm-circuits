@@ -72,18 +72,12 @@ impl Opcode for Sload {
         // Storage read
         let storage_value_read = cur_step.storage.get_or_err(&key)?;
 
-        let warm = match state.tx.warm_storage.get(&(contract_addr, key)) {
-            Some(_v) => (true),
-            None => (false),
-        };
-        state
-            .tx
-            .warm_storage
-            .insert((contract_addr, key), storage_value_read);
+        let warm = state
+            .sdb
+            .check_account_storage_in_access_list(&(contract_addr, key));
 
-        let (_, committed_value) = state.sdb.get_storage(&contract_addr, &key);
+        let (_, committed_value) = state.sdb.get_committed_storage(&contract_addr, &key);
         let committed_value = Word::from(committed_value);
-        //assert!(found, "committed_value should be in state db");
 
         state.push_op(
             &mut exec_step,

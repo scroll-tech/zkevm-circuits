@@ -1,6 +1,7 @@
 use super::{
-    AccountDestructedOp, AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, StackOp,
-    StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxRefundOp,
+    AccountDestructedOp, AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter,
+    StackOp, StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxRefundOp,
+    RW,
 };
 use crate::exec_trace::OperationRef;
 use itertools::Itertools;
@@ -72,7 +73,21 @@ impl OperationContainer {
         let rwc = op.rwc();
         let rw = op.rw();
         let reversible = op.reversible();
-        match op.op.into_enum() {
+        self.insert_op_enum(rwc, rw, reversible, op.op.into_enum())
+    }
+
+    /// Inserts an [`OpEnum`] into the  container returning a lightweight
+    /// reference to it in the form of an [`OperationRef`] which points to the
+    /// location of the inserted operation inside the corresponding container
+    /// vector.
+    pub fn insert_op_enum(
+        &mut self,
+        rwc: RWCounter,
+        rw: RW,
+        reversible: bool,
+        op_enum: OpEnum,
+    ) -> OperationRef {
+        match op_enum {
             OpEnum::Memory(op) => {
                 self.memory.push(Operation::new(rwc, rw, op));
                 OperationRef::from((Target::Memory, self.memory.len() - 1))
