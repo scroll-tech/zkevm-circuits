@@ -119,23 +119,26 @@ impl<F: Field, T: ToLimbs, const N: usize> Chip<F, T, N> {
 
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        _selector: Selector,
-        _u16_range: Column<Fixed>,
+        selector: Selector,
+        u16_range: Column<Fixed>,
     ) -> Config<T, N> {
         let value = meta.advice_column();
         let limbs = [0; N].map(|_| meta.advice_column());
 
-        // let q_value = meta.query_advice(value, Rotation::cur());
-        // for limb in &limbs {
-        //     let q_limb =
-        //     meta.lookup_any("mpi limb fits into u16", |_| {
-        //         vec![(limb.cur.clone(), u16_range.clone())]
-        //     });
-        // }
-        //
-        // meta.create_gate("mpi value matches claimed limbs", |_| {
-        //     vec![selector * (value.cur.clone() - value_from_limbs(&limbs))]
-        // });
+        for &limb in &limbs {
+            meta.lookup_any("mpi limb fits into u16", |meta| {
+                vec![(
+                    meta.query_advice(limb, Rotation::cur()),
+                    meta.query_fixed(u16_range, Rotation::cur()),
+                )]
+            });
+        }
+        meta.create_gate("mpi value matches claimed limbs", |meta| {
+            let selector = meta.query_selector(selector);
+            let value = meta.query_advice(value, Rotation::cur());
+            let limbs = limbs.map(|limb| meta.query_advice(limb, Rotation::cur()));
+            vec![selector * (value - value_from_limbs(&limbs))]
+        });
 
         Config {
             value,

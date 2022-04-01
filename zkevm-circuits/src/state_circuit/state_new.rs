@@ -17,10 +17,10 @@ mod random_linear_combination;
 #[cfg(test)]
 mod tests;
 
+use constraint_builder::{ConstraintBuilder, Queries};
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
-use constraint_builder::{ConstraintBuilder, Queries};
 
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
