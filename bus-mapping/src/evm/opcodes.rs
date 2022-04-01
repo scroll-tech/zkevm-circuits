@@ -15,6 +15,9 @@ use eth_types::{
 };
 use log::warn;
 
+#[cfg(test)]
+mod test_util;
+
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;

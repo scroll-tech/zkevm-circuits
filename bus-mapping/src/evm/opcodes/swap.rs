@@ -55,11 +55,12 @@ impl<const N: usize> Opcode for Swap<N> {
 #[cfg(test)]
 mod swap_tests {
     use super::*;
-    use crate::mock::BlockData;
+    use crate::evm::opcodes::test_util::TestCase;
     use crate::operation::StackOp;
-    use eth_types::{bytecode, evm_types::StackAddress, geth_types::GethData, Word};
-    use itertools::Itertools;
-    use mock::test_ctx::{helpers::*, TestContext};
+
+    use eth_types::evm_types::OpcodeId;
+    use eth_types::{bytecode, evm_types::StackAddress, Word};
+
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -77,28 +78,18 @@ mod swap_tests {
             STOP
         };
 
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
+        let test = TestCase::new_from_bytecode(code);
 
         // Generate steps corresponding to DUP1, DUP3, DUP5
-        for (i, (a, b)) in [(6, 5), (5, 3), (3, 1)].iter().enumerate() {
-            let step = builder.block.txs()[0]
-                .steps()
-                .iter()
-                .filter(|step| step.exec_state.is_swap())
-                .collect_vec()[i];
+        for (i, (op, a, b)) in [
+            (OpcodeId::SWAP1, 6, 5),
+            (OpcodeId::SWAP3, 5, 3),
+            (OpcodeId::SWAP5, 3, 1),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let step = test.step_witness(*op, 0);
 
             let a_pos = StackAddress(1024 - 6);
             let b_pos = StackAddress(1024 - 5 + i * 2);
@@ -107,8 +98,7 @@ mod swap_tests {
 
             assert_eq!(
                 [0, 1, 2, 3]
-                    .map(|idx| &builder.block.container.stack
-                        [step.bus_mapping_instance[idx].as_usize()])
+                    .map(|idx| &step.rws.stack[idx])
                     .map(|operation| (operation.rw(), operation.op())),
                 [
                     (RW::READ, &StackOp::new(1, b_pos, b_val)),

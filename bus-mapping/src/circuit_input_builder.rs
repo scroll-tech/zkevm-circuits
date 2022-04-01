@@ -11,9 +11,7 @@ use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
 use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
-use eth_types::{
-    self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, H160,
-};
+use eth_types::{self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word};
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
 
@@ -617,8 +615,6 @@ pub struct Transaction {
     pub value: Word,
     /// Input / Call Data
     pub input: Vec<u8>,
-    /// storage db for this tx
-    pub warm_storage: HashMap<(H160, Word), Word>,
     /// Calls made in the transaction
     calls: Vec<Call>,
     /// Execution steps
@@ -681,7 +677,6 @@ impl Transaction {
         };
 
         Ok(Self {
-            warm_storage: Default::default(),
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
@@ -1462,7 +1457,7 @@ impl<'a> CircuitInputBuilder {
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
-            log::debug!("handle {}th opcode {:?} ", index, geth_step.op);
+            log::trace!("handle {}th opcode {:?} ", index, geth_step.op);
             let exec_steps = gen_associated_ops(
                 &geth_step.op,
                 &mut state_ref,

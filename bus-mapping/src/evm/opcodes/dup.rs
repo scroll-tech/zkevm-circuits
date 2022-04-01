@@ -34,10 +34,13 @@ impl<const N: usize> Opcode for Dup<N> {
 #[cfg(test)]
 mod dup_tests {
     use super::*;
-    use crate::{mock::BlockData, operation::StackOp};
-    use eth_types::{bytecode, evm_types::StackAddress, geth_types::GethData, word};
-    use itertools::Itertools;
-    use mock::test_ctx::{helpers::*, TestContext};
+    use crate::{evm::opcodes::test_util::TestCase, operation::StackOp};
+    use eth_types::{
+        bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        word,
+    };
+
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -52,44 +55,30 @@ mod dup_tests {
             STOP
         };
 
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
+        let test = TestCase::new_from_bytecode(code);
 
         // Generate steps corresponding to DUP1, DUP3, DUP5
-        for (i, word) in [word!("0x3"), word!("0x2"), word!("0x1")]
-            .iter()
-            .enumerate()
+        for (i, (op, value)) in [
+            (OpcodeId::DUP1, word!("0x3")),
+            (OpcodeId::DUP3, word!("0x2")),
+            (OpcodeId::DUP5, word!("0x1")),
+        ]
+        .iter()
+        .enumerate()
         {
-            let step = builder.block.txs()[0]
-                .steps()
-                .iter()
-                .filter(|step| step.exec_state.is_dup())
-                .collect_vec()[i];
+            let step = test.step_witness(*op, 0);
             assert_eq!(
                 [0, 1]
-                    .map(|idx| &builder.block.container.stack
-                        [step.bus_mapping_instance[idx].as_usize()])
+                    .map(|idx| &step.rws.stack[idx])
                     .map(|operation| (operation.rw(), operation.op())),
                 [
                     (
                         RW::READ,
-                        &StackOp::new(1, StackAddress(1024 - 3 + i), *word)
+                        &StackOp::new(1, StackAddress(1024 - 3 + i), *value)
                     ),
                     (
                         RW::WRITE,
-                        &StackOp::new(1, StackAddress(1024 - 4 - i), *word)
+                        &StackOp::new(1, StackAddress(1024 - 4 - i), *value)
                     )
                 ]
             )

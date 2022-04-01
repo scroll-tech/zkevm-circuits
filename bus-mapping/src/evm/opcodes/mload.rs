@@ -61,17 +61,15 @@ impl Opcode for Mload {
 mod mload_tests {
     use super::*;
     use crate::{
-        circuit_input_builder::ExecState,
-        mock::BlockData,
+        evm::opcodes::test_util::step_witness_for_bytecode,
         operation::{MemoryOp, StackOp},
     };
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},
-        geth_types::GethData,
     };
     use itertools::Itertools;
-    use mock::test_ctx::{helpers::*, TestContext};
+
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -83,31 +81,11 @@ mod mload_tests {
             MLOAD
             STOP
         };
-
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-
-        let step = builder.block.txs()[0]
-            .steps()
-            .iter()
-            .find(|step| step.exec_state == ExecState::Op(OpcodeId::MLOAD))
-            .unwrap();
+        let step = step_witness_for_bytecode(code, OpcodeId::MLOAD);
 
         assert_eq!(
             [0, 1]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &step.rws.stack[idx])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -122,9 +100,8 @@ mod mload_tests {
         );
 
         assert_eq!(
-            (2..34)
-                .map(|idx| &builder.block.container.memory
-                    [step.bus_mapping_instance[idx].as_usize()])
+            (0..32)
+                .map(|idx| &step.rws.memory[idx])
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
             Word::from(0x80)

@@ -118,17 +118,13 @@ impl Opcode for Sload {
 #[cfg(test)]
 mod sload_tests {
     use super::*;
-    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
+    use crate::{evm::opcodes::test_util::step_witness_for_bytecode, operation::StackOp};
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},
-        geth_types::GethData,
         Word,
     };
-    use mock::{
-        test_ctx::{helpers::*, TestContext},
-        MOCK_ACCOUNTS,
-    };
+    use mock::MOCK_ACCOUNTS;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -145,30 +141,10 @@ mod sload_tests {
             STOP
         };
 
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-
-        let step = builder.block.txs()[0]
-            .steps()
-            .iter()
-            .find(|step| step.exec_state == ExecState::Op(OpcodeId::SLOAD))
-            .unwrap();
+        let step = step_witness_for_bytecode(code, OpcodeId::SLOAD);
 
         assert_eq!(
-            [4, 6]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+            [&step.rws.stack[0], &step.rws.stack[1]]
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -182,7 +158,7 @@ mod sload_tests {
             ]
         );
 
-        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[5].as_usize()];
+        let storage_op = &step.rws.storage[0];
         assert_eq!(
             (storage_op.rw(), storage_op.op()),
             (

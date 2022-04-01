@@ -56,16 +56,14 @@ impl Opcode for Selfbalance {
 mod selfbalance_tests {
     use super::*;
     use crate::{
-        circuit_input_builder::ExecState,
-        mock::BlockData,
+        evm::opcodes::test_util::TestCase,
         operation::{CallContextField, CallContextOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},
-        geth_types::GethData,
     };
-    use mock::test_ctx::{helpers::*, TestContext};
+
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -74,36 +72,16 @@ mod selfbalance_tests {
             SELFBALANCE
             STOP
         };
+        let test = TestCase::new_from_bytecode(code);
+        let step = test.step_witness(OpcodeId::SELFBALANCE, 0);
 
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-
-        let step = builder.block.txs()[0]
-            .steps()
-            .iter()
-            .find(|step| step.exec_state == ExecState::Op(OpcodeId::SELFBALANCE))
-            .unwrap();
-
-        let call_id = builder.block.txs()[0].calls()[0].call_id;
-        let callee_address = builder.block.txs()[0].to;
-        let self_balance = builder.sdb.get_account(&callee_address).1.balance;
+        let call_id = test.tx_witness().calls()[0].call_id;
+        let callee_address = test.tx_witness().to;
+        let self_balance = test.state_db().get_account(&callee_address).1.balance;
 
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.call_context[step.bus_mapping_instance[0].as_usize()];
+                let operation = &step.rws.call_context[0];
                 (operation.rw(), operation.op())
             },
             (
@@ -117,8 +95,7 @@ mod selfbalance_tests {
         );
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.account[step.bus_mapping_instance[1].as_usize()];
+                let operation = &step.rws.account[0];
                 (operation.rw(), operation.op())
             },
             (
@@ -133,8 +110,7 @@ mod selfbalance_tests {
         );
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.stack[step.bus_mapping_instance[2].as_usize()];
+                let operation = &step.rws.stack[0];
                 (operation.rw(), operation.op())
             },
             (

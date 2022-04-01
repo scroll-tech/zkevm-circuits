@@ -174,6 +174,35 @@ impl OperationContainer {
     pub fn sorted_storage(&self) -> Vec<Operation<StorageOp>> {
         self.storage.iter().sorted().cloned().collect()
     }
+
+    /// Returns a subset of operations given some [`OperationRef`]
+    pub fn slice(&self, indexes: &[OperationRef]) -> OperationContainer {
+        let mut result = OperationContainer::default();
+        for rw_ref in indexes {
+            match rw_ref.target() {
+                Target::Memory => result.memory.push(self.memory[rw_ref.as_usize()].clone()),
+                Target::Stack => result.stack.push(self.stack[rw_ref.as_usize()].clone()),
+                Target::Storage => result.storage.push(self.storage[rw_ref.as_usize()].clone()),
+                Target::TxAccessListAccount => result
+                    .tx_access_list_account
+                    .push(self.tx_access_list_account[rw_ref.as_usize()].clone()),
+                Target::TxAccessListAccountStorage => result
+                    .tx_access_list_account_storage
+                    .push(self.tx_access_list_account_storage[rw_ref.as_usize()].clone()),
+                Target::TxRefund => result
+                    .tx_refund
+                    .push(self.tx_refund[rw_ref.as_usize()].clone()),
+                Target::Account => result.account.push(self.account[rw_ref.as_usize()].clone()),
+                Target::AccountDestructed => result
+                    .account_destructed
+                    .push(self.account_destructed[rw_ref.as_usize()].clone()),
+                Target::CallContext => result
+                    .call_context
+                    .push(self.call_context[rw_ref.as_usize()].clone()),
+            }
+        }
+        result
+    }
 }
 
 #[cfg(test)]

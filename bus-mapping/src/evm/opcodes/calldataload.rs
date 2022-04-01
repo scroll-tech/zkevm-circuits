@@ -115,7 +115,7 @@ mod calldataload_tests {
     };
     use rand::random;
 
-    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
+    use crate::{evm::opcodes::test_util::TestCase, operation::StackOp};
 
     use super::*;
 
@@ -151,31 +151,25 @@ mod calldataload_tests {
             STOP
         };
 
-        // Get the execution steps from the external tracer
-        let mut block: GethData = TestContext::<2, 1>::new(
+        let geth_data: GethData = TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
+            |mut txs, accs| {
+                txs[0].input(calldata.into());
+                tx_from_1_to_0(txs, accs);
+            },
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap()
         .into();
+        let test = TestCase::new_from_geth_data(geth_data);
 
-        block.eth_block.transactions[0].input = calldata.into();
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-
-        let step = builder.block.txs()[0]
-            .steps()
-            .iter()
-            .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATALOAD))
-            .unwrap();
+        let step = test.step_witness(OpcodeId::CALLDATALOAD, 0);
+        let call_id = test.tx_witness().calls()[0].call_id;
 
         assert_eq!(
-            [0, 2]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+            [0, 1]
+                .map(|idx| &step.rws.stack[idx])
                 .map(|op| (op.rw(), op.op())),
             [
                 (
@@ -191,14 +185,13 @@ mod calldataload_tests {
 
         assert_eq!(
             {
-                let op =
-                    &builder.block.container.call_context[step.bus_mapping_instance[1].as_usize()];
+                let op = &step.rws.call_context[0];
                 (op.rw(), op.op())
             },
             (
                 RW::READ,
                 &CallContextOp {
-                    call_id: builder.block.txs()[0].calls()[0].call_id,
+                    call_id,
                     field: CallContextField::TxId,
                     value: Word::from(1),
                 }

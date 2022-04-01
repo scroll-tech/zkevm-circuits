@@ -122,78 +122,59 @@ impl Opcode for Sstore {
     }
 }
 
-/*
 #[cfg(test)]
-mod sload_tests {
+mod sstore_tests {
     use super::*;
+    use crate::evm::opcodes::test_util::step_witness_for_bytecode;
     use crate::operation::StackOp;
     use eth_types::bytecode;
     use eth_types::evm_types::{OpcodeId, StackAddress};
-    use eth_types::{Address, Word};
+    use eth_types::Word;
+    use mock::MOCK_ACCOUNTS;
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn sload_opcode_impl() {
+    fn sstore_opcode_impl() {
         let code = bytecode! {
             // Write 0x6f to storage slot 0
             PUSH1(0x6fu64)
             PUSH1(0x00u64)
             SSTORE
-
-            // Load storage slot 0
-            PUSH1(0x00u64)
-            SLOAD
             STOP
         };
 
-        // Get the execution steps from the external tracer
-        let block = crate::mock::BlockData::new_from_geth_data(
-            mock::new_single_tx_trace_code(&code).unwrap(),
-        );
-
-        let mut builder = block.new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-
-        let step = builder.block.txs()[0]
-            .steps()
-            .iter()
-            .find(|step| step.op == OpcodeId::SLOAD)
-            .unwrap();
+        let step = step_witness_for_bytecode(code, OpcodeId::SSTORE);
 
         assert_eq!(
-            [0, 2]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+            [0, 1]
+                .map(|idx| &step.rws.stack[idx])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1023), Word::from(0x0u32))
+                    &StackOp::new(1, StackAddress::from(1022), Word::from(0x0u32))
                 ),
                 (
-                    RW::WRITE,
+                    RW::READ,
                     &StackOp::new(1, StackAddress::from(1023), Word::from(0x6fu32))
-                )
+                ),
             ]
         );
 
-        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[1].as_usize()];
+        let storage_op = &step.rws.storage[0];
         assert_eq!(
             (storage_op.rw(), storage_op.op()),
             (
-                RW::READ,
+                RW::WRITE,
                 &StorageOp::new(
-                    Address::from([0u8; 20]),
+                    MOCK_ACCOUNTS[0],
                     Word::from(0x0u32),
                     Word::from(0x6fu32),
-                    Word::from(0x6fu32),
+                    Word::from(0x0u32),
                     1,
-                    Word::from(0x6fu32),
+                    Word::from(0x0u32),
                 )
             )
         )
     }
 }
-
-*/

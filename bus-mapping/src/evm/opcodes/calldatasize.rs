@@ -41,17 +41,14 @@ impl Opcode for Calldatasize {
 #[cfg(test)]
 mod calldatasize_tests {
     use crate::{
-        circuit_input_builder::ExecState,
-        mock::BlockData,
+        evm::opcodes::test_util::TestCase,
         operation::{CallContextField, CallContextOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},
-        geth_types::GethData,
     };
 
-    use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -61,33 +58,13 @@ mod calldatasize_tests {
             STOP
         };
 
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-
-        let step = builder.block.txs()[0]
-            .steps()
-            .iter()
-            .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATASIZE))
-            .unwrap();
-
-        let call_id = builder.block.txs()[0].calls()[0].call_id;
-        let call_data_size = block.eth_block.transactions[0].input.as_ref().len().into();
+        let test = TestCase::new_from_bytecode(code);
+        let step = test.step_witness(OpcodeId::CALLDATASIZE, 0);
+        let call_id = test.tx_witness().calls()[0].call_id;
+        let call_data_size = test.tx_input().input.as_ref().len().into();
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.call_context[step.bus_mapping_instance[0].as_usize()];
+                let operation = &step.rws.call_context[0];
                 (operation.rw(), operation.op())
             },
             (
@@ -101,8 +78,7 @@ mod calldatasize_tests {
         );
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.stack[step.bus_mapping_instance[1].as_usize()];
+                let operation = &step.rws.stack[0];
                 (operation.rw(), operation.op())
             },
             (
