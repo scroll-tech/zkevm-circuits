@@ -13,7 +13,6 @@ use halo2_proofs::{circuit::Region, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct DummpyGadget<F, const S: ExecutionState> {
     _marker: PhantomData<F>,
-    //_marker2: PhantomData<S>,
 }
 
 impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for DummpyGadget<F, S> {
@@ -24,7 +23,6 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for DummpyGadget<F, S
     fn configure(_cb: &mut ConstraintBuilder<F>) -> Self {
         Self {
             _marker: PhantomData,
-            //_marker2: PhantomData,
         }
     }
 

@@ -73,9 +73,15 @@ impl Account {
 #[derive(Debug, Clone, Default)]
 pub struct StateDB {
     state: HashMap<Address, Account>,
+
     // Fields with transaction lifespan, will be clear in `clear_access_list_and_refund`.
     access_list_account: HashSet<Address>,
     access_list_account_storage: HashSet<(Address, U256)>,
+    // `dirty_storage` constains writes during current transaction.
+    // When current transaction finishes, `dirty_storage` will be committed into `state`.
+    // The reason why we need this is that EVM needs committed state, namely
+    // state before current transaction, to calculate gas cost for some opcodes like sstore.
+    // So both dirty storage and committed storage are needed.
     dirty_storage: HashMap<(Address, Word), Word>,
     refund: u64,
 }
@@ -122,7 +128,7 @@ impl StateDB {
     /// Get a reference to the storage value from [`Account`] at `addr`, at
     /// `key`.  Returns false and a zero [`Word`] when the [`Account`] or `key`
     /// wasn't found in the state.
-    /// Returns dirty storage state, which contains writes in current tx
+    /// Returns dirty storage state, which includes writes in current tx
     pub fn get_storage(&self, addr: &Address, key: &Word) -> (bool, &Word) {
         match self.dirty_storage.get(&(*addr, *key)) {
             Some(v) => (true, v),
@@ -161,8 +167,8 @@ impl StateDB {
 
     /// Set storage value at `addr` and `key`.
     /// Writes into dirty_storage during transaction execution.
-    /// After transaction execution, dirty_storage is committed into storage
-    /// when `commit_tx`.
+    /// After transaction execution, `dirty_storage` is committed into `storage`
+    /// in `commit_tx` method.
     pub fn set_storage(&mut self, addr: &Address, key: &Word, value: &Word) {
         self.dirty_storage.insert((*addr, *key), *value);
     }
@@ -212,7 +218,7 @@ impl StateDB {
         self.refund = value;
     }
 
-    /// Clear access list and refund, and commit dirty storage
+    /// Clear access list and refund, and commit dirty storage.
     /// It should be invoked before processing
     /// with new transaction with the same [`StateDB`].
     pub fn commit_tx(&mut self) {

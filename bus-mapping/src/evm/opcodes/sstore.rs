@@ -17,11 +17,10 @@ pub(crate) struct Sstore;
 impl Opcode for Sstore {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
+        geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        let step = &steps[0];
-        let _next_step = &steps[1];
-        let mut exec_step = state.new_step(step)?;
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
 
         let _call_id = state.call()?.call_id;
         let contract_addr = state.call()?.address;
@@ -63,15 +62,15 @@ impl Opcode for Sstore {
             },
         );
 
-        let key = step.stack.nth_last(0)?;
-        let key_stack_position = step.stack.nth_last_filled(0);
-        let value = step.stack.nth_last(1)?;
-        let value_stack_position = step.stack.nth_last_filled(1);
+        let key = geth_step.stack.nth_last(0)?;
+        let key_stack_position = geth_step.stack.nth_last_filled(0);
+        let value = geth_step.stack.nth_last(1)?;
+        let value_stack_position = geth_step.stack.nth_last_filled(1);
 
         state.push_stack_op(&mut exec_step, RW::READ, key_stack_position, key)?;
         state.push_stack_op(&mut exec_step, RW::READ, value_stack_position, value)?;
 
-        let warm = state
+        let is_warm = state
             .sdb
             .check_account_storage_in_access_list(&(contract_addr, key));
 
@@ -101,23 +100,20 @@ impl Opcode for Sstore {
                 address: state.call()?.address,
                 key,
                 value: true,
-                value_prev: warm,
+                value_prev: is_warm,
             },
         )?;
 
-        let last_step_refund = state.tx.steps().last().unwrap().gas_refund;
-        let cur_step_refund = step.refund;
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
             TxRefundOp {
                 tx_id: state.tx_ctx.id(),
-                value_prev: last_step_refund.0,
-                value: cur_step_refund.0,
+                value_prev: state.sdb.refund(),
+                value: geth_step.refund.0,
             },
         )?;
 
-        exec_step.gas_refund = cur_step_refund;
         Ok(vec![exec_step])
     }
 }

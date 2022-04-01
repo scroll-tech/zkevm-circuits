@@ -1337,7 +1337,7 @@ impl<'a> CircuitInputStateRef<'a> {
 /// the State Proof witnesses are already generated on a structured manner and
 /// ready to be added into the State circuit.
 pub struct CircuitInputBuilder {
-    /// active StateDB key-value DB
+    /// StateDB key-value DB
     pub sdb: StateDB,
     /// Map of account codes by code hash
     pub code_db: CodeDB,

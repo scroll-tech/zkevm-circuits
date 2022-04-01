@@ -18,9 +18,8 @@ impl Opcode for Sload {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        let cur_step = &geth_steps[0];
-        let _next_step = &geth_steps[1];
-        let mut exec_step = state.new_step(cur_step)?;
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
 
         let call_id = state.call()?.call_id;
         let contract_addr = state.call()?.address;
@@ -63,42 +62,36 @@ impl Opcode for Sload {
         );
 
         // First stack read
-        let key = cur_step.stack.last()?;
-        let stack_position = cur_step.stack.last_filled();
+        let key = geth_step.stack.last()?;
+        let stack_position = geth_step.stack.last_filled();
 
         // Manage first stack read at latest stack position
         state.push_stack_op(&mut exec_step, RW::READ, stack_position, key)?;
 
         // Storage read
-        let storage_value_read = cur_step.storage.get_or_err(&key)?;
+        let value = geth_step.storage.get_or_err(&key)?;
 
-        let warm = state
+        let is_warm = state
             .sdb
             .check_account_storage_in_access_list(&(contract_addr, key));
 
         let (_, committed_value) = state.sdb.get_committed_storage(&contract_addr, &key);
-        let committed_value = Word::from(committed_value);
-
+        let committed_value = *committed_value;
         state.push_op(
             &mut exec_step,
             RW::READ,
             StorageOp::new(
                 contract_addr,
                 key,
-                storage_value_read,
-                storage_value_read,
+                value,
+                value,
                 state.tx_ctx.id(),
                 committed_value,
             ),
         );
 
         // First stack write
-        state.push_stack_op(
-            &mut exec_step,
-            RW::WRITE,
-            stack_position,
-            storage_value_read,
-        )?;
+        state.push_stack_op(&mut exec_step, RW::WRITE, stack_position, value)?;
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
@@ -107,7 +100,7 @@ impl Opcode for Sload {
                 address: contract_addr,
                 key,
                 value: true,
-                value_prev: warm,
+                value_prev: is_warm,
             },
         )?;
 
@@ -144,7 +137,8 @@ mod sload_tests {
         let step = step_witness_for_bytecode(code, OpcodeId::SLOAD);
 
         assert_eq!(
-            [&step.rws.stack[0], &step.rws.stack[1]]
+            [0, 1]
+                .map(|idx| &step.rws.stack[idx])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (

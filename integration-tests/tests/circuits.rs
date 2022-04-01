@@ -17,7 +17,7 @@ lazy_static! {
 }
 
 async fn test_evm_circuit_block(block_num: u64) {
-    log::info!("test evm circuit block {}", block_num);
+    log::info!("test evm circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
     let builder = cli.gen_inputs(block_num).await.unwrap();
@@ -30,9 +30,7 @@ async fn test_evm_circuit_block(block_num: u64) {
 #[tokio::test]
 async fn test_evm_circuit_block_greeter_calls() {
     log_init();
-    //let block_num_o = GEN_DATA.blocks.get("Deploy Greeter").unwrap();
     let block_num = GEN_DATA.blocks.get("Contract call").unwrap();
-    //println!("bb {} {}", block_num_o, block_num);
     test_evm_circuit_block(*block_num).await;
 }
 

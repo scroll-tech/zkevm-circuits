@@ -597,7 +597,7 @@ impl<F: Field> ExecutionConfig<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        log::debug!("assign_exec_step offset:{} step:{:?}", offset, step);
+        log::trace!("assign_exec_step offset:{} step:{:?}", offset, step);
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
 
@@ -628,7 +628,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SIGNEXTEND => {
                 assign_exec_step!(self.signextend_gadget)
             }
-            ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::SCMP => {
                 assign_exec_step!(self.signed_comparator_gadget)
@@ -682,6 +681,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLDATASIZE => {
                 assign_exec_step!(self.calldatasize_gadget)
             }
+            ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
             _ => unimplemented!(),
         }
 

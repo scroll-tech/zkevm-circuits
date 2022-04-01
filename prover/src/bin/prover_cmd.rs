@@ -10,7 +10,7 @@ use halo2_proofs::{
 use pairing::bn256::{Bn256, Fr, G1Affine};
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
-use std::env::var;
+use std::{env::var, fs::File, io::BufReader};
 
 use std::str::FromStr;
 use zkevm_circuits::evm_circuit::{
@@ -43,22 +43,29 @@ async fn main() {
         .expect("RPC_URL env var")
         .parse()
         .expect("Cannot parse RPC_URL env var");
-    /*
-        let params_path: String = var("PARAMS_PATH")
-            .expect("PARAMS_PATH env var")
-            .parse()
-            .expect("Cannot parse PARAMS_PATH env var");
 
-        // load polynomial commitment parameters
+    let params_path: String = match var("PARAMS_PATH") {
+        Ok(path) => path,
+        Err(e) => {
+            log::warn!(
+                "PARAMS_PATH env var is invalid: {:?}. Params will be setup locally.",
+                e
+            );
+            "".to_string()
+        }
+    };
+
+    let params: Params<G1Affine> = if params_path.is_empty() {
+        let degree = 18;
+        log::debug!("setup with degree {}", degree);
+        let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
+        log::debug!("setup done");
+        params
+    } else {
+        // load polynomial commitment parameters from file
         let params_fs = File::open(&params_path).expect("couldn't open params");
-        let params: Params<G1Affine> =
-            Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params");
-    */
-
-    let degree = 18;
-    log::info!("setup with degree {}", degree);
-    let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
-    log::info!("setup done");
+        Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params")
+    };
 
     // request & build the inputs for the circuits
     let geth_client = GethClient::new(Http::from_str(&rpc_url).expect("GethClient from RPC_URL"));

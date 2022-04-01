@@ -103,7 +103,6 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             committed_value.clone(),
             is_warm.clone(),
         );
-        //cb.require_equal("hahah", gas_cost.expr(), 22100.expr());
 
         let tx_refund_prev = cb.query_cell();
         let tx_refund = SstoreTxRefundGadget::construct(
@@ -1060,8 +1059,8 @@ mod test {
         );
     }
 
-    // TODO: with modularize mock, we can test more cases using real trace later,
-    // including code/warm persistent/revert.
+    // TODO: with modularized mock, we can test more cases using real trace later,
+    // including both code/warm persistent/revert.
     #[test]
     fn sstore_busmapping_simple() {
         let bytecode = bytecode! {

@@ -21,6 +21,7 @@ pub struct TestCase {
     pub block: Block,
     pub state_db: StateDB,
 }
+
 impl TestCase {
     pub fn new_from_geth_data(geth_data: GethData) -> Self {
         let mut builder =
@@ -28,7 +29,6 @@ impl TestCase {
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .unwrap();
-        println!("b {:?}", builder.block);
         Self {
             geth_data,
             block: builder.block,
@@ -73,10 +73,6 @@ impl TestCase {
             .nth(nth)
             .unwrap()
             .clone();
-        //println!("step bus_mapping_instance {:?}", step.bus_mapping_instance);
-
-        //println!("con {:?}", tx.container);
-        //println!("slcie {:?}", step_witness.rws);
         StepWitness {
             rws: block.container.slice(&step.bus_mapping_instance),
             step,

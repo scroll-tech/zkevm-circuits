@@ -611,8 +611,9 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             tag,
             values,
         );
-        // manual constant folding since halo2 cannot do this automatically
-        // 0.8%
+        // Manually constant folding is used here, since halo2 cannot do this
+        // automatically. Better error message will be printed during circuit
+        // debugging.
         self.rw_counter_offset = match &self.cb.condition {
             None => {
                 if let Constant(v) = self.rw_counter_offset {

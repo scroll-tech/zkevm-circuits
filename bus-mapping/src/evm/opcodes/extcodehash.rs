@@ -16,14 +16,14 @@ pub(crate) struct Extcodehash;
 impl Opcode for Extcodehash {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
-        steps: &[GethExecStep],
+        geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        let step = &steps[0];
-        let mut exec_step = state.new_step(step)?;
-        let stack_address = step.stack.last_filled();
+        let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
+        let stack_address = geth_step.stack.last_filled();
 
         // Pop external address off stack
-        let external_address = step.stack.last()?.to_address();
+        let external_address = geth_step.stack.last()?.to_address();
         state.push_stack_op(
             &mut exec_step,
             RW::READ,
@@ -58,7 +58,7 @@ impl Opcode for Extcodehash {
         }
 
         // Update transaction access list for external_address
-        let is_warm = match step.gas_cost {
+        let is_warm = match geth_step.gas_cost {
             GasCost::WARM_STORAGE_READ_COST => true,
             GasCost::COLD_ACCOUNT_ACCESS_COST => false,
             _ => unreachable!(),
@@ -119,7 +119,7 @@ impl Opcode for Extcodehash {
             &mut exec_step,
             RW::WRITE,
             stack_address,
-            steps[1].stack.last()?,
+            geth_steps[1].stack.last()?,
         )?;
 
         Ok(vec![exec_step])
