@@ -100,7 +100,7 @@ impl<F: FieldExt, E1: Expr<F>, E2: Expr<F>> From<(E1, E2)> for ReversionInfo<F> 
 pub struct BaseConstraintBuilder<F> {
     pub constraints: Vec<(&'static str, Expression<F>)>,
     pub max_degree: usize,
-    condition: Option<Expression<F>>,
+    pub condition: Option<Expression<F>>,
 }
 
 impl<F: FieldExt> BaseConstraintBuilder<F> {

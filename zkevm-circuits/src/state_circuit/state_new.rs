@@ -82,51 +82,11 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             constraint_builder.build(&queries);
             constraint_builder.gate(queries.selector)
         });
-        for (name, expressions) in constraint_builder.lookups {
+        for (name, expressions) in constraint_builder.lookups() {
             meta.lookup_any(name, |_| vec![expressions]);
         }
 
         config
-
-        // build constraints here!!!
-
-        //
-        // let mut cb = BaseConstraintBuilder::new(30); // TODO: use correct max
-        // degree; config.add_general_constraints(&mut cb);
-        // cb.condition(config.matches(RwTableTag::Start), |cb| {
-        //     config.configure_start(cb)
-        // });
-        // cb.condition(config.matches(RwTableTag::Memory), |cb| {
-        //     config.configure_memory(cb)
-        // });
-        // cb.condition(config.matches(RwTableTag::Stack), |cb| {
-        //     config.configure_stack(cb)
-        // });
-        // cb.condition(config.matches(RwTableTag::AccountStorage), |cb| {
-        //     config.configure_account_storage(cb)
-        // });
-        // cb.condition(config.matches(RwTableTag::TxAccessListAccount), |cb| {
-        //     config.configure_tx_access_list_account(cb)
-        // });
-        // cb.condition(
-        //     config.matches(RwTableTag::TxAccessListAccountStorage),
-        //     |cb| config.configure_tx_access_list_account_storage(cb),
-        // );
-        // cb.condition(config.matches(RwTableTag::TxRefund), |cb| {
-        //     config.configure_tx_refund(cb)
-        // });
-        // cb.condition(config.matches(RwTableTag::Account), |cb| {
-        //     config.configure_account(cb)
-        // });
-        // cb.condition(config.matches(RwTableTag::AccountDestructed), |cb| {
-        //     config.configure_account_destructed(cb)
-        // });
-        // cb.condition(config.matches(RwTableTag::CallContext), |cb| {
-        //     config.configure_call_context(cb)
-        // });
-        // meta.create_gate("state circuit constraints", |_| {
-        //     cb.gate(selector_expression)
-        // });
     }
 
     fn synthesize(

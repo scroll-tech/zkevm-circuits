@@ -1,3 +1,5 @@
+use super::N_LIMBS_ACCOUNT_ADDRESS;
+use super::N_LIMBS_RW_COUNTER;
 use eth_types::{Address, Field, ToScalar};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region},
@@ -5,65 +7,65 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
+use std::convert::TryInto;
 use std::marker::PhantomData;
 
 use crate::util::Expr;
 
-// TODO: maybe parameterize over number of limbs?
-pub trait ToLimbs {
-    fn to_limbs(&self) -> Vec<u16>;
+pub trait ToLimbs<const N: usize> {
+    fn to_limbs(&self) -> [u16; N];
 }
 
-impl ToLimbs for Address {
-    fn to_limbs(&self) -> Vec<u16> {
-        le_bytes_to_limbs(&self.0)
+impl ToLimbs<N_LIMBS_ACCOUNT_ADDRESS> for Address {
+    fn to_limbs(&self) -> [u16; 10] {
+        le_bytes_to_limbs(&self.0).try_into().unwrap()
     }
 }
 
-impl ToLimbs for u32 {
-    fn to_limbs(&self) -> Vec<u16> {
-        le_bytes_to_limbs(&self.to_le_bytes())
+impl ToLimbs<N_LIMBS_RW_COUNTER> for u32 {
+    fn to_limbs(&self) -> [u16; 2] {
+        le_bytes_to_limbs(&self.to_le_bytes()).try_into().unwrap()
     }
 }
 
 #[derive(Clone, Copy)]
-pub struct Config<T: ToLimbs, const N: usize> {
+pub struct Config<T, const N: usize>
+where
+    T: ToLimbs<N>,
+{
     pub value: Column<Advice>,
+    // TODO: we can save a column here by not storing the lsb, and then checking that
+    // value - value_from_limbs(limbs.prepend(0)) fits into a limb.
+    // Does this apply for RLC's too?
     pub limbs: [Column<Advice>; N],
     _marker: PhantomData<T>,
 }
 
 #[derive(Clone)]
-pub struct Queries<F: Field, T: ToLimbs, const N: usize> {
+pub struct Queries<F: Field, const N: usize> {
     pub value: Expression<F>,
+    pub value_prev: Expression<F>, // move this up, as it's not always needed.
     pub limbs: [Expression<F>; N],
-    _marker: PhantomData<T>,
 }
 
-impl<F: Field, T: ToLimbs, const N: usize> Queries<F, T, N> {
-    pub fn new(meta: &mut VirtualCells<'_, F>, c: Config<T, N>) -> Self {
+impl<F: Field, const N: usize> Queries<F, N> {
+    pub fn new<T: ToLimbs<N>>(meta: &mut VirtualCells<'_, F>, c: Config<T, N>) -> Self {
         Self {
             value: meta.query_advice(c.value, Rotation::cur()),
+            value_prev: meta.query_advice(c.value, Rotation::prev()),
             limbs: c.limbs.map(|limb| meta.query_advice(limb, Rotation::cur())),
-            _marker: PhantomData,
         }
     }
 }
 
-impl<const N: usize> Config<Address, N> {
+impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
     pub fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         value: Address,
     ) -> Result<AssignedCell<F, F>, Error> {
-        let limbs = value
-            .0
-            .iter()
-            .rev()
-            .tuples()
-            .map(|(lo, hi)| u16::from_le_bytes([*lo, *hi]));
-        for (i, limb) in limbs.enumerate() {
+        for (i, &limb) in value.to_limbs().iter().enumerate() {
             region.assign_advice(
                 || format!("limb[{}] in address mpi", i),
                 self.limbs[i],
@@ -80,14 +82,14 @@ impl<const N: usize> Config<Address, N> {
     }
 }
 
-impl<const N: usize> Config<u32, N> {
+impl Config<u32, N_LIMBS_RW_COUNTER> {
     pub fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         value: u32,
     ) -> Result<AssignedCell<F, F>, Error> {
-        for (i, &limb) in le_bytes_to_limbs(&value.to_le_bytes()).iter().enumerate() {
+        for (i, &limb) in value.to_limbs().iter().enumerate() {
             region.assign_advice(
                 || format!("limb[{}] in u32 mpi", i),
                 self.limbs[i],
@@ -104,12 +106,18 @@ impl<const N: usize> Config<u32, N> {
     }
 }
 
-pub struct Chip<F: Field, T: ToLimbs, const N: usize> {
+pub struct Chip<F: Field, T, const N: usize>
+where
+    T: ToLimbs<N>,
+{
     config: Config<T, N>,
     _marker: PhantomData<F>,
 }
 
-impl<F: Field, T: ToLimbs, const N: usize> Chip<F, T, N> {
+impl<F: Field, T, const N: usize> Chip<F, T, N>
+where
+    T: ToLimbs<N>,
+{
     pub fn construct(config: Config<T, N>) -> Self {
         Self {
             config,

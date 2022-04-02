@@ -13,6 +13,8 @@ pub struct Config {
     pub u8: Column<Fixed>,
     pub u10: Column<Fixed>,
     pub u16: Column<Fixed>,
+    // pub call_context_field_tags: Column<Fixed>,
+    // pub account_field_tags: Column<Fixed>, // this is only three elements. maybe not needed?
 }
 
 #[derive(Clone)]
