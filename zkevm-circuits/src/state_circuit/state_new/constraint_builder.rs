@@ -3,12 +3,13 @@ use super::{
     lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
     random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_RW_COUNTER,
 };
-use crate::evm_circuit::param::N_BYTES_WORD;
-use crate::evm_circuit::table::RwTableTag;
-use crate::evm_circuit::util::math_gadget::generate_lagrange_base_polynomial;
-use crate::evm_circuit::util::{and, not, or, select};
+use crate::evm_circuit::{
+    param::N_BYTES_WORD,
+    table::RwTableTag,
+    util::{math_gadget::generate_lagrange_base_polynomial, not},
+};
 use crate::util::Expr;
-use eth_types::{Address, Field};
+use eth_types::Field;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
 
