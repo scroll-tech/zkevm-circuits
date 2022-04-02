@@ -1,11 +1,12 @@
 use super::super::param::{N_BITS_ADDRESS, N_BITS_FIELD_TAG, N_BITS_ID, N_BITS_TAG};
 use super::{
     lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
-    random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_RW_COUNTER,N_LIMBS_ID,
+    random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
+    N_LIMBS_RW_COUNTER,
 };
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
-    table::RwTableTag,
+    table::{AccountFieldTag, RwTableTag},
     util::{math_gadget::generate_lagrange_base_polynomial, not},
 };
 use crate::util::Expr;
@@ -183,6 +184,11 @@ impl<F: Field> ConstraintBuilder<F> {
             "storage_key is 0 for Account",
             q.storage_key.encoded.clone(),
         );
+        self.require_in_set(
+            "field_tag in AccountFieldTag range",
+            q.field_tag(),
+            set::<AccountFieldTag>(),
+        );
         // for every first access, we add an Account write to setup the value from the
         // previous block with rw_counter = 0
         self.condition(q.first_access(), |cb| {
@@ -271,11 +277,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
-        generate_lagrange_base_polynomial(
-            self.tag.clone(),
-            tag as usize,
-            RwTableTag::iter().map(|x| x as usize),
-        )
+        generate_lagrange_base_polynomial(self.tag.clone(), tag as usize, set::<RwTableTag>())
     }
 
     fn sort_keys(&self) -> (Expression<F>, Expression<F>) {
@@ -317,4 +319,8 @@ fn from_digits<F: Field>(digits: &[Expression<F>], base: Expression<F>) -> Expre
         .fold(Expression::Constant(F::zero()), |result, digit| {
             digit.clone() + result * base.clone()
         })
+}
+
+fn set<F: Field, T: IntoEnumIterator + Expr<F>>() -> Vec<Expression<F>> {
+    T::iter().map(|x| x.expr()).collect()
 }

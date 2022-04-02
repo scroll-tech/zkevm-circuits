@@ -162,7 +162,7 @@ impl RwTableTag {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 pub enum AccountFieldTag {
     Nonce = 1,
     Balance,
