@@ -1,3 +1,4 @@
+use crate::evm_circuit::table::CallContextFieldTag;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::Layouter,
@@ -5,6 +6,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::marker::PhantomData;
+use strum::IntoEnumIterator;
 
 #[derive(Clone, Copy)]
 pub struct Config {
@@ -13,8 +15,7 @@ pub struct Config {
     pub u8: Column<Fixed>,
     pub u10: Column<Fixed>,
     pub u16: Column<Fixed>,
-    /* pub call_context_field_tags: Column<Fixed>,
-     * pub account_field_tags: Column<Fixed>, // this is only three elements. maybe not needed? */
+    pub call_context_field_tag: Column<Fixed>,
 }
 
 #[derive(Clone)]
@@ -22,6 +23,7 @@ pub struct Queries<F> {
     pub u8: Expression<F>,
     pub u10: Expression<F>,
     pub u16: Expression<F>,
+    pub call_context_field_tag: Expression<F>,
 }
 
 impl<F: Field> Queries<F> {
@@ -30,6 +32,7 @@ impl<F: Field> Queries<F> {
             u8: meta.query_fixed(c.u8, Rotation::cur()),
             u10: meta.query_fixed(c.u10, Rotation::cur()),
             u16: meta.query_fixed(c.u16, Rotation::cur()),
+            call_context_field_tag: meta.query_fixed(c.call_context_field_tag, Rotation::cur()),
         }
     }
 }
@@ -59,6 +62,7 @@ impl<F: Field> Chip<F> {
             u8: meta.fixed_column(),
             u10: meta.fixed_column(),
             u16: meta.fixed_column(),
+            call_context_field_tag: meta.fixed_column(),
         }
     }
 
@@ -83,6 +87,25 @@ impl<F: Field> Chip<F> {
                 },
             )?;
         }
+        layouter.assign_region(
+            || format!("assign call_context_field_tags fixed column"),
+            |mut region| {
+                for field_tag in CallContextFieldTag::iter() {
+                    region.assign_fixed(
+                        || {
+                            format!(
+                                "assign {:?} in call_context_field_tag fixed column",
+                                field_tag
+                            )
+                        },
+                        self.config.call_context_field_tag,
+                        field_tag as usize,
+                        || Ok(F::from(field_tag as u64)),
+                    )?;
+                }
+                Ok(())
+            },
+        )?;
         Ok(())
     }
 }

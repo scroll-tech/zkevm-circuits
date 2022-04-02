@@ -93,11 +93,7 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_general_constraints(&mut self, q: &Queries<F>) {
-        self.require_in_set(
-            "tag in RwTableTag range",
-            q.tag(),
-            RwTableTag::iter().map(|x| x.expr()).collect(),
-        );
+        self.require_in_set("tag in RwTableTag range", q.tag(), set::<F, RwTableTag>());
         self.require_boolean("is_write is boolean", q.is_write());
     }
 
@@ -187,7 +183,7 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_in_set(
             "field_tag in AccountFieldTag range",
             q.field_tag(),
-            set::<AccountFieldTag>(),
+            set::<F, AccountFieldTag>(),
         );
         // for every first access, we add an Account write to setup the value from the
         // previous block with rw_counter = 0
@@ -212,6 +208,10 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero(
             "storage_key is 0 for CallContext",
             q.storage_key.encoded.clone(),
+        );
+        self.add_lookup(
+            "field_tag in CallContextFieldTag range",
+            (q.field_tag(), q.lookups.call_context_field_tag.clone()),
         );
         // TODO: Missing constraints
     }
@@ -278,7 +278,11 @@ impl<F: Field> Queries<F> {
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
-        generate_lagrange_base_polynomial(self.tag.clone(), tag as usize, set::<RwTableTag>())
+        generate_lagrange_base_polynomial(
+            self.tag.clone(),
+            tag as usize,
+            RwTableTag::iter().map(|x| x as usize),
+        )
     }
 
     fn sort_keys(&self) -> (Expression<F>, Expression<F>) {
@@ -323,5 +327,7 @@ fn from_digits<F: Field>(digits: &[Expression<F>], base: Expression<F>) -> Expre
 }
 
 fn set<F: Field, T: IntoEnumIterator + Expr<F>>() -> Vec<Expression<F>> {
-    T::iter().map(|x| x.expr()).collect()
+    T::iter().map(|x| x.expr()).collect() // you don't need this collect if you
+                                          // can figure out the return type
+                                          // without it.
 }
