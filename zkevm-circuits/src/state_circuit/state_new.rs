@@ -24,6 +24,7 @@ use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as
 
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
+const N_LIMBS_ID: usize = 2;
 
 #[derive(Clone, Copy)]
 struct StateConfig {
@@ -31,7 +32,7 @@ struct StateConfig {
     rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
     is_write: Column<Advice>,
     tag: Column<Advice>,
-    id: Column<Advice>,
+    id: MpiConfig<u32, N_LIMBS_ID>,
     address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
     field_tag: Column<Advice>,
     storage_key: RlcConfig<N_BYTES_WORD>,
@@ -67,7 +68,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             rw_counter: MpiChip::configure(meta, selector, lookups.u16),
             is_write: meta.advice_column(),
             tag: meta.advice_column(),
-            id: meta.advice_column(),
+            id: MpiChip::configure(meta, selector, lookups.u16),
             address: MpiChip::configure(meta, selector, lookups.u16),
             field_tag: meta.advice_column(),
             storage_key: RlcChip::configure(meta, selector, lookups.u8, &power_of_randomness),
@@ -163,12 +164,12 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: StateConfig) -> Queries<
         selector: meta.query_selector(c.selector),
         rw_counter: MpiQueries::new(meta, c.rw_counter),
         is_write: meta.query_advice(c.is_write, Rotation::cur()),
-        tag: meta.query_advice(c.is_write, Rotation::cur()),
-        id: meta.query_advice(c.is_write, Rotation::cur()),
+        tag: meta.query_advice(c.tag, Rotation::cur()),
+        id: MpiQueries::new(meta, c.rw_counter),
         address: MpiQueries::new(meta, c.address),
-        field_tag: meta.query_advice(c.is_write, Rotation::cur()),
+        field_tag: meta.query_advice(c.field_tag, Rotation::cur()),
         storage_key: RlcQueries::new(meta, c.storage_key),
-        value: meta.query_advice(c.is_write, Rotation::cur()),
+        value: meta.query_advice(c.value, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c
             .power_of_randomness

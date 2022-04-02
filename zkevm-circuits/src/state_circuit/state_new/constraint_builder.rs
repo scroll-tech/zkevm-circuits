@@ -1,7 +1,7 @@
 use super::super::param::{N_BITS_ADDRESS, N_BITS_FIELD_TAG, N_BITS_ID, N_BITS_TAG};
 use super::{
     lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
-    random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_RW_COUNTER,
+    random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_RW_COUNTER,N_LIMBS_ID,
 };
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
@@ -19,7 +19,7 @@ pub struct Queries<F: Field> {
     pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
-    pub id: Expression<F>, // this should also be an MPI?
+    pub id: MpiQueries<F, N_LIMBS_ID>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
     pub field_tag: Expression<F>,
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
@@ -259,7 +259,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn id(&self) -> Expression<F> {
-        self.id.clone()
+        self.id.value.clone()
     }
 
     fn field_tag(&self) -> Expression<F> {
