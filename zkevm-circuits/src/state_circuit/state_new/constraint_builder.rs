@@ -213,6 +213,7 @@ impl<F: Field> ConstraintBuilder<F> {
             "storage_key is 0 for CallContext",
             q.storage_key.encoded.clone(),
         );
+        // TODO: Missing constraints
     }
 
     fn require_zero(&mut self, name: &'static str, e: Expression<F>) {
