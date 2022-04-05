@@ -1,21 +1,20 @@
-// use super::constraint_builder::from_digits;
-use super::N_LIMBS_ACCOUNT_ADDRESS;
-use super::{N_LIMBS_ID, N_LIMBS_RW_COUNTER};
-use crate::evm_circuit::param::N_BYTES_WORD;
-use crate::evm_circuit::util::{not, select};
-use crate::evm_circuit::witness::Rw;
-use crate::util::Expr;
-use eth_types::Field;
-use eth_types::ToBigEndian;
+use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
+use crate::{
+    evm_circuit::{
+        param::N_BYTES_WORD,
+        util::{not, select},
+        witness::Rw,
+    },
+    util::Expr,
+};
+use eth_types::{Field, ToBigEndian};
 use halo2_proofs::{
     circuit::{AssignedCell, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
-
-use std::marker::PhantomData;
-use std::ops::Mul;
+use std::{marker::PhantomData, ops::Mul};
 
 // 2 limbs for tag, field_tag and id.
 // 10 limbs for address,
@@ -27,7 +26,7 @@ pub struct Config {
     diff_1: Column<Advice>,
     diff_2: Column<Advice>,
     diff_inverse: Column<Advice>,
-    diff_selector: Column<Advice>,
+    pub diff_selector: Column<Advice>,
     tag: Column<Advice>,
     field_tag: Column<Advice>,
     id_limbs: [Column<Advice>; N_LIMBS_ID],

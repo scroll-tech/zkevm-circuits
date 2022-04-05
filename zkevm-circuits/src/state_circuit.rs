@@ -241,5 +241,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: StateConfig) -> Queries<
         power_of_randomness: c
             .power_of_randomness
             .map(|c| meta.query_instance(c, Rotation::cur())),
+        lexicographic_ordering_diff_selector: meta
+            .query_advice(c.lexicographic_ordering.diff_selector, Rotation::cur()),
     }
 }

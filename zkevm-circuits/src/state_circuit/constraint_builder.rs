@@ -26,7 +26,8 @@ pub struct Queries<F: Field> {
     pub value: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
-    // lexicographic_ordering expressions, etc.
+
+    pub lexicographic_ordering_diff_selector: Expression<F>,
 }
 
 pub struct ConstraintBuilder<F: Field> {
@@ -45,7 +46,6 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     pub fn gate(&self, condition: Expression<F>) -> Vec<(&'static str, Expression<F>)> {
-        // dbg!(self.constraints.clone());
         self.constraints
             .iter()
             .cloned()
@@ -65,12 +65,12 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.tag_matches(RwTableTag::Memory), |cb| {
             cb.build_memory_constraints(q)
         });
-        // self.condition(q.tag_matches(RwTableTag::Stack), |cb| {
-        //     cb.build_stack_constraints(q)
-        // });
-        // self.condition(q.tag_matches(RwTableTag::AccountStorage), |cb| {
-        //     cb.build_account_storage_constraints(q)
-        // });
+        self.condition(q.tag_matches(RwTableTag::Stack), |cb| {
+            cb.build_stack_constraints(q)
+        });
+        self.condition(q.tag_matches(RwTableTag::AccountStorage), |cb| {
+            cb.build_account_storage_constraints(q)
+        });
         self.condition(q.tag_matches(RwTableTag::TxAccessListAccount), |cb| {
             cb.build_tx_access_list_account_constraints(q)
         });
@@ -130,15 +130,17 @@ impl<F: Field> ConstraintBuilder<F> {
             "stack address fits into 10 bits",
             (q.address.value.clone(), q.lookups.u10.clone()),
         );
-        self.condition(not::expr(q.first_access()), |cb| {
-            cb.require_boolean("stack address change is 0 or 1", q.address_change())
-        })
+        self.require_zero(
+            "if call_id doesn't change, stack address change is 0 or 1",
+            q.id_change() * q.address_change(),
+        )
     }
 
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
         // TODO: cold VS warm
         // TODO: connection to MPT on first and last access for each (address, key)
-        self.require_zero("id is 0 for AccountStorage", q.id());
+        // No longer true because we moved id from aux to here.
+        // self.require_zero("id is 0 for AccountStorage", q.id());
         self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
         // for every first access, we add an AccountStorage write to setup the value
         // from the previous block with rw_counter = 0
@@ -240,7 +242,6 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn condition(&mut self, condition: Expression<F>, build: impl FnOnce(&mut Self)) {
-        // handle nested conditions?
         let original_condition = self.condition.clone();
         self.condition = self.condition.clone() * condition;
         build(self);
@@ -269,6 +270,10 @@ impl<F: Field> Queries<F> {
         self.id.value.clone()
     }
 
+    fn id_change(&self) -> Expression<F> {
+        self.id() - self.id.value_prev.clone()
+    }
+
     fn field_tag(&self) -> Expression<F> {
         self.field_tag.clone()
     }
@@ -286,8 +291,8 @@ impl<F: Field> Queries<F> {
     }
 
     fn first_access(&self) -> Expression<F> {
-        // TODO(mason) fix meeeeee
-        1.expr()
+        not::expr(self.lexicographic_ordering_diff_selector.clone())
+            * (self.storage_key.encoded.clone() - self.storage_key.encoded_prev.clone())
     }
 
     fn address_change(&self) -> Expression<F> {
