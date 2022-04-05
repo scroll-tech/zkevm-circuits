@@ -5,7 +5,9 @@ use crate::{
         table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+            },
             math_gadget::{IsEqualGadget, IsZeroGadget},
             not, select, Cell, Word,
         },
@@ -23,8 +25,7 @@ use halo2_proofs::{
 pub(crate) struct SstoreGadget<F> {
     same_context: SameContextGadget<F>,
     tx_id: Cell<F>,
-    rw_counter_end_of_reversion: Cell<F>,
-    is_persistent: Cell<F>,
+    reversion_info: ReversionInfo<F>,
     callee_address: Cell<F>,
     key: Cell<F>,
     value: Cell<F>,
@@ -44,13 +45,9 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let [tx_id, rw_counter_end_of_reversion, is_persistent, callee_address] = [
-            CallContextFieldTag::TxId,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            CallContextFieldTag::IsPersistent,
-            CallContextFieldTag::CalleeAddress,
-        ]
-        .map(|field_tag| cb.call_context(None, field_tag));
+        let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        let mut reversion_info = cb.reversion_info(None);
+        let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
         let key = cb.query_cell();
         // Pop the key from the stack
@@ -69,13 +66,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             value_prev.expr(),
             tx_id.expr(),
             committed_value.expr(),
-            Some(
-                (
-                    &is_persistent,
-                    rw_counter_end_of_reversion.expr() - cb.curr.state.state_write_counter.expr(),
-                )
-                    .into(),
-            ),
+            Some(&mut reversion_info),
         );
 
         let is_warm = cb.query_bool();
@@ -85,15 +76,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             key.expr(),
             true.expr(),
             is_warm.expr(),
-            Some(
-                (
-                    &is_persistent,
-                    rw_counter_end_of_reversion.expr()
-                        - 1.expr()
-                        - cb.curr.state.state_write_counter.expr(),
-                )
-                    .into(),
-            ),
+            Some(&mut reversion_info),
         );
 
         let gas_cost = SstoreGasGadget::construct(
@@ -116,15 +99,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             tx_id.expr(),
             tx_refund.expr(),
             tx_refund_prev.expr(),
-            Some(
-                (
-                    &is_persistent,
-                    rw_counter_end_of_reversion.expr()
-                        - 2.expr()
-                        - cb.curr.state.state_write_counter.expr(),
-                )
-                    .into(),
-            ),
+            Some(&mut reversion_info),
         );
 
         let step_state_transition = StepStateTransition {
@@ -140,8 +115,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         Self {
             same_context,
             tx_id,
-            rw_counter_end_of_reversion,
-            is_persistent,
+            reversion_info,
             callee_address,
             key,
             value,
@@ -167,13 +141,12 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
-        self.rw_counter_end_of_reversion.assign(
+        self.reversion_info.assign(
             region,
             offset,
-            Some(F::from(call.rw_counter_end_of_reversion as u64)),
+            call.rw_counter_end_of_reversion,
+            call.is_persistent,
         )?;
-        self.is_persistent
-            .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
         self.callee_address
             .assign(region, offset, call.callee_address.to_scalar())?;
 
@@ -272,21 +245,21 @@ impl<F: Field> SstoreGasGadget<F> {
         let original_is_zero = IsZeroGadget::construct(cb, committed_value.expr());
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
-            GasCost::SLOAD_GAS.expr(),
+            GasCost::WARM_ACCESS.expr(),
             select::expr(
                 original_eq_prev.expr(),
                 select::expr(
                     original_is_zero.expr(),
-                    GasCost::SSTORE_SET_GAS.expr(),
-                    GasCost::SSTORE_RESET_GAS.expr(),
+                    GasCost::SSTORE_SET.expr(),
+                    GasCost::SSTORE_RESET.expr(),
                 ),
-                GasCost::SLOAD_GAS.expr(),
+                GasCost::WARM_ACCESS.expr(),
             ),
         );
         let gas_cost = select::expr(
             is_warm.expr(),
             warm_case_gas.expr(),
-            warm_case_gas + GasCost::COLD_SLOAD_COST.expr(),
+            warm_case_gas + GasCost::COLD_SLOAD.expr(),
         );
 
         Self {
@@ -420,8 +393,8 @@ impl<F: Field> SstoreTxRefundGadget<F> {
 
         let tx_refund_new = tx_refund_old.expr()
             + case_a * GasCost::SSTORE_CLEARS_SCHEDULE.expr()
-            + case_b * (GasCost::SSTORE_RESET_GAS.expr() - GasCost::SLOAD_GAS.expr())
-            + case_c * (GasCost::SSTORE_SET_GAS.expr() - GasCost::SLOAD_GAS.expr())
+            + case_b * (GasCost::SSTORE_RESET.expr() - GasCost::COLD_SLOAD.expr())
+            + case_c * (GasCost::SSTORE_SET.expr() - GasCost::COLD_SLOAD.expr())
             - case_d * (GasCost::SSTORE_CLEARS_SCHEDULE.expr());
 
         Self {
@@ -526,10 +499,11 @@ mod test {
             test::{rand_fp, run_test_circuit_incomplete_fixed_table},
             witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
         },
-        test_util::{test_circuits_using_bytecode, BytecodeTestConfig},
+        test_util::{run_test_circuits, BytecodeTestConfig},
     };
     use bus_mapping::evm::OpcodeId;
     use eth_types::{address, bytecode, evm_types::GasCost, ToWord, Word};
+    use mock::TestContext;
     use std::convert::TryInto;
 
     fn calc_expected_gas_cost(
@@ -539,20 +513,20 @@ mod test {
         is_warm: bool,
     ) -> u64 {
         let warm_case_gas = if value_prev == value {
-            GasCost::SLOAD_GAS
+            GasCost::WARM_ACCESS
         } else if committed_value == value_prev {
             if committed_value == Word::from(0) {
-                GasCost::SSTORE_SET_GAS
+                GasCost::SSTORE_SET
             } else {
-                GasCost::SSTORE_RESET_GAS
+                GasCost::SSTORE_RESET
             }
         } else {
-            GasCost::SLOAD_GAS
+            GasCost::WARM_ACCESS
         };
         if is_warm {
             warm_case_gas.as_u64()
         } else {
-            warm_case_gas.as_u64() + GasCost::COLD_SLOAD_COST.as_u64()
+            warm_case_gas.as_u64() + GasCost::COLD_SLOAD.as_u64()
         }
     }
 
@@ -572,8 +546,10 @@ mod test {
             if committed_value == value {
                 if committed_value != Word::from(0) {
                     // CaseB
-                    tx_refund_new +=
-                        GasCost::SSTORE_RESET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64();
+                    tx_refund_new += GasCost::SSTORE_RESET.as_u64() - GasCost::COLD_SLOAD.as_u64();
+                } else {
+                    // CaseC
+                    tx_refund_new += GasCost::SSTORE_SET.as_u64() - GasCost::COLD_SLOAD.as_u64();
                 } else {
                     // CaseC
                     tx_refund_new += GasCost::SSTORE_SET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64();
@@ -598,7 +574,7 @@ mod test {
         result: bool,
     ) {
         let gas = calc_expected_gas_cost(value, value_prev, committed_value, is_warm);
-        let tx_refund_old = GasCost::SSTORE_SET_GAS.as_u64();
+        let tx_refund_old = GasCost::SSTORE_SET.as_u64();
         let tx_refund_new =
             calc_expected_tx_refund(tx_refund_old, value, value_prev, committed_value);
         let rw_counter_end_of_reversion = if result { 0 } else { 14 };
@@ -1076,7 +1052,10 @@ mod test {
             ..Default::default()
         };
         assert_eq!(
-            test_circuits_using_bytecode(bytecode, test_config, None),
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                Some(test_config),
+            ),
             Ok(())
         );
     }
@@ -1096,7 +1075,10 @@ mod test {
             ..Default::default()
         };
         assert_eq!(
-            test_circuits_using_bytecode(bytecode, test_config, None),
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                Some(test_config),
+            ),
             Ok(())
         );
     }

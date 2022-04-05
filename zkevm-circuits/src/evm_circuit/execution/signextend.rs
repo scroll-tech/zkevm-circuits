@@ -207,6 +207,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
     use eth_types::{bytecode, ToLittleEndian, Word};
+    use mock::TestContext;
 
     fn test_ok(index: Word, value: Word, _result: Word) {
         let bytecode = bytecode! {
@@ -215,7 +216,14 @@ mod test {
             SIGNEXTEND
             STOP
         };
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 
     #[test]

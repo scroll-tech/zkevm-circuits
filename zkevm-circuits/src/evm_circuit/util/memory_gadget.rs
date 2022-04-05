@@ -13,7 +13,6 @@ use crate::{
 use array_init::array_init;
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Region,
     plonk::{Error, Expression},
 };
@@ -25,9 +24,10 @@ pub(crate) mod address_low {
         param::N_BYTES_MEMORY_ADDRESS,
         util::{from_bytes, Word},
     };
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
+    pub(crate) fn expr<F: Field>(address: &Word<F>) -> Expression<F> {
         from_bytes::expr(&address.cells[..N_BYTES_MEMORY_ADDRESS])
     }
 
@@ -45,13 +45,14 @@ pub(crate) mod address_high {
         param::N_BYTES_MEMORY_ADDRESS,
         util::{sum, Word},
     };
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: FieldExt>(address: &Word<F>) -> Expression<F> {
+    pub(crate) fn expr<F: Field>(address: &Word<F>) -> Expression<F> {
         sum::expr(&address.cells[N_BYTES_MEMORY_ADDRESS..])
     }
 
-    pub(crate) fn value<F: FieldExt>(address: [u8; 32]) -> F {
+    pub(crate) fn value<F: Field>(address: [u8; 32]) -> F {
         sum::value::<F>(&address[N_BYTES_MEMORY_ADDRESS..])
     }
 }
@@ -66,7 +67,7 @@ pub(crate) struct MemoryAddressGadget<F> {
     memory_length_is_zero: IsZeroGadget<F>,
 }
 
-impl<F: FieldExt> MemoryAddressGadget<F> {
+impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         memory_offset: Cell<F>,

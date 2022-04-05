@@ -221,6 +221,7 @@ mod test {
     use eth_types::bytecode;
     use eth_types::evm_types::OpcodeId;
     use eth_types::Word;
+    use mock::TestContext;
 
     use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
 
@@ -232,7 +233,14 @@ mod test {
             bytecode.write_op(opcode);
         }
         bytecode.write_op(OpcodeId::STOP);
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 
     #[test]

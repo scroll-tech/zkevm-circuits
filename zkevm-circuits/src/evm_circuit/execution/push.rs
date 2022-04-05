@@ -147,6 +147,7 @@ mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
     use eth_types::bytecode;
     use eth_types::evm_types::OpcodeId;
+    use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
         assert!(bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,);
@@ -159,7 +160,13 @@ mod test {
         }
         bytecode.write_op(OpcodeId::STOP);
 
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 
     #[test]

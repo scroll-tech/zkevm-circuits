@@ -21,6 +21,7 @@ mod add;
 mod begin_tx;
 mod bitwise;
 mod byte;
+mod call;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
@@ -35,6 +36,7 @@ mod end_tx;
 mod error_oog_static_memory;
 mod extcodehash;
 mod gas;
+mod gasprice;
 mod is_zero;
 mod jump;
 mod jumpdest;
@@ -44,6 +46,7 @@ mod memory_copy;
 mod msize;
 mod mul;
 mod number;
+mod origin;
 mod pc;
 mod pop;
 mod push;
@@ -61,6 +64,7 @@ use add::AddGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use byte::ByteGadget;
+use call::CallGadget;
 use calldatacopy::CallDataCopyGadget;
 use calldataload::CallDataLoadGadget;
 use calldatasize::CallDataSizeGadget;
@@ -75,6 +79,7 @@ use end_tx::EndTxGadget;
 use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
 use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
+use gasprice::GasPriceGadget;
 use is_zero::IsZeroGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
@@ -84,6 +89,7 @@ use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
 use mul::MulGadget;
 use number::NumberGadget;
+use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
@@ -130,8 +136,10 @@ pub(crate) struct ExecutionConfig<F> {
     calldatacopy_gadget: CallDataCopyGadget<F>,
     calldataload_gadget: CallDataLoadGadget<F>,
     calldatasize_gadget: CallDataSizeGadget<F>,
+    origin_gadget: OriginGadget<F>,
     caller_gadget: CallerGadget<F>,
     call_value_gadget: CallValueGadget<F>,
+    call_gadget: CallGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
@@ -350,8 +358,10 @@ impl<F: Field> ExecutionConfig<F> {
             calldatacopy_gadget: configure_gadget!(),
             calldataload_gadget: configure_gadget!(),
             calldatasize_gadget: configure_gadget!(),
+            origin_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
             call_value_gadget: configure_gadget!(),
+            call_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
@@ -362,6 +372,7 @@ impl<F: Field> ExecutionConfig<F> {
             jumpi_gadget: configure_gadget!(),
             log3_gadget: configure_gadget!(),
             gas_gadget: configure_gadget!(),
+            gasprice_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
             copy_to_memory_gadget: configure_gadget!(),
             pc_gadget: configure_gadget!(),
@@ -422,9 +433,10 @@ impl<F: Field> ExecutionConfig<F> {
 
         let (constraints, constraints_first_step, lookups, presets) = cb.build();
         debug_assert!(
-            presets_map.insert(G::EXECUTION_STATE, presets).is_none(),
+            !presets_map.contains_key(&G::EXECUTION_STATE),
             "execution state already configured"
         );
+        presets_map.insert(G::EXECUTION_STATE, presets);
 
         for (selector, constraints) in [
             (q_step, constraints),
@@ -644,9 +656,11 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::LOG => assign_exec_step!(self.log3_gadget),
             ExecutionState::GAS => assign_exec_step!(self.gas_gadget),
+            ExecutionState::GASPRICE => assign_exec_step!(self.gasprice_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
+            ExecutionState::ORIGIN => assign_exec_step!(self.origin_gadget),
             ExecutionState::CALLER => assign_exec_step!(self.caller_gadget),
             ExecutionState::CALLVALUE => {
                 assign_exec_step!(self.call_value_gadget)
@@ -682,6 +696,9 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.calldatasize_gadget)
             }
             ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
+            ExecutionState::CALL => {
+                assign_exec_step!(self.call_gadget)
+            }
             _ => unimplemented!(),
         }
 

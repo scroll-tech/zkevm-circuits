@@ -9,8 +9,10 @@ use crate::{
     util::Expr,
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, Word};
-use halo2_proofs::plonk::Error;
-use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::Expression};
+use halo2_proofs::{
+    circuit::Region,
+    plonk::{Error, Expression},
+};
 use std::convert::TryFrom;
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
@@ -20,7 +22,7 @@ pub struct IsZeroGadget<F> {
     is_zero: Expression<F>,
 }
 
-impl<F: FieldExt> IsZeroGadget<F> {
+impl<F: Field> IsZeroGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
         let inverse = cb.query_cell();
 
@@ -64,7 +66,7 @@ pub struct IsEqualGadget<F> {
     is_zero: IsZeroGadget<F>,
 }
 
-impl<F: FieldExt> IsEqualGadget<F> {
+impl<F: Field> IsEqualGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         lhs: Expression<F>,
@@ -87,6 +89,61 @@ impl<F: FieldExt> IsEqualGadget<F> {
         rhs: F,
     ) -> Result<F, Error> {
         self.is_zero.assign(region, offset, lhs - rhs)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BatchedIsZeroGadget<F, const N: usize> {
+    is_zero: Cell<F>,
+    nonempty_witness: Cell<F>,
+}
+
+impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, values: [Expression<F>; N]) -> Self {
+        let is_zero = cb.query_bool();
+        let nonempty_witness = cb.query_cell();
+
+        for value in values.iter() {
+            cb.require_zero(
+                "is_zero is 0 if there is any non-zero value",
+                is_zero.expr() * value.clone(),
+            );
+        }
+
+        cb.require_zero(
+            "is_zero is 1 if values are all zero",
+            values.iter().fold(1.expr() - is_zero.expr(), |acc, value| {
+                acc * (1.expr() - value.expr() * nonempty_witness.clone().expr())
+            }),
+        );
+
+        Self {
+            is_zero,
+            nonempty_witness,
+        }
+    }
+
+    pub(crate) fn expr(&self) -> Expression<F> {
+        self.is_zero.expr()
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        values: [F; N],
+    ) -> Result<F, Error> {
+        let is_zero =
+            if let Some(inverse) = values.iter().find_map(|value| Option::from(value.invert())) {
+                self.nonempty_witness
+                    .assign(region, offset, Some(inverse))?;
+                F::zero()
+            } else {
+                F::one()
+            };
+        self.is_zero.assign(region, offset, Some(is_zero))?;
+
+        Ok(is_zero)
     }
 }
 
@@ -201,6 +258,10 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
         Ok(())
     }
 
+    pub(crate) fn addends(&self) -> &[util::Word<F>] {
+        &self.addends
+    }
+
     pub(crate) fn sum(&self) -> &util::Word<F> {
         &self.sum
     }
@@ -239,7 +300,7 @@ pub(crate) struct MulWordsGadget<F> {
      *  t2 + t3 + <radix v0> = <high 128 bit of product> + <radix v1> */
 }
 
-impl<F: FieldExt> MulWordsGadget<F> {
+impl<F: Field> MulWordsGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         a: util::Word<F>,
@@ -403,7 +464,7 @@ pub(crate) struct MulWordByU64Gadget<F> {
     carry_lo: [util::Cell<F>; 8],
 }
 
-impl<F: FieldExt> MulWordByU64Gadget<F> {
+impl<F: Field> MulWordByU64Gadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         multiplicand: util::Word<F>,
@@ -633,7 +694,7 @@ pub struct PairSelectGadget<F> {
     is_b: Expression<F>,
 }
 
-impl<F: FieldExt> PairSelectGadget<F> {
+impl<F: Field> PairSelectGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         value: Expression<F>,
@@ -795,7 +856,7 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
 // This function generates a Lagrange polynomial in the range [start, end) which
 // will be evaluated to 1 when `exp == value`, otherwise 0
 pub(crate) fn generate_lagrange_base_polynomial<
-    F: FieldExt,
+    F: Field,
     Exp: Expr<F>,
     I: Iterator<Item = usize>,
 >(

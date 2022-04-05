@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+pub mod gas_utils;
 pub mod memory;
 pub mod opcode_ids;
 pub mod stack;
@@ -63,6 +64,8 @@ impl fmt::Debug for Gas {
 
 /// Quotient for max refund of gas used
 pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
+/// Gas stipend when CALL or CALLCODE is attached with value.
+pub const GAS_STIPEND_CALL_WITH_VALUE: u64 = 2300;
 
 /// Defines the gas consumption.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -97,28 +100,28 @@ impl GasCost {
     pub const SELFDESTRUCT: Self = Self(5000);
     /// Constant cost for CREATE
     pub const CREATE: Self = Self(32000);
-    /// Constant cost for every additional word when expanding memory
-    pub const MEMORY: Self = Self(3);
     /// Constant cost for copying every word
     pub const COPY: Self = Self(3);
+    /// Constant cost for accessing account or storage key
+    pub const WARM_ACCESS: Self = Self(100);
     /// Constant cost for a cold SLOAD
-    pub const COLD_SLOAD_COST: Self = Self(2100);
+    pub const COLD_SLOAD: Self = Self(2100);
     /// Constant cost for a cold account access
-    pub const COLD_ACCOUNT_ACCESS_COST: Self = Self(2600);
-    /// Constant cost for a warm storage read
-    pub const WARM_STORAGE_READ_COST: Self = Self(100);
-    /// Constant cost for a basic storage operation
-    pub const SLOAD_GAS: Self = Self(100);
+    pub const COLD_ACCOUNT_ACCESS: Self = Self(2600);
     /// Constant cost for a storage set
-    pub const SSTORE_SET_GAS: Self = Self(20000);
+    pub const SSTORE_SET: Self = Self(20000);
     /// Constant cost for a storage reset
-    pub const SSTORE_RESET_GAS: Self = Self(2900);
+    pub const SSTORE_RESET: Self = Self(2900);
     /// Constant cost for a storage clear
     pub const SSTORE_CLEARS_SCHEDULE: Self = Self(15000);
     /// Constant cost for a non-creation transaction
     pub const TX: Self = Self(21000);
-    /// Constant cost for creation transaction
+    /// Constant cost for a creation transaction
     pub const CREATION_TX: Self = Self(53000);
+    /// Constant cost for calling with non-zero value
+    pub const CALL_WITH_VALUE: Self = Self(9000);
+    /// Constant cost for turning empty account into non-empty account
+    pub const NEW_ACCOUNT: Self = Self(25000);
     /// Denominator of quadratic part of memory expansion gas cost
     pub const MEMORY_EXPANSION_QUAD_DENOMINATOR: Self = Self(512);
     /// Coefficient of linear part of memory expansion gas cost

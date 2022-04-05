@@ -1095,6 +1095,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::JUMPDEST => ExecutionState::JUMPDEST,
                     OpcodeId::JUMP => ExecutionState::JUMP,
                     OpcodeId::JUMPI => ExecutionState::JUMPI,
+                    OpcodeId::GASPRICE => ExecutionState::GASPRICE,
                     OpcodeId::PC => ExecutionState::PC,
                     OpcodeId::MSIZE => ExecutionState::MSIZE,
                     OpcodeId::CALLER => ExecutionState::CALLER,

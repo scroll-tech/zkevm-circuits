@@ -91,10 +91,6 @@ pub enum ExecError {
     InvalidJump,
     /// For RETURNDATACOPY
     ReturnDataOutOfBounds,
-    // NOTE: We don't use the GasUintOverflow in favour of always reporting an
-    // OutOfGas error.
-    // /// Internal calculation of gas overflow
-    // GasUintOverflow,
     /// For RETURN in a CREATE, CREATE2
     CodeStoreOutOfGas,
     /// For RETURN in a CREATE, CREATE2
@@ -178,7 +174,7 @@ pub struct ExecStep {
     /// overflow", this value will **not** be the actual Gas cost of the
     /// step.
     pub gas_cost: GasCost,
-    /// accumulated gas refund
+    /// Accumulated gas refund
     pub gas_refund: Gas,
     /// Call index within the [`Transaction`]
     pub call_index: usize,
@@ -500,6 +496,10 @@ impl TransactionContext {
                     } else if geth_step.depth - 1 == geth_next_step.depth {
                         let is_success = !geth_next_step.stack.last()?.is_zero();
                         call_is_success_map.insert(call_indices.pop().unwrap(), is_success);
+                    // Callee with empty code
+                    } else if CallKind::try_from(geth_step.op).is_ok() {
+                        let is_success = !geth_next_step.stack.last()?.is_zero();
+                        call_is_success_map.insert(index, is_success);
                     }
                 }
             }
@@ -570,10 +570,12 @@ impl TransactionContext {
                 op_refs: Vec::new(),
             })
         } else if let Some(reversion_group) = self.reversion_groups.last_mut() {
-            let caller_swc = self.calls.last().expect("calls should not be empty").swc;
+            let caller_ctx = self.calls.last().expect("calls should not be empty");
+            let caller_swc = caller_ctx.swc;
             let caller_swc_offset = reversion_group
                 .calls
-                .last()
+                .iter()
+                .find(|(call_idx, _)| *call_idx == caller_ctx.index)
                 .expect("calls should not be empty")
                 .1;
             reversion_group
@@ -1068,7 +1070,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Apply reverted op to state and push to container.
+    /// Apply op to state and push to container.
     fn apply_op(&mut self, is_revert: bool, rw: RW, op: OpEnum) -> OperationRef {
         match &op {
             OpEnum::Storage(op) => {

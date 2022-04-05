@@ -3,7 +3,7 @@ use crate::{
     state_circuit::StateCircuit,
 };
 use bus_mapping::mock::BlockData;
-use eth_types::{address, geth_types::GethData, Bytes, Word};
+use eth_types::geth_types::GethData;
 use halo2_proofs::dev::{MockProver, VerifyFailure};
 use mock::TestContext;
 use pairing::bn256::Fr;
@@ -57,39 +57,11 @@ impl Default for BytecodeTestConfig {
     }
 }
 
-pub fn run_test_circuits(bytecode: eth_types::Bytecode) -> Result<(), Vec<VerifyFailure>> {
-    test_circuits_using_bytecode(bytecode, BytecodeTestConfig::default(), None)
-}
-
-pub fn test_circuits_using_bytecode(
-    bytecode: eth_types::Bytecode,
-    config: BytecodeTestConfig,
-    call_data: Option<Vec<u8>>,
+pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
+    test_ctx: TestContext<NACC, NTX>,
+    config: Option<BytecodeTestConfig>,
 ) -> Result<(), Vec<VerifyFailure>> {
-    // Create a custom tx setting Gas to
-    let block: GethData = TestContext::<2, 1>::new(
-        None,
-        |accs| {
-            accs[0]
-                .address(address!("0x0000000000000000000000000000000000000010"))
-                .balance(Word::from(1u64 << 20))
-                .code(bytecode);
-            accs[1]
-                .address(address!("0x0000000000000000000000000000000000000000"))
-                .balance(Word::from(1u64 << 30));
-        },
-        |mut txs, accs| {
-            txs[0]
-                .to(accs[0].address)
-                .from(accs[1].address)
-                .gas(Word::from(config.gas_limit))
-                .input(Bytes::from(call_data.unwrap_or_default()));
-        },
-        |block, _tx| block.number(0xcafeu64),
-    )
-    .unwrap()
-    .into();
-
+    let block: GethData = test_ctx.into();
     let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
@@ -99,7 +71,7 @@ pub fn test_circuits_using_bytecode(
     let block = crate::evm_circuit::witness::block_convert(&builder.block, &builder.code_db);
 
     // finish required tests according to config using this witness block
-    test_circuits_using_witness_block(block, config)
+    test_circuits_using_witness_block(block, config.unwrap_or_default())
 }
 
 pub fn test_circuits_using_witness_block(
