@@ -150,6 +150,7 @@ pub(crate) struct ExecutionConfig<F> {
     jumpi_gadget: JumpiGadget<F>,
     log3_gadget: DummpyGadget<F, { ExecutionState::LOG }>,
     gas_gadget: GasGadget<F>,
+    gasprice_gadget: GasPriceGadget<F>,
     memory_gadget: MemoryGadget<F>,
     copy_to_memory_gadget: CopyToMemoryGadget<F>,
     pc_gadget: PcGadget<F>,

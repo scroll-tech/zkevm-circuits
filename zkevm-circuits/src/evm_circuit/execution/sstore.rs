@@ -550,9 +550,6 @@ mod test {
                 } else {
                     // CaseC
                     tx_refund_new += GasCost::SSTORE_SET.as_u64() - GasCost::COLD_SLOAD.as_u64();
-                } else {
-                    // CaseC
-                    tx_refund_new += GasCost::SSTORE_SET_GAS.as_u64() - GasCost::SLOAD_GAS.as_u64();
                 }
             }
             if committed_value != value_prev && value_prev == Word::from(0) {
