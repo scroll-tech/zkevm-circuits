@@ -54,7 +54,6 @@ impl Config {
             .enumerate()
             .find(|(_, (a, b))| a != b);
         let (index, (cur_limb, prev_limb)) = find_result.expect("repeated rw counter");
-        dbg!(index);
 
         // TODO: simplify this
         let mut diff_1 = F::zero();
@@ -132,17 +131,19 @@ impl<F: Field> Chip<F> {
             storage_key_bytes,
             rw_counter_limbs,
         };
-        // meta.create_gate("diff_1 is one of 15 values", |meta| {
-        //     let selector = meta.query_fixed(selector, Rotation::cur());
-        //     let cur = Queries::new(meta, config, Rotation::cur());
-        //     let prev = Queries::new(meta, config, Rotation::prev());
-        //     let diff_1 = meta.query_advice(diff_1, Rotation::cur());
-        //     vec![
-        //         selector
-        //             * diff_1_possible_values(cur, prev) .iter() .map(|e|
-        //               diff_1.clone() - e.clone()) .fold(1.expr(), Expression::mul),
-        //     ]
-        // });
+        meta.create_gate("diff_1 is one of 15 values", |meta| {
+            let selector = meta.query_fixed(selector, Rotation::cur());
+            let cur = Queries::new(meta, config, Rotation::cur());
+            let prev = Queries::new(meta, config, Rotation::prev());
+            let diff_1 = meta.query_advice(diff_1, Rotation::cur());
+            vec![
+                selector
+                    * diff_1_possible_values(cur, prev)
+                        .iter()
+                        .map(|e| diff_1.clone() - e.clone())
+                        .fold(1.expr(), Expression::mul),
+            ]
+        });
 
         meta.create_gate("diff_2 is one of 15 values", |meta| {
             let selector = meta.query_fixed(selector, Rotation::cur());
@@ -203,7 +204,7 @@ impl<F: Field> Chip<F> {
 
 struct Queries<F: Field> {
     tag: Expression<F>,       // 4 bits
-    field_tag: Expression<F>, // < 12 bits, so we can pack tag + field_tag into one limb.
+    field_tag: Expression<F>, // 8 bits, so we can pack tag + field_tag into one limb.
     id_limbs: [Expression<F>; N_LIMBS_ID],
     address_limbs: [Expression<F>; N_LIMBS_ACCOUNT_ADDRESS],
     storage_key_bytes: [Expression<F>; N_BYTES_WORD],
@@ -240,9 +241,10 @@ impl<F: Field> Queries<F> {
         let mut limbs: Vec<_> = self
             .id_limbs
             .iter()
-            .chain(&self.address_limbs)
-            .chain(&self.storage_key_limbs())
-            .chain(&self.rw_counter_limbs)
+            .rev()
+            .chain(self.address_limbs.iter().rev())
+            .chain(self.storage_key_limbs().iter().rev())
+            .chain(self.rw_counter_limbs.iter().rev())
             .cloned()
             .collect();
         // most significant byte of id should be 0, so safe to overwrite it with packed
@@ -279,22 +281,20 @@ fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
 
 fn diff_1_possible_values<F: Field>(cur: Queries<F>, prev: Queries<F>) -> Vec<Expression<F>> {
     let mut result = vec![];
-    let mut partial_product = 0u64.expr();
+    let mut partial_sum = 0u64.expr();
     for (cur_limb, prev_limb) in cur.be_limbs()[..15].iter().zip(&prev.be_limbs()[..15]) {
-        partial_product =
-            partial_product * (1u64 << 16).expr() + cur_limb.clone() - prev_limb.clone();
-        result.push(partial_product.clone())
+        partial_sum = partial_sum * (1u64 << 16).expr() + cur_limb.clone() - prev_limb.clone();
+        result.push(partial_sum.clone())
     }
     result
 }
 
 fn diff_2_possible_values<F: Field>(cur: Queries<F>, prev: Queries<F>) -> Vec<Expression<F>> {
     let mut result = vec![];
-    let mut partial_product = 0u64.expr();
+    let mut partial_sum = 0u64.expr();
     for (cur_limb, prev_limb) in cur.be_limbs()[15..].iter().zip(&prev.be_limbs()[15..]) {
-        partial_product =
-            partial_product * (1u64 << 16).expr() + cur_limb.clone() - prev_limb.clone();
-        result.push(partial_product.clone())
+        partial_sum = partial_sum * (1u64 << 16).expr() + cur_limb.clone() - prev_limb.clone();
+        result.push(partial_sum.clone())
     }
     result
 }
