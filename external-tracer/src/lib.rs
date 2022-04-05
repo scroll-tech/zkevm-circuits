@@ -2,13 +2,13 @@
 
 use eth_types::{
     geth_types::{Account, BlockConstants, Transaction},
-    Address, Error, GethExecTrace, Word,
+    Address, Bytes, Error, GethExecTrace, Hash, ToBigEndian, Word,
 };
 use serde::Serialize;
 use std::collections::HashMap;
 
 /// Configuration structure for `geth_utlis::trace`
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone)]
 pub struct TraceConfig {
     /// chain id
     pub chain_id: Word,
@@ -23,14 +23,61 @@ pub struct TraceConfig {
     pub transactions: Vec<Transaction>,
 }
 
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct AccountForSerde {
+    pub address: Address,
+    pub nonce: Word,
+    pub balance: Word,
+    pub code: Bytes,
+    pub storage: HashMap<Hash, Hash>,
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+struct TraceConfigForSerde {
+    pub chain_id: Word,
+    pub history_hashes: Vec<Word>,
+    pub block_constants: BlockConstants,
+    pub accounts: HashMap<Address, AccountForSerde>,
+    pub transactions: Vec<Transaction>,
+}
+
+impl From<Account> for AccountForSerde {
+    fn from(a: Account) -> Self {
+        Self {
+            address: a.address,
+            nonce: a.nonce,
+            balance: a.balance,
+            code: a.code,
+            storage: a
+                .storage
+                .into_iter()
+                .map(|(k, v)| (Hash::from(k.to_be_bytes()), Hash::from(v.to_be_bytes())))
+                .collect(),
+        }
+    }
+}
+
+impl From<TraceConfig> for TraceConfigForSerde {
+    fn from(t: TraceConfig) -> Self {
+        Self {
+            chain_id: t.chain_id,
+            history_hashes: t.history_hashes,
+            block_constants: t.block_constants,
+            accounts: t.accounts.into_iter().map(|(k, v)| (k, v.into())).collect(),
+            transactions: t.transactions,
+        }
+    }
+}
+
 /// Creates a trace for the specified config
 pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
     // Get the trace
-    let trace_string = geth_utils::trace(&serde_json::to_string(config).unwrap()).map_err(
-        |error| match error {
-            geth_utils::Error::TracingError(error) => Error::TracingError(error),
-        },
-    )?;
+    let trace_string = geth_utils::trace(
+        &serde_json::to_string(&TraceConfigForSerde::from(config.clone())).unwrap(),
+    )
+    .map_err(|error| match error {
+        geth_utils::Error::TracingError(error) => Error::TracingError(error),
+    })?;
 
     let trace = serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
     Ok(trace)
