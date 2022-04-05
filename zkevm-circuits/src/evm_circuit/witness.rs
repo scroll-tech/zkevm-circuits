@@ -1108,10 +1108,13 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
-                    OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
-                    OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::SHA3 => ExecutionState::SHA3,
                     OpcodeId::LOG3 => ExecutionState::LOG,
+                    OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
+                    OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
+                    OpcodeId::ISZERO => ExecutionState::ISZERO,
+                    OpcodeId::CALL => ExecutionState::CALL,
+                    OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
