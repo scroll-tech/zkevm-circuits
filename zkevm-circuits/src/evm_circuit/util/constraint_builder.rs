@@ -141,7 +141,7 @@ impl<F: FieldExt> ReversionInfo<F> {
 pub struct BaseConstraintBuilder<F> {
     pub constraints: Vec<(&'static str, Expression<F>)>,
     pub max_degree: usize,
-    condition: Option<Expression<F>>,
+    pub condition: Option<Expression<F>>,
 }
 
 impl<F: FieldExt> BaseConstraintBuilder<F> {
@@ -845,13 +845,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             false.expr(),
             RwTableTag::AccountStorage,
             [
-                0.expr(),
+                tx_id,
                 account_address,
                 0.expr(),
                 key,
                 value.clone(),
                 value,
-                tx_id,
+                0.expr(),
                 committed_value,
             ],
         );
@@ -872,13 +872,13 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             "AccountStorage write",
             RwTableTag::AccountStorage,
             [
-                0.expr(),
+                tx_id,
                 account_address,
                 0.expr(),
                 key,
                 value,
                 value_prev,
-                tx_id,
+                0.expr(),
                 committed_value,
             ],
             reversion_info,
@@ -962,8 +962,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::Stack,
             [
                 self.curr.state.call_id.expr(),
-                0.expr(),
                 self.curr.state.stack_pointer.expr() + stack_pointer_offset,
+                0.expr(),
                 0.expr(),
                 value,
                 0.expr(),
@@ -988,8 +988,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::Memory,
             [
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
-                0.expr(),
                 memory_address,
+                0.expr(),
                 0.expr(),
                 byte,
                 0.expr(),
@@ -1013,8 +1013,8 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             RwTableTag::Memory,
             [
                 self.curr.state.call_id.expr(),
-                0.expr(),
                 memory_address,
+                0.expr(),
                 0.expr(),
                 byte,
                 0.expr(),

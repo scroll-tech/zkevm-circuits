@@ -1,25 +1,28 @@
+use super::cells::Cells;
+use super::constraint_builder::ConstraintBuilder;
+use super::param::N_LIMBS_ACCOUNT_ADDRESS;
+use crate::state_circuit::constraint_builder::sort_key_values;
+use crate::state_circuit::fixed_table::FixedTable;
 use crate::{
     evm_circuit::{
+        param::N_BYTES_WORD,
         table::RwTableTag,
-        util::{
-            constraint_builder::BaseConstraintBuilder,
-            math_gadget::generate_lagrange_base_polynomial,
-        },
-        witness::{RwMap, RwRow},
+        util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
+        witness::{Rw, RwMap, RwRow},
     },
-    gadget::{
-        is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
-        Variable,
-    },
+    gadget::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+    util::Expr,
 };
-use eth_types::Field;
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-
+use itertools::Itertools;
 use pairing::arithmetic::FieldExt;
+use std::convert::TryInto;
+use strum::IntoEnumIterator;
 
 /*
 (FIXME) Example state table:
@@ -47,24 +50,11 @@ use pairing::arithmetic::FieldExt;
 // 3 - stack
 // 4 - storage
 
-const EMPTY_TAG: usize = 0;
-const START_TAG: usize = 1;
 const MEMORY_TAG: usize = RwTableTag::Memory as usize;
 const STACK_TAG: usize = RwTableTag::Stack as usize;
 const STORAGE_TAG: usize = RwTableTag::AccountStorage as usize;
 
 const MAX_DEGREE: usize = 15;
-
-/// A mapping derived from witnessed operations.
-#[derive(Clone, Debug)]
-pub(crate) struct BusMapping<F: FieldExt> {
-    rw_counter: Variable<F, F>,
-    target: Variable<F, F>,
-    is_write: Variable<F, F>,
-    address: Variable<F, F>,
-    value: Variable<F, F>,
-    storage_key: Variable<F, F>,
-}
 
 #[derive(Clone, Debug)]
 pub struct Config<
@@ -80,26 +70,23 @@ pub struct Config<
     const ROWS_MAX: usize,
 > {
     s_enable: Column<Fixed>,
-    rw_counter: Column<Advice>,
-    is_write: Column<Advice>,
+    // rw_counter: Column<Advice>,
     keys: [Column<Advice>; 5],
 
-    // helper column used for IsZero chip
-    keys_diff_inv: [Column<Advice>; 5],
+    key2_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
+    // Use WordConfig here instead.
+    key4_bytes: [Column<Advice>; N_BYTES_WORD],
 
-    key2_limbs: [Column<Advice>; 8],
-    key4_bytes: [Column<Advice>; 32],
-    value: Column<Advice>,
-    auxs: [Column<Advice>; 2],
+    auxs: Column<Advice>,
 
-    // helper chips here
-    key_is_same_with_prev: [IsZeroConfig<F>; 5],
+    power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
 
-    // range tables here, TODO: organize them to a single struct?
-    rw_counter_table: Column<Fixed>,
-    stack_address_table_zero: Column<Fixed>,
-    memory_address_table_zero: Column<Fixed>,
-    memory_value_table: Column<Fixed>,
+    lexicographic_ordering: [IsZeroConfig<F>; 2],
+
+    // Fixed columns for range lookups
+    fixed_table: FixedTable,
+
+    cells: Cells<F>,
 }
 
 impl<
@@ -111,120 +98,126 @@ impl<
         const ROWS_MAX: usize,
     > Config<F, SANITY_CHECK, RW_COUNTER_MAX, MEMORY_ADDRESS_MAX, STACK_ADDRESS_MAX, ROWS_MAX>
 {
-    fn tag(&self) -> Column<Advice> {
-        self.keys[0]
-    }
-    fn account_addr(&self) -> Column<Advice> {
-        self.keys[2]
-    }
-    fn address(&self) -> Column<Advice> {
-        self.keys[3]
-    }
-    fn storage_key(&self) -> Column<Advice> {
-        self.keys[4]
-    }
-
     /// Set up custom gates and lookup arguments for this configuration.
-    pub(crate) fn configure(meta: &mut ConstraintSystem<F>) -> Self {
-        let rw_counter = meta.advice_column();
-        let is_write = meta.advice_column();
+    pub(crate) fn configure(
+        meta: &mut ConstraintSystem<F>,
+        power_of_randomness: [Expression<F>; 31],
+    ) -> Self {
+        let cells = Cells::new(meta, power_of_randomness.clone());
+
+        let fixed_table = FixedTable::configure(meta);
+
+        // let rw_counter = meta.advice_column();
         let keys = [(); 5].map(|_| meta.advice_column());
-        let keys_diff_inv = [(); 5].map(|_| meta.advice_column());
-        let key2_limbs = [(); 8].map(|_| meta.advice_column());
-        let key4_bytes = [(); 32].map(|_| meta.advice_column());
-        let auxs = [(); 2].map(|_| meta.advice_column());
+        let key2_limbs = [(); N_LIMBS_ACCOUNT_ADDRESS].map(|_| meta.advice_column());
+        let key4_bytes = [(); N_BYTES_WORD].map(|_| meta.advice_column());
+        let auxs = meta.advice_column();
 
         let s_enable = meta.fixed_column();
 
-        let value = meta.advice_column();
-
-        let rw_counter_table = meta.fixed_column();
-        let memory_address_table_zero = meta.fixed_column();
-        let stack_address_table_zero = meta.fixed_column();
-        let memory_value_table = meta.fixed_column();
-
         let new_cb = || BaseConstraintBuilder::<F>::new(MAX_DEGREE);
+        let qb = ConstraintBuilder::<F>::new(
+            meta,
+            keys,
+            key2_limbs,
+            s_enable,
+            key4_bytes,
+            power_of_randomness.clone(), /* TODO: these don't both of these need
+                                          * power_of_randomness */
+                                         /* rw_counter, */
+        );
 
-        // alias keys for later use
-        let tag = keys[0];
-        let address = keys[3];
+        let lexicographic_ordering =
+            [(0, meta.advice_column()), (1, meta.advice_column())].map(|(i, advice_column)| {
+                IsZeroChip::configure(
+                    meta,
+                    |meta| qb.s_enable(meta),
+                    |meta| qb.sort_keys_delta(meta)[i].clone(),
+                    advice_column,
+                )
+            });
 
-        let one = Expression::Constant(F::from(1));
-
-        let q_tag_is = |meta: &mut VirtualCells<F>, tag_value: usize| {
-            let tag_cur = meta.query_advice(tag, Rotation::cur());
-            let all_possible_values = EMPTY_TAG..=STORAGE_TAG;
-            generate_lagrange_base_polynomial(tag_cur, tag_value, all_possible_values)
+        let q_all_keys_same = |_: &mut VirtualCells<F>| {
+            lexicographic_ordering[0].is_zero_expression.clone()
+                * lexicographic_ordering[1].is_zero_expression.clone()
         };
-        let q_memory = |meta: &mut VirtualCells<F>| q_tag_is(meta, MEMORY_TAG);
-        let q_stack = |meta: &mut VirtualCells<F>| q_tag_is(meta, STACK_TAG);
-        let q_storage = |meta: &mut VirtualCells<F>| q_tag_is(meta, STORAGE_TAG);
-
-        let key_is_same_with_prev: [IsZeroConfig<F>; 5] = [0, 1, 2, 3, 4].map(|idx| {
-            IsZeroChip::configure(
-                meta,
-                |meta| meta.query_fixed(s_enable, Rotation::cur()),
-                |meta| {
-                    let value_cur = meta.query_advice(keys[idx], Rotation::cur());
-                    let value_prev = meta.query_advice(keys[idx], Rotation::prev());
-                    value_cur - value_prev
-                },
-                keys_diff_inv[idx],
-            )
-        });
-
-        let q_all_keys_same = |_meta: &mut VirtualCells<F>| {
-            key_is_same_with_prev[0].is_zero_expression.clone()
-                * key_is_same_with_prev[1].is_zero_expression.clone()
-                * key_is_same_with_prev[2].is_zero_expression.clone()
-                * key_is_same_with_prev[3].is_zero_expression.clone()
-                * key_is_same_with_prev[4].is_zero_expression.clone()
-        };
-        let q_not_all_keys_same = |meta: &mut VirtualCells<F>| one.clone() - q_all_keys_same(meta);
+        let q_not_all_keys_same = |meta: &mut VirtualCells<F>| 1u64.expr() - q_all_keys_same(meta);
 
         ///////////////////////// General constraints /////////////////////////////////
-        // Constraints that affect all rows, no matter which Tag they use
+
         meta.create_gate("General constraints", |meta| {
             let mut cb = new_cb();
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let is_read = one.clone() - is_write.clone();
-            let value_cur = meta.query_advice(value, Rotation::cur());
-            let value_prev = meta.query_advice(value, Rotation::prev());
 
-            // TODO: 0. key0, key1, key3 are in the expected range
+            // 0. tag in RwTableTag range
+            // TODO: check key1 and key3 ranges.
+            cb.require_in_set(
+                "tag in RwTableTag range",
+                qb.tag(meta),
+                RwTableTag::iter().map(|x| x.expr()).collect(),
+            );
 
-            // TODO: 1. key2 is linear combination of 10 x 16bit limbs and also in range
+            // 1. key2 expands to its limbs
+            cb.require_equal(
+                "account address matches its limbs",
+                qb.address(meta),
+                qb.address_limbs(meta)
+                    .iter()
+                    .fold(0u64.expr(), |result, limb| {
+                        limb.clone() + result * (1u64 << 16).expr()
+                    }),
+                // qb.address_from_limbs(meta),
+            );
 
-            // TODO: 2. key4 is RLC encoded
+            // 2. key4 is RLC encoded
+            cb.require_equal(
+                "storage key matches its RLC encoding",
+                qb.storage_key(meta),
+                RandomLinearCombination::random_linear_combine_expr(
+                    qb.storage_key_bytes(meta),
+                    qb.power_of_randomness(meta),
+                ),
+            );
 
             // 3. is_write is boolean
-            cb.require_boolean("is_write should be boolean", is_write);
+            cb.require_boolean("is_write should be boolean", cells.is_write());
 
             // 4. Keys are sorted in lexicographic order for same Tag
-            //
-            // This check also ensures that Tag monotonically increases for all values
-            // except for Start
-            //
-            // When in two consecutive rows the keys are equal in a column:
-            // - The corresponding keys in the following column must be increasing.
-            //
-            // key4 is RLC encoded, so it doesn't keep the order.  We use the key4 bytes
-            // decomposition instead.  Since we will use a chain of comparison gadgets,
-            // we try to merge multiple keys together to reduce the number of required
-            // gadgets.
+            // see lexicographic_ordering chips
+
+            // 5. RWC is monotonically strictly increasing for a set of all keys
+            // see below
 
             // 6. Read consistency
-            // When a row is READ
-            // AND When all the keys are equal in two consecutive a rows:
+            // When a row is READ AND When all the keys are equal in two consecutive a rows:
             //- The corresponding value must be equal to the previous row
             cb.require_zero(
                 "if read and keys are same, value should be same with prev",
-                q_all_keys_same(meta) * is_read * (value_cur - value_prev),
+                q_all_keys_same(meta) * cells.is_read() * (cells.value_delta()),
             );
 
-            cb.gate(s_enable)
+            cb.gate(qb.s_enable(meta))
         });
+
+        // TODO: move this into constraint builder
+        for i in 0..N_LIMBS_ACCOUNT_ADDRESS {
+            meta.lookup_any("address limbs fit into u16", |meta| {
+                vec![(
+                    qb.s_enable(meta) * qb.address_limbs(meta)[i].clone(),
+                    fixed_table.u16(meta),
+                )]
+            });
+        }
+
+        // Check that storage key bytes are between 0 and 255.
+        // TODO: move this into constraint builder
+        for i in 0..N_BYTES_WORD {
+            meta.lookup_any("storage key byte is between 0 and 255", |meta| {
+                vec![(
+                    qb.s_enable(meta) * qb.storage_key_bytes(meta)[i].clone(),
+                    fixed_table.u8(meta),
+                )]
+            });
+        }
 
         // 5. RWC is monotonically strictly increasing for a set of all keys
         //
@@ -232,17 +225,12 @@ impl<
         // - The corresponding rwc must be strictly increasing.
         // TODO: rewrite using range check gates rather than lookup
         meta.lookup_any("rw counter monotonicity", |meta| {
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-            let rw_counter_table = meta.query_fixed(rw_counter_table, Rotation::cur());
-            let rw_counter_prev = meta.query_advice(rw_counter, Rotation::prev());
-            let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
-
             vec![(
-                s_enable * q_all_keys_same(meta)
-                    * (rw_counter - rw_counter_prev - one.clone()), /*
-                                                                     * - 1 because it needs to
-                                                                     *   be strictly monotone */
-                rw_counter_table,
+                qb.s_enable(meta)
+                    * q_all_keys_same(meta)
+                    * (cells.rw_counter_delta() - 1u64.expr()),
+                // TODO(mason) this isn't correct. The specs say this should be u32....
+                fixed_table.u10(meta),
             )]
         });
 
@@ -250,16 +238,10 @@ impl<
 
         meta.create_gate("Memory operation", |meta| {
             let mut cb = new_cb();
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-            let value_cur = meta.query_advice(value, Rotation::cur());
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = one.clone() - is_write;
 
             // 0. Unused keys are 0
-            let key2 = meta.query_advice(keys[2], Rotation::cur());
-            let key4 = meta.query_advice(keys[4], Rotation::cur());
-            cb.require_zero("key2 is 0", key2);
-            cb.require_zero("key4 is 0", key4);
+            cb.require_zero("field tag is 0", qb.field_tag(meta));
+            cb.require_zero("storage key is 0", qb.storage_key(meta));
 
             // 1. First access for a set of all keys
             //
@@ -267,33 +249,18 @@ impl<
             // - If READ, value must be 0
             cb.require_zero(
                 "if address changes, read value should be 0",
-                q_not_all_keys_same(meta) * q_read * value_cur,
+                q_not_all_keys_same(meta) * cells.is_read() * cells.value(),
             );
 
-            cb.gate(s_enable * q_memory(meta))
+            cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::Memory))
         });
 
-        // 2. mem_addr in range
-        // TODO: rewrite this using range check gates instead of lookup
-        meta.lookup_any("Memory address in allowed range", |meta| {
-            let q_memory = q_memory(meta);
-            let address_cur = meta.query_advice(address, Rotation::cur());
-            let memory_address_table_zero =
-                meta.query_fixed(memory_address_table_zero, Rotation::cur());
-
-            // s_enable is omitted here deliberately, since `memory_address_table_zero` will
-            // contain '0', and 'q_memory * address_cur' on unused rows will be 0 too.
-            vec![(q_memory * address_cur, memory_address_table_zero)]
-        });
-
-        // 3. value is a byte
-        // Memory value is in the allowed range.
-        meta.lookup_any("Memory value in allowed range", |meta| {
-            let q_memory = q_memory(meta);
-            let value = meta.query_advice(value, Rotation::cur());
-            let memory_value_table = meta.query_fixed(memory_value_table, Rotation::cur());
-
-            vec![(q_memory * value, memory_value_table)]
+        // 2. value is a byte when tag is Memory
+        meta.lookup_any("value is a byte when tag is Memory", |meta| {
+            vec![(
+                qb.tag_is(meta, RwTableTag::Memory) * cells.value(),
+                fixed_table.u8(meta),
+            )]
         });
 
         ///////////////////////// Stack related constraints /////////////////////////
@@ -301,15 +268,9 @@ impl<
         meta.create_gate("Stack operation", |meta| {
             let mut cb = new_cb();
 
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = one.clone() - is_write;
-            let key2 = meta.query_advice(keys[2], Rotation::cur());
-            let key4 = meta.query_advice(keys[4], Rotation::cur());
-
             // 0. Unused keys are 0
-            cb.require_zero("key2 is 0", key2);
-            cb.require_zero("key4 is 0", key4);
+            cb.require_zero("field tag is 0", qb.field_tag(meta));
+            cb.require_zero("storage key is 0", qb.storage_key(meta));
 
             // 1. First access for a set of all keys
             //
@@ -320,56 +281,40 @@ impl<
             // - It must be a WRITE
             cb.require_zero(
                 "if address changes, operation is always a write",
-                q_not_all_keys_same(meta) * q_read,
+                q_not_all_keys_same(meta) * cells.is_read(),
             );
-            cb.gate(s_enable * q_stack(meta))
+            cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::Stack))
         });
 
         // 2. stack_ptr in range
         meta.lookup_any("Stack address in allowed range", |meta| {
-            let q_stack = q_stack(meta);
-            let address_cur = meta.query_advice(address, Rotation::cur());
-            let stack_address_table_zero =
-                meta.query_fixed(stack_address_table_zero, Rotation::cur());
-
-            vec![(q_stack * address_cur, stack_address_table_zero)]
+            vec![(
+                qb.tag_is(meta, RwTableTag::Stack) * qb.address(meta),
+                // todo: this should be u32, so we need to add two rw limb columns.
+                fixed_table.u10(meta),
+            )]
         });
 
         // 3. stack_ptr only increases by 0 or 1
-        meta.create_gate("Stack pointer diff be 0 or 1", |meta| {
+        meta.create_gate("Within a call, Stack pointer diff be 0 or 1", |meta| {
             let mut cb = new_cb();
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-            let q_stack = q_stack(meta);
-            let tag_is_same_with_prev = key_is_same_with_prev[0].is_zero_expression.clone();
-            let call_id_same_with_prev = key_is_same_with_prev[1].is_zero_expression.clone();
-            let stack_ptr = meta.query_advice(keys[3], Rotation::cur());
-            let stack_ptr_prev = meta.query_advice(keys[3], Rotation::prev());
             cb.require_boolean(
                 "stack pointer only increases by 0 or 1",
-                stack_ptr - stack_ptr_prev,
+                qb.address_delta(meta),
             );
-            cb.gate(s_enable * q_stack * tag_is_same_with_prev * call_id_same_with_prev)
+            cb.gate(qb.s_enable(meta) * q_all_keys_same(meta) * qb.tag_is(meta, RwTableTag::Stack))
         });
 
         ///////////////////////// Storage related constraints /////////////////////////
 
         meta.create_gate("Storage Operation", |meta| {
             let mut cb = new_cb();
-            let q_storage = q_storage(meta);
-
-            let is_write = meta.query_advice(is_write, Rotation::cur());
-            let q_read = one.clone() - is_write;
-            let s_enable = meta.query_fixed(s_enable, Rotation::cur());
-            let rw_counter = meta.query_advice(rw_counter, Rotation::cur());
-            let key1 = meta.query_advice(keys[1], Rotation::cur());
-            let key3 = meta.query_advice(keys[3], Rotation::cur());
-
             // TODO: cold VS warm
             // TODO: connection to MPT on first and last access for each (address, key)
 
             // 0. Unused keys are 0
-            cb.require_zero("key1 is 0", key1);
-            cb.require_zero("key3 is 0", key3);
+            // cb.require_zero("key1 is 0", qb.id(meta)); // moved from aux to key1
+            cb.require_zero("key3 is 0", qb.field_tag(meta));
 
             // 1. First access for a set of all keys
             //
@@ -380,101 +325,27 @@ impl<
             // - It must be a WRITE
             cb.require_zero(
                 "First access for storage is write",
-                q_not_all_keys_same(meta) * q_read,
+                q_not_all_keys_same(meta) * cells.is_read(),
             );
             cb.require_zero(
                 "First access for storage has rw_counter as 0",
-                q_not_all_keys_same(meta) * rw_counter,
+                q_not_all_keys_same(meta) * cells.rw_counter(),
             );
 
-            cb.gate(s_enable * q_storage)
+            cb.gate(qb.s_enable(meta) * qb.tag_is(meta, RwTableTag::AccountStorage))
         });
 
         Config {
-            rw_counter,
-            value,
-            is_write,
             keys,
-            keys_diff_inv,
             key2_limbs,
             key4_bytes,
             auxs,
             s_enable,
-            key_is_same_with_prev,
-            rw_counter_table,
-            memory_address_table_zero,
-            stack_address_table_zero,
-            memory_value_table,
+            fixed_table,
+            power_of_randomness,
+            lexicographic_ordering,
+            cells,
         }
-    }
-
-    /// Load lookup table / other fixed constants for this configuration.
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter
-            .assign_region(
-                || "rw counter table",
-                |mut region| {
-                    for idx in 0..=RW_COUNTER_MAX {
-                        region.assign_fixed(
-                            || "rw counter table",
-                            self.rw_counter_table,
-                            idx,
-                            || Ok(F::from(idx as u64)),
-                        )?;
-                    }
-                    Ok(())
-                },
-            )
-            .ok();
-
-        layouter
-            .assign_region(
-                || "memory value table",
-                |mut region| {
-                    for idx in 0..=255 {
-                        region.assign_fixed(
-                            || "memory value table",
-                            self.memory_value_table,
-                            idx,
-                            || Ok(F::from(idx as u64)),
-                        )?;
-                    }
-                    Ok(())
-                },
-            )
-            .ok();
-
-        layouter
-            .assign_region(
-                || "memory address table with zero",
-                |mut region| {
-                    for idx in 0..=MEMORY_ADDRESS_MAX {
-                        region.assign_fixed(
-                            || "address table with zero",
-                            self.memory_address_table_zero,
-                            idx,
-                            || Ok(F::from(idx as u64)),
-                        )?;
-                    }
-                    Ok(())
-                },
-            )
-            .ok();
-
-        layouter.assign_region(
-            || "stack address table with zero",
-            |mut region| {
-                for idx in 0..=STACK_ADDRESS_MAX {
-                    region.assign_fixed(
-                        || "stack address table with zero",
-                        self.stack_address_table_zero,
-                        idx,
-                        || Ok(F::from(idx as u64)),
-                    )?;
-                }
-                Ok(())
-            },
-        )
     }
 
     /// Assign cells.
@@ -484,48 +355,80 @@ impl<
         randomness: F,
         rw_map: &RwMap,
     ) -> Result<(), Error> {
-        let key_is_same_with_prev_chips: [IsZeroChip<F>; 5] = [0, 1, 2, 3, 4]
-            .map(|idx| IsZeroChip::construct(self.key_is_same_with_prev[idx].clone()));
+        let sort_key_chips = self
+            .lexicographic_ordering
+            .clone()
+            .map(|config| IsZeroChip::construct(config));
 
         layouter.assign_region(
             || "State operations",
             |mut region| {
-                // TODO: a "START_TAG" row should be inserted before all other rows in the final
-                // implmentation. Here we start from 1 to prevent some
-                // col.prev() problems since blinding rows are unavailable for constaints.
                 let mut offset = 1;
-
-                let mut rows: Vec<RwRow<F>> = [
-                    RwTableTag::Memory,
-                    RwTableTag::Stack,
-                    RwTableTag::AccountStorage,
-                ]
-                .iter()
-                .map(|tag| {
-                    rw_map.0[tag]
-                        .iter()
-                        .map(|rw| rw.table_assignment(randomness))
-                })
-                .flatten()
-                .collect();
-                rows.sort_by_key(|rw| (rw.tag, rw.key1, rw.key2, rw.key3, rw.key4, rw.rw_counter));
+                let mut rows: Vec<(Rw, RwRow<F>)> = rw_map
+                    .0
+                    .values()
+                    .flatten()
+                    .map(|row| (row.clone(), row.table_assignment(randomness)))
+                    .collect();
+                rows.sort_by_key(|(_, rw)| {
+                    (rw.tag, rw.key1, rw.key2, rw.key3, rw.key4, rw.rw_counter)
+                });
 
                 if rows.len() >= ROWS_MAX {
                     panic!("too many storage operations");
                 }
-                for (index, row) in rows.iter().enumerate() {
-                    let row_prev = if index == 0 {
-                        RwRow::default()
-                    } else {
-                        rows[index - 1]
-                    };
-                    self.assign_row(
+                for (index, (rw, rw_row)) in rows.iter().enumerate() {
+                    self.assign_row(&mut region, offset, *rw_row)?;
+
+                    if let Some(address) = rw.address() {
+                        self.assign_address_and_limbs(&mut region, offset, address)?;
+                    }
+
+                    if let Some(storage_key) = rw.storage_key() {
+                        self.assign_storage_key_and_bytes(
+                            &mut region,
+                            offset,
+                            randomness,
+                            storage_key,
+                        )?;
+                    }
+
+                    let (sort_key_0, sort_key_1): (F, F) = sort_key_values(
+                        rw.tag(),
+                        rw.id().unwrap_or_default().try_into().unwrap(),
+                        rw.address().unwrap_or_default(),
+                        rw.field_tag().unwrap_or_default(),
+                        rw.storage_key().unwrap_or_default().to_le_bytes(),
+                    );
+
+                    let mut sort_key_prev_0 = F::zero();
+                    let mut sort_key_prev_1 = F::zero();
+                    if index != 0 {
+                        let rw_prev = rows[index - 1].0.clone();
+
+                        let (a, b) = sort_key_values(
+                            rw_prev.tag(),
+                            rw_prev.id().unwrap_or_default().try_into().unwrap(),
+                            rw_prev.address().unwrap_or_default(),
+                            rw_prev.field_tag().unwrap_or_default(),
+                            rw_prev.storage_key().unwrap_or_default().to_le_bytes(),
+                        );
+
+                        sort_key_prev_0 = a;
+                        sort_key_prev_1 = b;
+                    }
+
+                    sort_key_chips[0].assign(
                         &mut region,
                         offset,
-                        *row,
-                        row_prev,
-                        &key_is_same_with_prev_chips,
+                        Some(sort_key_0 - sort_key_prev_0),
                     )?;
+                    sort_key_chips[1].assign(
+                        &mut region,
+                        offset,
+                        Some(sort_key_1 - sort_key_prev_1),
+                    )?;
+
                     offset += 1;
                 }
 
@@ -539,10 +442,8 @@ impl<
         region: &mut Region<'_, F>,
         offset: usize,
         row: RwRow<F>,
-        row_prev: RwRow<F>,
-        diff_is_zero_chips: &[IsZeroChip<F>; 5],
     ) -> Result<(), Error> {
-        let address = row.key3;
+        let memory_or_stack_address = row.key3;
         let rw_counter = row.rw_counter;
         let value = row.value;
         let is_write = row.is_write;
@@ -555,33 +456,38 @@ impl<
             if rw_counter > F::from(RW_COUNTER_MAX as u64) {
                 panic!("rw_counter out of range");
             }
-            if row.tag == F::from(STACK_TAG as u64) && address > F::from(STACK_ADDRESS_MAX as u64) {
+            if row.tag == F::from(STACK_TAG as u64)
+                && memory_or_stack_address > F::from(STACK_ADDRESS_MAX as u64)
+            {
                 panic!(
                     "stack address out of range {:?} > {}",
-                    address, STACK_ADDRESS_MAX
+                    memory_or_stack_address, STACK_ADDRESS_MAX
                 );
             }
-            if row.tag == F::from(MEMORY_TAG as u64) && address > F::from(MEMORY_ADDRESS_MAX as u64)
+            if row.tag == F::from(MEMORY_TAG as u64)
+                && memory_or_stack_address > F::from(MEMORY_ADDRESS_MAX as u64)
             {
                 panic!(
                     "memory address out of range {:?} > {}",
-                    address, MEMORY_ADDRESS_MAX
+                    memory_or_stack_address, MEMORY_ADDRESS_MAX
                 );
             }
         }
         region.assign_fixed(|| "enable row", self.s_enable, offset, || Ok(F::one()))?;
-        region.assign_advice(|| "rw counter", self.rw_counter, offset, || Ok(rw_counter))?;
-        region.assign_advice(|| "value", self.value, offset, || Ok(value))?;
-        region.assign_advice(|| "is_write", self.is_write, offset, || Ok(is_write))?;
+        self.cells
+            .rw_counter
+            .assign(region, offset, Some(rw_counter))?;
+        self.cells.value.assign(region, offset, Some(value))?;
+        self.cells.is_write.assign(region, offset, Some(is_write))?;
 
-        for (i, diff_is_zero_chip) in diff_is_zero_chips.iter().enumerate() {
-            let (value, diff) = match i {
+        for i in 0..5 {
+            let value = match i {
                 // FIXME: find a better way here
-                0 => (row.tag, row.tag - row_prev.tag),
-                1 => (row.key1, row.key1 - row_prev.key1),
-                2 => (row.key2, row.key2 - row_prev.key2),
-                3 => (row.key3, row.key3 - row_prev.key3),
-                4 => (row.key4, row.key4 - row_prev.key4),
+                0 => row.tag,
+                1 => row.key1,
+                2 => row.key2,
+                3 => row.key3,
+                4 => row.key4,
                 _ => unreachable!(),
             };
             region.assign_advice(
@@ -590,11 +496,64 @@ impl<
                 offset,
                 || Ok(value),
             )?;
-            diff_is_zero_chip.assign(region, offset, Some(diff))?;
         }
 
-        region.assign_advice(|| "aux1", self.auxs[0], offset, || Ok(row.aux1))?;
-        region.assign_advice(|| "aux2", self.auxs[1], offset, || Ok(row.aux2))?;
+        Ok(())
+    }
+
+    fn assign_address_and_limbs(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        address: Address,
+    ) -> Result<(), Error> {
+        let limbs = address
+            .0
+            .iter()
+            .tuples()
+            .map(|(hi, lo)| u16::from_le_bytes([*lo, *hi]));
+        for (limb, col) in limbs.zip(&self.key2_limbs) {
+            region.assign_advice(|| "key2_limb", *col, offset, || Ok(F::from(limb.into())))?;
+        }
+
+        region.assign_advice(
+            || "key2 (address)",
+            self.keys[2],
+            offset,
+            || Ok(address.to_scalar().unwrap()),
+        )?;
+
+        Ok(())
+    }
+
+    fn assign_storage_key_and_bytes(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        randomness: F,
+        key: Word,
+    ) -> Result<(), Error> {
+        region.assign_advice(
+            || "key4 (storage_key)",
+            self.keys[4],
+            offset,
+            || {
+                Ok(RandomLinearCombination::random_linear_combine(
+                    key.to_le_bytes(),
+                    randomness,
+                ))
+            },
+        )?;
+
+        // TODO: use array_zip if/when it stabilizes.
+        for (col, byte) in self.key4_bytes.iter().zip(&key.to_le_bytes()) {
+            region.assign_advice(
+                || "storage key byte",
+                *col,
+                offset,
+                || Ok(F::from(*byte as u64)),
+            )?;
+        }
 
         Ok(())
     }
@@ -614,6 +573,7 @@ pub struct StateCircuit<
     pub randomness: F,
     /// witness for rw map
     pub rw_map: RwMap,
+    // pub operations: OperationContainer,
 }
 
 impl<
@@ -631,6 +591,7 @@ impl<
         Self {
             randomness,
             rw_map: rw_map.clone(),
+            // operations,
         }
     }
 }
@@ -661,7 +622,21 @@ impl<
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        Config::configure(meta)
+        let power_of_randomness = {
+            let columns = [(); 31].map(|_| meta.instance_column());
+            let mut power_of_randomness = None;
+
+            meta.create_gate("", |meta| {
+                power_of_randomness =
+                    Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
+
+                [0.expr()]
+            });
+
+            power_of_randomness.unwrap()
+        };
+
+        Config::configure(meta, power_of_randomness)
     }
 
     fn synthesize(
@@ -669,7 +644,7 @@ impl<
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.load(&mut layouter)?;
+        config.fixed_table.load(&mut layouter)?;
         config.assign(layouter, self.randomness, &self.rw_map)?;
 
         Ok(())
@@ -710,7 +685,16 @@ mod tests {
                 { $memory_rows_max + $stack_rows_max + $storage_rows_max },
             >::new(Fr::rand(), &rw_map);
 
-            let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
+            let power_of_randomness: Vec<_> = (1..32)
+                .map(|exp| {
+                    vec![
+                        circuit.randomness.pow(&[exp, 0, 0, 0]);
+                        { $memory_rows_max + $stack_rows_max + $storage_rows_max } // I think this is the max offset?
+                    ]
+                })
+                .collect();
+
+            let prover = MockProver::<Fr>::run($k, &circuit, power_of_randomness).unwrap();
             let verify_result = prover.verify();
             assert!(verify_result.is_ok(), "verify err: {:#?}", verify_result);
         }};
@@ -733,7 +717,16 @@ mod tests {
                 { $memory_rows_max + $stack_rows_max + $storage_rows_max },
             >::new(Fr::rand(), &rw_map);
 
-            let prover = MockProver::<Fr>::run($k, &circuit, vec![]).unwrap();
+            let power_of_randomness: Vec<_> = (1..32)
+                .map(|exp| {
+                    vec![
+                        circuit.randomness.pow(&[exp, 0, 0, 0]);
+                        { $memory_rows_max + $stack_rows_max + $storage_rows_max } // I think this is the max offset?
+                    ]
+                })
+                .collect();
+
+            let prover = MockProver::<Fr>::run($k, &circuit, power_of_randomness).unwrap();
             assert!(prover.verify().is_err());
         }};
     }
@@ -777,7 +770,7 @@ mod tests {
             RWCounter::from(0),
             RW::WRITE,
             StorageOp::new(
-                address!("0x0000000000000000000000000000000000000001"),
+                U256::from(100).to_address(),
                 Word::from(0x40),
                 Word::from(32),
                 Word::zero(),
@@ -789,7 +782,7 @@ mod tests {
             RWCounter::from(18),
             RW::WRITE,
             StorageOp::new(
-                address!("0x0000000000000000000000000000000000000001"),
+                U256::from(100).to_address(),
                 Word::from(0x40),
                 Word::from(32),
                 Word::from(32),
@@ -801,7 +794,7 @@ mod tests {
             RWCounter::from(19),
             RW::WRITE,
             StorageOp::new(
-                address!("0x0000000000000000000000000000000000000001"),
+                U256::from(100).to_address(),
                 Word::from(0x40),
                 Word::from(32),
                 Word::from(32),
@@ -811,7 +804,7 @@ mod tests {
         );
 
         test_state_circuit_ok!(
-            12,
+            17,
             2000,
             100,
             2,
@@ -862,7 +855,7 @@ mod tests {
 
         const STACK_ROWS_MAX: usize = 2;
         test_state_circuit_ok!(
-            14,
+            17,
             2000,
             100,
             STACK_ROWS_MAX,
@@ -914,7 +907,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 7;
         test_state_circuit_error!(
-            14,
+            17,
             2000,
             MEMORY_ROWS_MAX,
             1000,
@@ -984,7 +977,7 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
         test_state_circuit_error!(
-            14,
+            17,
             2000,
             MEMORY_ROWS_MAX,
             1000,
@@ -1059,7 +1052,7 @@ mod tests {
         const STACK_ADDRESS_MAX: usize = 1023;
 
         test_state_circuit_error!(
-            16,
+            18,
             RW_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
@@ -1115,7 +1108,7 @@ mod tests {
         const STACK_ADDRESS_MAX: usize = 1023;
 
         test_state_circuit_error!(
-            16,
+            18,
             RW_COUNTER_MAX,
             MEMORY_ROWS_MAX,
             MEMORY_ADDRESS_MAX,
@@ -1237,7 +1230,7 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 100;
         const STACK_ROWS_MAX: usize = 100;
         test_state_circuit_error!(
-            15,
+            17,
             10000,
             MEMORY_ROWS_MAX,
             10000,
@@ -1301,7 +1294,7 @@ mod tests {
 
         const MEMORY_ROWS_MAX: usize = 10;
         test_state_circuit_error!(
-            14,
+            18,
             10000,
             MEMORY_ROWS_MAX,
             10000,
@@ -1375,7 +1368,7 @@ mod tests {
         const MEMORY_ROWS_MAX: usize = 2;
         const STORAGE_ROWS_MAX: usize = 2;
         test_state_circuit_error!(
-            14,
+            17,
             2000,
             MEMORY_ROWS_MAX,
             1000,
@@ -1429,7 +1422,7 @@ mod tests {
         let storage_ops = builder.block.container.sorted_storage();
 
         test_state_circuit_ok!(
-            14,
+            17,
             2000,
             100,
             0x80,
