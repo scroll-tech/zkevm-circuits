@@ -103,11 +103,10 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
 mod test {
     use crate::{
         evm_circuit::test::rand_word,
-        test_util::{
-            get_fixed_table, test_circuits_using_bytecode, BytecodeTestConfig, FixedTableConfig,
-        },
+        test_util::{get_fixed_table, run_test_circuits, BytecodeTestConfig, FixedTableConfig},
     };
     use eth_types::{bytecode, Word};
+    use mock::TestContext;
 
     fn test_ok(a: Word, b: Word) {
         let bytecode = bytecode! {
@@ -128,8 +127,12 @@ mod test {
             evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Complete),
             ..Default::default()
         };
+
         assert_eq!(
-            test_circuits_using_bytecode(bytecode, test_config, None),
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                Some(test_config)
+            ),
             Ok(())
         );
     }

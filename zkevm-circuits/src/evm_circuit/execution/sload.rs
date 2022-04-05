@@ -5,7 +5,9 @@ use crate::{
         table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+            },
             select, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -22,8 +24,7 @@ use halo2_proofs::{
 pub(crate) struct SloadGadget<F> {
     same_context: SameContextGadget<F>,
     tx_id: Cell<F>,
-    rw_counter_end_of_reversion: Cell<F>,
-    is_persistent: Cell<F>,
+    reversion_info: ReversionInfo<F>,
     callee_address: Cell<F>,
     key: Cell<F>,
     value: Cell<F>,
@@ -39,13 +40,9 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let [tx_id, rw_counter_end_of_reversion, is_persistent, callee_address] = [
-            CallContextFieldTag::TxId,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            CallContextFieldTag::IsPersistent,
-            CallContextFieldTag::CalleeAddress,
-        ]
-        .map(|field_tag| cb.call_context(None, field_tag));
+        let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        let mut reversion_info = cb.reversion_info(None);
+        let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
         let key = cb.query_cell();
         // Pop the key from the stack
@@ -70,13 +67,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
             key.expr(),
             true.expr(),
             is_warm.expr(),
-            Some(
-                (
-                    &is_persistent,
-                    rw_counter_end_of_reversion.expr() - cb.curr.state.state_write_counter.expr(),
-                )
-                    .into(),
-            ),
+            Some(&mut reversion_info),
         );
 
         let gas_cost = SloadGasGadget::construct(cb, is_warm.expr()).expr();
@@ -92,8 +83,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         Self {
             same_context,
             tx_id,
-            rw_counter_end_of_reversion,
-            is_persistent,
+            reversion_info,
             callee_address,
             key,
             value,
@@ -115,13 +105,12 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
 
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
-        self.rw_counter_end_of_reversion.assign(
+        self.reversion_info.assign(
             region,
             offset,
-            Some(F::from(call.rw_counter_end_of_reversion as u64)),
+            call.rw_counter_end_of_reversion,
+            call.is_persistent,
         )?;
-        self.is_persistent
-            .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
         self.callee_address
             .assign(region, offset, call.callee_address.to_scalar())?;
 
@@ -172,8 +161,8 @@ impl<F: Field> SloadGasGadget<F> {
     pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
         let gas_cost = select::expr(
             is_warm.expr(),
-            GasCost::WARM_STORAGE_READ_COST.expr(),
-            GasCost::COLD_SLOAD_COST.expr(),
+            GasCost::WARM_ACCESS.expr(),
+            GasCost::COLD_SLOAD.expr(),
         );
 
         Self { is_warm, gas_cost }
@@ -271,14 +260,14 @@ mod test {
                         program_counter: 33,
                         stack_pointer: STACK_CAPACITY,
                         gas_left: if is_warm {
-                            GasCost::WARM_STORAGE_READ_COST.as_u64()
+                            GasCost::WARM_ACCESS.as_u64()
                         } else {
-                            GasCost::COLD_SLOAD_COST.as_u64()
+                            GasCost::COLD_SLOAD.as_u64()
                         },
                         gas_cost: if is_warm {
-                            GasCost::WARM_STORAGE_READ_COST.as_u64()
+                            GasCost::WARM_ACCESS.as_u64()
                         } else {
-                            GasCost::COLD_SLOAD_COST.as_u64()
+                            GasCost::COLD_SLOAD.as_u64()
                         },
                         opcode: Some(OpcodeId::SLOAD),
                         ..Default::default()

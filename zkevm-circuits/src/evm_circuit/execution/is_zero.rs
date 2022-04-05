@@ -77,6 +77,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
 mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::{bytecode, Word};
+    use mock::TestContext;
 
     fn test_ok(value: Word) {
         let bytecode = bytecode! {
@@ -84,7 +85,14 @@ mod test {
             ISZERO
             STOP
         };
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 
     #[test]

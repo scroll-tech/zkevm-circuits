@@ -27,7 +27,13 @@ pub const CHAIN_ID: u64 = 1337;
 /// Path to the test contracts
 pub const CONTRACTS_PATH: &str = "contracts";
 /// List of contracts as (ContractName, ContractSolidityFile)
-pub const CONTRACTS: &[(&str, &str)] = &[("Greeter", "greeter/Greeter.sol")];
+pub const CONTRACTS: &[(&str, &str)] = &[
+    ("Greeter", "greeter/Greeter.sol"),
+    (
+        "OpenZeppelinERC20TestToken",
+        "ERC20/OpenZeppelinERC20TestToken.sol",
+    ),
+];
 /// Path to gen_blockchain_data output file
 pub const GENDATA_OUTPUT_PATH: &str = "gendata_output.json";
 

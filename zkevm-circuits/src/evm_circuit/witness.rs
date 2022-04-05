@@ -1094,6 +1094,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::JUMPDEST => ExecutionState::JUMPDEST,
                     OpcodeId::JUMP => ExecutionState::JUMP,
                     OpcodeId::JUMPI => ExecutionState::JUMPI,
+                    OpcodeId::GASPRICE => ExecutionState::GASPRICE,
                     OpcodeId::PC => ExecutionState::PC,
                     OpcodeId::MSIZE => ExecutionState::MSIZE,
                     OpcodeId::CALLER => ExecutionState::CALLER,
@@ -1108,6 +1109,8 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
+                    OpcodeId::CALL => ExecutionState::CALL,
+                    OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }

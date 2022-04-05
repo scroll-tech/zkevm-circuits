@@ -90,16 +90,21 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
 mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::bytecode;
+    use mock::TestContext;
 
-    fn test_ok() {
+    #[test]
+    fn callvalue_gadget_test() {
         let bytecode = bytecode! {
             CALLVALUE
             STOP
         };
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
-    }
-    #[test]
-    fn callvalue_gadget_test() {
-        test_ok();
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 }

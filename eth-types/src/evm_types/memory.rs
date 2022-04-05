@@ -271,6 +271,11 @@ impl Memory {
             &self[addr..addr + MemoryAddress::from(32)],
         ))
     }
+
+    /// Returns the size of memory in word.
+    pub fn word_size(&self) -> usize {
+        self.0.len() / 32
+    }
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@ authors = ["CPerezz <c.perezbaro@gmail.com>"]
 
 [dependencies]
 eth-types = { path = "../eth-types" }
+keccak256 = { path = "../keccak256" }
 ethers-core = "0.6"
 ethers-providers = "0.6"
 itertools = "0.10"

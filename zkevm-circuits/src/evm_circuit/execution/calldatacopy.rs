@@ -231,16 +231,17 @@ mod test {
         execution::memory_copy::test::make_memory_copy_steps,
         step::ExecutionState,
         table::{CallContextFieldTag, RwTableTag},
-        test::{calc_memory_copier_gas_cost, rand_bytes, run_test_circuit_incomplete_fixed_table},
+        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
         witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
     };
-    use crate::test_util::{test_circuits_using_bytecode, BytecodeTestConfig};
+    use crate::test_util::run_test_circuits;
     use eth_types::{
         bytecode,
-        evm_types::{GasCost, OpcodeId},
+        evm_types::{gas_utils::memory_copier_gas_cost, GasCost, OpcodeId},
         ToBigEndian, Word,
     };
     use halo2_proofs::arithmetic::BaseExt;
+    use mock::test_ctx::{helpers::*, TestContext};
     use pairing::bn256::Fr as Fp;
 
     fn test_ok_root(call_data_length: usize, memory_offset: Word, data_offset: Word, length: Word) {
@@ -253,11 +254,22 @@ mod test {
             STOP
         };
         let call_data = rand_bytes(call_data_length);
-        let test_config = BytecodeTestConfig::default();
-        assert_eq!(
-            test_circuits_using_bytecode(bytecode, test_config, Some(call_data)),
-            Ok(())
-        );
+
+        // Get the execution steps from the external tracer
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(bytecode),
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[1].address)
+                    .to(accs[0].address)
+                    .input(call_data.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        assert_eq!(run_test_circuits(ctx, None), Ok(()));
     }
 
     fn test_ok_internal(
@@ -353,7 +365,7 @@ mod test {
             )
         };
         let gas_cost = GasCost::FASTEST.as_u64()
-            + calc_memory_copier_gas_cost(
+            + memory_copier_gas_cost(
                 curr_memory_word_size,
                 next_memory_word_size,
                 length.as_u64(),

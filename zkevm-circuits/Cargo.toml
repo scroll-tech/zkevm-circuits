@@ -30,6 +30,7 @@ keccak256 = { path = "../keccak256"}
 criterion = "0.3"
 hex = "0.4.3"
 mock = { path = "../mock" }
+itertools = "0.10.1"
 
 [[bench]]
 name = "binary_value"

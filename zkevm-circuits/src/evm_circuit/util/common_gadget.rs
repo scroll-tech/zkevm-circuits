@@ -90,7 +90,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         cb: &mut ConstraintBuilder<F>,
         address: Expression<F>,
         updates: Vec<Word<F>>,
-        reversion_info: Option<ReversionInfo<F>>,
+        reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         debug_assert!(updates.len() == N_ADDENDS - 1);
 
@@ -124,17 +124,41 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         Self { add_words }
     }
 
+    pub(crate) fn balance(&self) -> &Word<F> {
+        if INCREASE {
+            self.add_words.sum()
+        } else {
+            &self.add_words.addends()[0]
+        }
+    }
+
+    pub(crate) fn balance_prev(&self) -> &Word<F> {
+        if INCREASE {
+            &self.add_words.addends()[0]
+        } else {
+            self.add_words.sum()
+        }
+    }
+
     pub(crate) fn assign(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        addends: Vec<U256>,
-        sum: U256,
+        value_prev: U256,
+        updates: Vec<U256>,
+        value: U256,
     ) -> Result<(), Error> {
-        debug_assert!(addends.len() == N_ADDENDS);
+        debug_assert!(updates.len() + 1 == N_ADDENDS);
 
+        let [value, value_prev] = if INCREASE {
+            [value, value_prev]
+        } else {
+            [value_prev, value]
+        };
+        let mut addends = vec![value_prev];
+        addends.extend(updates);
         self.add_words
-            .assign(region, offset, addends.try_into().unwrap(), sum)
+            .assign(region, offset, addends.try_into().unwrap(), value)
     }
 }
 
@@ -151,21 +175,16 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         receiver_address: Expression<F>,
         value: Word<F>,
         gas_fee: Word<F>,
-        is_persistent: Expression<F>,
-        rw_counter_end_of_reversion: Expression<F>,
+        reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
         let sender = UpdateBalanceGadget::construct(
             cb,
             sender_address,
             vec![value.clone(), gas_fee],
-            Some((&is_persistent, &rw_counter_end_of_reversion).into()),
+            Some(reversion_info),
         );
-        let receiver = UpdateBalanceGadget::construct(
-            cb,
-            receiver_address,
-            vec![value],
-            Some((is_persistent, rw_counter_end_of_reversion - 1.expr()).into()),
-        );
+        let receiver =
+            UpdateBalanceGadget::construct(cb, receiver_address, vec![value], Some(reversion_info));
 
         Self { sender, receiver }
     }
@@ -182,13 +201,71 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         self.sender.assign(
             region,
             offset,
-            vec![sender_balance, value, gas_fee],
             sender_balance_prev,
+            vec![value, gas_fee],
+            sender_balance,
         )?;
         self.receiver.assign(
             region,
             offset,
-            vec![receiver_balance_prev, value],
+            receiver_balance_prev,
+            vec![value],
+            receiver_balance,
+        )?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TransferGadget<F> {
+    sender: UpdateBalanceGadget<F, 2, false>,
+    receiver: UpdateBalanceGadget<F, 2, true>,
+}
+
+impl<F: Field> TransferGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        sender_address: Expression<F>,
+        receiver_address: Expression<F>,
+        value: Word<F>,
+        reversion_info: &mut ReversionInfo<F>,
+    ) -> Self {
+        let sender = UpdateBalanceGadget::construct(
+            cb,
+            sender_address,
+            vec![value.clone()],
+            Some(reversion_info),
+        );
+        let receiver =
+            UpdateBalanceGadget::construct(cb, receiver_address, vec![value], Some(reversion_info));
+
+        Self { sender, receiver }
+    }
+
+    pub(crate) fn receiver(&self) -> &UpdateBalanceGadget<F, 2, true> {
+        &self.receiver
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        (sender_balance, sender_balance_prev): (U256, U256),
+        (receiver_balance, receiver_balance_prev): (U256, U256),
+        value: U256,
+    ) -> Result<(), Error> {
+        self.sender.assign(
+            region,
+            offset,
+            sender_balance_prev,
+            vec![value],
+            sender_balance,
+        )?;
+        self.receiver.assign(
+            region,
+            offset,
+            receiver_balance_prev,
+            vec![value],
             receiver_balance,
         )?;
         Ok(())

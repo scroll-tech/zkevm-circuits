@@ -147,7 +147,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_used = tx.gas - step.gas_left;
         let (refund, _) = block.rws[step.rw_indices[1]].tx_refund_value_pair();
-        let [caller_balance_pair, coinbase_balance_pair] =
+        let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
             [step.rw_indices[2], step.rw_indices[3]].map(|idx| block.rws[idx].account_value_pair());
 
         self.tx_id
@@ -175,8 +175,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         self.gas_fee_refund.assign(
             region,
             offset,
-            vec![caller_balance_pair.1, gas_fee_refund],
-            caller_balance_pair.0,
+            caller_balance_prev,
+            vec![gas_fee_refund],
+            caller_balance,
         )?;
         let effective_tip = tx.gas_price - block.context.base_fee;
         self.sub_gas_price_by_base_fee.assign(
@@ -197,8 +198,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         self.coinbase_reward.assign(
             region,
             offset,
-            vec![coinbase_balance_pair.1, effective_tip * gas_used],
-            coinbase_balance_pair.0,
+            coinbase_balance_prev,
+            vec![effective_tip * gas_used],
+            coinbase_balance,
         )?;
 
         Ok(())
@@ -210,7 +212,7 @@ mod test {
     use crate::evm_circuit::{
         test::run_test_circuit_incomplete_fixed_table, witness::block_convert,
     };
-    use eth_types::{self, address, geth_types::GethData, Word};
+    use eth_types::{self, address, bytecode, geth_types::GethData, Word};
     use mock::TestContext;
 
     fn test_ok(block: GethData) {
@@ -248,7 +250,8 @@ mod test {
                 |accs| {
                     accs[0]
                         .address(address!("0x00000000000000000000000000000000000000fe"))
-                        .balance(Word::from(10u64.pow(19)));
+                        .balance(Word::from(10u64.pow(19)))
+                        .code(bytecode! { STOP });
                     accs[1]
                         .address(address!("0x00000000000000000000000000000000000000fd"))
                         .balance(Word::from(10u64.pow(19)));

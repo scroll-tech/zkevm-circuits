@@ -99,7 +99,14 @@ mod test {
             GAS
             STOP
         };
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 
     #[test]

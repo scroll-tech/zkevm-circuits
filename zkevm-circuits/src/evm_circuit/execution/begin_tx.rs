@@ -7,7 +7,7 @@ use crate::{
         util::{
             common_gadget::TransferWithGasFeeGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             math_gadget::{MulWordByU64Gadget, RangeCheckGadget},
@@ -17,9 +17,7 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::evm_types::GasCost;
-use eth_types::Field;
-use eth_types::{ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -35,8 +33,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_value: Word<F>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
-    rw_counter_end_of_reversion: Cell<F>,
-    is_persistent: Cell<F>,
+    reversion_info: ReversionInfo<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     code_hash: Cell<F>,
@@ -51,12 +48,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.curr.state.rw_counter.clone();
 
-        let [tx_id, rw_counter_end_of_reversion, is_persistent] = [
-            CallContextFieldTag::TxId,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            CallContextFieldTag::IsPersistent,
-        ]
-        .map(|field_tag| cb.call_context(Some(call_id.expr()), field_tag));
+        let tx_id = cb.call_context(Some(call_id.expr()), CallContextFieldTag::TxId);
+        let mut reversion_info = cb.reversion_info(None);
 
         let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =
             [
@@ -130,8 +123,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_callee_address.expr(),
             tx_value.clone(),
             mul_gas_fee_by_gas.product().clone(),
-            is_persistent.expr(),
-            rw_counter_end_of_reversion.expr(),
+            &mut reversion_info,
         );
 
         // TODO: Handle creation transaction
@@ -160,6 +152,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             (CallContextFieldTag::LastCalleeId, 0.expr()),
             (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
             (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
+            (CallContextFieldTag::IsRoot, 1.expr()),
+            (CallContextFieldTag::IsCreate, 0.expr()),
+            (CallContextFieldTag::CodeSource, code_hash.expr()),
         ] {
             cb.call_context_lookup(false.expr(), Some(call_id.expr()), field_tag, value);
         }
@@ -185,7 +180,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             //   - Read CallContext LastCalleeId
             //   - Read CallContext LastCalleeReturnDataOffset
             //   - Read CallContext LastCalleeReturnDataLength
-            rw_counter: Delta(19.expr()),
+            rw_counter: Delta(22.expr()),
             call_id: To(call_id.expr()),
             is_root: To(true.expr()),
             is_create: To(false.expr()),
@@ -207,8 +202,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_value,
             tx_call_data_length,
             tx_call_data_gas_cost,
-            rw_counter_end_of_reversion,
-            is_persistent,
+            reversion_info,
             sufficient_gas_left,
             transfer_with_gas_fee,
             code_hash,
@@ -251,13 +245,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.tx_call_data_gas_cost
             .assign(region, offset, Some(F::from(tx.call_data_gas_cost)))?;
-        self.rw_counter_end_of_reversion.assign(
+        self.reversion_info.assign(
             region,
             offset,
-            Some(F::from(call.rw_counter_end_of_reversion as u64)),
+            call.rw_counter_end_of_reversion,
+            call.is_persistent,
         )?;
-        self.is_persistent
-            .assign(region, offset, Some(F::from(call.is_persistent as u64)))?;
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
         self.transfer_with_gas_fee.assign(
