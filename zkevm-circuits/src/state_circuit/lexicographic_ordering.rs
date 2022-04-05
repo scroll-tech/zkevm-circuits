@@ -45,6 +45,8 @@ impl Config {
     ) -> Result<AssignedCell<F, F>, Error> {
         let cur_be_limbs = rw_to_be_limbs(cur);
         let prev_be_limbs = rw_to_be_limbs(prev);
+        assert_eq!(cur_be_limbs.len(), 30);
+        assert_eq!(prev_be_limbs.len(), 30);
 
         let find_result = cur_be_limbs
             .iter()
@@ -130,19 +132,17 @@ impl<F: Field> Chip<F> {
             storage_key_bytes,
             rw_counter_limbs,
         };
-        meta.create_gate("diff_1 is one of 15 values", |meta| {
-            let selector = meta.query_fixed(selector, Rotation::cur());
-            let cur = Queries::new(meta, config, Rotation::cur());
-            let prev = Queries::new(meta, config, Rotation::prev());
-            let diff_1 = meta.query_advice(diff_1, Rotation::cur());
-            vec![
-                selector.clone()
-                    * diff_1_possible_values(cur, prev)
-                        .iter()
-                        .map(|e| diff_1.clone() - e.clone())
-                        .fold(1.expr(), Expression::mul),
-            ]
-        });
+        // meta.create_gate("diff_1 is one of 15 values", |meta| {
+        //     let selector = meta.query_fixed(selector, Rotation::cur());
+        //     let cur = Queries::new(meta, config, Rotation::cur());
+        //     let prev = Queries::new(meta, config, Rotation::prev());
+        //     let diff_1 = meta.query_advice(diff_1, Rotation::cur());
+        //     vec![
+        //         selector
+        //             * diff_1_possible_values(cur, prev) .iter() .map(|e|
+        //               diff_1.clone() - e.clone()) .fold(1.expr(), Expression::mul),
+        //     ]
+        // });
 
         meta.create_gate("diff_2 is one of 15 values", |meta| {
             let selector = meta.query_fixed(selector, Rotation::cur());
@@ -150,7 +150,7 @@ impl<F: Field> Chip<F> {
             let prev = Queries::new(meta, config, Rotation::prev());
             let diff_2 = meta.query_advice(diff_2, Rotation::cur());
             vec![
-                selector.clone()
+                selector
                     * diff_2_possible_values(cur, prev)
                         .iter()
                         .map(|e| diff_2.clone() - e.clone())
@@ -255,15 +255,20 @@ impl<F: Field> Queries<F> {
 fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
     let mut be_bytes = vec![];
     be_bytes.extend_from_slice(&(row.id().unwrap_or_default() as u32).to_be_bytes());
+    assert_eq!(be_bytes.len(), 4);
 
-    // check that the first byte of id is not use, and overwrite it with packed
+    // check that the first byte of id is not used, and overwrites it with packed
     // tags.
     assert_eq!(be_bytes[0], 0);
-    be_bytes[0] = (row.tag() as u8) << 4 + row.field_tag().unwrap_or_default() as u8;
+    be_bytes[0] = row.field_tag().unwrap_or_default() as u8 + ((row.tag() as u8) << 4);
+    assert_eq!(be_bytes.len(), 4);
 
     be_bytes.extend_from_slice(&(row.address().unwrap_or_default().0));
+    assert_eq!(be_bytes.len(), 24);
     be_bytes.extend_from_slice(&(row.storage_key().unwrap_or_default().to_be_bytes()));
-    be_bytes.extend_from_slice(&(row.rw_counter().to_be_bytes()));
+    assert_eq!(be_bytes.len(), 24 + 32);
+    be_bytes.extend_from_slice(&((row.rw_counter() as u32).to_be_bytes()));
+    assert_eq!(be_bytes.len(), 24 + 32 + 4);
 
     be_bytes
         .iter()

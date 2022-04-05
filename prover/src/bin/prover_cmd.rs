@@ -93,15 +93,6 @@ async fn main() {
 
     {
         // generate state_circuit proof
-        //
-        // TODO: this should be configurable
-        const MEMORY_ADDRESS_MAX: usize = 2000;
-        const STACK_ADDRESS_MAX: usize = 1300;
-        const MEMORY_ROWS_MAX: usize = 16384;
-        const STACK_ROWS_MAX: usize = 16384;
-        const STORAGE_ROWS_MAX: usize = 16384;
-        const GLOBAL_COUNTER_MAX: usize = MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
-
         let circuit = StateCircuit::new(block.randomness, block.rws);
 
         // TODO: same quest like in the first scope

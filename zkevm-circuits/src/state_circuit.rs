@@ -7,6 +7,7 @@ mod random_linear_combination;
 #[cfg(test)]
 mod tests;
 
+use crate::evm_circuit::table::RwTableTag;
 use crate::evm_circuit::{param::N_BYTES_WORD, witness::RwMap};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
@@ -126,8 +127,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        // dbg!("synthesize being called");
-        // Is this clone ok?
         LookupsChip::construct(config.lookups).load(&mut layouter)?;
 
         // TODO: move sorting out of synthesize, so we can check that unsorted witnesses
@@ -136,22 +135,20 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         rows.sort_by_key(|row| {
             (
                 row.tag() as u64,
+                row.field_tag().unwrap_or_default(),
                 row.id().unwrap_or_default(),
                 row.address().unwrap_or_default(),
-                row.field_tag().unwrap_or_default(),
                 row.storage_key().unwrap_or_default(),
                 row.rw_counter(),
             )
         });
 
+        dbg!(rows.clone());
+
         layouter.assign_region(
             || "assign rw table",
             |mut region| {
-                dbg!("assign_region closure being called");
-                let mut offset = 0;
-
-                for row in &rows {
-                    dbg!(offset);
+                for (offset, row) in rows.iter().enumerate() {
                     if offset != 0 {
                         // just treat selector as is_start?
                         region.assign_fixed(
@@ -165,14 +162,12 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                             &mut region,
                             offset,
                             row,
-                            &rows[offset - 1],
+                            rows[offset - 1],
                         )?;
                     }
-                    // config.selector.enable(&mut region, offset)?;
                     config
                         .rw_counter
                         .assign(&mut region, offset, row.rw_counter() as u32)?;
-                    // dbg!(row.is_write() as u64);
                     region.assign_advice(
                         || "is_write",
                         config.is_write,
@@ -217,8 +212,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                             storage_key,
                         )?;
                     }
-
-                    offset += 1;
                 }
                 Ok(())
             },
@@ -232,7 +225,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: StateConfig) -> Queries<
         rw_counter: MpiQueries::new(meta, c.rw_counter),
         is_write: meta.query_advice(c.is_write, Rotation::cur()),
         tag: meta.query_advice(c.tag, Rotation::cur()),
-        id: MpiQueries::new(meta, c.rw_counter),
+        id: MpiQueries::new(meta, c.id),
         address: MpiQueries::new(meta, c.address),
         field_tag: meta.query_advice(c.field_tag, Rotation::cur()),
         storage_key: RlcQueries::new(meta, c.storage_key),

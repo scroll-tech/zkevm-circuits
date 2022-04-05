@@ -88,7 +88,7 @@ impl<F: Field> Chip<F> {
             )?;
         }
         layouter.assign_region(
-            || format!("assign call_context_field_tags fixed column"),
+            || "assign call_context_field_tags fixed column",
             |mut region| {
                 for field_tag in CallContextFieldTag::iter() {
                     region.assign_fixed(
