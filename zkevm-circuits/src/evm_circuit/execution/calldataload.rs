@@ -258,6 +258,7 @@ mod test {
     use bus_mapping::evm::OpcodeId;
     use eth_types::{bytecode, Word};
     use halo2_proofs::arithmetic::BaseExt;
+    use mock::TestContext;
     use pairing::bn256::Fr;
 
     use crate::{
@@ -513,7 +514,13 @@ mod test {
             CALLDATALOAD
             STOP
         };
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 
     #[test]
