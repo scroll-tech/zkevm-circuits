@@ -5,7 +5,7 @@ mod lookups;
 mod multiple_precision_integer;
 mod random_linear_combination;
 #[cfg(test)]
-mod tests;
+mod state_tests;
 
 use crate::evm_circuit::{param::N_BYTES_WORD, witness::RwMap};
 use constraint_builder::{ConstraintBuilder, Queries};
