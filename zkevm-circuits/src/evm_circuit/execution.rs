@@ -668,6 +668,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::JUMP => assign_exec_step!(self.jump_gadget),
             ExecutionState::JUMPDEST => assign_exec_step!(self.jumpdest_gadget),
             ExecutionState::JUMPI => assign_exec_step!(self.jumpi_gadget),
+            ExecutionState::LOG => assign_exec_step!(self.log3_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
             ExecutionState::MUL_DIV_MOD => assign_exec_step!(self.mul_div_mod_gadget),
