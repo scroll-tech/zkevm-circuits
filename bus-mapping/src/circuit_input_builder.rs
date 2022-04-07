@@ -809,7 +809,14 @@ impl<'a> CircuitInputStateRef<'a> {
         rw: RW,
         op: T,
     ) -> Result<(), Error> {
-        let op_ref = self.apply_op(false, rw, op.into_enum());
+        if matches!(rw, RW::WRITE) {
+            self.apply_op(&op.clone().into_enum());
+        }
+        let op_ref = self.block.container.insert(Operation::new_reversible(
+            self.block_ctx.rwc.inc_pre(),
+            rw,
+            op,
+        ));
         step.bus_mapping_instance.push(op_ref);
 
         // Increase reversible_write_counter
@@ -1076,8 +1083,8 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Apply op to state and push to container.
-    fn apply_op(&mut self, is_revert: bool, rw: RW, op: OpEnum) -> OperationRef {
+    /// Apply op to state.
+    fn apply_op(&mut self, op: &OpEnum) {
         match &op {
             OpEnum::Storage(op) => {
                 self.sdb.set_storage(&op.address, &op.key, &op.value);
@@ -1116,12 +1123,6 @@ impl<'a> CircuitInputStateRef<'a> {
             OpEnum::AccountDestructed(_) => unimplemented!(),
             _ => unreachable!(),
         };
-        if is_revert {
-            debug_assert!(rw == RW::WRITE, "revert read operation");
-        }
-        self.block
-            .container
-            .insert_op_enum(self.block_ctx.rwc.inc_pre(), rw, !is_revert, op)
     }
 
     /// Handle a reversion group
@@ -1135,7 +1136,13 @@ impl<'a> CircuitInputStateRef<'a> {
         // Apply reversions
         for (step_index, op_ref) in reversion_group.op_refs.into_iter().rev() {
             if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
-                let rev_op_ref = self.apply_op(true, RW::WRITE, op);
+                self.apply_op(&op);
+                let rev_op_ref = self.block.container.insert_op_enum(
+                    self.block_ctx.rwc.inc_pre(),
+                    RW::WRITE,
+                    false,
+                    op,
+                );
                 self.tx.steps[step_index]
                     .bus_mapping_instance
                     .push(rev_op_ref);
