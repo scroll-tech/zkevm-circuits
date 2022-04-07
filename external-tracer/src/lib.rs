@@ -23,15 +23,9 @@ pub struct TraceConfig {
     pub transactions: Vec<Transaction>,
 }
 
-#[derive(Debug, Default, Clone, Serialize)]
-pub struct AccountForSerde {
-    pub address: Address,
-    pub nonce: Word,
-    pub balance: Word,
-    pub code: Bytes,
-    pub storage: HashMap<Hash, Hash>,
-}
-
+// TraceConfigForSerde is used for converting Word to Hash for storage kvs.
+// Without the conversion, Geth will report error: "cannot unmarshal hex string
+// of odd length into Go struct field".
 #[derive(Debug, Default, Clone, Serialize)]
 struct TraceConfigForSerde {
     pub chain_id: Word,
@@ -39,6 +33,27 @@ struct TraceConfigForSerde {
     pub block_constants: BlockConstants,
     pub accounts: HashMap<Address, AccountForSerde>,
     pub transactions: Vec<Transaction>,
+}
+
+impl From<TraceConfig> for TraceConfigForSerde {
+    fn from(t: TraceConfig) -> Self {
+        Self {
+            chain_id: t.chain_id,
+            history_hashes: t.history_hashes,
+            block_constants: t.block_constants,
+            accounts: t.accounts.into_iter().map(|(k, v)| (k, v.into())).collect(),
+            transactions: t.transactions,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct AccountForSerde {
+    pub address: Address,
+    pub nonce: Word,
+    pub balance: Word,
+    pub code: Bytes,
+    pub storage: HashMap<Hash, Hash>,
 }
 
 impl From<Account> for AccountForSerde {
@@ -53,18 +68,6 @@ impl From<Account> for AccountForSerde {
                 .into_iter()
                 .map(|(k, v)| (Hash::from(k.to_be_bytes()), Hash::from(v.to_be_bytes())))
                 .collect(),
-        }
-    }
-}
-
-impl From<TraceConfig> for TraceConfigForSerde {
-    fn from(t: TraceConfig) -> Self {
-        Self {
-            chain_id: t.chain_id,
-            history_hashes: t.history_hashes,
-            block_constants: t.block_constants,
-            accounts: t.accounts.into_iter().map(|(k, v)| (k, v.into())).collect(),
-            transactions: t.transactions,
         }
     }
 }

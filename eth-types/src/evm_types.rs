@@ -112,7 +112,8 @@ impl GasCost {
     pub const SSTORE_SET: Self = Self(20000);
     /// Constant cost for a storage reset
     pub const SSTORE_RESET: Self = Self(2900);
-    /// Constant cost for a storage clear
+    /// Constant cost for a storage clear. EIP-3529 changed it to 4800 from
+    /// 15000.
     pub const SSTORE_CLEARS_SCHEDULE: Self = Self(4800);
     /// Constant cost for a non-creation transaction
     pub const TX: Self = Self(21000);

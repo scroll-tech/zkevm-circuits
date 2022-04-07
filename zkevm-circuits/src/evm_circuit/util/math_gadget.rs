@@ -3,7 +3,7 @@ use crate::{
         table::{FixedTableTag, Lookup},
         util::{
             self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, pow_of_two_expr,
-            select, split_u256, sum, Cell,
+        select, split_u256, split_u256_limb64, sum, Cell,
         },
     },
     util::Expr,
@@ -271,190 +271,6 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVREFLOW: bool>
     }
 }
 
-/// Construction of 2 256-bit words mutiplication and result (modulo 2**256),
-/// which is useful for opcode MUL, DIV, SDIV and xxxMOD
-#[derive(Clone, Debug)]
-pub(crate) struct MulWordsGadget<F> {
-    a: util::Word<F>,
-    b: util::Word<F>,
-    product: util::Word<F>,
-    //here we execute a multi-limbs multiplication, see spec or
-    //https://hackmd.io/HL0QhGUeQoSgIBt2el6fHA
-    // a, b and product is divided into 4 64-bit digits, call them a0 ~ a3, b0
-    // ~ b3 ... a * b = a0 * b0 + a1 * b0 ..., and let
-    // t0 = a0 * b0, contribute to 0 ~ 128 bit
-    // t1 = a0 * b1 + a1 * b0, contribute to 64 ~ 193 bit (include the carry)
-    // t2 = a0 * b2 + a2 * b0 + a1 * b1, contribute to above 128 bit
-    // t3 =  a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2, contribute to above 192 bit
-    //
-    // so t0 ~ t1 include all contributions to the low 256bit of product,
-    // with a maxium 68bit radix (the part higher than 256bit) v1
-    // it is similar that we have v0 as the radix of contributions
-    // to the low 128bit of the product
-    // we can slightly relax the constraint of v0/v1 to 72bit so just
-    // use 9 bytes for them
-    v0: [Cell<F>; 9],
-    v1: [Cell<F>; 9],
-    /* finally we just prove:
-     *  t0 + t1 = <low 128 bit of product> + <radix v0>
-     *  t2 + t3 + <radix v0> = <high 128 bit of product> + <radix v1> */
-}
-
-impl<F: Field> MulWordsGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        a: util::Word<F>,
-        b: util::Word<F>,
-    ) -> Self {
-        let product = cb.query_word();
-        let v0 = array_init::array_init(|_| cb.query_byte());
-        let v1 = array_init::array_init(|_| cb.query_byte());
-
-        let mut a_limbs = vec![];
-        let mut b_limbs = vec![];
-        let mut c_limbs = vec![];
-        for virtual_idx in 0..4 {
-            let now_idx = (virtual_idx * 8) as usize;
-            a_limbs.push(from_bytes::expr(&a.cells[now_idx..now_idx + 8]));
-            b_limbs.push(from_bytes::expr(&b.cells[now_idx..now_idx + 8]));
-            c_limbs.push(from_bytes::expr(&product.cells[now_idx..now_idx + 8]));
-        }
-
-        let t0 = a_limbs[0].clone() * b_limbs[0].clone();
-        let t1 = a_limbs[0].clone() * b_limbs[1].clone() + a_limbs[1].clone() * b_limbs[0].clone();
-        let t2 = a_limbs[0].clone() * b_limbs[2].clone()
-            + a_limbs[1].clone() * b_limbs[1].clone()
-            + a_limbs[2].clone() * b_limbs[0].clone();
-        let t3 = a_limbs[0].clone() * b_limbs[3].clone()
-            + a_limbs[1].clone() * b_limbs[2].clone()
-            + a_limbs[2].clone() * b_limbs[1].clone()
-            + a_limbs[3].clone() * b_limbs[0].clone();
-
-        let cur_v0 = from_bytes::expr(&v0[..]);
-        let cur_v1 = from_bytes::expr(&v1[..]);
-
-        //radix_constant_64 == 2^64
-        //radix_constant_128 == 2^128
-        let radix_constant_64 = pow_of_two_expr(64);
-        let radix_constant_128 = pow_of_two_expr(128);
-        cb.require_equal(
-            "mul(multipliers_lo) == product_lo + radix_lo ⋅ 2^128",
-            cur_v0.clone() * radix_constant_128.clone(),
-            t0.expr() + t1.expr() * radix_constant_64.clone()
-                - (c_limbs[0].clone() + c_limbs[1].clone() * radix_constant_64.clone()),
-        );
-        cb.require_equal(
-            "mul(multipliers_high) == product_high + radix_high ⋅ 2^128",
-            cur_v1 * radix_constant_128,
-            cur_v0 + t2.expr() + t3.expr() * radix_constant_64.clone()
-                - (c_limbs[2].clone() + c_limbs[3].clone() * radix_constant_64),
-        );
-
-        Self {
-            a,
-            b,
-            product,
-            v0,
-            v1,
-        }
-    }
-
-    pub(crate) fn assign(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        a: Word,
-        b: Word,
-        product: Word,
-    ) -> Result<(), Error> {
-        self.assign_witness(region, offset, &a, &b, &product)?;
-        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
-        self.product
-            .assign(region, offset, Some(product.to_le_bytes()))?;
-        Ok(())
-    }
-
-    pub(crate) fn product(&self) -> &util::Word<F> {
-        &self.product
-    }
-
-    //assign t0 ~ t3 and v0, v1
-    fn assign_witness(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        wa: &Word,
-        wb: &Word,
-        wc: &Word,
-    ) -> Result<(), Error> {
-        use num::BigUint;
-
-        let a = BigUint::from_bytes_le(&wa.to_le_bytes());
-        let b = BigUint::from_bytes_le(&wb.to_le_bytes());
-        let c = BigUint::from_bytes_le(&wc.to_le_bytes());
-        let constant_64 = BigUint::from(1u128 << 64);
-        let constant_128 = constant_64.clone() * constant_64.clone();
-        let a_limbs = a.to_u64_digits();
-        let b_limbs = b.to_u64_digits();
-        let c_limbs = c.to_u64_digits();
-        let mut t_digits = vec![];
-        for total_idx in 0..4 {
-            let mut rhs_sum = BigUint::from(0u128);
-            for a_id in 0..=total_idx {
-                let (a_idx, b_idx) = (a_id as usize, (total_idx - a_id) as usize);
-                let tmp_a = if a_limbs.len() > a_idx {
-                    BigUint::from(a_limbs[a_idx])
-                } else {
-                    BigUint::from(0u128)
-                };
-                let tmp_b = if b_limbs.len() > b_idx {
-                    BigUint::from(b_limbs[b_idx])
-                } else {
-                    BigUint::from(0u128)
-                };
-                rhs_sum = rhs_sum.clone() + tmp_a * tmp_b;
-            }
-            t_digits.push(rhs_sum);
-        }
-
-        let mut c_now = vec![];
-        for idx in 0..4 {
-            c_now.push(if c_limbs.len() > idx {
-                BigUint::from(c_limbs[idx])
-            } else {
-                BigUint::from(0u128)
-            })
-        }
-        let v0 = (constant_64.clone() * &t_digits[1] + &t_digits[0]
-            - &c_now[0]
-            - constant_64.clone() * &c_now[1])
-            / &constant_128;
-        let v1 = (constant_64.clone() * &t_digits[3] + &v0 + &t_digits[2]
-            - &c_now[2]
-            - constant_64 * &c_now[3])
-            / &constant_128;
-
-        v0.to_bytes_le()
-            .into_iter()
-            .zip(self.v0.iter())
-            .try_for_each(|(bt, assignee)| -> Result<(), Error> {
-                assignee.assign(region, offset, Some(F::from(bt as u64)))?;
-                Ok(())
-            })?;
-
-        v1.to_bytes_le()
-            .into_iter()
-            .zip(self.v1.iter())
-            .try_for_each(|(bt, assignee)| -> Result<(), Error> {
-                assignee.assign(region, offset, Some(F::from(bt as u64)))?;
-                Ok(())
-            })?;
-
-        Ok(())
-    }
-}
-
 /// Construction of 256-bit product by 256-bit multiplicand * 64-bit multiplier,
 /// which disallows overflow.
 #[derive(Clone, Debug)]
@@ -634,6 +450,66 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
 
     pub(crate) fn diff_bytes(&self) -> Vec<Cell<F>> {
         self.diff.to_vec()
+    }
+}
+
+/// Returns `1` when `lhs < rhs`, and returns `0` otherwise.
+/// lhs and rhs are both 256-bit word.
+#[derive(Clone, Debug)]
+pub struct LtWordGadget<F> {
+    comparison_hi: ComparisonGadget<F, 16>,
+    lt_lo: LtGadget<F, 16>,
+}
+
+impl<F: Field> LtWordGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        lhs: &util::Word<F>,
+        rhs: &util::Word<F>,
+    ) -> Self {
+        let comparison_hi = ComparisonGadget::construct(
+            cb,
+            from_bytes::expr(&lhs.cells[16..]),
+            from_bytes::expr(&rhs.cells[16..]),
+        );
+        let lt_lo = LtGadget::construct(
+            cb,
+            from_bytes::expr(&lhs.cells[..16]),
+            from_bytes::expr(&rhs.cells[..16]),
+        );
+        Self {
+            comparison_hi,
+            lt_lo,
+        }
+    }
+
+    pub(crate) fn expr(&self) -> Expression<F> {
+        let (hi_lt, hi_eq) = self.comparison_hi.expr();
+        hi_lt + hi_eq * self.lt_lo.expr()
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        lhs: Word,
+        rhs: Word,
+    ) -> Result<(), Error> {
+        let (lhs_lo, lhs_hi) = split_u256(&lhs);
+        let (rhs_lo, rhs_hi) = split_u256(&rhs);
+        self.comparison_hi.assign(
+            region,
+            offset,
+            F::from_u128(lhs_hi.as_u128()),
+            F::from_u128(rhs_hi.as_u128()),
+        )?;
+        self.lt_lo.assign(
+            region,
+            offset,
+            F::from_u128(lhs_lo.as_u128()),
+            F::from_u128(rhs_lo.as_u128()),
+        )?;
+        Ok(())
     }
 }
 
@@ -875,155 +751,155 @@ pub(crate) fn generate_lagrange_base_polynomial<
     numerator * denominator.invert().unwrap()
 }
 
+/// Construct the gadget that checks a * b + c == d (modulo 2**256),
+/// where a, b, c, d are 256-bit words. This can be used by opcode MUL, DIV,
+/// and MOD. For opcode MUL, set c to 0. For opcode DIV and MOD, treat c as
+/// residue and d as dividend.
+///
+/// We execute a multi-limb multiplication as follows:
+/// a and b is divided into 4 64-bit limbs, denoted as a0~a3 and b0~b3
+/// defined t0, t1, t2, t3
+///   t0 = a0 * b0, contribute to 0 ~ 128 bit
+///   t1 = a0 * b1 + a1 * b0, contribute to 64 ~ 193 bit (include the carry)
+///   t2 = a0 * b2 + a2 * b0 + a1 * b1, contribute to above 128 bit
+///   t3 = a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2, contribute to above 192 bit
+///
+/// so t0 ~ t1 include all contributions to the low 256-bit of product, with
+/// a maximum 68-bit radix (the part higher than 256-bit), denoted as carry_hi
+/// Similarly, we define carry_lo as the radix of contributions to the low
+/// 128-bit of the product.
+/// We can slightly relax the constraint of carry_lo/carry_hi to 72-bit and
+/// allocate 9 bytes for them each
+///
+/// Finally we just prove:
+///   t0 + t1 * 2^64 = <low 128 bit of product> + carry_lo
+///   t2 + t3 * 2^64 + carry_lo = <high 128 bit of product> + carry_hi
+///
+/// Last, we sum the parts that are higher than 256-bit in the multiplication
+/// into overflow
+///   overflow = carry_hi + a1 * b3 + a2 * b2 + a3 * b1 + a2 * b3 + a3 * b2
+///              + a3 * b3
+/// In the cases of DIV and MOD, we need to constrain overflow == 0 outside the
+/// MulAddWordsGadget.
 #[derive(Clone, Debug)]
-pub struct ShrWordsGadget<F> {
-    a: util::Word<F>,
-    shift: util::Word<F>,
-    b: util::Word<F>,
-    // slice_hi means the higher part of split digit
-    // slice_lo means the lower part of the split digit
-    a_slice_hi: [Cell<F>; 32],
-    a_slice_lo: [Cell<F>; 32],
-    // shift_div64, shift_mod64_div8, shift_mod8
-    // is used to seperate shift[0]
-    shift_div64: Cell<F>,
-    shift_mod64_div8: Cell<F>,
-    shift_mod64_decpow: Cell<F>, // means 2^(8-shift_mod64)
-    shift_mod64_pow: Cell<F>,    // means 2^shift_mod64
-    shift_mod8: Cell<F>,
-    // is_zero will check combination of shift[1..32] == 0
-    is_zero: IsZeroGadget<F>,
+pub(crate) struct MulAddWordsGadget<F> {
+    pub a: util::Word<F>,
+    pub b: util::Word<F>,
+    pub c: util::Word<F>,
+    pub d: util::Word<F>,
+    carry_lo: [Cell<F>; 9],
+    carry_hi: [Cell<F>; 9],
+    overflow: Expression<F>,
 }
-impl<F: Field> ShrWordsGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        a: util::Word<F>,
-        shift: util::Word<F>,
-    ) -> Self {
+
+impl<F: Field> MulAddWordsGadget<F> {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+        let a = cb.query_word();
         let b = cb.query_word();
-        let a_slice_hi = cb.query_bytes();
-        let a_slice_lo = cb.query_bytes();
-        let shift_div64 = cb.query_cell();
-        let shift_mod64_div8 = cb.query_cell();
-        let shift_mod64_decpow = cb.query_cell();
-        let shift_mod64_pow = cb.query_cell();
-        let shift_mod8 = cb.query_cell();
+        let c = cb.query_word();
+        let d = cb.query_word();
+        let carry_lo = cb.query_bytes();
+        let carry_hi = cb.query_bytes();
+        let carry_lo_expr = from_bytes::expr(&carry_lo);
+        let carry_hi_expr = from_bytes::expr(&carry_hi);
 
-        // check (combination of shift[1..32] == 0) == 1 - shift_overflow
-        let mut sum = 0.expr();
-        (1..32).for_each(|idx| sum = sum.clone() + shift.cells[idx].expr());
-        let is_zero = IsZeroGadget::construct(cb, sum);
-        // if combination of shift[1..32] == 0
-        // shift_overflow will be equal to 0, otherwise 1.
-        let shift_overflow = 1.expr() - is_zero.expr();
+        let mut a_limbs = vec![];
+        let mut b_limbs = vec![];
+        for trunk in 0..4 {
+            let idx = (trunk * 8) as usize;
+            a_limbs.push(from_bytes::expr(&a.cells[idx..idx + 8]));
+            b_limbs.push(from_bytes::expr(&b.cells[idx..idx + 8]));
+        }
+        let c_lo = from_bytes::expr(&c.cells[0..16]);
+        let c_hi = from_bytes::expr(&c.cells[16..32]);
+        let d_lo = from_bytes::expr(&d.cells[0..16]);
+        let d_hi = from_bytes::expr(&d.cells[16..32]);
+
+        let t0 = a_limbs[0].clone() * b_limbs[0].clone();
+        let t1 = a_limbs[0].clone() * b_limbs[1].clone() + a_limbs[1].clone() * b_limbs[0].clone();
+        let t2 = a_limbs[0].clone() * b_limbs[2].clone()
+            + a_limbs[1].clone() * b_limbs[1].clone()
+            + a_limbs[2].clone() * b_limbs[0].clone();
+        let t3 = a_limbs[0].clone() * b_limbs[3].clone()
+            + a_limbs[1].clone() * b_limbs[2].clone()
+            + a_limbs[2].clone() * b_limbs[1].clone()
+            + a_limbs[3].clone() * b_limbs[0].clone();
+        let overflow = carry_hi_expr.clone()
+            + a_limbs[1].clone() * b_limbs[3].clone()
+            + a_limbs[2].clone() * b_limbs[2].clone()
+            + a_limbs[3].clone() * b_limbs[2].clone()
+            + a_limbs[2].clone() * b_limbs[3].clone()
+            + a_limbs[3].clone() * b_limbs[2].clone()
+            + a_limbs[3].clone() * b_limbs[3].clone();
+
         cb.require_equal(
-            "shift_overflow == shift > 256 ",
-            shift_overflow.clone(),
-            1.expr() - is_zero.expr(),
+            "(a * b)_lo + c_lo == d_lo + carry_lo ⋅ 2^128",
+            t0.expr() + t1.expr() * pow_of_two_expr(64) + c_lo,
+            d_lo + carry_lo_expr.clone() * pow_of_two_expr(128),
+        );
+        cb.require_equal(
+            "(a * b)_hi + c_hi + carry_lo == d_hi + carry_hi ⋅ 2^128",
+            t2.expr() + t3.expr() * pow_of_two_expr(64) + c_hi + carry_lo_expr,
+            d_hi + carry_hi_expr * pow_of_two_expr(128),
         );
 
-        // rename variable:
-        // shift_div64 :a
-        // shift_mod64_div8:b
-        // shift_mod8:c
-        // we split shift[0] to the equation:
-        // shift[0] == a * 64 + b * 8 + c
-        let shift_mod64 = 8.expr() * shift_mod64_div8.expr() + shift_mod8.expr();
-        cb.require_equal(
-            "shift[0] == shift_div64 * 64 + shift_mod64_div8 * 8 + shift_mod8",
-            shift.cells[0].expr(),
-            shift_div64.expr() * 64.expr() + shift_mod64.clone(),
-        );
-
-        // merge 8 8-bit cell for a 64-bit expression
-        // for a, a_slice_hi, a_slice_lo, b
-        let mut a_digits = vec![];
-        let mut a_slice_hi_digits = vec![];
-        let mut a_slice_lo_digits = vec![];
-        let mut b_digits = vec![];
-        for virtual_idx in 0..4 {
-            let now_idx = (virtual_idx * 8) as usize;
-            a_digits.push(from_bytes::expr(&a.cells[now_idx..now_idx + 8]));
-            a_slice_lo_digits.push(from_bytes::expr(&a_slice_lo[now_idx..now_idx + 8]));
-            a_slice_hi_digits.push(from_bytes::expr(&a_slice_hi[now_idx..now_idx + 8]));
-            b_digits.push(from_bytes::expr(&b.cells[now_idx..now_idx + 8]));
+        Self {
+            a,
+            b,
+            c,
+            d,
+            carry_lo,
+            carry_hi,
+            overflow,
         }
+    }
 
-        // check combination of a_slice_back_digits and a_slice_front_digits
-        // == b_digits
-        let mut shr_constraints = (0..4).map(|_| 0.expr()).collect::<Vec<Expression<F>>>();
-        for transplacement in (0_usize)..(4_usize) {
-            // generate the polynomial depends on the shift_div64
-            let select_transplacement_polynomial =
-                generate_lagrange_base_polynomial(shift_div64.expr(), transplacement, 0..4);
-            for idx in 0..(4 - transplacement) {
-                let tmpidx = idx + transplacement;
-                let merge_a = if idx + transplacement == (3_usize) {
-                    a_slice_hi_digits[tmpidx].clone()
-                } else {
-                    a_slice_hi_digits[tmpidx].clone()
-                        + a_slice_lo_digits[tmpidx + 1].clone() * shift_mod64_decpow.expr()
-                };
-                shr_constraints[idx] = shr_constraints[idx].clone()
-                    + select_transplacement_polynomial.clone()
-                        * select::expr(
-                            shift_overflow.clone(),
-                            b_digits[idx].clone(),
-                            merge_a - b_digits[idx].clone(),
-                        );
-            }
-            for idx in (4 - transplacement)..4 {
-                shr_constraints[idx] = shr_constraints[idx].clone()
-                    + select_transplacement_polynomial.clone() * b_digits[idx].clone();
-            }
-        }
-        (0..4).for_each(|idx| {
-            cb.require_zero(
-                "merge a_slice_lo_digits and a_slice_hi_digits == b_digits",
-                shr_constraints[idx].clone(),
-            )
-        });
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        words: [Word; 4],
+    ) -> Result<(), Error> {
+        let (a, b, c, d) = (words[0], words[1], words[2], words[3]);
+        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+        self.c.assign(region, offset, Some(c.to_le_bytes()))?;
+        self.d.assign(region, offset, Some(d.to_le_bytes()))?;
 
-        // for i in 0..4
-        // a_slice_lo_digits[i] + a_slice_hi_digits * shift_mod64_pow
-        // == a_digits[i]
-        for idx in 0..4 {
-            cb.require_equal(
-                "a[idx] == a_slice_lo[idx] + a_slice_hi[idx] * shift_mod64_pow",
-                a_slice_lo_digits[idx].clone()
-                    + a_slice_hi_digits[idx].clone() * shift_mod64_pow.expr(),
-                a_digits[idx].clone(),
-            );
-        }
+        let a_limbs = split_u256_limb64(&a);
+        let b_limbs = split_u256_limb64(&b);
+        let (c_lo, c_hi) = split_u256(&c);
+        let (d_lo, d_hi) = split_u256(&d);
 
-        // check serveral higher cells == 0 for slice_back and slice_front
-        let mut equal_to_zero = 0.expr();
-        for digit_transplacement in 0..8 {
-            let select_transplacement_polynomial = generate_lagrange_base_polynomial(
-                shift_mod64_div8.expr(),
-                digit_transplacement,
-                0..8,
-            );
-            for virtual_idx in 0..4 {
-                for idx in (digit_transplacement + 1)..8 {
-                    let nowidx = (virtual_idx * 8 + idx) as usize;
-                    equal_to_zero = equal_to_zero
-                        + (select_transplacement_polynomial.clone() * a_slice_lo[nowidx].expr());
-                }
-                for idx in (8 - digit_transplacement)..8 {
-                    let nowidx = (virtual_idx * 8 + idx) as usize;
-                    equal_to_zero = equal_to_zero
-                        + (select_transplacement_polynomial.clone() * a_slice_hi[nowidx].expr());
-                }
-            }
-        }
+        let t0 = a_limbs[0] * b_limbs[0];
+        let t1 = a_limbs[0] * b_limbs[1] + a_limbs[1] * b_limbs[0];
+        let t2 = a_limbs[0] * b_limbs[2] + a_limbs[1] * b_limbs[1] + a_limbs[2] * b_limbs[0];
+        let t3 = a_limbs[0] * b_limbs[3]
+            + a_limbs[1] * b_limbs[2]
+            + a_limbs[2] * b_limbs[1]
+            + a_limbs[3] * b_limbs[0];
 
-        //check the specific 4 cells in 0..(1 << shift_mod8).
-        //check another specific 4 cells in 0..(1 << (8 - shift_mod8)).
-        for virtual_idx in 0..4 {
-            let mut slice_bits_polynomial = vec![0.expr(), 0.expr()];
-            for digit_transplacement in 0..8 {
-                let select_transplacement_polynomial = generate_lagrange_base_polynomial(
+        let carry_lo = (t0 + (t1 << 64) + c_lo - d_lo) >> 128;
+        let carry_hi = (t2 + (t3 << 64) + c_hi + carry_lo - d_hi) >> 128;
+
+        self.carry_lo
+            .iter()
+            .zip(carry_lo.to_le_bytes().iter())
+            .map(|(cell, byte)| cell.assign(region, offset, Some(F::from(*byte as u64))))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        self.carry_hi
+            .iter()
+            .zip(carry_hi.to_le_bytes().iter())
+            .map(|(cell, byte)| cell.assign(region, offset, Some(F::from(*byte as u64))))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(())
+    }
+
+    pub(crate) fn overflow(&self) -> Expression<F> {
+        self.overflow.clone()
+    }
                     shift_mod64_div8.expr(),
                     digit_transplacement,
                     0..8,

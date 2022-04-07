@@ -247,7 +247,7 @@ impl Opcode for Call {
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
                         CallContextField::StateWriteCounter,
-                        (exec_step.swc + 1).into(),
+                        (exec_step.reversible_write_counter + 1).into(),
                     ),
                 ] {
                     state.push_op(

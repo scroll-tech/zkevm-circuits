@@ -77,7 +77,7 @@ pub struct StateDB {
     // Fields with transaction lifespan, will be clear in `clear_access_list_and_refund`.
     access_list_account: HashSet<Address>,
     access_list_account_storage: HashSet<(Address, U256)>,
-    // `dirty_storage` constains writes during current transaction.
+    // `dirty_storage` contains writes during current transaction.
     // When current transaction finishes, `dirty_storage` will be committed into `state`.
     // The reason why we need this is that EVM needs committed state, namely
     // state before current transaction, to calculate gas cost for some opcodes like sstore.

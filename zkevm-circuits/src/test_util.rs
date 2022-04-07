@@ -12,7 +12,7 @@ use pairing::bn256::Fr;
 #[ctor::ctor]
 fn init_env_logger() {
     // Enable RUST_LOG during tests
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
 pub enum FixedTableConfig {
     Incomplete,

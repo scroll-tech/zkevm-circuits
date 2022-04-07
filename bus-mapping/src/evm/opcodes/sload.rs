@@ -137,7 +137,7 @@ mod sload_tests {
         let step = step_witness_for_bytecode(code, OpcodeId::SLOAD);
 
         assert_eq!(
-            [0, 1]
+            [4, 6]
                 .map(|idx| &step.rws.stack[idx])
                 .map(|operation| (operation.rw(), operation.op())),
             [
@@ -152,7 +152,7 @@ mod sload_tests {
             ]
         );
 
-        let storage_op = &step.rws.storage[0];
+        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[5].as_usize()];
         assert_eq!(
             (storage_op.rw(), storage_op.op()),
             (

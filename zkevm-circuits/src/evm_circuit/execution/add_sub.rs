@@ -21,16 +21,16 @@ use halo2_proofs::{circuit::Region, plonk::Error};
 // when it's SUB, we annotate stack as [c, b, ...] and [a, ...].
 // Then we verify if a + b is equal to c.
 #[derive(Clone, Debug)]
-pub(crate) struct AddGadget<F> {
+pub(crate) struct AddSubGadget<F> {
     same_context: SameContextGadget<F>,
     add_words: AddWordsGadget<F, 2, false>,
     is_sub: PairSelectGadget<F>,
 }
 
-impl<F: Field> ExecutionGadget<F> for AddGadget<F> {
+impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
     const NAME: &'static str = "ADD";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::ADD;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::ADD_SUB;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();

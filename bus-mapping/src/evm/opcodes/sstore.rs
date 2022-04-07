@@ -22,7 +22,6 @@ impl Opcode for Sstore {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let _call_id = state.call()?.call_id;
         let contract_addr = state.call()?.address;
 
         state.push_op(
@@ -121,12 +120,15 @@ impl Opcode for Sstore {
 #[cfg(test)]
 mod sstore_tests {
     use super::*;
-    use crate::evm::opcodes::test_util::step_witness_for_bytecode;
+    use crate::circuit_input_builder::ExecState;
+    use crate::mock::BlockData;
     use crate::operation::StackOp;
     use eth_types::bytecode;
     use eth_types::evm_types::{OpcodeId, StackAddress};
+    use eth_types::geth_types::GethData;
     use eth_types::Word;
-    use mock::MOCK_ACCOUNTS;
+    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
+    use mock::{TestContext, MOCK_ACCOUNTS};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -139,11 +141,30 @@ mod sstore_tests {
             STOP
         };
 
-        let step = step_witness_for_bytecode(code, OpcodeId::SSTORE);
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+
+        let step = builder.block.txs()[0]
+            .steps()
+            .iter()
+            .find(|step| step.exec_state == ExecState::Op(OpcodeId::SSTORE))
+            .unwrap();
 
         assert_eq!(
-            [0, 1]
-                .map(|idx| &step.rws.stack[idx])
+            [4, 5]
+                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -157,7 +178,7 @@ mod sstore_tests {
             ]
         );
 
-        let storage_op = &step.rws.storage[0];
+        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[6].as_usize()];
         assert_eq!(
             (storage_op.rw(), storage_op.op()),
             (

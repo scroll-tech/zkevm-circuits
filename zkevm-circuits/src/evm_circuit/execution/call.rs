@@ -147,7 +147,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         );
         cb.condition(is_success.expr() * (1.expr() - reversion_info.is_persistent()), |cb| {
             cb.require_equal(
-                "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (state_write_counter + 1)",
+                "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (reversible_write_counter + 1)",
                 callee_reversion_info.rw_counter_end_of_reversion(),
                 reversion_info.rw_counter_of_reversion(),
             );
@@ -235,7 +235,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                     has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
                 ),
                 memory_word_size: To(memory_expansion.next_memory_word_size()),
-                state_write_counter: Delta(3.expr()),
+                reversible_write_counter: Delta(3.expr()),
                 ..StepStateTransition::default()
             });
         });
@@ -261,7 +261,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 ),
                 (
                     CallContextFieldTag::StateWriteCounter,
-                    cb.curr.state.state_write_counter.expr() + 1.expr(),
+                    cb.curr.state.reversible_write_counter.expr() + 1.expr(),
                 ),
             ] {
                 cb.call_context_lookup(true.expr(), None, field_tag, value);
@@ -301,7 +301,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 is_create: To(false.expr()),
                 code_source: To(callee_code_hash.expr()),
                 gas_left: To(callee_gas_left),
-                state_write_counter: To(2.expr()),
+                reversible_write_counter: To(2.expr()),
                 ..StepStateTransition::new_context()
             });
         });
