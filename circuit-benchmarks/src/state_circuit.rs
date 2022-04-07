@@ -20,14 +20,7 @@ mod tests {
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_state_circuit_prover() {
-        let empty_circuit = StateCircuit::<
-            Fr,
-            true,
-            RW_COUNTER_MAX,
-            MEMORY_ADDRESS_MAX,
-            STACK_ADDRESS_MAX,
-            ROWS_MAX,
-        >::default();
+        let empty_circuit = StateCircuit::<Fr>::default();
 
         // Initialize the polynomial commitment parameters
         let rng = XorShiftRng::from_seed([

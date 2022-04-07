@@ -3,7 +3,7 @@ use bus_mapping::rpc::GethClient;
 use env_logger::Env;
 use ethers_providers::Http;
 use halo2_proofs::{
-    plonk::*,
+    plonk::{create_proof, keygen_pk, keygen_vk},
     poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},
 };
@@ -93,6 +93,9 @@ async fn main() {
 
     {
         // generate state_circuit proof
+        let instance = StateCircuit::instance(&block.randomness, block.rws.0.len());
+        let instance_slices: Vec<_> = instance.iter().map(Vec::as_slice).collect();
+
         let circuit = StateCircuit::new(block.randomness, block.rws);
 
         // TODO: same quest like in the first scope
@@ -107,7 +110,15 @@ async fn main() {
 
         // create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof(&params, &pk, &[circuit], &[], rng, &mut transcript).expect("state proof");
+        create_proof(
+            &params,
+            &pk,
+            &[circuit],
+            &[&instance_slices],
+            rng,
+            &mut transcript,
+        )
+        .expect("state proof");
         state_proof = transcript.finalize();
     }
 

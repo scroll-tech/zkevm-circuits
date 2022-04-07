@@ -7,7 +7,6 @@ mod random_linear_combination;
 #[cfg(test)]
 mod tests;
 
-use crate::evm_circuit::table::RwTableTag;
 use crate::evm_circuit::{param::N_BYTES_WORD, witness::RwMap};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
@@ -61,6 +60,13 @@ impl<F: Field> StateCircuit<F> {
     /// make a new state circuit
     pub fn new(randomness: F, rw_map: RwMap) -> Self {
         Self { randomness, rw_map }
+    }
+
+    /// powers of randomness for instance columns
+    pub fn instance(randomness: &F, n_rows: usize) -> Vec<Vec<F>> {
+        (1..32)
+            .map(|exp| vec![randomness.pow(&[exp, 0, 0, 0]); n_rows])
+            .collect()
     }
 }
 

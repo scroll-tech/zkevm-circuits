@@ -30,9 +30,12 @@ pub struct Queries<F: Field> {
     pub lexicographic_ordering_diff_selector: Expression<F>,
 }
 
+type Constraint<F> = (&'static str, Expression<F>);
+type Lookup<F> = (&'static str, (Expression<F>, Expression<F>));
+
 pub struct ConstraintBuilder<F: Field> {
-    constraints: Vec<(&'static str, Expression<F>)>,
-    lookups: Vec<(&'static str, (Expression<F>, Expression<F>))>,
+    constraints: Vec<Constraint<F>>,
+    lookups: Vec<Lookup<F>>,
     condition: Expression<F>,
 }
 
@@ -53,7 +56,7 @@ impl<F: Field> ConstraintBuilder<F> {
             .collect()
     }
 
-    pub fn lookups(&self) -> Vec<(&'static str, (Expression<F>, Expression<F>))> {
+    pub fn lookups(&self) -> Vec<Lookup<F>> {
         self.lookups.clone()
     }
 

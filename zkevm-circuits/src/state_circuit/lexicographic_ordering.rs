@@ -55,23 +55,18 @@ impl Config {
             .find(|(_, (a, b))| a != b);
         let (index, (cur_limb, prev_limb)) = find_result.expect("repeated rw counter");
 
-        // TODO: simplify this
-        let mut diff_1 = F::zero();
+        let mut diff_1 = F::from((cur_limb - prev_limb).into());
+        // you need to find a valid difference to fill in for diff_2 still.
+        // you've just been lucky that 0 is a valid value for all of the
+        // test cases.
         let mut diff_2 = F::zero();
         let mut diff_inverse = F::zero();
-        let mut diff_selector = F::zero();
-
-        if index < 15 {
-            diff_1 = F::from((cur_limb - prev_limb).into());
-            diff_inverse = diff_1.invert().unwrap();
-            diff_selector = F::one();
-
-            // you need to find a valid difference to fill in for diff_2 still.
-            // you've just been lucky that 0 is a valid value for all of the
-            // test cases.
-        } else {
+        let mut diff_selector = F::one();
+        if index >= 15 {
+            diff_1 = F::zero();
             diff_2 = F::from((cur_limb - prev_limb).into());
             diff_inverse = diff_2.invert().unwrap();
+            diff_selector = F::zero();
         }
 
         region.assign_advice(|| "diff_1", self.diff_1, offset, || Ok(diff_1))?;
@@ -104,6 +99,8 @@ impl<F: Field> Chip<F> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    // TODO: fix this to not have too many arguments?
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,

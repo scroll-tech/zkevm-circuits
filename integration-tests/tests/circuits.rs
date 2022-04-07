@@ -41,12 +41,7 @@ async fn test_state_circuit_block(block_num: u64) {
     let storage_ops = builder.block.container.sorted_storage();
     trace!("storage_ops: {:#?}", storage_ops);
 
-    const DEGREE: usize = 16;
-    const MEMORY_ADDRESS_MAX: usize = 2000;
-    const STACK_ADDRESS_MAX: usize = 1024;
-
-    const RW_COUNTER_MAX: usize = 1 << DEGREE;
-    const ROWS_MAX: usize = 1 << DEGREE;
+    const DEGREE: usize = 17;
 
     let rw_map = RwMap::from(&OperationContainer {
         memory: memory_ops,
@@ -54,17 +49,14 @@ async fn test_state_circuit_block(block_num: u64) {
         storage: storage_ops,
         ..Default::default()
     });
-    let circuit = StateCircuit::<
-        Fr,
-        true,
-        RW_COUNTER_MAX,
-        MEMORY_ADDRESS_MAX,
-        STACK_ADDRESS_MAX,
-        ROWS_MAX,
-    >::new(Fr::rand(), &rw_map);
+
+    let randomness = Fr::rand();
+    let power_of_randomness = StateCircuit::instance(&randomness, rw_map.0.len());
+
+    let circuit = StateCircuit::<Fr>::new(randomness, &rw_map);
 
     use pairing::bn256::Fr as Fp;
-    let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, vec![]).unwrap();
+    let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
     prover.verify().expect("state_circuit verification failed");
 }
 
