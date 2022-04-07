@@ -56,11 +56,12 @@ impl Config {
         let (index, (cur_limb, prev_limb)) = find_result.expect("repeated rw counter");
 
         let mut diff_1 = F::from((cur_limb - prev_limb).into());
-        // you need to find a valid difference to fill in for diff_2 still.
-        // you've just been lucky that 0 is a valid value for all of the
-        // test cases.
-        let mut diff_2 = F::zero();
-        let mut diff_inverse = F::zero();
+        let mut diff_2 = if cur_be_limbs[15] >= prev_be_limbs[15] {
+            F::from((cur_be_limbs[15] - prev_be_limbs[15]).into())
+        } else {
+            -F::from((prev_be_limbs[15] - cur_be_limbs[15]).into())
+        };
+        let mut diff_inverse = diff_1.invert().unwrap();
         let mut diff_selector = F::one();
         if index >= 15 {
             diff_1 = F::zero();
