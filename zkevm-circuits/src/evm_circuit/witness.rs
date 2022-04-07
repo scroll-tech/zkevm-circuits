@@ -1111,6 +1111,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::LOG3 => ExecutionState::LOG,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
+                    OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
                     OpcodeId::ISZERO => ExecutionState::ISZERO,
                     OpcodeId::CALL => ExecutionState::CALL,
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
