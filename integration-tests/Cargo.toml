@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 lazy_static = "1.4"
-ethers = "0.6"
+ethers = { version = "0.6", features = ["legacy"] }
 serde_json = "1.0.66"
 serde = {version = "1.0.130", features = ["derive"] }
 bus-mapping = { path = "../bus-mapping"}

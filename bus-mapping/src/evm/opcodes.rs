@@ -18,6 +18,7 @@ use log::warn;
 
 mod call;
 mod calldatacopy;
+mod calldataload;
 mod calldatasize;
 mod caller;
 mod callvalue;
@@ -38,6 +39,7 @@ mod swap;
 
 use call::Call;
 use calldatacopy::Calldatacopy;
+use calldataload::Calldataload;
 use calldatasize::Calldatasize;
 use caller::Caller;
 use callvalue::Callvalue;
@@ -109,14 +111,14 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SHL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        // OpcodeId::SHA3 => {},
+        OpcodeId::SHA3 => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         // OpcodeId::ADDRESS => {},
         // OpcodeId::BALANCE => {},
         OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
         OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
-        OpcodeId::CALLDATALOAD => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::CALLDATALOAD => Calldataload::gen_associated_ops,
         OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops,
         // OpcodeId::CODESIZE => {},
         // OpcodeId::CODECOPY => {},
@@ -214,7 +216,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::LOG0 => {},
         // OpcodeId::LOG1 => {},
         // OpcodeId::LOG2 => {},
-        // OpcodeId::LOG3 => {},
+        OpcodeId::LOG3 => StackOnlyOpcode::<5, 0>::gen_associated_ops,
         // OpcodeId::LOG4 => {},
         // OpcodeId::CREATE => {},
         OpcodeId::CALL => Call::gen_associated_ops,

@@ -7,6 +7,10 @@ use ethers::{
     },
     core::utils::WEI_IN_ETHER,
     middleware::SignerMiddleware,
+    prelude::{
+        rand::{self, Rng},
+        NonceManagerMiddleware,
+    },
     providers::{Middleware, PendingTransaction},
     signers::Signer,
     solc::Solc,
@@ -172,7 +176,10 @@ async fn main() {
     //
 
     let mut deployments = HashMap::new();
-    let prov_wallet0 = Arc::new(SignerMiddleware::new(get_provider(), wallet0));
+    let prov_wallet0 = Arc::new(NonceManagerMiddleware::new(
+        SignerMiddleware::new(get_provider(), wallet0.clone()),
+        wallet0.address(),
+    ));
 
     // Greeter
     let contract = deploy(
@@ -188,13 +195,56 @@ async fn main() {
         (block_num.as_u64(), contract.address()),
     );
 
+    let cli = get_client();
+
+    cli.miner_stop().await.expect("cannot stop miner");
+
+    let mut rng = rand::thread_rng();
+    let write_calls: Vec<_> = (0..10)
+        .map(|_| {
+            let value = rng.gen_range(0..5);
+            let call = contract
+                .method::<_, ()>("set_value", (U256::from(value),))
+                .unwrap();
+            call.gas(50000u64)
+        })
+        .collect();
+    let read_calls: Vec<_> = (0..10)
+        .map(|_| {
+            let call = contract.method::<_, U256>("retrieve", ()).unwrap();
+            // There seems somethings wrong with auto gas estimate
+            call.gas(50000u64)
+        })
+        .collect();
+
+    let mut pendings = Vec::new();
+    for _ in 0..20 {
+        let is_write: bool = rng.gen();
+        let idx: usize = rng.gen_range(0..10);
+        if is_write {
+            pendings.push(write_calls[idx].send().await.unwrap());
+        } else {
+            pendings.push(read_calls[idx].send().await.unwrap());
+        }
+    }
+
+    cli.miner_start().await.expect("cannot start miner");
+
+    for p in pendings {
+        let receipt = p.confirmations(0usize).await.unwrap().unwrap();
+        assert_eq!(receipt.status.unwrap(), 1.into(), "call failed");
+    }
+
+    let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    blocks.insert("Contract call".to_string(), block_num.as_u64());
+
     // OpenZeppelinERC20TestToken
     let contract = deploy(
         prov_wallet0.clone(),
         contracts
             .get("OpenZeppelinERC20TestToken")
             .expect("contract not found"),
-        prov_wallet0.address(),
+        wallet0.address(),
     )
     .await;
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
@@ -216,8 +266,6 @@ async fn main() {
     let wallets: Vec<_> = (0..NUM_TXS + 1)
         .map(|i| Arc::new(SignerMiddleware::new(get_provider(), get_wallet(i as u32))))
         .collect();
-
-    let cli = get_client();
 
     // Fund NUM_TXS wallets from coinbase
     cli.miner_stop().await.expect("cannot stop miner");

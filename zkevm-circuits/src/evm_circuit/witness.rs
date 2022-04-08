@@ -1087,7 +1087,9 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
                     OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
+                    OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
+                    OpcodeId::SHL => ExecutionState::SHL,
                     OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
                     // TODO: Convert REVERT and RETURN to their own ExecutionState.
                     OpcodeId::STOP | OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::STOP,
@@ -1109,6 +1111,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLER => ExecutionState::CALLER,
                     OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
                     OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
+                    OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::COINBASE => ExecutionState::COINBASE,
                     OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
                     OpcodeId::NUMBER => ExecutionState::NUMBER,
@@ -1116,12 +1119,15 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
                     OpcodeId::SSTORE => ExecutionState::SSTORE,
+                    OpcodeId::SHA3 => ExecutionState::SHA3,
+                    OpcodeId::LOG3 => ExecutionState::LOG,
+                    OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
+                    OpcodeId::CALLDATASIZE => ExecutionState::CALLDATASIZE,
                     OpcodeId::CHAINID => ExecutionState::CHAINID,
                     OpcodeId::ISZERO => ExecutionState::ISZERO,
                     OpcodeId::CALL => ExecutionState::CALL,
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
-
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }

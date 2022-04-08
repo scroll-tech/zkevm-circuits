@@ -35,6 +35,8 @@ pub enum FixedTableTag {
     BitwiseOr,
     BitwiseXor,
     ResponsibleOpcode,
+    Bitslevel,
+    Pow64,
 }
 
 impl FixedTableTag {
@@ -52,6 +54,8 @@ impl FixedTableTag {
             Self::BitwiseOr,
             Self::BitwiseXor,
             Self::ResponsibleOpcode,
+            Self::Bitslevel,
+            Self::Pow64,
         ]
         .iter()
         .copied()
@@ -113,6 +117,17 @@ impl FixedTableTag {
                         })
                 }))
             }
+            Self::Bitslevel => Box::new((0..9).flat_map(move |level| {
+                (0..(1 << level)).map(move |idx| [tag, F::from(level), F::from(idx), F::zero()])
+            })),
+            Self::Pow64 => Box::new((0..64).map(move |idx| {
+                [
+                    tag,
+                    F::from(idx),
+                    F::from_u128(1u128 << idx),
+                    F::from_u128(1u128 << (64 - idx)),
+                ]
+            })),
         }
     }
 }

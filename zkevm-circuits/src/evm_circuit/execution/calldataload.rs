@@ -258,15 +258,19 @@ mod test {
     use bus_mapping::evm::OpcodeId;
     use eth_types::{bytecode, Word};
     use halo2_proofs::arithmetic::BaseExt;
+    use mock::TestContext;
     use pairing::bn256::Fr;
 
-    use crate::evm_circuit::{
-        execution::calldataload::OFFSET_RW_MEMORY_INDICES,
-        param::N_BYTES_WORD,
-        step::ExecutionState,
-        table::{CallContextFieldTag, RwTableTag},
-        test::run_test_circuit_incomplete_fixed_table,
-        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
+    use crate::{
+        evm_circuit::{
+            execution::calldataload::OFFSET_RW_MEMORY_INDICES,
+            param::N_BYTES_WORD,
+            step::ExecutionState,
+            table::{CallContextFieldTag, RwTableTag},
+            test::run_test_circuit_incomplete_fixed_table,
+            witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
+        },
+        test_util::run_test_circuits,
     };
 
     fn bytes_from_hex(s: &str) -> Vec<u8> {
@@ -502,5 +506,27 @@ mod test {
             word_from_hex("04dc959a99b99a5c0cba8a2bd5bd3937be6a3ef6f6ae8dac116faf671072c9d5"),
             Some(10u64),
         );
+    }
+
+    fn test_busmapping(offset: Word) {
+        let bytecode = bytecode! {
+            PUSH32(offset)
+            CALLDATALOAD
+            STOP
+        };
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn calldataload_gadget_busmapping() {
+        test_busmapping(Word::from(0));
+        test_busmapping(Word::from(8));
+        test_busmapping(Word::from(16));
     }
 }

@@ -4,7 +4,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use pairing::arithmetic::FieldExt;
-use std::array;
 
 pub(crate) trait IsZeroInstruction<F: FieldExt> {
     /// Given a `value` to be checked if it is zero:
@@ -67,7 +66,7 @@ impl<F: FieldExt> IsZeroChip<F> {
             // value_inv ⋅ (1 - value ⋅ value_inv)
             let poly2 = value_inv * is_zero_expression.clone();
 
-            array::IntoIter::new([poly1, poly2])
+            IntoIterator::into_iter([poly1, poly2])
                 .map(move |poly| q_enable.clone() * poly)
         });
 

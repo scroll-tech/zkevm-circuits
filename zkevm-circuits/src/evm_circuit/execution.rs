@@ -30,6 +30,7 @@ mod callvalue;
 mod chainid;
 mod coinbase;
 mod comparator;
+mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
@@ -51,6 +52,8 @@ mod pc;
 mod pop;
 mod push;
 mod selfbalance;
+mod shl;
+mod shr;
 mod signed_comparator;
 mod signextend;
 mod sload;
@@ -72,6 +75,7 @@ use callvalue::CallValueGadget;
 use chainid::ChainIdGadget;
 use coinbase::CoinbaseGadget;
 use comparator::ComparatorGadget;
+use dummy::DummpyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
@@ -93,6 +97,8 @@ use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
 use selfbalance::SelfbalanceGadget;
+use shl::ShlGadget;
+use shr::ShrGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use sload::SloadGadget;
@@ -142,6 +148,7 @@ pub(crate) struct ExecutionConfig<F> {
     calldatasize_gadget: CallDataSizeGadget<F>,
     caller_gadget: CallerGadget<F>,
     chainid_gadget: ChainIdGadget<F>,
+    codecopy_gadget: DummpyGadget<F, { ExecutionState::CODECOPY }>,
     coinbase_gadget: CoinbaseGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
@@ -152,6 +159,7 @@ pub(crate) struct ExecutionConfig<F> {
     jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
+    log3_gadget: DummpyGadget<F, { ExecutionState::LOG }>,
     memory_gadget: MemoryGadget<F>,
     msize_gadget: MsizeGadget<F>,
     mul_div_mod_gadget: MulDivModGadget<F>,
@@ -161,6 +169,9 @@ pub(crate) struct ExecutionConfig<F> {
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
+    sha3_gadget: DummpyGadget<F, { ExecutionState::SHA3 }>,
+    shl_gadget: ShlGadget<F>,
+    shr_gadget: ShrGadget<F>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     sload_gadget: SloadGadget<F>,
@@ -168,7 +179,6 @@ pub(crate) struct ExecutionConfig<F> {
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
     timestamp_gadget: TimestampGadget<F>,
-
     // error gadgets
     error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
 }
@@ -367,6 +377,7 @@ impl<F: Field> ExecutionConfig<F> {
             calldatasize_gadget: configure_gadget!(),
             caller_gadget: configure_gadget!(),
             chainid_gadget: configure_gadget!(),
+            codecopy_gadget: configure_gadget!(),
             coinbase_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
@@ -377,6 +388,7 @@ impl<F: Field> ExecutionConfig<F> {
             jump_gadget: configure_gadget!(),
             jumpdest_gadget: configure_gadget!(),
             jumpi_gadget: configure_gadget!(),
+            log3_gadget: configure_gadget!(),
             memory_gadget: configure_gadget!(),
             msize_gadget: configure_gadget!(),
             mul_div_mod_gadget: configure_gadget!(),
@@ -386,6 +398,9 @@ impl<F: Field> ExecutionConfig<F> {
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
+            sha3_gadget: configure_gadget!(),
+            shl_gadget: configure_gadget!(),
+            shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
@@ -393,10 +408,8 @@ impl<F: Field> ExecutionConfig<F> {
             stop_gadget: configure_gadget!(),
             swap_gadget: configure_gadget!(),
             timestamp_gadget: configure_gadget!(),
-
             // error gadgets
             error_oog_static_memory_gadget: configure_gadget!(),
-
             // step and presets
             step: step_curr,
             presets_map,
@@ -649,6 +662,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CALLER => assign_exec_step!(self.caller_gadget),
             ExecutionState::CALLVALUE => assign_exec_step!(self.call_value_gadget),
             ExecutionState::CHAINID => assign_exec_step!(self.chainid_gadget),
+            ExecutionState::CODECOPY => assign_exec_step!(self.codecopy_gadget),
             ExecutionState::COINBASE => assign_exec_step!(self.coinbase_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
@@ -659,6 +673,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::JUMP => assign_exec_step!(self.jump_gadget),
             ExecutionState::JUMPDEST => assign_exec_step!(self.jumpdest_gadget),
             ExecutionState::JUMPI => assign_exec_step!(self.jumpi_gadget),
+            ExecutionState::LOG => assign_exec_step!(self.log3_gadget),
             ExecutionState::MEMORY => assign_exec_step!(self.memory_gadget),
             ExecutionState::MSIZE => assign_exec_step!(self.msize_gadget),
             ExecutionState::MUL_DIV_MOD => assign_exec_step!(self.mul_div_mod_gadget),
@@ -671,6 +686,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
+            ExecutionState::SHL => assign_exec_step!(self.shl_gadget),
+            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
+            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
