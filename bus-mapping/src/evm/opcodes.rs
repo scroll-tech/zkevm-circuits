@@ -121,7 +121,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::CALLDATALOAD => Calldataload::gen_associated_ops,
         OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops,
         // OpcodeId::CODESIZE => {},
-        // OpcodeId::CODECOPY => {},
+        OpcodeId::CODECOPY => StackOnlyOpcode::<3, 0>::gen_associated_ops,
         OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
         // OpcodeId::EXTCODESIZE => {},
         // OpcodeId::EXTCODECOPY => {},

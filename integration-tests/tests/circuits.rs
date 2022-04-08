@@ -54,13 +54,13 @@ async fn test_state_circuit_block(block_num: u64) {
     const MEMORY_ADDRESS_MAX: usize = 2000;
     const STACK_ADDRESS_MAX: usize = 1024;
 
-    const RW_COUNTER_MAX: usize = 1 << DEGREE;
-    const ROWS_MAX: usize = 1 << DEGREE;
+    const RW_COUNTER_MAX: usize = 1 << (DEGREE - 1);
+    const ROWS_MAX: usize = 1 << (DEGREE - 1);
 
     let rw_map = RwMap::from(&OperationContainer {
         memory: memory_ops,
         stack: stack_ops,
-        storage: storage_ops,
+        //storage: storage_ops,
         ..Default::default()
     });
     let circuit = StateCircuit::<
