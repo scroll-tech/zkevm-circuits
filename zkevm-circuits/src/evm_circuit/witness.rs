@@ -1094,7 +1094,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLER => ExecutionState::CALLER,
                     OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
                     OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
-                    OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::COINBASE => ExecutionState::COINBASE,
                     OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
                     OpcodeId::NUMBER => ExecutionState::NUMBER,
