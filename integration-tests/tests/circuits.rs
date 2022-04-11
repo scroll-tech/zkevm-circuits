@@ -51,9 +51,8 @@ async fn test_state_circuit_block(block_num: u64) {
     });
 
     let randomness = Fr::rand();
-    let power_of_randomness = StateCircuit::instance(&randomness, rw_map.0.len());
-
     let circuit = StateCircuit::<Fr>::new(randomness, rw_map);
+    let power_of_randomness = circuit.instance();
 
     use pairing::bn256::Fr as Fp;
     let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();

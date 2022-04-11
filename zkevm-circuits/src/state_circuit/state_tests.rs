@@ -24,8 +24,8 @@ mod tests {
         });
 
         let randomness = Fr::rand();
-        let power_of_randomness = StateCircuit::instance(&randomness, rw_map.0.len());
         let circuit = StateCircuit { randomness, rw_map };
+        let power_of_randomness = circuit.instance();
 
         let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
         let verify_result = prover.verify();

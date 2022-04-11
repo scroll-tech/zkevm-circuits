@@ -92,11 +92,11 @@ async fn main() {
     }
 
     {
-        // generate state_circuit proof
-        let instance = StateCircuit::instance(&block.randomness, block.rws.0.len());
-        let instance_slices: Vec<_> = instance.iter().map(Vec::as_slice).collect();
-
         let circuit = StateCircuit::new(block.randomness, block.rws);
+
+        // generate state_circuit proof
+        let instance = circuit.instance();
+        let instance_slices: Vec<_> = instance.iter().map(Vec::as_slice).collect();
 
         // TODO: same quest like in the first scope
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk for params, state_circuit");
