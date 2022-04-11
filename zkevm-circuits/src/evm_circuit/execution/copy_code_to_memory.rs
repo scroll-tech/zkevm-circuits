@@ -1,5 +1,8 @@
 use array_init::array_init;
-use bus_mapping::circuit_input_builder::{CopyCodeToMemoryAuxData, StepAuxiliaryData};
+use bus_mapping::{
+    circuit_input_builder::{CopyCodeToMemoryAuxData, StepAuxiliaryData},
+    constants::MAX_COPY_BYTES,
+};
 use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{circuit::Region, plonk::Error};
 
@@ -19,11 +22,6 @@ use crate::{
 };
 
 use super::ExecutionGadget;
-
-/// Maximum number of bytes that can be copied in one iteration of this gadget.
-/// We are bounded because of the limitation on the number of cells we can
-/// assign to in one iteration.
-const MAX_COPY_BYTES: usize = 32;
 
 #[derive(Clone, Debug)]
 /// This gadget is responsible for copying bytes from an account's code to

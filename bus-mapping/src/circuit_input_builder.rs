@@ -12,7 +12,7 @@ use crate::Error;
 use core::fmt::Debug;
 use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
 use eth_types::{
-    self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, U256,
+    self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use itertools::Itertools;
@@ -111,6 +111,8 @@ pub enum ExecState {
     EndTx,
     /// Virtual step Copy To Memory
     CopyToMemory,
+    /// Virtal step Copy Code To Memory
+    CopyCodeToMemory,
 }
 
 impl ExecState {
@@ -895,6 +897,15 @@ impl<'a> CircuitInputStateRef<'a> {
         let call_id = self.call()?.call_id;
         self.push_op(step, rw, StackOp::new(call_id, address, value));
         Ok(())
+    }
+
+    /// Fetch and return code for the given code hash from the code DB.
+    pub fn code(&self, code_hash: H256) -> Result<Vec<u8>, Error> {
+        self.code_db
+            .0
+            .get(&code_hash)
+            .cloned()
+            .ok_or(Error::CodeNotFound(code_hash))
     }
 
     /// Reference to the current Call

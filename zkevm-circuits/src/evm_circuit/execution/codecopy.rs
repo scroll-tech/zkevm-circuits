@@ -207,217 +207,32 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Sub;
+    use eth_types::{bytecode, Word};
+    use mock::TestContext;
 
-    use bus_mapping::evm::OpcodeId;
-    use eth_types::{bytecode, evm_types::gas_utils::memory_copier_gas_cost, Word};
-    use halo2_proofs::arithmetic::BaseExt;
-    use num::Zero;
-    use pairing::bn256::Fr;
+    use crate::test_util::run_test_circuits;
 
-    use crate::evm_circuit::{
-        execution::copy_code_to_memory::test::make_copy_code_steps,
-        step::ExecutionState,
-        table::RwTableTag,
-        test::run_test_circuit_incomplete_fixed_table,
-        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
-    };
-
-    fn test_ok(src_addr: u64, dst_addr: u64, size: usize) {
-        let randomness = Fr::rand();
-        let call_id = 1;
-
+    fn test_ok(memory_offset: usize, code_offset: usize, size: usize) {
         let code = bytecode! {
             PUSH32(Word::from(size))
-            PUSH32(Word::from(src_addr))
-            PUSH32(Word::from(dst_addr))
+            PUSH32(Word::from(code_offset))
+            PUSH32(Word::from(memory_offset))
             CODECOPY
             STOP
         };
-        let code = Bytecode::new(code.to_vec());
-
-        let mut rws_map = RwMap(
-            [(
-                RwTableTag::Stack,
-                vec![
-                    // Stack item written by PUSH32.
-                    Rw::Stack {
-                        rw_counter: 1,
-                        is_write: true,
-                        call_id,
-                        stack_pointer: 1023,
-                        value: Word::from(size),
-                    },
-                    // Stack item written by PUSH32.
-                    Rw::Stack {
-                        rw_counter: 2,
-                        is_write: true,
-                        call_id,
-                        stack_pointer: 1022,
-                        value: Word::from(src_addr),
-                    },
-                    // Stack item written by PUSH32.
-                    Rw::Stack {
-                        rw_counter: 3,
-                        is_write: true,
-                        call_id,
-                        stack_pointer: 1021,
-                        value: Word::from(dst_addr),
-                    },
-                    // First stack item read by CODECOPY.
-                    Rw::Stack {
-                        rw_counter: 4,
-                        is_write: false,
-                        call_id,
-                        stack_pointer: 1021,
-                        value: Word::from(dst_addr),
-                    },
-                    // Second stack item read by CODECOPY.
-                    Rw::Stack {
-                        rw_counter: 5,
-                        is_write: false,
-                        call_id,
-                        stack_pointer: 1022,
-                        value: Word::from(src_addr),
-                    },
-                    // Third stack item read by CODECOPY.
-                    Rw::Stack {
-                        rw_counter: 6,
-                        is_write: false,
-                        call_id,
-                        stack_pointer: 1023,
-                        value: Word::from(size),
-                    },
-                ],
-            )]
-            .into(),
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+                None,
+            ),
+            Ok(()),
         );
-
-        // After copying bytes from code to memory, we would end up having used this
-        // much memory.
-        let next_memory_word_size = if size.is_zero() {
-            0
-        } else {
-            (dst_addr + size as u64 + 31) / 32
-        };
-        let gas_cost_push32 = OpcodeId::PUSH32.constant_gas_cost().as_u64();
-        let gas_cost_codecopy = OpcodeId::CODECOPY.constant_gas_cost().as_u64()
-            + memory_copier_gas_cost(0, next_memory_word_size, size as u64);
-        let total_gas_cost = (3 * gas_cost_push32) + gas_cost_codecopy;
-
-        let mut steps = vec![
-            ExecStep {
-                rw_indices: vec![(RwTableTag::Stack, 0)],
-                execution_state: ExecutionState::PUSH,
-                rw_counter: 1,
-                program_counter: 0,
-                stack_pointer: 1024,
-                gas_left: total_gas_cost,
-                gas_cost: gas_cost_push32,
-                opcode: Some(OpcodeId::PUSH32),
-                ..Default::default()
-            },
-            ExecStep {
-                rw_indices: vec![(RwTableTag::Stack, 1)],
-                execution_state: ExecutionState::PUSH,
-                rw_counter: 2,
-                program_counter: 33,
-                stack_pointer: 1023,
-                gas_left: total_gas_cost.sub(gas_cost_push32),
-                gas_cost: gas_cost_push32,
-                opcode: Some(OpcodeId::PUSH32),
-                ..Default::default()
-            },
-            ExecStep {
-                rw_indices: vec![(RwTableTag::Stack, 2)],
-                execution_state: ExecutionState::PUSH,
-                rw_counter: 3,
-                program_counter: 66,
-                stack_pointer: 1022,
-                gas_left: total_gas_cost.sub(2 * gas_cost_push32),
-                gas_cost: gas_cost_push32,
-                opcode: Some(OpcodeId::PUSH32),
-                ..Default::default()
-            },
-            ExecStep {
-                rw_indices: vec![
-                    (RwTableTag::Stack, 3),
-                    (RwTableTag::Stack, 4),
-                    (RwTableTag::Stack, 5),
-                ],
-                execution_state: ExecutionState::CODECOPY,
-                rw_counter: 4,
-                program_counter: 99,
-                stack_pointer: 1021,
-                gas_left: gas_cost_codecopy,
-                gas_cost: gas_cost_codecopy,
-                opcode: Some(OpcodeId::CODECOPY),
-                ..Default::default()
-            },
-        ];
-
-        let program_counter = 100;
-        let stack_pointer = 1024;
-        let mut rw_counter = 7;
-        if !size.is_zero() {
-            make_copy_code_steps(
-                call_id,
-                &code,
-                src_addr,
-                dst_addr,
-                size,
-                program_counter,
-                stack_pointer,
-                next_memory_word_size * 32,
-                &mut rw_counter,
-                &mut rws_map,
-                &mut steps,
-            );
-        }
-        steps.push(ExecStep {
-            execution_state: ExecutionState::STOP,
-            rw_counter,
-            program_counter: 100,
-            stack_pointer: 1024,
-            opcode: Some(OpcodeId::STOP),
-            memory_size: next_memory_word_size * 32,
-            ..Default::default()
-        });
-
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                id: 1,
-                calls: vec![Call {
-                    id: call_id,
-                    is_root: true,
-                    is_create: false,
-                    code_source: CodeSource::Account(code.hash),
-                    ..Default::default()
-                }],
-                steps,
-                ..Default::default()
-            }],
-            rws: rws_map,
-            bytecodes: vec![code],
-            ..Default::default()
-        };
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
     #[test]
-    fn codecopy_gadget_single_step() {
-        test_ok(0x00, 0x00, 54);
-        test_ok(0x10, 0x05, 54);
-    }
-
-    #[test]
-    fn codecopy_gadget_multi_step() {
-        test_ok(0x00, 0x40, 123);
-    }
-
-    #[test]
-    fn codecopy_gadget_oob() {
-        test_ok(0x10, 0x20, 200);
+    fn codecopy_gadget() {
+        test_ok(0x00, 0x00, 0x20);
+        test_ok(0x20, 0x30, 0x30);
+        test_ok(0x10, 0x20, 0x42);
     }
 }

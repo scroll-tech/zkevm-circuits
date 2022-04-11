@@ -4,7 +4,7 @@ use crate::{evm_types::OpcodeId, Bytes, Word};
 use std::collections::HashMap;
 
 /// EVM Bytecode
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Bytecode {
     code: Vec<u8>,
     num_opcodes: usize,
@@ -15,6 +15,15 @@ impl From<Bytecode> for Bytes {
     fn from(code: Bytecode) -> Self {
         code.code.into()
     }
+}
+
+/// Error while constructing `Bytecode` from raw bytes.
+#[derive(Debug)]
+pub enum BytecodeError {
+    /// Invalid byte that is not reserved for any known opcode.
+    InvalidByte(u8),
+    /// Insufficient number of bytes following a PUSH instruction.
+    InsufficientPush,
 }
 
 impl Bytecode {
@@ -133,6 +142,37 @@ impl Bytecode {
     }
 }
 
+impl TryFrom<Vec<u8>> for Bytecode {
+    type Error = BytecodeError;
+
+    fn try_from(input: Vec<u8>) -> Result<Self, Self::Error> {
+        let mut code = Bytecode::default();
+
+        let mut input_iter = input.iter();
+        while let Some(byte) = input_iter.next() {
+            if let Ok(op) = OpcodeId::try_from(*byte) {
+                if op.is_push() {
+                    let n = (op.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize;
+                    let mut value = vec![0u8; n];
+                    for value_byte in value.iter_mut() {
+                        *value_byte = input_iter
+                            .next()
+                            .cloned()
+                            .ok_or(BytecodeError::InsufficientPush)?;
+                    }
+                    code.push(n, Word::from(value.as_slice()));
+                } else {
+                    code.write_op(op);
+                }
+            } else {
+                return Err(BytecodeError::InvalidByte(*byte));
+            }
+        }
+
+        Ok(code)
+    }
+}
+
 /// EVM code macro
 #[macro_export]
 macro_rules! bytecode {
@@ -173,4 +213,27 @@ macro_rules! bytecode_internal {
         $code.$function($($args.into(),)*);
         $crate::bytecode_internal!($code, $($rest)*);
     }};
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Bytecode;
+
+    #[test]
+    fn test_bytecode_roundtrip() {
+        let code = bytecode! {
+            PUSH8(0x123)
+            POP
+            PUSH24(0x321)
+            PUSH32(0x432)
+            MUL
+            CALLVALUE
+            CALLER
+            POP
+            POP
+            POP
+            STOP
+        };
+        assert_eq!(Bytecode::try_from(code.to_vec()).unwrap(), code);
+    }
 }

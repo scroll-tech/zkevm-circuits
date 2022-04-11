@@ -1,14 +1,13 @@
 use super::Opcode;
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
-};
 use crate::operation::{CallContextField, CallContextOp, MemoryOp, RW};
 use crate::Error;
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
+    },
+    constants::MAX_COPY_BYTES,
+};
 use eth_types::GethExecStep;
-
-// The max number of bytes that can be copied in a step limited by the number
-// of cells in a step
-const MAX_COPY_BYTES: usize = 71;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Calldatacopy;
