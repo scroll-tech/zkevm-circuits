@@ -37,13 +37,6 @@ impl<F: Field> Queries<F> {
     }
 }
 
-// impl Config {
-//     pub fn u8_range(&self) -> Expression<F> {
-//         self.u8.cur.clone()
-//     }
-// }
-
-// This doesn't seem like it needs to exist?
 pub struct Chip<F: Field> {
     config: Config,
     _marker: PhantomData<F>,

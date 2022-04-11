@@ -8,6 +8,8 @@ mod tests {
         evm_types::{MemoryAddress, StackAddress},
         ToAddress, Word, U256,
     };
+    use halo2_proofs::plonk::Circuit;
+    use halo2_proofs::plonk::ConstraintSystem;
     use halo2_proofs::{arithmetic::BaseExt, dev::MockProver};
     use pairing::bn256::Fr;
 
@@ -30,6 +32,14 @@ mod tests {
         let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
         let verify_result = prover.verify();
         assert_eq!(verify_result, Ok(()));
+    }
+
+    #[test]
+    fn degree() {
+        let mut meta = ConstraintSystem::<Fr>::default();
+        StateCircuit::configure(&mut meta);
+
+        assert_eq!(meta.degree(), 16);
     }
 
     #[test]
