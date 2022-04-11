@@ -12,17 +12,16 @@ use eth_types::ToLittleEndian;
 use halo2_proofs::{circuit::Region, plonk::Error};
 
 #[derive(Clone, Debug)]
-pub(crate) struct DummpyGadget<F, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
-{
+pub(crate) struct DummyGadget<F, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState> {
     pops: [Word<F>; N_POP],
     pushes: [Word<F>; N_PUSH],
     _marker: PhantomData<F>,
 }
 
 impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState> ExecutionGadget<F>
-    for DummpyGadget<F, N_POP, N_PUSH, S>
+    for DummyGadget<F, N_POP, N_PUSH, S>
 {
-    const NAME: &'static str = "DUMMPY";
+    const NAME: &'static str = "DUMMY";
 
     const EXECUTION_STATE: ExecutionState = S;
 
