@@ -227,11 +227,12 @@ impl<F: Field> Queries<F> {
         (1u64 << 4).expr() * self.tag.clone() + self.field_tag.clone()
     }
 
-    fn storage_key_limbs(&self) -> Vec<Expression<F>> {
+    fn storage_key_be_limbs(&self) -> Vec<Expression<F>> {
         self.storage_key_bytes
             .iter()
+            .rev()
             .tuples()
-            .map(|(hi, lo)| (1u64 << 16).expr() * hi.clone() + lo.clone())
+            .map(|(hi, lo)| (1u64 << 8).expr() * hi.clone() + lo.clone())
             .collect()
     }
 
@@ -241,7 +242,7 @@ impl<F: Field> Queries<F> {
             .iter()
             .rev()
             .chain(self.address_limbs.iter().rev())
-            .chain(self.storage_key_limbs().iter().rev())
+            .chain(&self.storage_key_be_limbs())
             .chain(self.rw_counter_limbs.iter().rev())
             .cloned()
             .collect();
