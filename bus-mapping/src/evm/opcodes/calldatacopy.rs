@@ -1,6 +1,8 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep, StepAuxiliaryData};
-use crate::operation::{CallContextField, CallContextOp, RW};
+use crate::circuit_input_builder::{
+    CircuitInputStateRef, CopyToMemoryAuxData, ExecState, ExecStep, StepAuxiliaryData,
+};
+use crate::operation::{CallContextField, CallContextOp, MemoryOp, RW};
 use crate::Error;
 use eth_types::GethExecStep;
 
@@ -96,25 +98,29 @@ fn gen_memory_copy_step(
     for idx in 0..std::cmp::min(bytes_left, MAX_COPY_BYTES) {
         let addr = src_addr + idx as u64;
         let byte = if addr < src_addr_end {
-            if is_root {
-                state.tx.input[addr as usize]
-            } else {
-                // TODO: read caller memory
-                unimplemented!()
+            let byte =
+                state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
+            if !is_root {
+                state.push_op(
+                    exec_step,
+                    RW::READ,
+                    MemoryOp::new(state.call()?.caller_id, (addr as usize).into(), byte),
+                );
             }
+            byte
         } else {
             0
         };
         state.push_memory_op(exec_step, RW::WRITE, (idx + dst_addr as usize).into(), byte)?;
     }
 
-    exec_step.aux_data = Some(StepAuxiliaryData::CopyToMemory {
+    exec_step.aux_data = Some(StepAuxiliaryData::CopyToMemory(CopyToMemoryAuxData {
         src_addr,
         dst_addr,
         bytes_left: bytes_left as u64,
         src_addr_end,
         from_tx: is_root,
-    });
+    }));
 
     Ok(())
 }

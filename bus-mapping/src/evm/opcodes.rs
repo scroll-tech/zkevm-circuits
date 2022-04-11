@@ -229,8 +229,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // TODO: Handle REVERT by its own gen_associated_ops.
         OpcodeId::REVERT => Stop::gen_associated_ops,
         // OpcodeId::SELFDESTRUCT => {},
-        // _ => panic!("Opcode {:?} gen_associated_ops not implemented",
-        // self),
+        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
+            warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
+            dummy_gen_call_ops
+        }
         _ => {
             warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
             dummy_gen_associated_ops
@@ -501,4 +503,35 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
 
     Ok(exec_step)
+}
+
+fn dummy_gen_call_ops(
+    state: &mut CircuitInputStateRef,
+    geth_steps: &[GethExecStep],
+) -> Result<Vec<ExecStep>, Error> {
+    let geth_step = &geth_steps[0];
+    let exec_step = state.new_step(geth_step)?;
+
+    let call = state.call()?.clone();
+    let callee = state.parse_call(geth_step)?;
+
+    let (_, account) = state.sdb.get_account(&callee.address);
+    let callee_code_hash = account.code_hash;
+
+    state.push_call(callee.clone(), geth_step);
+
+    match (
+        state.is_precompiled(&call.address),
+        callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+    ) {
+        // 1. Call to precompiled.
+        (true, _) => Ok(vec![exec_step]),
+        // 2. Call to account with empty code.
+        (_, true) => {
+            state.handle_return()?;
+            Ok(vec![exec_step])
+        }
+        // 3. Call to account with non-empty code.
+        (_, false) => Ok(vec![exec_step]),
+    }
 }

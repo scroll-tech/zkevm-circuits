@@ -93,7 +93,7 @@ impl Opcode for Call {
         )?;
 
         // Switch to callee's call context
-        state.push_call(callee.clone());
+        state.push_call(callee.clone(), geth_step);
 
         for (field, value) in [
             (CallContextField::RwCounterEndOfReversion, 0.into()),

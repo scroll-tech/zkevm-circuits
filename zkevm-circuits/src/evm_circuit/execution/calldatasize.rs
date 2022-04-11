@@ -89,108 +89,99 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-
-    use bus_mapping::evm::OpcodeId;
-    use eth_types::{bytecode, Word};
-    use halo2_proofs::arithmetic::BaseExt;
-    use pairing::bn256::Fr;
-
     use crate::evm_circuit::{
-        step::ExecutionState,
-        table::{CallContextFieldTag, RwTableTag},
         test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
-        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
+        witness::block_convert,
     };
+    use eth_types::{address, bytecode, Word};
+    use itertools::Itertools;
+    use mock::TestContext;
 
     fn test_ok(call_data_size: usize, is_root: bool) {
-        let randomness = Fr::rand();
         let bytecode = bytecode! {
             CALLDATASIZE
             STOP
         };
-        let bytecode = Bytecode::new(bytecode.to_vec());
-        let call_id = 1;
-        let call_data = rand_bytes(call_data_size);
 
-        let mut rw_map = HashMap::new();
-        rw_map.insert(
-            RwTableTag::CallContext,
-            vec![Rw::CallContext {
-                rw_counter: 9,
-                is_write: false,
-                call_id,
-                field_tag: CallContextFieldTag::CallDataLength,
-                value: Word::from(call_data_size),
-            }],
-        );
-        rw_map.insert(
-            RwTableTag::Stack,
-            vec![Rw::Stack {
-                rw_counter: 10,
-                is_write: true,
-                call_id,
-                stack_pointer: 1023,
-                value: Word::from(call_data_size),
-            }],
-        );
-
-        let steps = vec![
-            ExecStep {
-                execution_state: ExecutionState::CALLDATASIZE,
-                rw_indices: vec![(RwTableTag::CallContext, 0), (RwTableTag::Stack, 0)],
-                rw_counter: 9,
-                program_counter: 0,
-                stack_pointer: 1024,
-                gas_left: OpcodeId::CALLDATASIZE.constant_gas_cost().as_u64(),
-                gas_cost: OpcodeId::CALLDATASIZE.constant_gas_cost().as_u64(),
-                opcode: Some(OpcodeId::CALLDATASIZE),
-                ..Default::default()
-            },
-            ExecStep {
-                execution_state: ExecutionState::STOP,
-                rw_counter: 11,
-                program_counter: 1,
-                stack_pointer: 1023,
-                gas_left: 0,
-                opcode: Some(OpcodeId::STOP),
-                ..Default::default()
-            },
-        ];
-
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                id: 1,
-                call_data,
-                call_data_length: call_data_size,
-                steps,
-                calls: vec![Call {
-                    id: call_id,
-                    is_root,
-                    is_create: false,
-                    call_data_length: call_data_size as u64,
-                    code_source: CodeSource::Account(bytecode.hash),
-                    ..Default::default()
-                }],
-                ..Default::default()
-            }],
-            rws: RwMap(rw_map),
-            bytecodes: vec![bytecode],
-            ..Default::default()
+        let block_data = if is_root {
+            bus_mapping::mock::BlockData::new_from_geth_data(
+                TestContext::<2, 1>::new(
+                    None,
+                    |accs| {
+                        accs[0]
+                            .address(address!("0x0000000000000000000000000000000000000000"))
+                            .balance(Word::from(1u64 << 30));
+                        accs[1]
+                            .address(address!("0x0000000000000000000000000000000000000010"))
+                            .balance(Word::from(1u64 << 20))
+                            .code(bytecode);
+                    },
+                    |mut txs, accs| {
+                        txs[0]
+                            .from(accs[0].address)
+                            .to(accs[1].address)
+                            .input(rand_bytes(call_data_size).into())
+                            .gas(Word::from(40000));
+                    },
+                    |block, _tx| block.number(0xcafeu64),
+                )
+                .unwrap()
+                .into(),
+            )
+        } else {
+            bus_mapping::mock::BlockData::new_from_geth_data(
+                TestContext::<3, 1>::new(
+                    None,
+                    |accs| {
+                        accs[0]
+                            .address(address!("0x0000000000000000000000000000000000000000"))
+                            .balance(Word::from(1u64 << 30));
+                        accs[1]
+                            .address(address!("0x0000000000000000000000000000000000000010"))
+                            .balance(Word::from(1u64 << 20))
+                            .code(bytecode! {
+                                PUSH1(0)
+                                PUSH1(0)
+                                PUSH32(call_data_size)
+                                PUSH1(0)
+                                PUSH1(0)
+                                PUSH1(0x20)
+                                GAS
+                                CALL
+                                STOP
+                            });
+                        accs[2]
+                            .address(address!("0x0000000000000000000000000000000000000020"))
+                            .balance(Word::from(1u64 << 20))
+                            .code(bytecode);
+                    },
+                    |mut txs, accs| {
+                        txs[0]
+                            .from(accs[0].address)
+                            .to(accs[1].address)
+                            .gas(Word::from(30000));
+                    },
+                    |block, _tx| block.number(0xcafeu64),
+                )
+                .unwrap()
+                .into(),
+            )
         };
-
+        let mut builder = block_data.new_circuit_input_builder();
+        builder
+            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            .unwrap();
+        let block = block_convert(&builder.block, &builder.code_db);
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
     #[test]
     fn calldatasize_gadget_root() {
-        test_ok(32, true);
-        test_ok(64, true);
-        test_ok(96, true);
-        test_ok(128, true);
-        test_ok(256, true);
-        test_ok(512, true);
-        test_ok(1024, true);
+        for (call_data_size, is_root) in vec![32, 64, 96, 128, 256, 512, 1024]
+            .into_iter()
+            .cartesian_product([true, false])
+        {
+            test_ok(call_data_size, is_root);
+        }
     }
 }

@@ -11,8 +11,11 @@ use crate::state_db::{self, CodeDB, StateDB};
 use crate::Error;
 use core::fmt::Debug;
 use eth_types::evm_types::{Gas, GasCost, MemoryAddress, OpcodeId, ProgramCounter, StackAddress};
-use eth_types::{self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word};
+use eth_types::{
+    self, Address, GethExecStep, GethExecTrace, Hash, ToAddress, ToBigEndian, Word, U256,
+};
 use ethers_core::utils::{get_contract_address, get_create2_address};
+use itertools::Itertools;
 use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
 
 use crate::rpc::GethClient;
@@ -139,22 +142,43 @@ impl ExecState {
     }
 }
 
+/// Auxiliary data for CopyToMemory internal state.
+#[derive(Clone, Copy, Debug)]
+pub struct CopyToMemoryAuxData {
+    /// Source start address
+    pub src_addr: u64,
+    /// Destination address
+    pub dst_addr: u64,
+    /// Bytes left
+    pub bytes_left: u64,
+    /// Source end address
+    pub src_addr_end: u64,
+    /// Indicate if copy from transaction call data
+    pub from_tx: bool,
+}
+
+/// Auxiliary data for CopyCodeToMemory internal state.
+#[derive(Clone, Copy, Debug)]
+pub struct CopyCodeToMemoryAuxData {
+    /// Source start address
+    pub src_addr: u64,
+    /// Destination address
+    pub dst_addr: u64,
+    /// Bytes left
+    pub bytes_left: u64,
+    /// Source end address
+    pub src_addr_end: u64,
+    /// Hash of the bytecode to be copied
+    pub code_source: U256,
+}
+
 /// Auxiliary data of Execution step
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum StepAuxiliaryData {
     /// Auxiliary data of Copy To Memory
-    CopyToMemory {
-        /// Source start address
-        src_addr: u64,
-        /// Destination address
-        dst_addr: u64,
-        /// Bytes left
-        bytes_left: u64,
-        /// Source end address
-        src_addr_end: u64,
-        /// Indicate if copy from transaction call data
-        from_tx: bool,
-    },
+    CopyToMemory(CopyToMemoryAuxData),
+    /// Auxiliary data of Copy Code To Memory
+    CopyCodeToMemory(CopyCodeToMemoryAuxData),
 }
 
 /// An execution step of the EVM.
@@ -439,6 +463,9 @@ pub struct CallContext {
     /// call. It is incremented when a subcall in this call succeeds by the
     /// number of successful writes in the subcall.
     pub reversible_write_counter: usize,
+    /// Call data (copy of tx input or caller's
+    /// memory[call_data_offset..call_data_offset + call_data_length])
+    pub call_data: Vec<u8>,
 }
 
 /// A reversion group is the collection of calls and the operations which are
@@ -521,7 +548,7 @@ impl TransactionContext {
             calls: Vec::new(),
             reversion_groups: Vec::new(),
         };
-        tx_ctx.push_call_ctx(0);
+        tx_ctx.push_call_ctx(0, eth_tx.input.to_vec());
 
         Ok(tx_ctx)
     }
@@ -564,7 +591,7 @@ impl TransactionContext {
     }
 
     /// Push a new call context and its index into the call stack.
-    fn push_call_ctx(&mut self, call_idx: usize) {
+    fn push_call_ctx(&mut self, call_idx: usize, call_data: Vec<u8>) {
         if !self.call_is_success[call_idx] {
             self.reversion_groups.push(ReversionGroup {
                 calls: vec![(call_idx, 0)],
@@ -592,6 +619,7 @@ impl TransactionContext {
         self.calls.push(CallContext {
             index: call_idx,
             reversible_write_counter: 0,
+            call_data,
         });
     }
 
@@ -895,11 +923,32 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Push a new [`Call`] into the [`Transaction`], and add its index and
     /// [`CallContext`] in the `call_stack` of the [`TransactionContext`]
-    pub fn push_call(&mut self, call: Call) {
-        let call_id = call.call_id;
+    pub fn push_call(&mut self, call: Call, step: &GethExecStep) {
+        let call_data = match call.kind {
+            CallKind::Call | CallKind::CallCode | CallKind::DelegateCall | CallKind::StaticCall => {
+                let call_data = if step.memory.0.len() < call.call_data_offset as usize {
+                    &[]
+                } else {
+                    &step.memory.0[call.call_data_offset as usize..]
+                };
+                if call_data.len() < call.call_data_length as usize {
+                    // Expand call_data to expected size
+                    call_data
+                        .iter()
+                        .cloned()
+                        .pad_using(call.call_data_length as usize, |_| 0)
+                        .collect()
+                } else {
+                    call_data[..call.call_data_length as usize].to_vec()
+                }
+            }
+            CallKind::Create | CallKind::Create2 => Vec::new(),
+        };
 
+        let call_id = call.call_id;
         let call_idx = self.tx.calls.len();
-        self.tx_ctx.push_call_ctx(call_idx);
+
+        self.tx_ctx.push_call_ctx(call_idx, call_data);
         self.tx.push_call(call);
 
         self.block_ctx
@@ -1636,6 +1685,7 @@ impl From<Vec<Access>> for AccessSet {
                     }
                 },
                 AccessValue::Code { address } => {
+                    state.entry(address).or_insert_with(HashSet::new);
                     code.insert(address);
                 }
             }
@@ -2331,7 +2381,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at CREATE2
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder.state_ref().push_call(mock_internal_create(), step);
         // Set up account and contract that exist during the second CREATE2
         builder.builder.sdb.set_account(
             &ADDR_B,
@@ -2458,7 +2508,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at CREATE
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder.state_ref().push_call(mock_internal_create(), step);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             Some(ExecError::CodeStoreOutOfGas)
@@ -2564,7 +2614,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at RETURN
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder.state_ref().push_call(mock_internal_create(), step);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             Some(ExecError::InvalidCreationCode)
@@ -2671,7 +2721,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at RETURN
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder.state_ref().push_call(mock_internal_create(), step);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             Some(ExecError::MaxCodeSizeExceeded)
@@ -2765,7 +2815,7 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         // Set up call context at STOP
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder.state_ref().push_call(mock_internal_create(), step);
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
             None
@@ -3264,26 +3314,29 @@ mod tracer_tests {
 
         let mut builder = CircuitInputBuilderTx::new(&block, step);
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(Call {
-            call_id: 0,
-            caller_id: 0,
-            kind: CallKind::StaticCall,
-            is_static: true,
-            is_root: false,
-            is_persistent: false,
-            is_success: false,
-            rw_counter_end_of_reversion: 0,
-            caller_address: *ADDR_A,
-            address: *ADDR_B,
-            code_source: CodeSource::Address(*ADDR_B),
-            code_hash: Hash::zero(),
-            depth: 2,
-            value: Word::zero(),
-            call_data_offset: 0,
-            call_data_length: 0,
-            return_data_offset: 0,
-            return_data_length: 0,
-        });
+        builder.state_ref().push_call(
+            Call {
+                call_id: 0,
+                caller_id: 0,
+                kind: CallKind::StaticCall,
+                is_static: true,
+                is_root: false,
+                is_persistent: false,
+                is_success: false,
+                rw_counter_end_of_reversion: 0,
+                caller_address: *ADDR_A,
+                address: *ADDR_B,
+                code_source: CodeSource::Address(*ADDR_B),
+                code_hash: Hash::zero(),
+                depth: 2,
+                value: Word::zero(),
+                call_data_offset: 0,
+                call_data_length: 0,
+                return_data_offset: 0,
+                return_data_length: 0,
+            },
+            step,
+        );
 
         assert_eq!(
             builder.state_ref().get_step_err(step, next_step).unwrap(),
@@ -3476,7 +3529,9 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step_create2);
         // Set up call context at CREATE2
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder
+            .state_ref()
+            .push_call(mock_internal_create(), step_create2);
         let addr = builder.state_ref().create2_address(step_create2).unwrap();
 
         assert_eq!(addr.to_word(), addr_expect);
@@ -3582,7 +3637,9 @@ mod tracer_tests {
         let mut builder = CircuitInputBuilderTx::new(&block, step_create);
         // Set up call context at CREATE
         builder.tx_ctx.call_is_success.push(false);
-        builder.state_ref().push_call(mock_internal_create());
+        builder
+            .state_ref()
+            .push_call(mock_internal_create(), step_create);
         builder.builder.sdb.set_account(
             &ADDR_B,
             Account {
