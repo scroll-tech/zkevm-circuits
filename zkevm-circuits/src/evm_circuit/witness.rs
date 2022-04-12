@@ -528,6 +528,20 @@ impl<F: FieldExt> From<[F; 11]> for RwRow<F> {
 }
 
 impl Rw {
+    pub fn rw_counter(&self) -> usize {
+        match self {
+            Self::TxAccessListAccount { rw_counter, .. } => (*rw_counter),
+            Self::TxAccessListAccountStorage { rw_counter, .. } => (*rw_counter),
+            Self::Stack { rw_counter, .. } => (*rw_counter),
+            Self::Memory { rw_counter, .. } => (*rw_counter),
+            Self::Account { rw_counter, .. } => (*rw_counter),
+            Self::AccountDestructed { rw_counter, .. } => (*rw_counter),
+            Self::CallContext { rw_counter, .. } => (*rw_counter),
+            Self::AccountStorage { rw_counter, .. } => (*rw_counter),
+            Self::TxRefund { rw_counter, .. } => (*rw_counter),
+        }
+    }
+
     pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
             Self::TxAccessListAccount {

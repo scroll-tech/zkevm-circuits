@@ -1,12 +1,24 @@
 categories:
-  - title: 'Changes in the zkevm-circuits'
-    label: 'zkevm-circuits'
-  - title: 'Changes in the bus-mapping'
-    label: 'bus-mapping'
-  - title: 'Changes in Opcodes'
-    label: 'opcode'
-  - title: 'Changes in Keccak'
-    label: 'keccak'
+  - title: "Changes in the bus-mapping"
+    label: "crate-bus-mapping"
+  - title: "Changes in circuit-benchmarks"
+    label: "crate-circuit-benchmarks"
+  - title: "Changes in eth-types"
+    label: "crate-eth-types"
+  - title: "Changes in external-tracer"
+    label: "crate-external-tracer"
+  - title: "Changes in geth-utils"
+    label: "crate-geth-utils"
+  - title: "Changes in integration-tests"
+    label: "crate-integration-tests"
+  - title: "Changes in Keccak"
+    label: "crate-keccak"
+  - title: "Changes in mock"
+    label: "crate-mock"
+  - title: "Changes in prover"
+    label: "crate-prover"
+  - title: "Changes in the zkevm-circuits"
+    label: "crate-zkevm-circuits"
 version-resolver:
   default: minor
 prerelease: true

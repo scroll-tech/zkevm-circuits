@@ -1,10 +1,35 @@
-# Add 'zkevm-circuits' label to any change to files within the zkevm-circuits dir EXCEPT for the evm_circuit sub-folder
-zkevm-circuits:
-  - any: ['zkevm-circuits/src/**/*', '!zkevm-circuits/src/evm_circuit/**/*']
-# Add 'opcodes' to any changes within 'evm_circuit' folder or any subfolders
-opcode:
-  - zkevm-circuits/src/evm_circuit/**/*
-bus-mapping:
+# Add CI label for any CI changes
+CI:
+  - ".github/**/*"
+# Add crate-respective labels
+crate-bus-mapping:
   - bus-mapping/**/*
-keccak:
+crate-circuit-benchmarks:
+  - circuit-benchmarks/**/*
+crate-eth-types:
+  - eth-types/**/*
+crate-external-tracer:
+  - external-tracer/**/*
+crate-geth-utils:
+  - geth-utils/**/*
+crate-integration-tests:
+  - integration-tests/**/*
+crate-keccak:
   - keccak256/**/*
+crate-mock:
+  - mock/**/*
+crate-prover:
+  - prover/**/*
+crate-zkevm-circuits:
+  - zkevm-circuits/src/**/*
+
+# Add 'T-opcode' to any changes related to opcodes in `bus-mapping` or `zkevm-circuits`.
+T-opcode:
+  - any:
+      [
+        "zkevm-circuits/src/evm_circuit/execution/**/*",
+        "bus-mapping/src/evm/opcodes/**/*",
+      ]
+# Add 'T-bench' to any changes related to benchmarks in `circuit-benchmarks`.
+T-bench:
+  - circuit-benchmarks/**/*

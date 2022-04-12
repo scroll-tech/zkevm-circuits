@@ -3,7 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
-        table::{CallContextFieldTag, TxContextFieldTag},
+        table::CallContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
@@ -29,7 +29,7 @@ pub(crate) struct CallDataCopyGadget<F> {
     same_context: SameContextGadget<F>,
     memory_address: MemoryAddressGadget<F>,
     data_offset: MemoryAddress<F>,
-    tx_id: Cell<F>,
+    src_id: Cell<F>,
     call_data_length: Cell<F>,
     call_data_offset: Cell<F>, // Only used in the internal call
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
@@ -54,25 +54,32 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         cb.stack_pop(length.expr());
 
         let memory_address = MemoryAddressGadget::construct(cb, memory_offset, length);
-        let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        let src_id = cb.query_cell();
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
 
         // Lookup the calldata_length and caller_address in Tx context table or
         // Call context table
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            cb.tx_context_lookup(
-                tx_id.expr(),
-                TxContextFieldTag::CallDataLength,
+            cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, src_id.expr());
+            cb.call_context_lookup(
+                false.expr(),
                 None,
+                CallContextFieldTag::CallDataLength,
                 call_data_length.expr(),
             );
             cb.require_zero(
                 "call_data_offset == 0 in the root call",
                 call_data_offset.expr(),
-            )
+            );
         });
         cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
+            cb.call_context_lookup(
+                false.expr(),
+                None,
+                CallContextFieldTag::CallerId,
+                src_id.expr(),
+            );
             cb.call_context_lookup(
                 false.expr(),
                 None,
@@ -84,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 None,
                 CallContextFieldTag::CallDataOffset,
                 call_data_offset.expr(),
-            )
+            );
         });
 
         // Calculate the next memory size and the gas cost for this memory
@@ -110,7 +117,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 let next_bytes_left = cb.query_cell();
                 let next_src_addr_end = cb.query_cell();
                 let next_from_tx = cb.query_cell();
-                let next_tx_id = cb.query_cell();
+                let next_src_id = cb.query_cell();
                 cb.require_equal(
                     "next_src_addr = data_offset + call_data_offset",
                     next_src_addr.expr(),
@@ -136,7 +143,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                     next_from_tx.expr(),
                     cb.curr.state.is_root.expr(),
                 );
-                cb.require_equal("next_tx_id = tx_id", next_tx_id.expr(), tx_id.expr());
+                cb.require_equal("next_src_id = src_id", next_src_id.expr(), src_id.expr());
             },
         );
 
@@ -158,7 +165,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             same_context,
             memory_address,
             data_offset,
-            tx_id,
+            src_id,
             call_data_length,
             call_data_offset,
             memory_expansion,
@@ -192,8 +199,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                     .unwrap(),
             ),
         )?;
-        self.tx_id
-            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+        let src_id = if call.is_root { tx.id } else { call.caller_id };
+        self.src_id
+            .assign(region, offset, Some(F::from(src_id as u64)))?;
 
         // Call data length and call data offset
         let (call_data_length, call_data_offset) = if call.is_root {
@@ -227,24 +235,16 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        execution::memory_copy::test::make_memory_copy_steps,
-        step::ExecutionState,
-        table::{CallContextFieldTag, RwTableTag},
-        test::{rand_bytes, run_test_circuit_incomplete_fixed_table},
-        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
-    };
-    use crate::test_util::run_test_circuits;
-    use eth_types::{
-        bytecode,
-        evm_types::{gas_utils::memory_copier_gas_cost, GasCost, OpcodeId},
-        ToBigEndian, Word,
-    };
-    use halo2_proofs::arithmetic::BaseExt;
+    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
+    use eth_types::{address, bytecode, Address, ToWord, Word};
     use mock::test_ctx::{helpers::*, TestContext};
-    use pairing::bn256::Fr as Fp;
 
-    fn test_ok_root(call_data_length: usize, memory_offset: Word, data_offset: Word, length: Word) {
+    fn test_ok_root(
+        call_data_length: usize,
+        memory_offset: usize,
+        data_offset: usize,
+        length: usize,
+    ) {
         let bytecode = bytecode! {
             PUSH32(length)
             PUSH32(data_offset)
@@ -273,219 +273,83 @@ mod test {
     }
 
     fn test_ok_internal(
-        call_data_offset: Word,
-        call_data_length: Word,
-        memory_offset: Word,
-        data_offset: Word,
-        length: Word,
+        call_data_offset: usize,
+        call_data_length: usize,
+        dst_offset: usize,
+        offset: usize,
+        copy_size: usize,
     ) {
-        let randomness = Fp::rand();
-        let bytecode = Bytecode::new(
-            [
-                vec![OpcodeId::PUSH32.as_u8()],
-                length.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                data_offset.to_be_bytes().to_vec(),
-                vec![OpcodeId::PUSH32.as_u8()],
-                memory_offset.to_be_bytes().to_vec(),
-                vec![OpcodeId::CALLDATACOPY.as_u8(), OpcodeId::STOP.as_u8()],
-            ]
-            .concat(),
-        );
-        let call_id = 1;
-        let call_data = rand_bytes(call_data_length.as_usize());
+        let addr_a = address!("0x000000000000000000000000000000000cafe00a");
+        let addr_b = address!("0x000000000000000000000000000000000cafe00b");
 
-        let mut rws = RwMap(
-            [
-                (
-                    RwTableTag::Stack,
-                    vec![
-                        Rw::Stack {
-                            rw_counter: 1,
-                            is_write: false,
-                            call_id,
-                            stack_pointer: 1021,
-                            value: memory_offset,
-                        },
-                        Rw::Stack {
-                            rw_counter: 2,
-                            is_write: false,
-                            call_id,
-                            stack_pointer: 1022,
-                            value: data_offset,
-                        },
-                        Rw::Stack {
-                            rw_counter: 3,
-                            is_write: false,
-                            call_id,
-                            stack_pointer: 1023,
-                            value: length,
-                        },
-                    ],
-                ),
-                (
-                    RwTableTag::CallContext,
-                    vec![
-                        Rw::CallContext {
-                            rw_counter: 4,
-                            is_write: false,
-                            call_id,
-                            field_tag: CallContextFieldTag::TxId,
-                            value: Word::one(),
-                        },
-                        Rw::CallContext {
-                            rw_counter: 5,
-                            is_write: false,
-                            call_id,
-                            field_tag: CallContextFieldTag::CallDataLength,
-                            value: call_data_length,
-                        },
-                        Rw::CallContext {
-                            rw_counter: 6,
-                            is_write: false,
-                            call_id,
-                            field_tag: CallContextFieldTag::CallDataOffset,
-                            value: call_data_offset,
-                        },
-                    ],
-                ),
-            ]
-            .into(),
-        );
-        let mut rw_counter = 7;
-
-        let curr_memory_word_size =
-            (call_data_length.as_u64() + call_data_length.as_u64() + 31) / 32;
-        let next_memory_word_size = if length.is_zero() {
-            curr_memory_word_size
-        } else {
-            std::cmp::max(
-                curr_memory_word_size,
-                (memory_offset.as_u64() + length.as_u64() + 31) / 32,
-            )
+        // code B gets called by code A, so the call is an internal call.
+        let code_b = bytecode! {
+            PUSH32(copy_size)  // size
+            PUSH32(offset)     // offset
+            PUSH32(dst_offset) // dst_offset
+            CALLDATACOPY
+            STOP
         };
-        let gas_cost = GasCost::FASTEST.as_u64()
-            + memory_copier_gas_cost(
-                curr_memory_word_size,
-                next_memory_word_size,
-                length.as_u64(),
-            );
-        let mut steps = vec![ExecStep {
-            rw_indices: vec![
-                (RwTableTag::Stack, 0),
-                (RwTableTag::Stack, 1),
-                (RwTableTag::Stack, 2),
-                (RwTableTag::CallContext, 0),
-                (RwTableTag::CallContext, 1),
-                (RwTableTag::CallContext, 2),
-            ],
-            execution_state: ExecutionState::CALLDATACOPY,
-            rw_counter: 1,
-            program_counter: 99,
-            stack_pointer: 1021,
-            gas_left: gas_cost,
-            gas_cost,
-            memory_size: curr_memory_word_size * 32,
-            opcode: Some(OpcodeId::CALLDATACOPY),
-            ..Default::default()
-        }];
 
-        if !length.is_zero() {
-            make_memory_copy_steps(
-                call_id,
-                &call_data,
-                call_data_offset.as_u64(),
-                call_data_offset.as_u64() + data_offset.as_u64(),
-                memory_offset.as_u64(),
-                length.as_usize(),
-                false,
-                100,
-                1024,
-                next_memory_word_size * 32,
-                &mut rw_counter,
-                &mut rws,
-                &mut steps,
-            );
-        }
-
-        steps.push(ExecStep {
-            execution_state: ExecutionState::STOP,
-            rw_counter,
-            program_counter: 100,
-            stack_pointer: 1024,
-            opcode: Some(OpcodeId::STOP),
-            memory_size: next_memory_word_size * 32,
-            ..Default::default()
-        });
-
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                id: 1,
-                calls: vec![Call {
-                    id: call_id,
-                    is_root: false,
-                    is_create: false,
-                    call_data_length: call_data_length.as_u64(),
-                    call_data_offset: call_data_offset.as_u64(),
-                    code_source: CodeSource::Account(bytecode.hash),
-                    ..Default::default()
-                }],
-                steps,
-                ..Default::default()
-            }],
-            rws,
-            bytecodes: vec![bytecode],
-            ..Default::default()
+        // code A calls code B.
+        let pushdata = hex::decode("1234567890abcdef").unwrap();
+        let code_a = bytecode! {
+            // populate memory in A's context.
+            PUSH8(Word::from_big_endian(&pushdata))
+            PUSH1(0x00) // offset
+            MSTORE
+            // call ADDR_B.
+            PUSH1(0x00) // retLength
+            PUSH1(0x00) // retOffset
+            PUSH1(call_data_length) // argsLength
+            PUSH1(call_data_offset) // argsOffset
+            PUSH1(0x00) // value
+            PUSH32(addr_b.to_word()) // addr
+            PUSH32(0x1_0000) // gas
+            CALL
+            STOP
         };
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+
+        let ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(addr_b).code(code_b);
+                accs[1].address(addr_a).code(code_a);
+                accs[2]
+                    .address(Address::random())
+                    .balance(Word::from(1u64 << 30));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[1].address).from(accs[2].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        assert_eq!(run_test_circuits(ctx, None), Ok(()));
     }
 
     #[test]
     fn calldatacopy_gadget_simple() {
-        test_ok_root(64, Word::from(0x40), Word::from(0), Word::from(10));
-        test_ok_internal(
-            Word::from(0x40),
-            Word::from(64),
-            Word::from(0xA0),
-            Word::from(16),
-            Word::from(10),
-        );
+        test_ok_root(0x40, 0x40, 0x00, 0x0A);
+        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 0x0A);
     }
 
     #[test]
     fn calldatacopy_gadget_multi_step() {
-        test_ok_root(128, Word::from(0x40), Word::from(16), Word::from(90));
-        test_ok_internal(
-            Word::from(0x40),
-            Word::from(128),
-            Word::from(0x100),
-            Word::from(16),
-            Word::from(90),
-        );
+        test_ok_root(0x80, 0x40, 0x10, 0x5A);
+        test_ok_internal(0x30, 0x70, 0x20, 0x10, 0x5A);
     }
 
     #[test]
     fn calldatacopy_gadget_out_of_bound() {
-        test_ok_root(64, Word::from(0x40), Word::from(32), Word::from(40));
-        test_ok_internal(
-            Word::from(0x40),
-            Word::from(32),
-            Word::from(0xA0),
-            Word::from(40),
-            Word::from(10),
-        );
+        test_ok_root(0x40, 0x40, 0x20, 0x28);
+        test_ok_internal(0x40, 0x20, 0xA0, 0x28, 0x0A);
     }
 
     #[test]
     fn calldatacopy_gadget_zero_length() {
-        test_ok_root(64, Word::from(0x40), Word::from(0), Word::from(0));
-        test_ok_internal(
-            Word::from(0x40),
-            Word::from(64),
-            Word::from(0xA0),
-            Word::from(16),
-            Word::from(0),
-        );
+        test_ok_root(0x40, 0x40, 0x00, 0x00);
+        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 0x00);
     }
 }

@@ -338,6 +338,7 @@ dependencies = [
  "eth-types",
  "ethers-core",
  "ethers-providers",
+ "hex",
  "itertools",
  "keccak256",
  "lazy_static",
