@@ -70,8 +70,8 @@ impl Opcode for Extcodehash {
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address: external_address,
-                value: true,
-                value_prev: is_warm,
+                is_warm: true,
+                is_warm_prev: is_warm,
             },
         )?;
 
@@ -305,8 +305,8 @@ mod extcodehash_tests {
                 &TxAccessListAccountOp {
                     tx_id,
                     address: external_address,
-                    value: true,
-                    value_prev: is_warm
+                    is_warm: true,
+                    is_warm_prev: is_warm
                 }
             )
         );

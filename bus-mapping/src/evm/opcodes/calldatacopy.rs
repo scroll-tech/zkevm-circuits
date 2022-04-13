@@ -188,10 +188,10 @@ mod calldatacopy_tests {
         operation::{CallContextField, CallContextOp, MemoryOp, StackOp, RW},
     };
     use eth_types::{
-        address, bytecode,
+        bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        Address, ToWord, Word,
+        ToWord, Word,
     };
 
     use mock::test_ctx::{helpers::*, TestContext};
@@ -199,8 +199,7 @@ mod calldatacopy_tests {
 
     #[test]
     fn calldatacopy_opcode_internal() {
-        let addr_a = address!("0x000000000000000000000000000000000cafe00a");
-        let addr_b = address!("0x000000000000000000000000000000000cafe00b");
+        let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
         let dst_offset = 0x00usize;
@@ -246,13 +245,13 @@ mod calldatacopy_tests {
                 accs[0].address(addr_b).code(code_b);
                 accs[1].address(addr_a).code(code_a);
                 accs[2]
-                    .address(Address::random())
+                    .address(mock::MOCK_ACCOUNTS[2])
                     .balance(Word::from(1u64 << 30));
             },
             |mut txs, accs| {
                 txs[0].to(accs[1].address).from(accs[2].address);
             },
-            |block, _tx| block.number(0xcafeu64),
+            |block, _tx| block,
         )
         .unwrap()
         .into();
@@ -384,7 +383,7 @@ mod calldatacopy_tests {
             None,
             account_0_code_account_1_no_code(code),
             tx_from_1_to_0,
-            |block, _tx| block.number(0xcafeu64),
+            |block, _tx| block,
         )
         .unwrap()
         .into();

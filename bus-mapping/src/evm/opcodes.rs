@@ -134,11 +134,11 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::TIMESTAMP => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        // OpcodeId::DIFFICULTY => {},
-        // OpcodeId::GASLIMIT => {},
+        OpcodeId::DIFFICULTY => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::GASLIMIT => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::CHAINID => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
-        // OpcodeId::BASEFEE => {},
+        OpcodeId::BASEFEE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::POP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
@@ -300,8 +300,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address,
-                value: true,
-                value_prev: false,
+                is_warm: true,
+                is_warm_prev: false,
             },
         );
     }

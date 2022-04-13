@@ -99,8 +99,8 @@ impl Opcode for Sload {
                 tx_id: state.tx_ctx.id(),
                 address: contract_addr,
                 key,
-                value: true,
-                value_prev: is_warm,
+                is_warm: true,
+                is_warm_prev: is_warm,
             },
         )?;
 
@@ -209,8 +209,8 @@ mod sload_tests {
                     tx_id: 1,
                     address: MOCK_ACCOUNTS[0],
                     key: Word::from(0x0u32),
-                    value: true,
-                    value_prev: is_warm,
+                    is_warm: true,
+                    is_warm_prev: is_warm,
                 },
             )
         )

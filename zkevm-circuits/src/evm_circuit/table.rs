@@ -146,14 +146,15 @@ pub enum TxContextFieldTag {
     CallData,
 }
 
+// Keep the sequence consistent with OpcodeId for scalar
 #[derive(Clone, Copy, Debug)]
 pub enum BlockContextFieldTag {
     Coinbase = 1,
-    GasLimit,
-    Number,
     Timestamp,
+    Number,
     Difficulty,
-    BaseFee,
+    GasLimit,
+    BaseFee = 8,
     BlockHash,
     ChainId,
 }

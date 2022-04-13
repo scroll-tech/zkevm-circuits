@@ -49,7 +49,7 @@ impl Default for MockBlock {
             receipts_root: Hash::zero(),
             number: U64([0u64]),
             gas_used: Word::zero(),
-            gas_limit: Word::from(15_000_000u64),
+            gas_limit: Word::from(0x2386f26fc10000u64),
             base_fee_per_gas: Word::zero(),
             extra_data: Bytes::default(),
             logs_bloom: None,

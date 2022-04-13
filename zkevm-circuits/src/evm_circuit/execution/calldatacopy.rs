@@ -236,7 +236,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
-    use eth_types::{address, bytecode, Address, ToWord, Word};
+    use eth_types::{bytecode, ToWord, Word};
     use mock::test_ctx::{helpers::*, TestContext};
 
     fn test_ok_root(
@@ -279,8 +279,7 @@ mod test {
         offset: usize,
         copy_size: usize,
     ) {
-        let addr_a = address!("0x000000000000000000000000000000000cafe00a");
-        let addr_b = address!("0x000000000000000000000000000000000cafe00b");
+        let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = bytecode! {
@@ -292,7 +291,7 @@ mod test {
         };
 
         // code A calls code B.
-        let pushdata = hex::decode("1234567890abcdef").unwrap();
+        let pushdata = rand_bytes(8);
         let code_a = bytecode! {
             // populate memory in A's context.
             PUSH8(Word::from_big_endian(&pushdata))
@@ -316,13 +315,13 @@ mod test {
                 accs[0].address(addr_b).code(code_b);
                 accs[1].address(addr_a).code(code_a);
                 accs[2]
-                    .address(Address::random())
+                    .address(mock::MOCK_ACCOUNTS[2])
                     .balance(Word::from(1u64 << 30));
             },
             |mut txs, accs| {
                 txs[0].to(accs[1].address).from(accs[2].address);
             },
-            |block, _tx| block.number(0xcafeu64),
+            |block, _tx| block,
         )
         .unwrap();
 

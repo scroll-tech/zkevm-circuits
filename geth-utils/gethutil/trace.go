@@ -142,7 +142,8 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		LondonBlock:         big.NewInt(0),
 	}
 
-	var blockGasLimit uint64
+	var txsGasLimit uint64
+	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
 	messages := make([]types.Message, len(config.Transactions))
 	for i, tx := range config.Transactions {
 		// If gas price is specified directly, the tx is treated as legacy type.
@@ -170,7 +171,10 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 			false,
 		)
 
-		blockGasLimit += uint64(tx.GasLimit)
+		txsGasLimit += uint64(tx.GasLimit)
+	}
+	if txsGasLimit > blockGasLimit {
+		return nil, fmt.Errorf("txs total gas: %d Exceeds block gas limit: %d", txsGasLimit, blockGasLimit)
 	}
 
 	blockCtx := vm.BlockContext{

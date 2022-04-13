@@ -98,8 +98,8 @@ impl Opcode for Sstore {
                 tx_id: state.tx_ctx.id(),
                 address: state.call()?.address,
                 key,
-                value: true,
-                value_prev: is_warm,
+                is_warm: true,
+                is_warm_prev: is_warm,
             },
         )?;
 

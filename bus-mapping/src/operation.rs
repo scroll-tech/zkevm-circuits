@@ -382,18 +382,19 @@ pub struct TxAccessListAccountOp {
     pub tx_id: usize,
     /// Account Address
     pub address: Address,
-    /// Value after the operation
-    pub value: bool,
-    /// Value before the operation
-    pub value_prev: bool,
+    /// Represents whether we can classify the access to the value as `WARM`.
+    pub is_warm: bool,
+    /// Represents whether we can classify the access to the previous value as
+    /// `WARM`.
+    pub is_warm_prev: bool,
 }
 
 impl fmt::Debug for TxAccessListAccountOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TxAccessListAccountOp { ")?;
         f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, val_prev: {:?}, val: {:?}",
-            self.tx_id, self.address, self.value_prev, self.value
+            "tx_id: {:?}, addr: {:?}, is_warm_prev: {:?}, is_warm: {:?}",
+            self.tx_id, self.address, self.is_warm_prev, self.is_warm
         ))?;
         f.write_str(" }")
     }
@@ -418,7 +419,7 @@ impl Op for TxAccessListAccountOp {
 
     fn reverse(&self) -> Self {
         let mut rev = self.clone();
-        swap(&mut rev.value, &mut rev.value_prev);
+        swap(&mut rev.is_warm, &mut rev.is_warm_prev);
         rev
     }
 }
@@ -433,18 +434,18 @@ pub struct TxAccessListAccountStorageOp {
     pub address: Address,
     /// Storage Key
     pub key: Word,
-    /// Value after the operation
-    pub value: bool,
-    /// Value before the operation
-    pub value_prev: bool,
+    /// Whether the access was classified as `WARM` or not.
+    pub is_warm: bool,
+    /// Whether the prev_value access was classified as `WARM` or not.
+    pub is_warm_prev: bool,
 }
 
 impl fmt::Debug for TxAccessListAccountStorageOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TxAccessListAccountStorageOp { ")?;
         f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, key: 0x{:x}, val_prev: {:?}, val: {:?}",
-            self.tx_id, self.address, self.key, self.value_prev, self.value
+            "tx_id: {:?}, addr: {:?}, key: 0x{:x}, is_warm_prev: {:?}, is_warm: {:?}",
+            self.tx_id, self.address, self.key, self.is_warm_prev, self.is_warm
         ))?;
         f.write_str(" }")
     }
@@ -469,7 +470,7 @@ impl Op for TxAccessListAccountStorageOp {
 
     fn reverse(&self) -> Self {
         let mut rev = self.clone();
-        swap(&mut rev.value, &mut rev.value_prev);
+        swap(&mut rev.is_warm, &mut rev.is_warm_prev);
         rev
     }
 }
@@ -592,18 +593,18 @@ pub struct AccountDestructedOp {
     pub tx_id: usize,
     /// Account Address
     pub address: Address,
-    /// Value after the operation
-    pub value: bool,
-    /// Value before the operation
-    pub value_prev: bool,
+    /// Whether the account is destructed.
+    pub is_destructed: bool,
+    /// Whether the account was previously destructed.
+    pub is_destructed_prev: bool,
 }
 
 impl fmt::Debug for AccountDestructedOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AccountDestructedOp { ")?;
         f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, val_prev: {:?}, val: {:?}",
-            self.tx_id, self.address, self.value_prev, self.value
+            "tx_id: {:?}, addr: {:?}, is_destructed_prev: {:?}, is_destructed: {:?}",
+            self.tx_id, self.address, self.is_destructed_prev, self.is_destructed
         ))?;
         f.write_str(" }")
     }
@@ -628,7 +629,7 @@ impl Op for AccountDestructedOp {
 
     fn reverse(&self) -> Self {
         let mut rev = self.clone();
-        swap(&mut rev.value, &mut rev.value_prev);
+        swap(&mut rev.is_destructed, &mut rev.is_destructed_prev);
         rev
     }
 }

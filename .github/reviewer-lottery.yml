@@ -1,0 +1,10 @@
+groups:
+  - name: external-zkevm-reviewers
+    reviewers: 1
+    internal_reviewers: 1
+    usernames:
+      - DreamWuGit
+      - HAOYUatHZ
+      - roynalnaruto
+      - lispc
+      - icemelon

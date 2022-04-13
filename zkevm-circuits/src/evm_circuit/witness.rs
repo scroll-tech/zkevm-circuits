@@ -61,19 +61,14 @@ impl BlockContext {
                     self.coinbase.to_scalar().unwrap(),
                 ],
                 [
-                    F::from(BlockContextFieldTag::GasLimit as u64),
+                    F::from(BlockContextFieldTag::Timestamp as u64),
                     F::zero(),
-                    F::from(self.gas_limit),
+                    self.timestamp.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Number as u64),
                     F::zero(),
                     self.number.to_scalar().unwrap(),
-                ],
-                [
-                    F::from(BlockContextFieldTag::Timestamp as u64),
-                    F::zero(),
-                    self.timestamp.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Difficulty as u64),
@@ -82,6 +77,11 @@ impl BlockContext {
                         self.difficulty.to_le_bytes(),
                         randomness,
                     ),
+                ],
+                [
+                    F::from(BlockContextFieldTag::GasLimit as u64),
+                    F::zero(),
+                    F::from(self.gas_limit),
                 ],
                 [
                     F::from(BlockContextFieldTag::BaseFee as u64),
@@ -427,8 +427,8 @@ pub enum Rw {
         is_write: bool,
         tx_id: usize,
         account_address: Address,
-        value: bool,
-        value_prev: bool,
+        is_warm: bool,
+        is_warm_prev: bool,
     },
     TxAccessListAccountStorage {
         rw_counter: usize,
@@ -436,8 +436,8 @@ pub enum Rw {
         tx_id: usize,
         account_address: Address,
         storage_key: Word,
-        value: bool,
-        value_prev: bool,
+        is_warm: bool,
+        is_warm_prev: bool,
     },
     TxRefund {
         rw_counter: usize,
@@ -469,8 +469,8 @@ pub enum Rw {
         is_write: bool,
         tx_id: usize,
         account_address: Address,
-        value: bool,
-        value_prev: bool,
+        is_destructed: bool,
+        is_destructed_prev: bool,
     },
     CallContext {
         rw_counter: usize,
@@ -545,11 +545,15 @@ impl Rw {
     pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
             Self::TxAccessListAccount {
-                value, value_prev, ..
-            } => (*value, *value_prev),
+                is_warm,
+                is_warm_prev,
+                ..
+            } => (*is_warm, *is_warm_prev),
             Self::TxAccessListAccountStorage {
-                value, value_prev, ..
-            } => (*value, *value_prev),
+                is_warm,
+                is_warm_prev,
+                ..
+            } => (*is_warm, *is_warm_prev),
             _ => unreachable!(),
         }
     }
@@ -624,8 +628,8 @@ impl Rw {
                 is_write,
                 tx_id,
                 account_address,
-                value,
-                value_prev,
+                is_warm,
+                is_warm_prev,
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
@@ -634,8 +638,8 @@ impl Rw {
                 account_address.to_scalar().unwrap(),
                 F::zero(),
                 F::zero(),
-                F::from(*value as u64),
-                F::from(*value_prev as u64),
+                F::from(*is_warm as u64),
+                F::from(*is_warm_prev as u64),
                 F::zero(),
                 F::zero(),
             ]
@@ -646,8 +650,8 @@ impl Rw {
                 tx_id,
                 account_address,
                 storage_key,
-                value,
-                value_prev,
+                is_warm,
+                is_warm_prev,
             } => [
                 F::from(*rw_counter as u64),
                 F::from(*is_write as u64),
@@ -659,8 +663,8 @@ impl Rw {
                     storage_key.to_le_bytes(),
                     randomness,
                 ),
-                F::from(*value as u64),
-                F::from(*value_prev as u64),
+                F::from(*is_warm as u64),
+                F::from(*is_warm_prev as u64),
                 F::zero(),
                 F::zero(),
             ]
@@ -852,8 +856,8 @@ impl From<&operation::OperationContainer> for RwMap {
                     is_write: true,
                     tx_id: op.op().tx_id,
                     account_address: op.op().address,
-                    value: op.op().value,
-                    value_prev: op.op().value_prev,
+                    is_warm: op.op().is_warm,
+                    is_warm_prev: op.op().is_warm_prev,
                 })
                 .collect(),
         );
@@ -868,8 +872,8 @@ impl From<&operation::OperationContainer> for RwMap {
                     tx_id: op.op().tx_id,
                     account_address: op.op().address,
                     storage_key: op.op().key,
-                    value: op.op().value,
-                    value_prev: op.op().value_prev,
+                    is_warm: op.op().is_warm,
+                    is_warm_prev: op.op().is_warm_prev,
                 })
                 .collect(),
         );
@@ -933,8 +937,8 @@ impl From<&operation::OperationContainer> for RwMap {
                     is_write: true,
                     tx_id: op.op().tx_id,
                     account_address: op.op().address,
-                    value: op.op().value,
-                    value_prev: op.op().value_prev,
+                    is_destructed: op.op().is_destructed,
+                    is_destructed_prev: op.op().is_destructed_prev,
                 })
                 .collect(),
         );
@@ -1108,9 +1112,11 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLER => ExecutionState::CALLER,
                     OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
                     OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
-                    OpcodeId::COINBASE => ExecutionState::COINBASE,
-                    OpcodeId::TIMESTAMP => ExecutionState::TIMESTAMP,
-                    OpcodeId::NUMBER => ExecutionState::NUMBER,
+                    OpcodeId::TIMESTAMP | OpcodeId::NUMBER | OpcodeId::GASLIMIT => {
+                        ExecutionState::BLOCKCTXU64
+                    }
+                    OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
+                    OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
                     OpcodeId::SLOAD => ExecutionState::SLOAD,
@@ -1125,6 +1131,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALL => ExecutionState::CALL,
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
+                    OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }

@@ -1150,19 +1150,19 @@ impl<'a> CircuitInputStateRef<'a> {
                 self.sdb.set_storage(&op.address, &op.key, &op.value);
             }
             OpEnum::TxAccessListAccount(op) => {
-                if !op.value_prev && op.value {
+                if !op.is_warm_prev && op.is_warm {
                     self.sdb.add_account_to_access_list(op.address);
                 }
-                if op.value_prev && !op.value {
+                if op.is_warm_prev && !op.is_warm {
                     self.sdb.remove_account_from_access_list(&op.address);
                 }
             }
             OpEnum::TxAccessListAccountStorage(op) => {
-                if !op.value_prev && op.value {
+                if !op.is_warm_prev && op.is_warm {
                     self.sdb
                         .add_account_storage_to_access_list((op.address, op.key));
                 }
-                if op.value_prev && !op.value {
+                if op.is_warm_prev && !op.is_warm {
                     self.sdb
                         .remove_account_storage_from_access_list(&(op.address, op.key));
                 }
