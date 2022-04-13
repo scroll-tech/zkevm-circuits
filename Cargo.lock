@@ -1753,7 +1753,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/appliedzkp/halo2.git?tag=v2022_03_06#90f0487e986a8d7a323ec78e7de5ad8bbeeebbd5"
+source = "git+https://github.com/appliedzkp/halo2.git?branch=feat/general-optimization#a49778f586a563b90badec11d41fcc9851f382ec"
 dependencies = [
  "blake2b_simd",
  "bumpalo",
@@ -1833,9 +1833,9 @@ dependencies = [
 
 [[package]]
 name = "httparse"
-version = "1.6.0"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9100414882e15fb7feccb4897e5f0ff0ff1ca7d1a86a23208ada4d7a18e6c6c4"
+checksum = "6330e8a36bd8c859f3fa6d9382911fbb7147ec39807f63b923933a247240b9ba"
 
 [[package]]
 name = "httpdate"
@@ -2097,9 +2097,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.122"
+version = "0.2.123"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec647867e2bf0772e28c8bcde4f0d19a9216916e890543b5a03ed8ef27b8f259"
+checksum = "cb691a747a7ab48abc15c5b42066eaafde10dc427e3b6ee2a1cf43db04c763bd"
 
 [[package]]
 name = "lock_api"
@@ -2394,7 +2394,7 @@ dependencies = [
 [[package]]
 name = "pairing_bn256"
 version = "0.1.0"
-source = "git+https://github.com/appliedzkp/pairing#58986019b8bc7ad9c81c861c6acd8940b5eb1f66"
+source = "git+https://github.com/appliedzkp/pairing#37218794db1ad2e4ce58d29ec22c68238ad556a7"
 dependencies = [
  "ff 0.11.0",
  "group 0.11.0",
@@ -2730,9 +2730,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.17"
+version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "632d02bff7f874a36f33ea8bb416cd484b90cc66c1194b1a1110d067a7013f58"
+checksum = "a1feb54ed693b93a84e14094943b84b7c4eae204c512b7ccb95ab0c66d278ad1"
 dependencies = [
  "proc-macro2",
 ]
@@ -3621,9 +3621,9 @@ checksum = "360dfd1d6d30e05fda32ace2c8c70e9c0a9da713275777f5a4dbb8a1893930c6"
 
 [[package]]
 name = "tracing"
-version = "0.1.32"
+version = "0.1.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a1bdf54a7c28a2bbf701e1d2233f6c77f473486b94bee4f9678da5a148dca7f"
+checksum = "80b9fa4360528139bc96100c160b7ae879f5567f49f1782b0b02035b0358ebf3"
 dependencies = [
  "cfg-if 1.0.0",
  "pin-project-lite",
@@ -3644,9 +3644,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-core"
-version = "0.1.24"
+version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90442985ee2f57c9e1b548ee72ae842f4a9a20e3f417cc38dbc5dc684d9bb4ee"
+checksum = "6dfce9f3241b150f36e8e54bb561a742d5daa1a47b5dd9a5ce369fd4a4db2210"
 dependencies = [
  "lazy_static",
 ]

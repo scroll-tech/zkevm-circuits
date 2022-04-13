@@ -18,7 +18,7 @@ url = "2.2.2"
 pretty_assertions = "1.0.0"
 log = "0.4.14"
 env_logger = "0.9"
-halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_03_06" }
+halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", branch = "feat/general-optimization" }
 pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 ff =  "0.11"
 

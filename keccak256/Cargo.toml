@@ -7,7 +7,7 @@ edition = "2018"
 dev-graph = ["halo2_proofs/dev-graph", "plotters"]
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_03_06" }
+halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", branch = "feat/general-optimization" }
 itertools = "0.10.1"
 num-bigint = "0.4.2"
 num-traits = "0.2.14"
