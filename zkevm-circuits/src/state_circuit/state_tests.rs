@@ -1,12 +1,13 @@
 mod tests {
     use super::super::StateCircuit;
+    use crate::evm_circuit::table::AccountFieldTag;
     use crate::evm_circuit::witness::{Rw, RwMap};
     use bus_mapping::operation::{
         MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
     };
     use eth_types::{
         evm_types::{MemoryAddress, StackAddress},
-        ToAddress, Word, U256,
+        Address, ToAddress, Word, U256,
     };
     use halo2_proofs::{
         arithmetic::BaseExt,
@@ -203,6 +204,30 @@ mod tests {
                 call_id: 1,
                 stack_pointer: 1022,
                 value: U256::from(394500u64),
+            },
+        ];
+
+        assert_eq!(verify(rows), Ok(()));
+    }
+
+    #[test]
+    fn diff_1_problem_repro() {
+        let rows = vec![
+            Rw::Account {
+                rw_counter: 1,
+                is_write: true,
+                account_address: Address::default(),
+                field_tag: AccountFieldTag::CodeHash,
+                value: U256::zero(),
+                value_prev: U256::zero(),
+            },
+            Rw::Account {
+                rw_counter: 2,
+                is_write: true,
+                account_address: Address::default(),
+                field_tag: AccountFieldTag::CodeHash,
+                value: U256::zero(),
+                value_prev: U256::zero(),
             },
         ];
 

@@ -194,7 +194,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                     config
                         .rw_counter
                         .assign(&mut region, offset, row.rw_counter() as u32)?;
-                    // dbg!(row, if row.is_write() { F::one() } else { F::zero() });
                     region.assign_advice(
                         || "is_write",
                         config.is_write,

@@ -98,16 +98,15 @@ impl<F: Field> Chip<F> {
             ]
         });
         assert!(meta.degree() <= 16);
-        // meta.lookup_any("diff_1 is zero iff all 15 possible values are 0", |meta| {
-        //     let cur = Queries::new(meta, &config, Rotation::cur());
-        //     let prev = Queries::new(meta, &config, Rotation::prev());
-        //     let diff_1 = meta.query_advice(diff_1, Rotation::cur());
-        //     vec![(
-        //         // all 15 possible values are 0 iff the final linear combination is 0
-        //         diff_1_is_zero.clone() * diff_1_possible_values(cur,
-        // prev)[0].clone(),         meta.query_fixed(u16_range,
-        // Rotation::cur()),     )]
-        // });
+        meta.create_gate("diff_1 is zero iff all 15 possible values are 0", |meta| {
+            let selector = meta.query_fixed(selector, Rotation::cur());
+            let cur = Queries::new(meta, &config, Rotation::cur());
+            let prev = Queries::new(meta, &config, Rotation::prev());
+            vec![
+                // all 15 possible values are 0 iff the final linear combination is 0
+                selector * diff_1_is_zero.clone() * diff_1_possible_values(cur, prev)[14].clone(),
+            ]
+        });
         meta.create_gate("diff_2 is one of 15 values", |meta| {
             let selector = meta.query_fixed(selector, Rotation::cur());
             let cur = Queries::new(meta, &config, Rotation::cur());
@@ -166,11 +165,12 @@ impl<F: Field> Chip<F> {
         let (index, (cur_limb, prev_limb)) = find_result.expect("repeated rw counter");
 
         let mut diff_1 = F::from((cur_limb - prev_limb).into());
-        let mut diff_2 = if cur_be_limbs[29] >= prev_be_limbs[29] {
-            F::from((cur_be_limbs[29] - prev_be_limbs[29]).into())
-        } else {
-            -F::from((prev_be_limbs[29] - cur_be_limbs[29]).into())
-        };
+        let mut diff_2 = diff_2_value(&cur_be_limbs, &prev_be_limbs);
+        // let mut diff_2 = if cur_be_limbs[29] >= prev_be_limbs[29] {
+        //     F::from((cur_be_limbs[29] - prev_be_limbs[29]).into())
+        // } else {
+        //     -F::from((prev_be_limbs[29] - cur_be_limbs[29]).into())
+        // };
         if index >= 15 {
             dbg!(cur_be_limbs.clone());
             dbg!(prev_be_limbs.clone());
@@ -178,14 +178,14 @@ impl<F: Field> Chip<F> {
             diff_1 = F::zero();
             diff_2 = F::from((cur_limb - prev_limb).into());
         }
-
-        if diff_2 == F::zero() {
-            panic!();
-        }
-
-        if diff_1 == F::zero() {
-            dbg!(cur, prev);
-        }
+        //
+        // if diff_2 == F::zero() {
+        //     panic!();
+        // }
+        //
+        // if diff_1 == F::zero() {
+        //     dbg!(cur, prev);
+        // }
 
         region.assign_advice(|| "diff_1", self.config.diff_1, offset, || Ok(diff_1))?;
         region.assign_advice(|| "diff_2", self.config.diff_2, offset, || Ok(diff_2))?;
@@ -291,4 +291,14 @@ fn diff_2_possible_values<F: Field>(cur: Queries<F>, prev: Queries<F>) -> Vec<Ex
     }
     assert_eq!(result.len(), 15);
     result
+}
+
+fn diff_2_value<F: Field>(cur_limbs: &[u16], prev_limbs: &[u16]) -> F {
+    be_limbs_to_value::<F>(&cur_limbs[15..]) - be_limbs_to_value::<F>(&prev_limbs[15..])
+}
+
+fn be_limbs_to_value<F: Field>(limbs: &[u16]) -> F {
+    limbs.iter().fold(F::zero(), |result, &limb| {
+        result * F::from(1u64 << 16) + F::from(limb as u64)
+    })
 }
