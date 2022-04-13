@@ -11,6 +11,7 @@ use crate::evm_circuit::{
     param::N_BYTES_WORD,
     witness::{Rw, RwMap},
 };
+use crate::gadget::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
 use halo2_proofs::{
@@ -32,8 +33,8 @@ const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
 const N_LIMBS_ID: usize = 2;
 
 /// Config for StateCircuit
-#[derive(Clone, Copy)]
-pub struct StateConfig {
+#[derive(Clone)]
+pub struct StateConfig<F: Field> {
     selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
     // https://github.com/appliedzkp/zkevm-circuits/issues/407
     rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
@@ -42,15 +43,13 @@ pub struct StateConfig {
     id: MpiConfig<u32, N_LIMBS_ID>,
     address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
     field_tag: Column<Advice>,
-    // use WordConfig
+    // Consider using WordConfig instead?
     storage_key: RlcConfig<N_BYTES_WORD>,
+    is_storage_key_unchanged: IsZeroConfig<F>,
     value: Column<Advice>,
     lookups: LookupsConfig,
     power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
-    // lexicographic_ordering config, etc.
-    lexicographic_ordering: LexicographicOrderingConfig,
-    // use IsZeroChip instead.
-    storage_key_diff_inverse: Column<Advice>,
+    lexicographic_ordering: LexicographicOrderingConfig<F>,
 }
 
 type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
@@ -88,7 +87,7 @@ impl<F: Field> StateCircuit<F> {
 }
 
 impl<F: Field> Circuit<F> for StateCircuit<F> {
-    type Config = StateConfig;
+    type Config = StateConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -100,13 +99,23 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
 
-        let [is_write, tag, field_tag, value, storage_key_diff_inverse] =
+        let [is_write, tag, field_tag, value, is_zero_chip_advice_column] =
             [0; 5].map(|_| meta.advice_column());
 
         let id = MpiChip::configure(meta, selector, lookups.u16);
         let address = MpiChip::configure(meta, selector, lookups.u16);
         let storage_key = RlcChip::configure(meta, selector, lookups.u8, power_of_randomness);
         let rw_counter = MpiChip::configure(meta, selector, lookups.u16);
+
+        let is_storage_key_unchanged = IsZeroChip::configure(
+            meta,
+            |meta| meta.query_fixed(selector, Rotation::cur()),
+            |meta| {
+                meta.query_advice(storage_key.encoded, Rotation::cur())
+                    - meta.query_advice(storage_key.encoded, Rotation::prev())
+            },
+            is_zero_chip_advice_column,
+        );
 
         let config = Self::Config {
             selector,
@@ -129,14 +138,14 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 rw_counter.limbs,
                 lookups.u16,
             ),
-            storage_key_diff_inverse,
+            is_storage_key_unchanged,
             lookups,
             power_of_randomness,
         };
 
         let mut constraint_builder = ConstraintBuilder::new();
         meta.create_gate("state circuit constraints", |meta| {
-            let queries = queries(meta, config);
+            let queries = queries(meta, &config);
             constraint_builder.build(&queries);
             constraint_builder.gate(queries.selector)
         });
@@ -153,6 +162,11 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         LookupsChip::construct(config.lookups).load(&mut layouter)?;
+        let is_storage_key_unchanged =
+            IsZeroChip::construct(config.is_storage_key_unchanged.clone());
+
+        let lexicographic_ordering_chip =
+            LexicographicOrderingChip::construct(config.lexicographic_ordering.clone());
 
         dbg!(self.rows.clone());
 
@@ -170,7 +184,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                             || Ok(F::one()),
                         )?;
 
-                        config.lexicographic_ordering.assign(
+                        lexicographic_ordering_chip.assign(
                             &mut region,
                             offset,
                             row,
@@ -180,7 +194,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                     config
                         .rw_counter
                         .assign(&mut region, offset, row.rw_counter() as u32)?;
-                    dbg!(row, if row.is_write() { F::one() } else { F::zero() });
+                    // dbg!(row, if row.is_write() { F::one() } else { F::zero() });
                     region.assign_advice(
                         || "is_write",
                         config.is_write,
@@ -220,15 +234,10 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         .value()
                         .unwrap_or(&F::zero()));
 
-                    region.assign_advice(
-                        || "storage_key_diff_inverse",
-                        config.storage_key_diff_inverse,
+                    is_storage_key_unchanged.assign(
+                        &mut region,
                         offset,
-                        || {
-                            Ok((cur_storage_key - prev_storage_key)
-                                .invert()
-                                .unwrap_or(F::zero()))
-                        },
+                        Some(cur_storage_key - prev_storage_key),
                     )?;
 
                     prev_storage_key = cur_storage_key;
@@ -239,7 +248,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
     }
 }
 
-fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: StateConfig) -> Queries<F> {
+fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Queries<F> {
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
         rw_counter: MpiQueries::new(meta, c.rw_counter),
@@ -255,8 +264,11 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: StateConfig) -> Queries<
         power_of_randomness: c
             .power_of_randomness
             .map(|c| meta.query_instance(c, Rotation::cur())),
-        lexicographic_ordering_diff_selector: meta
-            .query_advice(c.lexicographic_ordering.diff_selector, Rotation::cur()),
-        storage_key_diff_inverse: meta.query_advice(c.storage_key_diff_inverse, Rotation::cur()),
+        is_storage_key_unchanged: c.is_storage_key_unchanged.is_zero_expression.clone(),
+        lexicographic_ordering_diff_1_is_zero: c
+            .lexicographic_ordering
+            .diff_1_is_zero
+            .is_zero_expression
+            .clone(),
     }
 }

@@ -27,16 +27,15 @@ pub struct Queries<F: Field> {
     pub value: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
-
-    pub lexicographic_ordering_diff_selector: Expression<F>,
-    pub storage_key_diff_inverse: Expression<F>,
+    pub is_storage_key_unchanged: Expression<F>,
+    pub lexicographic_ordering_diff_1_is_zero: Expression<F>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
 type Lookup<F> = (&'static str, (Expression<F>, Expression<F>));
 
 pub struct ConstraintBuilder<F: Field> {
-    constraints: Vec<Constraint<F>>,
+    pub constraints: Vec<Constraint<F>>,
     lookups: Vec<Lookup<F>>,
     condition: Expression<F>,
 }
@@ -51,6 +50,13 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     pub fn gate(&self, condition: Expression<F>) -> Vec<(&'static str, Expression<F>)> {
+        // for (name, constraint) in &self.constraints {
+        //     if constraint.degree() >= 16 {
+        //         dbg!(name);
+        //         panic!();
+        //     }
+        //     // assert!(constraint.degree() <= 16);
+        // }
         self.constraints
             .iter()
             .cloned()
@@ -100,17 +106,6 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_general_constraints(&mut self, q: &Queries<F>) {
         self.require_in_set("tag in RwTableTag range", q.tag(), set::<F, RwTableTag>());
         self.require_boolean("is_write is boolean", q.is_write());
-
-        // TODO: use IsZeroChip instead.
-        self.require_zero(
-            "todooooo_1",
-            q.is_storage_key_diff_zero() * q.storage_key_diff_inverse.clone(),
-        );
-        self.require_zero(
-            "todooooo_2",
-            q.is_storage_key_diff_zero()
-                * (q.storage_key.encoded.clone() - q.storage_key.encoded_prev.clone()),
-        );
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
@@ -146,6 +141,7 @@ impl<F: Field> ConstraintBuilder<F> {
             "stack address fits into 10 bits",
             (q.address.value.clone(), q.lookups.u10.clone()),
         );
+        // this pushes the degree to 17....
         self.condition(q.first_access(), |cb| {
             cb.require_zero(
                 "previous tag is Start, address change is 0 or address change is 1",
@@ -312,23 +308,12 @@ impl<F: Field> Queries<F> {
     }
 
     fn first_access(&self) -> Expression<F> {
-        not::expr(self.not_first_access())
-    }
-
-    fn not_first_access(&self) -> Expression<F> {
-        not::expr(self.lexicographic_ordering_diff_selector.clone())
-            * self.is_storage_key_diff_zero()
+        not::expr(self.lexicographic_ordering_diff_1_is_zero.clone())
+            * not::expr(self.is_storage_key_unchanged.clone())
     }
 
     fn address_change(&self) -> Expression<F> {
         self.address.value.clone() - self.address.value_prev.clone()
-    }
-
-    // replace this with IsZeroChip
-    fn is_storage_key_diff_zero(&self) -> Expression<F> {
-        1.expr()
-            - self.storage_key_diff_inverse.clone()
-                * (self.storage_key.encoded.clone() - self.storage_key.encoded_prev.clone())
     }
 }
 
