@@ -42,12 +42,15 @@ pub struct StateConfig {
     id: MpiConfig<u32, N_LIMBS_ID>,
     address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
     field_tag: Column<Advice>,
+    // use WordConfig
     storage_key: RlcConfig<N_BYTES_WORD>,
     value: Column<Advice>,
     lookups: LookupsConfig,
     power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
     // lexicographic_ordering config, etc.
     lexicographic_ordering: LexicographicOrderingConfig,
+    // use IsZeroChip instead.
+    storage_key_diff_inverse: Column<Advice>,
 }
 
 type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
@@ -97,7 +100,8 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
 
-        let [is_write, tag, field_tag, value] = [0; 4].map(|_| meta.advice_column());
+        let [is_write, tag, field_tag, value, storage_key_diff_inverse] =
+            [0; 5].map(|_| meta.advice_column());
 
         let id = MpiChip::configure(meta, selector, lookups.u16);
         let address = MpiChip::configure(meta, selector, lookups.u16);
@@ -125,6 +129,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 rw_counter.limbs,
                 lookups.u16,
             ),
+            storage_key_diff_inverse,
             lookups,
             power_of_randomness,
         };
@@ -149,12 +154,15 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
     ) -> Result<(), Error> {
         LookupsChip::construct(config.lookups).load(&mut layouter)?;
 
+        dbg!(self.rows.clone());
+
+        let mut prev_storage_key = F::zero();
+
         layouter.assign_region(
             || "assign rw table",
             |mut region| {
                 for (offset, row) in self.rows.iter().enumerate() {
                     if offset != 0 {
-                        // just treat selector as is_start?
                         region.assign_fixed(
                             || "selector",
                             config.selector,
@@ -172,11 +180,12 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                     config
                         .rw_counter
                         .assign(&mut region, offset, row.rw_counter() as u32)?;
+                    dbg!(row, if row.is_write() { F::one() } else { F::zero() });
                     region.assign_advice(
                         || "is_write",
                         config.is_write,
                         offset,
-                        || Ok(F::from(row.is_write() as u64)),
+                        || Ok(if row.is_write() { F::one() } else { F::zero() }),
                     )?;
                     region.assign_advice(
                         || "tag",
@@ -199,23 +208,30 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         )?;
                     }
 
-                    // TODO: must explicitly assign to cells to convince MockProver.
-                    // I don't think this was needed in the past?
-                    // this also isn't needed for address???
-                    // config.storage_key.assign(
-                    //     &mut region,
-                    //     offset,
-                    //     self.randomness,
-                    //     row.storage_key().unwrap_or_default(),
-                    // )?;
-                    if let Some(storage_key) = row.storage_key() {
-                        config.storage_key.assign(
+                    // TODO: chain assigments idiomatically.
+                    let cur_storage_key = *(config
+                        .storage_key
+                        .assign(
                             &mut region,
                             offset,
                             self.randomness,
-                            storage_key,
-                        )?;
-                    }
+                            row.storage_key().unwrap_or_default(),
+                        )?
+                        .value()
+                        .unwrap_or(&F::zero()));
+
+                    region.assign_advice(
+                        || "storage_key_diff_inverse",
+                        config.storage_key_diff_inverse,
+                        offset,
+                        || {
+                            Ok((cur_storage_key - prev_storage_key)
+                                .invert()
+                                .unwrap_or(F::zero()))
+                        },
+                    )?;
+
+                    prev_storage_key = cur_storage_key;
                 }
                 Ok(())
             },
@@ -229,6 +245,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: StateConfig) -> Queries<
         rw_counter: MpiQueries::new(meta, c.rw_counter),
         is_write: meta.query_advice(c.is_write, Rotation::cur()),
         tag: meta.query_advice(c.tag, Rotation::cur()),
+        prev_tag: meta.query_advice(c.tag, Rotation::prev()),
         id: MpiQueries::new(meta, c.id),
         address: MpiQueries::new(meta, c.address),
         field_tag: meta.query_advice(c.field_tag, Rotation::cur()),
@@ -240,5 +257,6 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: StateConfig) -> Queries<
             .map(|c| meta.query_instance(c, Rotation::cur())),
         lexicographic_ordering_diff_selector: meta
             .query_advice(c.lexicographic_ordering.diff_selector, Rotation::cur()),
+        storage_key_diff_inverse: meta.query_advice(c.storage_key_diff_inverse, Rotation::cur()),
     }
 }

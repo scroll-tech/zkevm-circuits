@@ -19,6 +19,7 @@ pub struct Queries<F: Field> {
     pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
+    pub prev_tag: Expression<F>,
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub address: MpiQueries<F, N_LIMBS_ACCOUNT_ADDRESS>,
     pub field_tag: Expression<F>,
@@ -28,6 +29,7 @@ pub struct Queries<F: Field> {
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
 
     pub lexicographic_ordering_diff_selector: Expression<F>,
+    pub storage_key_diff_inverse: Expression<F>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
@@ -98,6 +100,17 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_general_constraints(&mut self, q: &Queries<F>) {
         self.require_in_set("tag in RwTableTag range", q.tag(), set::<F, RwTableTag>());
         self.require_boolean("is_write is boolean", q.is_write());
+
+        // TODO: use IsZeroChip instead.
+        self.require_zero(
+            "todooooo_1",
+            q.is_storage_key_diff_zero() * q.storage_key_diff_inverse.clone(),
+        );
+        self.require_zero(
+            "todooooo_2",
+            q.is_storage_key_diff_zero()
+                * (q.storage_key.encoded.clone() - q.storage_key.encoded_prev.clone()),
+        );
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
@@ -127,16 +140,20 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero("storage_key is 0 for Stack", q.storage_key.encoded.clone());
         self.require_zero(
             "first access to new stack address is a write",
-            q.first_access() * q.is_write(),
+            q.first_access() * (1.expr() - q.is_write()),
         );
         self.add_lookup(
             "stack address fits into 10 bits",
             (q.address.value.clone(), q.lookups.u10.clone()),
         );
-        self.require_zero(
-            "if call_id doesn't change, stack address change is 0 or 1",
-            q.id_change() * q.address_change(),
-        )
+        self.condition(q.first_access(), |cb| {
+            cb.require_zero(
+                "previous tag is Start, address change is 0 or address change is 1",
+                (q.prev_tag.clone() - RwTableTag::Start.expr())
+                    * q.address_change()
+                    * (1.expr() - q.address_change()),
+            )
+        });
     }
 
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
@@ -145,12 +162,13 @@ impl<F: Field> ConstraintBuilder<F> {
         // No longer true because we moved id from aux to here.
         // self.require_zero("id is 0 for AccountStorage", q.id());
         self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
-        // for every first access, we add an AccountStorage write to setup the value
-        // from the previous block with rw_counter = 0
-        self.condition(q.first_access(), |cb| {
-            cb.require_zero("first access is a write", q.is_write());
-            cb.require_zero("first access rw_counter is 0", q.rw_counter.value.clone());
-        })
+        // for every first access, we add an AccountStorage write to setup the
+        // value from the previous block with rw_counter = 0
+        // needs some work...
+        // self.condition(q.first_access(), |cb| {
+        //     cb.require_zero("first access is a write", q.is_write());
+        //     // cb.require_zero("first access rw_counter is 0",
+        // q.rw_counter.value.clone()); })
     }
     fn build_tx_access_list_account_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for TxAccessListAccount", q.field_tag());
@@ -190,12 +208,12 @@ impl<F: Field> ConstraintBuilder<F> {
             q.field_tag(),
             set::<F, AccountFieldTag>(),
         );
-        // for every first access, we add an Account write to setup the value from the
-        // previous block with rw_counter = 0
-        self.condition(q.first_access(), |cb| {
-            cb.require_zero("first access is a write", q.is_write());
-            cb.require_zero("first access rw_counter is 0", q.rw_counter.value.clone());
-        });
+        // // for every first access, we add an Account write to setup the value
+        // from the // previous block with rw_counter = 0
+        // self.condition(q.first_access(), |cb| {
+        //     // cb.require_zero("first access is a write", q.is_write());
+        //     cb.require_zero("first access rw_counter is 0",
+        // q.rw_counter.value.clone()); });
     }
 
     fn build_account_destructed_constraints(&mut self, q: &Queries<F>) {
@@ -294,12 +312,23 @@ impl<F: Field> Queries<F> {
     }
 
     fn first_access(&self) -> Expression<F> {
+        not::expr(self.not_first_access())
+    }
+
+    fn not_first_access(&self) -> Expression<F> {
         not::expr(self.lexicographic_ordering_diff_selector.clone())
-            * (self.storage_key.encoded.clone() - self.storage_key.encoded_prev.clone())
+            * self.is_storage_key_diff_zero()
     }
 
     fn address_change(&self) -> Expression<F> {
         self.address.value.clone() - self.address.value_prev.clone()
+    }
+
+    // replace this with IsZeroChip
+    fn is_storage_key_diff_zero(&self) -> Expression<F> {
+        1.expr()
+            - self.storage_key_diff_inverse.clone()
+                * (self.storage_key.encoded.clone() - self.storage_key.encoded_prev.clone())
     }
 }
 

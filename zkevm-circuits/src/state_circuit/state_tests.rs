@@ -1,6 +1,6 @@
 mod tests {
     use super::super::StateCircuit;
-    use crate::evm_circuit::witness::RwMap;
+    use crate::evm_circuit::witness::{Rw, RwMap};
     use bus_mapping::operation::{
         MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
     };
@@ -8,9 +8,11 @@ mod tests {
         evm_types::{MemoryAddress, StackAddress},
         ToAddress, Word, U256,
     };
-    use halo2_proofs::plonk::Circuit;
-    use halo2_proofs::plonk::ConstraintSystem;
-    use halo2_proofs::{arithmetic::BaseExt, dev::MockProver};
+    use halo2_proofs::{
+        arithmetic::BaseExt,
+        dev::{MockProver, VerifyFailure},
+        plonk::{Circuit, ConstraintSystem},
+    };
     use pairing::bn256::Fr;
 
     fn test_state_circuit_ok(
@@ -26,7 +28,7 @@ mod tests {
         });
 
         let randomness = Fr::rand();
-        let circuit = StateCircuit { randomness, rw_map };
+        let circuit = StateCircuit::new(randomness, rw_map);
         let power_of_randomness = circuit.instance();
 
         let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
@@ -183,5 +185,37 @@ mod tests {
             MemoryOp::new(1, MemoryAddress::from(0), 32),
         );
         test_state_circuit_ok(vec![memory_op_0, memory_op_1], vec![], vec![]);
+    }
+
+    #[test]
+    fn first_access_for_stack_is_write() {
+        let rows = vec![
+            Rw::Stack {
+                rw_counter: 24,
+                is_write: true,
+                call_id: 1,
+                stack_pointer: 1022,
+                value: U256::from(394500u64),
+            },
+            Rw::Stack {
+                rw_counter: 25,
+                is_write: false,
+                call_id: 1,
+                stack_pointer: 1022,
+                value: U256::from(394500u64),
+            },
+        ];
+
+        assert_eq!(verify(rows), Ok(()));
+    }
+
+    fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {
+        let randomness = Fr::rand();
+        let circuit = StateCircuit { randomness, rows };
+        let power_of_randomness = circuit.instance();
+
+        MockProver::<Fr>::run(19, &circuit, power_of_randomness)
+            .unwrap()
+            .verify()
     }
 }
