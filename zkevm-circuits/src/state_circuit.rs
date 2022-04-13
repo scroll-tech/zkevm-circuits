@@ -7,7 +7,10 @@ mod random_linear_combination;
 #[cfg(test)]
 mod state_tests;
 
-use crate::evm_circuit::{param::N_BYTES_WORD, witness::RwMap};
+use crate::evm_circuit::{
+    param::N_BYTES_WORD,
+    witness::{Rw, RwMap},
+};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
 use halo2_proofs::{
@@ -52,21 +55,31 @@ type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 /// State Circuit for proving RwTable is valid
 #[derive(Default)]
 pub struct StateCircuit<F: Field> {
-    randomness: F,
-    rw_map: RwMap,
+    pub(crate) randomness: F,
+    pub(crate) rows: Vec<Rw>,
 }
 
 impl<F: Field> StateCircuit<F> {
     /// make a new state circuit
     pub fn new(randomness: F, rw_map: RwMap) -> Self {
-        Self { randomness, rw_map }
+        let mut rows: Vec<_> = rw_map.0.into_values().flatten().collect();
+        rows.sort_by_key(|row| {
+            (
+                row.tag() as u64,
+                row.field_tag().unwrap_or_default(),
+                row.id().unwrap_or_default(),
+                row.address().unwrap_or_default(),
+                row.storage_key().unwrap_or_default(),
+                row.rw_counter(),
+            )
+        });
+        Self { randomness, rows }
     }
 
     /// powers of randomness for instance columns
     pub fn instance(&self) -> Vec<Vec<F>> {
-        let n_rows = self.rw_map.0.values().flatten().count();
         (1..32)
-            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); n_rows])
+            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.rows.len()])
             .collect()
     }
 }
@@ -136,26 +149,10 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
     ) -> Result<(), Error> {
         LookupsChip::construct(config.lookups).load(&mut layouter)?;
 
-        // TODO: move sorting out of synthesize, so we can check that unsorted witnesses
-        // don't verify.
-        let mut rows: Vec<_> = self.rw_map.0.values().flatten().collect();
-        rows.sort_by_key(|row| {
-            (
-                row.tag() as u64,
-                row.field_tag().unwrap_or_default(),
-                row.id().unwrap_or_default(),
-                row.address().unwrap_or_default(),
-                row.storage_key().unwrap_or_default(),
-                row.rw_counter(),
-            )
-        });
-
-        dbg!(rows.clone());
-
         layouter.assign_region(
             || "assign rw table",
             |mut region| {
-                for (offset, row) in rows.iter().enumerate() {
+                for (offset, row) in self.rows.iter().enumerate() {
                     if offset != 0 {
                         // just treat selector as is_start?
                         region.assign_fixed(
@@ -169,7 +166,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                             &mut region,
                             offset,
                             row,
-                            rows[offset - 1],
+                            &self.rows[offset - 1],
                         )?;
                     }
                     config
