@@ -1,21 +1,17 @@
 use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
 use crate::{
-    evm_circuit::{
-        param::N_BYTES_WORD,
-        util::{not, select},
-        witness::Rw,
-    },
+    evm_circuit::{param::N_BYTES_WORD, witness::Rw},
     gadget::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     util::Expr,
 };
 use eth_types::{Field, ToBigEndian};
 use halo2_proofs::{
-    circuit::{AssignedCell, Region},
+    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::{marker::PhantomData, ops::Mul};
+use std::ops::Mul;
 
 // 2 limbs for tag, field_tag and id.
 // 10 limbs for address,
@@ -166,26 +162,10 @@ impl<F: Field> Chip<F> {
 
         let mut diff_1 = F::from((cur_limb - prev_limb).into());
         let mut diff_2 = diff_2_value(&cur_be_limbs, &prev_be_limbs);
-        // let mut diff_2 = if cur_be_limbs[29] >= prev_be_limbs[29] {
-        //     F::from((cur_be_limbs[29] - prev_be_limbs[29]).into())
-        // } else {
-        //     -F::from((prev_be_limbs[29] - cur_be_limbs[29]).into())
-        // };
         if index >= 15 {
-            dbg!(cur_be_limbs.clone());
-            dbg!(prev_be_limbs.clone());
-            dbg!(index);
             diff_1 = F::zero();
             diff_2 = F::from((cur_limb - prev_limb).into());
         }
-        //
-        // if diff_2 == F::zero() {
-        //     panic!();
-        // }
-        //
-        // if diff_1 == F::zero() {
-        //     dbg!(cur, prev);
-        // }
 
         region.assign_advice(|| "diff_1", self.config.diff_1, offset, || Ok(diff_1))?;
         region.assign_advice(|| "diff_2", self.config.diff_2, offset, || Ok(diff_2))?;
@@ -250,20 +230,14 @@ impl<F: Field> Queries<F> {
 fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
     let mut be_bytes = vec![];
     be_bytes.extend_from_slice(&(row.id().unwrap_or_default() as u32).to_be_bytes());
-    assert_eq!(be_bytes.len(), 4);
+    be_bytes.extend_from_slice(&(row.address().unwrap_or_default().0));
+    be_bytes.extend_from_slice(&(row.storage_key().unwrap_or_default().to_be_bytes()));
+    be_bytes.extend_from_slice(&((row.rw_counter() as u32).to_be_bytes()));
 
     // check that the first byte of id is not used, and overwrites it with packed
     // tags.
     assert_eq!(be_bytes[0], 0);
     be_bytes[0] = row.field_tag().unwrap_or_default() as u8 + ((row.tag() as u8) << 4);
-    assert_eq!(be_bytes.len(), 4);
-
-    be_bytes.extend_from_slice(&(row.address().unwrap_or_default().0));
-    assert_eq!(be_bytes.len(), 24);
-    be_bytes.extend_from_slice(&(row.storage_key().unwrap_or_default().to_be_bytes()));
-    assert_eq!(be_bytes.len(), 24 + 32);
-    be_bytes.extend_from_slice(&((row.rw_counter() as u32).to_be_bytes()));
-    assert_eq!(be_bytes.len(), 24 + 32 + 4);
 
     be_bytes
         .iter()

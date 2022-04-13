@@ -50,13 +50,6 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     pub fn gate(&self, condition: Expression<F>) -> Vec<(&'static str, Expression<F>)> {
-        // for (name, constraint) in &self.constraints {
-        //     if constraint.degree() >= 16 {
-        //         dbg!(name);
-        //         panic!();
-        //     }
-        //     // assert!(constraint.degree() <= 16);
-        // }
         self.constraints
             .iter()
             .cloned()
@@ -144,7 +137,8 @@ impl<F: Field> ConstraintBuilder<F> {
         // this pushes the degree to 17....
         self.condition(q.first_access(), |cb| {
             cb.require_zero(
-                "previous tag is Start, address change is 0 or address change is 1",
+                // previous tag is Start <=> this is the first stack rw
+                "previous tag is Start or address change is 0 or 1",
                 (q.prev_tag.clone() - RwTableTag::Start.expr())
                     * q.address_change()
                     * (1.expr() - q.address_change()),
