@@ -160,11 +160,11 @@ impl<F: Field> Chip<F> {
             .find(|(_, (a, b))| a != b);
         let (index, (cur_limb, prev_limb)) = find_result.expect("repeated rw counter");
 
-        let mut diff_1 = F::from((cur_limb - prev_limb).into());
+        let mut diff_1 = F::from_u128((cur_limb - prev_limb).into());
         let mut diff_2 = diff_2_value(&cur_be_limbs, &prev_be_limbs);
         if index >= 15 {
             diff_1 = F::zero();
-            diff_2 = F::from((cur_limb - prev_limb).into());
+            diff_2 = F::from_u128((cur_limb - prev_limb).into());
         }
 
         region.assign_advice(|| "diff_1", self.config.diff_1, offset, || Ok(diff_1))?;
