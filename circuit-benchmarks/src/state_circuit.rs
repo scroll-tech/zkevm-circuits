@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::bench_params::{DEGREE, MEMORY_ADDRESS_MAX, STACK_ADDRESS_MAX};
+    use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
     use halo2_proofs::{
@@ -14,20 +14,10 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use zkevm_circuits::state_circuit::StateCircuit;
 
-    const RW_COUNTER_MAX: usize = 1 << DEGREE;
-    const ROWS_MAX: usize = 1 << DEGREE;
-
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_state_circuit_prover() {
-        let empty_circuit = StateCircuit::<
-            Fr,
-            true,
-            RW_COUNTER_MAX,
-            MEMORY_ADDRESS_MAX,
-            STACK_ADDRESS_MAX,
-            ROWS_MAX,
-        >::default();
+        let empty_circuit = StateCircuit::<Fr>::default();
 
         // Initialize the polynomial commitment parameters
         let rng = XorShiftRng::from_seed([

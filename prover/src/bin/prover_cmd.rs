@@ -3,7 +3,7 @@ use bus_mapping::rpc::GethClient;
 use env_logger::Env;
 use ethers_providers::Http;
 use halo2_proofs::{
-    plonk::*,
+    plonk::{create_proof, keygen_pk, keygen_vk},
     poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},
 };
@@ -108,24 +108,11 @@ async fn main() {
     }
 
     {
-        // generate state_circuit proof
-        //
-        // TODO: this should be configurable
-        const MEMORY_ADDRESS_MAX: usize = 2000;
-        const STACK_ADDRESS_MAX: usize = 1300;
-        const MEMORY_ROWS_MAX: usize = 16384;
-        const STACK_ROWS_MAX: usize = 16384;
-        const STORAGE_ROWS_MAX: usize = 16384;
-        const GLOBAL_COUNTER_MAX: usize = MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
+        let circuit = StateCircuit::new(block.randomness, block.rws);
 
-        let circuit = StateCircuit::<
-            Fr,
-            true,
-            GLOBAL_COUNTER_MAX,
-            MEMORY_ADDRESS_MAX,
-            STACK_ADDRESS_MAX,
-            GLOBAL_COUNTER_MAX,
-        >::new(block.randomness, &block.rws);
+        // generate state_circuit proof
+        let instance = circuit.instance();
+        let instance_slices: Vec<_> = instance.iter().map(Vec::as_slice).collect();
 
         // TODO: same quest like in the first scope
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk for params, state_circuit");
@@ -139,7 +126,15 @@ async fn main() {
 
         // create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof(&params, &pk, &[circuit], &[], rng, &mut transcript).expect("state proof");
+        create_proof(
+            &params,
+            &pk,
+            &[circuit],
+            &[&instance_slices],
+            rng,
+            &mut transcript,
+        )
+        .expect("state proof");
         state_proof = transcript.finalize();
     }
 

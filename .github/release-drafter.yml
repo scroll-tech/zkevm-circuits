@@ -7,6 +7,8 @@ categories:
     label: "crate-eth-types"
   - title: "Changes in external-tracer"
     label: "crate-external-tracer"
+  - title: "Changes in gadgets"
+    label: "crate-gadgets"
   - title: "Changes in geth-utils"
     label: "crate-geth-utils"
   - title: "Changes in integration-tests"

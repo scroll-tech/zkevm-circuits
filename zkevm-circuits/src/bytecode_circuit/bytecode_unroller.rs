@@ -6,14 +6,14 @@ use crate::{
             RandomLinearCombination,
         },
     },
-    gadget::{
-        evm_word::encode,
-        is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
-    },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
+use gadgets::{
+    evm_word::encode,
+    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+};
 use halo2_proofs::{
     circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
@@ -45,7 +45,7 @@ pub(crate) struct UnrolledBytecode<F: Field> {
 pub struct Config<F> {
     r: F,
     minimum_rows: usize,
-    q_enable: Selector,
+    q_enable: Column<Fixed>,
     q_first: Column<Fixed>,
     q_last: Selector,
     hash: Column<Advice>,
@@ -69,7 +69,7 @@ pub struct Config<F> {
 
 impl<F: Field> Config<F> {
     pub(crate) fn configure(meta: &mut ConstraintSystem<F>, r: F) -> Self {
-        let q_enable = meta.complex_selector();
+        let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_last = meta.selector();
         let hash = meta.advice_column();
@@ -95,7 +95,7 @@ impl<F: Field> Config<F> {
             |meta| {
                 // Conditions:
                 // - Not on the first row
-                meta.query_selector(q_enable)
+                meta.query_fixed(q_enable, Rotation::cur())
                     * not::expr(meta.query_fixed(q_first, Rotation::cur()))
             },
             |meta| meta.query_advice(push_rindex, Rotation::prev()),
@@ -121,7 +121,7 @@ impl<F: Field> Config<F> {
         // For a row tagged Length, is the length (value) zero?
         let length_is_zero = IsZeroChip::configure(
             meta,
-            |meta| meta.query_selector(q_enable) * is_row_tag_length(meta),
+            |meta| meta.query_fixed(q_enable, Rotation::cur()) * is_row_tag_length(meta),
             |meta| meta.query_advice(value, Rotation::cur()),
             length_inv,
         );
@@ -191,7 +191,7 @@ impl<F: Field> Config<F> {
             // Conditions:
             // - Continuing
             cb.gate(and::expr(vec![
-                meta.query_selector(q_enable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 q_continue(meta),
             ]))
         });
@@ -227,7 +227,7 @@ impl<F: Field> Config<F> {
             // - Not Continuing
             // - This is the start of a new bytecode
             cb.gate(and::expr(vec![
-                meta.query_selector(q_enable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 is_row_tag_length(meta),
                 not::expr(q_continue(meta)),
             ]))
@@ -244,7 +244,7 @@ impl<F: Field> Config<F> {
             // - Not Continuing
             // - This is not the start of a new bytecode
             cb.gate(and::expr(vec![
-                meta.query_selector(q_enable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 not::expr(is_row_tag_length(meta)),
                 not::expr(q_continue(meta)),
             ]))
@@ -264,7 +264,7 @@ impl<F: Field> Config<F> {
             // - Of bytecode with length > 0
             // - Not padding
             cb.gate(and::expr(vec![
-                meta.query_selector(q_enable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_advice(is_final, Rotation::cur()),
                 not::expr(meta.query_advice(padding, Rotation::cur())),
             ]))
@@ -292,7 +292,7 @@ impl<F: Field> Config<F> {
                 );
             });
             // Conditions: Always
-            cb.gate(meta.query_selector(q_enable))
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
         meta.create_gate("padding", |meta| {
@@ -305,7 +305,7 @@ impl<F: Field> Config<F> {
             // Conditions:
             // - Not on the first row
             cb.gate(and::expr(vec![
-                meta.query_selector(q_enable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 not::expr(meta.query_fixed(q_first, Rotation::cur())),
             ]))
         });
@@ -332,8 +332,8 @@ impl<F: Field> Config<F> {
         // Lookup how many bytes the current opcode pushes
         // (also indirectly range checks `byte` to be in [0, 255])
         meta.lookup_any("Range bytes", |meta| {
-            // Conditions: If the current row is is tagged Byte
-            let q_enable = meta.query_selector(q_enable) * is_row_tag_byte(meta);
+            // Conditions: Always
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur()) * is_row_tag_byte(meta);
             let lookup_columns = vec![value, byte_push_size];
             let mut constraints = vec![];
             for i in 0..PUSH_TABLE_WIDTH {
@@ -396,41 +396,41 @@ impl<F: Field> Config<F> {
         mut layouter: impl Layouter<F>,
         size: usize,
         witness: &[UnrolledBytecode<F>],
-    ) {
+    ) -> Result<(), Error> {
         let push_rindex_is_zero_chip = IsZeroChip::construct(self.push_rindex_is_zero.clone());
         let length_is_zero_chip = IsZeroChip::construct(self.length_is_zero.clone());
 
         // Subtract the unusable rows from the size
         let last_row_offset = size - self.minimum_rows + 1;
 
-        layouter
-            .assign_region(
-                || "assign bytecode",
-                |mut region| {
-                    let mut offset = 0;
-                    let mut push_rindex_prev = 0;
+        layouter.assign_region(
+            || "assign bytecode",
+            |mut region| {
+                let mut offset = 0;
+                let mut push_rindex_prev = 0;
 
-                    for bytecode in witness.iter() {
-                        // Run over all the bytes
-                        let mut push_rindex = 0;
-                        let mut byte_push_size = 0;
-                        let mut hash_rlc = F::zero();
-                        let hash_length = F::from(bytecode.bytes.len() as u64);
-                        for (idx, row) in bytecode.rows.iter().enumerate() {
-                            // Track which byte is an opcode and which is push
-                            // data
-                            let is_code = push_rindex == 0;
-                            if idx > 0 {
-                                byte_push_size = get_push_size(row.value.get_lower_128() as u8);
-                                push_rindex = if is_code {
-                                    byte_push_size
-                                } else {
-                                    push_rindex - 1
-                                };
-                                hash_rlc = hash_rlc * self.r + row.value;
-                            }
+                for bytecode in witness.iter() {
+                    // Run over all the bytes
+                    let mut push_rindex = 0;
+                    let mut byte_push_size = 0;
+                    let mut hash_rlc = F::zero();
+                    let hash_length = F::from(bytecode.bytes.len() as u64);
+                    for (idx, row) in bytecode.rows.iter().enumerate() {
+                        // Track which byte is an opcode and which is push
+                        // data
+                        let is_code = push_rindex == 0;
+                        if idx > 0 {
+                            byte_push_size = get_push_size(row.value.get_lower_128() as u8);
+                            push_rindex = if is_code {
+                                byte_push_size
+                            } else {
+                                push_rindex - 1
+                            };
+                            hash_rlc = hash_rlc * self.r + row.value;
+                        }
 
-                            // Set the data for this row
+                        // Set the data for this row
+                        if offset <= last_row_offset {
                             self.set_row(
                                 &mut region,
                                 &push_rindex_is_zero_chip,
@@ -455,36 +455,35 @@ impl<F: Field> Config<F> {
                             offset += 1;
                         }
                     }
+                }
 
-                    // Padding
-                    for idx in offset..size {
-                        self.set_row(
-                            &mut region,
-                            &push_rindex_is_zero_chip,
-                            &length_is_zero_chip,
-                            idx,
-                            idx < size,
-                            idx == last_row_offset,
-                            F::zero(),
-                            F::from(BytecodeFieldTag::Padding as u64),
-                            F::zero(),
-                            F::one(),
-                            F::zero(),
-                            0,
-                            F::zero(),
-                            F::zero(),
-                            F::zero(),
-                            true,
-                            true,
-                            F::from(push_rindex_prev),
-                        )?;
-                        push_rindex_prev = 0;
-                    }
-
-                    Ok(())
-                },
-            )
-            .ok();
+                // Padding
+                for idx in offset..=last_row_offset {
+                    self.set_row(
+                        &mut region,
+                        &push_rindex_is_zero_chip,
+                        &length_is_zero_chip,
+                        idx,
+                        idx < last_row_offset,
+                        idx == last_row_offset,
+                        F::zero(),
+                        F::from(BytecodeFieldTag::Padding as u64),
+                        F::zero(),
+                        F::one(),
+                        F::zero(),
+                        0,
+                        F::zero(),
+                        F::zero(),
+                        F::zero(),
+                        true,
+                        true,
+                        F::from(push_rindex_prev),
+                    )?;
+                    push_rindex_prev = 0;
+                }
+                Ok(())
+            },
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -510,9 +509,12 @@ impl<F: Field> Config<F> {
         push_rindex_prev: F,
     ) -> Result<(), Error> {
         // q_enable
-        if enable {
-            self.q_enable.enable(region, offset)?;
-        }
+        region.assign_fixed(
+            || format!("assign q_enable {}", offset),
+            self.q_enable,
+            offset,
+            || Ok(F::from(enable as u64)),
+        )?;
 
         // q_first
         region.assign_fixed(
@@ -723,7 +725,7 @@ mod tests {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
             config.load(&mut layouter, &self.bytecodes)?;
-            config.assign(layouter, self.size, &self.bytecodes);
+            config.assign(layouter, self.size, &self.bytecodes)?;
             Ok(())
         }
     }

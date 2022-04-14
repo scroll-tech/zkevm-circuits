@@ -10,6 +10,8 @@ crate-eth-types:
   - eth-types/**/*
 crate-external-tracer:
   - external-tracer/**/*
+crate-gadgets:
+  - gadgets/**/*
 crate-geth-utils:
   - geth-utils/**/*
 crate-integration-tests:
@@ -30,6 +32,7 @@ T-opcode:
         "zkevm-circuits/src/evm_circuit/execution/**/*",
         "bus-mapping/src/evm/opcodes/**/*",
       ]
+
 # Add 'T-bench' to any changes related to benchmarks in `circuit-benchmarks`.
 T-bench:
   - circuit-benchmarks/**/*

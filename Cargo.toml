@@ -4,6 +4,7 @@ members = [
     "bus-mapping",
     "keccak256",
     "geth-utils",
+    "gadgets",
     "integration-tests",
     "circuit-benchmarks",
     "eth-types",

@@ -4,6 +4,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use strum_macros::EnumIter;
 
 pub trait LookupTable<F: FieldExt, const W: usize> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W];
@@ -40,6 +41,7 @@ pub enum FixedTableTag {
 }
 
 impl FixedTableTag {
+    // TODO(mason) derive with strum instead.
     pub fn iterator() -> impl Iterator<Item = Self> {
         [
             Self::Range5,
@@ -159,10 +161,11 @@ pub enum BlockContextFieldTag {
     ChainId,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum RwTableTag {
-    Memory = 2,
+    Start = 1,
     Stack,
+    Memory,
     AccountStorage,
     TxAccessListAccount,
     TxAccessListAccountStorage,
@@ -186,7 +189,7 @@ impl RwTableTag {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 pub enum AccountFieldTag {
     Nonce = 1,
     Balance,
@@ -200,7 +203,9 @@ pub enum BytecodeFieldTag {
     Padding,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+// there are ~25 tags here.
+// # of possible tag, field_tag combinations is less than 64?
+#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
 pub enum CallContextFieldTag {
     RwCounterEndOfReversion = 1,
     CallerId,

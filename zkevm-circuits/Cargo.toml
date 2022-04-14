@@ -16,16 +16,18 @@ sha3 = "0.7.2"
 digest = "0.7.6"
 array-init = "2.0.0"
 paste = "1.0"
-bus-mapping = { path = "../bus-mapping"}
+bus-mapping = { path = "../bus-mapping" }
 eth-types = { path = "../eth-types" }
+gadgets = { path = "../gadgets" }
 ethers-core = "0.6"
 serde_json = "1.0.66"
+strum = "0.24"
+strum_macros = "0.24"
 rand_xorshift = "0.3"
 rand = "0.8"
 itertools = "0.10.3"
 lazy_static = "1.4"
 keccak256 = { path = "../keccak256"}
-
 log = "0.4.14"
 env_logger = "0.9"
 
