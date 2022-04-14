@@ -242,7 +242,7 @@ mod tests {
 
         let rows_len = circuit.rows.len();
         let prover = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
-        
+
         prover.verify_at_rows(0..rows_len, 0..rows_len)
     }
 }
