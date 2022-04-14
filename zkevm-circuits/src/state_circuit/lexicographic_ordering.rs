@@ -1,10 +1,10 @@
 use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, witness::Rw},
-    gadget::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
     util::Expr,
 };
 use eth_types::{Field, ToBigEndian};
+use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},

@@ -11,9 +11,9 @@ use crate::evm_circuit::{
     param::N_BYTES_WORD,
     witness::{Rw, RwMap},
 };
-use crate::gadget::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
+use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{

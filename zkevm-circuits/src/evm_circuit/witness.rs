@@ -643,20 +643,6 @@ impl Rw {
         }
     }
 
-    pub fn rw_counter(&self) -> usize {
-        match self {
-            Self::Memory { rw_counter, .. }
-            | Self::Stack { rw_counter, .. }
-            | Self::AccountStorage { rw_counter, .. }
-            | Self::TxAccessListAccount { rw_counter, .. }
-            | Self::TxAccessListAccountStorage { rw_counter, .. }
-            | Self::TxRefund { rw_counter, .. }
-            | Self::Account { rw_counter, .. }
-            | Self::AccountDestructed { rw_counter, .. }
-            | Self::CallContext { rw_counter, .. } => *rw_counter,
-        }
-    }
-
     pub fn is_write(&self) -> bool {
         match self {
             Self::Memory { is_write, .. }
@@ -773,9 +759,9 @@ impl Rw {
             | Self::Stack { value, .. } => {
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
             }
-            Self::TxAccessListAccount { value, .. }
-            | Self::TxAccessListAccountStorage { value, .. }
-            | Self::AccountDestructed { value, .. } => F::from(*value as u64),
+            Self::TxAccessListAccount { is_warm, .. }
+            | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
+            Self::AccountDestructed { is_destructed, .. } => F::from(*is_destructed as u64),
             Self::Memory { byte, .. } => F::from(u64::from(*byte)),
             Self::TxRefund { value, .. } => F::from(*value),
         }
@@ -789,9 +775,11 @@ impl Rw {
                     randomness,
                 ))
             }
-            Self::TxAccessListAccount { value_prev, .. }
-            | Self::TxAccessListAccountStorage { value_prev, .. }
-            | Self::AccountDestructed { value_prev, .. } => Some(F::from(*value_prev as u64)),
+            Self::TxAccessListAccount { is_warm_prev, .. }
+            | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
+                Some(F::from(*is_warm_prev as u64))
+            }
+            Self::AccountDestructed { is_destructed, .. } => Some(F::from(*is_destructed as u64)),
             Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
             Self::Stack { .. } | Self::Memory { .. } | Self::CallContext { .. } => None,
         }
