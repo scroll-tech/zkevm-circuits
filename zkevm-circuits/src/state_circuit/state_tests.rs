@@ -32,8 +32,9 @@ mod tests {
         let circuit = StateCircuit::new(randomness, rw_map);
         let power_of_randomness = circuit.instance();
 
-        let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
-        let verify_result = prover.verify();
+        let rows_len = circuit.rows.len();
+        let prover = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
+        let verify_result = prover.verify_at_rows(0..rows_len, 0..rows_len);
         assert_eq!(verify_result, Ok(()));
     }
 
@@ -239,8 +240,9 @@ mod tests {
         let circuit = StateCircuit { randomness, rows };
         let power_of_randomness = circuit.instance();
 
-        MockProver::<Fr>::run(19, &circuit, power_of_randomness)
-            .unwrap()
-            .verify()
+        let rows_len = circuit.rows.len();
+        let prover = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
+        
+        prover.verify_at_rows(0..rows_len, 0..rows_len)
     }
 }
