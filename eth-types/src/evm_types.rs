@@ -53,7 +53,7 @@ impl ProgramCounter {
 }
 
 /// Defines the gas left to perate.
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Gas(pub u64);
 
 impl fmt::Debug for Gas {
@@ -112,8 +112,9 @@ impl GasCost {
     pub const SSTORE_SET: Self = Self(20000);
     /// Constant cost for a storage reset
     pub const SSTORE_RESET: Self = Self(2900);
-    /// Constant cost for a storage clear
-    pub const SSTORE_CLEARS_SCHEDULE: Self = Self(15000);
+    /// Constant cost for a storage clear. EIP-3529 changed it to 4800 from
+    /// 15000.
+    pub const SSTORE_CLEARS_SCHEDULE: Self = Self(4800);
     /// Constant cost for a non-creation transaction
     pub const TX: Self = Self(21000);
     /// Constant cost for a creation transaction

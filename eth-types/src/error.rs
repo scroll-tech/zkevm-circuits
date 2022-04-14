@@ -12,6 +12,8 @@ pub enum Error {
     TracingError(String),
     /// Block is missing information about number or base_fee
     IncompleteBlock,
+    /// Denotes that the byte in the bytecode does not match with any Opcode ID.
+    InvalidOpcodeIdByte(u8),
     /// Error while parsing an `Instruction/Opcode`.
     OpcodeParsing,
     /// Error while parsing a `MemoryAddress`.

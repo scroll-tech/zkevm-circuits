@@ -224,7 +224,18 @@ pub mod test {
                         .assign(&mut region, offset, &Default::default())?;
                     offset += 1;
 
-                    for rw in rws.0.values().flat_map(|rws| rws.iter()) {
+                    let mut rows = rws
+                        .0
+                        .values()
+                        .flat_map(|rws| rws.iter())
+                        .collect::<Vec<_>>();
+
+                    rows.sort_by_key(|a| a.rw_counter());
+                    let mut expected_rw_counter = 1;
+                    for rw in rows {
+                        assert!(rw.rw_counter() == expected_rw_counter);
+                        expected_rw_counter += 1;
+
                         self.rw_table.assign(
                             &mut region,
                             offset,
@@ -409,6 +420,10 @@ pub mod test {
                 .map(|bytecode| bytecode.bytes.len())
                 .sum::<usize>(),
         ));
+        let k = k.max(log2_ceil(
+            64 + block.txs.iter().map(|tx| tx.steps.len()).sum::<usize>() * STEP_HEIGHT,
+        ));
+        log::debug!("evm circuit uses k = {}", k);
 
         let power_of_randomness = (1..32)
             .map(|exp| {

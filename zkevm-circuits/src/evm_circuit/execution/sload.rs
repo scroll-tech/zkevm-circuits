@@ -74,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(8.expr()),
             program_counter: Delta(1.expr()),
-            state_write_counter: Delta(1.expr()),
+            reversible_write_counter: Delta(1.expr()),
             gas_left: Delta(-gas_cost),
             ..Default::default()
         };
@@ -176,244 +176,71 @@ impl<F: Field> SloadGasGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        param::STACK_CAPACITY,
-        step::ExecutionState,
-        table::{CallContextFieldTag, RwTableTag},
-        test::{rand_fp, rand_word, run_test_circuit_incomplete_fixed_table},
-        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
+
+    use crate::{
+        evm_circuit::test::rand_word,
+        test_util::{run_test_circuits, BytecodeTestConfig},
     };
 
-    use bus_mapping::evm::OpcodeId;
-    use eth_types::{address, bytecode, evm_types::GasCost, ToWord, Word};
-    use std::convert::TryInto;
+    use eth_types::{bytecode, Word};
+    use mock::{test_ctx::helpers::tx_from_1_to_0, TestContext, MOCK_ACCOUNTS};
 
-    fn test_ok(
-        tx: eth_types::Transaction,
-        key: Word,
-        value: Word,
-        is_warm: bool,
-        is_persistent: bool,
-    ) {
-        let rw_counter_end_of_reversion = if is_persistent { 0 } else { 19 };
-
-        let call_data_gas_cost = tx
-            .input
-            .0
-            .iter()
-            .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 });
-
-        let randomness = rand_fp();
-        let bytecode = Bytecode::from(&bytecode! {
+    fn test_ok(key: Word, value: Word) {
+        // Here we use two bytecodes to test both is_persistent(STOP) or not(REVERT)
+        // Besides, in bytecode we use two SLOADs,
+        // the first SLOAD is used to test cold,  and the second is used to test warm
+        let bytecode_success = bytecode! {
             PUSH32(key)
-            #[start]
+            SLOAD
+            PUSH32(key)
             SLOAD
             STOP
-        });
-        let block = Block {
-            randomness,
-            txs: vec![Transaction {
-                id: 1,
-                nonce: tx.nonce.try_into().unwrap(),
-                gas: tx.gas.try_into().unwrap(),
-                gas_price: tx.gas_price.unwrap_or_else(Word::zero),
-                caller_address: tx.from,
-                callee_address: tx.to.unwrap(),
-                is_create: tx.to.is_none(),
-                value: tx.value,
-                call_data: tx.input.to_vec(),
-                call_data_length: tx.input.0.len(),
-                call_data_gas_cost,
-                calls: vec![Call {
-                    id: 1,
-                    is_root: true,
-                    is_create: false,
-                    code_source: CodeSource::Account(bytecode.hash),
-                    rw_counter_end_of_reversion,
-                    is_persistent,
-                    is_success: is_persistent,
-                    callee_address: tx.to.unwrap(),
-                    ..Default::default()
-                }],
-                steps: vec![
-                    ExecStep {
-                        rw_indices: [
-                            vec![
-                                (RwTableTag::CallContext, 0),
-                                (RwTableTag::CallContext, 1),
-                                (RwTableTag::CallContext, 2),
-                                (RwTableTag::CallContext, 3),
-                                (RwTableTag::Stack, 0),
-                                (RwTableTag::AccountStorage, 0),
-                                (RwTableTag::Stack, 1),
-                                (RwTableTag::TxAccessListAccountStorage, 0),
-                            ],
-                            if is_persistent {
-                                vec![]
-                            } else {
-                                vec![(RwTableTag::TxAccessListAccountStorage, 1)]
-                            },
-                        ]
-                        .concat(),
-                        execution_state: ExecutionState::SLOAD,
-                        rw_counter: 9,
-                        program_counter: 33,
-                        stack_pointer: STACK_CAPACITY,
-                        gas_left: if is_warm {
-                            GasCost::WARM_ACCESS.as_u64()
-                        } else {
-                            GasCost::COLD_SLOAD.as_u64()
-                        },
-                        gas_cost: if is_warm {
-                            GasCost::WARM_ACCESS.as_u64()
-                        } else {
-                            GasCost::COLD_SLOAD.as_u64()
-                        },
-                        opcode: Some(OpcodeId::SLOAD),
-                        ..Default::default()
-                    },
-                    ExecStep {
-                        execution_state: ExecutionState::STOP,
-                        rw_counter: 17,
-                        program_counter: 34,
-                        stack_pointer: STACK_CAPACITY,
-                        gas_left: 0,
-                        opcode: Some(OpcodeId::STOP),
-                        state_write_counter: 1,
-                        ..Default::default()
-                    },
-                ],
-            }],
-            rws: RwMap(
-                [
-                    (
-                        RwTableTag::Stack,
-                        vec![
-                            Rw::Stack {
-                                rw_counter: 13,
-                                is_write: false,
-                                call_id: 1,
-                                stack_pointer: STACK_CAPACITY,
-                                value: key,
-                            },
-                            Rw::Stack {
-                                rw_counter: 15,
-                                is_write: true,
-                                call_id: 1,
-                                stack_pointer: STACK_CAPACITY,
-                                value,
-                            },
-                        ],
-                    ),
-                    (
-                        RwTableTag::AccountStorage,
-                        vec![Rw::AccountStorage {
-                            rw_counter: 14,
-                            is_write: false,
-                            account_address: tx.to.unwrap(),
-                            storage_key: key,
-                            value,
-                            value_prev: value,
-                            tx_id: 1,
-                            committed_value: Word::zero(),
-                        }],
-                    ),
-                    (
-                        RwTableTag::TxAccessListAccountStorage,
-                        [
-                            vec![Rw::TxAccessListAccountStorage {
-                                rw_counter: 16,
-                                is_write: true,
-                                tx_id: 1,
-                                account_address: tx.to.unwrap(),
-                                storage_key: key,
-                                value: true,
-                                value_prev: is_warm,
-                            }],
-                            if is_persistent {
-                                vec![]
-                            } else {
-                                vec![Rw::TxAccessListAccountStorage {
-                                    rw_counter: rw_counter_end_of_reversion,
-                                    is_write: true,
-                                    tx_id: 1usize,
-                                    account_address: tx.to.unwrap(),
-                                    storage_key: key,
-                                    value: is_warm,
-                                    value_prev: true,
-                                }]
-                            },
-                        ]
-                        .concat(),
-                    ),
-                    (
-                        RwTableTag::CallContext,
-                        vec![
-                            Rw::CallContext {
-                                rw_counter: 9,
-                                is_write: false,
-                                call_id: 1,
-                                field_tag: CallContextFieldTag::TxId,
-                                value: Word::one(),
-                            },
-                            Rw::CallContext {
-                                rw_counter: 10,
-                                is_write: false,
-                                call_id: 1,
-                                field_tag: CallContextFieldTag::RwCounterEndOfReversion,
-                                value: Word::from(rw_counter_end_of_reversion),
-                            },
-                            Rw::CallContext {
-                                rw_counter: 11,
-                                is_write: false,
-                                call_id: 1,
-                                field_tag: CallContextFieldTag::IsPersistent,
-                                value: Word::from(is_persistent as u64),
-                            },
-                            Rw::CallContext {
-                                rw_counter: 12,
-                                is_write: false,
-                                call_id: 1,
-                                field_tag: CallContextFieldTag::CalleeAddress,
-                                value: tx.to.unwrap().to_word(),
-                            },
-                        ],
-                    ),
-                ]
-                .into(),
-            ),
-            bytecodes: vec![bytecode],
-            ..Default::default()
         };
-
-        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
-    }
-
-    fn mock_tx() -> eth_types::Transaction {
-        let from = address!("0x00000000000000000000000000000000000000fe");
-        let to = address!("0x00000000000000000000000000000000000000ff");
-        eth_types::Transaction {
-            from,
-            to: Some(to),
-            ..Default::default()
+        let bytecode_failure = bytecode! {
+            PUSH32(key)
+            SLOAD
+            PUSH32(key)
+            SLOAD
+            PUSH32(0)
+            PUSH32(0)
+            REVERT
+        };
+        for bytecode in [bytecode_success, bytecode_failure] {
+            let ctx = TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(MOCK_ACCOUNTS[0])
+                        .balance(Word::from(10u64.pow(19)))
+                        .code(bytecode)
+                        .storage(vec![(key, value)].into_iter());
+                    accs[1]
+                        .address(MOCK_ACCOUNTS[1])
+                        .balance(Word::from(10u64.pow(19)));
+                },
+                tx_from_1_to_0,
+                |block, _txs| block,
+            )
+            .unwrap();
+            let test_config = BytecodeTestConfig {
+                enable_state_circuit_test: false,
+                ..Default::default()
+            };
+            assert_eq!(run_test_circuits(ctx, Some(test_config),), Ok(()));
         }
     }
 
     #[test]
     fn sload_gadget_simple() {
-        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true, true);
-        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), true, false);
-        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false, true);
-        test_ok(mock_tx(), 0x030201.into(), 0x060504.into(), false, false);
+        let key = 0x030201.into();
+        let value = 0x060504.into();
+        test_ok(key, value);
     }
 
     #[test]
     fn sload_gadget_rand() {
         let key = rand_word();
         let value = rand_word();
-        test_ok(mock_tx(), key, value, true, true);
-        test_ok(mock_tx(), key, value, true, false);
-        test_ok(mock_tx(), key, value, false, true);
-        test_ok(mock_tx(), key, value, false, false);
+        test_ok(key, value);
     }
 }

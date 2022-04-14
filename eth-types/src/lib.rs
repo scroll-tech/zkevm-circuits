@@ -220,6 +220,8 @@ struct GethExecStepInternal {
     pc: ProgramCounter,
     op: OpcodeId,
     gas: Gas,
+    #[serde(default)]
+    refund: Gas,
     #[serde(rename = "gasCost")]
     gas_cost: GasCost,
     depth: u16,
@@ -243,6 +245,7 @@ pub struct GethExecStep {
     pub op: OpcodeId,
     pub gas: Gas,
     pub gas_cost: GasCost,
+    pub refund: Gas,
     pub depth: u16,
     pub error: Option<String>,
     // stack is in hex 0x prefixed
@@ -298,6 +301,7 @@ impl<'de> Deserialize<'de> for GethExecStep {
             pc: s.pc,
             op: s.op,
             gas: s.gas,
+            refund: s.refund,
             gas_cost: s.gas_cost,
             depth: s.depth,
             error: s.error,
@@ -340,6 +344,8 @@ pub struct GethExecTraceInternal {
     pub gas: Gas,
     pub failed: bool,
     // return_value is a hex encoded byte array
+    #[serde(rename = "returnValue")]
+    pub return_value: String,
     #[serde(rename = "structLogs")]
     pub struct_logs: Vec<GethExecStep>,
 }
@@ -355,6 +361,8 @@ pub struct GethExecTrace {
     pub gas: Gas,
     /// True when the transaction has failed.
     pub failed: bool,
+    /// Return value of execution
+    pub return_value: String,
     /// Vector of geth execution steps of the trace.
     pub struct_logs: Vec<GethExecStep>,
 }
@@ -396,12 +404,14 @@ impl<'de> Deserialize<'de> for GethExecTrace {
             gas,
             failed,
             mut struct_logs,
+            return_value,
         } = GethExecTraceInternal::deserialize(deserializer)?;
         fix_geth_trace_memory_size(&mut struct_logs);
         Ok(Self {
             gas,
             failed,
             struct_logs,
+            return_value,
         })
     }
 }
@@ -459,6 +469,7 @@ mod tests {
         "op": "PUSH1",
         "gas": 22705,
         "gasCost": 3,
+        "refund": 0,
         "depth": 1,
         "stack": []
       },
@@ -467,6 +478,7 @@ mod tests {
         "op": "SLOAD",
         "gas": 5217,
         "gasCost": 2100,
+        "refund": 0,
         "depth": 1,
         "stack": [
           "0x1003e2d2",
@@ -487,6 +499,7 @@ mod tests {
         "op": "KECCAK256",
         "gas": 178805,
         "gasCost": 42,
+        "refund": 0,
         "depth": 1,
         "stack": [
             "0x3635c9adc5dea00000",
@@ -512,11 +525,13 @@ mod tests {
             GethExecTraceInternal {
                 gas: Gas(26809),
                 failed: false,
+                return_value: "".to_owned(),
                 struct_logs: vec![
                     GethExecStep {
                         pc: ProgramCounter(0),
                         op: OpcodeId::PUSH1,
                         gas: Gas(22705),
+                        refund: Gas(0),
                         gas_cost: GasCost(3),
                         depth: 1,
                         error: None,
@@ -528,6 +543,7 @@ mod tests {
                         pc: ProgramCounter(163),
                         op: OpcodeId::SLOAD,
                         gas: Gas(5217),
+                        refund: Gas(0),
                         gas_cost: GasCost(2100),
                         depth: 1,
                         error: None,
@@ -539,6 +555,7 @@ mod tests {
                         pc: ProgramCounter(189),
                         op: OpcodeId::SHA3,
                         gas: Gas(178805),
+                        refund: Gas(0),
                         gas_cost: GasCost(42),
                         depth: 1,
                         error: None,

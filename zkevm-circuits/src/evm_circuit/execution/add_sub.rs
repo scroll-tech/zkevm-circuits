@@ -21,16 +21,16 @@ use halo2_proofs::{circuit::Region, plonk::Error};
 // when it's SUB, we annotate stack as [c, b, ...] and [a, ...].
 // Then we verify if a + b is equal to c.
 #[derive(Clone, Debug)]
-pub(crate) struct AddGadget<F> {
+pub(crate) struct AddSubGadget<F> {
     same_context: SameContextGadget<F>,
     add_words: AddWordsGadget<F, 2, false>,
     is_sub: PairSelectGadget<F>,
 }
 
-impl<F: Field> ExecutionGadget<F> for AddGadget<F> {
+impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
     const NAME: &'static str = "ADD";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::ADD;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::ADD_SUB;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -108,6 +108,7 @@ mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::evm_types::OpcodeId;
     use eth_types::{bytecode, Word};
+    use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
         let bytecode = bytecode! {
@@ -116,7 +117,14 @@ mod test {
             .write_op(opcode)
             STOP
         };
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 
     #[test]

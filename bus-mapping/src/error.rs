@@ -1,7 +1,7 @@
 //! Error module for the bus-mapping crate
 
 use core::fmt::{Display, Formatter, Result as FmtResult};
-use eth_types::{Address, GethExecStep, Word};
+use eth_types::{Address, GethExecStep, Word, H256};
 use ethers_providers::ProviderError;
 use std::error::Error as StdError;
 
@@ -18,6 +18,8 @@ pub enum Error {
     AccountNotFound(Address),
     /// Storage key not found in the StateDB
     StorageKeyNotFound(Address, Word),
+    /// Code not found in the CodeDB
+    CodeNotFound(H256),
     /// Unable to figure out error at a [`GethExecStep`]
     UnexpectedExecStepError(&'static str, GethExecStep),
     /// Invalid [`eth_types::GethExecTrace`] due to an invalid/unexpected value

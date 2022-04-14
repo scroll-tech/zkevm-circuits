@@ -100,7 +100,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(0.expr()),
             gas_left: Delta(-gas_cost),
-            state_write_counter: Delta(1.expr()),
+            reversible_write_counter: Delta(1.expr()),
             ..Default::default()
         };
 

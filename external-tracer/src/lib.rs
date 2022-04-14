@@ -26,7 +26,7 @@ pub struct TraceConfig {
 /// Creates a trace for the specified config
 pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
     // Get the trace
-    let trace_string = geth_utils::trace(&serde_json::to_string(config).unwrap()).map_err(
+    let trace_string = geth_utils::trace(&serde_json::to_string(&config).unwrap()).map_err(
         |error| match error {
             geth_utils::Error::TracingError(error) => Error::TracingError(error),
         },

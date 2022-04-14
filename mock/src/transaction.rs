@@ -95,61 +95,61 @@ impl MockTransaction {
         self
     }
 
-    /// Set block_hash field for the MockBlock.
+    /// Set block_hash field for the MockTransaction.
     pub fn block_hash(&mut self, block_hash: Hash) -> &mut Self {
         self.block_hash = block_hash;
         self
     }
 
-    /// Set block_number field for the MockBlock.
+    /// Set block_number field for the MockTransaction.
     pub fn block_number(&mut self, block_number: u64) -> &mut Self {
         self.block_number = U64::from(block_number);
         self
     }
 
-    /// Set transaction_idx field for the MockBlock.
+    /// Set transaction_idx field for the MockTransaction.
     pub fn transaction_idx(&mut self, transaction_idx: u64) -> &mut Self {
         self.transaction_index = U64::from(transaction_idx);
         self
     }
 
-    /// Set from field for the MockBlock.
+    /// Set from field for the MockTransaction.
     pub fn from(&mut self, from: Address) -> &mut Self {
         self.from = from;
         self
     }
 
-    /// Set to field for the MockBlock.
+    /// Set to field for the MockTransaction.
     pub fn to(&mut self, to: Address) -> &mut Self {
         self.to = Some(to);
         self
     }
 
-    /// Set value field for the MockBlock.
+    /// Set value field for the MockTransaction.
     pub fn value(&mut self, value: Word) -> &mut Self {
         self.value = value;
         self
     }
 
-    /// Set gas_price field for the MockBlock.
+    /// Set gas_price field for the MockTransaction.
     pub fn gas_price(&mut self, gas_price: Word) -> &mut Self {
         self.gas_price = gas_price;
         self
     }
 
-    /// Set gas field for the MockBlock.
+    /// Set gas field for the MockTransaction.
     pub fn gas(&mut self, gas: Word) -> &mut Self {
         self.gas = gas;
         self
     }
 
-    /// Set input field for the MockBlock.
+    /// Set input field for the MockTransaction.
     pub fn input(&mut self, input: Bytes) -> &mut Self {
         self.input = input;
         self
     }
 
-    /// Set sig_data field for the MockBlock.
+    /// Set sig_data field for the MockTransaction.
     pub fn sig_data(&mut self, data: (u64, Word, Word)) -> &mut Self {
         self.v = U64::from(data.0);
         self.r = data.1;
@@ -157,38 +157,38 @@ impl MockTransaction {
         self
     }
 
-    /// Set transaction_type field for the MockBlock.
+    /// Set transaction_type field for the MockTransaction.
     pub fn transaction_type(&mut self, transaction_type: u64) -> &mut Self {
         self.transaction_type = U64::from(transaction_type);
         self
     }
 
-    /// Set access_list field for the MockBlock.
+    /// Set access_list field for the MockTransaction.
     pub fn access_list(&mut self, access_list: AccessList) -> &mut Self {
         self.access_list = access_list;
         self
     }
 
-    /// Set max_priority_fee_per_gas field for the MockBlock.
+    /// Set max_priority_fee_per_gas field for the MockTransaction.
     pub fn max_priority_fee_per_gas(&mut self, max_priority_fee_per_gas: Word) -> &mut Self {
         self.max_priority_fee_per_gas = max_priority_fee_per_gas;
         self
     }
 
-    /// Set max_fee_per_gas field for the MockBlock.
+    /// Set max_fee_per_gas field for the MockTransaction.
     pub fn max_fee_per_gas(&mut self, max_fee_per_gas: Word) -> &mut Self {
         self.max_fee_per_gas = max_fee_per_gas;
         self
     }
 
-    /// Set chain_id field for the MockBlock.
-    pub fn chain_id(&mut self, chain_id: Word) -> &mut Self {
+    /// Set chain_id field for the MockTransaction.
+    pub(crate) fn chain_id(&mut self, chain_id: Word) -> &mut Self {
         self.chain_id = chain_id;
         self
     }
 
-    /// Consumes the mutable ref to the MockBlock returning the structure by
-    /// value.
+    /// Consumes the mutable ref to the MockTransaction returning the structure
+    /// by value.
     pub fn build(&mut self) -> Self {
         self.to_owned()
     }

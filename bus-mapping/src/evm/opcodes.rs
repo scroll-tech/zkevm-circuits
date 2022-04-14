@@ -18,31 +18,42 @@ use log::warn;
 
 mod call;
 mod calldatacopy;
+mod calldataload;
 mod calldatasize;
 mod caller;
 mod callvalue;
+mod chainid;
+mod codecopy;
 mod dup;
 mod extcodehash;
+mod gasprice;
 mod mload;
 mod mstore;
 mod number;
+mod origin;
 mod selfbalance;
 mod sload;
+mod sstore;
 mod stackonlyop;
 mod stop;
 mod swap;
 
 use call::Call;
 use calldatacopy::Calldatacopy;
+use calldataload::Calldataload;
 use calldatasize::Calldatasize;
 use caller::Caller;
 use callvalue::Callvalue;
+use codecopy::Codecopy;
 use dup::Dup;
 use extcodehash::Extcodehash;
+use gasprice::GasPrice;
 use mload::Mload;
 use mstore::Mstore;
+use origin::Origin;
 use selfbalance::Selfbalance;
 use sload::Sload;
+use sstore::Sstore;
 use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
@@ -105,15 +116,15 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::SHA3 => {},
         // OpcodeId::ADDRESS => {},
         // OpcodeId::BALANCE => {},
-        // OpcodeId::ORIGIN => {},
+        OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
         OpcodeId::CALLDATASIZE => Calldatasize::gen_associated_ops,
-        OpcodeId::CALLDATALOAD => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::CALLDATALOAD => Calldataload::gen_associated_ops,
         OpcodeId::CALLDATACOPY => Calldatacopy::gen_associated_ops,
         // OpcodeId::CODESIZE => {},
-        // OpcodeId::CODECOPY => {},
-        // OpcodeId::GASPRICE => {},
+        OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
+        OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         // OpcodeId::EXTCODESIZE => {},
         // OpcodeId::EXTCODECOPY => {},
         // OpcodeId::RETURNDATASIZE => {},
@@ -123,17 +134,17 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::TIMESTAMP => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        // OpcodeId::DIFFICULTY => {},
-        // OpcodeId::GASLIMIT => {},
-        // OpcodeId::CHAINID => {},
+        OpcodeId::DIFFICULTY => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::GASLIMIT => StackOnlyOpcode::<0, 1>::gen_associated_ops,
+        OpcodeId::CHAINID => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::SELFBALANCE => Selfbalance::gen_associated_ops,
-        // OpcodeId::BASEFEE => {},
+        OpcodeId::BASEFEE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::POP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
         OpcodeId::MLOAD => Mload::gen_associated_ops,
         OpcodeId::MSTORE => Mstore::<false>::gen_associated_ops,
         OpcodeId::MSTORE8 => Mstore::<true>::gen_associated_ops,
         OpcodeId::SLOAD => Sload::gen_associated_ops,
-        // OpcodeId::SSTORE => {},
+        OpcodeId::SSTORE => Sstore::gen_associated_ops,
         OpcodeId::JUMP => StackOnlyOpcode::<1, 0>::gen_associated_ops,
         OpcodeId::JUMPI => StackOnlyOpcode::<2, 0>::gen_associated_ops,
         OpcodeId::PC => StackOnlyOpcode::<0, 1>::gen_associated_ops,
@@ -220,8 +231,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // TODO: Handle REVERT by its own gen_associated_ops.
         OpcodeId::REVERT => Stop::gen_associated_ops,
         // OpcodeId::SELFDESTRUCT => {},
-        // _ => panic!("Opcode {:?} gen_associated_ops not implemented",
-        // self),
+        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
+            warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
+            dummy_gen_call_ops
+        }
         _ => {
             warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
             dummy_gen_associated_ops
@@ -287,8 +300,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address,
-                value: true,
-                value_prev: false,
+                is_warm: true,
+                is_warm_prev: false,
             },
         );
     }
@@ -492,4 +505,35 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
 
     Ok(exec_step)
+}
+
+fn dummy_gen_call_ops(
+    state: &mut CircuitInputStateRef,
+    geth_steps: &[GethExecStep],
+) -> Result<Vec<ExecStep>, Error> {
+    let geth_step = &geth_steps[0];
+    let exec_step = state.new_step(geth_step)?;
+
+    let call = state.call()?.clone();
+    let callee = state.parse_call(geth_step)?;
+
+    let (_, account) = state.sdb.get_account(&callee.address);
+    let callee_code_hash = account.code_hash;
+
+    state.push_call(callee.clone(), geth_step);
+
+    match (
+        state.is_precompiled(&call.address),
+        callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+    ) {
+        // 1. Call to precompiled.
+        (true, _) => Ok(vec![exec_step]),
+        // 2. Call to account with empty code.
+        (_, true) => {
+            state.handle_return()?;
+            Ok(vec![exec_step])
+        }
+        // 3. Call to account with non-empty code.
+        (_, false) => Ok(vec![exec_step]),
+    }
 }

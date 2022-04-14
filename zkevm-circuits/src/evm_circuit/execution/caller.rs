@@ -92,16 +92,21 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
 mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::bytecode;
+    use mock::TestContext;
 
-    fn test_ok() {
+    #[test]
+    fn caller_gadget_test() {
         let bytecode = bytecode! {
             CALLER
             STOP
         };
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
-    }
-    #[test]
-    fn caller_gadget_test() {
-        test_ok();
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 }

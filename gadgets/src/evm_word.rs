@@ -6,7 +6,7 @@
 //! In the zkevm circuit, this `encode(word)` expression will not be directly
 //! looked up. Instead, it will be folded into the bus mapping lookup.
 
-use crate::gadget::Variable;
+use crate::Variable;
 use digest::{FixedOutput, Input};
 use eth_types::Field;
 use halo2_proofs::{
@@ -20,9 +20,9 @@ use std::convert::TryInto;
 #[cfg(test)]
 use halo2_proofs::circuit::Layouter;
 
-// r = hash([0, 1, ..., 255])
 // TODO: Move into crate-level `constants` file.
-pub(crate) fn r<F: Field>() -> F {
+/// r = hash([0, 1, ..., 255])
+pub fn r<F: Field>() -> F {
     let mut hasher = Keccak256::new();
     for byte in 0..=u8::MAX {
         hasher.process(&[byte]);
@@ -32,8 +32,8 @@ pub(crate) fn r<F: Field>() -> F {
     F::from_bytes_wide(&r)
 }
 
-// Returns encoding of big-endian representation of a 256-bit word.
-pub(crate) fn encode<F: Field>(vals: impl Iterator<Item = u8>, r: F) -> F {
+/// Returns encoding of big-endian representation of a 256-bit word.
+pub fn encode<F: Field>(vals: impl Iterator<Item = u8>, r: F) -> F {
     vals.fold(F::zero(), |acc, val| {
         let byte = F::from(val as u64);
         acc * r + byte
@@ -41,37 +41,31 @@ pub(crate) fn encode<F: Field>(vals: impl Iterator<Item = u8>, r: F) -> F {
 }
 
 /// A 256-bit word represented in the circuit as 32 bytes.
-pub(crate) struct Word<F: Field>([Variable<u8, F>; 32]);
+pub struct Word<F: Field>([Variable<u8, F>; 32]);
 
-impl<F: Field> Word<F> {
-    fn encoded_val(&self, r: F) -> Option<F> {
-        if self.0[0].value.is_some() {
-            let val = self.0.iter().rev().map(|var| var.value.unwrap());
-            let val = encode(val, r);
-            Some(val)
-        } else {
-            None
-        }
-    }
-}
-
+#[allow(dead_code)]
+/// Configuration structure used to constraint. generate and assign an EVM Word
+/// inside a circuit.
 #[derive(Clone, Debug)]
-pub(crate) struct WordConfig<F: Field> {
-    // Randomness used to compress the word encoding.
+pub struct WordConfig<F: Field> {
+    /// Randomness used to compress the word encoding.
     r: F,
-    // Selector to toggle the word encoding gate.
+    /// Selector to toggle the word encoding gate.
     // TODO: This may be replaced by a synthetic selector.
-    pub q_encode: Selector,
-    // Advice columns used to witness the byte representation of the word.
-    pub bytes: [Column<Advice>; 32],
-    // Fixed column containing all possible 8-bit values. This is used in
-    // a lookup argument to range-constrain each byte.
-    pub byte_lookup: Column<Fixed>,
-    // Expression representing `encode(word)`.
-    pub encode_word_expr: Expression<F>,
+    q_encode: Selector,
+    /// Advice columns used to witness the byte representation of the word.
+    bytes: [Column<Advice>; 32],
+    /// Fixed column containing all possible 8-bit values. This is used in
+    /// a lookup argument to range-constrain each byte.
+    byte_lookup: Column<Fixed>,
+    /// Expression representing `encode(word)`.
+    encode_word_expr: Expression<F>,
 }
 
 impl<F: Field> WordConfig<F> {
+    /// Sets up the configuration of the config by creating the required columns
+    /// & selectors and defining the constraints that take part when using a
+    /// Word.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         r: F,

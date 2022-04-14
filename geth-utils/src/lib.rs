@@ -57,6 +57,9 @@ mod test {
         for config in [
             // Minimal call tx with gas_limit = 21000
             r#"{
+                "block_constants": {
+                    "gas_limit": "0x52080"
+                },
                 "transactions": [
                     {
                         "from": "0x00000000000000000000000000000000000000fe",
@@ -67,6 +70,9 @@ mod test {
             }"#,
             // Minimal creation tx with gas_limit = 53000
             r#"{
+                "block_constants": {
+                    "gas_limit": "0xcf080"
+                },
                 "transactions": [
                     {
                         "from": "0x00000000000000000000000000000000000000fe",
@@ -76,6 +82,9 @@ mod test {
             }"#,
             // Normal call tx with gas_limit = 21000 and gas_price = 2 Gwei
             r#"{
+                "block_constants": {
+                    "gas_limit": "0x52080"
+                },
                 "accounts": {
                     "0x00000000000000000000000000000000000000fe": {
                         "balance": "0x2632e314a000"
@@ -100,6 +109,9 @@ mod test {
         for config in [
             // Insufficient gas for intrinsic usage
             r#"{
+                "block_constants": {
+                    "gas_limit": "0xcf080"
+                },
                 "transactions": [
                     {
                         "from": "0x00000000000000000000000000000000000000fe",
@@ -109,6 +121,9 @@ mod test {
             }"#,
             // Insufficient balance to buy gas
             r#"{
+                "block_constants": {
+                    "gas_limit": "0x52080"
+                },
                 "transactions": [
                     {
                         "from": "0x00000000000000000000000000000000000000fe",
@@ -120,6 +135,9 @@ mod test {
             }"#,
             // Insufficient balance to do the first transfer
             r#"{
+                "block_constants": {
+                    "gas_limit": "0x52080"
+                },
                 "transactions": [
                     {
                         "from": "0x00000000000000000000000000000000000000fe",

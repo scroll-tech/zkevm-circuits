@@ -91,16 +91,21 @@ impl<F: Field> ExecutionGadget<F> for CoinbaseGadget<F> {
 mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::bytecode;
+    use mock::TestContext;
 
-    fn test_ok() {
+    #[test]
+    fn coinbase_gadget_test() {
         let bytecode = bytecode! {
             COINBASE
             STOP
         };
-        assert_eq!(run_test_circuits(bytecode), Ok(()));
-    }
-    #[test]
-    fn coinbase_gadget_test() {
-        test_ok();
+
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                None
+            ),
+            Ok(())
+        );
     }
 }

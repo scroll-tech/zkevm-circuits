@@ -30,15 +30,16 @@ type ExecutionResult struct {
 // transaction in debug mode
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.StructLogRes
 type StructLogRes struct {
-	Pc      uint64             `json:"pc"`
-	Op      string             `json:"op"`
-	Gas     uint64             `json:"gas"`
-	GasCost uint64             `json:"gasCost"`
-	Depth   int                `json:"depth"`
-	Error   string             `json:"error,omitempty"`
-	Stack   *[]string          `json:"stack,omitempty"`
-	Memory  *[]string          `json:"memory,omitempty"`
-	Storage *map[string]string `json:"storage,omitempty"`
+	Pc            uint64             `json:"pc"`
+	Op            string             `json:"op"`
+	Gas           uint64             `json:"gas"`
+	GasCost       uint64             `json:"gasCost"`
+	Depth         int                `json:"depth"`
+	Error         string             `json:"error,omitempty"`
+	Stack         *[]string          `json:"stack,omitempty"`
+	Memory        *[]string          `json:"memory,omitempty"`
+	Storage       *map[string]string `json:"storage,omitempty"`
+	RefundCounter uint64             `json:"refund,omitempty"`
 }
 
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.FormatLogs
@@ -47,12 +48,13 @@ func FormatLogs(logs []logger.StructLog) []StructLogRes {
 	formatted := make([]StructLogRes, len(logs))
 	for index, trace := range logs {
 		formatted[index] = StructLogRes{
-			Pc:      trace.Pc,
-			Op:      trace.Op.String(),
-			Gas:     trace.Gas,
-			GasCost: trace.GasCost,
-			Depth:   trace.Depth,
-			Error:   trace.ErrorString(),
+			Pc:            trace.Pc,
+			Op:            trace.Op.String(),
+			Gas:           trace.Gas,
+			GasCost:       trace.GasCost,
+			Depth:         trace.Depth,
+			Error:         trace.ErrorString(),
+			RefundCounter: trace.RefundCounter,
 		}
 		if trace.Stack != nil {
 			stack := make([]string, len(trace.Stack))
@@ -140,7 +142,8 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		LondonBlock:         big.NewInt(0),
 	}
 
-	var blockGasLimit uint64
+	var txsGasLimit uint64
+	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
 	messages := make([]types.Message, len(config.Transactions))
 	for i, tx := range config.Transactions {
 		// If gas price is specified directly, the tx is treated as legacy type.
@@ -168,7 +171,10 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 			false,
 		)
 
-		blockGasLimit += uint64(tx.GasLimit)
+		txsGasLimit += uint64(tx.GasLimit)
+	}
+	if txsGasLimit > blockGasLimit {
+		return nil, fmt.Errorf("txs total gas: %d Exceeds block gas limit: %d", txsGasLimit, blockGasLimit)
 	}
 
 	blockCtx := vm.BlockContext{

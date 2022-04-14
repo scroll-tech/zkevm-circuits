@@ -15,20 +15,20 @@ use halo2_proofs::{
 };
 use std::collections::VecDeque;
 
+#[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ExecutionState {
     // Internal state
     BeginTx,
     EndTx,
     EndBlock,
+    CopyCodeToMemory,
     CopyToMemory,
     // Opcode successful cases
     STOP,
-    ADD, // ADD, SUB
-    MUL,
-    DIV,
+    ADD_SUB,     // ADD, SUB
+    MUL_DIV_MOD, // MUL, DIV, MOD
     SDIV,
-    MOD,
     SMOD,
     ADDMOD,
     MULMOD,
@@ -61,14 +61,11 @@ pub enum ExecutionState {
     RETURNDATACOPY,
     EXTCODEHASH,
     BLOCKHASH,
-    COINBASE,
-    TIMESTAMP,
-    NUMBER,
-    DIFFICULTY,
-    GASLIMIT,
+    BLOCKCTXU64,  // TIMESTAMP, NUMBER, GASLIMIT
+    BLOCKCTXU160, // COINBASE
+    BLOCKCTXU256, // DIFFICULTY, BASEFEE
     CHAINID,
     SELFBALANCE,
-    BASEFEE,
     POP,
     MEMORY, // MLOAD, MSTORE, MSTORE8
     SLOAD,
@@ -140,13 +137,12 @@ impl ExecutionState {
             Self::BeginTx,
             Self::EndTx,
             Self::EndBlock,
+            Self::CopyCodeToMemory,
             Self::CopyToMemory,
             Self::STOP,
-            Self::ADD,
-            Self::MUL,
-            Self::DIV,
+            Self::ADD_SUB,
+            Self::MUL_DIV_MOD,
             Self::SDIV,
-            Self::MOD,
             Self::SMOD,
             Self::ADDMOD,
             Self::MULMOD,
@@ -179,14 +175,11 @@ impl ExecutionState {
             Self::RETURNDATACOPY,
             Self::EXTCODEHASH,
             Self::BLOCKHASH,
-            Self::COINBASE,
-            Self::TIMESTAMP,
-            Self::NUMBER,
-            Self::DIFFICULTY,
-            Self::GASLIMIT,
+            Self::BLOCKCTXU64,
+            Self::BLOCKCTXU160,
+            Self::BLOCKCTXU256,
             Self::CHAINID,
             Self::SELFBALANCE,
-            Self::BASEFEE,
             Self::POP,
             Self::MEMORY,
             Self::SLOAD,
@@ -290,11 +283,9 @@ impl ExecutionState {
     pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {
         match self {
             Self::STOP => vec![OpcodeId::STOP],
-            Self::ADD => vec![OpcodeId::ADD, OpcodeId::SUB],
-            Self::MUL => vec![OpcodeId::MUL],
-            Self::DIV => vec![OpcodeId::DIV],
+            Self::ADD_SUB => vec![OpcodeId::ADD, OpcodeId::SUB],
+            Self::MUL_DIV_MOD => vec![OpcodeId::MUL, OpcodeId::DIV, OpcodeId::MOD],
             Self::SDIV => vec![OpcodeId::SDIV],
-            Self::MOD => vec![OpcodeId::MOD],
             Self::SMOD => vec![OpcodeId::SMOD],
             Self::ADDMOD => vec![OpcodeId::ADDMOD],
             Self::MULMOD => vec![OpcodeId::MULMOD],
@@ -327,14 +318,11 @@ impl ExecutionState {
             Self::RETURNDATACOPY => vec![OpcodeId::RETURNDATACOPY],
             Self::EXTCODEHASH => vec![OpcodeId::EXTCODEHASH],
             Self::BLOCKHASH => vec![OpcodeId::BLOCKHASH],
-            Self::COINBASE => vec![OpcodeId::COINBASE],
-            Self::TIMESTAMP => vec![OpcodeId::TIMESTAMP],
-            Self::NUMBER => vec![OpcodeId::NUMBER],
-            Self::DIFFICULTY => vec![OpcodeId::DIFFICULTY],
-            Self::GASLIMIT => vec![OpcodeId::GASLIMIT],
+            Self::BLOCKCTXU64 => vec![OpcodeId::TIMESTAMP, OpcodeId::NUMBER, OpcodeId::GASLIMIT],
+            Self::BLOCKCTXU160 => vec![OpcodeId::COINBASE],
+            Self::BLOCKCTXU256 => vec![OpcodeId::DIFFICULTY, OpcodeId::BASEFEE],
             Self::CHAINID => vec![OpcodeId::CHAINID],
             Self::SELFBALANCE => vec![OpcodeId::SELFBALANCE],
-            Self::BASEFEE => vec![OpcodeId::BASEFEE],
             Self::POP => vec![OpcodeId::POP],
             Self::MEMORY => {
                 vec![OpcodeId::MLOAD, OpcodeId::MSTORE, OpcodeId::MSTORE8]
@@ -468,8 +456,8 @@ pub(crate) struct StepState<F> {
     pub(crate) gas_left: Cell<F>,
     /// Memory size in words (32 bytes)
     pub(crate) memory_word_size: Cell<F>,
-    /// The counter for state writes
-    pub(crate) state_write_counter: Cell<F>,
+    /// The counter for reversible writes
+    pub(crate) reversible_write_counter: Cell<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -516,7 +504,7 @@ impl<F: FieldExt> Step<F> {
                 stack_pointer: cells.pop_front().unwrap(),
                 gas_left: cells.pop_front().unwrap(),
                 memory_word_size: cells.pop_front().unwrap(),
-                state_write_counter: cells.pop_front().unwrap(),
+                reversible_write_counter: cells.pop_front().unwrap(),
             }
         };
 
@@ -611,10 +599,10 @@ impl<F: FieldExt> Step<F> {
             offset,
             Some(F::from(step.memory_word_size())),
         )?;
-        self.state.state_write_counter.assign(
+        self.state.reversible_write_counter.assign(
             region,
             offset,
-            Some(F::from(step.state_write_counter as u64)),
+            Some(F::from(step.reversible_write_counter as u64)),
         )?;
         Ok(())
     }

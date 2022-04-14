@@ -3,8 +3,8 @@ use crate::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Preset, Step},
         table::{
-            AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup, RwTableTag,
-            TxContextFieldTag,
+            AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, FixedTableTag, Lookup,
+            RwTableTag, TxContextFieldTag,
         },
         util::{Cell, RandomLinearCombination, Word},
     },
@@ -13,7 +13,10 @@ use crate::{
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
-    plonk::{Error, Expression},
+    plonk::{
+        Error,
+        Expression::{self, Constant},
+    },
 };
 use std::convert::TryInto;
 
@@ -56,7 +59,7 @@ pub(crate) struct StepStateTransition<F: FieldExt> {
     pub(crate) stack_pointer: Transition<Expression<F>>,
     pub(crate) gas_left: Transition<Expression<F>>,
     pub(crate) memory_word_size: Transition<Expression<F>>,
-    pub(crate) state_write_counter: Transition<Expression<F>>,
+    pub(crate) reversible_write_counter: Transition<Expression<F>>,
 }
 
 impl<F: FieldExt> StepStateTransition<F> {
@@ -80,7 +83,7 @@ impl<F: FieldExt> StepStateTransition<F> {
             stack_pointer: Transition::Any,
             gas_left: Transition::Any,
             memory_word_size: Transition::Any,
-            state_write_counter: Transition::Any,
+            reversible_write_counter: Transition::Any,
         }
     }
 }
@@ -88,8 +91,9 @@ impl<F: FieldExt> StepStateTransition<F> {
 /// ReversionInfo counts `rw_counter` of reversion for gadgets, by tracking how
 /// many reversions that have been used. Gadgets should call
 /// [`ConstraintBuilder::reversion_info`] to get [`ReversionInfo`] with
-/// `state_write_counter` initialized at current tracking one if no `call_id` is
-/// specified, then pass it as mutable reference when doing state write.
+/// `reversible_write_counter` initialized at current tracking one if no
+/// `call_id` is specified, then pass it as mutable reference when doing state
+/// write.
 #[derive(Clone, Debug)]
 pub(crate) struct ReversionInfo<F> {
     /// Field [`CallContextFieldTag::RwCounterEndOfReversion`] read from call
@@ -97,8 +101,8 @@ pub(crate) struct ReversionInfo<F> {
     rw_counter_end_of_reversion: Cell<F>,
     /// Field [`CallContextFieldTag::IsPersistent`] read from call context.
     is_persistent: Cell<F>,
-    /// Current cumulative state_write_counter.
-    state_write_counter: Expression<F>,
+    /// Current cumulative reversible_write_counter.
+    reversible_write_counter: Expression<F>,
 }
 
 impl<F: FieldExt> ReversionInfo<F> {
@@ -110,12 +114,12 @@ impl<F: FieldExt> ReversionInfo<F> {
         self.is_persistent.expr()
     }
 
-    /// Returns `rw_counter_end_of_reversion - state_write_counter` and
-    /// increases `state_write_counter` by `1`.
+    /// Returns `rw_counter_end_of_reversion - reversible_write_counter` and
+    /// increases `reversible_write_counter` by `1`.
     pub(crate) fn rw_counter_of_reversion(&mut self) -> Expression<F> {
         let rw_counter_of_reversion =
-            self.rw_counter_end_of_reversion.expr() - self.state_write_counter.expr();
-        self.state_write_counter = self.state_write_counter.clone() + 1.expr();
+            self.rw_counter_end_of_reversion.expr() - self.reversible_write_counter.expr();
+        self.reversible_write_counter = self.reversible_write_counter.clone() + 1.expr();
         rw_counter_of_reversion
     }
 
@@ -494,7 +498,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         constrain!(stack_pointer);
         constrain!(gas_left);
         constrain!(memory_word_size);
-        constrain!(state_write_counter);
+        constrain!(reversible_write_counter);
     }
 
     // Fixed
@@ -545,12 +549,49 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             "Opcode lookup",
             Lookup::Bytecode {
                 hash: self.curr.state.code_source.expr(),
+                tag: BytecodeFieldTag::Byte.expr(),
                 index,
-                value: opcode,
                 is_code,
+                value: opcode,
             }
             .conditional(1.expr() - is_root_create),
         );
+    }
+
+    // Bytecode table
+
+    pub(crate) fn bytecode_lookup(
+        &mut self,
+        code_hash: Expression<F>,
+        index: Expression<F>,
+        is_code: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.add_lookup(
+            "Bytecode (byte) lookup",
+            Lookup::Bytecode {
+                hash: code_hash,
+                tag: BytecodeFieldTag::Byte.expr(),
+                index,
+                is_code,
+                value,
+            },
+        )
+    }
+
+    pub(crate) fn bytecode_length(&mut self, code_hash: Expression<F>) -> Cell<F> {
+        let cell = self.query_cell();
+        self.add_lookup(
+            "Bytecode (length)",
+            Lookup::Bytecode {
+                hash: code_hash,
+                tag: BytecodeFieldTag::Length.expr(),
+                index: 0.expr(),
+                is_code: 0.expr(),
+                value: cell.expr(),
+            },
+        );
+        cell
     }
 
     // Tx context
@@ -651,18 +692,32 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             tag,
             values,
         );
-        self.rw_counter_offset =
-            self.rw_counter_offset.clone() + self.cb.condition.clone().unwrap_or_else(|| 1.expr());
+        // Manually constant folding is used here, since halo2 cannot do this
+        // automatically. Better error message will be printed during circuit
+        // debugging.
+        self.rw_counter_offset = match &self.cb.condition {
+            None => {
+                if let Constant(v) = self.rw_counter_offset {
+                    Constant(v + F::from(1u64))
+                } else {
+                    self.rw_counter_offset.clone() + 1i32.expr()
+                }
+            }
+            Some(c) => self.rw_counter_offset.clone() + c.clone(),
+        };
     }
 
-    fn state_write(
+    fn reversible_write(
         &mut self,
         name: &'static str,
         tag: RwTableTag,
         mut values: [Expression<F>; 8],
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        debug_assert!(tag.is_reversible(), "Only reversible tags are state write");
+        debug_assert!(
+            tag.is_reversible(),
+            "Reversible write requires reversible tag"
+        );
 
         self.rw_lookup(name, true.expr(), tag, values.clone());
 
@@ -693,7 +748,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value_prev: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        self.state_write(
+        self.reversible_write(
             "TxAccessListAccount write",
             RwTableTag::TxAccessListAccount,
             [
@@ -719,7 +774,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value_prev: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        self.state_write(
+        self.reversible_write(
             "TxAccessListAccountStorage write",
             RwTableTag::TxAccessListAccountStorage,
             [
@@ -763,7 +818,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value_prev: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        self.state_write(
+        self.reversible_write(
             "TxRefund write",
             RwTableTag::TxRefund,
             [
@@ -813,7 +868,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         value_prev: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        self.state_write(
+        self.reversible_write(
             "Account write with reversion",
             RwTableTag::Account,
             [
@@ -868,7 +923,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         committed_value: Expression<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
-        self.state_write(
+        self.reversible_write(
             "AccountStorage write",
             RwTableTag::AccountStorage,
             [
@@ -930,10 +985,10 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         ReversionInfo {
             rw_counter_end_of_reversion,
             is_persistent,
-            state_write_counter: if call_id.is_some() {
+            reversible_write_counter: if call_id.is_some() {
                 0.expr()
             } else {
-                self.curr.state.state_write_counter.expr()
+                self.curr.state.reversible_write_counter.expr()
             },
         }
     }

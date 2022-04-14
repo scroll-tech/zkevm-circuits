@@ -1,6 +1,6 @@
 //! Mock Block definition and builder related methods.
 
-use crate::MockTransaction;
+use crate::{MockTransaction, MOCK_CHAIN_ID};
 use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, U64};
 use ethbloom::Bloom;
 
@@ -31,6 +31,10 @@ pub struct MockBlock {
     size: Word,
     mix_hash: Hash,
     nonce: U64,
+    // This field is handled here as we assume that all block txs have the same ChainId.
+    // Also, the field is stored in the block_table since we don't have a chain_config
+    // structure/table.
+    pub(crate) chain_id: Word,
 }
 
 impl Default for MockBlock {
@@ -45,7 +49,7 @@ impl Default for MockBlock {
             receipts_root: Hash::zero(),
             number: U64([0u64]),
             gas_used: Word::zero(),
-            gas_limit: Word::from(15_000_000u64),
+            gas_limit: Word::from(0x2386f26fc10000u64),
             base_fee_per_gas: Word::zero(),
             extra_data: Bytes::default(),
             logs_bloom: None,
@@ -58,12 +62,13 @@ impl Default for MockBlock {
             size: Word::zero(),
             mix_hash: Hash::zero(),
             nonce: U64::zero(),
+            chain_id: *MOCK_CHAIN_ID,
         }
     }
 }
 
 impl From<MockBlock> for Block<Transaction> {
-    fn from(mock: MockBlock) -> Self {
+    fn from(mut mock: MockBlock) -> Self {
         Block {
             hash: mock.hash.or_else(|| Some(Hash::default())),
             parent_hash: mock.parent_hash,
@@ -84,8 +89,8 @@ impl From<MockBlock> for Block<Transaction> {
             uncles: mock.uncles,
             transactions: mock
                 .transactions
-                .iter()
-                .map(|mock_tx| (mock_tx.to_owned()).into())
+                .iter_mut()
+                .map(|mock_tx| (mock_tx.chain_id(mock.chain_id).to_owned()).into())
                 .collect::<Vec<Transaction>>(),
             size: Some(mock.size),
             mix_hash: Some(mock.mix_hash),
@@ -258,6 +263,12 @@ impl MockBlock {
     /// Set nonce field for the MockBlock.
     pub fn nonce(&mut self, nonce: u64) -> &mut Self {
         self.nonce = U64::from(nonce);
+        self
+    }
+
+    /// Set chain_id field for the MockBlock.
+    pub fn chain_id(&mut self, chain_id: Word) -> &mut Self {
+        self.chain_id = chain_id;
         self
     }
 

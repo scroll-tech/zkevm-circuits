@@ -1,3 +1,9 @@
+//! IsZero gadget works as follows:
+//!
+//! Given a `value` to be checked if it is zero:
+//!  - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
+//!  `1/x` otherwise
+
 use halo2_proofs::{
     circuit::{Chip, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
@@ -6,7 +12,9 @@ use halo2_proofs::{
 use pairing::arithmetic::FieldExt;
 use std::array;
 
-pub(crate) trait IsZeroInstruction<F: FieldExt> {
+/// Trait that needs to be implemented for any gadget or circuit that wants to
+/// implement `IsZero`.
+pub trait IsZeroInstruction<F: FieldExt> {
     /// Given a `value` to be checked if it is zero:
     ///   - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
     ///     `1/x` otherwise
@@ -18,19 +26,37 @@ pub(crate) trait IsZeroInstruction<F: FieldExt> {
     ) -> Result<(), Error>;
 }
 
+/// Config struct representing the required fields for an `IsZero` config to
+/// exist.
 #[derive(Clone, Debug)]
-pub(crate) struct IsZeroConfig<F> {
+pub struct IsZeroConfig<F> {
+    /// Modular inverse of the value.
     pub value_inv: Column<Advice>,
     /// This can be used directly for custom gate at the offset if `is_zero` is
     /// called, it will be 1 if `value` is zero, and 0 otherwise.
     pub is_zero_expression: Expression<F>,
 }
 
-pub(crate) struct IsZeroChip<F> {
+/// Wrapper arround [`IsZeroConfig`] for which [`Chip`] is implemented.
+pub struct IsZeroChip<F> {
     config: IsZeroConfig<F>,
 }
 
+#[rustfmt::skip]
 impl<F: FieldExt> IsZeroChip<F> {
+    /// Sets up the configuration of the chip by creating the required columns
+    /// and defining the constraints that take part when using `is_zero` gate.
+    ///
+    /// Truth table of iz_zero gate:
+    /// +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
+    /// | ok | value | value_inv | 1 - value ⋅ value_inv | value ⋅ (1 - value ⋅ value_inv) | value_inv ⋅ (1 - value ⋅ value_inv) |
+    /// +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
+    /// | V  | 0     | 0         | 1                     | 0                               | 0                                   |
+    /// |    | 0     | x         | 1                     | 0                               | x                                   |
+    /// |    | x     | 0         | 1                     | x                               | 0                                   |
+    /// | V  | x     | 1/x       | 0                     | 0                               | 0                                   |
+    /// |    | x     | y         | 1 - xy                | x(1 - xy)                       | y(1 - xy)                           |
+    /// +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
@@ -40,17 +66,6 @@ impl<F: FieldExt> IsZeroChip<F> {
         // dummy initialization
         let mut is_zero_expression = Expression::Constant(F::zero());
 
-        #[rustfmt::skip]
-        // Truth table of iz_zero gate:
-        // +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
-        // | ok | value | value_inv | 1 - value ⋅ value_inv | value ⋅ (1 - value ⋅ value_inv) | value_inv ⋅ (1 - value ⋅ value_inv) |
-        // +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
-        // | V  | 0     | 0         | 1                     | 0                               | 0                                   |
-        // |    | 0     | x         | 1                     | 0                               | x                                   |
-        // |    | x     | 0         | 1                     | x                               | 0                                   |
-        // | V  | x     | 1/x       | 0                     | 0                               | 0                                   |
-        // |    | x     | y         | 1 - xy                | x(1 - xy)                       | y(1 - xy)                           |
-        // +----+-------+-----------+-----------------------+---------------------------------+-------------------------------------+
         meta.create_gate("is_zero gate", |meta| {
             let q_enable = q_enable(meta);
 
@@ -77,6 +92,7 @@ impl<F: FieldExt> IsZeroChip<F> {
         }
     }
 
+    /// Given an `IsZeroConfig`, construct the chip.
     pub fn construct(config: IsZeroConfig<F>) -> Self {
         IsZeroChip { config }
     }

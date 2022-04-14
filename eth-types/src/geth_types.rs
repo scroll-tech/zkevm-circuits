@@ -1,7 +1,9 @@
 //! Types needed for generating Ethereum traces
 
-use crate::{AccessList, Address, Block, Bytes, Error, GethExecTrace, Word, U64};
-use serde::Serialize;
+use crate::{
+    AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, Word, U64,
+};
+use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 
 /// Definition of all of the data related to an account.
@@ -16,7 +18,19 @@ pub struct Account {
     /// EVM Code
     pub code: Bytes,
     /// Storage
+    #[serde(serialize_with = "serde_account_storage")]
     pub storage: HashMap<Word, Word>,
+}
+
+fn serde_account_storage<S: Serializer>(
+    to_serialize: &HashMap<Word, Word>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    to_serialize
+        .iter()
+        .map(|(k, v)| (Hash::from(k.to_be_bytes()), Hash::from(v.to_be_bytes())))
+        .collect::<HashMap<_, _>>()
+        .serialize(serializer)
 }
 
 /// Definition of all of the constants related to an Ethereum block and

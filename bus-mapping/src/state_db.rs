@@ -73,9 +73,16 @@ impl Account {
 #[derive(Debug, Clone, Default)]
 pub struct StateDB {
     state: HashMap<Address, Account>,
+
     // Fields with transaction lifespan, will be clear in `clear_access_list_and_refund`.
     access_list_account: HashSet<Address>,
     access_list_account_storage: HashSet<(Address, U256)>,
+    // `dirty_storage` contains writes during current transaction.
+    // When current transaction finishes, `dirty_storage` will be committed into `state`.
+    // The reason why we need this is that EVM needs committed state, namely
+    // state before current transaction, to calculate gas cost for some opcodes like sstore.
+    // So both dirty storage and committed storage are needed.
+    dirty_storage: HashMap<(Address, Word), Word>,
     refund: u64,
 }
 
@@ -86,6 +93,7 @@ impl StateDB {
             state: HashMap::new(),
             access_list_account: HashSet::new(),
             access_list_account_storage: HashSet::new(),
+            dirty_storage: HashMap::new(),
             refund: 0,
         }
     }
@@ -120,7 +128,19 @@ impl StateDB {
     /// Get a reference to the storage value from [`Account`] at `addr`, at
     /// `key`.  Returns false and a zero [`Word`] when the [`Account`] or `key`
     /// wasn't found in the state.
+    /// Returns dirty storage state, which includes writes in current tx
     pub fn get_storage(&self, addr: &Address, key: &Word) -> (bool, &Word) {
+        match self.dirty_storage.get(&(*addr, *key)) {
+            Some(v) => (true, v),
+            None => self.get_committed_storage(addr, key),
+        }
+    }
+
+    /// Get a reference to the storage value from [`Account`] at `addr`, at
+    /// `key`.  Returns false and a zero [`Word`] when the [`Account`] or `key`
+    /// wasn't found in the state.
+    /// Returns committed storage, which is storage state before current tx
+    pub fn get_committed_storage(&self, addr: &Address, key: &Word) -> (bool, &Word) {
         let (_, acc) = self.get_account(addr);
         match acc.storage.get(key) {
             Some(value) => (true, value),
@@ -143,6 +163,14 @@ impl StateDB {
             false
         };
         (found, acc.storage.get_mut(key).expect("key not inserted"))
+    }
+
+    /// Set storage value at `addr` and `key`.
+    /// Writes into dirty_storage during transaction execution.
+    /// After transaction execution, `dirty_storage` is committed into `storage`
+    /// in `commit_tx` method.
+    pub fn set_storage(&mut self, addr: &Address, key: &Word, value: &Word) {
+        self.dirty_storage.insert((*addr, *key), *value);
     }
 
     /// Increase nonce of account with `addr` and return the previous value.
@@ -175,16 +203,32 @@ impl StateDB {
         debug_assert!(self.access_list_account_storage.remove(pair));
     }
 
+    /// Check whether `(addr, key)` exists in account storage access list.
+    pub fn check_account_storage_in_access_list(&self, pair: &(Address, Word)) -> bool {
+        self.access_list_account_storage.contains(pair)
+    }
+
     /// Retrieve refund.
     pub fn refund(&self) -> u64 {
         self.refund
     }
 
-    /// Clear access list and refund. It should be invoked before processing
+    /// Set refund
+    pub fn set_refund(&mut self, value: u64) {
+        self.refund = value;
+    }
+
+    /// Clear access list and refund, and commit dirty storage.
+    /// It should be invoked before processing
     /// with new transaction with the same [`StateDB`].
-    pub fn clear_access_list_and_refund(&mut self) {
+    pub fn commit_tx(&mut self) {
         self.access_list_account = HashSet::new();
         self.access_list_account_storage = HashSet::new();
+        for ((addr, key), value) in self.dirty_storage.clone() {
+            let (_, ptr) = self.get_storage_mut(&addr, &key);
+            *ptr = value;
+        }
+        self.dirty_storage = HashMap::new();
         self.refund = 0;
     }
 }

@@ -65,6 +65,7 @@
 //!         "op": "PUSH1",
 //!         "gas": 82,
 //!         "gasCost": 3,
+//!         "refund": 0,
 //!         "depth": 1,
 //!         "stack": [],
 //!         "memory": [
@@ -78,6 +79,7 @@
 //!         "op": "MLOAD",
 //!         "gas": 79,
 //!         "gasCost": 3,
+//!         "refund": 0,
 //!         "depth": 1,
 //!         "stack": [
 //!           "40"
@@ -93,6 +95,7 @@
 //!         "op": "STOP",
 //!         "gas": 76,
 //!         "gasCost": 0,
+//!         "refund": 0,
 //!         "depth": 1,
 //!         "stack": [
 //!           "80"
@@ -136,6 +139,7 @@
 //!
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
 //! let geth_trace = GethExecTrace {
+//!     return_value: "".to_string(),
 //!     gas: Gas(block.eth_block.transactions[0].gas.as_u64()),
 //!     failed: false,
 //!     struct_logs: geth_steps,
@@ -223,6 +227,7 @@
 
 extern crate alloc;
 pub mod circuit_input_builder;
+pub mod constants;
 pub mod error;
 pub mod evm;
 pub mod exec_trace;
