@@ -1,12 +1,15 @@
 #![allow(missing_docs)]
-use crate::evm_circuit::{
-    param::{N_BYTES_WORD, STACK_CAPACITY},
-    step::ExecutionState,
-    table::{
-        AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
-        TxContextFieldTag,
+use crate::{
+    evm_circuit::{
+        param::{N_BYTES_WORD, STACK_CAPACITY},
+        step::ExecutionState,
+        table::{
+            AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag,
+            RwTableTag, TxContextFieldTag,
+        },
+        util::RandomLinearCombination,
     },
-    util::RandomLinearCombination,
+    util::DEFAULT_RAND,
 };
 use bus_mapping::circuit_input_builder::{self, ExecError, OogError, StepAuxiliaryData};
 use bus_mapping::operation::{self, AccountField, CallContextField};
@@ -1228,7 +1231,7 @@ pub fn block_convert(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Block<Fp> {
     Block {
-        randomness: Fp::from_u128(crate::test_util::DEFAULT_RAND),
+        randomness: Fp::from_u128(DEFAULT_RAND),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block

@@ -124,7 +124,7 @@ pub mod test {
             EvmCircuit,
         },
         rw_table::RwTable,
-        test_util::DEFAULT_RAND,
+        util::DEFAULT_RAND,
     };
     use eth_types::{Field, Word};
     use halo2_proofs::{
