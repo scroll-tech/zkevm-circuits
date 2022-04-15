@@ -16,6 +16,7 @@ pub mod bytecode_circuit;
 pub mod evm_circuit;
 pub mod rw_table;
 pub mod state_circuit;
+
 #[cfg(test)]
 pub mod test_util;
 pub mod util;
