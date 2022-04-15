@@ -8,6 +8,9 @@ use halo2_proofs::dev::{MockProver, VerifyFailure};
 use mock::TestContext;
 use pairing::bn256::Fr;
 
+// the magic number is `echo 'zkevm-circuits' | hexdump`
+pub(crate) const DEFAULT_RAND: u128 = 0x6b7a76652d6d6963637269757374u128;
+
 #[cfg(test)]
 #[ctor::ctor]
 fn init_env_logger() {
