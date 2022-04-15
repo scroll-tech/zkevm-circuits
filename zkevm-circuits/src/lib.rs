@@ -16,6 +16,8 @@ pub mod bytecode_circuit;
 pub mod evm_circuit;
 pub mod rw_table;
 pub mod state_circuit;
-#[cfg(test)]
+
+#[cfg(any(feature = "test", test))]
+#[allow(missing_docs)]
 pub mod test_util;
 pub mod util;
