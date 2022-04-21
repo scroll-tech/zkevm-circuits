@@ -395,9 +395,13 @@ pub mod test {
             config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
             config.load_bytecodes(&mut layouter, &self.block.bytecodes, self.block.randomness)?;
             config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
-            config
-                .evm_circuit
-                .assign_block_exact(&mut layouter, &self.block)
+            if self.block.step_num_with_pad != 0 {
+                config.evm_circuit.assign_block(&mut layouter, &self.block)
+            } else {
+                config
+                    .evm_circuit
+                    .assign_block_exact(&mut layouter, &self.block)
+            }
         }
     }
 
@@ -434,6 +438,8 @@ pub mod test {
             })
             .collect();
         let (active_gate_rows, active_lookup_rows) = EvmCircuit::get_active_rows(&block);
+        let mut block = block;
+        block.step_num_with_pad = ((1 << k) - 64) / STEP_HEIGHT;
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
         let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
         prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())

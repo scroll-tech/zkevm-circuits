@@ -30,6 +30,8 @@ pub struct Block<F> {
     pub bytecodes: Vec<Bytecode>,
     /// The block context
     pub context: BlockContext,
+    /// ...
+    pub step_num_with_pad: usize,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -1246,5 +1248,6 @@ pub fn block_convert(
                     .map(|call| Bytecode::new(code_db.0.get(&call.code_hash).unwrap().to_vec()))
             })
             .collect(),
+        step_num_with_pad: 0,
     }
 }
