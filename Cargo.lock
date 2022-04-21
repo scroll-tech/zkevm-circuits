@@ -1767,7 +1767,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/appliedzkp/halo2.git?branch=feat/general-optimization#0126eed14af928db9f93059a68553eb061ef6a06"
+source = "git+https://github.com/scroll-tech/halo2.git?rev=a49778f5#a49778f586a563b90badec11d41fcc9851f382ec"
 dependencies = [
  "blake2b_simd",
  "bumpalo",
