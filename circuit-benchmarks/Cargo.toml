@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 ff = "0.11"
-halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", branch = "feat/general-optimization" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", rev = "a49778f5" }
 pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 ark-std = { version = "0.3", features = ["print-trace"] }
 zkevm-circuits = { path = "../zkevm-circuits" }
