@@ -31,6 +31,7 @@ mod mload;
 mod mstore;
 mod number;
 mod origin;
+mod r#return;
 mod selfbalance;
 mod sload;
 mod sstore;
@@ -51,6 +52,7 @@ use gasprice::GasPrice;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
+use r#return::Return;
 use selfbalance::Selfbalance;
 use sload::Sload;
 use sstore::Sstore;
@@ -223,13 +225,13 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         // OpcodeId::CREATE => {},
         OpcodeId::CALL => Call::gen_associated_ops,
         // OpcodeId::CALLCODE => {},
-        // TODO: Handle RETURN by its own gen_associated_ops.
-        OpcodeId::RETURN => Stop::gen_associated_ops,
+        // TODO: Fully implement RETURN.
+        OpcodeId::RETURN => Return::gen_associated_ops,
         // OpcodeId::DELEGATECALL => {},
         // OpcodeId::CREATE2 => {},
         // OpcodeId::STATICCALL => {},
         // TODO: Handle REVERT by its own gen_associated_ops.
-        OpcodeId::REVERT => Stop::gen_associated_ops,
+        OpcodeId::REVERT => Return::gen_associated_ops,
         // OpcodeId::SELFDESTRUCT => {},
         OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
             warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);

@@ -570,14 +570,24 @@ impl TransactionContext {
         &self.calls
     }
 
+    /// Return the index of the caller (the second last call in the call stack).
+    fn caller_index(&self) -> Result<usize, Error> {
+        self.caller_ctx().map(|call| call.index)
+    }
+
     /// Return the index of the current call (the last call in the call stack).
     fn call_index(&self) -> Result<usize, Error> {
+        self.call_ctx().map(|call| call.index)
+    }
+
+    fn caller_ctx(&self) -> Result<&CallContext, Error> {
         self.calls
-            .last()
+            .len()
+            .checked_sub(2)
+            .map(|idx| &self.calls[idx])
             .ok_or(Error::InvalidGethExecTrace(
                 "Call stack is empty but call is used",
             ))
-            .map(|call| call.index)
     }
 
     fn call_ctx(&self) -> Result<&CallContext, Error> {
@@ -908,6 +918,13 @@ impl<'a> CircuitInputStateRef<'a> {
             .ok_or(Error::CodeNotFound(code_hash))
     }
 
+    /// Reference to the caller's Call
+    pub fn caller(&self) -> Result<&Call, Error> {
+        self.tx_ctx
+            .caller_index()
+            .map(|caller_idx| &self.tx.calls[caller_idx])
+    }
+
     /// Reference to the current Call
     pub fn call(&self) -> Result<&Call, Error> {
         self.tx_ctx
@@ -925,6 +942,11 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Reference to the current CallContext
     pub fn call_ctx(&self) -> Result<&CallContext, Error> {
         self.tx_ctx.call_ctx()
+    }
+
+    /// Reference to the current CallContext
+    pub fn caller_ctx(&self) -> Result<&CallContext, Error> {
+        self.tx_ctx.caller_ctx()
     }
 
     /// Mutable reference to the call CallContext

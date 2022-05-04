@@ -207,13 +207,24 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_util::run_test_circuits;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
-    use crate::test_util::run_test_circuits;
-
     fn test_ok(memory_offset: usize, code_offset: usize, size: usize) {
         let code = bytecode! {
+        // generate random bytecode longer than `src_addr_end`
+            PUSH32(Word::from(0x123))
+            POP
+            PUSH32(Word::from(0x213))
+            POP
+            PUSH32(Word::from(0x321))
+            POP
+            PUSH32(Word::from(0x12349AB))
+            POP
+            PUSH32(Word::from(0x1928835))
+            POP
+
             PUSH32(Word::from(size))
             PUSH32(Word::from(code_offset))
             PUSH32(Word::from(memory_offset))
@@ -230,9 +241,31 @@ mod tests {
     }
 
     #[test]
-    fn codecopy_gadget() {
-        test_ok(0x00, 0x00, 0x20);
-        test_ok(0x20, 0x30, 0x30);
-        test_ok(0x10, 0x20, 0x42);
+    fn copy_code_to_memory_single_step() {
+        test_ok(
+            0x00, // src_addr
+            0x00, // dst_addr
+            54,   // length
+        );
+    }
+
+    #[test]
+    fn copy_code_to_memory_multi_step() {
+        test_ok(
+            0x00, // src_addr
+            0x40, // dst_addr
+            123,  // length
+        );
+    }
+
+    #[test]
+    fn copy_code_to_memory_oob() {
+        // since the bytecode we construct above is (34 * 5) = 170 bytes long, copying
+        // 200 bytes means we go out-of-bounds.
+        test_ok(
+            0x10, // src_addr
+            0x20, // dst_addr
+            200,  // length
+        );
     }
 }

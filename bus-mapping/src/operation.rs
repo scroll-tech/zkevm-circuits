@@ -686,8 +686,8 @@ pub enum CallContextField {
     GasLeft,
     /// MemorySize
     MemorySize,
-    /// StateWriteCounter
-    StateWriteCounter,
+    /// ReversibleWriteCounter
+    ReversibleWriteCounter,
 }
 
 /// Represents an CallContext read/write operation.

@@ -3,7 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
-        table::{AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup},
+        table::{AccountFieldTag, CallContextFieldTag},
         util::{
             common_gadget::TransferGadget,
             constraint_builder::{
@@ -22,6 +22,7 @@ use crate::{
     },
     util::Expr,
 };
+use bus_mapping::evm::OpcodeId;
 use eth_types::{
     evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE},
     Field, ToLittleEndian, ToScalar,
@@ -67,18 +68,12 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        // We do the `ResponsibleOpcode` lookup explicitly here because we're not using
+        // We do the responsible opcode check explicitly here because we're not using
         // the `SameContextGadget` for `CALL`.
-        cb.add_lookup(
-            "Responsible opcode lookup",
-            Lookup::Fixed {
-                tag: FixedTableTag::ResponsibleOpcode.expr(),
-                values: [
-                    cb.execution_state().as_u64().expr(),
-                    opcode.expr(),
-                    0.expr(),
-                ],
-            },
+        cb.require_equal(
+            "Opcode should be CALL",
+            opcode.expr(),
+            OpcodeId::CALL.expr(),
         );
 
         let gas_word = cb.query_word();
@@ -260,7 +255,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                     memory_expansion.next_memory_word_size(),
                 ),
                 (
-                    CallContextFieldTag::StateWriteCounter,
+                    CallContextFieldTag::ReversibleWriteCounter,
                     cb.curr.state.reversible_write_counter.expr() + 1.expr(),
                 ),
             ] {
@@ -692,13 +687,23 @@ mod test {
     #[test]
     fn call_gadget_recursive() {
         test_ok(
-            caller(
-                Stack {
-                    gas: 100000,
-                    ..Default::default()
-                },
-                false,
-            ),
+            Account {
+                address: Address::repeat_byte(0xfe),
+                balance: Word::from(10).pow(20.into()),
+                code: bytecode! {
+                    PUSH1(0)
+                    PUSH1(0)
+                    PUSH1(0)
+                    PUSH1(0)
+                    PUSH1(0)
+                    PUSH32(Address::repeat_byte(0xff).to_word())
+                    PUSH2(10000)
+                    CALL
+                    STOP
+                }
+                .into(),
+                ..Default::default()
+            },
             // The following bytecode calls itself recursively if gas_left is greater than 100, and
             // halts with REVERT if gas_left is odd, otherwise just halts with STOP.
             callee(bytecode! {

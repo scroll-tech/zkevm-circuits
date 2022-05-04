@@ -52,6 +52,7 @@ mod origin;
 mod pc;
 mod pop;
 mod push;
+mod r#return;
 mod selfbalance;
 mod shl;
 mod shr;
@@ -97,6 +98,7 @@ use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
+use r#return::ReturnGadget;
 use selfbalance::SelfbalanceGadget;
 use shl::ShlGadget;
 use shr::ShrGadget;
@@ -167,6 +169,7 @@ pub(crate) struct ExecutionConfig<F> {
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
+    return_gadget: ReturnGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
     shl_gadget: ShlGadget<F>,
@@ -296,7 +299,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .map(move |(name, poly)| (name, (1.expr() - q_step_last.clone()) * poly))
             };
 
-            let _first_step_check = {
+            let first_step_check = {
                 let begin_tx_selector =
                     step_curr.execution_state_selector([ExecutionState::BeginTx]);
                 iter::once((
@@ -305,7 +308,7 @@ impl<F: Field> ExecutionConfig<F> {
                 ))
             };
 
-            let _last_step_check = {
+            let last_step_check = {
                 let end_block_selector =
                     step_curr.execution_state_selector([ExecutionState::EndBlock]);
                 iter::once((
@@ -318,9 +321,8 @@ impl<F: Field> ExecutionConfig<F> {
                 .chain(bool_checks)
                 .chain(execution_state_transition)
                 .map(move |(name, poly)| (name, q_step.clone() * poly))
-                // TODO: Enable these after test of CALLDATACOPY is complete.
-                // .chain(first_step_check)
-                // .chain(last_step_check)
+                .chain(first_step_check)
+                .chain(last_step_check)
         });
 
         // Use qs_byte_lookup as selector to do byte range lookup on each advice
@@ -397,6 +399,7 @@ impl<F: Field> ExecutionConfig<F> {
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
+            return_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
             sha3_gadget: configure_gadget!(),
             shl_gadget: configure_gadget!(),
@@ -717,6 +720,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
+            ExecutionState::RETURN => assign_exec_step!(self.return_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
