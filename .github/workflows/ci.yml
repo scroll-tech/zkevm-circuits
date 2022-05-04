@@ -123,7 +123,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-%{{ matrix-target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-%{{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: cargo build
         uses: actions-rs/cargo@v1
         with:
