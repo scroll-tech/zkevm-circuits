@@ -27,7 +27,12 @@ impl<F: Field, const K: u64> RangeCheckConfig<F, K> {
             || "range",
             |mut table| {
                 for i in 0..=K {
-                    table.assign_cell(|| "range", self.range, i as usize, || Ok(F::from(i)))?;
+                    table.assign_cell(
+                        || "range",
+                        self.range,
+                        i as usize,
+                        || Ok(F::from_u128(i.into())),
+                    )?;
                 }
                 Ok(())
             },
@@ -85,7 +90,7 @@ impl<F: Field> Base13toBase9TableConfig<F> {
                         self.overflow_detector,
                         i,
                         || {
-                            Ok(F::from(
+                            Ok(F::from_u128(
                                 get_overflow_detector(b13_chunks.clone().try_into().unwrap())
                                     .into(),
                             ))
@@ -128,10 +133,10 @@ impl<F: Field> SpecialChunkTableConfig<F> {
                 for i in 0..B13 {
                     for j in 0..(B13 - i) {
                         let (low, high) = (i, j);
-                        let last_chunk = F::from(low.into())
-                            + F::from(high.into())
-                                * F::from(B13.into()).pow(&[LANE_SIZE as u64, 0, 0, 0]);
-                        let output_coef = F::from(convert_b13_coef(low + high).into());
+                        let last_chunk = F::from_u128(low.into())
+                            + F::from_u128(high.into())
+                                * F::from_u128(B13.into()).pow(&[LANE_SIZE as u64, 0, 0, 0]);
+                        let output_coef = F::from_u128(convert_b13_coef(low + high).into());
                         table.assign_cell(
                             || "last chunk",
                             self.last_chunk,
@@ -176,10 +181,10 @@ pub(crate) struct BaseInfo<F> {
 
 impl<F: Field> BaseInfo<F> {
     pub fn input_pob(&self) -> F {
-        F::from(self.input_base.into()).pow(&[self.num_chunks as u64, 0, 0, 0])
+        F::from_u128(self.input_base.into()).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
     pub fn output_pob(&self) -> F {
-        F::from(self.output_base.into()).pow(&[self.num_chunks as u64, 0, 0, 0])
+        F::from_u128(self.output_base.into()).pow(&[self.num_chunks as u64, 0, 0, 0])
     }
 
     pub fn slice_count(self) -> usize {

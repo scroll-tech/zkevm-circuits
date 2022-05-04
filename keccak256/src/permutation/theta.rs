@@ -43,7 +43,7 @@ impl<F: Field> ThetaConfig<F> {
                     let old_state = meta.query_advice(state[5 * x + y], Rotation::cur());
                     let right = old_state
                         + column_sum[(x + 4) % 5].clone()
-                        + Expression::Constant(F::from(B13.into()))
+                        + Expression::Constant(F::from_u128(B13.into()))
                             * column_sum[(x + 1) % 5].clone();
                     q_enable.clone() * (new_state - right)
                 })

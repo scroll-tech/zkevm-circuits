@@ -254,9 +254,9 @@ pub fn split_state_cells<F: Field, const N: usize>(state: [AssignedCell<F, F>; N
 }
 
 pub fn f_from_radix_be<F: Field>(buf: &[u8], base: u8) -> F {
-    let base = F::from(base.into());
+    let base = F::from(base as u64);
     buf.iter()
-        .fold(F::zero(), |acc, &x| acc * base + F::from(x.into()))
+        .fold(F::zero(), |acc, &x| acc * base + F::from(x as u64))
 }
 
 #[cfg(test)]

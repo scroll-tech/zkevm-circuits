@@ -17,12 +17,21 @@ lazy_static! {
 }
 
 async fn test_evm_circuit_block(block_num: u64) {
+    log::info!("test evm circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
     let builder = cli.gen_inputs(block_num).await.unwrap();
 
     let block = block_convert(&builder.block, &builder.code_db);
+
     run_test_circuit_complete_fixed_table(block).expect("evm_circuit verification failed");
+}
+
+#[tokio::test]
+async fn test_evm_circuit_block_greeter_calls() {
+    log_init();
+    let block_num = GEN_DATA.blocks.get("Contract call").unwrap();
+    test_evm_circuit_block(*block_num).await;
 }
 
 async fn test_state_circuit_block(block_num: u64) {
@@ -41,30 +50,21 @@ async fn test_state_circuit_block(block_num: u64) {
     let storage_ops = builder.block.container.sorted_storage();
     trace!("storage_ops: {:#?}", storage_ops);
 
-    const DEGREE: usize = 16;
-    const MEMORY_ADDRESS_MAX: usize = 2000;
-    const STACK_ADDRESS_MAX: usize = 1024;
-
-    const RW_COUNTER_MAX: usize = 1 << DEGREE;
-    const ROWS_MAX: usize = 1 << DEGREE;
+    const DEGREE: usize = 17;
 
     let rw_map = RwMap::from(&OperationContainer {
         memory: memory_ops,
         stack: stack_ops,
-        storage: storage_ops,
+        //storage: storage_ops,
         ..Default::default()
     });
-    let circuit = StateCircuit::<
-        Fr,
-        true,
-        RW_COUNTER_MAX,
-        MEMORY_ADDRESS_MAX,
-        STACK_ADDRESS_MAX,
-        ROWS_MAX,
-    >::new(Fr::rand(), &rw_map);
+
+    let randomness = Fr::rand();
+    let circuit = StateCircuit::<Fr>::new(randomness, rw_map);
+    let power_of_randomness = circuit.instance();
 
     use pairing::bn256::Fr as Fp;
-    let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, vec![]).unwrap();
+    let prover = MockProver::<Fp>::run(DEGREE as u32, &circuit, power_of_randomness).unwrap();
     prover.verify().expect("state_circuit verification failed");
 }
 

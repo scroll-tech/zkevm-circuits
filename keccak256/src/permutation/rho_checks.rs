@@ -322,7 +322,7 @@ impl<F: Field> LaneRotateConversionConfig<F> {
                             }
                         }
                         let od = {
-                            let value = F::from(conv.overflow_detector.value.into());
+                            let value = F::from(conv.overflow_detector.value as u64);
                             let od = region.assign_advice(
                                 || "Overflow detector",
                                 self.overflow_detector,
@@ -356,13 +356,13 @@ impl<F: Field> LaneRotateConversionConfig<F> {
                         || "Special output coef",
                         self.output_coef,
                         offset,
-                        || Ok(F::from(special.output_coef.into())),
+                        || Ok(F::from(special.output_coef as u64)),
                     )?;
                     region.assign_fixed(
                         || "Special output power of base",
                         self.output_pob,
                         offset,
-                        || Ok(F::from(B9.into()).pow(&[self.rotation.into(), 0, 0, 0])),
+                        || Ok(F::from(B9 as u64).pow(&[self.rotation.into(), 0, 0, 0])),
                     )?;
                     region.assign_advice(
                         || "Special output acc pre",

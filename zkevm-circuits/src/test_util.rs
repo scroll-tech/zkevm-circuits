@@ -32,6 +32,8 @@ pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
                 FixedTableTag::Range1024,
                 FixedTableTag::SignByte,
                 FixedTableTag::ResponsibleOpcode,
+                FixedTableTag::Bitslevel,
+                FixedTableTag::Pow64,
             ]
         }
         FixedTableConfig::Complete => FixedTableTag::iterator().collect(),
@@ -90,10 +92,11 @@ pub fn test_circuits_using_witness_block(
     // public input, since randomness in state circuit and evm
     // circuit must be same
     if config.enable_state_circuit_test {
-        let state_circuit =
-            StateCircuit::<Fr, true, 2000, 200, 1023, 2000>::new(block.randomness, &block.rws);
-        let prover = MockProver::<Fr>::run(12, &state_circuit, vec![]).unwrap();
-        prover.verify()?;
+        let state_circuit = StateCircuit::new(block.randomness, block.rws);
+        let power_of_randomness = state_circuit.instance();
+        let rows_len = state_circuit.rows.len();
+        let prover = MockProver::<Fr>::run(17, &state_circuit, power_of_randomness).unwrap();
+        prover.verify_at_rows(0..rows_len, 0..rows_len)?;
     }
 
     Ok(())

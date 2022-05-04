@@ -1,5 +1,6 @@
 //! # zk_evm
-
+#![allow(incomplete_features)]
+#![feature(adt_const_params)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Temporary until we have more of the crate implemented.
 #![allow(dead_code)]
@@ -15,6 +16,7 @@ pub mod bytecode_circuit;
 pub mod evm_circuit;
 pub mod rw_table;
 pub mod state_circuit;
+
 #[cfg(test)]
 pub mod test_util;
 pub mod util;

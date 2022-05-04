@@ -4,6 +4,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use strum_macros::EnumIter;
 
 pub trait LookupTable<F: FieldExt, const W: usize> {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; W];
@@ -35,9 +36,12 @@ pub enum FixedTableTag {
     BitwiseOr,
     BitwiseXor,
     ResponsibleOpcode,
+    Bitslevel,
+    Pow64,
 }
 
 impl FixedTableTag {
+    // TODO(mason) derive with strum instead.
     pub fn iterator() -> impl Iterator<Item = Self> {
         [
             Self::Range5,
@@ -52,6 +56,8 @@ impl FixedTableTag {
             Self::BitwiseOr,
             Self::BitwiseXor,
             Self::ResponsibleOpcode,
+            Self::Bitslevel,
+            Self::Pow64,
         ]
         .iter()
         .copied()
@@ -113,6 +119,17 @@ impl FixedTableTag {
                         })
                 }))
             }
+            Self::Bitslevel => Box::new((0..9).flat_map(move |level| {
+                (0..(1 << level)).map(move |idx| [tag, F::from(level), F::from(idx), F::zero()])
+            })),
+            Self::Pow64 => Box::new((0..64).map(move |idx| {
+                [
+                    tag,
+                    F::from(idx),
+                    F::from_u128(1u128 << idx),
+                    F::from_u128(1u128 << (64 - idx)),
+                ]
+            })),
         }
     }
 }
@@ -144,10 +161,11 @@ pub enum BlockContextFieldTag {
     ChainId,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum RwTableTag {
-    Memory = 2,
+    Start = 1,
     Stack,
+    Memory,
     AccountStorage,
     TxAccessListAccount,
     TxAccessListAccountStorage,
@@ -171,7 +189,7 @@ impl RwTableTag {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 pub enum AccountFieldTag {
     Nonce = 1,
     Balance,
@@ -185,7 +203,9 @@ pub enum BytecodeFieldTag {
     Padding,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+// there are ~25 tags here.
+// # of possible tag, field_tag combinations is less than 64?
+#[derive(Clone, Copy, Debug, PartialEq, EnumIter)]
 pub enum CallContextFieldTag {
     RwCounterEndOfReversion = 1,
     CallerId,

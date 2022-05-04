@@ -3,16 +3,15 @@ use bus_mapping::rpc::GethClient;
 use env_logger::Env;
 use ethers_providers::Http;
 use halo2_proofs::{
-    plonk::*,
+    plonk::{create_proof, keygen_pk, keygen_vk},
     poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},
 };
-use pairing::bn256::{Fr, G1Affine};
+use pairing::bn256::{Bn256, Fr, G1Affine};
 use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
-use std::env::var;
-use std::fs::File;
-use std::io::BufReader;
+use std::{env::var, fs::File, io::BufReader};
+
 use std::str::FromStr;
 use zkevm_circuits::evm_circuit::{
     table::FixedTableTag, test::TestCircuit, witness::block_convert,
@@ -44,15 +43,29 @@ async fn main() {
         .expect("RPC_URL env var")
         .parse()
         .expect("Cannot parse RPC_URL env var");
-    let params_path: String = var("PARAMS_PATH")
-        .expect("PARAMS_PATH env var")
-        .parse()
-        .expect("Cannot parse PARAMS_PATH env var");
 
-    // load polynomial commitment parameters
-    let params_fs = File::open(&params_path).expect("couldn't open params");
-    let params: Params<G1Affine> =
-        Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params");
+    let params_path: String = match var("PARAMS_PATH") {
+        Ok(path) => path,
+        Err(e) => {
+            log::warn!(
+                "PARAMS_PATH env var is invalid: {:?}. Params will be setup locally.",
+                e
+            );
+            "".to_string()
+        }
+    };
+
+    let params: Params<G1Affine> = if params_path.is_empty() {
+        let degree = 18;
+        log::debug!("setup with degree {}", degree);
+        let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
+        log::debug!("setup done");
+        params
+    } else {
+        // load polynomial commitment parameters from file
+        let params_fs = File::open(&params_path).expect("couldn't open params");
+        Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params")
+    };
 
     // request & build the inputs for the circuits
     let geth_client = GethClient::new(Http::from_str(&rpc_url).expect("GethClient from RPC_URL"));
@@ -69,6 +82,7 @@ async fn main() {
     let state_proof;
     let block = block_convert(&builder.block, &builder.code_db);
     {
+        log::info!("generate evm_circuit proof");
         // generate evm_circuit proof
         let circuit = TestCircuit::<Fr>::new(block.clone(), FixedTableTag::iterator().collect());
 
@@ -89,27 +103,16 @@ async fn main() {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
         create_proof(&params, &pk, &[circuit], &[], rng, &mut transcript).expect("evm proof");
         evm_proof = transcript.finalize();
+
+        log::info!("generate evm_circuit proof done");
     }
 
     {
-        // generate state_circuit proof
-        //
-        // TODO: this should be configurable
-        const MEMORY_ADDRESS_MAX: usize = 2000;
-        const STACK_ADDRESS_MAX: usize = 1300;
-        const MEMORY_ROWS_MAX: usize = 16384;
-        const STACK_ROWS_MAX: usize = 16384;
-        const STORAGE_ROWS_MAX: usize = 16384;
-        const GLOBAL_COUNTER_MAX: usize = MEMORY_ROWS_MAX + STACK_ROWS_MAX + STORAGE_ROWS_MAX;
+        let circuit = StateCircuit::new(block.randomness, block.rws);
 
-        let circuit = StateCircuit::<
-            Fr,
-            true,
-            GLOBAL_COUNTER_MAX,
-            MEMORY_ADDRESS_MAX,
-            STACK_ADDRESS_MAX,
-            GLOBAL_COUNTER_MAX,
-        >::new(block.randomness, &block.rws);
+        // generate state_circuit proof
+        let instance = circuit.instance();
+        let instance_slices: Vec<_> = instance.iter().map(Vec::as_slice).collect();
 
         // TODO: same quest like in the first scope
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk for params, state_circuit");
@@ -123,7 +126,15 @@ async fn main() {
 
         // create a proof
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof(&params, &pk, &[circuit], &[], rng, &mut transcript).expect("state proof");
+        create_proof(
+            &params,
+            &pk,
+            &[circuit],
+            &[&instance_slices],
+            rng,
+            &mut transcript,
+        )
+        .expect("state proof");
         state_proof = transcript.finalize();
     }
 

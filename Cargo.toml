@@ -14,7 +14,7 @@ members = [
 ]
 
 [patch.crates-io]
-halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_03_06" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", rev = "a49778f5" }
 # This fork makes bitvec 0.20.x work with funty 1.1 and funty 1.2.  Without
 # this fork, bitvec 0.20.x is incompatible with funty 1.2, which we depend on,
 # and leads to a compilation error.  This can be removed once the upstream PR
