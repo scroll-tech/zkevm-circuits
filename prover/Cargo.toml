@@ -9,7 +9,7 @@ env_logger = "0.9.0"
 ethers-providers = "0.6"
 eth-types = { path = "../eth-types" }
 rand_xorshift = "0.3"
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", rev = "a49778f5" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", rev = "d73abe1" }
 log = "0.4.14"
 pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256" }
 rand = "0.8.4"

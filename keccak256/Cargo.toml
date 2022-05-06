@@ -7,7 +7,7 @@ edition = "2018"
 dev-graph = ["halo2_proofs/dev-graph", "plotters"]
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", rev = "a49778f5" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", rev = "d73abe1" }
 itertools = "0.10.1"
 num-bigint = "0.4.2"
 num-traits = "0.2.14"

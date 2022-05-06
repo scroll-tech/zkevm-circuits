@@ -1767,7 +1767,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/scroll-tech/halo2.git?rev=a49778f5#a49778f586a563b90badec11d41fcc9851f382ec"
+source = "git+https://github.com/scroll-tech/halo2.git?rev=d73abe1#d73abe16de54defb8969caef83eecf81af99c263"
 dependencies = [
  "blake2b_simd",
  "bumpalo",
