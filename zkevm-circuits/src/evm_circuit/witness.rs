@@ -1,14 +1,16 @@
 #![allow(missing_docs)]
-use crate::evm_circuit::{
-    param::{N_BYTES_WORD, STACK_CAPACITY},
-    step::ExecutionState,
-    table::{
-        AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
-        TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
+use crate::{
+    evm_circuit::{
+        param::{N_BYTES_WORD, STACK_CAPACITY},
+        step::ExecutionState,
+        table::{
+            AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag,
+            RwTableTag, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
+        },
+        util::RandomLinearCombination,
     },
-    util::RandomLinearCombination,
+    util::DEFAULT_RAND,
 };
-
 use bus_mapping::{
     circuit_input_builder::{self, StepAuxiliaryData},
     error::{ExecError, OogError},
@@ -18,7 +20,7 @@ use bus_mapping::{
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use eth_types::{ToAddress, U256};
-use halo2_proofs::arithmetic::{BaseExt, FieldExt};
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::pairing::bn256::Fr as Fp;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
@@ -36,6 +38,8 @@ pub struct Block<F> {
     pub bytecodes: Vec<Bytecode>,
     /// The block context
     pub context: BlockContext,
+    /// ..
+    pub pad_to: usize,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -1145,7 +1149,10 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
                     OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
+                    OpcodeId::SHA3 => ExecutionState::SHA3,
+                    OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
+                    OpcodeId::SHL => ExecutionState::SHL,
                     OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
                     // TODO: Convert REVERT and RETURN to their own ExecutionState.
                     OpcodeId::STOP | OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::STOP,
@@ -1184,7 +1191,10 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
-                    _ => unimplemented!("unimplemented opcode {:?}", op),
+                    _ => {
+                        log::warn!("unimplemented opcode {:?}", op);
+                        ExecutionState::DUMMY
+                    }
                 }
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
@@ -1272,7 +1282,7 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
                     circuit_input_builder::CodeSource::Memory => {
                         CodeSource::Account(call.code_hash.to_word())
                     }
-                    _ => unimplemented!(),
+                    _ => unimplemented!("invalid code source {:#?}", call.code_source),
                 },
                 rw_counter_end_of_reversion: call.rw_counter_end_of_reversion,
                 caller_id: call.caller_id,
@@ -1316,7 +1326,7 @@ pub fn block_convert(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Block<Fp> {
     Block {
-        randomness: Fp::rand(),
+        randomness: Fp::from_u128(DEFAULT_RAND),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
@@ -1337,5 +1347,6 @@ pub fn block_convert(
                     .map(|code_hash| Bytecode::new(code_db.0.get(&code_hash).unwrap().to_vec()))
             })
             .collect(),
+        pad_to: 0,
     }
 }

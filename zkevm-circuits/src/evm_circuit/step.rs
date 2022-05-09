@@ -13,9 +13,11 @@ use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
 pub enum ExecutionState {
     // Internal state
     BeginTx,
@@ -89,6 +91,9 @@ pub enum ExecutionState {
     STATICCALL,
     REVERT,
     SELFDESTRUCT,
+
+    DUMMY,
+
     // Error cases
     ErrorInvalidOpcode,
     ErrorStackOverflow,
@@ -132,114 +137,8 @@ impl ExecutionState {
         *self as u64
     }
 
-    pub(crate) fn iterator() -> impl Iterator<Item = Self> {
-        [
-            Self::BeginTx,
-            Self::EndTx,
-            Self::EndBlock,
-            Self::CopyCodeToMemory,
-            Self::CopyToMemory,
-            Self::CopyToLog,
-            Self::STOP,
-            Self::ADD_SUB,
-            Self::MUL_DIV_MOD,
-            Self::SDIV,
-            Self::SMOD,
-            Self::ADDMOD,
-            Self::MULMOD,
-            Self::EXP,
-            Self::SIGNEXTEND,
-            Self::CMP,
-            Self::SCMP,
-            Self::ISZERO,
-            Self::BITWISE,
-            Self::NOT,
-            Self::BYTE,
-            Self::SHL,
-            Self::SHR,
-            Self::SAR,
-            Self::SHA3,
-            Self::ADDRESS,
-            Self::BALANCE,
-            Self::ORIGIN,
-            Self::CALLER,
-            Self::CALLVALUE,
-            Self::CALLDATALOAD,
-            Self::CALLDATASIZE,
-            Self::CALLDATACOPY,
-            Self::CODESIZE,
-            Self::CODECOPY,
-            Self::GASPRICE,
-            Self::EXTCODESIZE,
-            Self::EXTCODECOPY,
-            Self::RETURNDATASIZE,
-            Self::RETURNDATACOPY,
-            Self::EXTCODEHASH,
-            Self::BLOCKHASH,
-            Self::BLOCKCTXU64,
-            Self::BLOCKCTXU160,
-            Self::BLOCKCTXU256,
-            Self::CHAINID,
-            Self::SELFBALANCE,
-            Self::POP,
-            Self::MEMORY,
-            Self::SLOAD,
-            Self::SSTORE,
-            Self::JUMP,
-            Self::JUMPI,
-            Self::PC,
-            Self::MSIZE,
-            Self::GAS,
-            Self::JUMPDEST,
-            Self::PUSH,
-            Self::DUP,
-            Self::SWAP,
-            Self::LOG,
-            Self::CREATE,
-            Self::CALL,
-            Self::CALLCODE,
-            Self::RETURN,
-            Self::DELEGATECALL,
-            Self::CREATE2,
-            Self::STATICCALL,
-            Self::REVERT,
-            Self::SELFDESTRUCT,
-            Self::ErrorInvalidOpcode,
-            Self::ErrorStackOverflow,
-            Self::ErrorStackUnderflow,
-            Self::ErrorWriteProtection,
-            Self::ErrorDepth,
-            Self::ErrorInsufficientBalance,
-            Self::ErrorContractAddressCollision,
-            Self::ErrorInvalidCreationCode,
-            Self::ErrorMaxCodeSizeExceeded,
-            Self::ErrorInvalidJump,
-            Self::ErrorReturnDataOutOfBound,
-            Self::ErrorOutOfGasConstant,
-            Self::ErrorOutOfGasStaticMemoryExpansion,
-            Self::ErrorOutOfGasDynamicMemoryExpansion,
-            Self::ErrorOutOfGasMemoryCopy,
-            Self::ErrorOutOfGasAccountAccess,
-            Self::ErrorOutOfGasCodeStore,
-            Self::ErrorOutOfGasLOG,
-            Self::ErrorOutOfGasEXP,
-            Self::ErrorOutOfGasSHA3,
-            Self::ErrorOutOfGasEXTCODECOPY,
-            Self::ErrorOutOfGasSLOAD,
-            Self::ErrorOutOfGasSSTORE,
-            Self::ErrorOutOfGasCALL,
-            Self::ErrorOutOfGasCALLCODE,
-            Self::ErrorOutOfGasDELEGATECALL,
-            Self::ErrorOutOfGasCREATE2,
-            Self::ErrorOutOfGasSTATICCALL,
-            Self::ErrorOutOfGasSELFDESTRUCT,
-        ]
-        .iter()
-        .copied()
-    }
-
     pub(crate) fn amount() -> usize {
-        Self::iterator().count()
+        Self::iter().count()
     }
 
     pub(crate) fn halts(&self) -> bool {

@@ -11,13 +11,13 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{MulWordByU64Gadget, RangeCheckGadget},
-            select, CachedRegion, Cell, RandomLinearCombination, Word,
+            CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{Field, ToLittleEndian, ToScalar};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -34,6 +34,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
+    intrinsic_gas_cost: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     code_hash: Cell<F>,
@@ -90,14 +91,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // TODO: Take gas cost of access list (EIP 2930) into consideration.
         // Use intrinsic gas
+        /*
         let intrinsic_gas_cost = select::expr(
             tx_is_create.expr(),
             GasCost::CREATION_TX.expr(),
             GasCost::TX.expr(),
         ) + tx_call_data_gas_cost.expr();
-
+        */
         // Check gas_left is sufficient
-        let gas_left = tx_gas.expr() - intrinsic_gas_cost;
+        let intrinsic_gas_cost = cb.query_cell();
+        let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
         // Prepare access list of caller and callee
@@ -207,6 +210,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             sufficient_gas_left,
             transfer_with_gas_fee,
             code_hash,
+            intrinsic_gas_cost,
         }
     }
 
@@ -252,6 +256,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
+        self.intrinsic_gas_cost
+            .assign(region, offset, Some(F::from(step.gas_cost)))?;
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
         self.transfer_with_gas_fee.assign(

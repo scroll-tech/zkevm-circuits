@@ -170,7 +170,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("EVM Proof generation with {} rows", degree);
+        let proof_message = format!("Keccak Proof generation with {} degree", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof(
             &general_params,
@@ -191,7 +191,7 @@ mod tests {
         let strategy = SingleVerifier::new(&verifier_params);
 
         // Bench verification time
-        let start3 = start_timer!(|| "EVM Proof verification");
+        let start3 = start_timer!(|| "Keccak Proof verification");
         verify_proof(
             &verifier_params,
             pk.get_vk(),

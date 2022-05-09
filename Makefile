@@ -5,7 +5,7 @@ help: ## Display this help screen
 
 clippy: ## Run clippy checks over all workspace members
 	@cargo check --all-features
-	@cargo clippy --all-features --all-targets -- -D clippy::all
+	@cargo clippy --all-features --all-targets -- -D warnings
 
 doc: ## Generate and tests docs including private items
 	@cargo doc --no-deps --all --document-private-items
@@ -19,6 +19,9 @@ test: ## Run tests for all the workspace members
 
 test_benches: ## Compiles the benchmarks
 	@cargo test --verbose --release --all-features -p circuit-benchmarks --no-run
+
+test-doc:
+	@cargo test --release --all --all-features --doc
 
 test-all: fmt doc clippy test_benches test ## Run all the CI checks locally (in your actual toolchain) 
 

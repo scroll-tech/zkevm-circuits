@@ -20,6 +20,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::{collections::HashMap, convert::TryInto, iter};
+use strum::IntoEnumIterator;
 
 mod add_sub;
 mod begin_tx;
@@ -37,6 +38,7 @@ mod codecopy;
 mod comparator;
 mod copy_code_to_memory;
 mod copy_to_log;
+mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
@@ -81,6 +83,7 @@ use codecopy::CodeCopyGadget;
 use comparator::ComparatorGadget;
 use copy_code_to_memory::CopyCodeToMemoryGadget;
 use copy_to_log::CopyToLogGadget;
+use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
@@ -92,7 +95,6 @@ use is_zero::IsZeroGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
-use logs::LogGadget;
 use memory::MemoryGadget;
 use memory_copy::CopyToMemoryGadget;
 use msize::MsizeGadget;
@@ -167,7 +169,7 @@ pub(crate) struct ExecutionConfig<F> {
     jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
-    log_gadget: LogGadget<F>,
+    log_gadget: DummyGadget<F, 0, 0, { ExecutionState::LOG }>,
     memory_gadget: MemoryGadget<F>,
     msize_gadget: MsizeGadget<F>,
     mul_div_mod_gadget: MulDivModGadget<F>,
@@ -176,6 +178,9 @@ pub(crate) struct ExecutionConfig<F> {
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
+    shr_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHR }>,
+    shl_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHL }>,
+    sha3_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHA3 }>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     sload_gadget: SloadGadget<F>,
@@ -219,6 +224,7 @@ impl<F: Field> ExecutionConfig<F> {
             let q_step_last = meta.query_selector(q_step_last);
 
             // Only one of execution_state should be enabled
+            debug_assert!(!step_curr.state.execution_state.is_empty());
             let sum_to_one = (
                 "Only one of execution_state should be enabled",
                 step_curr
@@ -365,6 +371,9 @@ impl<F: Field> ExecutionConfig<F> {
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
+            sha3_gadget: configure_gadget!(),
+            shl_gadget: configure_gadget!(),
+            shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
@@ -526,7 +535,7 @@ impl<F: Field> ExecutionConfig<F> {
                         (
                             "Only ExecutionState which halts or BeginTx can transit to EndTx",
                             ExecutionState::EndTx,
-                            ExecutionState::iterator()
+                            ExecutionState::iter()
                                 .filter(ExecutionState::halts)
                                 .chain(iter::once(ExecutionState::BeginTx))
                                 .collect(),
@@ -617,7 +626,6 @@ impl<F: Field> ExecutionConfig<F> {
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
-
                 // Collect all steps
                 let mut steps = block
                     .txs
@@ -629,7 +637,6 @@ impl<F: Field> ExecutionConfig<F> {
                 while let Some((transaction, step)) = steps.next() {
                     let call = &transaction.calls[step.call_index];
                     let height = self.get_step_height(step.execution_state);
-
                     // Assign the step witness
                     self.assign_exec_step(
                         &mut region,
@@ -642,7 +649,6 @@ impl<F: Field> ExecutionConfig<F> {
                         steps.peek(),
                         power_of_randomness,
                     )?;
-
                     // q_step logic
                     for idx in 0..height {
                         let offset = offset + idx;
@@ -805,12 +811,18 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
+            ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
+            ExecutionState::SHL => assign_exec_step!(self.shr_gadget),
+            ExecutionState::SHR => assign_exec_step!(self.shl_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),
             // errors
             ExecutionState::ErrorOutOfGasStaticMemoryExpansion => {
                 assign_exec_step!(self.error_oog_static_memory_gadget)
+            }
+            ExecutionState::DUMMY => {
+                // just skip, do nothing
             }
             _ => unimplemented!(),
         }

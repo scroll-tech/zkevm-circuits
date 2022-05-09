@@ -141,6 +141,9 @@ impl<F: Field> EvmCircuit<F> {
 
 #[cfg(any(feature = "test", test))]
 pub mod test {
+
+    use std::convert::TryInto;
+
     use crate::{
         evm_circuit::{
             table::FixedTableTag,
@@ -148,7 +151,7 @@ pub mod test {
             EvmCircuit,
         },
         rw_table::RwTable,
-        util::Expr,
+        util::DEFAULT_RAND,
     };
     use eth_types::{Field, Word};
     use halo2_proofs::{
@@ -156,8 +159,7 @@ pub mod test {
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         pairing::bn256::Fr as Fp,
-        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
-        poly::Rotation,
+        plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
     };
     use itertools::Itertools;
     use rand::{
@@ -381,20 +383,11 @@ pub mod test {
             let bytecode_table = [(); 5].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 
-            let power_of_randomness = {
-                let columns = [(); 31].map(|_| meta.instance_column());
-                let mut power_of_randomness = None;
-
-                meta.create_gate("", |meta| {
-                    power_of_randomness =
-                        Some(columns.map(|column| meta.query_instance(column, Rotation::cur())));
-
-                    [0.expr()]
-                });
-
-                power_of_randomness.unwrap()
-            };
-
+            let power_of_randomness: [Expression<F>; 31] = (1..32)
+                .map(|exp| Expression::Constant(F::from_u128(DEFAULT_RAND).pow(&[exp, 0, 0, 0])))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
             Self::Config {
                 tx_table,
                 rw_table,
@@ -424,9 +417,14 @@ pub mod test {
             config.load_rws(&mut layouter, &self.block.rws, self.block.randomness)?;
             config.load_bytecodes(&mut layouter, &self.block.bytecodes, self.block.randomness)?;
             config.load_block(&mut layouter, &self.block.context, self.block.randomness)?;
-            config
-                .evm_circuit
-                .assign_block_exact(&mut layouter, &self.block)
+            if self.block.pad_to != 0 {
+                config.evm_circuit.assign_block(&mut layouter, &self.block)
+            } else {
+                config
+                    .evm_circuit
+                    .assign_block_exact(&mut layouter, &self.block)
+            }?;
+            Ok(())
         }
     }
 
@@ -467,13 +465,11 @@ pub mod test {
         ));
         let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
         log::debug!("evm circuit uses k = {}", k);
-
-        let power_of_randomness = (1..32)
-            .map(|exp| vec![block.randomness.pow(&[exp, 0, 0, 0]); (1 << k) - 64])
-            .collect();
         let (active_gate_rows, active_lookup_rows) = TestCircuit::get_active_rows(&block);
+        let mut block = block;
+        block.pad_to = (1 << k) - 64;
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
-        let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
+        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
 

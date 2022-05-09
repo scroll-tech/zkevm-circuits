@@ -4,6 +4,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use strum::IntoEnumIterator;
 use strum_macros::{EnumCount, EnumIter};
 
 pub trait LookupTable<F: FieldExt> {
@@ -87,7 +88,7 @@ impl FixedTableTag {
                 (0..256).map(move |rhs| [tag, F::from(lhs), F::from(rhs), F::from(lhs ^ rhs)])
             })),
             Self::ResponsibleOpcode => {
-                Box::new(ExecutionState::iterator().flat_map(move |execution_state| {
+                Box::new(ExecutionState::iter().flat_map(move |execution_state| {
                     execution_state
                         .responsible_opcodes()
                         .into_iter()

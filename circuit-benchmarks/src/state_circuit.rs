@@ -40,7 +40,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("State Proof generation with {} rows", DEGREE);
+        let proof_message = format!("State Proof generation with {} degree", DEGREE);
         let start2 = start_timer!(|| proof_message);
         create_proof(
             &general_params,

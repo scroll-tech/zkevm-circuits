@@ -7,6 +7,7 @@ use ethers::{
     },
     core::utils::WEI_IN_ETHER,
     middleware::SignerMiddleware,
+    prelude::NonceManagerMiddleware,
     providers::{Middleware, PendingTransaction},
     signers::Signer,
     solc::Solc,
@@ -54,7 +55,7 @@ where
         .method::<_, bool>("transfer", (to, amount))
         .expect("cannot construct ERC20 transfer call");
     // Set gas to avoid `eth_estimateGas` call
-    let call = call.legacy();
+    //let call = call.legacy();
     let call = call.gas(100_000);
     call.tx
 }
@@ -172,7 +173,10 @@ async fn main() {
     //
 
     let mut deployments = HashMap::new();
-    let prov_wallet0 = Arc::new(SignerMiddleware::new(get_provider(), wallet0));
+    let prov_wallet0 = Arc::new(NonceManagerMiddleware::new(
+        SignerMiddleware::new(get_provider(), wallet0.clone()),
+        wallet0.address(),
+    ));
 
     // Greeter
     let contract = deploy(
@@ -194,7 +198,7 @@ async fn main() {
         contracts
             .get("OpenZeppelinERC20TestToken")
             .expect("contract not found"),
-        prov_wallet0.address(),
+        wallet0.address(),
     )
     .await;
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
@@ -325,13 +329,16 @@ async fn main() {
     for (i, (from_i, to_i)) in [(0, 1), (2, 3), (1, 0), (3, 2)].iter().enumerate() {
         let amount = U256::from(0x800000000000000 / (i + 1));
         let prov_wallet = &wallets[*from_i];
-        let tx = erc20_transfer(
+        let mut tx = erc20_transfer(
             prov_wallet.clone(),
             contract_address,
             contract_abi,
             wallets[*to_i].address(),
             amount,
         );
+
+        prov_wallet.fill_transaction(&mut tx, None).await.unwrap();
+        tx.set_gas(100_000u64);
 
         let pending_tx = prov_wallet
             .send_transaction(tx, None)
@@ -345,7 +352,13 @@ async fn main() {
         let pending_tx = PendingTransaction::new(*tx_hash, wallets[i].inner());
         let receipt = pending_tx.confirmations(0usize).await.unwrap().unwrap();
         let expected_status = if i % 2 == 0 { 1u64 } else { 0u64 };
-        assert_eq!(receipt.status, Some(U64::from(expected_status)));
+        assert_eq!(
+            receipt.status,
+            Some(U64::from(expected_status)),
+            "failed tx hash: {:?}, receipt: {:#?}",
+            tx_hash,
+            receipt
+        );
     }
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
     blocks.insert(

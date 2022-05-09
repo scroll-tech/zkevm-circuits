@@ -17,6 +17,7 @@ lazy_static! {
 }
 
 async fn test_evm_circuit_block(block_num: u64) {
+    log::info!("test evm circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
     let builder = cli.gen_inputs(block_num).await.unwrap();
@@ -46,7 +47,7 @@ async fn test_state_circuit_block(block_num: u64) {
     let rw_map = RwMap::from(&OperationContainer {
         memory: memory_ops,
         stack: stack_ops,
-        storage: storage_ops,
+        //storage: storage_ops,
         ..Default::default()
     });
 
