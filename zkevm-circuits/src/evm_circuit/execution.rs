@@ -245,7 +245,7 @@ impl<F: Field> ExecutionConfig<F> {
                 )
             });
 
-            let first_step_check = {
+            let _first_step_check = {
                 let begin_tx_selector =
                     step_curr.execution_state_selector([ExecutionState::BeginTx]);
                 iter::once((
@@ -254,7 +254,7 @@ impl<F: Field> ExecutionConfig<F> {
                 ))
             };
 
-            let last_step_check = {
+            let _last_step_check = {
                 let end_block_selector =
                     step_curr.execution_state_selector([ExecutionState::EndBlock]);
                 iter::once((
@@ -266,9 +266,9 @@ impl<F: Field> ExecutionConfig<F> {
             iter::once(sum_to_one)
                 .chain(bool_checks)
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
-                // TODO: Enable these after test of CALLDATACOPY is complete.
-                // .chain(first_step_check)
-                // .chain(last_step_check)
+            // TODO: Enable these after test of CALLDATACOPY is complete.
+            // .chain(first_step_check)
+            // .chain(last_step_check)
         });
 
         meta.create_gate("q_step", |meta| {

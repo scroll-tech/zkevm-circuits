@@ -6,6 +6,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::ShrWordsGadget,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -13,7 +14,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::{plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ShrGadget<F> {
@@ -54,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for ShrGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction,

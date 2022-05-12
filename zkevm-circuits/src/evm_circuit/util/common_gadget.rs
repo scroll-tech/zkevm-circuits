@@ -180,7 +180,7 @@ impl<F: Field> RestoreContextGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         call: &Call,

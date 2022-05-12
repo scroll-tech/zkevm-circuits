@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, Same},
             },
             math_gadget::IsZeroGadget,
-            Cell,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, CodeSource, ExecStep, Transaction},
     },

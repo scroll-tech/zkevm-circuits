@@ -1139,7 +1139,7 @@ impl<F: Field> ShrWordsGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         a: Word,
         shift: Word,
@@ -1159,7 +1159,7 @@ impl<F: Field> ShrWordsGadget<F> {
 
     fn assign_witness(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         wa: &Word,
         wshift: &Word,
@@ -1469,7 +1469,7 @@ impl<F: Field> ShlWordsGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         a: Word,
         shift: Word,
@@ -1489,7 +1489,7 @@ impl<F: Field> ShlWordsGadget<F> {
 
     fn assign_witness(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         wa: &Word,
         wshift: &Word,

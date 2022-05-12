@@ -797,41 +797,6 @@ impl Rw {
 
     fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
-        }
-    }
-
-    pub fn field_tag(&self) -> Option<u64> {
-        match self {
-            Self::Account { field_tag, .. } => Some(*field_tag as u64),
-            Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
-            Self::TxLog { field_tag, .. } => Some(*field_tag as u64),
-            Self::Memory { .. }
-            | Self::Stack { .. }
-            | Self::AccountStorage { .. }
-            | Self::TxAccessListAccount { .. }
-            | Self::TxAccessListAccountStorage { .. }
-            | Self::TxRefund { .. }
-            | Self::AccountDestructed { .. } => None,
-        }
-    }
-
-    pub fn storage_key(&self) -> Option<Word> {
-        match self {
-            Self::AccountStorage { storage_key, .. }
-            | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
-            Self::CallContext { .. }
-            | Self::Stack { .. }
-            | Self::Memory { .. }
-            | Self::TxRefund { .. }
-            | Self::Account { .. }
-            | Self::TxAccessListAccount { .. }
-            | Self::AccountDestructed { .. }
-            | Self::TxLog { .. } => None,
-        }
-    }
-
-    fn value_assignment<F: Field>(&self, randomness: F) -> F {
-        match self {
             Self::CallContext {
                 field_tag, value, ..
             } => {
