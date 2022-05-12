@@ -8,7 +8,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::Field;
-use halo2_proofs::{plonk::Error};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnGadget<F> {

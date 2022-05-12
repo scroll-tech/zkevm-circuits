@@ -391,6 +391,7 @@ impl<F: Field> ExecutionConfig<F> {
             block_ctx_u256_gadget: configure_gadget!(),
             // error gadgets
             error_oog_static_memory_gadget: configure_gadget!(),
+
             // step and presets
             step: step_curr,
             height_map,
@@ -619,7 +620,7 @@ impl<F: Field> ExecutionConfig<F> {
         block: &Block<F>,
         _exact: bool,
     ) -> Result<(), Error> {
-        //println!("assign_block start");
+        let power_of_randomness = (1..32)
             .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
             .collect::<Vec<F>>()
             .try_into()
@@ -628,15 +629,9 @@ impl<F: Field> ExecutionConfig<F> {
         layouter.assign_region(
             || "Execution step",
             |mut region| {
-                // assign selectors
-                self.q_step_first.enable(&mut region, 0)?;
-                let slot_num = block.step_num_with_pad; // slot_num * STEP_HEIGHT < 2**degree - blinding_rows
-                for i in 0..slot_num {
-                    let offset = STEP_HEIGHT * i;
-                    self.q_step.enable(&mut region, offset)?;
-                }
-                self.q_step_last
-                    .enable(&mut region, (slot_num - 1) * STEP_HEIGHT)?;
+                let mut offset = 0;
+
+                self.q_step_first.enable(&mut region, offset)?;
 
                 // Collect all steps
                 let mut steps = block
@@ -649,6 +644,7 @@ impl<F: Field> ExecutionConfig<F> {
                 while let Some((transaction, step)) = steps.next() {
                     let call = &transaction.calls[step.call_index];
                     let height = self.get_step_height(step.execution_state);
+
                     // Assign the step witness
                     self.assign_exec_step(
                         &mut region,
@@ -661,6 +657,7 @@ impl<F: Field> ExecutionConfig<F> {
                         steps.peek(),
                         power_of_randomness,
                     )?;
+
                     // q_step logic
                     for idx in 0..height {
                         let offset = offset + idx;
@@ -705,19 +702,6 @@ impl<F: Field> ExecutionConfig<F> {
                     self.q_step,
                     offset,
                     || Ok(F::zero()),
-                            offset,
-                            block,
-                            &Default::default(),
-                            &Default::default(),
-                            &ExecStep {
-                                execution_state: ExecutionState::EndBlock,
-                                ..Default::default()
-                            },
-                        )?;
-                    }
-                    offset += STEP_HEIGHT;
-                }
-
                 )?;
 
                 // If not exact:
@@ -771,7 +755,6 @@ impl<F: Field> ExecutionConfig<F> {
         }
 
         self.assign_exec_step_int(region, offset, block, transaction, call, step)
-                }
     }
 
     fn assign_exec_step_int(
