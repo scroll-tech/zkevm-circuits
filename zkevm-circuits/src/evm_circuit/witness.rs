@@ -797,6 +797,41 @@ impl Rw {
 
     fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
+        }
+    }
+
+    pub fn field_tag(&self) -> Option<u64> {
+        match self {
+            Self::Account { field_tag, .. } => Some(*field_tag as u64),
+            Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
+            Self::TxLog { field_tag, .. } => Some(*field_tag as u64),
+            Self::Memory { .. }
+            | Self::Stack { .. }
+            | Self::AccountStorage { .. }
+            | Self::TxAccessListAccount { .. }
+            | Self::TxAccessListAccountStorage { .. }
+            | Self::TxRefund { .. }
+            | Self::AccountDestructed { .. } => None,
+        }
+    }
+
+    pub fn storage_key(&self) -> Option<Word> {
+        match self {
+            Self::AccountStorage { storage_key, .. }
+            | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),
+            Self::CallContext { .. }
+            | Self::Stack { .. }
+            | Self::Memory { .. }
+            | Self::TxRefund { .. }
+            | Self::Account { .. }
+            | Self::TxAccessListAccount { .. }
+            | Self::AccountDestructed { .. }
+            | Self::TxLog { .. } => None,
+        }
+    }
+
+    fn value_assignment<F: Field>(&self, randomness: F) -> F {
+        match self {
             Self::CallContext {
                 field_tag, value, ..
             } => {
@@ -1018,8 +1053,8 @@ impl From<&operation::OperationContainer> for RwMap {
                         CallContextField::StackPointer => CallContextFieldTag::StackPointer,
                         CallContextField::GasLeft => CallContextFieldTag::GasLeft,
                         CallContextField::MemorySize => CallContextFieldTag::MemorySize,
-                        CallContextField::StateWriteCounter => {
-                            CallContextFieldTag::StateWriteCounter
+                        CallContextField::ReversibleWriteCounter => {
+                            CallContextFieldTag::ReversibleWriteCounter
                         }
                     },
                     value: op.op().value,
@@ -1145,10 +1180,11 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
                     OpcodeId::EQ | OpcodeId::LT | OpcodeId::GT => ExecutionState::CMP,
+                    OpcodeId::SHR => ExecutionState::SHR,
                     OpcodeId::SLT | OpcodeId::SGT => ExecutionState::SCMP,
+                    OpcodeId::SHL => ExecutionState::SHL,
                     OpcodeId::SIGNEXTEND => ExecutionState::SIGNEXTEND,
-                    // TODO: Convert REVERT and RETURN to their own ExecutionState.
-                    OpcodeId::STOP | OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::STOP,
+                    OpcodeId::STOP => ExecutionState::STOP,
                     OpcodeId::AND => ExecutionState::BITWISE,
                     OpcodeId::XOR => ExecutionState::BITWISE,
                     OpcodeId::OR => ExecutionState::BITWISE,
@@ -1184,6 +1220,8 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
+                    // TODO: Convert REVERT to its own ExecutionState.
+                    OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }

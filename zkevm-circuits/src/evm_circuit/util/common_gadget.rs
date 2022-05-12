@@ -2,17 +2,20 @@ use super::CachedRegion;
 use crate::{
     evm_circuit::{
         param::N_BYTES_GAS,
-        table::{AccountFieldTag, FixedTableTag, Lookup},
+        table::{AccountFieldTag, CallContextFieldTag, FixedTableTag, Lookup},
         util::{
-            constraint_builder::{ConstraintBuilder, ReversionInfo, StepStateTransition},
+            constraint_builder::{
+                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition::{self, To},
+            },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
             Cell, Word,
         },
-        witness::ExecStep,
+        witness::{Block, Call, ExecStep},
     },
     util::Expr,
 };
-use eth_types::{Field, U256};
+use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::plonk::{Error, Expression};
 use std::convert::TryInto;
 
@@ -47,7 +50,7 @@ impl<F: Field> SameContextGadget<F> {
         // Check gas_left is sufficient
         let sufficient_gas_left = RangeCheckGadget::construct(cb, cb.next.state.gas_left.expr());
 
-        // State transition
+        // Do step state transition
         cb.require_step_state_transition(step_state_transition);
 
         Self {
@@ -70,6 +73,160 @@ impl<F: Field> SameContextGadget<F> {
             region,
             offset,
             F::from((step.gas_left - step.gas_cost) as u64),
+        )?;
+
+        Ok(())
+    }
+}
+
+/// Construction of step state transition that restores caller's state.
+#[derive(Clone, Debug)]
+pub(crate) struct RestoreContextGadget<F> {
+    caller_id: Cell<F>,
+    caller_is_root: Cell<F>,
+    caller_is_create: Cell<F>,
+    caller_code_source: Cell<F>,
+    caller_program_counter: Cell<F>,
+    caller_stack_pointer: Cell<F>,
+    caller_gas_left: Cell<F>,
+    caller_memory_word_size: Cell<F>,
+    caller_reversible_write_counter: Cell<F>,
+}
+
+impl<F: Field> RestoreContextGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        rw_counter: Transition<Expression<F>>,
+        return_data_offset: Expression<F>,
+        return_data_length: Expression<F>,
+    ) -> Self {
+        // Read caller's context for restore
+        let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
+        let [caller_is_root, caller_is_create, caller_code_source, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
+            [
+                CallContextFieldTag::IsRoot,
+                CallContextFieldTag::IsCreate,
+                CallContextFieldTag::CodeSource,
+                CallContextFieldTag::ProgramCounter,
+                CallContextFieldTag::StackPointer,
+                CallContextFieldTag::GasLeft,
+                CallContextFieldTag::MemorySize,
+                CallContextFieldTag::ReversibleWriteCounter,
+            ]
+            .map(|field_tag| cb.call_context(Some(caller_id.expr()), field_tag));
+
+        // Update caller's last callee information
+        for (field_tag, value) in [
+            (
+                CallContextFieldTag::LastCalleeId,
+                cb.curr.state.call_id.expr(),
+            ),
+            (
+                CallContextFieldTag::LastCalleeReturnDataOffset,
+                return_data_offset,
+            ),
+            (
+                CallContextFieldTag::LastCalleeReturnDataLength,
+                return_data_length,
+            ),
+        ] {
+            cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
+        }
+
+        // Consume all gas_left if call halts in exception
+        let gas_left = if cb.execution_state().halts_in_exception() {
+            caller_gas_left.expr()
+        } else {
+            caller_gas_left.expr() + cb.curr.state.gas_left.expr()
+        };
+
+        // Accumulate reversible_write_counter in case this call stack reverts in the
+        // future even it itself succeeds. Note that when sub-call halts in
+        // failure, we don't need to accumulate reversible_write_counter because
+        // what happened in the sub-call has been reverted.
+        let reversible_write_counter = if cb.execution_state().halts_in_success() {
+            caller_reversible_write_counter.expr() + cb.curr.state.reversible_write_counter.expr()
+        } else {
+            caller_reversible_write_counter.expr()
+        };
+
+        // Do step state transition
+        cb.require_step_state_transition(StepStateTransition {
+            rw_counter,
+            call_id: To(caller_id.expr()),
+            is_root: To(caller_is_root.expr()),
+            is_create: To(caller_is_create.expr()),
+            code_source: To(caller_code_source.expr()),
+            program_counter: To(caller_program_counter.expr()),
+            stack_pointer: To(caller_stack_pointer.expr()),
+            gas_left: To(gas_left.expr()),
+            memory_word_size: To(caller_memory_word_size.expr()),
+            reversible_write_counter: To(reversible_write_counter),
+            log_id: To(0.expr()),
+        });
+
+        Self {
+            caller_id,
+            caller_is_root,
+            caller_is_create,
+            caller_code_source,
+            caller_program_counter,
+            caller_stack_pointer,
+            caller_gas_left,
+            caller_memory_word_size,
+            caller_reversible_write_counter,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        block: &Block<F>,
+        call: &Call,
+        step: &ExecStep,
+    ) -> Result<(), Error> {
+        let [caller_id, caller_is_root, caller_is_create, caller_code_source, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
+            if call.is_root {
+                [U256::zero(); 9]
+            } else {
+                [
+                    step.rw_indices[1],
+                    step.rw_indices[2],
+                    step.rw_indices[3],
+                    step.rw_indices[4],
+                    step.rw_indices[5],
+                    step.rw_indices[6],
+                    step.rw_indices[7],
+                    step.rw_indices[8],
+                    step.rw_indices[9],
+                ]
+                .map(|idx| block.rws[idx].call_context_value())
+            };
+
+        for (cell, value) in [
+            (&self.caller_id, caller_id),
+            (&self.caller_is_root, caller_is_root),
+            (&self.caller_is_create, caller_is_create),
+            (&self.caller_program_counter, caller_program_counter),
+            (&self.caller_stack_pointer, caller_stack_pointer),
+            (&self.caller_gas_left, caller_gas_left),
+            (&self.caller_memory_word_size, caller_memory_word_size),
+            (
+                &self.caller_reversible_write_counter,
+                caller_reversible_write_counter,
+            ),
+        ] {
+            cell.assign(region, offset, value.to_scalar())?;
+        }
+
+        self.caller_code_source.assign(
+            region,
+            offset,
+            Some(Word::random_linear_combine(
+                caller_code_source.to_le_bytes(),
+                block.randomness,
+            )),
         )?;
 
         Ok(())

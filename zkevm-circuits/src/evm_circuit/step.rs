@@ -242,14 +242,14 @@ impl ExecutionState {
         Self::iterator().count()
     }
 
-    pub(crate) fn halts(&self) -> bool {
+    pub(crate) fn halts_in_success(&self) -> bool {
+        matches!(self, Self::STOP | Self::RETURN | Self::SELFDESTRUCT)
+    }
+
+    pub(crate) fn halts_in_exception(&self) -> bool {
         matches!(
             self,
-            Self::STOP
-                | Self::RETURN
-                | Self::REVERT
-                | Self::SELFDESTRUCT
-                | Self::ErrorInvalidOpcode
+            Self::ErrorInvalidOpcode
                 | Self::ErrorStackOverflow
                 | Self::ErrorStackUnderflow
                 | Self::ErrorWriteProtection
@@ -279,6 +279,10 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasSTATICCALL
                 | Self::ErrorOutOfGasSELFDESTRUCT
         )
+    }
+
+    pub(crate) fn halts(&self) -> bool {
+        self.halts_in_success() || self.halts_in_exception() || matches!(self, Self::REVERT)
     }
 
     pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {

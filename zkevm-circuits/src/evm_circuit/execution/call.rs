@@ -255,7 +255,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                     memory_expansion.next_memory_word_size(),
                 ),
                 (
-                    CallContextFieldTag::StateWriteCounter,
+                    CallContextFieldTag::ReversibleWriteCounter,
                     cb.curr.state.reversible_write_counter.expr() + 1.expr(),
                 ),
             ] {

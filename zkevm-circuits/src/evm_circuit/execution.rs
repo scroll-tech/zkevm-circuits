@@ -57,7 +57,10 @@ mod origin;
 mod pc;
 mod pop;
 mod push;
+mod r#return;
 mod selfbalance;
+mod shl;
+mod shr;
 mod signed_comparator;
 mod signextend;
 mod sload;
@@ -101,7 +104,10 @@ use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
 use push::PushGadget;
+use r#return::ReturnGadget;
 use selfbalance::SelfbalanceGadget;
+use shl::ShlGadget;
+use shr::ShrGadget;
 use signed_comparator::SignedComparatorGadget;
 use signextend::SignextendGadget;
 use sload::SloadGadget;
@@ -175,7 +181,10 @@ pub(crate) struct ExecutionConfig<F> {
     pc_gadget: PcGadget<F>,
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
+    return_gadget: ReturnGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
+    shl_gadget: ShlGadget<F>,
+    shr_gadget: ShrGadget<F>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
     sload_gadget: SloadGadget<F>,
@@ -236,7 +245,7 @@ impl<F: Field> ExecutionConfig<F> {
                 )
             });
 
-            let _first_step_check = {
+            let first_step_check = {
                 let begin_tx_selector =
                     step_curr.execution_state_selector([ExecutionState::BeginTx]);
                 iter::once((
@@ -245,7 +254,7 @@ impl<F: Field> ExecutionConfig<F> {
                 ))
             };
 
-            let _last_step_check = {
+            let last_step_check = {
                 let end_block_selector =
                     step_curr.execution_state_selector([ExecutionState::EndBlock]);
                 iter::once((
@@ -257,9 +266,9 @@ impl<F: Field> ExecutionConfig<F> {
             iter::once(sum_to_one)
                 .chain(bool_checks)
                 .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
-            // TODO: Enable these after test of CALLDATACOPY is complete.
-            // .chain(first_step_check)
-            // .chain(last_step_check)
+                // TODO: Enable these after test of CALLDATACOPY is complete.
+                // .chain(first_step_check)
+                // .chain(last_step_check)
         });
 
         meta.create_gate("q_step", |meta| {
@@ -364,7 +373,10 @@ impl<F: Field> ExecutionConfig<F> {
             pc_gadget: configure_gadget!(),
             pop_gadget: configure_gadget!(),
             push_gadget: configure_gadget!(),
+            return_gadget: configure_gadget!(),
             selfbalance_gadget: configure_gadget!(),
+            shl_gadget: configure_gadget!(),
+            shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
             signextend_gadget: configure_gadget!(),
             sload_gadget: configure_gadget!(),
@@ -376,7 +388,6 @@ impl<F: Field> ExecutionConfig<F> {
             block_ctx_u256_gadget: configure_gadget!(),
             // error gadgets
             error_oog_static_memory_gadget: configure_gadget!(),
-
             // step and presets
             step: step_curr,
             height_map,
@@ -798,6 +809,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::PC => assign_exec_step!(self.pc_gadget),
             ExecutionState::POP => assign_exec_step!(self.pop_gadget),
             ExecutionState::PUSH => assign_exec_step!(self.push_gadget),
+            ExecutionState::RETURN => assign_exec_step!(self.return_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
             ExecutionState::BLOCKCTXU160 => assign_exec_step!(self.block_ctx_u160_gadget),
@@ -805,6 +817,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             ExecutionState::SIGNEXTEND => assign_exec_step!(self.signextend_gadget),
             ExecutionState::SLOAD => assign_exec_step!(self.sload_gadget),
+            ExecutionState::SHL => assign_exec_step!(self.shl_gadget),
+            ExecutionState::SHR => assign_exec_step!(self.shr_gadget),
             ExecutionState::SSTORE => assign_exec_step!(self.sstore_gadget),
             ExecutionState::STOP => assign_exec_step!(self.stop_gadget),
             ExecutionState::SWAP => assign_exec_step!(self.swap_gadget),

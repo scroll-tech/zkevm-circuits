@@ -493,6 +493,8 @@ pub mod test {
                 FixedTableTag::Range1024,
                 FixedTableTag::SignByte,
                 FixedTableTag::ResponsibleOpcode,
+                FixedTableTag::Bitslevel,
+                FixedTableTag::Pow64,
             ],
         )
     }
