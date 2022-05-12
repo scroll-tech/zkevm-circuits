@@ -32,10 +32,10 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
         EvmCircuit::configure(
             meta,
             power_of_randomness,
-            tx_table,
-            rw_table,
-            bytecode_table,
-            block_table,
+            &tx_table,
+            &rw_table,
+            &bytecode_table,
+            &block_table,
         )
     }
 

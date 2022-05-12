@@ -24,6 +24,7 @@ pub fn get_fixed_table(conf: FixedTableConfig) -> Vec<FixedTableTag> {
     match conf {
         FixedTableConfig::Incomplete => {
             vec![
+                FixedTableTag::Zero,
                 FixedTableTag::Range5,
                 FixedTableTag::Range16,
                 FixedTableTag::Range32,

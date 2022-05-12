@@ -1,11 +1,18 @@
-use crate::{evm_circuit::param::N_BYTES_MEMORY_ADDRESS, util::Expr};
+use crate::{
+    evm_circuit::{
+        param::{LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS},
+        table::Table,
+    },
+    util::Expr,
+};
 use eth_types::U256;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region},
-    plonk::{Advice, Column, Error, Expression, VirtualCells},
+    plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
+use std::collections::BTreeMap;
 
 pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
@@ -32,7 +39,7 @@ impl<F: FieldExt> Cell<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value: Option<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
@@ -62,6 +69,231 @@ impl<F: FieldExt> Expr<F> for &Cell<F> {
     }
 }
 
+pub struct CachedRegion<'r, 'b, F: FieldExt> {
+    region: &'r mut Region<'b, F>,
+    advice: Vec<Vec<F>>,
+    power_of_randomness: [F; 31],
+    width_start: usize,
+    height_start: usize,
+}
+
+impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
+    /// New cached region
+    pub(crate) fn new(
+        region: &'r mut Region<'b, F>,
+        power_of_randomness: [F; 31],
+        width: usize,
+        height: usize,
+        width_start: usize,
+        height_start: usize,
+    ) -> Self {
+        Self {
+            region,
+            advice: vec![vec![F::zero(); height]; width],
+            power_of_randomness,
+            width_start,
+            height_start,
+        }
+    }
+
+    /// Assign an advice column value (witness).
+    pub fn assign_advice<'v, V, VR, A, AR>(
+        &'v mut self,
+        annotation: A,
+        column: Column<Advice>,
+        offset: usize,
+        to: V,
+    ) -> Result<AssignedCell<VR, F>, Error>
+    where
+        V: FnMut() -> Result<VR, Error> + 'v,
+        for<'vr> Assigned<F>: From<&'vr VR>,
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        // Actually set the value
+        let res = self.region.assign_advice(annotation, column, offset, to);
+        // Cache the value
+        if let Result::Ok(cell) = &res {
+            let call_value = cell.value_field();
+            if let Some(value) = call_value {
+                self.advice[column.index() - self.width_start][offset - self.height_start] =
+                    value.evaluate();
+            }
+        }
+        res
+    }
+
+    pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
+        unimplemented!("fixed column");
+    }
+
+    pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
+        self.advice[column_index - self.width_start]
+            [(((row_index - self.height_start) as i32) + rotation.0) as usize]
+    }
+
+    pub fn get_instance(&self, _row_index: usize, column_index: usize, _rotation: Rotation) -> F {
+        self.power_of_randomness[column_index]
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StoredExpression<F> {
+    name: String,
+    cell: Cell<F>,
+    cell_type: CellType,
+    expr: Expression<F>,
+    expr_id: String,
+}
+
+impl<F: FieldExt> StoredExpression<F> {
+    pub fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        let value = self.expr.evaluate(
+            &|scalar| scalar,
+            &|_| unimplemented!("selector column"),
+            &|_, column_index, rotation| region.get_fixed(offset, column_index, rotation),
+            &|_, column_index, rotation| region.get_advice(offset, column_index, rotation),
+            &|_, column_index, rotation| region.get_instance(offset, column_index, rotation),
+            &|a| -a,
+            &|a, b| a + b,
+            &|a, b| a * b,
+            &|a, scalar| a * scalar,
+        );
+        self.cell.assign(region, offset, Some(value))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum CellType {
+    Storage,
+    Lookup(Table),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CellColumn<F> {
+    pub(crate) index: usize,
+    pub(crate) cell_type: CellType,
+    pub(crate) height: usize,
+    pub(crate) expr: Expression<F>,
+}
+
+impl<F: FieldExt> Expr<F> for CellColumn<F> {
+    fn expr(&self) -> Expression<F> {
+        self.expr.clone()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CellManager<F> {
+    width: usize,
+    height: usize,
+    cells: Vec<Cell<F>>,
+    columns: Vec<CellColumn<F>>,
+}
+
+impl<F: FieldExt> CellManager<F> {
+    pub(crate) fn new(
+        meta: &mut ConstraintSystem<F>,
+        height: usize,
+        advices: &[Column<Advice>],
+        height_offset: usize,
+    ) -> Self {
+        // Setup the columns and query the cells
+        let width = advices.len();
+        let mut cells = Vec::with_capacity(height * width);
+        let mut columns = Vec::with_capacity(height);
+        meta.create_gate("Query rows for step", |meta| {
+            for c in 0..width {
+                for r in 0..height {
+                    cells.push(Cell::new(meta, advices[c], height_offset + r));
+                }
+                columns.push(CellColumn {
+                    index: c,
+                    cell_type: CellType::Storage,
+                    height: 0,
+                    expr: cells[c * height].expr(),
+                });
+            }
+            vec![0.expr()]
+        });
+
+        // Mark columns used for lookups
+        let mut column_idx = 0;
+        for &(table, count) in LOOKUP_CONFIG {
+            for _ in 0usize..count {
+                columns[column_idx].cell_type = CellType::Lookup(table);
+                column_idx += 1;
+            }
+        }
+
+        Self {
+            width,
+            height,
+            cells,
+            columns,
+        }
+    }
+
+    pub(crate) fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
+        let mut cells = Vec::with_capacity(count);
+        while cells.len() < count {
+            let column_idx = self.next_column(cell_type);
+            let column = &mut self.columns[column_idx];
+            cells.push(self.cells[column_idx * self.height + column.height].clone());
+            column.height += 1;
+        }
+        cells
+    }
+
+    pub(crate) fn query_cell(&mut self, cell_type: CellType) -> Cell<F> {
+        self.query_cells(cell_type, 1)[0].clone()
+    }
+
+    fn next_column(&self, cell_type: CellType) -> usize {
+        let mut best_index: Option<usize> = None;
+        let mut best_height = self.height;
+        for column in self.columns.iter() {
+            if column.cell_type == cell_type && column.height < best_height {
+                best_index = Some(column.index);
+                best_height = column.height;
+            }
+        }
+        match best_index {
+            Some(index) => index,
+            None => unreachable!(format!("not enough cells for query: {:?}", cell_type)),
+        }
+    }
+
+    pub(crate) fn get_height(&self) -> usize {
+        self.columns
+            .iter()
+            .map(|column| column.height)
+            .max()
+            .unwrap()
+    }
+
+    pub(crate) fn get_stats(&self) -> BTreeMap<CellType, (usize, usize, usize)> {
+        let mut data = BTreeMap::new();
+        for column in self.columns.iter() {
+            let (mut count, mut height, mut num_cells) =
+                data.get(&column.cell_type).unwrap_or(&(0, 0, 0));
+            count += 1;
+            height = height.max(column.height);
+            num_cells += column.height;
+            data.insert(column.cell_type, (count, height, num_cells));
+        }
+        data
+    }
+
+    pub(crate) fn columns(&self) -> &[CellColumn<F>] {
+        &self.columns
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct RandomLinearCombination<F, const N: usize> {
     // random linear combination expression of cells
@@ -74,22 +306,14 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
     const N_BYTES: usize = N;
 
     pub(crate) fn random_linear_combine(bytes: [u8; N], randomness: F) -> F {
-        bytes.iter().rev().fold(F::zero(), |acc, byte| {
-            acc * randomness + F::from(*byte as u64)
-        })
+        rlc::value(&bytes, randomness)
     }
 
     pub(crate) fn random_linear_combine_expr(
         bytes: [Expression<F>; N],
         power_of_randomness: &[Expression<F>],
     ) -> Expression<F> {
-        debug_assert!(bytes.len() <= power_of_randomness.len() + 1);
-
-        let mut rlc = bytes[0].clone();
-        for (byte, randomness) in bytes[1..].iter().zip(power_of_randomness.iter()) {
-            rlc = rlc + byte.clone() * randomness.clone();
-        }
-        rlc
+        rlc::expr(&bytes, power_of_randomness)
     }
 
     pub(crate) fn new(cells: [Cell<F>; N], power_of_randomness: &[Expression<F>]) -> Self {
@@ -104,7 +328,7 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: Option<[u8; N]>,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
@@ -261,6 +485,32 @@ pub(crate) mod from_bytes {
             multiplier *= F::from(256);
         }
         value
+    }
+}
+
+/// Returns the random linear combination of the inputs.
+/// Encoding is done as follows: v_0 * R^0 + v_1 * R^1 + ...
+pub(crate) mod rlc {
+    use crate::util::Expr;
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(
+        expressions: &[E],
+        power_of_randomness: &[E],
+    ) -> Expression<F> {
+        debug_assert!(expressions.len() <= power_of_randomness.len() + 1);
+
+        let mut rlc = expressions[0].expr();
+        for (expression, randomness) in expressions[1..].iter().zip(power_of_randomness.iter()) {
+            rlc = rlc + expression.expr() * randomness.expr();
+        }
+        rlc
+    }
+
+    pub(crate) fn value<F: FieldExt>(values: &[u8], randomness: F) -> F {
+        values.iter().rev().fold(F::zero(), |acc, value| {
+            acc * randomness + F::from(*value as u64)
+        })
     }
 }
 

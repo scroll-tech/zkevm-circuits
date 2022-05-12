@@ -1,3 +1,4 @@
+use super::CachedRegion;
 use crate::{
     evm_circuit::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
@@ -12,10 +13,7 @@ use crate::{
 };
 use array_init::array_init;
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};
-use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 use std::convert::TryInto;
 
 /// Decodes the usable part of an address stored in a Word
@@ -95,7 +93,7 @@ impl<F: Field> MemoryAddressGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory_offset: U256,
         memory_length: U256,
@@ -176,7 +174,7 @@ impl<F: Field> MemoryWordSizeGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         address: u64,
     ) -> Result<u64, Error> {
@@ -280,7 +278,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         curr_memory_word_size: u64,
         addresses: [u64; N],
@@ -377,7 +375,7 @@ impl<F: Field> MemoryCopierGasGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         num_bytes: u64,
         memory_expansion_gas_cost: u64,
@@ -490,7 +488,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         addr_start: u64,
         addr_end: u64,

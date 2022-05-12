@@ -6,7 +6,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            sum, Word,
+            sum, CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -16,7 +16,7 @@ use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use eth_types::ToLittleEndian;
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ByteGadget<F> {
@@ -92,7 +92,7 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction,

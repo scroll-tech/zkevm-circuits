@@ -11,14 +11,15 @@ use crate::{
             },
             from_bytes,
             math_gadget::IsZeroGadget,
-            select, Cell, RandomLinearCombination, Word,
+            select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
+
 use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
@@ -84,7 +85,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction,

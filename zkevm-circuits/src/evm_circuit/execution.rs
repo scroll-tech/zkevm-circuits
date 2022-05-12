@@ -1,9 +1,13 @@
+use super::util::{CachedRegion, CellManager, StoredExpression};
 use crate::{
     evm_circuit::{
-        param::{STEP_HEIGHT, STEP_WIDTH},
-        step::{ExecutionState, Preset, Step},
-        table::{FixedTableTag, Lookup, LookupTable, Table},
-        util::constraint_builder::ConstraintBuilder,
+        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
+        step::{ExecutionState, Step},
+        table::{LookupTable, Table},
+        util::{
+            constraint_builder::{BaseConstraintBuilder, ConstraintBuilder},
+            rlc, CellType,
+        },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
@@ -12,10 +16,10 @@ use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
-    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, iter};
+use std::{collections::HashMap, convert::TryInto, iter};
 
 mod add_sub;
 mod begin_tx;
@@ -121,7 +125,7 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         transaction: &Transaction,
@@ -132,12 +136,17 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExecutionConfig<F> {
-    q_step: Selector,
+    q_usable: Selector,
+    q_step: Column<Advice>,
+    num_rows_until_next_step: Column<Advice>,
+    num_rows_inv: Column<Advice>,
     q_step_first: Selector,
     q_step_last: Selector,
+    advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
-    presets_map: HashMap<ExecutionState, Vec<Preset<F>>>,
     // internal state gadgets
+    height_map: HashMap<ExecutionState, usize>,
+    stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     begin_tx_gadget: BeginTxGadget<F>,
     copy_to_memory_gadget: CopyToMemoryGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
@@ -192,34 +201,31 @@ pub(crate) struct ExecutionConfig<F> {
 }
 
 impl<F: Field> ExecutionConfig<F> {
-    pub(crate) fn configure<TxTable, RwTable, BytecodeTable, BlockTable>(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; 31],
-        fixed_table: [Column<Fixed>; 4],
-        tx_table: TxTable,
-        rw_table: RwTable,
-        bytecode_table: BytecodeTable,
-        block_table: BlockTable,
-    ) -> Self
-    where
-        TxTable: LookupTable<F, 4>,
-        RwTable: LookupTable<F, 11>,
-        BytecodeTable: LookupTable<F, 5>,
-        BlockTable: LookupTable<F, 3>,
-    {
-        let q_step = meta.complex_selector();
+        fixed_table: &dyn LookupTable<F>,
+        byte_table: &dyn LookupTable<F>,
+        tx_table: &dyn LookupTable<F>,
+        rw_table: &dyn LookupTable<F>,
+        bytecode_table: &dyn LookupTable<F>,
+        block_table: &dyn LookupTable<F>,
+    ) -> Self {
+        let q_usable = meta.complex_selector();
+        let q_step = meta.advice_column();
+        let num_rows_until_next_step = meta.advice_column();
+        let num_rows_inv = meta.advice_column();
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
-        let qs_byte_lookup = meta.advice_column();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
 
-        let step_curr = Step::new(meta, qs_byte_lookup, advices, false);
-        let step_next = Step::new(meta, qs_byte_lookup, advices, true);
-        let mut independent_lookups = Vec::new();
-        let mut presets_map = HashMap::new();
+        let step_curr = Step::new(meta, advices, 0);
+        let mut height_map = HashMap::new();
 
         meta.create_gate("Constrain execution state", |meta| {
-            let q_step = meta.query_selector(q_step);
+            let q_usable = meta.query_selector(q_usable);
+            let q_step = meta.query_advice(q_step, Rotation::cur());
             let q_step_first = meta.query_selector(q_step_first);
             let q_step_last = meta.query_selector(q_step_last);
 
@@ -241,69 +247,7 @@ impl<F: Field> ExecutionConfig<F> {
                 )
             });
 
-            // ExecutionState transition should be correct.
-            let execution_state_transition = {
-                let q_step_last = q_step_last.clone();
-                iter::empty()
-                    .chain(
-                        [
-                            (
-                                "EndTx can only transit to BeginTx or EndBlock",
-                                ExecutionState::EndTx,
-                                vec![ExecutionState::BeginTx, ExecutionState::EndBlock],
-                            ),
-                            (
-                                "EndBlock can only transit to EndBlock",
-                                ExecutionState::EndBlock,
-                                vec![ExecutionState::EndBlock],
-                            ),
-                        ]
-                        .map(|(name, from, to)| {
-                            (
-                                name,
-                                step_curr.execution_state_selector([from])
-                                    * (1.expr() - step_next.execution_state_selector(to)),
-                            )
-                        }),
-                    )
-                    .chain(
-                        [
-                            (
-                                "Only EndTx can transit to BeginTx",
-                                ExecutionState::BeginTx,
-                                vec![ExecutionState::EndTx],
-                            ),
-                            (
-                                "Only ExecutionState which halts or BeginTx can transit to EndTx",
-                                ExecutionState::EndTx,
-                                ExecutionState::iterator()
-                                    .filter(ExecutionState::halts)
-                                    .chain(iter::once(ExecutionState::BeginTx))
-                                    .collect(),
-                            ),
-                            (
-                                "Only EndTx or EndBlock can transit to EndBlock",
-                                ExecutionState::EndBlock,
-                                vec![ExecutionState::EndTx, ExecutionState::EndBlock],
-                            ),
-                            (
-                                "Only ExecutionState which copies memory to memory can transit to CopyToMemory",
-                                ExecutionState::CopyToMemory,
-                                vec![ExecutionState::CopyToMemory, ExecutionState::CALLDATACOPY],
-                            ),
-                        ]
-                        .map(|(name, to, from)| {
-                            (
-                                name,
-                                step_next.execution_state_selector([to])
-                                    * (1.expr() - step_curr.execution_state_selector(from)),
-                            )
-                        }),
-                    )
-                    .map(move |(name, poly)| (name, (1.expr() - q_step_last.clone()) * poly))
-            };
-
-            let first_step_check = {
+            let _first_step_check = {
                 let begin_tx_selector =
                     step_curr.execution_state_selector([ExecutionState::BeginTx]);
                 iter::once((
@@ -312,7 +256,7 @@ impl<F: Field> ExecutionConfig<F> {
                 ))
             };
 
-            let last_step_check = {
+            let _last_step_check = {
                 let end_block_selector =
                     step_curr.execution_state_selector([ExecutionState::EndBlock]);
                 iter::once((
@@ -323,51 +267,78 @@ impl<F: Field> ExecutionConfig<F> {
 
             iter::once(sum_to_one)
                 .chain(bool_checks)
-                .chain(execution_state_transition)
-                .map(move |(name, poly)| (name, q_step.clone() * poly))
-                .chain(first_step_check)
-                .chain(last_step_check)
+                .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
+            // TODO: Enable these after test of CALLDATACOPY is complete.
+            // .chain(first_step_check)
+            // .chain(last_step_check)
         });
 
-        // Use qs_byte_lookup as selector to do byte range lookup on each advice
-        // column. In this way, ExecutionGadget could enable the byte range
-        // lookup by enable qs_byte_lookup.
-        for advice in advices {
-            meta.lookup_any("Qs byte", |meta| {
-                let advice = meta.query_advice(advice, Rotation::cur());
-                let qs_byte_lookup = meta.query_advice(qs_byte_lookup, Rotation::cur());
+        meta.create_gate("q_step", |meta| {
+            let q_usable = meta.query_selector(q_usable);
+            let q_step_first = meta.query_selector(q_step_first);
+            let q_step = meta.query_advice(q_step, Rotation::cur());
+            let num_rows_left_cur = meta.query_advice(num_rows_until_next_step, Rotation::cur());
+            let num_rows_left_next = meta.query_advice(num_rows_until_next_step, Rotation::next());
+            let num_rows_left_inverse = meta.query_advice(num_rows_inv, Rotation::cur());
 
-                vec![
-                    qs_byte_lookup.clone() * FixedTableTag::Range256.expr(),
-                    qs_byte_lookup * advice,
-                    0u64.expr(),
-                    0u64.expr(),
-                ]
-                .into_iter()
-                .zip(fixed_table.table_exprs(meta).to_vec().into_iter())
-                .collect::<Vec<_>>()
+            let mut cb = BaseConstraintBuilder::default();
+            // q_step needs to be enabled on the first row
+            cb.condition(q_step_first, |cb| {
+                cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
             });
-        }
+            // Except when step is enabled, the step counter needs to decrease by 1
+            cb.condition(1.expr() - q_step.clone(), |cb| {
+                cb.require_equal(
+                    "num_rows_left_cur := num_rows_left_next + 1",
+                    num_rows_left_cur.clone(),
+                    num_rows_left_next + 1.expr(),
+                );
+            });
+            // Enforce that q_step := num_rows_until_next_step == 0
+            let is_zero = 1.expr() - (num_rows_left_cur.clone() * num_rows_left_inverse.clone());
+            cb.require_zero(
+                "num_rows_left_cur * is_zero == 0",
+                num_rows_left_cur * is_zero.clone(),
+            );
+            cb.require_zero(
+                "num_rows_left_inverse * is_zero == 0",
+                num_rows_left_inverse * is_zero.clone(),
+            );
+            cb.require_equal("q_step == is_zero", q_step, is_zero);
+            // On each usable row
+            cb.gate(q_usable)
+        });
 
+        let mut stored_expressions_map = HashMap::new();
+        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
                     meta,
+                    advices,
+                    q_usable,
                     q_step,
+                    num_rows_until_next_step,
                     q_step_first,
+                    q_step_last,
                     &power_of_randomness,
                     &step_curr,
                     &step_next,
-                    &mut independent_lookups,
-                    &mut presets_map,
+                    &mut height_map,
+                    &mut stored_expressions_map,
                 )
             };
         }
 
+        let cell_manager = step_curr.cell_manager.clone();
         let config = Self {
+            q_usable,
             q_step,
+            num_rows_until_next_step,
+            num_rows_inv,
             q_step_first,
             q_step_last,
+            advices,
             // internal states
             begin_tx_gadget: configure_gadget!(),
             copy_code_to_memory_gadget: configure_gadget!(),
@@ -422,155 +393,238 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_static_memory_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
-            presets_map,
+            height_map,
+            stored_expressions_map,
         };
 
         Self::configure_lookup(
             meta,
-            q_step,
             fixed_table,
+            byte_table,
             tx_table,
             rw_table,
             bytecode_table,
             block_table,
-            independent_lookups,
+            &power_of_randomness,
+            &cell_manager,
         );
 
         config
     }
 
+    pub fn get_step_height(&self, execution_state: ExecutionState) -> usize {
+        *self
+            .height_map
+            .get(&execution_state)
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", execution_state))
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
-        q_step: Selector,
+        advices: [Column<Advice>; STEP_WIDTH],
+        q_usable: Selector,
+        q_step: Column<Advice>,
+        num_rows_until_next_step: Column<Advice>,
         q_step_first: Selector,
+        q_step_last: Selector,
         power_of_randomness: &[Expression<F>; 31],
         step_curr: &Step<F>,
         step_next: &Step<F>,
-        independent_lookups: &mut Vec<Vec<Lookup<F>>>,
-        presets_map: &mut HashMap<ExecutionState, Vec<Preset<F>>>,
+        height_map: &mut HashMap<ExecutionState, usize>,
+        stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     ) -> G {
+        // Configure the gadget with the max height first so we can find out the actual
+        // height
+        let height = {
+            let mut cb = ConstraintBuilder::new(
+                step_curr.clone(),
+                step_next.clone(),
+                power_of_randomness,
+                G::EXECUTION_STATE,
+            );
+            G::configure(&mut cb);
+            let (_, _, _, height) = cb.build();
+            height
+        };
+
+        // Now actually configure the gadget with the correct minimal height
+        let step_next = &Step::new(meta, advices, height);
         let mut cb = ConstraintBuilder::new(
-            step_curr,
-            step_next,
+            step_curr.clone(),
+            step_next.clone(),
             power_of_randomness,
             G::EXECUTION_STATE,
         );
 
         let gadget = G::configure(&mut cb);
 
-        let (constraints, constraints_first_step, lookups, presets) = cb.build();
+        // Enforce the step height for this opcode
+        let mut num_rows_until_next_step_next = 0.expr();
+        meta.create_gate("query num rows", |meta| {
+            num_rows_until_next_step_next =
+                meta.query_advice(num_rows_until_next_step, Rotation::next());
+            vec![0.expr()]
+        });
+        cb.require_equal(
+            "num_rows_until_next_step_next := height - 1",
+            num_rows_until_next_step_next,
+            (height - 1).expr(),
+        );
+
+        let (constraints, constraints_first_step, stored_expressions, _) = cb.build();
         debug_assert!(
-            !presets_map.contains_key(&G::EXECUTION_STATE),
+            !height_map.contains_key(&G::EXECUTION_STATE),
             "execution state already configured"
         );
-        presets_map.insert(G::EXECUTION_STATE, presets);
+        height_map.insert(G::EXECUTION_STATE, height);
+        debug_assert!(
+            !stored_expressions_map.contains_key(&G::EXECUTION_STATE),
+            "execution state already configured"
+        );
+        stored_expressions_map.insert(G::EXECUTION_STATE, stored_expressions);
 
+        // Enforce the logic for this opcode
+        let q_steps: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
+            &|meta| meta.query_advice(q_step, Rotation::cur());
+        let q_steps_first: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
+            &|meta| meta.query_selector(q_step_first);
         for (selector, constraints) in [
-            (q_step, constraints),
-            (q_step_first, constraints_first_step),
+            (q_steps, constraints),
+            (q_steps_first, constraints_first_step),
         ] {
             if !constraints.is_empty() {
                 meta.create_gate(G::NAME, |meta| {
-                    let selector = meta.query_selector(selector);
-
-                    constraints
-                        .into_iter()
-                        .map(move |(name, constraint)| (name, selector.clone() * constraint))
+                    let q_usable = meta.query_selector(q_usable);
+                    let selector = selector(meta);
+                    constraints.into_iter().map(move |(name, constraint)| {
+                        (name, q_usable.clone() * selector.clone() * constraint)
+                    })
                 });
             }
         }
 
-        // Push lookups of this ExecutionState to independent_lookups for
-        // further configuration in configure_lookup.
-        independent_lookups.push(lookups.iter().map(|(_, lookup)| lookup.clone()).collect());
+        // Enforce the state transitions for this opcode
+        meta.create_gate("Constrain state machine transitions", |meta| {
+            let q_usable = meta.query_selector(q_usable);
+            let q_step = meta.query_advice(q_step, Rotation::cur());
+            let q_step_last = meta.query_selector(q_step_last);
+
+            // ExecutionState transition should be correct.
+            iter::empty()
+                .chain(
+                    IntoIterator::into_iter([
+                        (
+                            "EndTx can only transit to BeginTx or EndBlock",
+                            ExecutionState::EndTx,
+                            vec![ExecutionState::BeginTx, ExecutionState::EndBlock],
+                        ),
+                        (
+                            "EndBlock can only transit to EndBlock",
+                            ExecutionState::EndBlock,
+                            vec![ExecutionState::EndBlock],
+                        ),
+                    ])
+                    .filter(move |(_, from, _)| *from == G::EXECUTION_STATE)
+                    .map(|(_, _, to)| {
+                        1.expr() - step_next.execution_state_selector(to)
+                    }),
+                )
+                .chain(
+                    IntoIterator::into_iter([
+                        (
+                            "Only EndTx can transit to BeginTx",
+                            ExecutionState::BeginTx,
+                            vec![ExecutionState::EndTx],
+                        ),
+                        (
+                            "Only ExecutionState which halts or BeginTx can transit to EndTx",
+                            ExecutionState::EndTx,
+                            ExecutionState::iterator()
+                                .filter(ExecutionState::halts)
+                                .chain(iter::once(ExecutionState::BeginTx))
+                                .collect(),
+                        ),
+                        (
+                            "Only EndTx or EndBlock can transit to EndBlock",
+                            ExecutionState::EndBlock,
+                            vec![ExecutionState::EndTx, ExecutionState::EndBlock],
+                        ),
+                        (
+                            "Only ExecutionState which copies memory to memory can transit to CopyToMemory",
+                            ExecutionState::CopyToMemory,
+                            vec![ExecutionState::CopyToMemory, ExecutionState::CALLDATACOPY],
+                        ),
+                    ])
+                    .filter(move |(_, _, from)| !from.contains(&G::EXECUTION_STATE))
+                    .map(|(_, to, _)| {
+                        step_next.execution_state_selector([to])
+                    }),
+                )
+                // Accumulate all state transition checks.
+                // This can be done because all summed values are enforced to be boolean.
+                .reduce(|accum, poly| accum + poly)
+                .map(move |poly| {
+                        q_usable.clone()
+                            * q_step.clone()
+                            * (1.expr() - q_step_last.clone())
+                            * step_curr.execution_state_selector([G::EXECUTION_STATE])
+                            * poly
+                })
+        });
 
         gadget
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn configure_lookup<TxTable, RwTable, BytecodeTable, BlockTable>(
+    fn configure_lookup(
         meta: &mut ConstraintSystem<F>,
-        q_step: Selector,
-        fixed_table: [Column<Fixed>; 4],
-        tx_table: TxTable,
-        rw_table: RwTable,
-        bytecode_table: BytecodeTable,
-        block_table: BlockTable,
-        independent_lookups: Vec<Vec<Lookup<F>>>,
-    ) where
-        TxTable: LookupTable<F, 4>,
-        RwTable: LookupTable<F, 11>,
-        BytecodeTable: LookupTable<F, 5>,
-        BlockTable: LookupTable<F, 3>,
-    {
-        // Because one and only one ExecutionState is enabled at a step, we then
-        // know only one of independent_lookups will be enabled at a step, so we
-        // can add up them together to reduce the amount of lookup arguments.
-        // This map holds all added up independent lookups as accumulated
-        // lookups, and will be used in configuring lookup arguments later.
-        let mut acc_lookups_of_table = HashMap::new();
-
-        for lookups in independent_lookups {
-            let mut index_of_table = HashMap::new();
-
-            for lookup in lookups {
-                let table = lookup.table();
-                let acc_lookups = acc_lookups_of_table.entry(table).or_insert_with(Vec::new);
-                let index = index_of_table.entry(table).or_insert(0);
-
-                if *index == acc_lookups.len() {
-                    acc_lookups.push(lookup.input_exprs());
-                } else {
-                    // Add up independent lookup together
-                    for (acc, expr) in acc_lookups[*index]
-                        .iter_mut()
-                        .zip(lookup.input_exprs().into_iter())
-                    {
-                        *acc = acc.clone() + expr;
+        fixed_table: &dyn LookupTable<F>,
+        byte_table: &dyn LookupTable<F>,
+        tx_table: &dyn LookupTable<F>,
+        rw_table: &dyn LookupTable<F>,
+        bytecode_table: &dyn LookupTable<F>,
+        block_table: &dyn LookupTable<F>,
+        power_of_randomness: &[Expression<F>; 31],
+        cell_manager: &CellManager<F>,
+    ) {
+        for column in cell_manager.columns().iter() {
+            if let CellType::Lookup(table) = column.cell_type {
+                let name = format!("{:?}", table);
+                meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
+                    let table_expressions = match table {
+                        Table::Fixed => fixed_table,
+                        Table::Tx => tx_table,
+                        Table::Rw => rw_table,
+                        Table::Bytecode => bytecode_table,
+                        Table::Block => block_table,
+                        Table::Byte => byte_table,
                     }
-                }
-                *index += 1;
+                    .table_exprs(meta);
+                    vec![(
+                        column.expr(),
+                        rlc::expr(&table_expressions, power_of_randomness),
+                    )]
+                });
             }
         }
-
-        macro_rules! lookup {
-            ($id:path, $table:ident, $descrip:expr) => {
-                if let Some(acc_lookups) = acc_lookups_of_table.remove(&$id) {
-                    for (lookup_idx, input_exprs) in acc_lookups.into_iter().enumerate() {
-                        let idx =
-                            meta.lookup_any(concat!("LOOKUP: ", stringify!($descrip)), |meta| {
-                                let q_step = meta.query_selector(q_step);
-                                input_exprs
-                                    .into_iter()
-                                    .zip($table.table_exprs(meta).to_vec().into_iter())
-                                    .map(|(input, table)| (q_step.clone() * input, table))
-                                    .collect::<Vec<_>>()
-                            });
-                        log::debug!(
-                            "LOOKUP TABLE {} <=> {} {}",
-                            idx,
-                            stringify!($descrip),
-                            lookup_idx
-                        );
-                    }
-                }
-            };
-        }
-
-        lookup!(Table::Fixed, fixed_table, "Fixed table");
-        lookup!(Table::Tx, tx_table, "Tx table");
-        lookup!(Table::Rw, rw_table, "RW table");
-        lookup!(Table::Bytecode, bytecode_table, "Bytecode table");
-        lookup!(Table::Block, block_table, "Block table");
     }
 
+    /// Assign block
+    /// When exact is enabled, assign exact steps in block without padding for
+    /// unit test purpose
     pub fn assign_block(
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        _exact: bool,
     ) -> Result<(), Error> {
         //println!("assign_block start");
+            .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
+            .collect::<Vec<F>>()
+            .try_into()
+            .unwrap();
+
         layouter.assign_region(
             || "Execution step",
             |mut region| {
@@ -584,27 +638,73 @@ impl<F: Field> ExecutionConfig<F> {
                 self.q_step_last
                     .enable(&mut region, (slot_num - 1) * STEP_HEIGHT)?;
 
-                // assign real witnesses
-                let mut offset = 0;
-                for transaction in &block.txs {
-                    for step in &transaction.steps {
-                        let call = &transaction.calls[step.call_index];
-                        self.assign_exec_step(&mut region, offset, block, transaction, call, step)?;
-                        offset += STEP_HEIGHT;
-                    }
-                }
-                // assign dummy witnesses
-                let fast = true;
-                while offset < slot_num * STEP_HEIGHT {
-                    if fast {
-                        self.step.state.execution_state[ExecutionState::EndBlock as usize].assign(
-                            &mut region,
+                // Collect all steps
+                let mut steps = block
+                    .txs
+                    .iter()
+                    .flat_map(|tx| tx.steps.iter().map(move |step| (tx, step)))
+                    .peekable();
+
+                let mut last_height = 0;
+                while let Some((transaction, step)) = steps.next() {
+                    let call = &transaction.calls[step.call_index];
+                    let height = self.get_step_height(step.execution_state);
+                    // Assign the step witness
+                    self.assign_exec_step(
+                        &mut region,
+                        offset,
+                        block,
+                        transaction,
+                        call,
+                        step,
+                        height,
+                        steps.peek(),
+                        power_of_randomness,
+                    )?;
+                    // q_step logic
+                    for idx in 0..height {
+                        let offset = offset + idx;
+                        self.q_usable.enable(&mut region, offset)?;
+                        region.assign_advice(
+                            || "step selector",
+                            self.q_step,
                             offset,
-                            Some(F::one()),
+                            || Ok(if idx == 0 { F::one() } else { F::zero() }),
                         )?;
-                    } else {
-                        self.assign_exec_step(
-                            &mut region,
+                        let value = if idx == 0 {
+                            F::zero()
+                        } else {
+                            F::from((height - idx) as u64)
+                        };
+                        region.assign_advice(
+                            || "step height",
+                            self.num_rows_until_next_step,
+                            offset,
+                            || Ok(value),
+                        )?;
+                        region.assign_advice(
+                            || "step height inv",
+                            self.num_rows_inv,
+                            offset,
+                            || Ok(value.invert().unwrap_or(F::zero())),
+                        )?;
+                    }
+
+                    offset += height;
+                    last_height = height;
+                }
+                // These are still referenced (but not used) in next rows
+                region.assign_advice(
+                    || "step height",
+                    self.num_rows_until_next_step,
+                    offset,
+                    || Ok(F::zero()),
+                )?;
+                region.assign_advice(
+                    || "step height inv",
+                    self.q_step,
+                    offset,
+                    || Ok(F::zero()),
                             offset,
                             block,
                             &Default::default(),
@@ -618,53 +718,65 @@ impl<F: Field> ExecutionConfig<F> {
                     offset += STEP_HEIGHT;
                 }
 
-                Ok(())
-            },
-        )?;
+                )?;
 
-        //println!("assign_block done");
-        // TODO: Pad leftover region to the desired capacity
-        // TODO: Enable q_step_last
-
-        Ok(())
-    }
-
-    /// Assign exact steps in block without padding for unit test purpose
-    pub fn assign_block_exact(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "Execution step",
-            |mut region| {
-                let mut offset = 0;
-
-                self.q_step_first.enable(&mut region, offset)?;
-
-                for transaction in &block.txs {
-                    for step in &transaction.steps {
-                        let call = &transaction.calls[step.call_index];
-
-                        self.q_step.enable(&mut region, offset)?;
-                        self.assign_exec_step(&mut region, offset, block, transaction, call, step)?;
-
-                        offset += STEP_HEIGHT;
-                    }
-                }
-
-                if offset >= STEP_HEIGHT {
-                    self.q_step_last.enable(&mut region, offset - STEP_HEIGHT)?;
-                }
+                // If not exact:
+                // TODO: Pad leftover region to the desired capacity
+                // TODO: Enable q_step_last
+                self.q_step_last.enable(&mut region, offset - last_height)?;
 
                 Ok(())
             },
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn assign_exec_step(
         &self,
         region: &mut Region<'_, F>,
+        offset: usize,
+        block: &Block<F>,
+        transaction: &Transaction,
+        call: &Call,
+        step: &ExecStep,
+        height: usize,
+        next: Option<&(&Transaction, &ExecStep)>,
+        power_of_randomness: [F; 31],
+    ) -> Result<(), Error> {
+        // Make the region large enough for the current step and the next step.
+        // The next step's next step may also be accessed, so make the region large
+        // enough for 3 steps.
+        let region = &mut CachedRegion::<'_, '_, F>::new(
+            region,
+            power_of_randomness,
+            STEP_WIDTH,
+            MAX_STEP_HEIGHT * 3,
+            self.advices[0].index(),
+            offset,
+        );
+
+        // Also set the witness of the next step.
+        // These may be used in stored expressions and
+        // so their witness values need to be known to be able
+        // to correctly calculate the intermediate value.
+        if let Some((transaction_next, step_next)) = next {
+            self.assign_exec_step_int(
+                region,
+                offset + height,
+                block,
+                transaction_next,
+                call,
+                step_next,
+            )?;
+        }
+
+        self.assign_exec_step_int(region, offset, block, transaction, call, step)
+                }
+    }
+
+    fn assign_exec_step_int(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         transaction: &Transaction,
@@ -674,14 +786,6 @@ impl<F: Field> ExecutionConfig<F> {
         log::trace!("assign_exec_step offset:{} step:{:?}", offset, step);
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
-
-        for (cell, value) in self
-            .presets_map
-            .get(&step.execution_state)
-            .expect("not implemented")
-        {
-            cell.assign(region, offset, Some(*value))?;
-        }
 
         macro_rules! assign_exec_step {
             ($gadget:expr) => {
@@ -745,6 +849,15 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_oog_static_memory_gadget)
             }
             _ => unimplemented!(),
+        }
+
+        // Fill in the witness values for stored expressions
+        for stored_expression in self
+            .stored_expressions_map
+            .get(&step.execution_state)
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
+        {
+            stored_expression.assign(region, offset)?;
         }
 
         Ok(())

@@ -24,9 +24,9 @@ pub struct RwTable {
     pub aux2: Column<Advice>,
 }
 
-impl<F: FieldExt> LookupTable<F, 11> for RwTable {
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> [Expression<F>; 11] {
-        [
+impl<F: FieldExt> LookupTable<F> for RwTable {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
             meta.query_advice(self.rw_counter, Rotation::cur()),
             meta.query_advice(self.is_write, Rotation::cur()),
             meta.query_advice(self.tag, Rotation::cur()),

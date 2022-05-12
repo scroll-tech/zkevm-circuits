@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["The appliedzkp team"]
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_05_06" }
+halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_05_09" }
 sha3 = "0.7.2"
 eth-types = { path = "../eth-types" }
 digest = "0.7.6"

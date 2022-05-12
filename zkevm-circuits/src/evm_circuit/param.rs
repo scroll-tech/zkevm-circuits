@@ -1,8 +1,20 @@
+use super::table::Table;
+
 // Step dimension
-pub(crate) const STEP_WIDTH: usize = 32;
+pub(crate) const STEP_WIDTH: usize = 128;
 /// Step height
-pub const STEP_HEIGHT: usize = 16;
+pub const MAX_STEP_HEIGHT: usize = 16;
 pub(crate) const N_CELLS_STEP_STATE: usize = 11;
+
+/// Lookups done per row.
+pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
+    (Table::Fixed, 8),
+    (Table::Tx, 4),
+    (Table::Rw, 8),
+    (Table::Bytecode, 4),
+    (Table::Block, 1),
+    (Table::Byte, 24),
+];
 
 /// Maximum number of bytes that an integer can fit in field without wrapping
 /// around.

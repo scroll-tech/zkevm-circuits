@@ -5,17 +5,19 @@ use crate::{
         step::ExecutionState,
         table::{
             AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag,
-            RwTableTag, TxContextFieldTag, TxLogFieldTag,
+            RwTableTag, TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
         },
         util::RandomLinearCombination,
     },
     util::DEFAULT_RAND,
 };
+
 use bus_mapping::{
     circuit_input_builder::{self, StepAuxiliaryData},
     error::{ExecError, OogError},
-    operation::{self, AccountField, CallContextField},
+    operation::{self, AccountField, CallContextField, TxReceiptField},
 };
+
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use eth_types::{ToAddress, U256};
@@ -519,6 +521,13 @@ pub enum Rw {
         // when it is topic field, value can be word type
         value: Word,
     },
+    TxReceipt {
+        rw_counter: usize,
+        is_write: bool,
+        tx_id: usize,
+        field_tag: TxReceiptFieldTag,
+        value: u64,
+    },
 }
 #[derive(Default, Clone, Copy)]
 pub struct RwRow<F: FieldExt> {
@@ -633,6 +642,13 @@ impl Rw {
         }
     }
 
+    pub fn receipt_value(&self) -> u64 {
+        match self {
+            Self::TxReceipt { value, .. } => *value,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn memory_value(&self) -> u8 {
         match self {
             Self::Memory { byte, .. } => *byte,
@@ -672,7 +688,8 @@ impl Rw {
             | Self::Account { rw_counter, .. }
             | Self::AccountDestructed { rw_counter, .. }
             | Self::CallContext { rw_counter, .. }
-            | Self::TxLog { rw_counter, .. } => *rw_counter,
+            | Self::TxLog { rw_counter, .. }
+            | Self::TxReceipt { rw_counter, .. } => *rw_counter,
         }
     }
 
@@ -687,7 +704,8 @@ impl Rw {
             | Self::Account { is_write, .. }
             | Self::AccountDestructed { is_write, .. }
             | Self::CallContext { is_write, .. }
-            | Self::TxLog { is_write, .. } => *is_write,
+            | Self::TxLog { is_write, .. }
+            | Self::TxReceipt { is_write, .. } => *is_write,
         }
     }
 
@@ -703,6 +721,7 @@ impl Rw {
             Self::AccountDestructed { .. } => RwTableTag::AccountDestructed,
             Self::CallContext { .. } => RwTableTag::CallContext,
             Self::TxLog { .. } => RwTableTag::TxLog,
+            Self::TxReceipt { .. } => RwTableTag::TxReceipt,
         }
     }
 
@@ -712,7 +731,8 @@ impl Rw {
             | Self::TxAccessListAccount { tx_id, .. }
             | Self::TxAccessListAccountStorage { tx_id, .. }
             | Self::TxRefund { tx_id, .. }
-            | Self::TxLog { tx_id, .. } => Some(*tx_id),
+            | Self::TxLog { tx_id, .. }
+            | Self::TxReceipt { tx_id, .. } => Some(*tx_id),
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
@@ -744,7 +764,7 @@ impl Rw {
             Self::TxLog { log_id, index, .. } => {
                 Some((U256::from(*index as u64) + (U256::from(*log_id) << 8)).to_address())
             }
-            Self::CallContext { .. } | Self::TxRefund { .. } => None,
+            Self::CallContext { .. } | Self::TxRefund { .. } | Self::TxReceipt { .. } => None,
         }
     }
 
@@ -753,6 +773,7 @@ impl Rw {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
             Self::TxLog { field_tag, .. } => Some(*field_tag as u64),
+            Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
             Self::Memory { .. }
             | Self::Stack { .. }
             | Self::AccountStorage { .. }
@@ -774,7 +795,8 @@ impl Rw {
             | Self::Account { .. }
             | Self::TxAccessListAccount { .. }
             | Self::AccountDestructed { .. }
-            | Self::TxLog { .. } => None,
+            | Self::TxLog { .. }
+            | Self::TxReceipt { .. } => None,
         }
     }
 
@@ -805,7 +827,7 @@ impl Rw {
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
             Self::AccountDestructed { is_destructed, .. } => F::from(*is_destructed as u64),
             Self::Memory { byte, .. } => F::from(u64::from(*byte)),
-            Self::TxRefund { value, .. } => F::from(*value),
+            Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
         }
     }
 
@@ -828,7 +850,8 @@ impl Rw {
             Self::Stack { .. }
             | Self::Memory { .. }
             | Self::CallContext { .. }
-            | Self::TxLog { .. } => None,
+            | Self::TxLog { .. }
+            | Self::TxReceipt { .. } => None,
         }
     }
 
@@ -1038,6 +1061,24 @@ impl From<&operation::OperationContainer> for RwMap {
                 })
                 .collect(),
         );
+        rws.insert(
+            RwTableTag::TxReceipt,
+            container
+                .tx_receipt
+                .iter()
+                .map(|op| Rw::TxReceipt {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    tx_id: op.op().tx_id,
+                    field_tag: match op.op().field {
+                        TxReceiptField::PostStateOrStatus => TxReceiptFieldTag::PostStateOrStatus,
+                        TxReceiptField::LogLength => TxReceiptFieldTag::LogLength,
+                        TxReceiptField::CumulativeGasUsed => TxReceiptFieldTag::CumulativeGasUsed,
+                    },
+                    value: op.op().value,
+                })
+                .collect(),
+        );
 
         Self(rws)
     }
@@ -1187,6 +1228,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                     operation::Target::Account => RwTableTag::Account,
                     operation::Target::AccountDestructed => RwTableTag::AccountDestructed,
                     operation::Target::CallContext => RwTableTag::CallContext,
+                    operation::Target::TxReceipt => RwTableTag::TxReceipt,
                 };
                 (tag, x.as_usize())
             })
@@ -1259,7 +1301,8 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
             .chain(
                 (if is_last_tx {
                     Some(iter::once(ExecStep {
-                        rw_counter: tx.steps().last().unwrap().rwc.0 + 4,
+                        // if it is the first tx,  less 1 rw lookup, refer to end_tx gadget
+                        rw_counter: tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize,
                         execution_state: ExecutionState::EndBlock,
                         ..Default::default()
                     }))

@@ -11,14 +11,14 @@ use crate::{
             },
             from_bytes,
             math_gadget::BatchedIsZeroGadget,
-            Cell, RandomLinearCombination, Word,
+            CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToAddress, ToScalar, U256};
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
@@ -122,7 +122,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,

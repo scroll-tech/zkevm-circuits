@@ -16,7 +16,7 @@ use crate::{
                 MinMaxGadget,
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            select, sum, Cell, Word,
+            select, sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -27,7 +27,7 @@ use eth_types::{
     evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE},
     Field, ToLittleEndian, ToScalar,
 };
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
@@ -332,7 +332,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction,

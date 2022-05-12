@@ -6,7 +6,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
-            select, sum,
+            select, sum, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -14,7 +14,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, U256};
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 /// MulGadget verifies opcode MUL, DIV, and MOD.
 /// For MUL, verify a * b = c (mod 2^256);
@@ -105,7 +105,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction,

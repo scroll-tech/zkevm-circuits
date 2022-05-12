@@ -6,7 +6,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{AddWordsGadget, PairSelectGadget},
-            select,
+            select, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -14,7 +14,7 @@ use crate::{
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 // AddGadget verifies ADD and SUB at the same time by an extra swap flag,
 // when it's ADD, we annotate stack as [a, b, ...] and [c, ...],
@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction,

@@ -1,7 +1,7 @@
 use super::{
     AccountDestructedOp, AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter,
-    StackOp, StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxRefundOp,
-    RW,
+    StackOp, StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxReceiptOp,
+    TxRefundOp, RW,
 };
 use crate::exec_trace::OperationRef;
 use itertools::Itertools;
@@ -40,6 +40,8 @@ pub struct OperationContainer {
     pub account_destructed: Vec<Operation<AccountDestructedOp>>,
     /// Operations of CallContextOp
     pub call_context: Vec<Operation<CallContextOp>>,
+    /// Operations of TxReceiptOp
+    pub tx_receipt: Vec<Operation<TxReceiptOp>>,
 }
 
 impl Default for OperationContainer {
@@ -62,6 +64,7 @@ impl OperationContainer {
             account: Vec::new(),
             account_destructed: Vec::new(),
             call_context: Vec::new(),
+            tx_receipt: Vec::new(),
         }
     }
 
@@ -153,6 +156,10 @@ impl OperationContainer {
             OpEnum::CallContext(op) => {
                 self.call_context.push(Operation::new(rwc, rw, op));
                 OperationRef::from((Target::CallContext, self.call_context.len() - 1))
+            }
+            OpEnum::TxReceipt(op) => {
+                self.tx_receipt.push(Operation::new(rwc, rw, op));
+                OperationRef::from((Target::TxReceipt, self.tx_receipt.len() - 1))
             }
         }
     }

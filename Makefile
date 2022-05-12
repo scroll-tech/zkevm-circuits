@@ -25,7 +25,7 @@ test-doc:
 
 test-all: fmt doc clippy test_benches test ## Run all the CI checks locally (in your actual toolchain) 
 
-evm_bench: ## Run Evm Circuit benchmarks 
+evm_bench: ## Run Evm Circuit benchmarks
 	@cargo test --profile bench bench_evm_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
 
 state_bench: ## Run State Circuit benchmarks

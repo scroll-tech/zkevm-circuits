@@ -12,7 +12,7 @@ use crate::{
             },
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            sum, Cell, Word,
+            sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -21,7 +21,7 @@ use crate::{
 use array_init::array_init;
 use eth_types::Field;
 use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToLittleEndian, ToScalar};
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct LogGadget<F> {
@@ -186,7 +186,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,

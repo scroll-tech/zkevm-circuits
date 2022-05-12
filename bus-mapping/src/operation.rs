@@ -106,6 +106,8 @@ pub enum Target {
     AccountDestructed,
     /// Means the target of the operation is the CallContext.
     CallContext,
+    /// Means the target of the operation is the TxReceipt.
+    TxReceipt,
 }
 
 /// Trait used for Operation Kinds.
@@ -760,6 +762,63 @@ impl CallContextOp {
     }
 }
 
+/// Represents a field parameter of the TxReceipt that can be accessed via EVM
+/// execution.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TxReceiptField {
+    /// flag indicates whether a tx succeed or not
+    PostStateOrStatus,
+    /// the cumulative gas used in the block containing the transaction receipt
+    /// as of immediately after the transaction has happened.
+    CumulativeGasUsed,
+    /// record how many log entries in the receipt/tx , 0 if tx fails
+    LogLength,
+}
+
+/// Represents TxReceipt read/write operation.
+#[derive(Clone, PartialEq, Eq)]
+pub struct TxReceiptOp {
+    /// tx_id of TxReceipt
+    pub tx_id: usize,
+    /// field of TxReceipt
+    pub field: TxReceiptField,
+    /// value of TxReceipt
+    pub value: u64,
+}
+
+impl fmt::Debug for TxReceiptOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TxReceiptOp { ")?;
+        f.write_fmt(format_args!(
+            "tx_id: {:?}, field: {:?}, value: {:?}",
+            self.tx_id, self.field, self.value,
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl PartialOrd for TxReceiptOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TxReceiptOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.tx_id, &self.field).cmp(&(&other.tx_id, &other.field))
+    }
+}
+
+impl Op for TxReceiptOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::TxReceipt(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!("TxReceiptOp can't be reverted")
+    }
+}
+
 /// Generic enum that wraps over all the operation types possible.
 /// In particular [`StackOp`], [`MemoryOp`] and [`StorageOp`].
 #[derive(Debug, Clone)]
@@ -782,6 +841,8 @@ pub enum OpEnum {
     AccountDestructed(AccountDestructedOp),
     /// CallContext
     CallContext(CallContextOp),
+    /// TxReceipt
+    TxReceipt(TxReceiptOp),
 }
 
 /// Operation is a Wrapper over a type that implements Op with a RWCounter.

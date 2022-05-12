@@ -1,11 +1,12 @@
 use crate::evm_circuit::{
     execution::ExecutionGadget,
     step::ExecutionState,
-    util::constraint_builder::ConstraintBuilder,
+    util::{constraint_builder::ConstraintBuilder, CachedRegion},
     witness::{Block, Call, ExecStep, Transaction},
 };
 use eth_types::Field;
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
+
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -32,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 
     fn assign_exec_step(
         &self,
-        _region: &mut Region<'_, F>,
+        _region: &mut CachedRegion<'_, '_, F>,
         _offset: usize,
         _: &Block<F>,
         _: &Transaction,

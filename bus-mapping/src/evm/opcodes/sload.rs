@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{CallContextField, CallContextOp};
+use crate::operation::CallContextField;
 use crate::{
     operation::{StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
@@ -24,41 +24,32 @@ impl Opcode for Sload {
         let call_id = state.call()?.call_id;
         let contract_addr = state.call()?.address;
 
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id,
-                field: CallContextField::TxId,
-                value: Word::from(state.tx_ctx.id()),
-            },
+            call_id,
+            CallContextField::TxId,
+            Word::from(state.tx_ctx.id()),
         );
-        state.push_op(
+
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id,
-                field: CallContextField::RwCounterEndOfReversion,
-                value: Word::from(state.call()?.rw_counter_end_of_reversion),
-            },
+            call_id,
+            CallContextField::RwCounterEndOfReversion,
+            Word::from(state.call()?.rw_counter_end_of_reversion),
         );
-        state.push_op(
+
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id,
-                field: CallContextField::IsPersistent,
-                value: Word::from(state.call()?.is_persistent as u8),
-            },
+            call_id,
+            CallContextField::IsPersistent,
+            Word::from(state.call()?.is_persistent as u8),
         );
-        state.push_op(
+
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id,
-                field: CallContextField::CalleeAddress,
-                value: contract_addr.to_word(),
-            },
+            call_id,
+            CallContextField::CalleeAddress,
+            contract_addr.to_word(),
         );
 
         // First stack read
@@ -66,7 +57,7 @@ impl Opcode for Sload {
         let stack_position = geth_step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        state.push_stack_op(&mut exec_step, RW::READ, stack_position, key)?;
+        state.stack_read(&mut exec_step, stack_position, key)?;
 
         // Storage read
         let value = geth_step.storage.get_or_err(&key)?;

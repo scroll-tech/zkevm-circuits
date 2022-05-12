@@ -8,7 +8,7 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::ComparisonGadget,
             memory_gadget::BufferReaderGadget,
-            Cell,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -16,7 +16,7 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CopyDetails, constants::MAX_COPY_BYTES};
 use eth_types::Field;
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 /// Multi-step gadget for copying data from memory or Tx calldata to memory
 #[derive(Clone, Debug)]
@@ -157,7 +157,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,

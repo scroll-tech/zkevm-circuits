@@ -1,6 +1,7 @@
+use super::util::{CachedRegion, CellManager, CellType};
 use crate::{
     evm_circuit::{
-        param::{N_CELLS_STEP_STATE, STEP_HEIGHT, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
         util::{Cell, RandomLinearCombination},
         witness::{Block, Call, CodeSource, ExecStep, Transaction},
     },
@@ -10,10 +11,8 @@ use bus_mapping::evm::OpcodeId;
 use eth_types::ToLittleEndian;
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
-use std::collections::VecDeque;
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -477,62 +476,37 @@ pub(crate) struct StepRow<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct Step<F> {
     pub(crate) state: StepState<F>,
-    pub(crate) rows: Vec<StepRow<F>>,
+    pub(crate) cell_manager: CellManager<F>,
 }
 
 impl<F: FieldExt> Step<F> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
-        qs_byte_lookup: Column<Advice>,
         advices: [Column<Advice>; STEP_WIDTH],
-        is_next_step: bool,
+        offset: usize,
     ) -> Self {
-        let num_state_cells = ExecutionState::amount() + N_CELLS_STEP_STATE;
-
+        let mut cell_manager = CellManager::new(meta, MAX_STEP_HEIGHT, &advices, offset);
         let state = {
-            let mut cells = VecDeque::with_capacity(num_state_cells);
-            meta.create_gate("Query state for step", |meta| {
-                for idx in 0..num_state_cells {
-                    let column_idx = idx % STEP_WIDTH;
-                    let rotation = idx / STEP_WIDTH + if is_next_step { STEP_HEIGHT } else { 0 };
-                    cells.push_back(Cell::new(meta, advices[column_idx], rotation));
-                }
-
-                vec![0.expr()]
-            });
-
             StepState {
-                execution_state: cells.drain(..ExecutionState::amount()).collect(),
-                rw_counter: cells.pop_front().unwrap(),
-                call_id: cells.pop_front().unwrap(),
-                is_root: cells.pop_front().unwrap(),
-                is_create: cells.pop_front().unwrap(),
-                code_source: cells.pop_front().unwrap(),
-                program_counter: cells.pop_front().unwrap(),
-                stack_pointer: cells.pop_front().unwrap(),
-                gas_left: cells.pop_front().unwrap(),
-                memory_word_size: cells.pop_front().unwrap(),
-                reversible_write_counter: cells.pop_front().unwrap(),
-                log_id: cells.pop_front().unwrap(),
+                execution_state: cell_manager
+                    .query_cells(CellType::Storage, ExecutionState::amount()),
+                rw_counter: cell_manager.query_cell(CellType::Storage),
+                call_id: cell_manager.query_cell(CellType::Storage),
+                is_root: cell_manager.query_cell(CellType::Storage),
+                is_create: cell_manager.query_cell(CellType::Storage),
+                code_source: cell_manager.query_cell(CellType::Storage),
+                program_counter: cell_manager.query_cell(CellType::Storage),
+                stack_pointer: cell_manager.query_cell(CellType::Storage),
+                gas_left: cell_manager.query_cell(CellType::Storage),
+                memory_word_size: cell_manager.query_cell(CellType::Storage),
+                reversible_write_counter: cell_manager.query_cell(CellType::Storage),
+                log_id: cell_manager.query_cell(CellType::Storage),
             }
         };
-
-        let rotation_offset =
-            num_state_cells / STEP_WIDTH + (num_state_cells % STEP_WIDTH != 0) as usize;
-        let mut rows = Vec::with_capacity(STEP_HEIGHT - rotation_offset);
-        meta.create_gate("Query rows for step", |meta| {
-            for rotation in rotation_offset..STEP_HEIGHT {
-                let rotation = rotation + if is_next_step { STEP_HEIGHT } else { 0 };
-                rows.push(StepRow {
-                    qs_byte_lookup: Cell::new(meta, qs_byte_lookup, rotation),
-                    cells: advices.map(|column| Cell::new(meta, column, rotation)),
-                });
-            }
-
-            vec![0.expr()]
-        });
-
-        Self { state, rows }
+        Self {
+            state,
+            cell_manager,
+        }
     }
 
     pub(crate) fn execution_state_selector(
@@ -548,7 +522,7 @@ impl<F: FieldExt> Step<F> {
 
     pub(crate) fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
@@ -619,5 +593,3 @@ impl<F: FieldExt> Step<F> {
         Ok(())
     }
 }
-
-pub(crate) type Preset<F> = (Cell<F>, F);

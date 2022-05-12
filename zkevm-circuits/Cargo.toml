@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 ff = "0.11"
-halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_05_06" }
+halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", tag = "v2022_05_09" }
 bigint = "4"
 num = "0.4"
 sha3 = "0.7.2"

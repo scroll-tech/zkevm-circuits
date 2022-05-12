@@ -2,10 +2,7 @@ use std::convert::TryInto;
 
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 
 use crate::{
     evm_circuit::{
@@ -16,7 +13,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             memory_gadget::BufferReaderGadget,
-            Cell, MemoryAddress, RandomLinearCombination,
+            CachedRegion, Cell, MemoryAddress, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -171,7 +168,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,

@@ -138,9 +138,16 @@ impl<'a> CircuitInputBuilder {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
+        // accumulates gas across all txs in the block
+        let mut cumulative_gas_used = HashMap::new();
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[tx_index];
-            self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
+            self.handle_tx(
+                tx,
+                geth_trace,
+                tx_index + 1 == eth_block.transactions.len(),
+                &mut cumulative_gas_used,
+            )?;
         }
         self.set_value_ops_call_context_rwc_eor();
         Ok(())
@@ -156,6 +163,7 @@ impl<'a> CircuitInputBuilder {
         eth_tx: &eth_types::Transaction,
         geth_trace: &GethExecTrace,
         is_last_tx: bool,
+        cumulative_gas_used: &mut HashMap<usize, u64>,
     ) -> Result<(), Error> {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
@@ -192,7 +200,10 @@ impl<'a> CircuitInputBuilder {
         // - execution_state: EndTx
         // - op: None
         // Generate EndTx step
-        let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        let end_tx_step = gen_end_tx_ops(
+            &mut self.state_ref(&mut tx, &mut tx_ctx),
+            cumulative_gas_used,
+        )?;
         tx.steps_mut().push(end_tx_step);
 
         self.sdb.commit_tx();

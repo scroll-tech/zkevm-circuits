@@ -2,7 +2,7 @@ use std::convert::TryInto;
 
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{circuit::Region, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 use crate::{
     evm_circuit::{
@@ -13,7 +13,7 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            Cell, MemoryAddress,
+            CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, CodeSource, ExecStep, Transaction},
     },
@@ -146,7 +146,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
         _tx: &Transaction,

@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::{operation::RW, Error};
+use crate::Error;
 use core::convert::TryInto;
 use eth_types::evm_types::MemoryAddress;
 use eth_types::{GethExecStep, ToBigEndian, Word};
@@ -27,7 +27,7 @@ impl Opcode for Mload {
         let stack_position = geth_step.stack.last_filled();
 
         // Manage first stack read at latest stack position
-        state.push_stack_op(&mut exec_step, RW::READ, stack_position, stack_value_read)?;
+        state.stack_read(&mut exec_step, stack_position, stack_value_read)?;
 
         // Read the memory
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
@@ -41,13 +41,13 @@ impl Opcode for Mload {
         //
         // First stack write
         //
-        state.push_stack_op(&mut exec_step, RW::WRITE, stack_position, mem_read_value)?;
+        state.stack_write(&mut exec_step, stack_position, mem_read_value)?;
 
         //
         // First mem read -> 32 MemoryOp generated.
         //
         for byte in mem_read_value.to_be_bytes() {
-            state.push_memory_op(&mut exec_step, RW::READ, mem_read_addr, byte)?;
+            state.memory_read(&mut exec_step, mem_read_addr, byte)?;
 
             // Update mem_read_addr to next byte's one
             mem_read_addr += MemoryAddress::from(1);
@@ -63,7 +63,7 @@ mod mload_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{MemoryOp, StackOp},
+        operation::{MemoryOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,
