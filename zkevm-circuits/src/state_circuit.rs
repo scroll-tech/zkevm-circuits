@@ -168,7 +168,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lexicographic_ordering_chip =
             LexicographicOrderingChip::construct(config.lexicographic_ordering.clone());
 
-        dbg!(self.rows.clone());
+        // dbg!(self.rows.clone());
 
         let mut prev_storage_key = F::zero();
 
