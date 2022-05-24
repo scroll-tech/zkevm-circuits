@@ -4,7 +4,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
     dev::MockProver,
-    pairing::{arithmetic::FieldExt, bn256::Fr as Fp},
+    pairing::{arithmetic::FieldExt, bn256::Fr},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
@@ -281,21 +281,21 @@ macro_rules! test_state_circuit {
         let mut ops = vec![];
         for _i in 0..10000 {
             let op = MemoryOp {
-                address: MemoryAddress(Fp::zero()),
+                address: MemoryAddress(Fr::zero()),
                 global_counters: vec![
-                    Some(ReadWrite::Write(GlobalCounter(12), Value(Fp::from(12)))),
-                    Some(ReadWrite::Read(GlobalCounter(24), Value(Fp::from(12)))),
+                    Some(ReadWrite::Write(GlobalCounter(12), Value(Fr::from(12)))),
+                    Some(ReadWrite::Read(GlobalCounter(24), Value(Fr::from(12)))),
                 ],
             };
             ops.push(op);
         }
 
-        let circuit = MemoryCircuit::<Fp, $lookup> {
+        let circuit = MemoryCircuit::<Fr, $lookup> {
             ops,
             _marker: PhantomData,
         };
 
-        let prover = MockProver::<Fp>::run(7, &circuit, vec![]).unwrap();
+        let prover = MockProver::<Fr>::run(7, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }};
 }

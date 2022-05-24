@@ -3,8 +3,8 @@ use crate::{
     common::{NEXT_INPUTS_LANES, PERMUTATION, ROUND_CONSTANTS},
     keccak_arith::*,
     permutation::{
-        iota_b9::IotaB9Config, mixing::MixingConfig, pi::pi_gate_permutation, rho::RhoConfig,
-        state_conversion::StateBaseConversion, tables::FromBase9TableConfig, theta::ThetaConfig,
+        base_conversion::BaseConversionConfig, iota_b9::IotaB9Config, mixing::MixingConfig,
+        pi::pi_gate_permutation, rho::RhoConfig, tables::FromBase9TableConfig, theta::ThetaConfig,
         xi::XiConfig,
     },
 };
@@ -24,7 +24,7 @@ pub struct KeccakFConfig<F: Field> {
     xi_config: XiConfig<F>,
     iota_b9_config: IotaB9Config<F>,
     from_b9_table: FromBase9TableConfig<F>,
-    base_conversion_config: StateBaseConversion<F>,
+    base_conversion_config: BaseConversionConfig<F>,
     mixing_config: MixingConfig<F>,
     pub state: [Column<Advice>; 25],
     q_out: Selector,
@@ -75,7 +75,7 @@ impl<F: Field> KeccakFConfig<F> {
         let base_info = from_b9_table.get_base_info(false);
         let base_conv_lane = meta.advice_column();
         let base_conversion_config =
-            StateBaseConversion::configure(meta, base_info, base_conv_lane, base_conv_activator);
+            BaseConversionConfig::configure(meta, base_info, base_conv_lane, base_conv_activator);
 
         // Mixing will make sure that the flag is binary constrained and that
         // the out state matches the expected result.
@@ -200,7 +200,7 @@ impl<F: Field> KeccakFConfig<F> {
                 )?;
 
                 self.base_conversion_config
-                    .assign_region(layouter, &state, activation_flag)?
+                    .assign_state(layouter, &state, activation_flag)?
             }
         }
 

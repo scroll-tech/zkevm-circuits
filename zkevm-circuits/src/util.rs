@@ -11,7 +11,7 @@ pub(crate) trait Expr<F: FieldExt> {
 #[macro_export]
 macro_rules! impl_expr {
     ($type:ty) => {
-        impl<F: FieldExt> crate::util::Expr<F> for $type {
+        impl<F: FieldExt> $crate::util::Expr<F> for $type {
             #[inline]
             fn expr(&self) -> Expression<F> {
                 Expression::Constant(F::from(*self as u64))

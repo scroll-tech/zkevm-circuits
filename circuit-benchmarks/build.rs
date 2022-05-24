@@ -7,7 +7,7 @@ use std::io::Write;
 
 fn main() {
     let degree: usize = var("DEGREE")
-        .unwrap_or_else(|_| "17".to_string())
+        .unwrap_or_else(|_| "18".to_string())
         .parse()
         .expect("Cannot parse DEGREE env var as usize");
 

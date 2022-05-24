@@ -66,7 +66,7 @@ impl<F: Field> EvmCircuit<F> {
             || "fixed table",
             |mut region| {
                 for (offset, row) in std::iter::once([F::zero(); 4])
-                    .chain(fixed_table_tags.iter().map(|tag| tag.build()).flatten())
+                    .chain(fixed_table_tags.iter().flat_map(|tag| tag.build()))
                     .enumerate()
                 {
                     for (column, value) in self.fixed_table.iter().zip_eq(row) {
@@ -155,10 +155,8 @@ pub mod test {
     };
     use eth_types::{Field, Word};
     use halo2_proofs::{
-        arithmetic::BaseExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        pairing::bn256::Fr as Fp,
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression},
     };
     use itertools::Itertools;
@@ -186,10 +184,6 @@ pub mod test {
 
     pub(crate) fn rand_word() -> Word {
         Word::from_big_endian(&rand_bytes_array::<32>())
-    }
-
-    pub(crate) fn rand_fp() -> Fp {
-        Fp::rand()
     }
 
     #[derive(Clone)]

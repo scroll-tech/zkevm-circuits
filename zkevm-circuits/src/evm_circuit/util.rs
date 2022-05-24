@@ -264,7 +264,7 @@ impl<F: FieldExt> CellManager<F> {
         }
         match best_index {
             Some(index) => index,
-            None => unreachable!(format!("not enough cells for query: {:?}", cell_type)),
+            None => unreachable!("not enough cells for query: {:?}", cell_type),
         }
     }
 

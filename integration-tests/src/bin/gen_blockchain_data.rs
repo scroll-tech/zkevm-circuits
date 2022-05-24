@@ -90,10 +90,7 @@ async fn main() {
         }
 
         let contract = compiled
-            .get(
-                &path_sol.to_str().expect("path is not str").to_string(),
-                name,
-            )
+            .get(path_sol.to_str().expect("path is not str"), name)
             .expect("contract not found");
         let abi = contract.abi.expect("no abi found").clone();
         let bin = contract.bin.expect("no bin found").clone();

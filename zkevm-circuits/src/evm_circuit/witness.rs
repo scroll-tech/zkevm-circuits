@@ -21,7 +21,7 @@ use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use eth_types::{ToAddress, U256};
 use halo2_proofs::arithmetic::FieldExt;
-use halo2_proofs::pairing::bn256::Fr as Fp;
+use halo2_proofs::pairing::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, convert::TryInto, iter};
@@ -1282,7 +1282,7 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
                     circuit_input_builder::CodeSource::Memory => {
                         CodeSource::Account(call.code_hash.to_word())
                     }
-                    _ => unimplemented!("invalid code source {:#?}", call.code_source),
+                    _ => unimplemented!("unimplemented code source {:#?}", call.code_source),
                 },
                 rw_counter_end_of_reversion: call.rw_counter_end_of_reversion,
                 caller_id: call.caller_id,
@@ -1324,9 +1324,9 @@ fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bo
 pub fn block_convert(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
-) -> Block<Fp> {
+) -> Block<Fr> {
     Block {
-        randomness: Fp::from_u128(DEFAULT_RAND),
+        randomness: Fr::from_u128(DEFAULT_RAND),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block

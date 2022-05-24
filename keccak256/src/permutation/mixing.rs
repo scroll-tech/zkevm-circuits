@@ -1,8 +1,8 @@
 use super::super::arith_helpers::*;
 use super::tables::FromBase9TableConfig;
 use super::{
-    absorb::AbsorbConfig, iota_b13::IotaB13Config, iota_b9::IotaB9Config,
-    state_conversion::StateBaseConversion,
+    absorb::AbsorbConfig, base_conversion::BaseConversionConfig, iota_b13::IotaB13Config,
+    iota_b9::IotaB9Config,
 };
 use crate::common::*;
 use crate::keccak_arith::KeccakFArith;
@@ -21,7 +21,7 @@ pub struct MixingConfig<F> {
     iota_b9_config: IotaB9Config<F>,
     iota_b13_config: IotaB13Config<F>,
     absorb_config: AbsorbConfig<F>,
-    base_conv_config: StateBaseConversion<F>,
+    base_conv_config: BaseConversionConfig<F>,
     state: [Column<Advice>; 25],
     flag: Column<Advice>,
     q_flag: Selector,
@@ -94,7 +94,7 @@ impl<F: Field> MixingConfig<F> {
         let base_info = table.get_base_info(false);
         let base_conv_lane = meta.advice_column();
         let base_conv_config =
-            StateBaseConversion::configure(meta, base_info, base_conv_lane, flag);
+            BaseConversionConfig::configure(meta, base_info, base_conv_lane, flag);
 
         let iota_b13_config =
             IotaB13Config::configure(meta, state, round_ctant_b13, round_constants_b13);
@@ -272,7 +272,7 @@ impl<F: Field> MixingConfig<F> {
         // Base conversion assign
         let base_conv_cells =
             self.base_conv_config
-                .assign_region(layouter, &out_state_absorb_cells, flag.clone())?;
+                .assign_state(layouter, &out_state_absorb_cells, flag.clone())?;
 
         // IotaB13
         let mix_res = {

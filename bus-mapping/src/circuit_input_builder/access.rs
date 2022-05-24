@@ -50,8 +50,7 @@ fn get_call_result(trace: &[GethExecStep]) -> Option<Word> {
     trace[1..]
         .iter()
         .find(|s| s.depth == depth)
-        .map(|s| s.stack.nth_last(0).ok())
-        .flatten()
+        .and_then(|s| s.stack.nth_last(0).ok())
 }
 
 /// State and Code Access set.

@@ -261,7 +261,7 @@ mod test {
         ToBigEndian, Word,
     };
     use halo2_proofs::arithmetic::BaseExt;
-    use halo2_proofs::pairing::bn256::Fr as Fp;
+    use halo2_proofs::pairing::bn256::Fr;
     use std::convert::TryInto;
 
     // make dynamic byte code sequence base on topics
@@ -285,7 +285,7 @@ mod test {
     }
 
     fn test_ok(memory_start: Word, msize: Word, topics: &[Word], is_persistent: bool) {
-        let randomness = Fp::rand();
+        let randomness = Fr::rand();
         let bytecode = make_log_byte_code(memory_start, memory_start, topics);
         let call_id = 1;
         let tx_id = 1;

@@ -245,7 +245,7 @@ pub mod test {
     use bus_mapping::circuit_input_builder::{CopyDetails, StepAuxiliaryData};
     use eth_types::evm_types::OpcodeId;
     use halo2_proofs::arithmetic::BaseExt;
-    use halo2_proofs::pairing::bn256::Fr as Fp;
+    use halo2_proofs::pairing::bn256::Fr;
     use std::collections::HashMap;
 
     pub(crate) const CALL_ID: usize = 1;
@@ -363,7 +363,7 @@ pub mod test {
     }
 
     fn test_ok_from_memory(src_addr: u64, dst_addr: u64, src_addr_end: u64, length: usize) {
-        let randomness = Fp::rand();
+        let randomness = Fr::rand();
         let bytecode = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
         let mut rws = RwMap(Default::default());
         let mut rw_counter = 1;
@@ -419,7 +419,7 @@ pub mod test {
     }
 
     fn test_ok_from_tx(calldata_length: usize, src_addr: u64, dst_addr: u64, length: usize) {
-        let randomness = Fp::rand();
+        let randomness = Fr::rand();
         let bytecode = Bytecode::new(vec![OpcodeId::STOP.as_u8(), OpcodeId::STOP.as_u8()]);
         let mut rws = RwMap(Default::default());
         let mut rw_counter = 1;

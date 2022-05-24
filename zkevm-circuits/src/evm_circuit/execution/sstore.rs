@@ -697,7 +697,7 @@ mod test {
             )
             .unwrap();
             let test_config = BytecodeTestConfig {
-                enable_state_circuit_test: false,
+                enable_state_circuit_test: true,
                 ..Default::default()
             };
             assert_eq!(run_test_circuits(ctx, Some(test_config),), Ok(()));

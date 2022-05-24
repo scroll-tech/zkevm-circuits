@@ -214,9 +214,6 @@ mod test {
                 + OpcodeId::PUSH32.as_u64()
                 + OpcodeId::PUSH32.as_u64()
                 + gas_cost,
-            // we have to disable state circit now, since the memory size used
-            // here is too large
-            enable_state_circuit_test: false,
             ..Default::default()
         };
 

@@ -70,13 +70,11 @@ impl<F: Field> RhoConfig<F> {
 
         let step2_od_join = lane_and_ods
             .iter()
-            .map(|(_, step2_od, _)| step2_od.clone())
-            .flatten()
+            .flat_map(|(_, step2_od, _)| step2_od.clone())
             .collect::<Vec<_>>();
         let step3_od_join = lane_and_ods
             .iter()
-            .map(|(_, _, step3_od)| step3_od.clone())
-            .flatten()
+            .flat_map(|(_, _, step3_od)| step3_od.clone())
             .collect::<Vec<_>>();
         self.overflow_check_config.assign_region(
             &mut layouter.namespace(|| "Final overflow check"),

@@ -11,8 +11,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use std::array;
-
 /// Trait that needs to be implemented for any gadget or circuit that wants to
 /// implement `IsZero`.
 pub trait IsZeroInstruction<F: FieldExt> {
@@ -83,7 +81,8 @@ impl<F: FieldExt> IsZeroChip<F> {
             // value_inv ⋅ (1 - value ⋅ value_inv)
             let poly2 = value_inv * is_zero_expression.clone();
 
-            array::IntoIter::new([poly1, poly2])
+            [poly1, poly2]
+                .into_iter()
                 .map(move |poly| q_enable.clone() * poly)
         });
 
