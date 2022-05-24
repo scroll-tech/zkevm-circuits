@@ -31,6 +31,8 @@ pub(crate) struct CopyToLogGadget<F> {
     is_persistent: Cell<F>,
     // The tx id
     tx_id: Cell<F>,
+    // the log data start index fetched from last step
+    data_start_index: Cell<F>,
     // Buffer reader gadget
     buffer_reader: BufferReaderGadget<F, MAX_COPY_BYTES, N_BYTES_MEMORY_ADDRESS>,
     // The comparison gadget between num bytes copied and bytes_left
@@ -48,6 +50,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
         let src_addr_end = cb.query_cell();
         let is_persistent = cb.query_bool();
         let tx_id = cb.query_cell();
+        let data_start_index = cb.query_cell();
         let buffer_reader = BufferReaderGadget::construct(cb, src_addr.expr(), src_addr_end.expr());
 
         // Copy bytes from src and dst
@@ -68,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
                 cb.tx_log_lookup(
                     tx_id.expr(),
                     TxLogFieldTag::Data,
-                    i.expr(),
+                    data_start_index.expr() + i.expr(),
                     buffer_reader.byte(i),
                 )
             });
@@ -88,6 +91,10 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             let next_src_addr = cb.query_cell();
             let next_bytes_left = cb.query_cell();
             let next_src_addr_end = cb.query_cell();
+            let next_is_persistent = cb.query_bool();
+            let next_tx_id = cb.query_cell();
+            let next_data_start_index = cb.query_cell();
+
             cb.require_equal(
                 "next_src_addr == src_addr + copied_size",
                 next_src_addr.expr(),
@@ -104,6 +111,18 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
                 next_src_addr_end.expr(),
                 src_addr_end.expr(),
             );
+            cb.require_equal(
+                "next_is_persistent == is_persistent",
+                next_is_persistent.expr(),
+                is_persistent.expr(),
+            );
+            cb.require_equal("next_tx_id == tx_id", next_tx_id.expr(), tx_id.expr());
+            cb.require_equal(
+                "next_data_start_index == data_start_index + MAX_COPY_BYTES
+                ",
+                next_data_start_index.expr(),
+                data_start_index.expr() + MAX_COPY_BYTES.expr(),
+            );
         });
 
         // State transition
@@ -119,6 +138,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             src_addr_end,
             is_persistent,
             tx_id,
+            data_start_index,
             buffer_reader,
             finish_gadget,
         }
@@ -141,8 +161,12 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             step.aux_data.unwrap()
         };
 
-        let (is_persistent, tx_id) = match aux.copy_details() {
-            CopyDetails::Log((is_persistent, tx_id)) => (is_persistent, tx_id),
+        // log won't use dst_addr
+        assert!(aux.dst_addr() == 0u64);
+        let (is_persistent, tx_id, data_start_index) = match aux.copy_details() {
+            CopyDetails::Log((is_persistent, tx_id, data_index)) => {
+                (is_persistent, tx_id, data_index)
+            }
             _ => unreachable!("the data copy is not related to a LOG op"),
         };
 
@@ -156,7 +180,8 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
             .assign(region, offset, Some(F::from(is_persistent as u64)))?;
         self.tx_id
             .assign(region, offset, Some(F::from(tx_id as u64)))?;
-
+        self.data_start_index
+            .assign(region, offset, Some(F::from(data_start_index as u64)))?;
         // Retrieve the bytes and selectors
 
         let mut rw_idx = 0;
@@ -220,6 +245,7 @@ pub mod test {
         src_addr: u64,
         src_addr_end: u64,
         bytes_left: usize,
+        data_start_index: usize,
         program_counter: u64,
         stack_pointer: usize,
         memory_size: u64,
@@ -261,7 +287,7 @@ pub mod test {
                         tx_id,
                         log_id,
                         field_tag: TxLogFieldTag::Data,
-                        index: idx.try_into().unwrap(),
+                        index: data_start_index + idx,
                         value: Word::from(byte),
                     });
                     rw_offset += 1;
@@ -277,7 +303,7 @@ pub mod test {
             Default::default(),
             bytes_left as u64,
             src_addr_end,
-            CopyDetails::Log((is_persistent, tx_id)),
+            CopyDetails::Log((is_persistent, tx_id, data_start_index)),
         );
 
         let memory_indices: Vec<(RwTableTag, usize)> = (memory_idx_start
@@ -336,6 +362,7 @@ pub mod test {
                 src_addr + copied as u64,
                 buffer_addr_end,
                 length - copied,
+                copied,
                 program_counter,
                 stack_pointer,
                 memory_size,

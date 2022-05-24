@@ -82,7 +82,7 @@ impl Opcode for Sload {
         );
 
         // First stack write
-        state.push_stack_op(&mut exec_step, RW::WRITE, stack_position, value)?;
+        state.stack_write(&mut exec_step, stack_position, value)?;
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,

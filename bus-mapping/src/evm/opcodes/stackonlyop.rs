@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::{operation::RW, Error};
+use crate::Error;
 use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -21,9 +21,8 @@ impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, 
         let mut exec_step = state.new_step(geth_step)?;
         // N_POP stack reads
         for i in 0..N_POP {
-            state.push_stack_op(
+            state.stack_read(
                 &mut exec_step,
-                RW::READ,
                 geth_step.stack.nth_last_filled(i),
                 geth_step.stack.nth_last(i)?,
             )?;
@@ -31,9 +30,8 @@ impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, 
 
         // N_PUSH stack writes
         for i in 0..N_PUSH {
-            state.push_stack_op(
+            state.stack_write(
                 &mut exec_step,
-                RW::WRITE,
                 geth_steps[1].stack.nth_last_filled(N_PUSH - 1 - i),
                 geth_steps[1].stack.nth_last(N_PUSH - 1 - i)?,
             )?;
@@ -45,7 +43,7 @@ impl<const N_POP: usize, const N_PUSH: usize> Opcode for StackOnlyOpcode<N_POP, 
 
 #[cfg(test)]
 mod stackonlyop_tests {
-    use super::*;
+    use crate::operation::RW;
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
     use eth_types::{
         bytecode,

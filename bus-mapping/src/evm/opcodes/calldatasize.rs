@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{CallContextField, CallContextOp, RW},
+    operation::CallContextField,
     Error,
 };
 
@@ -19,21 +19,19 @@ impl Opcode for Calldatasize {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
         let value = geth_steps[1].stack.last()?;
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::CallDataLength,
-                value,
-            },
+            state.call()?.call_id,
+            CallContextField::CallDataLength,
+            value,
         );
-        state.push_stack_op(
+
+        state.stack_write(
             &mut exec_step,
-            RW::WRITE,
             geth_step.stack.last_filled().map(|a| a - 1),
             value,
         )?;
+
         Ok(vec![exec_step])
     }
 }

@@ -2,9 +2,7 @@ use super::Opcode;
 use crate::{
     circuit_input_builder::CircuitInputStateRef,
     evm::opcodes::ExecStep,
-    operation::{
-        AccountField, AccountOp, CallContextField, CallContextOp, TxAccessListAccountOp, RW,
-    },
+    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     state_db::Account,
     Error,
 };
@@ -24,37 +22,23 @@ impl Opcode for Extcodehash {
 
         // Pop external address off stack
         let external_address = step.stack.last()?.to_address();
-        state.push_stack_op(
-            &mut exec_step,
-            RW::READ,
-            stack_address,
-            external_address.to_word(),
-        )?;
+        state.stack_read(&mut exec_step, stack_address, external_address.to_word())?;
 
         // Read transaction id, rw_counter_end_of_reversion, and is_persistent from call
         // context
-        let call = state.call()?;
-        let call_id = call.call_id;
+
         for (field, value) in [
             (CallContextField::TxId, U256::from(state.tx_ctx.id())),
             (
                 CallContextField::RwCounterEndOfReversion,
-                U256::from(call.rw_counter_end_of_reversion as u64),
+                U256::from(state.call()?.rw_counter_end_of_reversion as u64),
             ),
             (
                 CallContextField::IsPersistent,
-                U256::from(call.is_persistent as u64),
+                U256::from(state.call()?.is_persistent as u64),
             ),
         ] {
-            state.push_op(
-                &mut exec_step,
-                RW::READ,
-                CallContextOp {
-                    call_id,
-                    field,
-                    value,
-                },
-            );
+            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
         }
 
         // Update transaction access list for external_address
@@ -78,44 +62,32 @@ impl Opcode for Extcodehash {
             balance,
             ..
         } = state.sdb.get_account(&external_address).1;
-        state.push_op(
+        state.account_read(
             &mut exec_step,
-            RW::READ,
-            AccountOp {
-                address: external_address,
-                field: AccountField::Nonce,
-                value: nonce,
-                value_prev: nonce,
-            },
-        );
-        state.push_op(
+            external_address,
+            AccountField::Nonce,
+            nonce,
+            nonce,
+        )?;
+
+        state.account_read(
             &mut exec_step,
-            RW::READ,
-            AccountOp {
-                address: external_address,
-                field: AccountField::Balance,
-                value: balance,
-                value_prev: balance,
-            },
-        );
-        state.push_op(
+            external_address,
+            AccountField::Balance,
+            balance,
+            balance,
+        )?;
+
+        state.account_read(
             &mut exec_step,
-            RW::READ,
-            AccountOp {
-                address: external_address,
-                field: AccountField::CodeHash,
-                value: code_hash.to_word(),
-                value_prev: code_hash.to_word(),
-            },
-        );
+            external_address,
+            AccountField::CodeHash,
+            code_hash.to_word(),
+            code_hash.to_word(),
+        )?;
 
         // Stack write of the result of EXTCODEHASH.
-        state.push_stack_op(
-            &mut exec_step,
-            RW::WRITE,
-            stack_address,
-            steps[1].stack.last()?,
-        )?;
+        state.stack_write(&mut exec_step, stack_address, steps[1].stack.last()?)?;
 
         Ok(vec![exec_step])
     }
@@ -126,7 +98,7 @@ mod extcodehash_tests {
     use super::*;
     use crate::circuit_input_builder::ExecState;
     use crate::mock::BlockData;
-    use crate::operation::StackOp;
+    use crate::operation::{AccountOp, CallContextOp, StackOp};
     use eth_types::{
         address, bytecode,
         evm_types::{OpcodeId, StackAddress},

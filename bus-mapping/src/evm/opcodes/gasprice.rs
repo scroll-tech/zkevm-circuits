@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{CallContextField, CallContextOp, RW};
+use crate::operation::CallContextField;
 use crate::Error;
 use eth_types::GethExecStep;
 
@@ -21,20 +21,16 @@ impl Opcode for GasPrice {
         let tx_id = state.tx_ctx.id();
 
         // CallContext read of the TxId
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::TxId,
-                value: tx_id.into(),
-            },
+            state.call()?.call_id,
+            CallContextField::TxId,
+            tx_id.into(),
         );
 
         // Stack write of the gasprice value
-        state.push_stack_op(
+        state.stack_write(
             &mut exec_step,
-            RW::WRITE,
             geth_step.stack.last_filled().map(|a| a - 1),
             value,
         )?;

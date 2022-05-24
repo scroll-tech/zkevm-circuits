@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::{operation::RW, Error};
+use crate::Error;
 use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -18,11 +18,9 @@ impl<const N: usize> Opcode for Dup<N> {
 
         let stack_value_read = geth_step.stack.nth_last(N - 1)?;
         let stack_position = geth_step.stack.nth_last_filled(N - 1);
-        state.push_stack_op(&mut exec_step, RW::READ, stack_position, stack_value_read)?;
-
-        state.push_stack_op(
+        state.stack_read(&mut exec_step, stack_position, stack_value_read)?;
+        state.stack_write(
             &mut exec_step,
-            RW::WRITE,
             geth_step.stack.last_filled().map(|a| a - 1),
             stack_value_read,
         )?;
@@ -33,8 +31,7 @@ impl<const N: usize> Opcode for Dup<N> {
 
 #[cfg(test)]
 mod dup_tests {
-    use super::*;
-    use crate::{mock::BlockData, operation::StackOp};
+    use crate::{mock::BlockData, operation::StackOp, operation::RW};
     use eth_types::{bytecode, evm_types::StackAddress, geth_types::GethData, word};
     use itertools::Itertools;
     use mock::test_ctx::{helpers::*, TestContext};

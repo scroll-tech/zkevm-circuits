@@ -1,5 +1,5 @@
 use super::Opcode;
-use crate::operation::{CallContextField, CallContextOp, MemoryOp, RW};
+use crate::operation::{CallContextField, MemoryOp, RW};
 use crate::Error;
 use crate::{
     circuit_input_builder::{
@@ -34,71 +34,50 @@ fn gen_calldatacopy_step(
     let data_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?;
 
-    state.push_stack_op(
+    state.stack_read(
         &mut exec_step,
-        RW::READ,
         geth_step.stack.nth_last_filled(0),
         memory_offset,
     )?;
-    state.push_stack_op(
+    state.stack_read(
         &mut exec_step,
-        RW::READ,
         geth_step.stack.nth_last_filled(1),
         data_offset,
     )?;
-    state.push_stack_op(
-        &mut exec_step,
-        RW::READ,
-        geth_step.stack.nth_last_filled(2),
-        length,
-    )?;
+    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), length)?;
 
     if state.call()?.is_root {
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::TxId,
-                value: state.tx_ctx.id().into(),
-            },
+            state.call()?.call_id,
+            CallContextField::TxId,
+            state.tx_ctx.id().into(),
         );
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::CallDataLength,
-                value: state.call()?.call_data_length.into(),
-            },
+            state.call()?.call_id,
+            CallContextField::CallDataLength,
+            state.call()?.call_data_length.into(),
         );
     } else {
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::CallerId,
-                value: state.call()?.caller_id.into(),
-            },
+            state.call()?.call_id,
+            CallContextField::CallerId,
+            state.call()?.caller_id.into(),
         );
-        state.push_op(
+
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::CallDataLength,
-                value: state.call()?.call_data_length.into(),
-            },
+            state.call()?.call_id,
+            CallContextField::CallDataLength,
+            state.call()?.call_data_length.into(),
         );
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::CallDataOffset,
-                value: state.call()?.call_data_offset.into(),
-            },
+            state.call()?.call_id,
+            CallContextField::CallDataOffset,
+            state.call()?.call_data_offset.into(),
         );
     };
 
@@ -130,7 +109,7 @@ fn gen_memory_copy_step(
         } else {
             0
         };
-        state.push_memory_op(exec_step, RW::WRITE, (idx + dst_addr as usize).into(), byte)?;
+        state.memory_write(exec_step, (idx + dst_addr as usize).into(), byte)?;
     }
 
     exec_step.aux_data = Some(StepAuxiliaryData::new(

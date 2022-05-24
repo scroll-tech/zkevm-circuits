@@ -552,6 +552,23 @@ pub struct AccountOp {
     pub value_prev: Word,
 }
 
+impl AccountOp {
+    /// Create a new instance of a `AccountOp` from it's components.
+    pub const fn new(
+        address: Address,
+        field: AccountField,
+        value: Word,
+        value_prev: Word,
+    ) -> AccountOp {
+        AccountOp {
+            address,
+            field,
+            value,
+            value_prev,
+        }
+    }
+}
+
 impl fmt::Debug for AccountOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("AccountOp { ")?;

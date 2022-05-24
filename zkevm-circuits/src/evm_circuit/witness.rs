@@ -513,9 +513,9 @@ pub enum Rw {
         log_id: u64, // pack this can index together into address?
         field_tag: TxLogFieldTag,
         // topic index (0..4) if field_tag is TxLogFieldTag:Topic
-        // byte index (0..32) if field_tag is TxLogFieldTag:Data
+        // byte index if field_tag is TxLogFieldTag:Data
         // 0 for other field tags
-        index: u8,
+        index: usize,
 
         // when it is topic field, value can be word type
         value: Word,

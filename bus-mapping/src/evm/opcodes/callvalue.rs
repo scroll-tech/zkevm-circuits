@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{CallContextField, CallContextOp, RW};
+use crate::operation::CallContextField;
 use crate::Error;
 use eth_types::GethExecStep;
 
@@ -19,19 +19,16 @@ impl Opcode for Callvalue {
         // Get call_value result from next step
         let value = geth_steps[1].stack.last()?;
         // CallContext read of the call_value
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::Value,
-                value,
-            },
+            state.call()?.call_id,
+            CallContextField::Value,
+            value,
         );
+
         // Stack write of the call_value
-        state.push_stack_op(
+        state.stack_write(
             &mut exec_step,
-            RW::WRITE,
             geth_step.stack.last_filled().map(|a| a - 1),
             value,
         )?;

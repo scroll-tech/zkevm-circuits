@@ -130,6 +130,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 let next_src_addr_end = cb.query_cell();
                 let next_is_persistent = cb.query_bool();
                 let next_tx_id = cb.query_cell();
+                let next_data_start_index = cb.query_cell();
 
                 cb.require_equal(
                     "next_src_addr = memory_offset",
@@ -152,6 +153,10 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                     is_persistent.expr(),
                 );
                 cb.require_equal("next_tx_id = tx_id", next_tx_id.expr(), tx_id.expr());
+                cb.require_zero(
+                    "next_data_start_index starts with 0",
+                    next_data_start_index.expr(),
+                );
             },
         );
 
@@ -383,7 +388,7 @@ mod test {
                     tx_id,
                     log_id: log_id.try_into().unwrap(),
                     field_tag: TxLogFieldTag::Topic,
-                    index: idx.try_into().unwrap(),
+                    index: idx,
                     value: *topic,
                 });
             }

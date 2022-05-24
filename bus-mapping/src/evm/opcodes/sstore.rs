@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{CallContextField, CallContextOp, TxRefundOp};
+use crate::operation::{CallContextField, TxRefundOp};
 use crate::{
     operation::{StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
@@ -24,50 +24,38 @@ impl Opcode for Sstore {
 
         let contract_addr = state.call()?.address;
 
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::TxId,
-                value: Word::from(state.tx_ctx.id()),
-            },
+            state.call()?.call_id,
+            CallContextField::TxId,
+            Word::from(state.tx_ctx.id()),
         );
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::IsStatic,
-                value: Word::from(state.call()?.is_static as u8),
-            },
+            state.call()?.call_id,
+            CallContextField::IsStatic,
+            Word::from(state.call()?.is_static as u8),
         );
-        state.push_op(
+
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::RwCounterEndOfReversion,
-                value: Word::from(state.call()?.rw_counter_end_of_reversion),
-            },
+            state.call()?.call_id,
+            CallContextField::RwCounterEndOfReversion,
+            Word::from(state.call()?.rw_counter_end_of_reversion),
         );
-        state.push_op(
+
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::IsPersistent,
-                value: Word::from(state.call()?.is_persistent as u8),
-            },
+            state.call()?.call_id,
+            CallContextField::IsPersistent,
+            Word::from(state.call()?.is_persistent as u8),
         );
-        state.push_op(
+
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::CalleeAddress,
-                value: state.call()?.address.to_word(),
-            },
+            state.call()?.call_id,
+            CallContextField::CalleeAddress,
+            state.call()?.address.to_word(),
         );
 
         let key = geth_step.stack.nth_last(0)?;
@@ -75,8 +63,8 @@ impl Opcode for Sstore {
         let value = geth_step.stack.nth_last(1)?;
         let value_stack_position = geth_step.stack.nth_last_filled(1);
 
-        state.push_stack_op(&mut exec_step, RW::READ, key_stack_position, key)?;
-        state.push_stack_op(&mut exec_step, RW::READ, value_stack_position, value)?;
+        state.stack_read(&mut exec_step, key_stack_position, key)?;
+        state.stack_read(&mut exec_step, value_stack_position, value)?;
 
         let is_warm = state
             .sdb
@@ -131,7 +119,7 @@ mod sstore_tests {
     use super::*;
     use crate::circuit_input_builder::ExecState;
     use crate::mock::BlockData;
-    use crate::operation::StackOp;
+    use crate::operation::{CallContextOp, StackOp};
     use eth_types::bytecode;
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::geth_types::GethData;

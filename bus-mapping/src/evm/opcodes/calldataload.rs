@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{CallContextField, CallContextOp, MemoryOp, RW},
+    operation::{CallContextField, MemoryOp, RW},
     Error,
 };
 use eth_types::{GethExecStep, U256};
@@ -21,61 +21,40 @@ impl Opcode for Calldataload {
         // fetch the top of the stack, i.e. offset in calldata to start reading 32-bytes
         // from.
         let offset = geth_step.stack.nth_last(0)?;
-
-        state.push_stack_op(
-            &mut exec_step,
-            RW::READ,
-            geth_step.stack.nth_last_filled(0),
-            offset,
-        )?;
+        state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
 
         let is_root = state.call()?.is_root;
         if is_root {
-            state.push_op(
+            state.call_context_read(
                 &mut exec_step,
-                RW::READ,
-                CallContextOp {
-                    call_id: state.call()?.call_id,
-                    field: CallContextField::TxId,
-                    value: state.tx_ctx.id().into(),
-                },
+                state.call()?.call_id,
+                CallContextField::TxId,
+                state.tx_ctx.id().into(),
             );
-            state.push_op(
+            state.call_context_read(
                 &mut exec_step,
-                RW::READ,
-                CallContextOp {
-                    call_id: state.call()?.call_id,
-                    field: CallContextField::CallDataLength,
-                    value: state.call()?.call_data_length.into(),
-                },
+                state.call()?.call_id,
+                CallContextField::CallDataLength,
+                state.call()?.call_data_length.into(),
             );
         } else {
-            state.push_op(
+            state.call_context_read(
                 &mut exec_step,
-                RW::READ,
-                CallContextOp {
-                    call_id: state.call()?.call_id,
-                    field: CallContextField::CallerId,
-                    value: state.call()?.caller_id.into(),
-                },
+                state.call()?.call_id,
+                CallContextField::CallerId,
+                state.call()?.caller_id.into(),
             );
-            state.push_op(
+            state.call_context_read(
                 &mut exec_step,
-                RW::READ,
-                CallContextOp {
-                    call_id: state.call()?.call_id,
-                    field: CallContextField::CallDataLength,
-                    value: state.call()?.call_data_length.into(),
-                },
+                state.call()?.call_id,
+                CallContextField::CallDataLength,
+                state.call()?.call_data_length.into(),
             );
-            state.push_op(
+            state.call_context_read(
                 &mut exec_step,
-                RW::READ,
-                CallContextOp {
-                    call_id: state.call()?.call_id,
-                    field: CallContextField::CallDataOffset,
-                    value: state.call()?.call_data_offset.into(),
-                },
+                state.call()?.call_id,
+                CallContextField::CallDataOffset,
+                state.call()?.call_data_offset.into(),
             );
         }
 
@@ -92,6 +71,7 @@ impl Opcode for Calldataload {
                 if addr < src_addr_end {
                     let byte = call_data[addr - call.call_data_offset as usize];
                     if !is_root {
+                        // caller id as call_id
                         state.push_op(
                             &mut exec_step,
                             RW::READ,
@@ -105,9 +85,8 @@ impl Opcode for Calldataload {
             })
             .collect::<Vec<u8>>();
 
-        state.push_stack_op(
+        state.stack_write(
             &mut exec_step,
-            RW::WRITE,
             geth_step.stack.last_filled(),
             U256::from_big_endian(&calldata_word),
         )?;
@@ -118,6 +97,7 @@ impl Opcode for Calldataload {
 
 #[cfg(test)]
 mod calldataload_tests {
+    use crate::operation::CallContextOp;
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},

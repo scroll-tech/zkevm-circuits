@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{AccountField, AccountOp, CallContextField, CallContextOp, RW};
+use crate::operation::{AccountField, CallContextField};
 use crate::Error;
 use eth_types::{GethExecStep, ToWord};
 
@@ -18,32 +18,25 @@ impl Opcode for Selfbalance {
         let callee_address = state.call()?.address;
 
         // CallContext read of the callee_address
-        state.push_op(
+        state.call_context_read(
             &mut exec_step,
-            RW::READ,
-            CallContextOp {
-                call_id: state.call()?.call_id,
-                field: CallContextField::CalleeAddress,
-                value: callee_address.to_word(),
-            },
+            state.call()?.call_id,
+            CallContextField::CalleeAddress,
+            callee_address.to_word(),
         );
 
         // Account read for the balance of the callee_address
-        state.push_op(
+        state.account_read(
             &mut exec_step,
-            RW::READ,
-            AccountOp {
-                address: callee_address,
-                field: AccountField::Balance,
-                value: self_balance,
-                value_prev: self_balance,
-            },
-        );
+            callee_address,
+            AccountField::Balance,
+            self_balance,
+            self_balance,
+        )?;
 
         // Stack write of self_balance
-        state.push_stack_op(
+        state.stack_write(
             &mut exec_step,
-            RW::WRITE,
             geth_step.stack.last_filled().map(|a| a - 1),
             self_balance,
         )?;
@@ -58,7 +51,7 @@ mod selfbalance_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, StackOp, RW},
+        operation::{AccountOp, CallContextField, CallContextOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,

@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::{operation::RW, Error};
+use crate::Error;
 use core::convert::TryInto;
 use eth_types::evm_types::MemoryAddress;
 use eth_types::{GethExecStep, ToBigEndian, ToLittleEndian};
@@ -21,12 +21,12 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         // First stack read (offset)
         let offset = geth_step.stack.nth_last(0)?;
         let offset_pos = geth_step.stack.nth_last_filled(0);
-        state.push_stack_op(&mut exec_step, RW::READ, offset_pos, offset)?;
+        state.stack_read(&mut exec_step, offset_pos, offset)?;
 
         // Second stack read (value)
         let value = geth_step.stack.nth_last(1)?;
         let value_pos = geth_step.stack.nth_last_filled(1);
-        state.push_stack_op(&mut exec_step, RW::READ, value_pos, value)?;
+        state.stack_read(&mut exec_step, value_pos, value)?;
 
         // First mem write -> 32 MemoryOp generated.
         let offset_addr: MemoryAddress = offset.try_into()?;
@@ -34,9 +34,8 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         match IS_MSTORE8 {
             true => {
                 // stack write operation for mstore8
-                state.push_memory_op(
+                state.memory_write(
                     &mut exec_step,
-                    RW::WRITE,
                     offset_addr,
                     *value.to_le_bytes().first().unwrap(),
                 )?;
@@ -45,12 +44,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
                 // stack write each byte for mstore
                 let bytes = value.to_be_bytes();
                 for (i, byte) in bytes.iter().enumerate() {
-                    state.push_memory_op(
-                        &mut exec_step,
-                        RW::WRITE,
-                        offset_addr.map(|a| a + i),
-                        *byte,
-                    )?;
+                    state.memory_write(&mut exec_step, offset_addr.map(|a| a + i), *byte)?;
                 }
             }
         }

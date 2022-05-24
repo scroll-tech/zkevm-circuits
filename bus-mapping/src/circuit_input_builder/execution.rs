@@ -144,7 +144,8 @@ pub enum CopyDetails {
     Code(U256),
     /// The bytes are being copied to a Log.
     /// Call's state change's persistance and tx_id are provided.
-    Log((bool, usize)),
+    /// the data start index when enter this copy step
+    Log((bool, usize, usize)),
 }
 
 /// Auxiliary data of Execution step
