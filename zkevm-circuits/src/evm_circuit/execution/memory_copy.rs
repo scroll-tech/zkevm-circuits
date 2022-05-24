@@ -233,7 +233,7 @@ impl<F: Field> ExecutionGadget<F> for CopyToMemoryGadget<F> {
     }
 }
 
-#[cfg(feature = "disable")]
+#[cfg(test)]
 pub mod test {
     use crate::evm_circuit::{
         execution::memory_copy::MAX_COPY_BYTES,
