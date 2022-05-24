@@ -16,7 +16,7 @@ use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
 use std::{collections::HashMap, convert::TryInto, iter};
@@ -131,12 +131,13 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExecutionConfig<F> {
-    q_usable: Selector,
+    q_usable: Column<Fixed>,
+    q_used: Column<Advice>,
     q_step: Column<Advice>,
     num_rows_until_next_step: Column<Advice>,
     num_rows_inv: Column<Advice>,
     q_step_first: Selector,
-    q_step_last: Selector,
+    q_step_last: Column<Advice>,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
     // internal state gadgets
@@ -206,22 +207,24 @@ impl<F: Field> ExecutionConfig<F> {
         bytecode_table: &dyn LookupTable<F>,
         block_table: &dyn LookupTable<F>,
     ) -> Self {
-        let q_usable = meta.complex_selector();
+        let q_usable = meta.fixed_column();
+        let q_used = meta.advice_column();
         let q_step = meta.advice_column();
         let num_rows_until_next_step = meta.advice_column();
         let num_rows_inv = meta.advice_column();
         let q_step_first = meta.complex_selector();
-        let q_step_last = meta.complex_selector();
+        let q_step_last = meta.advice_column();
         let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
 
         let step_curr = Step::new(meta, advices, 0);
         let mut height_map = HashMap::new();
 
         meta.create_gate("Constrain execution state", |meta| {
-            let q_usable = meta.query_selector(q_usable);
+            let q_usable = meta.query_fixed(q_usable, Rotation::cur());
+            let q_used = meta.query_advice(q_used, Rotation::cur());
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let q_step_first = meta.query_selector(q_step_first);
-            let q_step_last = meta.query_selector(q_step_last);
+            let q_step_last = meta.query_advice(q_step_last, Rotation::cur());
 
             // Only one of execution_state should be enabled
             debug_assert!(!step_curr.state.execution_state.is_empty());
@@ -262,14 +265,20 @@ impl<F: Field> ExecutionConfig<F> {
 
             iter::once(sum_to_one)
                 .chain(bool_checks)
-                .map(move |(name, poly)| (name, q_usable.clone() * q_step.clone() * poly))
+                .map(move |(name, poly)| {
+                    (
+                        name,
+                        q_usable.clone() * q_used.clone() * q_step.clone() * poly,
+                    )
+                })
             // TODO: Enable these after test of CALLDATACOPY is complete.
             // .chain(first_step_check)
             // .chain(last_step_check)
         });
 
         meta.create_gate("q_step", |meta| {
-            let q_usable = meta.query_selector(q_usable);
+            let q_usable = meta.query_fixed(q_usable, Rotation::cur());
+            let q_used = meta.query_advice(q_used, Rotation::cur());
             let q_step_first = meta.query_selector(q_step_first);
             let q_step = meta.query_advice(q_step, Rotation::cur());
             let num_rows_left_cur = meta.query_advice(num_rows_until_next_step, Rotation::cur());
@@ -301,7 +310,7 @@ impl<F: Field> ExecutionConfig<F> {
             );
             cb.require_equal("q_step == is_zero", q_step, is_zero);
             // On each usable row
-            cb.gate(q_usable)
+            cb.gate(q_usable * q_used)
         });
 
         let mut stored_expressions_map = HashMap::new();
@@ -312,6 +321,7 @@ impl<F: Field> ExecutionConfig<F> {
                     meta,
                     advices,
                     q_usable,
+                    q_used,
                     q_step,
                     num_rows_until_next_step,
                     q_step_first,
@@ -328,6 +338,7 @@ impl<F: Field> ExecutionConfig<F> {
         let cell_manager = step_curr.cell_manager.clone();
         let config = Self {
             q_usable,
+            q_used,
             q_step,
             num_rows_until_next_step,
             num_rows_inv,
@@ -418,11 +429,12 @@ impl<F: Field> ExecutionConfig<F> {
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
-        q_usable: Selector,
+        q_usable: Column<Fixed>,
+        q_used: Column<Advice>,
         q_step: Column<Advice>,
         num_rows_until_next_step: Column<Advice>,
         q_step_first: Selector,
-        q_step_last: Selector,
+        q_step_last: Column<Advice>,
         power_of_randomness: &[Expression<F>; 31],
         step_curr: &Step<F>,
         step_next: &Step<F>,
@@ -490,10 +502,15 @@ impl<F: Field> ExecutionConfig<F> {
         ] {
             if !constraints.is_empty() {
                 meta.create_gate(G::NAME, |meta| {
-                    let q_usable = meta.query_selector(q_usable);
+                    let q_usable = meta.query_fixed(q_usable, Rotation::cur());
+                    let q_used = meta.query_advice(q_used, Rotation::cur());
                     let selector = selector(meta);
+
                     constraints.into_iter().map(move |(name, constraint)| {
-                        (name, q_usable.clone() * selector.clone() * constraint)
+                        (
+                            name,
+                            q_usable.clone() * q_used.clone() * selector.clone() * constraint,
+                        )
                     })
                 });
             }
@@ -501,9 +518,10 @@ impl<F: Field> ExecutionConfig<F> {
 
         // Enforce the state transitions for this opcode
         meta.create_gate("Constrain state machine transitions", |meta| {
-            let q_usable = meta.query_selector(q_usable);
+            let q_usable = meta.query_fixed(q_usable, Rotation::cur());
+            let q_used = meta.query_advice(q_used, Rotation::cur());
             let q_step = meta.query_advice(q_step, Rotation::cur());
-            let q_step_last = meta.query_selector(q_step_last);
+            let q_step_last = meta.query_advice(q_step_last, Rotation::cur());
 
             // ExecutionState transition should be correct.
             iter::empty()
@@ -561,6 +579,7 @@ impl<F: Field> ExecutionConfig<F> {
                 .reduce(|accum, poly| accum + poly)
                 .map(move |poly| {
                         q_usable.clone()
+                            * q_used.clone()
                             * q_step.clone()
                             * (1.expr() - q_step_last.clone())
                             * step_curr.execution_state_selector([G::EXECUTION_STATE])
@@ -612,7 +631,7 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-        _exact: bool,
+        exact: bool,
     ) -> Result<(), Error> {
         let power_of_randomness = (1..32)
             .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
@@ -652,7 +671,24 @@ impl<F: Field> ExecutionConfig<F> {
                     // q_step logic
                     for idx in 0..height {
                         let offset = offset + idx;
-                        self.q_usable.enable(&mut region, offset)?;
+                        region.assign_fixed(
+                            || "row usable",
+                            self.q_usable,
+                            offset,
+                            || Ok(F::one()),
+                        )?;
+                        region.assign_advice(
+                            || "row used",
+                            self.q_used,
+                            offset,
+                            || Ok(F::one()),
+                        )?;
+                        region.assign_advice(
+                            || "last step",
+                            self.q_step_last,
+                            offset,
+                            || Ok(F::zero()),
+                        )?;
                         region.assign_advice(
                             || "step selector",
                             self.q_step,
@@ -695,10 +731,31 @@ impl<F: Field> ExecutionConfig<F> {
                     || Ok(F::zero()),
                 )?;
 
-                // If not exact:
-                // TODO: Pad leftover region to the desired capacity
-                // TODO: Enable q_step_last
-                self.q_step_last.enable(&mut region, offset - last_height)?;
+                region.assign_advice(
+                    || "last step",
+                    self.q_step_last,
+                    offset - last_height,
+                    || Ok(F::one()),
+                )?;
+
+                if !exact {
+                    if block.pad_to != 0 {
+                        // Pad leftover region to the desired capacity
+                        if offset >= block.pad_to {
+                            panic!("row not enough");
+                        }
+                        for pad_offset in offset..block.pad_to {
+                            region.assign_fixed(
+                                || "row usable",
+                                self.q_usable,
+                                pad_offset,
+                                || Ok(F::one()),
+                            )?;
+                        }
+                    } else {
+                        log::warn!("assign_block with exact = false, but pad_to not provided");
+                    }
+                }
 
                 Ok(())
             },

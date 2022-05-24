@@ -466,8 +466,8 @@ pub mod test {
         let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
         log::debug!("evm circuit uses k = {}", k);
         let (active_gate_rows, active_lookup_rows) = TestCircuit::get_active_rows(&block);
-        let mut block = block;
-        block.pad_to = (1 << k) - 64;
+        let block = block;
+        //block.pad_to = (1 << k) - 64;
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
