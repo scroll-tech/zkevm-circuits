@@ -23,9 +23,6 @@ test_doc: ## Test the docs
 test_benches: ## Compiles the benchmarks
 	@cargo test --verbose --release --all-features -p circuit-benchmarks --no-run
 
-test-doc:
-	@cargo test --release --all --all-features --doc
-
 test-all: fmt doc clippy test_doc test_benches test ## Run all the CI checks locally (in your actual toolchain) 
 
 evm_bench: ## Run Evm Circuit benchmarks

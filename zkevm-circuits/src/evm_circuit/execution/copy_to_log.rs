@@ -221,7 +221,6 @@ impl<F: Field> ExecutionGadget<F> for CopyToLogGadget<F> {
     }
 }
 
-#[cfg(feature = "disable")]
 pub mod test {
     use crate::evm_circuit::{
         step::ExecutionState,

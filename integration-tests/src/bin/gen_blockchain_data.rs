@@ -55,7 +55,7 @@ where
         .method::<_, bool>("transfer", (to, amount))
         .expect("cannot construct ERC20 transfer call");
     // Set gas to avoid `eth_estimateGas` call
-    //let call = call.legacy();
+    let call = call.legacy();
     let call = call.gas(100_000);
     call.tx
 }

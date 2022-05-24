@@ -247,7 +247,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     }
 }
 
-#[cfg(feature = "disable")]
 mod test {
     use crate::evm_circuit::{
         execution::copy_to_log::test::make_log_copy_steps,
