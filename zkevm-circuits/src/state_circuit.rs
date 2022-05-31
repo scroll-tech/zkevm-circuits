@@ -11,9 +11,10 @@ mod test;
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::RwTableTag,
-    util::RandomLinearCombination,
+    util::{not, RandomLinearCombination},
     witness::{Rw, RwMap},
 };
+use crate::util::Expr;
 use binary_number::{Chip as BinaryNumberChip, Config as BinaryNumberConfig};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, ToLittleEndian};
@@ -25,7 +26,7 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
-use lexicographic_ordering::Config as LexicographicOrderingConfig;
+use lexicographic_ordering::{Config as LexicographicOrderingConfig, Limb};
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
@@ -45,11 +46,10 @@ pub struct StateConfig<F: Field> {
     sort_keys: SortKeysConfig,
     is_write: Column<Advice>,
     is_id_unchanged: IsZeroConfig<F>,
-    is_storage_key_unchanged: IsZeroConfig<F>, // can be removed
     value: Column<Advice>,
+    lexicographic_ordering: LexicographicOrderingConfig,
     lookups: LookupsConfig,
     power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
-    lexicographic_ordering: LexicographicOrderingConfig,
 }
 
 /// Keys for sorting the rows of the state circuit
@@ -118,8 +118,8 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
 
-        let [is_write, field_tag, value, is_id_unchanged_column, is_storage_key_unchanged_column] =
-            [0; 5].map(|_| meta.advice_column());
+        let [is_write, field_tag, value, is_id_unchanged_column] =
+            [0; 4].map(|_| meta.advice_column());
 
         let tag = BinaryNumberChip::configure(meta, selector);
 
@@ -149,15 +149,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             },
             is_id_unchanged_column,
         );
-        let is_storage_key_unchanged = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_fixed(lexicographic_ordering.selector, Rotation::cur()),
-            |meta| {
-                meta.query_advice(storage_key.encoded, Rotation::cur())
-                    - meta.query_advice(storage_key.encoded, Rotation::prev())
-            },
-            is_storage_key_unchanged_column,
-        );
 
         let config = Self::Config {
             selector,
@@ -166,7 +157,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
             is_id_unchanged,
             value,
             lexicographic_ordering,
-            is_storage_key_unchanged,
             lookups,
             power_of_randomness,
         };
@@ -192,8 +182,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         LookupsChip::construct(config.lookups).load(&mut layouter)?;
 
         let is_id_unchanged = IsZeroChip::construct(config.is_id_unchanged.clone());
-        let is_storage_key_unchanged =
-            IsZeroChip::construct(config.is_storage_key_unchanged.clone());
 
         let tag_chip = BinaryNumberChip::construct(config.sort_keys.tag);
 
@@ -256,19 +244,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         let id_change = F::from(row.id().unwrap_or_default() as u64)
                             - F::from(prev_row.id().unwrap_or_default() as u64);
                         is_id_unchanged.assign(&mut region, offset, Some(id_change))?;
-
-                        let storage_key_change = RandomLinearCombination::random_linear_combine(
-                            row.storage_key().unwrap_or_default().to_le_bytes(),
-                            self.randomness,
-                        ) - RandomLinearCombination::random_linear_combine(
-                            prev_row.storage_key().unwrap_or_default().to_le_bytes(),
-                            self.randomness,
-                        );
-                        is_storage_key_unchanged.assign(
-                            &mut region,
-                            offset,
-                            Some(storage_key_change),
-                        )?;
                     }
                 }
 
@@ -305,11 +280,23 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
         power_of_randomness: c
             .power_of_randomness
             .map(|c| meta.query_instance(c, Rotation::cur())),
-        is_storage_key_unchanged: c.is_storage_key_unchanged.is_zero_expression.clone(),
-        /* lexicographic_ordering_upper_limb_difference_is_zero: c
-         *     .lexicographic_ordering
-         *     .upper_limb_difference_is_zero
-         *     .is_zero_expression
-         *     .clone(), */
+        // this isn't binary! 0 only if most significant 4 bits are all 1.
+        first_access: 4.expr()
+            - meta.query_advice(
+                c.lexicographic_ordering.first_different_limb.bits[0],
+                Rotation::cur(),
+            )
+            - meta.query_advice(
+                c.lexicographic_ordering.first_different_limb.bits[1],
+                Rotation::cur(),
+            )
+            - meta.query_advice(
+                c.lexicographic_ordering.first_different_limb.bits[2],
+                Rotation::cur(),
+            )
+            - meta.query_advice(
+                c.lexicographic_ordering.first_different_limb.bits[3],
+                Rotation::cur(),
+            ),
     }
 }

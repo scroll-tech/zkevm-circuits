@@ -30,7 +30,6 @@ pub enum AdviceColumn {
     StorageKey,
     StorageKeyByte0,
     StorageKeyByte1,
-    StorageKeyChangeInverse,
     Value,
     RwCounter,
     RwCounterLimb0,
@@ -50,7 +49,6 @@ impl AdviceColumn {
             Self::StorageKey => config.sort_keys.storage_key.encoded,
             Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
             Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
-            Self::StorageKeyChangeInverse => config.is_storage_key_unchanged.value_inv,
             Self::Value => config.value,
             Self::RwCounter => config.sort_keys.rw_counter.value,
             Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
@@ -344,13 +342,7 @@ fn storage_key_mismatch() {
         tx_id: 4,
         committed_value: U256::from(5),
     }];
-    let overrides = HashMap::from([
-        ((AdviceColumn::StorageKey, 1), Fr::from(10)),
-        (
-            (AdviceColumn::StorageKeyChangeInverse, 1),
-            Fr::from(10).invert().unwrap(),
-        ),
-    ]);
+    let overrides = HashMap::from([((AdviceColumn::StorageKey, 1), Fr::from(10))]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -373,10 +365,6 @@ fn storage_key_byte_out_of_range() {
         ((AdviceColumn::StorageKey, 1), Fr::from(256)),
         ((AdviceColumn::StorageKeyByte0, 1), Fr::from(256)),
         ((AdviceColumn::StorageKeyByte1, 1), Fr::zero()),
-        (
-            (AdviceColumn::StorageKeyChangeInverse, 1),
-            Fr::from(256).invert().unwrap(),
-        ),
     ]);
 
     let result = verify_with_overrides(rows, overrides);

@@ -29,8 +29,7 @@ pub struct Queries<F: Field> {
     pub value: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
-    pub is_storage_key_unchanged: Expression<F>,
-    // pub lexicographic_ordering_upper_limb_difference_is_zero: Expression<F>,
+    pub first_access: Expression<F>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
@@ -107,6 +106,7 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero("rw_counter is 0 for Start", q.rw_counter.value.clone());
     }
 
+    // 4+ 5 + 1 + 1+ 1 = 12 -> can reduce to 11...
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for Memory", q.field_tag());
         self.require_zero("storage_key is 0 for Memory", q.storage_key.encoded.clone());
@@ -296,13 +296,7 @@ impl<F: Field> Queries<F> {
     }
 
     fn first_access(&self) -> Expression<F> {
-        or::expr(&[
-            // not::expr(
-            //     self.lexicographic_ordering_upper_limb_difference_is_zero
-            //         .clone(),
-            // ),
-            not::expr(self.is_storage_key_unchanged.clone()),
-        ])
+        self.first_access.clone()
     }
 
     fn address_change(&self) -> Expression<F> {
