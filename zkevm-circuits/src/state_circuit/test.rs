@@ -40,7 +40,7 @@ pub enum AdviceColumn {
 }
 
 impl AdviceColumn {
-    pub fn value<F: Field>(&self, config: &StateConfig<F>) -> Column<Advice> {
+    pub fn value(&self, config: &StateConfig) -> Column<Advice> {
         match self {
             Self::IsWrite => config.is_write,
             Self::Address => config.sort_keys.address.value,

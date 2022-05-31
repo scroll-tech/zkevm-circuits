@@ -78,7 +78,6 @@ pub enum Limb {
     Tag,
     Id1,
     Id0,
-    FieldTag,
     Address9,
     Address8,
     Address7,
@@ -89,6 +88,7 @@ pub enum Limb {
     Address2,
     Address1,
     Address0,
+    FieldTag,
     StorageKey15,
     StorageKey14,
     StorageKey13,
@@ -121,7 +121,7 @@ impl AsBits<5> for Limb {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Config {
     pub(crate) selector: Column<Fixed>,
     pub first_different_limb: BinaryNumberConfig<Limb, 5>,
@@ -247,9 +247,9 @@ impl<F: Field> Queries<F> {
         let mut query_advice = |column| meta.query_advice(column, rotation);
         Self {
             tag,
-            field_tag: query_advice(keys.field_tag),
             id_limbs: keys.id.limbs.map(&mut query_advice),
             address_limbs: keys.address.limbs.map(&mut query_advice),
+            field_tag: query_advice(keys.field_tag),
             storage_key_bytes: keys.storage_key.bytes.map(&mut query_advice),
             rw_counter_limbs: keys.rw_counter.limbs.map(query_advice),
         }
@@ -267,8 +267,8 @@ impl<F: Field> Queries<F> {
     fn be_limbs(&self) -> Vec<Expression<F>> {
         once(&self.tag)
             .chain(self.id_limbs.iter().rev())
-            .chain(once(&self.field_tag))
             .chain(self.address_limbs.iter().rev())
+            .chain(once(&self.field_tag))
             .chain(&self.storage_key_be_limbs())
             .chain(self.rw_counter_limbs.iter().rev())
             .cloned()
@@ -280,9 +280,9 @@ fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
     let mut be_bytes = vec![0u8];
     be_bytes.push(row.tag() as u8);
     be_bytes.extend_from_slice(&(row.id().unwrap_or_default() as u32).to_be_bytes());
+    be_bytes.extend_from_slice(&(row.address().unwrap_or_default().0));
     be_bytes.push(0u8);
     be_bytes.push(row.field_tag().unwrap_or_default() as u8);
-    be_bytes.extend_from_slice(&(row.address().unwrap_or_default().0));
     be_bytes.extend_from_slice(&(row.storage_key().unwrap_or_default().to_be_bytes()));
     be_bytes.extend_from_slice(&((row.rw_counter() as u32).to_be_bytes()));
 

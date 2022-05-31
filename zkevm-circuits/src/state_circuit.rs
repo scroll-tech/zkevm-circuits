@@ -18,7 +18,6 @@ use crate::util::Expr;
 use binary_number::{Chip as BinaryNumberChip, Config as BinaryNumberConfig};
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, ToLittleEndian};
-use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{
@@ -39,13 +38,12 @@ const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
 const N_LIMBS_ID: usize = 2;
 
 /// Config for StateCircuit
-#[derive(Clone)]
-pub struct StateConfig<F: Field> {
+#[derive(Clone, Copy)]
+pub struct StateConfig {
     selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
     // https://github.com/appliedzkp/zkevm-circuits/issues/407
     sort_keys: SortKeysConfig,
     is_write: Column<Advice>,
-    is_id_unchanged: IsZeroConfig<F>,
     value: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
     lookups: LookupsConfig,
@@ -57,8 +55,8 @@ pub struct StateConfig<F: Field> {
 pub struct SortKeysConfig {
     tag: BinaryNumberConfig<RwTableTag, 4>,
     id: MpiConfig<u32, N_LIMBS_ID>,
-    field_tag: Column<Advice>,
     address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
+    field_tag: Column<Advice>,
     storage_key: RlcConfig<N_BYTES_WORD>,
     rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
 }
@@ -82,9 +80,8 @@ impl<F: Field> StateCircuit<F> {
             (
                 row.tag() as u64,
                 row.id().unwrap_or_default(),
-                row.field_tag().unwrap_or_default(),
                 row.address().unwrap_or_default(),
-                // row.field_tag().unwrap_or_default(), // this is the correct place
+                row.field_tag().unwrap_or_default(),
                 row.storage_key().unwrap_or_default(),
                 row.rw_counter(),
             )
@@ -106,7 +103,7 @@ impl<F: Field> StateCircuit<F> {
 }
 
 impl<F: Field> Circuit<F> for StateCircuit<F> {
-    type Config = StateConfig<F>;
+    type Config = StateConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -118,8 +115,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
 
-        let [is_write, field_tag, value, is_id_unchanged_column] =
-            [0; 4].map(|_| meta.advice_column());
+        let [is_write, field_tag, value] = [0; 3].map(|_| meta.advice_column());
 
         let tag = BinaryNumberChip::configure(meta, selector);
 
@@ -140,21 +136,10 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lexicographic_ordering =
             LexicographicOrderingConfig::configure(meta, sort_keys, lookups.u16);
 
-        let is_id_unchanged = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_fixed(lexicographic_ordering.selector, Rotation::cur()),
-            |meta| {
-                meta.query_advice(id.value, Rotation::cur())
-                    - meta.query_advice(id.value, Rotation::prev())
-            },
-            is_id_unchanged_column,
-        );
-
         let config = Self::Config {
             selector,
             sort_keys,
             is_write,
-            is_id_unchanged,
             value,
             lexicographic_ordering,
             lookups,
@@ -180,8 +165,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         LookupsChip::construct(config.lookups).load(&mut layouter)?;
-
-        let is_id_unchanged = IsZeroChip::construct(config.is_id_unchanged.clone());
 
         let tag_chip = BinaryNumberChip::construct(config.sort_keys.tag);
 
@@ -240,10 +223,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         config
                             .lexicographic_ordering
                             .assign(&mut region, offset, row, prev_row)?;
-
-                        let id_change = F::from(row.id().unwrap_or_default() as u64)
-                            - F::from(prev_row.id().unwrap_or_default() as u64);
-                        is_id_unchanged.assign(&mut region, offset, Some(id_change))?;
                     }
                 }
 
@@ -259,7 +238,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
     }
 }
 
-fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Queries<F> {
+fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries<F> {
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
         rw_counter: MpiQueries::new(meta, c.sort_keys.rw_counter),
@@ -271,7 +250,17 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
             .bits
             .map(|bit| meta.query_advice(bit, Rotation::cur())),
         id: MpiQueries::new(meta, c.sort_keys.id),
-        is_id_unchanged: c.is_id_unchanged.is_zero_expression.clone(),
+        is_tag_and_id_unchanged: not::expr(
+            c.lexicographic_ordering
+                .first_different_limb
+                .value_equals(&Limb::Tag, Rotation::cur())(meta)
+                + c.lexicographic_ordering
+                    .first_different_limb
+                    .value_equals(&Limb::Id1, Rotation::cur())(meta)
+                + c.lexicographic_ordering
+                    .first_different_limb
+                    .value_equals(&Limb::Id0, Rotation::cur())(meta),
+        ),
         address: MpiQueries::new(meta, c.sort_keys.address),
         field_tag: meta.query_advice(c.sort_keys.field_tag, Rotation::cur()),
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
