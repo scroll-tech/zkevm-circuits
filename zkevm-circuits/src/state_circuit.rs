@@ -25,9 +25,7 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
-use lexicographic_ordering::{
-    Chip as LexicographicOrderingChip, Config as LexicographicOrderingConfig,
-};
+use lexicographic_ordering::Config as LexicographicOrderingConfig;
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
@@ -47,11 +45,11 @@ pub struct StateConfig<F: Field> {
     sort_keys: SortKeysConfig,
     is_write: Column<Advice>,
     is_id_unchanged: IsZeroConfig<F>,
-    is_storage_key_unchanged: IsZeroConfig<F>,
+    is_storage_key_unchanged: IsZeroConfig<F>, // can be removed
     value: Column<Advice>,
     lookups: LookupsConfig,
     power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
-    lexicographic_ordering: LexicographicOrderingConfig<F>,
+    lexicographic_ordering: LexicographicOrderingConfig,
 }
 
 /// Keys for sorting the rows of the state circuit
@@ -83,9 +81,10 @@ impl<F: Field> StateCircuit<F> {
         rows.sort_by_key(|row| {
             (
                 row.tag() as u64,
-                row.field_tag().unwrap_or_default(),
                 row.id().unwrap_or_default(),
+                row.field_tag().unwrap_or_default(),
                 row.address().unwrap_or_default(),
+                // row.field_tag().unwrap_or_default(), // this is the correct place
                 row.storage_key().unwrap_or_default(),
                 row.rw_counter(),
             )
@@ -130,14 +129,16 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let rw_counter = MpiChip::configure(meta, selector, lookups.u16);
 
         let sort_keys = SortKeysConfig {
-            tag, id, field_tag, address, storage_key, rw_counter,
+            tag,
+            id,
+            field_tag,
+            address,
+            storage_key,
+            rw_counter,
         };
 
-        let lexicographic_ordering = LexicographicOrderingChip::configure(
-            meta,
-            sort_keys,
-            lookups.u16,
-        );
+        let lexicographic_ordering =
+            LexicographicOrderingConfig::configure(meta, sort_keys, lookups.u16);
 
         let is_id_unchanged = IsZeroChip::configure(
             meta,
@@ -193,8 +194,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let is_id_unchanged = IsZeroChip::construct(config.is_id_unchanged.clone());
         let is_storage_key_unchanged =
             IsZeroChip::construct(config.is_storage_key_unchanged.clone());
-        let lexicographic_ordering_chip =
-            LexicographicOrderingChip::construct(config.lexicographic_ordering.clone());
 
         let tag_chip = BinaryNumberChip::construct(config.sort_keys.tag);
 
@@ -205,9 +204,11 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 let prev_rows = once(&Rw::Start).chain(rows.clone());
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
-                    config
-                        .sort_keys.rw_counter
-                        .assign(&mut region, offset, row.rw_counter() as u32)?;
+                    config.sort_keys.rw_counter.assign(
+                        &mut region,
+                        offset,
+                        row.rw_counter() as u32,
+                    )?;
                     region.assign_advice(
                         || "is_write",
                         config.is_write,
@@ -219,7 +220,10 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                         config.sort_keys.id.assign(&mut region, offset, id as u32)?;
                     }
                     if let Some(address) = row.address() {
-                        config.sort_keys.address.assign(&mut region, offset, address)?;
+                        config
+                            .sort_keys
+                            .address
+                            .assign(&mut region, offset, address)?;
                     }
                     if let Some(field_tag) = row.field_tag() {
                         region.assign_advice(
@@ -245,7 +249,9 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                     )?;
 
                     if offset != 0 {
-                        lexicographic_ordering_chip.assign(&mut region, offset, row, prev_row)?;
+                        config
+                            .lexicographic_ordering
+                            .assign(&mut region, offset, row, prev_row)?;
 
                         let id_change = F::from(row.id().unwrap_or_default() as u64)
                             - F::from(prev_row.id().unwrap_or_default() as u64);
@@ -284,7 +290,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
         rw_counter: MpiQueries::new(meta, c.sort_keys.rw_counter),
         is_write: meta.query_advice(c.is_write, Rotation::cur()),
         tag: c.sort_keys.tag.value(Rotation::cur())(meta),
-        tag_bits: c.sort_keys
+        tag_bits: c
+            .sort_keys
             .tag
             .bits
             .map(|bit| meta.query_advice(bit, Rotation::cur())),
@@ -299,10 +306,10 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
             .power_of_randomness
             .map(|c| meta.query_instance(c, Rotation::cur())),
         is_storage_key_unchanged: c.is_storage_key_unchanged.is_zero_expression.clone(),
-        lexicographic_ordering_upper_limb_difference_is_zero: c
-            .lexicographic_ordering
-            .upper_limb_difference_is_zero
-            .is_zero_expression
-            .clone(),
+        /* lexicographic_ordering_upper_limb_difference_is_zero: c
+         *     .lexicographic_ordering
+         *     .upper_limb_difference_is_zero
+         *     .is_zero_expression
+         *     .clone(), */
     }
 }

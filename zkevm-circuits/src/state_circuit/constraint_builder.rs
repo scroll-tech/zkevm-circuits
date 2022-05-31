@@ -30,7 +30,7 @@ pub struct Queries<F: Field> {
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     pub is_storage_key_unchanged: Expression<F>,
-    pub lexicographic_ordering_upper_limb_difference_is_zero: Expression<F>,
+    // pub lexicographic_ordering_upper_limb_difference_is_zero: Expression<F>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
@@ -297,10 +297,10 @@ impl<F: Field> Queries<F> {
 
     fn first_access(&self) -> Expression<F> {
         or::expr(&[
-            not::expr(
-                self.lexicographic_ordering_upper_limb_difference_is_zero
-                    .clone(),
-            ),
+            // not::expr(
+            //     self.lexicographic_ordering_upper_limb_difference_is_zero
+            //         .clone(),
+            // ),
             not::expr(self.is_storage_key_unchanged.clone()),
         ])
     }

@@ -44,20 +44,20 @@ impl AdviceColumn {
     pub fn value<F: Field>(&self, config: &StateConfig<F>) -> Column<Advice> {
         match self {
             Self::IsWrite => config.is_write,
-            Self::Address => config.address.value,
-            Self::AddressLimb0 => config.address.limbs[0],
-            Self::AddressLimb1 => config.address.limbs[1],
-            Self::StorageKey => config.storage_key.encoded,
-            Self::StorageKeyByte0 => config.storage_key.bytes[0],
-            Self::StorageKeyByte1 => config.storage_key.bytes[1],
+            Self::Address => config.sort_keys.address.value,
+            Self::AddressLimb0 => config.sort_keys.address.limbs[0],
+            Self::AddressLimb1 => config.sort_keys.address.limbs[1],
+            Self::StorageKey => config.sort_keys.storage_key.encoded,
+            Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
+            Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
             Self::StorageKeyChangeInverse => config.is_storage_key_unchanged.value_inv,
             Self::Value => config.value,
-            Self::RwCounter => config.rw_counter.value,
-            Self::RwCounterLimb0 => config.rw_counter.limbs[0],
-            Self::TagBit0 => config.tag.bits[0],
-            Self::TagBit1 => config.tag.bits[1],
-            Self::TagBit2 => config.tag.bits[2],
-            Self::TagBit3 => config.tag.bits[3],
+            Self::RwCounter => config.sort_keys.rw_counter.value,
+            Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
+            Self::TagBit0 => config.sort_keys.tag.bits[0],
+            Self::TagBit1 => config.sort_keys.tag.bits[1],
+            Self::TagBit2 => config.sort_keys.tag.bits[2],
+            Self::TagBit3 => config.sort_keys.tag.bits[3],
         }
     }
 }
@@ -87,7 +87,7 @@ fn test_state_circuit_ok(
 fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
     StateCircuit::configure(&mut meta);
-    assert_eq!(meta.degree(), 16);
+    assert_eq!(meta.degree(), 9);
 }
 
 #[test]
@@ -418,10 +418,7 @@ fn nonlexicographic_order_tag() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -442,10 +439,7 @@ fn nonlexicographic_order_field_tag() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -466,10 +460,7 @@ fn nonlexicographic_order_id() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -492,10 +483,7 @@ fn nonlexicographic_order_address() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -522,10 +510,7 @@ fn nonlexicographic_order_storage_key_upper() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -552,10 +537,7 @@ fn nonlexicographic_order_storage_key_lower() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference is zero or lower_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
@@ -576,10 +558,7 @@ fn nonlexicographic_order_rw_counter() {
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
-    assert_error_matches(
-        verify(vec![second, first]),
-        "upper_limb_difference is zero or lower_limb_difference fits into u16",
-    );
+    assert_error_matches(verify(vec![second, first]), "limb_difference fits into u16");
 }
 
 #[test]
