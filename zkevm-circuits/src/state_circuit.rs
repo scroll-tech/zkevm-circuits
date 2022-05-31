@@ -280,7 +280,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Quer
         power_of_randomness: c
             .power_of_randomness
             .map(|c| meta.query_instance(c, Rotation::cur())),
-        // this isn't binary! 0 only if most significant 4 bits are all 1.
+        // this isn't binary! only 0 if most significant 4 bits are all 1.
         first_access: 4.expr()
             - meta.query_advice(
                 c.lexicographic_ordering.first_different_limb.bits[0],
