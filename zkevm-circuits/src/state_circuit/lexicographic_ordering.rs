@@ -78,13 +78,6 @@ pub struct Config<F: Field> {
     pub(crate) upper_limb_difference_is_zero: IsZeroConfig<F>,
     lower_limb_difference: Column<Advice>,
     lower_limb_difference_is_zero: IsZeroConfig<F>,
-    // TODO: remove these columns from the config
-    tag: BinaryNumberConfig<RwTableTag, 4>,
-    field_tag: Column<Advice>,
-    id_limbs: [Column<Advice>; N_LIMBS_ID],
-    address_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
-    storage_key_bytes: [Column<Advice>; N_BYTES_WORD],
-    rw_counter_limbs: [Column<Advice>; N_LIMBS_RW_COUNTER],
 }
 
 pub struct Chip<F: Field> {
@@ -130,17 +123,11 @@ impl<F: Field> Chip<F> {
             upper_limb_difference_is_zero: upper_limb_difference_is_zero_config,
             lower_limb_difference,
             lower_limb_difference_is_zero: lower_limb_difference_is_zero_config,
-            tag: keys.tag,
-            field_tag: keys.field_tag,
-            id_limbs: keys.id.limbs,
-            address_limbs: keys.address.limbs,
-            storage_key_bytes: keys.storage_key.bytes,
-            rw_counter_limbs: keys.rw_counter.limbs,
         };
         meta.create_gate("upper_limb_difference is one of 15 values", |meta| {
             let selector = meta.query_fixed(selector, Rotation::cur());
-            let cur = Queries::new(meta, &config, Rotation::cur());
-            let prev = Queries::new(meta, &config, Rotation::prev());
+            let cur = Queries::new(meta, &config, keys, Rotation::cur());
+            let prev = Queries::new(meta, &config, keys, Rotation::prev());
             let upper_limb_difference = meta.query_advice(upper_limb_difference, Rotation::cur());
             vec![
                 selector
@@ -155,8 +142,8 @@ impl<F: Field> Chip<F> {
             "upper_limb_difference is zero iff all 15 possible values are 0",
             |meta| {
                 let selector = meta.query_fixed(selector, Rotation::cur());
-                let cur = Queries::new(meta, &config, Rotation::cur());
-                let prev = Queries::new(meta, &config, Rotation::prev());
+                let cur = Queries::new(meta, &config, keys, Rotation::cur());
+                let prev = Queries::new(meta, &config, keys, Rotation::prev());
                 vec![
                     // all 15 possible values are 0 iff the final linear combination is 0
                     selector
@@ -167,8 +154,8 @@ impl<F: Field> Chip<F> {
         );
         meta.create_gate("lower_limb_difference is one of 15 values", |meta| {
             let selector = meta.query_fixed(selector, Rotation::cur());
-            let cur = Queries::new(meta, &config, Rotation::cur());
-            let prev = Queries::new(meta, &config, Rotation::prev());
+            let cur = Queries::new(meta, &config, keys, Rotation::cur());
+            let prev = Queries::new(meta, &config, keys, Rotation::prev());
             let lower_limb_difference = meta.query_advice(lower_limb_difference, Rotation::cur());
             vec![
                 selector
@@ -277,16 +264,16 @@ struct Queries<F: Field> {
 }
 
 impl<F: Field> Queries<F> {
-    fn new(meta: &mut VirtualCells<'_, F>, config: &Config<F>, rotation: Rotation) -> Self {
-        let tag = config.tag.value(rotation)(meta);
+    fn new(meta: &mut VirtualCells<'_, F>, config: &Config<F>, keys: SortKeysConfig, rotation: Rotation) -> Self {
+        let tag = keys.tag.value(rotation)(meta);
         let mut query_advice = |column| meta.query_advice(column, rotation);
         Self {
             tag,
-            field_tag: query_advice(config.field_tag),
-            id_limbs: config.id_limbs.map(&mut query_advice),
-            address_limbs: config.address_limbs.map(&mut query_advice),
-            storage_key_bytes: config.storage_key_bytes.map(&mut query_advice),
-            rw_counter_limbs: config.rw_counter_limbs.map(query_advice),
+            field_tag: query_advice(keys.field_tag),
+            id_limbs: keys.id.limbs.map(&mut query_advice),
+            address_limbs: keys.address.limbs.map(&mut query_advice),
+            storage_key_bytes: keys.storage_key.bytes.map(&mut query_advice),
+            rw_counter_limbs: keys.rw_counter.limbs.map(query_advice),
         }
     }
 
