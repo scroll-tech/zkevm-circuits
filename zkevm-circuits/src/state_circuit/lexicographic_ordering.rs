@@ -3,7 +3,7 @@ use super::{
     SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER,
 };
 use crate::{
-    evm_circuit::{param::N_BYTES_WORD, table::RwTableTag, witness::Rw},
+    evm_circuit::{param::N_BYTES_WORD, witness::Rw},
     util::Expr,
 };
 use eth_types::{Field, ToBigEndian};
@@ -166,7 +166,7 @@ impl Config {
             let selector = meta.query_fixed(selector, Rotation::cur());
             let cur = Queries::new(meta, keys, Rotation::cur());
             let prev = Queries::new(meta, keys, Rotation::prev());
-            let limb_difference = meta.query_advice(limb_difference, Rotation::cur());
+            let _limb_difference = meta.query_advice(limb_difference, Rotation::cur());
 
             let mut constraints = vec![];
             for (limb, e) in Limb::iter().zip(&limb_difference_possible_values(cur, prev)) {

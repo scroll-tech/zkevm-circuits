@@ -11,13 +11,13 @@ mod test;
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::RwTableTag,
-    util::{not, RandomLinearCombination},
+    util::not,
     witness::{Rw, RwMap},
 };
 use crate::util::Expr;
 use binary_number::{Chip as BinaryNumberChip, Config as BinaryNumberConfig};
 use constraint_builder::{ConstraintBuilder, Queries};
-use eth_types::{Address, Field, ToLittleEndian};
+use eth_types::{Address, Field};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{
@@ -250,6 +250,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
             .bits
             .map(|bit| meta.query_advice(bit, Rotation::cur())),
         id: MpiQueries::new(meta, c.sort_keys.id),
+        // this is degree five....
         is_tag_and_id_unchanged: not::expr(
             c.lexicographic_ordering
                 .first_different_limb

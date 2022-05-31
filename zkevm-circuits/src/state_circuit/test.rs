@@ -10,7 +10,7 @@ use bus_mapping::operation::{
 use eth_types::{
     address,
     evm_types::{MemoryAddress, StackAddress},
-    Address, Field, ToAddress, Word, U256,
+    Address, ToAddress, Word, U256,
 };
 use halo2_proofs::{
     arithmetic::{BaseExt, Field as halo2_field},
@@ -85,7 +85,7 @@ fn test_state_circuit_ok(
 fn degree() {
     let mut meta = ConstraintSystem::<Fr>::default();
     StateCircuit::configure(&mut meta);
-    assert_eq!(meta.degree(), 9);
+    assert_eq!(meta.degree(), 12);
 }
 
 #[test]
@@ -675,7 +675,7 @@ fn invalid_stack_address_change() {
 
     assert_error_matches(
         verify(rows),
-        "if call id is the same, address change is 0 or 1",
+        "if previous row is Stack with unchanged call id, address change is 0 or 1",
     );
 }
 
