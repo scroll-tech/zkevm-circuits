@@ -239,6 +239,14 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
 }
 
 fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries<F> {
+    let x = meta.query_advice(
+        c.lexicographic_ordering.first_different_limb.bits[3],
+        Rotation::cur(),
+    ) + meta.query_advice(
+        c.lexicographic_ordering.first_different_limb.bits[4],
+        Rotation::cur(),
+    );
+
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
         rw_counter: MpiQueries::new(meta, c.sort_keys.rw_counter),
@@ -250,18 +258,20 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig) -> Queries
             .bits
             .map(|bit| meta.query_advice(bit, Rotation::cur())),
         id: MpiQueries::new(meta, c.sort_keys.id),
-        // this is degree five....
-        is_tag_and_id_unchanged: not::expr(
-            c.lexicographic_ordering
-                .first_different_limb
-                .value_equals(&Limb::Tag, Rotation::cur())(meta)
-                + c.lexicographic_ordering
-                    .first_different_limb
-                    .value_equals(&Limb::Id1, Rotation::cur())(meta)
-                + c.lexicographic_ordering
-                    .first_different_limb
-                    .value_equals(&Limb::Id0, Rotation::cur())(meta),
-        ),
+        // this isn't binary! only 0 if most significant 3 bits are all 0 and at most 1 of the two
+        // least significant bits is 1.
+        is_tag_and_id_unchanged: 10.expr()
+            * (meta.query_advice(
+                c.lexicographic_ordering.first_different_limb.bits[0],
+                Rotation::cur(),
+            ) + meta.query_advice(
+                c.lexicographic_ordering.first_different_limb.bits[1],
+                Rotation::cur(),
+            ) + meta.query_advice(
+                c.lexicographic_ordering.first_different_limb.bits[2],
+                Rotation::cur(),
+            ))
+            + x.clone() * (1.expr() - x),
         address: MpiQueries::new(meta, c.sort_keys.address),
         field_tag: meta.query_advice(c.sort_keys.field_tag, Rotation::cur()),
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),

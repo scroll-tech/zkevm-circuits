@@ -74,6 +74,7 @@ use strum_macros::{EnumCount, EnumIter};
 
 #[derive(Clone, Copy, Debug, EnumIter, EnumCount)]
 // TODO: unpub this
+// should call this limb index
 pub enum Limb {
     Tag,
     Id1,
@@ -166,21 +167,36 @@ impl Config {
             let selector = meta.query_fixed(selector, Rotation::cur());
             let cur = Queries::new(meta, keys, Rotation::cur());
             let prev = Queries::new(meta, keys, Rotation::prev());
-            let _limb_difference = meta.query_advice(limb_difference, Rotation::cur());
 
             let mut constraints = vec![];
-            for (limb, e) in Limb::iter().zip(&limb_difference_possible_values(cur, prev)) {
+            for (limb, e) in Limb::iter().zip(limb_difference_possible_values(cur, prev)) {
                 constraints.push(
                     selector.clone()
                         * first_different_limb.value_equals(&limb, Rotation::cur())(meta)
-                        * e.clone(),
+                        * e,
                 )
             }
             constraints
         });
 
-        // need one more constraint here that limb difference is the difference of the
-        // cliamed limbs
+        meta.create_gate("limb_difference is equal to the difference at claimed limb", |meta| {
+            let selector = meta.query_fixed(selector, Rotation::cur());
+            let cur = Queries::new(meta, keys, Rotation::cur());
+            let prev = Queries::new(meta, keys, Rotation::prev());
+            let limb_difference = meta.query_advice(limb_difference, Rotation::cur());
+
+            let mut constraints = vec![];
+            for ((limb, cur_expression), prev_expression) in
+                Limb::iter().zip(cur.be_limbs()).zip(prev.be_limbs())
+            {
+                constraints.push(
+                    selector.clone()
+                        * first_different_limb.value_equals(&limb, Rotation::cur())(meta)
+                        * (limb_difference.clone() - cur_expression + prev_expression),
+                );
+            }
+            constraints
+        });
 
         config
     }
