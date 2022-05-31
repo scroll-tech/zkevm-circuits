@@ -1,6 +1,6 @@
 use super::{StateCircuit, StateConfig};
 use crate::evm_circuit::{
-    table::{AccountFieldTag, CallContextFieldTag},
+    table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag},
     witness::{Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -337,6 +337,57 @@ fn nonlexicographic_order_rw_counter() {
     assert_error_matches(
         verify(vec![second, first]),
         "upper_limb_difference is zero or lower_limb_difference fits into u16",
+    );
+}
+
+#[test]
+fn tx_log_ok() {
+    let rows = vec![Rw::TxLog {
+        rw_counter: 1,
+        is_write: false,
+        tx_id: 1,
+        log_id: u64::MAX,
+        field_tag: TxLogFieldTag::Topic,
+        index: u64::MAX as usize,
+        value: U256::one(),
+    }];
+
+    assert_eq!(verify(rows), Ok(()));
+}
+
+#[test]
+fn tx_log_failure_1() {
+    let rows = vec![Rw::TxLog {
+        rw_counter: 1,
+        is_write: false,
+        tx_id: 1,
+        log_id: u64::MAX,
+        field_tag: TxLogFieldTag::Topic,
+        index: 1,
+        value: U256::one(),
+    }];
+
+    assert_error_matches(
+        verify(rows),
+        "tx_log_index is always u64::MAX",
+    );
+}
+
+#[test]
+fn tx_log_failure_2() {
+    let rows = vec![Rw::TxLog {
+        rw_counter: 1,
+        is_write: false,
+        tx_id: 1,
+        log_id: 1,
+        field_tag: TxLogFieldTag::Topic,
+        index: u64::MAX as usize,
+        value: U256::one(),
+    }];
+
+    assert_error_matches(
+        verify(rows),
+        "tx_log_id is always u64::MAX",
     );
 }
 

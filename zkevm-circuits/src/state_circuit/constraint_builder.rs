@@ -95,6 +95,9 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
             cb.build_call_context_constraints(q)
         });
+        self.condition(q.tag_matches(RwTableTag::TxLog), |cb| {
+            cb.build_tx_log_constraints(q)
+        });
     }
 
     fn build_general_constraints(&mut self, q: &Queries<F>) {
@@ -226,6 +229,11 @@ impl<F: Field> ConstraintBuilder<F> {
         // TODO: Missing constraints
     }
 
+    fn build_tx_log_constraints(&mut self, q: &Queries<F>) {
+        self.require_zero("tx_log_id is always u64::MAX", q.tx_log_id() - u64::MAX.expr());
+        self.require_zero("tx_log_index is always u64::MAX", q.tx_log_index() - u64::MAX.expr());
+    }
+
     fn require_zero(&mut self, name: &'static str, e: Expression<F>) {
         self.constraints.push((name, self.condition.clone() * e));
     }
@@ -311,11 +319,19 @@ impl<F: Field> Queries<F> {
     fn address_change(&self) -> Expression<F> {
         self.address.value.clone() - self.address.value_prev.clone()
     }
+
+    fn tx_log_index(&self) -> Expression<F> {
+        from_digits(&self.address.limbs[0..4], (1u64 << 16).expr())
+    }
+
+    fn tx_log_id(&self) -> Expression<F> {
+        from_digits(&self.address.limbs[4..8], (1u64 << 16).expr())
+    }
 }
 
 fn from_digits<F: Field>(digits: &[Expression<F>], base: Expression<F>) -> Expression<F> {
     digits
-        .iter()
+        .iter().rev()
         .fold(Expression::Constant(F::zero()), |result, digit| {
             digit.clone() + result * base.clone()
         })

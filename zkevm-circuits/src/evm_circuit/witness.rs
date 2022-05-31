@@ -761,7 +761,7 @@ impl Rw {
                 Some(U256::from(*stack_pointer as u64).to_address())
             }
             Self::TxLog { log_id, index, .. } => {
-                Some((U256::from(*index as u64) + (U256::from(*log_id) << 8)).to_address())
+                Some(U256([*index as u64, *log_id, 0, 0]).to_address())
             }
             Self::Start
             | Self::CallContext { .. }
