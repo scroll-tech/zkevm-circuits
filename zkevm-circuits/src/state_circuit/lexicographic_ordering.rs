@@ -179,24 +179,27 @@ impl Config {
             constraints
         });
 
-        meta.create_gate("limb_difference is equal to the difference at claimed limb", |meta| {
-            let selector = meta.query_fixed(selector, Rotation::cur());
-            let cur = Queries::new(meta, keys, Rotation::cur());
-            let prev = Queries::new(meta, keys, Rotation::prev());
-            let limb_difference = meta.query_advice(limb_difference, Rotation::cur());
+        meta.create_gate(
+            "limb_difference is equal to the difference at claimed limb",
+            |meta| {
+                let selector = meta.query_fixed(selector, Rotation::cur());
+                let cur = Queries::new(meta, keys, Rotation::cur());
+                let prev = Queries::new(meta, keys, Rotation::prev());
+                let limb_difference = meta.query_advice(limb_difference, Rotation::cur());
 
-            let mut constraints = vec![];
-            for ((limb, cur_expression), prev_expression) in
-                Limb::iter().zip(cur.be_limbs()).zip(prev.be_limbs())
-            {
-                constraints.push(
-                    selector.clone()
-                        * first_different_limb.value_equals(&limb, Rotation::cur())(meta)
-                        * (limb_difference.clone() - cur_expression + prev_expression),
-                );
-            }
-            constraints
-        });
+                let mut constraints = vec![];
+                for ((limb, cur_expression), prev_expression) in
+                    Limb::iter().zip(cur.be_limbs()).zip(prev.be_limbs())
+                {
+                    constraints.push(
+                        selector.clone()
+                            * first_different_limb.value_equals(&limb, Rotation::cur())(meta)
+                            * (limb_difference.clone() - cur_expression + prev_expression),
+                    );
+                }
+                constraints
+            },
+        );
 
         config
     }
@@ -235,7 +238,7 @@ impl Config {
             || "limb_difference",
             self.limb_difference,
             offset,
-            || Ok(limb_difference.clone()),
+            || Ok(limb_difference),
         )?;
         region.assign_advice(
             || "limb_difference_inverse",

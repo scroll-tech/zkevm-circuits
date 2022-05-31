@@ -13,7 +13,7 @@ use eth_types::{
     Address, ToAddress, Word, U256,
 };
 use halo2_proofs::{
-    arithmetic::{BaseExt, Field as halo2_field},
+    arithmetic::BaseExt,
     dev::{MockProver, VerifyFailure},
     pairing::bn256::Fr,
     plonk::{Advice, Circuit, Column, ConstraintSystem},

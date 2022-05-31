@@ -11,7 +11,6 @@ mod test;
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::RwTableTag,
-    util::not,
     witness::{Rw, RwMap},
 };
 use crate::util::Expr;
@@ -25,7 +24,7 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
-use lexicographic_ordering::{Config as LexicographicOrderingConfig, Limb};
+use lexicographic_ordering::Config as LexicographicOrderingConfig;
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
