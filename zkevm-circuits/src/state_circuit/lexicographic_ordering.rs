@@ -1,6 +1,6 @@
 use super::{
-    binary_number::Config as BinaryNumberConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
-    N_LIMBS_RW_COUNTER,
+    binary_number::Config as BinaryNumberConfig, SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS,
+    N_LIMBS_ID, N_LIMBS_RW_COUNTER,
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, table::RwTableTag, witness::Rw},
@@ -96,16 +96,9 @@ impl<F: Field> Chip<F> {
         Self { config }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    // TODO: fix this to not have too many arguments?
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        tag: BinaryNumberConfig<RwTableTag, 4>,
-        field_tag: Column<Advice>,
-        id_limbs: [Column<Advice>; N_LIMBS_ID],
-        address_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
-        storage_key_bytes: [Column<Advice>; N_BYTES_WORD],
-        rw_counter_limbs: [Column<Advice>; N_LIMBS_RW_COUNTER],
+        keys: SortKeysConfig,
         u16_range: Column<Fixed>,
     ) -> Config<F> {
         let selector = meta.fixed_column();
@@ -137,12 +130,12 @@ impl<F: Field> Chip<F> {
             upper_limb_difference_is_zero: upper_limb_difference_is_zero_config,
             lower_limb_difference,
             lower_limb_difference_is_zero: lower_limb_difference_is_zero_config,
-            tag,
-            field_tag,
-            id_limbs,
-            address_limbs,
-            storage_key_bytes,
-            rw_counter_limbs,
+            tag: keys.tag,
+            field_tag: keys.field_tag,
+            id_limbs: keys.id.limbs,
+            address_limbs: keys.address.limbs,
+            storage_key_bytes: keys.storage_key.bytes,
+            rw_counter_limbs: keys.rw_counter.limbs,
         };
         meta.create_gate("upper_limb_difference is one of 15 values", |meta| {
             let selector = meta.query_fixed(selector, Rotation::cur());

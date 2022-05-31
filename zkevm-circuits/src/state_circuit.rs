@@ -44,19 +44,25 @@ const N_LIMBS_ID: usize = 2;
 pub struct StateConfig<F: Field> {
     selector: Column<Fixed>, // Figure out why you get errors when this is Selector.
     // https://github.com/appliedzkp/zkevm-circuits/issues/407
-    rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
+    sort_keys: SortKeysConfig,
     is_write: Column<Advice>,
-    tag: BinaryNumberConfig<RwTableTag, 4>,
-    id: MpiConfig<u32, N_LIMBS_ID>,
     is_id_unchanged: IsZeroConfig<F>,
-    address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
-    field_tag: Column<Advice>,
-    storage_key: RlcConfig<N_BYTES_WORD>,
     is_storage_key_unchanged: IsZeroConfig<F>,
     value: Column<Advice>,
     lookups: LookupsConfig,
     power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
     lexicographic_ordering: LexicographicOrderingConfig<F>,
+}
+
+/// Keys for sorting the rows of the state circuit
+#[derive(Clone, Copy)]
+pub struct SortKeysConfig {
+    tag: BinaryNumberConfig<RwTableTag, 4>,
+    id: MpiConfig<u32, N_LIMBS_ID>,
+    field_tag: Column<Advice>,
+    address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
+    storage_key: RlcConfig<N_BYTES_WORD>,
+    rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
 }
 
 type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
@@ -123,14 +129,13 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let storage_key = RlcChip::configure(meta, selector, lookups.u8, power_of_randomness);
         let rw_counter = MpiChip::configure(meta, selector, lookups.u16);
 
+        let sort_keys = SortKeysConfig {
+            tag, id, field_tag, address, storage_key, rw_counter,
+        };
+
         let lexicographic_ordering = LexicographicOrderingChip::configure(
             meta,
-            tag,
-            field_tag,
-            id.limbs,
-            address.limbs,
-            storage_key.bytes,
-            rw_counter.limbs,
+            sort_keys,
             lookups.u16,
         );
 
@@ -155,14 +160,9 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
 
         let config = Self::Config {
             selector,
-            rw_counter,
+            sort_keys,
             is_write,
-            tag,
-            id,
             is_id_unchanged,
-            address,
-            field_tag,
-            storage_key,
             value,
             lexicographic_ordering,
             is_storage_key_unchanged,
@@ -196,7 +196,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
         let lexicographic_ordering_chip =
             LexicographicOrderingChip::construct(config.lexicographic_ordering.clone());
 
-        let tag_chip = BinaryNumberChip::construct(config.tag);
+        let tag_chip = BinaryNumberChip::construct(config.sort_keys.tag);
 
         layouter.assign_region(
             || "rw table",
@@ -206,7 +206,7 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                 for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
                     region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
                     config
-                        .rw_counter
+                        .sort_keys.rw_counter
                         .assign(&mut region, offset, row.rw_counter() as u32)?;
                     region.assign_advice(
                         || "is_write",
@@ -216,21 +216,21 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
                     )?;
                     tag_chip.assign(&mut region, offset, &row.tag())?;
                     if let Some(id) = row.id() {
-                        config.id.assign(&mut region, offset, id as u32)?;
+                        config.sort_keys.id.assign(&mut region, offset, id as u32)?;
                     }
                     if let Some(address) = row.address() {
-                        config.address.assign(&mut region, offset, address)?;
+                        config.sort_keys.address.assign(&mut region, offset, address)?;
                     }
                     if let Some(field_tag) = row.field_tag() {
                         region.assign_advice(
                             || "field_tag",
-                            config.field_tag,
+                            config.sort_keys.field_tag,
                             offset,
                             || Ok(F::from(field_tag as u64)),
                         )?;
                     }
                     if let Some(storage_key) = row.storage_key() {
-                        config.storage_key.assign(
+                        config.sort_keys.storage_key.assign(
                             &mut region,
                             offset,
                             self.randomness,
@@ -281,18 +281,18 @@ impl<F: Field> Circuit<F> for StateCircuit<F> {
 fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateConfig<F>) -> Queries<F> {
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
-        rw_counter: MpiQueries::new(meta, c.rw_counter),
+        rw_counter: MpiQueries::new(meta, c.sort_keys.rw_counter),
         is_write: meta.query_advice(c.is_write, Rotation::cur()),
-        tag: c.tag.value(Rotation::cur())(meta),
-        tag_bits: c
+        tag: c.sort_keys.tag.value(Rotation::cur())(meta),
+        tag_bits: c.sort_keys
             .tag
             .bits
             .map(|bit| meta.query_advice(bit, Rotation::cur())),
-        id: MpiQueries::new(meta, c.id),
+        id: MpiQueries::new(meta, c.sort_keys.id),
         is_id_unchanged: c.is_id_unchanged.is_zero_expression.clone(),
-        address: MpiQueries::new(meta, c.address),
-        field_tag: meta.query_advice(c.field_tag, Rotation::cur()),
-        storage_key: RlcQueries::new(meta, c.storage_key),
+        address: MpiQueries::new(meta, c.sort_keys.address),
+        field_tag: meta.query_advice(c.sort_keys.field_tag, Rotation::cur()),
+        storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
         value: meta.query_advice(c.value, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c
