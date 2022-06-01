@@ -15,7 +15,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 use std::iter::once;
 use strum::IntoEnumIterator;
-use strum_macros::{EnumCount, EnumIter};
+use strum_macros::EnumIter;
 
 // We use this chip to show that the rows of the rw table are in lexicographic
 // order, i.e. ordered by (tag, field_tag, id, address, storage_key, and
@@ -72,7 +72,7 @@ use strum_macros::{EnumCount, EnumIter};
 // -----------------------------------
 // = 480 bits
 
-#[derive(Clone, Copy, Debug, EnumIter, EnumCount)]
+#[derive(Clone, Copy, Debug, EnumIter)]
 // TODO: unpub this
 // should call this limb index
 pub enum Limb {
