@@ -324,8 +324,16 @@ impl<F: Field> Queries<F> {
         from_digits(&self.address.limbs[0..4], (1u64 << 16).expr())
     }
 
+    fn prev_tx_log_index(&self) -> Expression<F> {
+        from_digits(&self.address.limbs_prev[0..4], (1u64 << 16).expr())
+    }
+
     fn tx_log_id(&self) -> Expression<F> {
         from_digits(&self.address.limbs[4..8], (1u64 << 16).expr())
+    }
+
+    fn prev_tx_log_id(&self) -> Expression<F> {
+        from_digits(&self.address.limbs_prev[4..8], (1u64 << 16).expr())
     }
 }
 

@@ -49,6 +49,7 @@ pub struct Queries<F: Field, const N: usize> {
     pub value: Expression<F>,
     pub value_prev: Expression<F>, // move this up, as it's not always needed.
     pub limbs: [Expression<F>; N],
+    pub limbs_prev: [Expression<F>; N],
 }
 
 impl<F: Field, const N: usize> Queries<F, N> {
@@ -57,6 +58,7 @@ impl<F: Field, const N: usize> Queries<F, N> {
             value: meta.query_advice(c.value, Rotation::cur()),
             value_prev: meta.query_advice(c.value, Rotation::prev()),
             limbs: c.limbs.map(|limb| meta.query_advice(limb, Rotation::cur())),
+            limbs_prev: c.limbs.map(|limb| meta.query_advice(limb, Rotation::prev())),
         }
     }
 }
