@@ -8,6 +8,56 @@ use halo2_proofs::{
 
 use crate::evm_circuit::{table::LookupTable, witness::RwRow};
 
+#[derive(Clone, Copy)]
+pub struct RwTableRlc {
+    pub rlc: Column<Advice>,
+}
+
+impl<F: FieldExt> LookupTable<F> for RwTableRlc {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![meta.query_advice(self.rlc, Rotation::cur())]
+    }
+}
+impl RwTableRlc {
+    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            rlc: meta.advice_column(),
+        }
+    }
+    pub fn assign<F: FieldExt>(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        row: &RwRow<F>,
+        randomness: F,
+    ) -> Result<(), Error> {
+        let values = [
+            row.rw_counter,
+            row.is_write,
+            row.tag,
+            row.key1,
+            row.key2,
+            row.key3,
+            row.key4,
+            row.value,
+            row.value_prev,
+            row.aux1,
+            row.aux2,
+        ];
+        let value = values
+            .iter()
+            .rev()
+            .fold(F::zero(), |acc, value| acc * randomness + value);
+        region.assign_advice(
+            || "assign rw row on rw table",
+            self.rlc,
+            offset,
+            || Ok(value),
+        )?;
+        Ok(())
+    }
+}
+
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Copy)]
 pub struct RwTable {

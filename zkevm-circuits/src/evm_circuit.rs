@@ -150,7 +150,7 @@ pub mod test {
             witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
             EvmCircuit,
         },
-        rw_table::RwTable,
+        rw_table::RwTableRlc,
         util::DEFAULT_RAND,
     };
     use eth_types::{Field, Word};
@@ -189,7 +189,7 @@ pub mod test {
     #[derive(Clone)]
     pub struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
-        rw_table: RwTable,
+        rw_table: RwTableRlc,
         bytecode_table: [Column<Advice>; 5],
         block_table: [Column<Advice>; 3],
         evm_circuit: EvmCircuit<F>,
@@ -245,7 +245,7 @@ pub mod test {
                 |mut region| {
                     let mut offset = 0;
                     self.rw_table
-                        .assign(&mut region, offset, &Default::default())?;
+                        .assign(&mut region, offset, &Default::default(), randomness)?;
                     offset += 1;
 
                     let mut rows = rws
@@ -264,6 +264,7 @@ pub mod test {
                             &mut region,
                             offset,
                             &rw.table_assignment(randomness),
+                            randomness,
                         )?;
                         offset += 1;
                     }
@@ -373,7 +374,7 @@ pub mod test {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = [(); 4].map(|_| meta.advice_column());
-            let rw_table = RwTable::construct(meta);
+            let rw_table = RwTableRlc::construct(meta);
             let bytecode_table = [(); 5].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 
