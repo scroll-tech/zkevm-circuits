@@ -3,6 +3,7 @@ use super::{
     random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
     N_LIMBS_RW_COUNTER,
 };
+use crate::evm_circuit::util::rlc;
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::{AccountFieldTag, RwTableTag},
@@ -33,6 +34,7 @@ pub struct Queries<F: Field> {
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     pub is_storage_key_unchanged: Expression<F>,
     pub lexicographic_ordering_upper_limb_difference_is_zero: Expression<F>,
+    pub rw_rlc: Expression<F>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
@@ -149,6 +151,25 @@ impl<F: Field> ConstraintBuilder<F> {
                         q.value_at_prev_rotation.clone(),
                     ),
         );
+
+        self.require_equal("rw table rlc", q.rw_rlc.clone(), {
+            rlc::expr(
+                &[
+                    q.rw_counter.value.clone(),
+                    q.is_write.clone(),
+                    q.tag.clone(),
+                    q.id.value.clone(),
+                    q.address.value.clone(),
+                    q.field_tag.clone(),
+                    q.storage_key.encoded.clone(),
+                    q.value.clone(),
+                    q.value_prev.clone(),
+                    0u64.expr(), //q.aux1,
+                    q.aux2.clone(),
+                ],
+                &q.power_of_randomness,
+            )
+        })
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {

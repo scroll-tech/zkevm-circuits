@@ -776,6 +776,18 @@ fn verify_with_overrides(
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
     let errors = result.err().expect("result is not an error");
+    let errors: Vec<_> = errors
+        .iter()
+        .filter(|e| {
+            if let VerifyFailure::ConstraintNotSatisfied { constraint, .. } = e {
+                let constraint = format!("{}", constraint);
+                if constraint.contains("rw table rlc") {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
     assert_eq!(errors.len(), 1, "{:?}", errors);
     match &errors[0] {
         VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {

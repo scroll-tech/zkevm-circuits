@@ -150,7 +150,7 @@ pub mod test {
             witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
             EvmCircuit,
         },
-        rw_table::RwTable,
+        rw_table::RwTableRlc,
         util::DEFAULT_RAND,
     };
     use bus_mapping::evm::OpcodeId;
@@ -190,7 +190,7 @@ pub mod test {
     #[derive(Clone)]
     pub struct TestCircuitConfig<F> {
         tx_table: [Column<Advice>; 4],
-        rw_table: RwTable,
+        rw_table: RwTableRlc,
         bytecode_table: [Column<Advice>; 5],
         block_table: [Column<Advice>; 3],
         evm_circuit: EvmCircuit<F>,
@@ -245,7 +245,10 @@ pub mod test {
                 || "rw table",
                 |mut region| {
                     rws.check_rw_counter_sanity();
-                    self.rw_table.assign(&mut region, randomness, rws)?;
+                    // TODO: fix this after cs.challenge() is implemented in halo2
+                    let randomness_phase_next = randomness;
+                    self.rw_table
+                        .assign(&mut region, randomness, rws, randomness_phase_next)?;
                     Ok(())
                 },
             )
@@ -401,7 +404,7 @@ pub mod test {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let tx_table = [(); 4].map(|_| meta.advice_column());
-            let rw_table = RwTable::construct(meta);
+            let rw_table = RwTableRlc::construct(meta);
             let bytecode_table = [(); 5].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 

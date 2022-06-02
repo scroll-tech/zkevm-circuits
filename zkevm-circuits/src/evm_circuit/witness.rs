@@ -449,6 +449,7 @@ impl RwMap {
             debug_assert_eq!(idx, rw_counter - 1);
         }
     }
+
     pub fn table_assignments<F>(&self, randomness: F) -> Vec<RwRow<F>>
     where
         F: Field,
@@ -582,6 +583,30 @@ pub struct RwRow<F> {
     pub value_prev: F,
     pub aux1: F,
     pub aux2: F,
+}
+impl<F: Field> RwRow<F> {
+    pub fn rlc(&self, randomness: F, randomness_next_phase: F) -> F {
+        let values = [
+            F::from(self.rw_counter),
+            F::from(self.is_write),
+            (F::from(self.tag)),
+            (F::from(self.id)),
+            (self.address.to_scalar().unwrap()),
+            (F::from(self.field_tag)),
+            (RandomLinearCombination::random_linear_combine(
+                self.storage_key.to_le_bytes(),
+                randomness,
+            )),
+            (self.value),
+            (self.value_prev),
+            (self.aux1),
+            (self.aux2),
+        ];
+        values
+            .iter()
+            .rev()
+            .fold(F::zero(), |acc, value| acc * randomness_next_phase + value)
+    }
 }
 impl Rw {
     pub fn tx_access_list_value_pair(&self) -> (bool, bool) {

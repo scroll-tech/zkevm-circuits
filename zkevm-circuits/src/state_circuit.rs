@@ -115,10 +115,6 @@ impl<F: Field, const QUICK_CHECK: bool> StateCircuitBase<F, QUICK_CHECK> {
         region.assign_fixed(|| "selector", config.selector, offset, || Ok(F::one()))?;
 
         config
-            .rw_table
-            .assign_row(region, offset, self.randomness, &row)?;
-
-        config
             .rw_counter_mpi
             .assign(region, offset, row.rw_counter as u32)?;
         config.id_mpi.assign(region, offset, row.id as u32)?;
@@ -262,6 +258,10 @@ impl<F: Field, const QUICK_CHECK: bool> Circuit<F> for StateCircuitBase<F, QUICK
         layouter.assign_region(
             || "rw table",
             |mut region| {
+                config
+                    .rw_table
+                    .assign(&mut region, self.randomness, &self.rows)?;
+
                 for (offset, row) in self.rows.iter().enumerate() {
                     log::trace!("state citcuit assign offset:{} row:{:#?}", offset, row);
                     self.assign_row(
@@ -321,5 +321,6 @@ fn queries<F: Field, const QUICK_CHECK: bool>(
             .upper_limb_difference_is_zero
             .is_zero_expression
             .clone(),
+        rw_rlc: meta.query_advice(c.rw_table.rlc, Rotation::cur()),
     }
 }
