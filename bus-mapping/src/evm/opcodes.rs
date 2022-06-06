@@ -120,7 +120,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SHL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
-        // OpcodeId::SHA3 => {},
+        OpcodeId::SHA3 => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         // OpcodeId::ADDRESS => {},
         // OpcodeId::BALANCE => {},
         OpcodeId::ORIGIN => Origin::gen_associated_ops,

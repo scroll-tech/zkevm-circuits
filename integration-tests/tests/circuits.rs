@@ -1,14 +1,16 @@
 #![cfg(feature = "circuits")]
 
-use bus_mapping::circuit_input_builder::BuilderClient;
+use bus_mapping::circuit_input_builder::{BuilderClient, ExecState};
+use bus_mapping::evm::OpcodeId;
 use bus_mapping::operation::OperationContainer;
 use halo2_proofs::dev::MockProver;
-use integration_tests::{get_client, log_init, GenDataOutput};
+use integration_tests::{get_client, log_init, GenDataOutput, END_BLOCK, START_BLOCK};
 use lazy_static::lazy_static;
 use log::trace;
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{
-    test::run_test_circuit_complete_fixed_table, witness::block_convert,
+    test::run_test_circuit_complete_fixed_table, test::run_test_circuit_incomplete_fixed_table,
+    witness::block_convert,
 };
 use zkevm_circuits::state_circuit::StateCircuit;
 
@@ -16,13 +18,43 @@ lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
 }
 
+#[tokio::test]
+async fn test_evm_circuit_all_block() {
+    log_init();
+    let start: usize = *START_BLOCK;
+    let end: usize = *END_BLOCK;
+    for blk in start..=end {
+        test_evm_circuit_block(blk as u64).await;
+    }
+}
+
 async fn test_evm_circuit_block(block_num: u64) {
+    log::info!("test evm circuit, block number: {}", block_num);
     let cli = get_client();
     let cli = BuilderClient::new(cli).await.unwrap();
     let builder = cli.gen_inputs(block_num).await.unwrap();
 
+    if builder.block.txs.is_empty() {
+        log::info!("skip empty block");
+        return;
+    }
+
     let block = block_convert(&builder.block, &builder.code_db);
-    run_test_circuit_complete_fixed_table(block).expect("evm_circuit verification failed");
+    let need_bitwise_lookup = builder.block.txs.iter().any(|tx| {
+        tx.steps().iter().any(|step| {
+            matches!(
+                step.exec_state,
+                ExecState::Op(OpcodeId::ADD)
+                    | ExecState::Op(OpcodeId::OR)
+                    | ExecState::Op(OpcodeId::XOR)
+            )
+        })
+    });
+    if need_bitwise_lookup {
+        run_test_circuit_complete_fixed_table(block).expect("evm_circuit verification failed");
+    } else {
+        run_test_circuit_incomplete_fixed_table(block).expect("evm_circuit verification failed");
+    }
 }
 
 async fn test_state_circuit_block(block_num: u64) {
@@ -46,7 +78,7 @@ async fn test_state_circuit_block(block_num: u64) {
     let rw_map = RwMap::from(&OperationContainer {
         memory: memory_ops,
         stack: stack_ops,
-        storage: storage_ops,
+        //storage: storage_ops,
         ..Default::default()
     });
 
