@@ -885,10 +885,17 @@ impl<F: Field> ExecutionConfig<F> {
         }
 
         // Fill in the witness values for stored expressions
+        let empty_vec = Vec::new();
         for stored_expression in self
             .stored_expressions_map
             .get(&step.execution_state)
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
+            .unwrap_or_else(|| {
+                if matches!(step.execution_state, ExecutionState::DUMMY) {
+                    &empty_vec
+                } else {
+                    panic!("Execution state unknown: {:?}", step.execution_state)
+                }
+            })
         {
             stored_expression.assign(region, offset)?;
         }
