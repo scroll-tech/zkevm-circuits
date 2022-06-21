@@ -163,6 +163,7 @@ pub(crate) struct ExecutionConfig<F> {
     copy_code_to_memory_gadget: CopyCodeToMemoryGadget<F>,
     copy_to_log_gadget: CopyToLogGadget<F>,
     dup_gadget: DupGadget<F>,
+    dummy_gadget: DummyGadget<F, 0, 0, { ExecutionState::DUMMY }>,
     extcodehash_gadget: ExtcodehashGadget<F>,
     gas_gadget: GasGadget<F>,
     gasprice_gadget: GasPriceGadget<F>,
@@ -366,6 +367,7 @@ impl<F: Field> ExecutionConfig<F> {
             codecopy_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
+            dummy_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
             gas_gadget: configure_gadget!(),
             gasprice_gadget: configure_gadget!(),
@@ -879,23 +881,16 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_oog_static_memory_gadget)
             }
             ExecutionState::DUMMY => {
-                // just skip, do nothing
+                assign_exec_step!(self.dummy_gadget)
             }
             _ => unimplemented!(),
         }
 
         // Fill in the witness values for stored expressions
-        let empty_vec = Vec::new();
         for stored_expression in self
             .stored_expressions_map
             .get(&step.execution_state)
-            .unwrap_or_else(|| {
-                if matches!(step.execution_state, ExecutionState::DUMMY) {
-                    &empty_vec
-                } else {
-                    panic!("Execution state unknown: {:?}", step.execution_state)
-                }
-            })
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
             stored_expression.assign(region, offset)?;
         }
