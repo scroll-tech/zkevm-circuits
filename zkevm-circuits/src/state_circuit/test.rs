@@ -1,7 +1,10 @@
 use super::{StateCircuit, StateConfig};
-use crate::evm_circuit::{
-    table::{AccountFieldTag, CallContextFieldTag},
-    witness::{Rw, RwMap},
+use crate::{
+    evm_circuit::{
+        table::{AccountFieldTag, CallContextFieldTag},
+        witness::{Rw, RwMap},
+    },
+    util::DEFAULT_RAND,
 };
 use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
@@ -12,7 +15,7 @@ use eth_types::{
     Address, Field, ToAddress, Word, U256,
 };
 use halo2_proofs::{
-    arithmetic::{BaseExt, Field as halo2_field},
+    arithmetic::{Field as halo2_field, FieldExt},
     dev::{MockProver, VerifyFailure},
     pairing::bn256::Fr,
     plonk::{Advice, Circuit, Column, ConstraintSystem},
@@ -67,12 +70,11 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
-    let randomness = Fr::rand();
+    let randomness = Fr::from_u128(DEFAULT_RAND);
     let circuit = StateCircuit::new(randomness, rw_map);
-    let power_of_randomness = circuit.instance();
+    let _power_of_randomness = circuit.instance();
 
-    let prover =
-        MockProver::<Fr>::run(circuit.estimate_k(), &circuit, power_of_randomness).unwrap();
+    let prover = MockProver::<Fr>::run(circuit.estimate_k(), &circuit, vec![]).unwrap();
     let verify_result = prover.verify();
     assert_eq!(verify_result, Ok(()));
 }
@@ -743,7 +745,7 @@ fn invalid_stack_address_change() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockProver<Fr> {
-    let randomness = Fr::rand();
+    let randomness = Fr::from_u128(DEFAULT_RAND);
     let rows = rows
         .iter()
         .map(|r| r.table_assignment(randomness))
@@ -753,9 +755,9 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, usize), Fr>) -> MockP
         rows,
         overrides,
     };
-    let power_of_randomness = circuit.instance();
+    let _power_of_randomness = circuit.instance();
 
-    MockProver::<Fr>::run(circuit.estimate_k(), &circuit, power_of_randomness).unwrap()
+    MockProver::<Fr>::run(circuit.estimate_k(), &circuit, vec![]).unwrap()
 }
 
 fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {

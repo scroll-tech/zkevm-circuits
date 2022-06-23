@@ -14,13 +14,14 @@ use crate::{
         witness::{RwMap, RwRow},
     },
     rw_table::RwTable,
+    util::DEFAULT_RAND,
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field, ToLittleEndian};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner},
-    plonk::{Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells},
+    plonk::{Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use lexicographic_ordering::{
@@ -50,7 +51,7 @@ pub struct StateConfig<F, const QUICK_CHECK: bool> {
     is_id_unchanged: IsZeroConfig<F>,
     is_storage_key_unchanged: IsZeroConfig<F>,
     lookups: LookupsConfig<QUICK_CHECK>,
-    power_of_randomness: [Column<Instance>; N_BYTES_WORD - 1],
+    power_of_randomness: [Expression<F>; 31],
     lexicographic_ordering: LexicographicOrderingConfig<F>,
 }
 
@@ -66,7 +67,7 @@ pub type StateCircuit<F> = StateCircuitBase<F, false>;
 pub type StateCircuitLight<F> = StateCircuitBase<F, true>;
 
 /// State Circuit for proving RwTable is valid
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StateCircuitBase<F, const QUICK_CHECK: bool> {
     pub(crate) randomness: F,
     pub(crate) rows: Vec<RwRow<F>>,
@@ -169,7 +170,14 @@ impl<F: Field, const QUICK_CHECK: bool> Circuit<F> for StateCircuitBase<F, QUICK
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let selector = meta.fixed_column();
         let lookups = LookupsChip::configure(meta);
-        let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_| meta.instance_column());
+        //let power_of_randomness = [0; N_BYTES_WORD - 1].map(|_|
+        // meta.instance_column());
+
+        let power_of_randomness: [Expression<F>; 31] = (1..32)
+            .map(|exp| Expression::Constant(F::from_u128(DEFAULT_RAND).pow(&[exp, 0, 0, 0])))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
 
         let rw_table = RwTable::construct(meta);
         let is_storage_key_unchanged_column = meta.advice_column();
@@ -181,7 +189,7 @@ impl<F: Field, const QUICK_CHECK: bool> Circuit<F> for StateCircuitBase<F, QUICK
             selector,
             rw_table.storage_key,
             lookups,
-            power_of_randomness,
+            power_of_randomness.clone(),
         );
         let rw_counter_mpi = MpiChip::configure(meta, rw_table.rw_counter, selector, lookups);
 
@@ -312,9 +320,7 @@ fn queries<F: Field, const QUICK_CHECK: bool>(
         value_at_prev_rotation: meta.query_advice(c.rw_table.value, Rotation::prev()),
         value_prev: meta.query_advice(c.rw_table.value_prev, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
-        power_of_randomness: c
-            .power_of_randomness
-            .map(|c| meta.query_instance(c, Rotation::cur())),
+        power_of_randomness: c.power_of_randomness.clone(),
         is_storage_key_unchanged: c.is_storage_key_unchanged.is_zero_expression.clone(),
         lexicographic_ordering_upper_limb_difference_is_zero: c
             .lexicographic_ordering

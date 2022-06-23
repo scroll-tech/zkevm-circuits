@@ -403,8 +403,8 @@ pub mod test {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = [(); 4].map(|_| meta.advice_column());
             let rw_table = RwTableRlc::construct(meta);
+            let tx_table = [(); 4].map(|_| meta.advice_column());
             let bytecode_table = [(); 5].map(|_| meta.advice_column());
             let block_table = [(); 3].map(|_| meta.advice_column());
 
@@ -474,7 +474,7 @@ pub mod test {
         let (active_gate_rows, active_lookup_rows) = TestCircuit::get_active_rows(&block);
         let circuit = TestCircuit::<F>::new(block.clone(), fixed_table_tags);
         let k = circuit.estimate_k();
-        let block = block;
+        let _block = block;
         //block.pad_to = (1 << k) - 64;
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())

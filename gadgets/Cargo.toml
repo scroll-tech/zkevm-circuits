@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["The appliedzkp team"]
 
 [dependencies]
-halo2_proofs = { version = "0.1.0-beta.1" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0607" }
 sha3 = "0.7.2"
 eth-types = { path = "../eth-types" }
 digest = "0.7.6"

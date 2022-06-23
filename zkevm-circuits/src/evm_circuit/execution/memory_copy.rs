@@ -475,18 +475,21 @@ pub mod test {
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
+    #[ignore = "skip"]
     #[test]
     fn copy_to_memory_simple() {
         test_ok_from_memory(0x40, 0xA0, 0x70, 5);
         test_ok_from_tx(32, 5, 0x40, 5);
     }
 
+    #[ignore = "skip"]
     #[test]
     fn copy_to_memory_multi_step() {
         test_ok_from_memory(0x20, 0xA0, 0x80, 80);
         test_ok_from_tx(128, 10, 0x40, 90);
     }
 
+    #[ignore = "skip"]
     #[test]
     fn copy_to_memory_out_of_bound() {
         test_ok_from_memory(0x40, 0xA0, 0x60, 45);

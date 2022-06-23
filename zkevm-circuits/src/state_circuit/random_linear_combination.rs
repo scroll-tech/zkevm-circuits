@@ -2,7 +2,7 @@ use crate::evm_circuit::util::rlc;
 use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -77,7 +77,7 @@ impl<F: Field, const N: usize> Chip<F, N> {
         selector: Column<Fixed>,
         encoded: Column<Advice>,
         lookup: lookups::Config<QUICK_CHECK>,
-        power_of_randomness: [Column<Instance>; 31],
+        power_of_randomness: [Expression<F>; 31],
     ) -> Config<N> {
         let bytes = [0; N].map(|_| meta.advice_column());
 
@@ -91,8 +91,8 @@ impl<F: Field, const N: usize> Chip<F, N> {
             let selector = meta.query_fixed(selector, Rotation::cur());
             let encoded = meta.query_advice(encoded, Rotation::cur());
             let bytes = bytes.map(|c| meta.query_advice(c, Rotation::cur()));
-            let power_of_randomness =
-                power_of_randomness.map(|c| meta.query_instance(c, Rotation::cur()));
+            //let power_of_randomness =
+            //    power_of_randomness.map(|c| meta.query_instance(c, Rotation::cur()));
             vec![selector * (encoded - rlc::expr(&bytes, &power_of_randomness))]
         });
 

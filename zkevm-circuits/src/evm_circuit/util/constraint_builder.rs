@@ -26,8 +26,8 @@ use super::{rlc, CachedRegion, CellType, StoredExpression};
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
 // but each ExecutionGadget has implicit selector degree 3, so here it only
 // allows 2^2+1-3 = 2.
-const MAX_DEGREE: usize = 5;
-const IMPLICIT_DEGREE: usize = 3;
+const MAX_DEGREE: usize = 9;
+const IMPLICIT_DEGREE: usize = 4;
 
 #[derive(Clone, Debug, Default)]
 struct StepRowUsage {

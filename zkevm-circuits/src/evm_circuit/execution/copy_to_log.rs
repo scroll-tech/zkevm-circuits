@@ -442,6 +442,7 @@ pub mod test {
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
+    #[ignore = "skip"]
     #[test]
     fn copy_to_log_simple() {
         // is_persistent = true
@@ -452,6 +453,7 @@ pub mod test {
         test_ok_copy_to_log(0x100, 0x180, 0x40, false);
     }
 
+    #[ignore = "skip"]
     #[test]
     fn copy_to_log_multi_step() {
         // is_persistent = true
