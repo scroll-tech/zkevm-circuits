@@ -1,6 +1,6 @@
-use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
+use super::{lookups, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
 use crate::{
-    evm_circuit::{param::N_BYTES_WORD, witness::Rw},
+    evm_circuit::{param::N_BYTES_WORD, witness::RwRow},
     util::Expr,
 };
 use eth_types::{Field, ToBigEndian};
@@ -69,7 +69,7 @@ use std::ops::Mul;
 // = 480 bits
 
 #[derive(Clone)]
-pub struct Config<F: Field> {
+pub struct Config<F> {
     pub(crate) selector: Column<Fixed>,
     upper_limb_difference: Column<Advice>,
     pub(crate) upper_limb_difference_is_zero: IsZeroConfig<F>,
@@ -95,7 +95,7 @@ impl<F: Field> Chip<F> {
 
     #[allow(clippy::too_many_arguments)]
     // TODO: fix this to not have too many arguments?
-    pub fn configure(
+    pub fn configure<const QUICK_CHECK: bool>(
         meta: &mut ConstraintSystem<F>,
         tag: Column<Advice>,
         field_tag: Column<Advice>,
@@ -103,7 +103,7 @@ impl<F: Field> Chip<F> {
         address_limbs: [Column<Advice>; N_LIMBS_ACCOUNT_ADDRESS],
         storage_key_bytes: [Column<Advice>; N_BYTES_WORD],
         rw_counter_limbs: [Column<Advice>; N_LIMBS_RW_COUNTER],
-        u16_range: Column<Fixed>,
+        lookup: lookups::Config<QUICK_CHECK>,
     ) -> Config<F> {
         let selector = meta.fixed_column();
         let [upper_limb_difference, upper_limb_difference_inverse, lower_limb_difference, lower_limb_difference_inverse] =
@@ -183,24 +183,19 @@ impl<F: Field> Chip<F> {
             ]
         });
         assert!(meta.degree() <= 16);
-        meta.lookup_any("upper_limb_difference fits into u16", |meta| {
-            let upper_limb_difference = meta.query_advice(upper_limb_difference, Rotation::cur());
-            vec![(
-                upper_limb_difference,
-                meta.query_fixed(u16_range, Rotation::cur()),
-            )]
+        lookup.range_check_u16(meta, "upper_limb_difference fits into u16", |meta| {
+            meta.query_advice(upper_limb_difference, Rotation::cur())
         });
-        meta.lookup_any(
+        lookup.range_check_u16(
+            meta,
             "upper_limb_difference is zero or lower_limb_difference fits into u16",
             |meta| {
                 let lower_limb_difference =
                     meta.query_advice(lower_limb_difference, Rotation::cur());
-                vec![(
-                    upper_limb_difference_is_zero * lower_limb_difference,
-                    meta.query_fixed(u16_range, Rotation::cur()),
-                )]
+                upper_limb_difference_is_zero * lower_limb_difference
             },
         );
+
         assert!(meta.degree() <= 16);
         meta.create_gate("lower_limb_difference is not zero", |meta| {
             let selector = meta.query_fixed(selector, Rotation::cur());
@@ -215,8 +210,8 @@ impl<F: Field> Chip<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        cur: &Rw,
-        prev: &Rw,
+        cur: &RwRow<F>,
+        prev: &RwRow<F>,
     ) -> Result<(), Error> {
         region.assign_fixed(
             || "upper_limb_difference",
@@ -323,19 +318,19 @@ impl<F: Field> Queries<F> {
     }
 }
 
-fn rw_to_be_limbs(row: &Rw) -> Vec<u16> {
-    let mut id = row.id().unwrap_or_default() as u32;
+fn rw_to_be_limbs<F: Field>(row: &RwRow<F>) -> Vec<u16> {
+    let mut id = row.id as u32;
     assert_eq!(id.to_be_bytes().len(), 4);
     // The max value of `id` is 2^23 - 1, so the 9 most significant bits should be
     // 0. We use these 9 bits to hold value of `tag` and `field_tag`.
     assert!(id < (1 << 23));
-    id += (((row.tag() as u32) << 5) + (row.field_tag().unwrap_or_default() as u32)) << 23;
+    id += (((row.tag as u32) << 5) + (row.field_tag as u32)) << 23;
 
     let mut be_bytes = vec![];
     be_bytes.extend_from_slice(&id.to_be_bytes());
-    be_bytes.extend_from_slice(&(row.address().unwrap_or_default().0));
-    be_bytes.extend_from_slice(&(row.storage_key().unwrap_or_default().to_be_bytes()));
-    be_bytes.extend_from_slice(&((row.rw_counter() as u32).to_be_bytes()));
+    be_bytes.extend_from_slice(&(row.address.0));
+    be_bytes.extend_from_slice(&(row.storage_key.to_be_bytes()));
+    be_bytes.extend_from_slice(&((row.rw_counter as u32).to_be_bytes()));
 
     be_bytes
         .iter()
@@ -354,6 +349,7 @@ fn upper_limb_difference_possible_values<F: Field>(
         partial_sum = partial_sum * (1u64 << 16).expr() + cur_limb.clone() - prev_limb.clone();
         result.push(partial_sum.clone())
     }
+    assert_eq!(result.len(), 15);
     result
 }
 

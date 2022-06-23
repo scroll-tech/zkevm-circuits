@@ -6,7 +6,7 @@ use super::{
 use crate::evm_circuit::{
     param::N_BYTES_WORD,
     table::{AccountFieldTag, RwTableTag},
-    util::{math_gadget::generate_lagrange_base_polynomial, not, or},
+    util::{math_gadget::generate_lagrange_base_polynomial, not, or, select},
 };
 use crate::util::Expr;
 use eth_types::Field;
@@ -19,6 +19,7 @@ pub struct Queries<F: Field> {
     pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub is_write: Expression<F>,
     pub tag: Expression<F>,
+    pub aux2: Expression<F>,
     pub prev_tag: Expression<F>,
     pub id: MpiQueries<F, N_LIMBS_ID>,
     pub is_id_unchanged: Expression<F>,
@@ -26,6 +27,8 @@ pub struct Queries<F: Field> {
     pub field_tag: Expression<F>,
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
     pub value: Expression<F>,
+    pub value_at_prev_rotation: Expression<F>,
+    pub value_prev: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     pub is_storage_key_unchanged: Expression<F>,
@@ -100,6 +103,52 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_general_constraints(&mut self, q: &Queries<F>) {
         self.require_in_set("tag in RwTableTag range", q.tag(), set::<F, RwTableTag>());
         self.require_boolean("is_write is boolean", q.is_write());
+
+        // Only reversible rws have `value_prev`.
+        // There is no need to constain MemoryRw and StackRw since the 'read
+        // consistency' part of the constaints are enough for them to behave
+        // correctly.
+        // For these 6 Rws whose `value_prev` need to be
+        // constrained:
+        // (1) `AccountStorage` and `Account`: they are related to storage
+        // and they should be connected to MPT cricuit later to check the
+        // `value_prev`.
+        // (2)`TxAccessListAccount` and
+        // `TxAccessListAccountStorage`:  Default values of them should be `false`
+        // indicating "not accessed yet".
+        // (3) `AccountDestructed`: Since we probably
+        // will not support this feature, it is skipped now.
+        // (4) `TxRefund`: Default values should be '0'. BTW it may be moved out of rw table in the future. See https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/395
+        // for more details.
+        self.require_equal(
+            "prev value",
+            q.value_prev.clone(),
+            (q.tag_matches(RwTableTag::TxAccessListAccount)
+                + q.tag_matches(RwTableTag::TxAccessListAccountStorage)
+                + q.tag_matches(RwTableTag::AccountDestructed)
+                + q.tag_matches(RwTableTag::TxRefund))
+                * select::expr(
+                    q.first_access(),
+                    0u64.expr(),
+                    q.value_at_prev_rotation.clone(),
+                )
+                + q.tag_matches(RwTableTag::Account)
+                    * select::expr(
+                        q.first_access(),
+                        // FIXME: this is a dummy placeholder to pass constraints
+                        // It should be aux2/committed_value.
+                        // We should fix this after the committed_value field of Rw::Account in
+                        // both bus-mapping and evm-circuits are implemented.
+                        q.value_prev.clone(),
+                        q.value_at_prev_rotation.clone(),
+                    )
+                + q.tag_matches(RwTableTag::AccountStorage)
+                    * select::expr(
+                        q.first_access(),
+                        q.aux2.clone(), // committed value
+                        q.value_at_prev_rotation.clone(),
+                    ),
+        );
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
@@ -141,6 +190,10 @@ impl<F: Field> ConstraintBuilder<F> {
                 q.address_change(),
             )
         });
+        self.require_zero(
+            "prev_value is 0 when keys changed",
+            q.first_access() * q.value_prev.clone(),
+        );
     }
 
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
@@ -156,12 +209,18 @@ impl<F: Field> ConstraintBuilder<F> {
         //     cb.require_zero("first access is a write", q.is_write());
         //     // cb.require_zero("first access rw_counter is 0",
         // q.rw_counter.value.clone()); })
+
+        // TODO: value_prev == committed_value when keys changed
     }
     fn build_tx_access_list_account_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for TxAccessListAccount", q.field_tag());
         self.require_zero(
             "storage_key is 0 for TxAccessListAccount",
             q.storage_key.encoded.clone(),
+        );
+        self.require_zero(
+            "prev_value is 0 when keys changed",
+            q.first_access() * q.value_prev.clone(),
         );
         // TODO: Missing constraints
     }
@@ -170,6 +229,10 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero(
             "field_tag is 0 for TxAccessListAccountStorage",
             q.field_tag(),
+        );
+        self.require_zero(
+            "prev_value is 0 when keys changed",
+            q.first_access() * q.value_prev.clone(),
         );
         // TODO: Missing constraints
     }
@@ -180,6 +243,10 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero(
             "storage_key is 0 for TxRefund",
             q.storage_key.encoded.clone(),
+        );
+        self.require_zero(
+            "prev_value is 0 when keys changed",
+            q.first_access() * q.value_prev.clone(),
         );
         // TODO: Missing constraints
     }
@@ -228,6 +295,10 @@ impl<F: Field> ConstraintBuilder<F> {
 
     fn require_zero(&mut self, name: &'static str, e: Expression<F>) {
         self.constraints.push((name, self.condition.clone() * e));
+    }
+
+    fn require_equal(&mut self, name: &'static str, a: Expression<F>, b: Expression<F>) {
+        self.require_zero(name, a - b);
     }
 
     fn require_boolean(&mut self, name: &'static str, e: Expression<F>) {
@@ -297,8 +368,18 @@ impl<F: Field> Queries<F> {
             RwTableTag::iter().map(|x| x as usize),
         )
     }
+    fn multi_tag_match(&self, target_tags: Vec<RwTableTag>) -> Expression<F> {
+        let mut numerator = 1u64.expr();
+        for unmatched_tag in RwTableTag::iter() {
+            if !target_tags.contains(&unmatched_tag) {
+                numerator = numerator * (self.tag.expr() - unmatched_tag.expr());
+            }
+        }
+        numerator
+    }
 
     fn first_access(&self) -> Expression<F> {
+        // upper diff changed OR storage key changed
         or::expr(&[
             not::expr(
                 self.lexicographic_ordering_upper_limb_difference_is_zero

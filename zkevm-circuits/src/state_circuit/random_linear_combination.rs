@@ -7,6 +7,8 @@ use halo2_proofs::{
 };
 use std::marker::PhantomData;
 
+use super::lookups;
+
 #[derive(Clone, Debug, Copy)]
 pub struct Config<const N: usize> {
     pub encoded: Column<Advice>,
@@ -70,20 +72,18 @@ impl<F: Field, const N: usize> Chip<F, N> {
         }
     }
 
-    pub fn configure(
+    pub fn configure<const QUICK_CHECK: bool>(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
-        u8_lookup: Column<Fixed>,
+        encoded: Column<Advice>,
+        lookup: lookups::Config<QUICK_CHECK>,
         power_of_randomness: [Column<Instance>; 31],
     ) -> Config<N> {
-        let encoded = meta.advice_column();
         let bytes = [0; N].map(|_| meta.advice_column());
 
         for &byte in &bytes {
-            meta.lookup_any("rlc bytes fit into u8", |meta| {
-                let byte = meta.query_advice(byte, Rotation::cur());
-                let u8_lookup = meta.query_fixed(u8_lookup, Rotation::cur());
-                vec![(byte, u8_lookup)]
+            lookup.range_check_u8(meta, "rlc bytes fit into u8", |meta| {
+                meta.query_advice(byte, Rotation::cur())
             });
         }
 

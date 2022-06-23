@@ -1,4 +1,5 @@
 use crate::{evm_circuit::step::ExecutionState, impl_expr};
+use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, Expression, Fixed, VirtualCells},
@@ -252,6 +253,43 @@ pub(crate) enum Table {
 }
 
 #[derive(Clone, Debug)]
+pub struct RwValues<F> {
+    pub id: Expression<F>,
+    pub address: Expression<F>,
+    pub field_tag: Expression<F>,
+    pub storage_key: Expression<F>,
+    pub value: Expression<F>,
+    pub value_prev: Expression<F>,
+    pub aux1: Expression<F>,
+    pub aux2: Expression<F>,
+}
+
+impl<F: Field> RwValues<F> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        id: Expression<F>,
+        address: Expression<F>,
+        field_tag: Expression<F>,
+        storage_key: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        aux1: Expression<F>,
+        aux2: Expression<F>,
+    ) -> Self {
+        Self {
+            id,
+            address,
+            field_tag,
+            storage_key,
+            value,
+            value_prev,
+            aux1,
+            aux2,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum Lookup<F> {
     /// Lookup to fixed table, which contains serveral pre-built tables such as
     /// range tables or bitwise tables.
@@ -285,7 +323,7 @@ pub(crate) enum Lookup<F> {
         /// all tags.
         tag: Expression<F>,
         /// Values corresponding to the tag.
-        values: [Expression<F>; 8],
+        values: RwValues<F>,
     },
     /// Lookup to bytecode table, which contains all used creation code and
     /// contract code.
@@ -322,7 +360,7 @@ pub(crate) enum Lookup<F> {
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
 
-impl<F: FieldExt> Lookup<F> {
+impl<F: Field> Lookup<F> {
     pub(crate) fn conditional(self, condition: Expression<F>) -> Self {
         Self::Conditional(condition, self.into())
     }
@@ -353,11 +391,21 @@ impl<F: FieldExt> Lookup<F> {
                 is_write,
                 tag,
                 values,
-            } => [
-                vec![counter.clone(), is_write.clone(), tag.clone()],
-                values.to_vec(),
-            ]
-            .concat(),
+            } => {
+                vec![
+                    counter.clone(),
+                    is_write.clone(),
+                    tag.clone(),
+                    values.id.clone(),
+                    values.address.clone(),
+                    values.field_tag.clone(),
+                    values.storage_key.clone(),
+                    values.value.clone(),
+                    values.value_prev.clone(),
+                    values.aux1.clone(),
+                    values.aux2.clone(),
+                ]
+            }
             Self::Bytecode {
                 hash,
                 tag,
