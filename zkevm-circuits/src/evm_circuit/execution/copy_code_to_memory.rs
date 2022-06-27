@@ -247,3 +247,228 @@ impl<F: Field> ExecutionGadget<F> for CopyCodeToMemoryGadget<F> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test {
+    use super::MAX_COPY_BYTES;
+    use std::collections::HashMap;
+
+    use crate::util::DEFAULT_RAND;
+    use bus_mapping::{
+        circuit_input_builder::{CopyDetails, StepAuxiliaryData},
+        evm::OpcodeId,
+    };
+    use eth_types::{bytecode, Word};
+    use halo2_proofs::arithmetic::FieldExt;
+    use halo2_proofs::pairing::bn256::Fr;
+
+    use crate::evm_circuit::{
+        step::ExecutionState,
+        table::RwTableTag,
+        test::run_test_circuit_incomplete_fixed_table,
+        witness::{Block, Bytecode, Call, CodeSource, ExecStep, Rw, RwMap, Transaction},
+    };
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn make_copy_code_step(
+        call_id: usize,
+        src_addr: u64,
+        dst_addr: u64,
+        src_addr_end: u64,
+        bytes_left: usize,
+        program_counter: u64,
+        stack_pointer: usize,
+        memory_size: u64,
+        rw_counter: usize,
+        rws: &mut RwMap,
+        bytes_map: &HashMap<u64, u8>,
+        code: &Bytecode,
+    ) -> (ExecStep, usize) {
+        let mut rw_offset = 0usize;
+        let memory_rws: &mut Vec<_> = rws.0.entry(RwTableTag::Memory).or_insert_with(Vec::new);
+        let rw_idx_start = memory_rws.len();
+
+        for idx in 0..std::cmp::min(bytes_left, MAX_COPY_BYTES) {
+            let addr = src_addr + idx as u64;
+            let byte = if addr < src_addr_end {
+                assert!(bytes_map.contains_key(&addr));
+                bytes_map[&addr]
+            } else {
+                0
+            };
+            memory_rws.push(Rw::Memory {
+                rw_counter: rw_counter + rw_offset,
+                is_write: true,
+                call_id,
+                memory_address: dst_addr + idx as u64,
+                byte,
+            });
+            rw_offset += 1;
+        }
+
+        let rw_idx_end = rws.0[&RwTableTag::Memory].len();
+        let aux_data = StepAuxiliaryData::new(
+            src_addr,
+            dst_addr,
+            bytes_left as u64,
+            src_addr_end,
+            CopyDetails::Code(code.hash),
+        );
+        let step = ExecStep {
+            execution_state: ExecutionState::CopyCodeToMemory,
+            rw_indices: (rw_idx_start..rw_idx_end)
+                .map(|idx| (RwTableTag::Memory, idx))
+                .collect(),
+            rw_counter,
+            program_counter,
+            stack_pointer,
+            memory_size,
+            gas_cost: 0,
+            aux_data: Some(aux_data),
+            ..Default::default()
+        };
+
+        (step, rw_offset)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn make_copy_code_steps(
+        call_id: usize,
+        code: &Bytecode,
+        src_addr: u64,
+        dst_addr: u64,
+        length: usize,
+        program_counter: u64,
+        stack_pointer: usize,
+        memory_size: u64,
+        rw_counter: &mut usize,
+        rws: &mut RwMap,
+        steps: &mut Vec<ExecStep>,
+    ) {
+        let bytes_map = (0..(code.bytes.len() as u64))
+            .zip(code.bytes.iter().copied())
+            .collect();
+
+        let mut copied = 0;
+        while copied < length {
+            let (step, rw_offset) = make_copy_code_step(
+                call_id,
+                src_addr + copied as u64,
+                dst_addr + copied as u64,
+                code.bytes.len() as u64,
+                length - copied,
+                program_counter,
+                stack_pointer,
+                memory_size,
+                *rw_counter,
+                rws,
+                &bytes_map,
+                code,
+            );
+            steps.push(step);
+            *rw_counter += rw_offset;
+            copied += MAX_COPY_BYTES;
+        }
+    }
+
+    fn test_ok(src_addr: u64, dst_addr: u64, length: usize) {
+        let randomness = Fr::from_u128(DEFAULT_RAND);
+        let call_id = 1;
+        let mut rws = RwMap::default();
+        let mut rw_counter = 1;
+        let mut steps = Vec::new();
+        let memory_size = (dst_addr + length as u64 + 31) / 32 * 32;
+
+        // generate random bytecode longer than `src_addr_end`
+        let code = bytecode! {
+            PUSH32(Word::from(0x123))
+            POP
+            PUSH32(Word::from(0x213))
+            POP
+            PUSH32(Word::from(0x321))
+            POP
+            PUSH32(Word::from(0x12349AB))
+            POP
+            PUSH32(Word::from(0x1928835))
+            POP
+        };
+
+        let code = Bytecode::new(code.to_vec());
+        let dummy_code = Bytecode::new(vec![OpcodeId::STOP.as_u8()]);
+
+        let program_counter = 0;
+        let stack_pointer = 1024;
+        make_copy_code_steps(
+            call_id,
+            &code,
+            src_addr,
+            dst_addr,
+            length,
+            program_counter,
+            stack_pointer,
+            memory_size,
+            &mut rw_counter,
+            &mut rws,
+            &mut steps,
+        );
+
+        steps.push(ExecStep {
+            execution_state: ExecutionState::STOP,
+            rw_counter,
+            program_counter,
+            stack_pointer,
+            memory_size,
+            opcode: Some(OpcodeId::STOP),
+            ..Default::default()
+        });
+
+        let block = Block {
+            randomness,
+            txs: vec![Transaction {
+                id: 1,
+                calls: vec![Call {
+                    id: call_id,
+                    is_root: true,
+                    is_create: false,
+                    code_source: CodeSource::Account(dummy_code.hash),
+                    ..Default::default()
+                }],
+                steps,
+                ..Default::default()
+            }],
+            rws,
+            bytecodes: vec![dummy_code, code],
+            ..Default::default()
+        };
+        assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
+    }
+
+    #[test]
+    fn copy_code_to_memory_single_step() {
+        test_ok(
+            0x00, // src_addr
+            0x00, // dst_addr
+            54,   // length
+        );
+    }
+
+    #[test]
+    fn copy_code_to_memory_multi_step() {
+        test_ok(
+            0x00, // src_addr
+            0x40, // dst_addr
+            123,  // length
+        );
+    }
+
+    #[test]
+    fn copy_code_to_memory_oob() {
+        // since the bytecode we construct above is (34 * 5) = 170 bytes long, copying
+        // 200 bytes means we go out-of-bounds.
+        test_ok(
+            0x10, // src_addr
+            0x20, // dst_addr
+            200,  // length
+        );
+    }
+}
