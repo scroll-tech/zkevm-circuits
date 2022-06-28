@@ -134,7 +134,6 @@ impl RwTable {
         randomness: F,
         row: &RwRow<F>,
     ) -> Result<(), Error> {
-        println!("rw_table assign_row :");
         for (column, value) in [
             (self.rw_counter, F::from(row.rw_counter)),
             (self.is_write, F::from(row.is_write)),

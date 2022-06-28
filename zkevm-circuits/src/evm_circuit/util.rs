@@ -139,7 +139,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
 
 #[derive(Debug, Clone)]
 pub struct StoredExpression<F> {
-    name: String,
+    pub(crate) name: String,
     cell: Cell<F>,
     cell_type: CellType,
     expr: Expression<F>,

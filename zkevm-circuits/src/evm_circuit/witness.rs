@@ -608,6 +608,31 @@ impl<F: Field> RwRow<F> {
             .fold(F::zero(), |acc, value| acc * randomness_next_phase + value)
     }
 }
+/*
+impl<F: FieldExt> RwRow<F> {
+    pub fn values(&self) -> [F; 11] {
+        [
+            self.rw_counter,
+            self.is_write,
+            self.tag,
+            self.key1,
+            self.key2,
+            self.key3,
+            self.key4,
+            self.value,
+            self.value_prev,
+            self.aux1,
+            self.aux2,
+        ]
+    }
+    pub fn rlc(&self, randomness: F) -> F {
+        self.values()
+            .iter()
+            .rev()
+            .fold(F::zero(), |acc, value| acc * randomness + value)
+    }
+}
+*/
 impl Rw {
     pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
@@ -1274,6 +1299,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
+                    OpcodeId::INVALID(_) => ExecutionState::ErrorInvalidOpcode,
                     _ => {
                         log::warn!("unimplemented opcode {:?}", op);
                         ExecutionState::DUMMY
