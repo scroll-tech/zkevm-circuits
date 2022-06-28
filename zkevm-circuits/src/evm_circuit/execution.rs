@@ -13,6 +13,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::Field;
+
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
@@ -194,6 +195,7 @@ pub(crate) struct ExecutionConfig<F> {
     block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
     // error gadgets
     error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
+    invalid_opcode_gadget: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidOpcode }>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -398,7 +400,7 @@ impl<F: Field> ExecutionConfig<F> {
             block_ctx_u256_gadget: configure_gadget!(),
             // error gadgets
             error_oog_static_memory_gadget: configure_gadget!(),
-
+            invalid_opcode_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -651,12 +653,15 @@ impl<F: Field> ExecutionConfig<F> {
                 let mut steps = block
                     .txs
                     .iter()
-                    .flat_map(|tx| tx.steps.iter().map(move |step| (tx, step)))
+                    .flat_map(|tx| {
+                        tx.steps
+                            .iter()
+                            .map(move |step| (tx, &tx.calls[step.call_index], step))
+                    })
                     .peekable();
 
                 let mut last_height = 0;
-                while let Some((transaction, step)) = steps.next() {
-                    let call = &transaction.calls[step.call_index];
+                while let Some((transaction, call, step)) = steps.next() {
                     let height = self.get_step_height(step.execution_state);
                     // Assign the step witness
                     self.assign_exec_step(
@@ -774,7 +779,7 @@ impl<F: Field> ExecutionConfig<F> {
         call: &Call,
         step: &ExecStep,
         height: usize,
-        next: Option<&(&Transaction, &ExecStep)>,
+        next: Option<&(&Transaction, &Call, &ExecStep)>,
         power_of_randomness: [F; 31],
     ) -> Result<(), Error> {
         // Make the region large enough for the current step and the next step.
@@ -793,13 +798,13 @@ impl<F: Field> ExecutionConfig<F> {
         // These may be used in stored expressions and
         // so their witness values need to be known to be able
         // to correctly calculate the intermediate value.
-        if let Some((transaction_next, step_next)) = next {
+        if let Some((transaction_next, call_next, step_next)) = next {
             self.assign_exec_step_int(
                 region,
                 offset + height,
                 block,
                 transaction_next,
-                call,
+                call_next,
                 step_next,
             )?;
         }
@@ -816,7 +821,12 @@ impl<F: Field> ExecutionConfig<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        log::trace!("assign_exec_step offset:{} step:{:?}", offset, step);
+        log::trace!(
+            "assign_exec_step offset: {} step: {:?} call: {:?}",
+            offset,
+            step,
+            call
+        );
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
 
@@ -880,6 +890,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasStaticMemoryExpansion => {
                 assign_exec_step!(self.error_oog_static_memory_gadget)
             }
+            ExecutionState::ErrorInvalidOpcode => {
+                assign_exec_step!(self.dummy_gadget)
+            }
             ExecutionState::DUMMY => {
                 assign_exec_step!(self.dummy_gadget)
             }
@@ -887,12 +900,43 @@ impl<F: Field> ExecutionConfig<F> {
         }
 
         // Fill in the witness values for stored expressions
+
+        let mut assigned_rw_values = Vec::new();
         for stored_expression in self
             .stored_expressions_map
             .get(&step.execution_state)
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
-            stored_expression.assign(region, offset)?;
+            let assigned = stored_expression.assign(region, offset)?;
+            if let Some(v) = assigned.value() {
+                let name = stored_expression.name.clone();
+                if name.starts_with("rw lookup ")
+                    && !name.contains(" with reversion")
+                    && !v.is_zero_vartime()
+                {
+                    assigned_rw_values.push((name, *v));
+                }
+            }
+        }
+        let rw_table_values: Vec<_> = step
+            .rw_indices
+            .iter()
+            .map(|rw_idx| {
+                let rlc = block.rws[*rw_idx]
+                    .table_assignment(block.randomness)
+                    .rlc(block.randomness);
+                (rw_idx, rlc)
+            })
+            .filter(|(_, v)| !v.is_zero_vartime())
+            .collect();
+
+        for idx in 0..assigned_rw_values.len() {
+            let (rw_idx, rlc) = rw_table_values[idx];
+            debug_assert_eq!(
+                rlc, assigned_rw_values[idx].1,
+                "incorrect rw witness {} at {:?}({}th rw), step: {:#?}",
+                assigned_rw_values[idx].0, rw_idx, idx, step
+            )
         }
 
         Ok(())

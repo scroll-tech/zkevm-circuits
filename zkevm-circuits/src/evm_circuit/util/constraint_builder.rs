@@ -625,6 +625,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         tag: RwTableTag,
         values: [Expression<F>; 8],
     ) {
+        let name = Box::leak(format!("rw lookup {}", name).into_boxed_str());
         self.add_lookup(
             name,
             Lookup::Rw {
@@ -686,7 +687,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             self.condition(1.expr() - reversion_info.is_persistent(), |cb| {
                 // Swap value and value_prev
                 values.swap(4, 5);
-
+                let name = Box::leak(format!("{} with reversion", name).into_boxed_str());
                 cb.rw_lookup_with_counter(
                     name,
                     reversion_info.rw_counter_of_reversion(),
@@ -829,7 +830,7 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         self.reversible_write(
-            "Account write with reversion",
+            "Account write",
             RwTableTag::Account,
             [
                 0.expr(),
