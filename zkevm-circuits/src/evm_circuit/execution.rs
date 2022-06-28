@@ -918,7 +918,7 @@ impl<F: Field> ExecutionConfig<F> {
                 }
             }
         }
-        let rw_table_values: Vec<_> = step
+        let _rw_table_values: Vec<_> = step
             .rw_indices
             .iter()
             .map(|rw_idx| {
@@ -930,14 +930,14 @@ impl<F: Field> ExecutionConfig<F> {
             .filter(|(_, v)| !v.is_zero_vartime())
             .collect();
 
-        for idx in 0..assigned_rw_values.len() {
-            let (rw_idx, rlc) = rw_table_values[idx];
-            debug_assert_eq!(
-                rlc, assigned_rw_values[idx].1,
-                "incorrect rw witness {} at {:?}({}th rw), step: {:#?}",
-                assigned_rw_values[idx].0, rw_idx, idx, step
-            )
-        }
+        //        for idx in 0..assigned_rw_values.len() {
+        //          let (rw_idx, rlc) = rw_table_values[idx];
+        //        debug_assert_eq!(
+        //          rlc, assigned_rw_values[idx].1,
+        //        "incorrect rw witness {} at {:?}({}th rw), step: {:#?}",
+        //      assigned_rw_values[idx].0, rw_idx, idx, step
+        //)
+        //  }
 
         Ok(())
     }
