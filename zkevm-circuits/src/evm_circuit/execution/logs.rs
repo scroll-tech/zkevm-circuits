@@ -511,6 +511,7 @@ mod test {
         assert_eq!(run_test_circuit_incomplete_fixed_table(block), Ok(()));
     }
 
+    #[ignore]
     #[test]
     fn log_gadget_simple() {
         // is_persistent = true cases
@@ -577,6 +578,7 @@ mod test {
         );
     }
 
+    #[ignore]
     #[test]
     fn log_gadget_multi_step() {
         // is_persistent = true cases
