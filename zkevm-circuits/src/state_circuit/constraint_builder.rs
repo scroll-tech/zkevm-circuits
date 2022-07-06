@@ -142,7 +142,7 @@ impl<F: Field> ConstraintBuilder<F> {
                         // We should fix this after the committed_value field of Rw::Account in
                         // both bus-mapping and evm-circuits are implemented.
                         q.value_prev.clone(),
-                        q.value_at_prev_rotation.clone(),
+                        q.value_prev.clone(),
                     )
                 + q.tag_matches(RwTableTag::AccountStorage)
                     * select::expr(
