@@ -1041,25 +1041,34 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
 
     // Tx Receipt
 
-    pub(crate) fn tx_receipt(
+    pub(crate) fn tx_receipt_read(
         &mut self,
         tx_id: Expression<F>,
-        field_tag: TxReceiptFieldTag,
-    ) -> Cell<F> {
-        let cell = self.query_cell();
-        self.tx_receipt_lookup(tx_id, field_tag, cell.expr());
-        cell
+        tag: TxReceiptFieldTag,
+        value: Expression<F>,
+    ) {
+        self.tx_receipt_lookup(0.expr(), tx_id, tag, value);
     }
 
-    pub(crate) fn tx_receipt_lookup(
+    pub(crate) fn tx_receipt_write(
         &mut self,
+        tx_id: Expression<F>,
+        tag: TxReceiptFieldTag,
+        value: Expression<F>,
+    ) {
+        self.tx_receipt_lookup(1.expr(), tx_id, tag, value);
+    }
+
+    fn tx_receipt_lookup(
+        &mut self,
+        is_write: Expression<F>,
         tx_id: Expression<F>,
         tag: TxReceiptFieldTag,
         value: Expression<F>,
     ) {
         self.rw_lookup(
             "tx receipt lookup",
-            0.expr(),
+            is_write,
             RwTableTag::TxReceipt,
             [
                 tx_id,

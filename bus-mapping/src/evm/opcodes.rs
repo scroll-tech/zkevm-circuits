@@ -438,7 +438,7 @@ pub fn gen_end_tx_ops(
     )?;
 
     // handle tx receipt tag
-    state.tx_receipt_read(
+    state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
         TxReceiptField::PostStateOrStatus,
@@ -446,7 +446,7 @@ pub fn gen_end_tx_ops(
     )?;
 
     let log_id = exec_step.log_id;
-    state.tx_receipt_read(
+    state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
         TxReceiptField::LogLength,
@@ -466,7 +466,7 @@ pub fn gen_end_tx_ops(
         )?;
     }
 
-    state.tx_receipt_read(
+    state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
         TxReceiptField::CumulativeGasUsed,

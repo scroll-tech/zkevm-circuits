@@ -242,10 +242,7 @@ impl<F: Field, const N_ROWS: usize> Circuit<F> for StateCircuit<F, N_ROWS> {
                         if is_first_access {
                             // TODO: Set initial values for Rw::CallContext and Rw::TxReceipt to be
                             // 0 instead of special casing them.
-                            initial_value = if matches!(
-                                row.tag(),
-                                RwTableTag::CallContext | RwTableTag::TxReceipt
-                            ) {
+                            initial_value = if matches!(row.tag(), RwTableTag::CallContext) {
                                 row.value_assignment(self.randomness)
                             } else {
                                 row.value_prev_assignment(self.randomness)
