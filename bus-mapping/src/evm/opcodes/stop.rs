@@ -25,7 +25,7 @@ impl Opcode for Stop {
 
         let call = state.call()?.clone();
 
-        state.call_context_read(
+        state.call_context_write(
             &mut exec_step,
             call.call_id,
             CallContextField::IsSuccess,

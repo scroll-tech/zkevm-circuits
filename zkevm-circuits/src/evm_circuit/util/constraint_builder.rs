@@ -912,6 +912,16 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
         cell
     }
 
+    fn call_context_write(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+    ) -> Cell<F> {
+        let cell = self.query_cell();
+        self.call_context_lookup(true.expr(), call_id, field_tag, cell.expr());
+        cell
+    }
+
     pub(crate) fn call_context_lookup(
         &mut self,
         is_write: Expression<F>,
@@ -942,6 +952,26 @@ impl<'a, F: FieldExt> ConstraintBuilder<'a, F> {
             CallContextFieldTag::IsPersistent,
         ]
         .map(|field_tag| self.call_context(call_id.clone(), field_tag));
+        ReversionInfo {
+            rw_counter_end_of_reversion,
+            is_persistent,
+            reversible_write_counter: if call_id.is_some() {
+                0.expr()
+            } else {
+                self.curr.state.reversible_write_counter.expr()
+            },
+        }
+    }
+
+    pub(crate) fn reversion_info_write(
+        &mut self,
+        call_id: Option<Expression<F>>,
+    ) -> ReversionInfo<F> {
+        let [rw_counter_end_of_reversion, is_persistent] = [
+            CallContextFieldTag::RwCounterEndOfReversion,
+            CallContextFieldTag::IsPersistent,
+        ]
+        .map(|field_tag| self.call_context_write(call_id.clone(), field_tag));
         ReversionInfo {
             rw_counter_end_of_reversion,
             is_persistent,

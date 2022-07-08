@@ -53,7 +53,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         );
 
         // Call ends with STOP must be successful
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 1.expr());
+        cb.call_context_lookup(true.expr(), None, CallContextFieldTag::IsSuccess, 1.expr());
 
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(

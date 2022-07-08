@@ -48,8 +48,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.curr.state.rw_counter.clone();
 
-        let tx_id = cb.call_context(Some(call_id.expr()), CallContextFieldTag::TxId);
-        let mut reversion_info = cb.reversion_info(None);
+        let tx_id = cb.query_cell();
+        cb.call_context_lookup(
+            true.expr(),
+            Some(call_id.expr()),
+            CallContextFieldTag::TxId,
+            tx_id.expr(),
+        );
+        let mut reversion_info = cb.reversion_info_write(None);
 
         let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =
             [
@@ -156,11 +162,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             (CallContextFieldTag::IsCreate, 0.expr()),
             (CallContextFieldTag::CodeHash, code_hash.expr()),
         ] {
-            cb.call_context_lookup(false.expr(), Some(call_id.expr()), field_tag, value);
+            cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
         }
 
         cb.require_step_state_transition(StepStateTransition {
-            // 19 read/write including:
+            // 19 read/write including: // there are 3 missing here.
             //   - Read CallContext TxId
             //   - Read CallContext RwCounterEndOfReversion
             //   - Read CallContext IsPersistent
@@ -179,7 +185,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             //   - Read CallContext IsStatic
             //   - Read CallContext LastCalleeId
             //   - Read CallContext LastCalleeReturnDataOffset
-            //   - Read CallContext LastCalleeReturnDataLength
+            //   - Read CallContext IsRoot
+            //   - Read CallContext IsCreate
+            //   - Read CallContext CodeHash
             rw_counter: Delta(22.expr()),
             call_id: To(call_id.expr()),
             is_root: To(true.expr()),

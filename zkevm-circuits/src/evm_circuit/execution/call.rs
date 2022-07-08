@@ -134,7 +134,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         );
 
         // Propagate rw_counter_end_of_reversion and is_persistent
-        let mut callee_reversion_info = cb.reversion_info(Some(callee_call_id.expr()));
+        let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
         cb.require_equal(
             "callee_is_persistent == is_persistent ⋅ is_success",
             callee_reversion_info.is_persistent(),
@@ -283,7 +283,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 (CallContextFieldTag::IsCreate, 0.expr()),
                 (CallContextFieldTag::CodeHash, callee_code_hash.expr()),
             ] {
-                cb.call_context_lookup(false.expr(), Some(callee_call_id.expr()), field_tag, value);
+                cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
             }
 
             // Give gas stipend if value is not zero

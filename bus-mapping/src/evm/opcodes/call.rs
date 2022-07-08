@@ -90,7 +90,7 @@ impl Opcode for Call {
                 (call.is_persistent as u64).into(),
             ),
         ] {
-            state.call_context_read(&mut exec_step, call.call_id, field, value);
+            state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
         state.transfer(
@@ -222,7 +222,7 @@ impl Opcode for Call {
                     (CallContextField::IsCreate, 0.into()),
                     (CallContextField::CodeHash, call.code_hash.to_word()),
                 ] {
-                    state.call_context_read(&mut exec_step, call.call_id, field, value);
+                    state.call_context_write(&mut exec_step, call.call_id, field, value);
                 }
 
                 Ok(vec![exec_step])
