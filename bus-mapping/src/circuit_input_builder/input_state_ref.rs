@@ -351,6 +351,31 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    /// Push a write type [`TxReceiptOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter), and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`]. Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    pub fn tx_receipt_write(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        field: TxReceiptField,
+        value: u64,
+    ) -> Result<(), Error> {
+        self.push_op(
+            step,
+            RW::WRITE,
+            TxReceiptOp {
+                tx_id,
+                field,
+                value,
+            },
+        );
+        Ok(())
+    }
+
     /// Push a write type [`TxAccessListAccountOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter), and then
