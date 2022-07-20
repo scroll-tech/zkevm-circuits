@@ -546,6 +546,29 @@ mod test {
         }
     }
 
+    fn caller_for_insufficient_balance(stack: Stack) -> Account {
+        let terminator = OpcodeId::STOP;
+
+        let bytecode = bytecode! {
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+            PUSH32(stack.value)
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            CALL
+            .write_op(terminator)
+        };
+
+        Account {
+            address: Address::repeat_byte(0xfe),
+            balance: Word::from(10).pow(18.into()),
+            code: bytecode.to_vec().into(),
+            ..Default::default()
+        }
+    }
+
     fn callee(code: Bytecode) -> Account {
         let code = code.to_vec();
         let is_empty = code.is_empty();
@@ -647,6 +670,19 @@ mod test {
         let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
         for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
             test_ok(caller(stack, true), callee, false);
+        }
+    }
+
+    #[test]
+    fn call_with_insufficient_balance() {
+        let stacks = vec![Stack {
+            // this value is bigger than caller's balance
+            value: Word::from(11).pow(18.into()),
+            ..Default::default()
+        }];
+        let callees = vec![callee(bytecode! {}), callee(bytecode! { STOP })];
+        for (stack, callee) in stacks.into_iter().cartesian_product(callees.into_iter()) {
+            test_ok(caller_for_insufficient_balance(stack), callee, false);
         }
     }
 

@@ -1,6 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::ExecError,
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
@@ -254,9 +255,14 @@ pub fn gen_associated_ops(
             exec_error,
             geth_step.op
         );
-        exec_step.error = Some(exec_error);
-        state.handle_return(geth_step)?;
-        return Ok(vec![exec_step]);
+
+        exec_step.error = Some(exec_error.clone());
+        if exec_error == ExecError::InsufficientBalance {
+            // handle it inside call op code
+        } else {
+            state.handle_return(geth_step)?;
+            return Ok(vec![exec_step]);
+        }
     }
     // if no errors, continue as normal
     fn_gen_associated_ops(state, geth_steps)

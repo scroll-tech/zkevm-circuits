@@ -842,10 +842,13 @@ impl<'a> CircuitInputStateRef<'a> {
                     }
                     OpcodeId::REVERT => None,
                     _ => {
-                        return Err(Error::UnexpectedExecStepError(
-                            "call failure without return",
-                            step.clone(),
-                        ));
+                        // TODO: for call sucess case will enter here, comment this for now
+                        // return Err(Error::UnexpectedExecStepError(
+                        //     "call failure without return",
+                        //     step.clone(),
+                        // ));
+
+                        None
                     }
                 });
             } else {
