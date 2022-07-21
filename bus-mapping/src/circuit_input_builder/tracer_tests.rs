@@ -266,6 +266,66 @@ fn tracer_err_insufficient_balance() {
 }
 
 #[test]
+fn tracer_call_success() {
+    let code_a = bytecode! {
+    PUSH1(0x0) // retLength
+    PUSH1(0x0) // retOffset
+    PUSH1(0x0) // argsLength
+    PUSH1(0x0) // argsOffset
+    PUSH32(Word::from(0x1000)) // value
+    PUSH32(Word::from(0x000000000000000000000000000000000cafe001)) // addr
+    PUSH32(0x1_0000) // gas
+    CALL
+
+    PUSH2(0xaa)
+    };
+    let code_b = bytecode! {
+    STOP
+    //PUSH1(0x0)
+    };
+
+    // Get the execution steps from the external tracer
+    let block: GethData = TestContext::<3, 1>::new(
+        None,
+        |accs| {
+            accs[0]
+                .address(address!("0x0000000000000000000000000000000000000000"))
+                .code(code_a)
+                .balance(Word::from(10000u64));
+            accs[1]
+                .address(address!("0x000000000000000000000000000000000cafe001"))
+                .code(code_b);
+            accs[2]
+                .address(address!("0x000000000000000000000000000000000cafe002"))
+                .balance(Word::from(1u64 << 30));
+        },
+        |mut txs, accs| {
+            txs[0].to(accs[0].address).from(accs[2].address);
+        },
+        |block, _tx| block.number(0xcafeu64),
+    )
+    .unwrap()
+    .into();
+
+    // get last CALL
+    let (index, step) = block.geth_traces[0]
+        .struct_logs
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, s)| s.op == OpcodeId::CALL)
+        .unwrap();
+    let next_step = block.geth_traces[0].struct_logs.get(index + 1);
+    assert_eq!(step.error, None);
+    assert_eq!(next_step.unwrap().op, OpcodeId::STOP);
+    assert_eq!(next_step.unwrap().stack, Stack(vec![]));
+
+    let mut builder = CircuitInputBuilderTx::new(&block, step);
+    let error = builder.state_ref().get_step_err(step, next_step);
+    assert_eq!(error.unwrap(), None);
+}
+
+#[test]
 fn tracer_err_address_collision() {
     // We do CREATE2 twice with the same parameters, with a code_creater
     // that outputs the same, which will lead to the same new
