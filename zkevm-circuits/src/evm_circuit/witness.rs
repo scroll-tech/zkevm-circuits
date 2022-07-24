@@ -1301,7 +1301,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::INVALID(_) => ExecutionState::ErrorInvalidOpcode,
                     _ => {
-                        log::warn!("unimplemented opcode {:?}", op);
+                        log::debug!("unimplemented opcode {:?}", op);
                         ExecutionState::DUMMY
                     }
                 }
