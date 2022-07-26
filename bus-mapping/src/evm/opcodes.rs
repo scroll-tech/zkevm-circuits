@@ -244,7 +244,7 @@ pub fn gen_associated_ops(
     let geth_step = &geth_steps[0];
     let mut exec_step = state.new_step(geth_step)?;
     let next_step = if geth_steps.len() > 1 {
-        Some(&geth_steps[0])
+        Some(&geth_steps[1])
     } else {
         None
     };
@@ -522,6 +522,19 @@ fn dummy_gen_call_ops(
     let mut exec_step = state.new_step(geth_step)?;
     let tx_id = state.tx_ctx.id();
     let call = state.parse_call(geth_step)?;
+    let next_step = &geth_steps[1];
+    // TODO: maybe refactor to a standalone method
+    if let Some(exec_error) = state.get_step_err(geth_step, Some(next_step)).unwrap() {
+        exec_step.error = Some(exec_error.clone());
+        if !call.is_success && exec_error == ExecError::InsufficientBalance {
+            // Switch to callee's call context
+            state.push_call(call, geth_step);
+            state.handle_return(geth_step)?;
+            return Ok(vec![exec_step]);
+        } else {
+            panic!("unhandled error happened in CallCode")
+        }
+    }
 
     let (_, account) = state.sdb.get_account(&call.address);
     let callee_code_hash = account.code_hash;
@@ -565,7 +578,20 @@ fn dummy_gen_create_ops(
 
     let tx_id = state.tx_ctx.id();
     let call = state.parse_call(geth_step)?;
+    let next_step = &geth_steps[1];
 
+    // TODO: maybe refactor to a standalone method
+    if let Some(exec_error) = state.get_step_err(geth_step, Some(next_step)).unwrap() {
+        exec_step.error = Some(exec_error.clone());
+        if !call.is_success && exec_error == ExecError::InsufficientBalance {
+            // Switch to callee's call context
+            state.push_call(call, geth_step);
+            state.handle_return(geth_step)?;
+            return Ok(vec![exec_step]);
+        } else {
+            panic!("unhandled error happened in Create")
+        }
+    }
     // Increase caller's nonce
     let nonce_prev = state.sdb.get_nonce(&call.caller_address);
     state.push_op_reversible(
