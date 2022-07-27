@@ -253,8 +253,8 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_static_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSTATICCALL }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
-    error_oog_insufficient_balance:
-        DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
+    error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
+    error_invalid_jump: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidJump }>,
 
     invalid_opcode_gadget: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidOpcode }>,
 }
@@ -499,7 +499,8 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_create2: configure_gadget!(),
             error_oog_static_call: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
-            error_oog_insufficient_balance: configure_gadget!(),
+            error_insufficient_balance: configure_gadget!(),
+            error_invalid_jump: configure_gadget!(),
             invalid_opcode_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
@@ -1069,7 +1070,10 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_stack_underflow)
             }
             ExecutionState::ErrorInsufficientBalance => {
-                assign_exec_step!(self.error_oog_insufficient_balance)
+                assign_exec_step!(self.error_insufficient_balance)
+            }
+            ExecutionState::ErrorInvalidJump => {
+                assign_exec_step!(self.error_invalid_jump)
             }
 
             ExecutionState::ErrorInvalidOpcode => {
