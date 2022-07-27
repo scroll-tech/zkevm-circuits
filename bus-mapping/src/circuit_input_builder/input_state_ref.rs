@@ -943,10 +943,10 @@ impl<'a> CircuitInputStateRef<'a> {
                 }
             }
 
-            // return Err(Error::UnexpectedExecStepError(
-            //     "*CALL*/CREATE* code not executed",
-            //     step.clone(),
-            // ));
+            return Err(Error::UnexpectedExecStepError(
+                "*CALL*/CREATE* code not executed",
+                step.clone(),
+            ));
         }
 
         Ok(None)

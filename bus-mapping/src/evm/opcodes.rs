@@ -1,7 +1,6 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    error::ExecError,
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
@@ -256,13 +255,15 @@ pub fn gen_associated_ops(
             geth_step.op
         );
 
-        exec_step.error = Some(exec_error.clone());
-        if exec_error == ExecError::InsufficientBalance {
-            // handle it inside call op code
-        } else {
-            state.handle_return(geth_step)?;
-            return Ok(vec![exec_step]);
+        exec_step.error = Some(exec_error);
+        if geth_step.op.is_call_or_create() {
+            let call = state.parse_call(geth_step)?;
+            // Switch to callee's call context
+            state.push_call(call, geth_step);
         }
+
+        state.handle_return(geth_step)?;
+        return Ok(vec![exec_step]);
     }
     // if no errors, continue as normal
     fn_gen_associated_ops(state, geth_steps)
@@ -522,19 +523,6 @@ fn dummy_gen_call_ops(
     let mut exec_step = state.new_step(geth_step)?;
     let tx_id = state.tx_ctx.id();
     let call = state.parse_call(geth_step)?;
-    let next_step = &geth_steps[1];
-    // TODO: maybe refactor to a standalone method
-    if let Some(exec_error) = state.get_step_err(geth_step, Some(next_step)).unwrap() {
-        exec_step.error = Some(exec_error.clone());
-        if !call.is_success && exec_error == ExecError::InsufficientBalance {
-            // Switch to callee's call context
-            state.push_call(call, geth_step);
-            state.handle_return(geth_step)?;
-            return Ok(vec![exec_step]);
-        } else {
-            panic!("unhandled error happened in CallCode")
-        }
-    }
 
     let (_, account) = state.sdb.get_account(&call.address);
     let callee_code_hash = account.code_hash;
@@ -578,20 +566,6 @@ fn dummy_gen_create_ops(
 
     let tx_id = state.tx_ctx.id();
     let call = state.parse_call(geth_step)?;
-    let next_step = &geth_steps[1];
-
-    // TODO: maybe refactor to a standalone method
-    if let Some(exec_error) = state.get_step_err(geth_step, Some(next_step)).unwrap() {
-        exec_step.error = Some(exec_error.clone());
-        if !call.is_success && exec_error == ExecError::InsufficientBalance {
-            // Switch to callee's call context
-            state.push_call(call, geth_step);
-            state.handle_return(geth_step)?;
-            return Ok(vec![exec_step]);
-        } else {
-            panic!("unhandled error happened in Create")
-        }
-    }
     // Increase caller's nonce
     let nonce_prev = state.sdb.get_nonce(&call.caller_address);
     state.push_op_reversible(
