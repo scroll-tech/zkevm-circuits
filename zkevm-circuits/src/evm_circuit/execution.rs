@@ -253,8 +253,16 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_static_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSTATICCALL }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
+    error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
     error_invalid_jump: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidJump }>,
+    error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
+    error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
+    error_contract_address_collision:
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
+    error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
+    error_return_data_out_of_bound:
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
 
     invalid_opcode_gadget: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidOpcode }>,
 }
@@ -499,8 +507,15 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_create2: configure_gadget!(),
             error_oog_static_call: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
+            error_oog_code_store: configure_gadget!(),
             error_insufficient_balance: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
+            error_write_protection: configure_gadget!(),
+            error_depth: configure_gadget!(),
+            error_contract_address_collision: configure_gadget!(),
+            error_invalid_creation_code: configure_gadget!(),
+            error_return_data_out_of_bound: configure_gadget!(),
+
             invalid_opcode_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
@@ -1063,6 +1078,9 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_oog_self_destruct)
             }
 
+            ExecutionState::ErrorOutOfGasCodeStore => {
+                assign_exec_step!(self.error_oog_code_store)
+            }
             ExecutionState::ErrorStackOverflow => {
                 assign_exec_step!(self.error_stack_overflow)
             }
@@ -1074,6 +1092,21 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorInvalidJump => {
                 assign_exec_step!(self.error_invalid_jump)
+            }
+            ExecutionState::ErrorWriteProtection => {
+                assign_exec_step!(self.error_write_protection)
+            }
+            ExecutionState::ErrorDepth => {
+                assign_exec_step!(self.error_depth)
+            }
+            ExecutionState::ErrorContractAddressCollision => {
+                assign_exec_step!(self.error_contract_address_collision)
+            }
+            ExecutionState::ErrorInvalidCreationCode => {
+                assign_exec_step!(self.error_invalid_creation_code)
+            }
+            ExecutionState::ErrorReturnDataOutOfBound => {
+                assign_exec_step!(self.error_return_data_out_of_bound)
             }
 
             ExecutionState::ErrorInvalidOpcode => {
