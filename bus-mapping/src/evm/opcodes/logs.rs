@@ -29,10 +29,12 @@ impl Opcode for Log {
         let offset = geth_step.stack.nth_last(0)?.as_usize();
         let length = geth_step.stack.nth_last(1)?.as_usize();
 
-        state
-            .call_ctx_mut()?
-            .memory
-            .extend_at_least(offset + length);
+        if length != 0 {
+            state
+                .call_ctx_mut()?
+                .memory
+                .extend_at_least(offset + length);
+        }
 
         Ok(exec_steps)
     }
