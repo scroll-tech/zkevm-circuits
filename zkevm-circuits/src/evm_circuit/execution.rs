@@ -787,7 +787,7 @@ impl<F: Field> ExecutionConfig<F> {
                             };
                             current_cumulative_gas_used + gas_used
                         };
-                        log::debug!(
+                        log::info!(
                             "offset {} tx_num {} total_gas {} assign last step {:?} of tx {:?}",
                             offset,
                             tx.id,
@@ -1114,7 +1114,14 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::DUMMY => {
                 assign_exec_step!(self.dummy_gadget)
             }
-            _ => unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
+            _ => {
+                log::error!(
+                    "unimplemented ExecutionState: {:?} {:?}",
+                    step.execution_state,
+                    step
+                );
+                assign_exec_step!(self.dummy_gadget)
+            }
         };
 
         // Fill in the witness values for stored expressions
