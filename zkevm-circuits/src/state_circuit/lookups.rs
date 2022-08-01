@@ -126,7 +126,6 @@ impl<F: Field, const QUICK_CHECK: bool> Chip<F, QUICK_CHECK> {
                 },
             )?;
         }
-
         layouter.assign_region(
             || "assign call_context_field_tags fixed column",
             |mut region| {

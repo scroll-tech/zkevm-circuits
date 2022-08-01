@@ -222,6 +222,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::DELEGATECALL => Call::<6>::gen_associated_ops,
         OpcodeId::STATICCALL => Call::<6>::gen_associated_ops,
         OpcodeId::RETURN => Return::gen_associated_ops,
+        // REVERT is almost the same as RETURN
         OpcodeId::REVERT => Return::gen_associated_ops,
         OpcodeId::INVALID(_) => Stop::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
@@ -567,7 +568,6 @@ fn dummy_gen_selfdestruct_ops(
 ) -> Result<Vec<ExecStep>, Error> {
     let geth_step = &geth_steps[0];
     let mut exec_step = state.new_step(geth_step)?;
-
     let sender = state.call()?.address;
     let receiver = geth_step.stack.last()?.to_address();
 

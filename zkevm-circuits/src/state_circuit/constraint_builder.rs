@@ -251,10 +251,6 @@ impl<F: Field> ConstraintBuilder<F> {
         });
 
         self.require_zero("initial Stack value is 0", q.initial_value.clone());
-        //self.require_zero(
-        //   "prev_value is 0 when keys changed",
-        //    q.first_access() * q.value_prev.clone(),
-        //);
     }
 
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
@@ -297,10 +293,6 @@ impl<F: Field> ConstraintBuilder<F> {
             q.storage_key.encoded.clone(),
         );
         self.require_zero("initial TxRefund value is 0", q.initial_value());
-        //self.require_zero(
-        //    "prev_value is 0 when keys changed",
-        //    q.first_access() * q.value_prev.clone(),
-        //);
     }
 
     fn build_account_constraints(&mut self, q: &Queries<F>) {

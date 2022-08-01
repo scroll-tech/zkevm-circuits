@@ -21,22 +21,23 @@ pub mod bytecode;
 pub mod evm_types;
 pub mod geth_types;
 
-use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
-use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
 pub use bytecode::Bytecode;
 pub use error::Error;
-pub use ethers_core::abi::ethereum_types::U512;
-use ethers_core::types;
-pub use ethers_core::types::{
-    transaction::{eip2930::AccessList, response::Transaction},
-    Address, Block, Bytes, H160, H256, U256, U64,
-};
 use halo2_proofs::{
     arithmetic::{Field as Halo2Field, FieldExt},
     pairing::{
         bn256::{Fq, Fr},
         group::ff::PrimeField,
     },
+};
+
+use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
+use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
+pub use ethers_core::abi::ethereum_types::U512;
+use ethers_core::types;
+pub use ethers_core::types::{
+    transaction::{eip2930::AccessList, response::Transaction},
+    Address, Block, Bytes, H160, H256, U256, U64,
 };
 
 use serde::{de, Deserialize, Serialize};

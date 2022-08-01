@@ -6,8 +6,9 @@ authors = ["The appliedzkp team"]
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0607" }
+array-init = "2.0.0"
 ff = "0.11"
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0607" }
 sha3 = "0.7.2"
 eth-types = { path = "../eth-types" }
 digest = "0.7.6"

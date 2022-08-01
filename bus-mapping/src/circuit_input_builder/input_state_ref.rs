@@ -528,6 +528,7 @@ impl<'a> CircuitInputStateRef<'a> {
             }
             CallKind::Create | CallKind::Create2 => Vec::new(),
         };
+
         let call_id = call.call_id;
         let call_idx = self.tx.calls().len();
 

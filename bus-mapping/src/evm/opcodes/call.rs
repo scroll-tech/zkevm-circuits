@@ -1,5 +1,4 @@
 use super::Opcode;
-
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
@@ -27,8 +26,6 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        assert!(N_ARGS == 6 || N_ARGS == 7);
-
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
         let args_offset = geth_step.stack.nth_last(3)?.as_usize();
@@ -153,7 +150,6 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
         .unwrap();
 
         let has_value = !call.value.is_zero();
-
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let gas_cost = if is_warm {
@@ -221,20 +217,6 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
                 state.handle_return(geth_step)?;
-                /*
-                // FIXME: is this correct?
-                if call.is_success {
-                    let caller_ctx = state.caller_ctx_mut()?;
-                    let code_address = code_address.unwrap();
-                    let result = execute_precompiled(
-                        &code_address,
-                        &caller_ctx.memory.0[args_offset..args_offset + args_length],
-                    );
-                    caller_ctx.memory.0[ret_offset..ret_offset + ret_length]
-                        .copy_from_slice(&result.0[..]);
-                }
-                state.tx_ctx.pop_call_ctx();
-                */
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
                 if real_cost != exec_step.gas_cost.0 {
                     log::warn!(
