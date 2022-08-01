@@ -366,20 +366,20 @@ impl RwTable {
         }
     }
     /// Assign a `RwRow` at offset into the `RwTable`
-    pub fn assign<F: FieldExt>(
+    pub fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         row: &RwRow<F>,
     ) -> Result<(), Error> {
         for (column, value) in [
-            (self.rw_counter, row.rw_counter),
-            (self.is_write, row.is_write),
+            (self.rw_counter, (row.rw_counter)),
+            (self.is_write, (row.is_write)),
             (self.tag, row.tag),
-            (self.key1, row.key1),
-            (self.key2, row.key2),
-            (self.key3, row.key3),
-            (self.key4, row.key4),
+            (self.key1, row.id),
+            (self.key2, (row.address)),
+            (self.key3, row.field_tag),
+            (self.key4, row.storage_key),
             (self.value, row.value),
             (self.value_prev, row.value_prev),
             (self.aux1, row.aux1),
@@ -397,28 +397,17 @@ impl RwTable {
         layouter: &mut impl Layouter<F>,
         rws: &RwMap,
         randomness: F,
+        n_rows: usize,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "rw table",
             |mut region| {
-                let mut offset = 0;
-                self.assign(&mut region, offset, &Default::default())?;
-                offset += 1;
-
-                let mut rows = rws
-                    .0
-                    .values()
-                    .flat_map(|rws| rws.iter())
-                    .collect::<Vec<_>>();
-
-                rows.sort_by_key(|a| a.rw_counter());
-                let mut expected_rw_counter = 1;
-                for rw in rows {
-                    assert!(rw.rw_counter() == expected_rw_counter);
-                    expected_rw_counter += 1;
-
-                    self.assign(&mut region, offset, &rw.table_assignment(randomness))?;
-                    offset += 1;
+                // uncomment this line in evm circuit to check rwc is continuous
+                //rws.check_rw_counter_sanity();
+                let rows = rws.table_assignments();
+                let (rows, _) = RwMap::table_assignments_prepad(rows, n_rows);
+                for (offset, row) in rows.iter().enumerate() {
+                    self.assign(&mut region, offset, &row.table_assignment(randomness))?;
                 }
                 Ok(())
             },

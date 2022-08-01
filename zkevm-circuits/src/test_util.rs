@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::{table::FixedTableTag, witness::Block},
-    state_circuit::StateCircuit,
+    state_circuit::StateCircuitLight,
 };
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
@@ -55,7 +55,7 @@ impl Default for BytecodeTestConfig {
             enable_evm_circuit_test: true,
             enable_state_circuit_test: true,
             gas_limit: 1_000_000u64,
-            evm_circuit_lookup_tags: get_fixed_table(FixedTableConfig::Incomplete),
+            evm_circuit_lookup_tags: vec![],
         }
     }
 }
@@ -90,10 +90,15 @@ pub fn test_circuits_using_witness_block(
     // TODO: use randomness as one of the circuit public input, since randomness in
     // state circuit and evm circuit must be same
     if config.enable_state_circuit_test {
-        const N_ROWS: usize = 1 << 16;
-        let state_circuit = StateCircuit::<Fr>::new(block.randomness, block.rws, N_ROWS);
+        const N_ROWS: usize = (1 << 12) - 100;
+        let state_circuit = StateCircuitLight::<Fr>::new(block.randomness, block.rws, N_ROWS);
         let power_of_randomness = state_circuit.instance();
-        let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
+        let prover = MockProver::<Fr>::run(
+            state_circuit.estimate_k(),
+            &state_circuit,
+            power_of_randomness,
+        )
+        .unwrap();
         prover.verify_at_rows(
             N_ROWS - state_circuit.rows.len()..N_ROWS,
             N_ROWS - state_circuit.rows.len()..N_ROWS,

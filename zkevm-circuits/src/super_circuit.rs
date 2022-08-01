@@ -164,9 +164,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .evm_circuit
             .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
         config.evm_circuit.load_byte_table(&mut layouter)?;
-        config
-            .rw_table
-            .load(&mut layouter, &self.block.rws, self.block.randomness)?;
+        config.rw_table.load(
+            &mut layouter,
+            &self.block.rws,
+            self.block.randomness,
+            self.block.state_circuit_pad_to,
+        )?;
         config
             .block_table
             .load(&mut layouter, &self.block.context, self.block.randomness)?;

@@ -365,7 +365,7 @@ dependencies = [
  "ethers-core",
  "ethers-providers",
  "gadgets",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs",
  "hex",
  "itertools",
  "keccak256",
@@ -511,12 +511,11 @@ dependencies = [
  "eth-types",
  "ff 0.11.1",
  "group 0.11.0",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs",
  "itertools",
  "keccak256",
  "rand",
  "rand_xorshift",
- "secp256k1",
  "zkevm-circuits",
 ]
 
@@ -1063,7 +1062,7 @@ dependencies = [
 [[package]]
 name = "ecc"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0801#e6ee9594bd83c905c76be45b9e9bcdc338017af3"
 dependencies = [
  "cfg-if 0.1.10",
  "group 0.11.0",
@@ -1078,7 +1077,7 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0801#e6ee9594bd83c905c76be45b9e9bcdc338017af3"
 dependencies = [
  "cfg-if 0.1.10",
  "ecc",
@@ -1190,7 +1189,7 @@ version = "0.1.0"
 dependencies = [
  "ethers-core",
  "ethers-providers",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs",
  "hex",
  "itertools",
  "lazy_static",
@@ -1720,7 +1719,7 @@ dependencies = [
  "digest 0.7.6",
  "eth-types",
  "ff 0.11.1",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs",
  "rand",
  "rand_xorshift",
  "sha3 0.7.3",
@@ -1854,15 +1853,18 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_06_03#1fc67702da729b41bfeebc9764c4c6effbd1f9ad"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-0607#94de954abfbff0a74329f6bbfb0f56fc4aefefae"
 dependencies = [
  "blake2b_simd 1.0.0",
  "bumpalo",
  "cfg-if 0.1.10",
  "ff 0.11.1",
  "group 0.11.0",
+ "num-bigint",
+ "num-integer",
  "pairing_bn256",
  "plotters",
+ "poseidon",
  "rand",
  "rand_core",
  "rayon",
@@ -1871,27 +1873,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "halo2_proofs"
-version = "0.1.0-beta.3"
-source = "git+https://github.com/zcash/halo2.git#406f622e330e23ff91d645d43725e55de665c8e3"
-dependencies = [
- "blake2b_simd 1.0.0",
- "bumpalo",
- "ff 0.11.1",
- "group 0.11.0",
- "pasta_curves",
- "rand_core",
- "rayon",
-]
-
-[[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0801#e6ee9594bd83c905c76be45b9e9bcdc338017af3"
 dependencies = [
  "cfg-if 0.1.10",
- "halo2_proofs 0.1.0-beta.1",
- "halo2_proofs 0.1.0-beta.3",
+ "halo2_proofs",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2150,7 +2137,7 @@ dependencies = [
 [[package]]
 name = "integer"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0801#e6ee9594bd83c905c76be45b9e9bcdc338017af3"
 dependencies = [
  "cfg-if 0.1.10",
  "group 0.11.0",
@@ -2172,12 +2159,14 @@ dependencies = [
  "eth-types",
  "ethers",
  "ff 0.11.1",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs",
+ "hex",
  "lazy_static",
  "log",
  "pretty_assertions",
  "serde",
  "serde_json",
+ "strum",
  "tokio",
  "url",
  "zkevm-circuits",
@@ -2250,7 +2239,7 @@ version = "0.1.0"
 dependencies = [
  "eth-types",
  "gadgets",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs",
  "itertools",
  "lazy_static",
  "num-bigint",
@@ -2344,7 +2333,7 @@ dependencies = [
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0801#e6ee9594bd83c905c76be45b9e9bcdc338017af3"
 dependencies = [
  "cfg-if 0.1.10",
  "group 0.11.0",
@@ -2716,21 +2705,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pasta_curves"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82b6fc4f73033f6aa52fdde0c38f1f570e7f2c244f22e441f62a144556891b8c"
-dependencies = [
- "blake2b_simd 1.0.0",
- "ff 0.11.1",
- "group 0.11.0",
- "lazy_static",
- "rand",
- "static_assertions",
- "subtle",
-]
-
-[[package]]
 name = "paste"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2900,6 +2874,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "poseidon"
+version = "0.1.0"
+source = "git+https://github.com/appliedzkp/poseidon.git?branch=circuit#1f8609776f64f36b518aac1732f18758d65a2791"
+dependencies = [
+ "group 0.11.0",
+ "pairing_bn256",
+ "rand",
+ "subtle",
+]
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2981,7 +2966,7 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers-providers",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs",
  "hyper",
  "log",
  "rand",
@@ -3370,7 +3355,7 @@ dependencies = [
 [[package]]
 name = "secp256k1"
 version = "0.0.1"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_06_03#15bb5c9749079b0ee73da4feb740466e64eba740"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=scroll-dev-0801#e6ee9594bd83c905c76be45b9e9bcdc338017af3"
 dependencies = [
  "blake2b_simd 0.5.11",
  "cfg-if 0.1.10",
@@ -3668,9 +3653,9 @@ checksum = "6446ced80d6c486436db5c078dde11a9f73d42b57fb273121e160b84f63d894c"
 
 [[package]]
 name = "strum"
-version = "0.24.0"
+version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e96acfc1b70604b8b2f1ffa4c57e59176c7dbb05d556c71ecd2f5498a1dee7f8"
+checksum = "063e6045c0e62079840579a7e47a355ae92f60eb74daaf156fb1e84ba164e63f"
 
 [[package]]
 name = "strum_macros"
@@ -4385,7 +4370,7 @@ dependencies = [
  "ff 0.11.1",
  "gadgets",
  "group 0.11.0",
- "halo2_proofs 0.1.0-beta.1",
+ "halo2_proofs",
  "hex",
  "integer",
  "itertools",

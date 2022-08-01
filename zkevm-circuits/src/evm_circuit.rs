@@ -132,29 +132,36 @@ impl<F: Field> EvmCircuit<F> {
     }
 
     pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
-        // Start at 1 so we can be sure there is an unused `next` row available
-        let mut num_rows = 1;
+        let mut num_rows = 0;
         for transaction in &block.txs {
             for step in &transaction.steps {
                 num_rows += self.execution.get_step_height(step.execution_state);
             }
         }
-        num_rows
+        if num_rows == 0 {
+            return 0;
+        }
+        // add 1 so we can be sure there is an unused `next` row available
+        num_rows + 1
     }
 }
 
 #[cfg(any(feature = "test", test))]
 pub mod test {
+
+    use std::convert::TryInto;
+
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
         table::{BlockTable, BytecodeTable, CopyTable, RwTable, TxTable},
-        util::power_of_randomness_from_instance,
+        util::DEFAULT_RAND,
     };
+    use bus_mapping::evm::OpcodeId;
     use eth_types::{Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        plonk::{Circuit, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error, Expression},
     };
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
@@ -198,12 +205,61 @@ pub mod test {
         fixed_table_tags: Vec<FixedTableTag>,
     }
 
-    impl<F> TestCircuit<F> {
+    impl<F: Field> TestCircuit<F> {
         pub fn new(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
+            let mut fixed_table_tags = fixed_table_tags;
+            if fixed_table_tags.is_empty() {
+                // create fixed_table_tags by trace
+                let need_bitwise_lookup = block.txs.iter().any(|tx| {
+                    tx.steps.iter().any(|step| {
+                        matches!(
+                            step.opcode,
+                            Some(OpcodeId::AND) | Some(OpcodeId::OR) | Some(OpcodeId::XOR)
+                        )
+                    })
+                });
+                fixed_table_tags = FixedTableTag::iter()
+                    .filter(|t| {
+                        !matches!(
+                            t,
+                            FixedTableTag::BitwiseAnd
+                                | FixedTableTag::BitwiseOr
+                                | FixedTableTag::BitwiseXor
+                        ) || need_bitwise_lookup
+                    })
+                    .collect();
+            }
             Self {
                 block,
                 fixed_table_tags,
             }
+        }
+
+        pub fn estimate_k(&self) -> u32 {
+            let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
+
+            let k = log2_ceil(
+                64 + self
+                    .fixed_table_tags
+                    .iter()
+                    .map(|tag| tag.build::<F>().count())
+                    .sum::<usize>(),
+            );
+
+            let num_rows_required_for_steps = TestCircuit::get_num_rows_required(&self.block);
+            let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
+
+            let k = k.max(log2_ceil(
+                64 + self
+                    .block
+                    .bytecodes
+                    .values()
+                    .map(|bytecode| bytecode.bytes.len())
+                    .sum::<usize>(),
+            ));
+
+            log::info!("evm circuit uses k = {}", k);
+            k
         }
     }
 
@@ -216,14 +272,17 @@ pub mod test {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = TxTable::construct(meta);
             let rw_table = RwTable::construct(meta);
+            let tx_table = TxTable::construct(meta);
             let bytecode_table = BytecodeTable::construct(meta);
             let block_table = BlockTable::construct(meta);
             let q_copy_table = meta.fixed_column();
+            let power_of_randomness: [Expression<F>; 31] = (1..32)
+                .map(|exp| Expression::Constant(F::from_u128(DEFAULT_RAND).pow(&[exp, 0, 0, 0])))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
             let copy_table = CopyTable::construct(meta, q_copy_table);
-
-            let power_of_randomness = power_of_randomness_from_instance(meta);
             let evm_circuit = EvmCircuit::configure(
                 meta,
                 power_of_randomness,
@@ -256,9 +315,12 @@ pub mod test {
             config
                 .tx_table
                 .load(&mut layouter, &self.block.txs, self.block.randomness)?;
-            config
-                .rw_table
-                .load(&mut layouter, &self.block.rws, self.block.randomness)?;
+            config.rw_table.load(
+                &mut layouter,
+                &self.block.rws,
+                self.block.randomness,
+                self.block.state_circuit_pad_to,
+            )?;
             config.bytecode_table.load(
                 &mut layouter,
                 self.block.bytecodes.values(),
@@ -272,7 +334,8 @@ pub mod test {
                 .load(&mut layouter, &self.block, self.block.randomness)?;
             config
                 .evm_circuit
-                .assign_block_exact(&mut layouter, &self.block)
+                .assign_block_exact(&mut layouter, &self.block)?;
+            Ok(())
         }
     }
 
@@ -294,33 +357,13 @@ pub mod test {
         block: Block<F>,
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
-
-        let num_rows_required_for_steps = TestCircuit::get_num_rows_required(&block);
-
-        let k = log2_ceil(
-            64 + fixed_table_tags
-                .iter()
-                .map(|tag| tag.build::<F>().count())
-                .sum::<usize>(),
-        );
-        let k = k.max(log2_ceil(
-            64 + block
-                .bytecodes
-                .values()
-                .map(|bytecode| bytecode.bytes.len())
-                .sum::<usize>(),
-        ));
-        let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
-        log::debug!("evm circuit uses k = {}", k);
-
-        let power_of_randomness = (1..32)
-            .map(|exp| vec![block.randomness.pow(&[exp, 0, 0, 0]); (1 << k) - 64])
-            .collect();
         let (active_gate_rows, active_lookup_rows) = TestCircuit::get_active_rows(&block);
-        let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
-        let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
-        prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
+        let circuit = TestCircuit::<F>::new(block.clone(), fixed_table_tags);
+        let k = circuit.estimate_k();
+        let _block = block;
+        //block.pad_to = (1 << k) - 64;
+        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
+        prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
 
     pub fn run_test_circuit_incomplete_fixed_table<F: Field>(

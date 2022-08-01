@@ -34,3 +34,6 @@ pub fn power_of_randomness_from_instance<F: Field, const N: usize>(
 
     power_of_randomness.unwrap()
 }
+
+// the magic number is `echo 'zkevm-circuits' | hexdump`
+pub(crate) const DEFAULT_RAND: u128 = 0x10000; //0x6b7a76652d6d6963637269757374u128;

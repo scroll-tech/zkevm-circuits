@@ -1,3 +1,4 @@
+use super::lookups;
 use super::N_LIMBS_ACCOUNT_ADDRESS;
 use super::N_LIMBS_RW_COUNTER;
 use crate::util::Expr;
@@ -132,20 +133,17 @@ where
         }
     }
 
-    pub fn configure(
+    pub fn configure<const QUICK_CHECK: bool>(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
-        u16_range: Column<Fixed>,
+        lookup: lookups::Config<QUICK_CHECK>,
     ) -> Config<T, N> {
         let value = meta.advice_column();
         let limbs = [0; N].map(|_| meta.advice_column());
 
         for &limb in &limbs {
-            meta.lookup_any("mpi limb fits into u16", |meta| {
-                vec![(
-                    meta.query_advice(limb, Rotation::cur()),
-                    meta.query_fixed(u16_range, Rotation::cur()),
-                )]
+            lookup.range_check_u16(meta, "mpi limb fits into u16", |meta| {
+                meta.query_advice(limb, Rotation::cur())
             });
         }
         meta.create_gate("mpi value matches claimed limbs", |meta| {

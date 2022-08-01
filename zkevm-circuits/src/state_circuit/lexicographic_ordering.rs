@@ -1,4 +1,4 @@
-use super::{SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
+use super::{lookups, SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, witness::Rw},
     impl_expr,
@@ -8,7 +8,7 @@ use eth_types::{Field, ToBigEndian};
 use gadgets::binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -107,11 +107,11 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn configure<F: Field>(
+    pub fn configure<F: Field, const QUICK_CHECK: bool>(
         meta: &mut ConstraintSystem<F>,
         keys: SortKeysConfig,
-        u16_range: Column<Fixed>,
-        power_of_randomness: [Column<Instance>; 31],
+        lookup: lookups::Config<QUICK_CHECK>,
+        powers_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     ) -> Self {
         let selector = meta.fixed_column();
         let first_different_limb = BinaryNumberChip::configure(meta, selector);
@@ -125,11 +125,8 @@ impl Config {
             limb_difference_inverse,
         };
 
-        meta.lookup_any("limb_difference fits into u16", |meta| {
-            vec![(
-                meta.query_advice(limb_difference, Rotation::cur()),
-                meta.query_fixed(u16_range, Rotation::cur()),
-            )]
+        lookup.range_check_u16(meta, "limb_difference fits into u16", |meta| {
+            meta.query_advice(limb_difference, Rotation::cur())
         });
 
         meta.create_gate("limb_difference is not zero", |meta| {
@@ -146,8 +143,6 @@ impl Config {
                 let selector = meta.query_fixed(selector, Rotation::cur());
                 let cur = Queries::new(meta, keys, Rotation::cur());
                 let prev = Queries::new(meta, keys, Rotation::prev());
-                let powers_of_randomness =
-                    power_of_randomness.map(|i| meta.query_instance(i, Rotation::cur()));
 
                 let mut constraints = vec![];
                 for (i, rlc_expression) in
