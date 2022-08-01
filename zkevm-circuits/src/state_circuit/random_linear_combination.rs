@@ -2,10 +2,12 @@ use crate::evm_circuit::util::rlc;
 use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Instance, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
+
+use super::lookups;
 
 #[derive(Clone, Debug, Copy)]
 pub struct Config<const N: usize> {
@@ -70,20 +72,18 @@ impl<F: Field, const N: usize> Chip<F, N> {
         }
     }
 
-    pub fn configure(
+    pub fn configure<const QUICK_CHECK: bool>(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
-        u8_lookup: Column<Fixed>,
-        power_of_randomness: [Column<Instance>; 31],
+        lookup: lookups::Config<QUICK_CHECK>,
+        power_of_randomness: [Expression<F>; 31],
     ) -> Config<N> {
         let encoded = meta.advice_column();
         let bytes = [0; N].map(|_| meta.advice_column());
 
         for &byte in &bytes {
-            meta.lookup_any("rlc bytes fit into u8", |meta| {
-                let byte = meta.query_advice(byte, Rotation::cur());
-                let u8_lookup = meta.query_fixed(u8_lookup, Rotation::cur());
-                vec![(byte, u8_lookup)]
+            lookup.range_check_u8(meta, "rlc bytes fit into u8", |meta| {
+                meta.query_advice(byte, Rotation::cur())
             });
         }
 
@@ -91,8 +91,6 @@ impl<F: Field, const N: usize> Chip<F, N> {
             let selector = meta.query_fixed(selector, Rotation::cur());
             let encoded = meta.query_advice(encoded, Rotation::cur());
             let bytes = bytes.map(|c| meta.query_advice(c, Rotation::cur()));
-            let power_of_randomness =
-                power_of_randomness.map(|c| meta.query_instance(c, Rotation::cur()));
             vec![selector * (encoded - rlc::expr(&bytes, &power_of_randomness))]
         });
 

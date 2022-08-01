@@ -1,5 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
+use crate::operation::{TxAccessListAccountOp, RW};
 use crate::Error;
 use eth_types::{GethExecStep, ToAddress};
 
@@ -59,6 +60,20 @@ fn gen_extcodecopy_step(
     let dest_offset = geth_step.stack.nth_last(1)?;
     let offset = geth_step.stack.nth_last(2)?;
     let length = geth_step.stack.nth_last(3)?;
+
+    let is_warm = state
+        .sdb
+        .check_account_in_access_list(&address.to_address());
+    state.push_op_reversible(
+        &mut exec_step,
+        RW::WRITE,
+        TxAccessListAccountOp {
+            tx_id: state.tx_ctx.id(),
+            address: address.to_address(),
+            is_warm: true,
+            is_warm_prev: is_warm,
+        },
+    )?;
 
     // stack reads
     state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), address)?;

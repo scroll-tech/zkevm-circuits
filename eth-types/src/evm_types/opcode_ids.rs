@@ -320,6 +320,16 @@ impl OpcodeId {
         self.as_u8() >= Self::PUSH1.as_u8() && self.as_u8() <= Self::PUSH32.as_u8()
     }
 
+    /// ..
+    pub fn is_call7(&self) -> bool {
+        matches!(self, Self::CALL | Self::CALLCODE)
+    }
+
+    /// ..
+    pub fn is_call6(&self) -> bool {
+        matches!(self, Self::DELEGATECALL | Self::STATICCALL)
+    }
+
     /// Returns `true` if the `OpcodeId` is a `DUPn`.
     pub fn is_dup(&self) -> bool {
         self.as_u8() >= Self::DUP1.as_u8() && self.as_u8() <= Self::DUP16.as_u8()
@@ -345,6 +355,18 @@ impl OpcodeId {
                 | OpcodeId::DELEGATECALL
                 | OpcodeId::STATICCALL
         )
+    }
+    /// Returns `true` if the `OpcodeId` is a `CALL` or `CREATE` related .
+    pub fn is_call_or_create(&self) -> bool {
+        [
+            Self::CALL,
+            Self::DELEGATECALL,
+            Self::CALLCODE,
+            Self::STATICCALL,
+            Self::CREATE,
+            Self::CREATE2,
+        ]
+        .contains(self)
     }
 }
 

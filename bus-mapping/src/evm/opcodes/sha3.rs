@@ -15,7 +15,7 @@ impl Opcode for Sha3 {
         // TODO: add rw operations needed, like memory reads and other lookups
         let geth_step = &geth_steps[0];
 
-        log::warn!("incomplete SHA3 implementation");
+        log::debug!("incomplete SHA3 implementation");
         let steps = StackOnlyOpcode::<2, 1>::gen_associated_ops(state, geth_steps)?;
 
         // reconstruction

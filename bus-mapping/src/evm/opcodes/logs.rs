@@ -22,7 +22,6 @@ impl Opcode for Log {
             state.push_copy(copy_event);
             state.tx_ctx.log_id += 1;
         }
-
         // reconstruction
         let offset = geth_step.stack.nth_last(0)?.as_usize();
         let length = geth_step.stack.nth_last(1)?.as_usize();
@@ -33,7 +32,6 @@ impl Opcode for Log {
                 .memory
                 .extend_at_least(offset + length);
         }
-
         Ok(vec![exec_step])
     }
 }

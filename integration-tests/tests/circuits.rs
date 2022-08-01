@@ -1,19 +1,86 @@
 #![cfg(feature = "circuits")]
 
-use bus_mapping::circuit_input_builder::BuilderClient;
+use bus_mapping::circuit_input_builder::{BuilderClient, ExecState};
+use bus_mapping::evm::OpcodeId;
 use bus_mapping::operation::OperationContainer;
 use halo2_proofs::dev::MockProver;
-use integration_tests::{get_client, log_init, GenDataOutput};
+use halo2_proofs::pairing::bn256::Fr;
+use integration_tests::{get_client, log_init, GenDataOutput, END_BLOCK, FAST, START_BLOCK, TX_ID};
 use lazy_static::lazy_static;
 use log::trace;
+use strum::IntoEnumIterator;
+use zkevm_circuits::evm_circuit::table::FixedTableTag;
+use zkevm_circuits::evm_circuit::test::TestCircuit;
 use zkevm_circuits::evm_circuit::witness::RwMap;
 use zkevm_circuits::evm_circuit::{
-    test::run_test_circuit_complete_fixed_table, witness::block_convert,
+    test::run_test_circuit_complete_fixed_table, test::run_test_circuit_incomplete_fixed_table,
+    witness::block_convert,
 };
 use zkevm_circuits::state_circuit::StateCircuit;
 
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
+}
+
+#[tokio::test]
+async fn test_mock_prove_tx() {
+    log_init();
+    log::info!("test evm circuit, tx: {}", *TX_ID);
+    let cli = get_client();
+    let cli = BuilderClient::new(cli).await.unwrap();
+    let builder = cli.gen_inputs_tx(&TX_ID).await.unwrap();
+
+    if builder.block.txs.is_empty() {
+        log::info!("skip empty block");
+        return;
+    }
+
+    let block = block_convert(&builder.block, &builder.code_db);
+    let need_bitwise_lookup = builder.block.txs.iter().any(|tx| {
+        tx.steps().iter().any(|step| {
+            matches!(
+                step.exec_state,
+                ExecState::Op(OpcodeId::AND)
+                    | ExecState::Op(OpcodeId::OR)
+                    | ExecState::Op(OpcodeId::XOR)
+            )
+        })
+    });
+
+    let fixed_table_tags = FixedTableTag::iter()
+        .filter(|t| {
+            need_bitwise_lookup
+                || !matches!(
+                    t,
+                    FixedTableTag::BitwiseAnd
+                        | FixedTableTag::BitwiseOr
+                        | FixedTableTag::BitwiseXor
+                )
+        })
+        .collect();
+    let (active_gate_rows, active_lookup_rows) = TestCircuit::get_active_rows(&block);
+
+    let circuit = TestCircuit::<Fr>::new(block, fixed_table_tags);
+    let k = circuit.estimate_k();
+    let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+    if *FAST {
+        prover
+            .verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
+            .unwrap();
+    } else {
+        prover.verify_par().unwrap();
+    }
+    log::info!("prove done");
+}
+
+#[tokio::test]
+async fn test_evm_circuit_all_block() {
+    log_init();
+    let start: usize = *START_BLOCK;
+    let end: usize = *END_BLOCK;
+    for blk in start..=end {
+        test_evm_circuit_block(blk as u64).await;
+    }
 }
 
 async fn test_evm_circuit_block(block_num: u64) {
@@ -22,13 +89,36 @@ async fn test_evm_circuit_block(block_num: u64) {
     let cli = BuilderClient::new(cli).await.unwrap();
     let builder = cli.gen_inputs(block_num).await.unwrap();
 
+    if builder.block.txs.is_empty() {
+        log::info!("skip empty block");
+        return;
+    }
+
     let block = block_convert(&builder.block, &builder.code_db);
-    run_test_circuit_complete_fixed_table(block).expect("evm_circuit verification failed");
+    let need_bitwise_lookup = builder.block.txs.iter().any(|tx| {
+        tx.steps().iter().any(|step| {
+            matches!(
+                step.exec_state,
+                ExecState::Op(OpcodeId::ADD)
+                    | ExecState::Op(OpcodeId::OR)
+                    | ExecState::Op(OpcodeId::XOR)
+            )
+        })
+    });
+    let result = if need_bitwise_lookup {
+        run_test_circuit_complete_fixed_table(block)
+    } else {
+        run_test_circuit_incomplete_fixed_table(block)
+    };
+    log::info!(
+        "test evm circuit, block number: {} result {:?}",
+        block_num,
+        result
+    );
 }
 
 async fn test_state_circuit_block(block_num: u64) {
     use halo2_proofs::arithmetic::BaseExt;
-    use halo2_proofs::pairing::bn256::Fr;
 
     log::info!("test state circuit, block number: {}", block_num);
     let cli = get_client();
@@ -48,7 +138,7 @@ async fn test_state_circuit_block(block_num: u64) {
     let rw_map = RwMap::from(&OperationContainer {
         memory: memory_ops,
         stack: stack_ops,
-        storage: storage_ops,
+        //storage: storage_ops,
         ..Default::default()
     });
 

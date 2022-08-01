@@ -1,12 +1,10 @@
 use ethers::{
     abi::{self, Tokenize},
     contract::{builders::ContractCall, Contract, ContractFactory},
-    core::types::{
-        transaction::eip2718::TypedTransaction, Address, TransactionReceipt, TransactionRequest,
-        U256, U64,
-    },
+    core::types::{transaction::eip2718::TypedTransaction, Address, TransactionRequest, U256},
     core::utils::WEI_IN_ETHER,
     middleware::SignerMiddleware,
+    prelude::{k256::ecdsa::SigningKey, Eip1559TransactionRequest, NonceManagerMiddleware, Wallet},
     providers::{Middleware, PendingTransaction},
     signers::Signer,
     solc::Solc,
@@ -45,6 +43,7 @@ fn erc20_transfer<M>(
     contract_abi: &abi::Contract,
     to: Address,
     amount: U256,
+    legacy: bool,
 ) -> TypedTransaction
 where
     M: Middleware,
@@ -54,11 +53,13 @@ where
         .method::<_, bool>("transfer", (to, amount))
         .expect("cannot construct ERC20 transfer call");
     // Set gas to avoid `eth_estimateGas` call
-    let call = call.legacy();
+    let call = if legacy { call.legacy() } else { call };
     let call = call.gas(100_000);
+    println!("typed erc20 tx {:?}", call.tx);
     call.tx
 }
 
+/*
 async fn send_confirm_tx<M>(prov: &Arc<M>, tx: TypedTransaction) -> TransactionReceipt
 where
     M: Middleware,
@@ -71,6 +72,7 @@ where
         .unwrap()
         .unwrap()
 }
+*/
 
 #[tokio::main]
 async fn main() {
@@ -141,6 +143,20 @@ async fn main() {
         );
     }
 
+    let stop_miner = |real: bool| async move {
+        if real {
+            get_client().miner_stop().await.expect("cannot stopx miner");
+        }
+    };
+    let start_miner = |real: bool| async move {
+        if real {
+            get_client()
+                .miner_start()
+                .await
+                .expect("cannot startx miner");
+        }
+    };
+
     let accounts = prov.get_accounts().await.expect("cannot get accounts");
     let wallet0 = get_wallet(0);
     info!("wallet0: {:x}", wallet0.address());
@@ -150,6 +166,8 @@ async fn main() {
     //
     // ETH Transfer: Transfer funds to our account.
     //
+
+    println!("wallet 0 is {:?}", wallet0.address());
 
     info!("Transferring funds from coinbase...");
     let tx = TransactionRequest::new()
@@ -164,34 +182,64 @@ async fn main() {
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
     blocks.insert("Transfer 0".to_string(), block_num.as_u64());
 
+    println!("coin base done;");
     //
     // Deploy smart contracts
     //
 
+    let wallet_fn = |wallet0: Wallet<SigningKey>| {
+        let p1 = NonceManagerMiddleware::new(get_provider(), wallet0.address());
+        let p2 = SignerMiddleware::new(p1, wallet0);
+        Arc::new(p2)
+    };
     let mut deployments = HashMap::new();
-    let prov_wallet0 = Arc::new(SignerMiddleware::new(get_provider(), wallet0));
+    let wallets: Vec<_> = (0..NUM_TXS + 1)
+        .map(|i| wallet_fn(get_wallet(i as u32)))
+        .collect();
 
-    // Greeter
-    let contract = deploy(
-        prov_wallet0.clone(),
-        contracts.get("Greeter").expect("contract not found"),
-        U256::from(42),
-    )
-    .await;
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Deploy Greeter".to_string(), block_num.as_u64());
-    deployments.insert(
-        "Greeter".to_string(),
-        (block_num.as_u64(), contract.address()),
-    );
+    let mut tx_hashes = Vec::new();
+
+    use ethers::types::BlockNumber::Pending;
+    // Fund NUM_TXS wallets from coinbase
+    for wallet in &wallets[0..NUM_TXS] {
+        let tx = TransactionRequest::new()
+            .to(wallet.address())
+            .value(WEI_IN_ETHER * 2u8) // send 2 ETH
+            .from(accounts[0]);
+        tx_hashes.push(
+            *prov
+                .send_transaction(tx, Some(Pending.into()))
+                .await
+                .expect("cannot send tx"),
+        );
+    }
+
+    println!("pending {:?}", tx_hashes);
+
+    for (i, tx_hash) in tx_hashes.iter().enumerate() {
+        let pending_tx = PendingTransaction::new(*tx_hash, wallets[i].inner().inner());
+        let receipt = pending_tx.confirmations(0usize).await.unwrap().unwrap();
+        println!("native transfer state {:?}", receipt.status);
+        /*
+        let expected_status = if i % 2 == 0 { 1u64 } else { 0u64 };
+        assert_eq!(
+            receipt.status,
+            Some(U64::from(expected_status)),
+            "failed tx hash: {:?}, receipt: {:#?}",
+            tx_hash,
+            receipt
+        );
+        */
+    }
+    tx_hashes.clear();
 
     // OpenZeppelinERC20TestToken
     let contract = deploy(
-        prov_wallet0.clone(),
+        wallets[0].clone(),
         contracts
             .get("OpenZeppelinERC20TestToken")
             .expect("contract not found"),
-        prov_wallet0.address(),
+        wallet0.address(),
     )
     .await;
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
@@ -204,60 +252,67 @@ async fn main() {
         (block_num.as_u64(), contract.address()),
     );
 
+    stop_miner(true).await;
+    // Greeter
+
+    println!("deploying greeter");
+    let compiled = contracts.get("Greeter").expect("contract not found");
+
+    let params = U256::from(42u64).into_tokens();
+    let data = match (compiled.abi.constructor(), params.is_empty()) {
+        (None, false) => panic!("hhh"),
+        (None, true) => compiled.bin.clone(),
+        (Some(constructor), _) => constructor
+            .encode_input(compiled.bin.to_vec(), &params)
+            .unwrap()
+            .into(),
+    };
+
+    let tx = TransactionRequest {
+        to: None,
+        data: Some(data),
+        ..Default::default()
+    };
+    //let tx = Eip1559TransactionRequest { to: None, data: Some(data),
+    // ..Default::default() }; let tx = tx.into();
+
+    let pending = ethers::prelude::BlockId::Number(Pending);
+    let _tx = *wallets[0]
+        .send_transaction(tx, Some(pending))
+        .await
+        .unwrap();
+
+    println!("deploying greeter done");
     //
     // ETH transfers: Generate a block with multiple transfers
     //
 
     info!("Generating block with multiple transfers...");
     const NUM_TXS: usize = 4; // NUM_TXS must be >= 4 for the rest of the cases to work.
-    let wallets: Vec<_> = (0..NUM_TXS + 1)
-        .map(|i| Arc::new(SignerMiddleware::new(get_provider(), get_wallet(i as u32))))
-        .collect();
 
-    let cli = get_client();
-
-    // Fund NUM_TXS wallets from coinbase
-    cli.miner_stop().await.expect("cannot stop miner");
-    let mut pending_txs = Vec::new();
-    for wallet in &wallets[0..NUM_TXS] {
-        let tx = TransactionRequest::new()
-            .to(wallet.address())
-            .value(WEI_IN_ETHER * 2u8) // send 2 ETH
-            .from(accounts[0]);
-        pending_txs.push(
-            prov.send_transaction(tx, None)
-                .await
-                .expect("cannot send tx"),
-        );
-    }
-    cli.miner_start().await.expect("cannot start miner");
-    for tx in pending_txs {
-        tx.await.expect("cannot confirm tx");
-    }
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Fund wallets".to_string(), block_num.as_u64());
-
-    // Make NUM_TXS transfers in a "chain"
-    cli.miner_stop().await.expect("cannot stop miner");
-    let mut pending_txs = Vec::new();
     for i in 0..NUM_TXS {
-        let tx = TransactionRequest::new()
-            .to(wallets[i + 1].address())
-            .value(WEI_IN_ETHER / (2 * (i + 1))) // send a fraction of an ETH
-            .from(wallets[i].address());
-        pending_txs.push(
-            wallets[i]
-                .send_transaction(tx, None)
+        println!("try i {}", i);
+        let tx: TypedTransaction = if i % 2 == 0 {
+            TransactionRequest::new()
+                .to(wallets[i + 1].address())
+                .value(WEI_IN_ETHER / (2 * (i + 1))) // send a fraction of an ETH
+                .from(wallets[i].address())
+                .into()
+        } else {
+            Eip1559TransactionRequest::new()
+                .to(wallets[i + 1].address())
+                .value(WEI_IN_ETHER / (2 * (i + 1))) // send a fraction of an ETH
+                .from(wallets[i].address())
+                .into()
+        };
+        tx_hashes.push(
+            *wallets[i]
+                .send_transaction(tx, Some(pending))
                 .await
                 .expect("cannot send tx"),
         );
+        println!("i = {} hashes {:?}", i, tx_hashes);
     }
-    cli.miner_start().await.expect("cannot start miner");
-    for tx in pending_txs {
-        tx.await.expect("cannot confirm tx");
-    }
-    let block_num = prov.get_block_number().await.expect("cannot get block_num");
-    blocks.insert("Multiple transfers 0".to_string(), block_num.as_u64());
 
     //
     // ERC20 calls (OpenZeppelin)
@@ -274,42 +329,6 @@ async fn main() {
         .expect("contract not found")
         .abi;
 
-    // OpenZeppelin ERC20 single failed transfer (wallet2 sends 345.67 Tokens to
-    // wallet3, but wallet2 has 0 Tokens)
-    info!("Doing OpenZeppelin ERC20 single failed transfer...");
-    let amount = U256::from_dec_str("345670000000000000000").unwrap();
-    let tx = erc20_transfer(
-        wallets[2].clone(),
-        contract_address,
-        contract_abi,
-        wallets[3].address(),
-        amount,
-    );
-    let receipt = send_confirm_tx(&wallets[2], tx).await;
-    assert_eq!(receipt.status, Some(U64::from(0u64)));
-    blocks.insert(
-        "ERC20 OpenZeppelin transfer failed".to_string(),
-        receipt.block_number.unwrap().as_u64(),
-    );
-
-    // OpenZeppelin ERC20 single successful transfer (wallet0 sends 123.45 Tokens to
-    // wallet4)
-    info!("Doing OpenZeppelin ERC20 single successful transfer...");
-    let amount = U256::from_dec_str("123450000000000000000").unwrap();
-    let tx = erc20_transfer(
-        wallets[0].clone(),
-        contract_address,
-        contract_abi,
-        wallets[4].address(),
-        amount,
-    );
-    let receipt = send_confirm_tx(&wallets[0], tx).await;
-    assert_eq!(receipt.status, Some(U64::from(1u64)));
-    blocks.insert(
-        "ERC20 OpenZeppelin transfer successful".to_string(),
-        receipt.block_number.unwrap().as_u64(),
-    );
-
     // OpenZeppelin ERC20 multiple transfers in a single block (some successful,
     // some unsuccessful)
     // - wallet0 -> wallet1 (ok)
@@ -317,40 +336,39 @@ async fn main() {
     // - wallet1 -> wallet0 (ok)
     // - wallet3 -> wallet2 (ko)
     info!("Doing OpenZeppelin ERC20 multiple transfers...");
-    cli.miner_stop().await.expect("cannot stop miner");
-    let mut tx_hashes = Vec::new();
     for (i, (from_i, to_i)) in [(0, 1), (2, 3), (1, 0), (3, 2)].iter().enumerate() {
         let amount = U256::from(0x800000000000000 / (i + 1));
         let prov_wallet = &wallets[*from_i];
-        let tx = erc20_transfer(
+        let mut tx = erc20_transfer(
             prov_wallet.clone(),
             contract_address,
             contract_abi,
             wallets[*to_i].address(),
             amount,
+            i % 2 == 0,
         );
 
+        prov_wallet
+            .fill_transaction(&mut tx, Some(pending))
+            .await
+            .unwrap();
+        tx.set_gas(100_000u64);
+
         let pending_tx = prov_wallet
-            .send_transaction(tx, None)
+            .send_transaction(tx, Some(pending))
             .await
             .expect("cannot send ERC20 transfer call");
         let tx_hash = *pending_tx; // Deref for PendingTransaction returns TxHash
         tx_hashes.push(tx_hash);
     }
-    cli.miner_start().await.expect("cannot start miner");
+    start_miner(true).await;
     for (i, tx_hash) in tx_hashes.iter().enumerate() {
-        let pending_tx = PendingTransaction::new(*tx_hash, wallets[i].inner());
+        let pending_tx = PendingTransaction::new(*tx_hash, wallets[i % 4].inner().inner());
         let receipt = pending_tx.confirmations(0usize).await.unwrap().unwrap();
-        let expected_status = if i % 2 == 0 { 1u64 } else { 0u64 };
-        assert_eq!(
-            receipt.status,
-            Some(U64::from(expected_status)),
-            "failed tx hash: {:?}, receipt: {:#?}",
-            tx_hash,
-            receipt
-        );
+        println!("erc20 state {:?}", receipt.status);
     }
     let block_num = prov.get_block_number().await.expect("cannot get block_num");
+    println!("block num is {}", block_num);
     blocks.insert(
         "Multiple ERC20 OpenZeppelin transfers".to_string(),
         block_num.as_u64(),

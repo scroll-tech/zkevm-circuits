@@ -319,6 +319,7 @@ fn tracer_call_success() {
 }
 
 #[test]
+#[test]
 fn tracer_err_address_collision() {
     // We do CREATE2 twice with the same parameters, with a code_creater
     // that outputs the same, which will lead to the same new
@@ -647,6 +648,10 @@ fn tracer_err_invalid_code() {
     .unwrap()
     .into();
 
+    println!(
+        "{}",
+        serde_json::to_string(&block.geth_traces[0].struct_logs).unwrap()
+    );
     // get last RETURN
     let (index, step) = block.geth_traces[0]
         .struct_logs

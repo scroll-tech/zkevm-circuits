@@ -9,6 +9,7 @@ use crate::{
         AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
         TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
+    util::DEFAULT_RAND,
 };
 
 use bus_mapping::{
@@ -20,11 +21,15 @@ use bus_mapping::{
 use eth_types::{evm_types::OpcodeId, ToWord};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use eth_types::{ToAddress, U256};
-use halo2_proofs::arithmetic::{BaseExt, FieldExt};
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::pairing::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
-use std::{collections::HashMap, convert::TryInto, iter};
+use std::{
+    collections::HashMap,
+    convert::TryInto,
+    iter::{self},
+};
 
 #[derive(Debug, Default, Clone)]
 pub struct Block<F> {
@@ -38,9 +43,13 @@ pub struct Block<F> {
     pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContext,
+    /// ..
+    pub evm_circuit_pad_to: usize,
+    /// ..
     /// Copy events for the EVM circuit's Copy Table, a mapping from (tx_id ||
     /// call_id || pc) to the corresponding copy event.
     pub copy_events: HashMap<(usize, usize, usize), CopyEvent>,
+    pub state_circuit_pad_to: usize,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -131,7 +140,7 @@ impl BlockContext {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Transaction {
     /// The transaction identifier in the block
     pub id: usize,
@@ -196,7 +205,13 @@ impl Transaction {
                     F::from(self.id as u64),
                     F::from(TxContextFieldTag::CalleeAddress as u64),
                     F::zero(),
-                    self.callee_address.to_scalar().unwrap(),
+                    (if self.is_create {
+                        self.calls[0].callee_address
+                    } else {
+                        self.callee_address
+                    })
+                    .to_scalar()
+                    .unwrap(),
                 ],
                 [
                     F::from(self.id as u64),
@@ -217,7 +232,11 @@ impl Transaction {
                     F::from(self.id as u64),
                     F::from(TxContextFieldTag::CallDataLength as u64),
                     F::zero(),
-                    F::from(self.call_data_length as u64),
+                    F::from(if self.is_create {
+                        0
+                    } else {
+                        self.call_data_length
+                    } as u64),
                 ],
                 [
                     F::from(self.id as u64),
@@ -243,7 +262,7 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Call {
     /// The unique identifier of call in the whole proof, using the
     /// `rw_counter` at the call step.
@@ -283,7 +302,7 @@ pub struct Call {
     pub is_static: bool,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExecStep {
     /// The index in the Transaction calls
     pub call_index: usize,
@@ -379,6 +398,51 @@ impl std::ops::Index<(RwTableTag, usize)> for RwMap {
     }
 }
 
+impl RwMap {
+    // check rw_counter is continous and starting from 1
+    pub fn check_rw_counter_sanity(&self) {
+        for (idx, rw_counter) in self
+            .0
+            .values()
+            .flatten()
+            .map(|r| r.rw_counter())
+            .sorted()
+            .enumerate()
+        {
+            debug_assert_eq!(idx, rw_counter - 1);
+        }
+    }
+    pub fn table_assignments_prepad(rows: Vec<Rw>, target_len: usize) -> (Vec<Rw>, usize) {
+        let padding_length = if target_len > rows.len() {
+            target_len - rows.len()
+        } else {
+            if target_len != 0 {
+                log::error!(
+                    "RwMap::table_assignments_prepad len overflow {} {}",
+                    target_len,
+                    rows.len()
+                );
+            }
+            1
+        };
+        let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
+        (padding.chain(rows.into_iter()).collect(), padding_length)
+    }
+    pub fn table_assignments(&self) -> Vec<Rw> {
+        let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();
+        rows.sort_by_key(|row| {
+            (
+                row.tag() as u64,
+                row.field_tag().unwrap_or_default(),
+                row.id().unwrap_or_default(),
+                row.address().unwrap_or_default(),
+                row.storage_key().unwrap_or_default(),
+                row.rw_counter(),
+            )
+        });
+        rows
+    }
+}
 #[derive(Clone, Copy, Debug)]
 pub enum Rw {
     Start {
@@ -477,39 +541,72 @@ pub enum Rw {
         value: u64,
     },
 }
-#[derive(Default, Clone, Copy)]
-pub struct RwRow<F: FieldExt> {
-    pub rw_counter: F,
-    pub is_write: F,
-    pub tag: F,
-    pub key1: F,
-    pub key2: F,
-    pub key3: F,
-    pub key4: F,
+#[derive(Default, Clone, Copy, Debug)]
+pub struct RwRow<F> {
+    pub rw_counter: u64,
+    pub is_write: bool,
+    pub tag: RwTableTag,
+    pub id: u64,
+    pub address: Address,
+    pub field_tag: u64,
+    pub storage_key: U256,
     pub value: F,
     pub value_prev: F,
     pub aux1: F,
     pub aux2: F,
 }
-
-impl<F: FieldExt> From<[F; 11]> for RwRow<F> {
-    fn from(row: [F; 11]) -> Self {
-        Self {
-            rw_counter: row[0],
-            is_write: row[1],
-            tag: row[2],
-            key1: row[3],
-            key2: row[4],
-            key3: row[5],
-            key4: row[6],
-            value: row[7],
-            value_prev: row[8],
-            aux1: row[9],
-            aux2: row[10],
-        }
+impl<F: Field> RwRow<F> {
+    pub fn rlc_values(&self, randomness: F) -> [F; 11] {
+        [
+            F::from(self.rw_counter),
+            F::from(self.is_write),
+            (F::from(self.tag as u64)),
+            (F::from(self.id)),
+            (self.address.to_scalar().unwrap()),
+            (F::from(self.field_tag)),
+            (RandomLinearCombination::random_linear_combine(
+                self.storage_key.to_le_bytes(),
+                randomness,
+            )),
+            (self.value),
+            (self.value_prev),
+            (self.aux1),
+            (self.aux2),
+        ]
+    }
+    pub fn rlc(&self, randomness: F, randomness_next_phase: F) -> F {
+        let values = self.rlc_values(randomness);
+        values
+            .iter()
+            .rev()
+            .fold(F::zero(), |acc, value| acc * randomness_next_phase + value)
     }
 }
-
+/*
+impl<F: FieldExt> RwRow<F> {
+    pub fn values(&self) -> [F; 11] {
+        [
+            self.rw_counter,
+            self.is_write,
+            self.tag,
+            self.key1,
+            self.key2,
+            self.key3,
+            self.key4,
+            self.value,
+            self.value_prev,
+            self.aux1,
+            self.aux2,
+        ]
+    }
+    pub fn rlc(&self, randomness: F) -> F {
+        self.values()
+            .iter()
+            .rev()
+            .fold(F::zero(), |acc, value| acc * randomness + value)
+    }
+}
+*/
 impl Rw {
     pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
@@ -606,16 +703,13 @@ impl Rw {
 
     pub fn table_assignment<F: Field>(&self, randomness: F) -> RwRow<F> {
         RwRow {
-            rw_counter: F::from(self.rw_counter() as u64),
-            is_write: F::from(self.is_write() as u64),
-            tag: F::from(self.tag() as u64),
-            key1: F::from(self.id().unwrap_or_default() as u64),
-            key2: self.address().unwrap_or_default().to_scalar().unwrap(),
-            key3: F::from(self.field_tag().unwrap_or_default() as u64),
-            key4: RandomLinearCombination::random_linear_combine(
-                self.storage_key().unwrap_or_default().to_le_bytes(),
-                randomness,
-            ),
+            rw_counter: self.rw_counter() as u64,
+            is_write: self.is_write(),
+            tag: self.tag(),
+            id: self.id().unwrap_or_default() as u64,
+            address: self.address().unwrap_or_default(),
+            field_tag: self.field_tag().unwrap_or_default() as u64,
+            storage_key: self.storage_key().unwrap_or_default(),
             value: self.value_assignment(randomness),
             value_prev: self.value_prev_assignment(randomness).unwrap_or_default(),
             aux1: F::zero(), // only used for AccountStorage::tx_id, which moved to key1.
@@ -796,7 +890,6 @@ impl Rw {
             Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
                 RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
             }
-
             Self::TxLog {
                 field_tag, value, ..
             } => match field_tag {
@@ -852,7 +945,7 @@ impl Rw {
         }
     }
 
-    fn committed_value_assignment<F: Field>(&self, randomness: F) -> Option<F> {
+    pub fn committed_value_assignment<F: Field>(&self, randomness: F) -> Option<F> {
         match self {
             Self::AccountStorage {
                 committed_value, ..
@@ -1166,7 +1259,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
 
                 macro_rules! dummy {
                     ($name:expr) => {{
-                        log::warn!("{:?} is implemented with DummyGadget", $name);
+                        log::debug!("{:?} is implemented with DummyGadget", $name);
                         $name
                     }};
                 }
@@ -1238,7 +1331,11 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
                     OpcodeId::STATICCALL => dummy!(ExecutionState::STATICCALL),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
-                    _ => unimplemented!("unimplemented opcode {:?}", op),
+                    OpcodeId::INVALID(_) => ExecutionState::ErrorInvalidOpcode,
+                    _ => {
+                        log::warn!("unimplemented opcode {:?}", op);
+                        ExecutionState::DUMMY
+                    }
                 }
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
@@ -1360,7 +1457,7 @@ pub fn block_convert(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Block<Fr> {
     Block {
-        randomness: Fr::rand(),
+        randomness: Fr::from_u128(DEFAULT_RAND),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
@@ -1379,7 +1476,8 @@ pub fn block_convert(
                     .unique()
                     .into_iter()
                     .map(|code_hash| {
-                        let bytecode = Bytecode::new(code_db.0.get(&code_hash).unwrap().to_vec());
+                        let bytecode =
+                            Bytecode::new(code_db.0.get(&code_hash).cloned().unwrap_or_default());
                         (bytecode.hash, bytecode)
                     })
             })
@@ -1394,5 +1492,7 @@ pub fn block_convert(
                 )
             })
             .collect(),
+        evm_circuit_pad_to: 0,
+        state_circuit_pad_to: 0,
     }
 }

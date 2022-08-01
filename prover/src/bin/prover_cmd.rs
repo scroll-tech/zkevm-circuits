@@ -1,9 +1,7 @@
 use env_logger::Env;
-use halo2_proofs::pairing::bn256::G1Affine;
+use halo2_proofs::pairing::bn256::{Bn256, G1Affine};
 use halo2_proofs::poly::commitment::Params;
-use std::env::var;
-use std::fs::File;
-use std::io::BufReader;
+use std::{env::var, fs::File, io::BufReader};
 
 use prover::compute_proof::compute_proof;
 
@@ -24,15 +22,29 @@ async fn main() {
         .expect("RPC_URL env var")
         .parse()
         .expect("Cannot parse RPC_URL env var");
-    let params_path: String = var("PARAMS_PATH")
-        .expect("PARAMS_PATH env var")
-        .parse()
-        .expect("Cannot parse PARAMS_PATH env var");
 
-    // load polynomial commitment parameters
-    let params_fs = File::open(&params_path).expect("couldn't open params");
-    let params: Params<G1Affine> =
-        Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params");
+    let params_path: String = match var("PARAMS_PATH") {
+        Ok(path) => path,
+        Err(e) => {
+            log::warn!(
+                "PARAMS_PATH env var is invalid: {:?}. Params will be setup locally.",
+                e
+            );
+            "".to_string()
+        }
+    };
+
+    let params: Params<G1Affine> = if params_path.is_empty() {
+        let degree = 18;
+        log::debug!("setup with degree {}", degree);
+        let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
+        log::debug!("setup done");
+        params
+    } else {
+        // load polynomial commitment parameters from file
+        let params_fs = File::open(&params_path).expect("couldn't open params");
+        Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params")
+    };
 
     let result = compute_proof(&params, &block_num, &rpc_url)
         .await

@@ -1,5 +1,7 @@
 //! Table definitions used cross-circuits
 
+use std::iter::zip;
+
 use crate::copy_circuit::number_or_hash_to_field;
 use crate::evm_circuit::witness::RwRow;
 use crate::evm_circuit::{
@@ -366,25 +368,42 @@ impl RwTable {
         }
     }
     /// Assign a `RwRow` at offset into the `RwTable`
-    pub fn assign<F: FieldExt>(
+    pub fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         row: &RwRow<F>,
+        randomness: F,
     ) -> Result<(), Error> {
-        for (column, value) in [
-            (self.rw_counter, row.rw_counter),
-            (self.is_write, row.is_write),
+        /*
+
+        [
+            (self.rw_counter, F::from(row.rw_counter)),
+            (self.is_write, F::from(row.is_write as u64)),
             (self.tag, row.tag),
-            (self.key1, row.key1),
-            (self.key2, row.key2),
-            (self.key3, row.key3),
-            (self.key4, row.key4),
+            (self.key1, row.id),
+            (self.key2, F::from(row.address)),
+            (self.key3, row.field_tag),
+            (self.key4, row.storage_key),
             (self.value, row.value),
             (self.value_prev, row.value_prev),
             (self.aux1, row.aux1),
             (self.aux2, row.aux2),
-        ] {
+         */
+        let cols = [
+            self.rw_counter,
+            self.is_write,
+            self.tag,
+            self.key1,
+            self.key2,
+            self.key3,
+            self.key4,
+            self.value,
+            self.value_prev,
+            self.aux1,
+            self.aux2,
+        ];
+        for (column, value) in zip(cols, row.rlc_values(randomness)) {
             region.assign_advice(|| "assign rw row on rw table", column, offset, || Ok(value))?;
         }
         Ok(())
@@ -402,7 +421,7 @@ impl RwTable {
             || "rw table",
             |mut region| {
                 let mut offset = 0;
-                self.assign(&mut region, offset, &Default::default())?;
+                self.assign(&mut region, offset, &Default::default(), randomness)?;
                 offset += 1;
 
                 let mut rows = rws
@@ -417,7 +436,12 @@ impl RwTable {
                     assert!(rw.rw_counter() == expected_rw_counter);
                     expected_rw_counter += 1;
 
-                    self.assign(&mut region, offset, &rw.table_assignment(randomness))?;
+                    self.assign(
+                        &mut region,
+                        offset,
+                        &rw.table_assignment(randomness),
+                        randomness,
+                    )?;
                     offset += 1;
                 }
                 Ok(())

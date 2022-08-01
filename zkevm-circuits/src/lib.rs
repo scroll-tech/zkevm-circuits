@@ -20,11 +20,11 @@ pub mod bytecode_circuit;
 pub mod copy_circuit;
 pub mod evm_circuit;
 pub mod state_circuit;
-pub mod super_circuit;
+//pub mod super_circuit;
+pub mod rw_table;
 pub mod table;
 #[cfg(test)]
 pub mod test_util;
-pub mod tx_circuit;
 pub mod util;
 
 pub use gadgets::impl_expr;

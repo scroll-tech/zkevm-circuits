@@ -15,6 +15,7 @@ use eth_types::{
 use keccak256::EMPTY_HASH;
 use log::warn;
 
+mod balance;
 mod call;
 mod calldatacopy;
 mod calldataload;
@@ -28,6 +29,7 @@ mod create;
 mod dup;
 mod extcodecopy;
 mod extcodehash;
+mod extcodesize;
 mod gasprice;
 mod logs;
 mod mload;
@@ -47,6 +49,7 @@ mod swap;
 #[cfg(test)]
 mod memory_expansion_test;
 
+use balance::Balance;
 use call::Call;
 use calldatacopy::Calldatacopy;
 use calldataload::Calldataload;
@@ -59,6 +62,7 @@ use create::DummyCreate;
 use dup::Dup;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
+use extcodesize::Extcodesize;
 use gasprice::GasPrice;
 use logs::Log;
 use mload::Mload;
@@ -140,7 +144,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::SAR => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::SHA3 => Sha3::gen_associated_ops,
         OpcodeId::ADDRESS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
-        OpcodeId::BALANCE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::BALANCE => Balance::gen_associated_ops,
         OpcodeId::ORIGIN => Origin::gen_associated_ops,
         OpcodeId::CALLER => Caller::gen_associated_ops,
         OpcodeId::CALLVALUE => Callvalue::gen_associated_ops,
@@ -150,7 +154,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::GASPRICE => GasPrice::gen_associated_ops,
         OpcodeId::CODECOPY => Codecopy::gen_associated_ops,
         OpcodeId::CODESIZE => Codesize::gen_associated_ops,
-        OpcodeId::EXTCODESIZE => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::EXTCODESIZE => Extcodesize::gen_associated_ops,
         OpcodeId::EXTCODECOPY => Extcodecopy::gen_associated_ops,
         OpcodeId::RETURNDATASIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
@@ -213,24 +217,26 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG2 => Log::gen_associated_ops,
         OpcodeId::LOG3 => Log::gen_associated_ops,
         OpcodeId::LOG4 => Log::gen_associated_ops,
-        OpcodeId::CALL => Call::gen_associated_ops,
-        OpcodeId::RETURN => Return::gen_associated_ops,
-        // REVERT is almost the same as RETURN
+        OpcodeId::CALL => Call::<7>::gen_associated_ops,
+        OpcodeId::CALLCODE => Call::<7>::gen_associated_ops,
         OpcodeId::REVERT => Return::gen_associated_ops,
+        OpcodeId::DELEGATECALL => Call::<6>::gen_associated_ops,
+        OpcodeId::STATICCALL => Call::<6>::gen_associated_ops,
+        OpcodeId::INVALID(_) => Stop::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
         }
-        OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
-            warn!("Using dummy gen_call_ops for opcode {:?}", opcode_id);
-            DummyCall::gen_associated_ops
+        OpcodeId::CREATE => {
+            log::debug!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            DummyCreate::<false>::gen_associated_ops
         }
-        OpcodeId::CREATE | OpcodeId::CREATE2 => {
-            warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            DummyCreate::gen_associated_ops
+        OpcodeId::CREATE2 => {
+            log::debug!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            DummyCreate::<true>::gen_associated_ops
         }
         _ => {
-            warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
+            log::debug!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
             Dummy::gen_associated_ops
         }
     }
@@ -245,19 +251,63 @@ pub fn gen_associated_ops(
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
+    // check if have error
+    let geth_step = &geth_steps[0];
+    let mut exec_step = state.new_step(geth_step)?;
+    let next_step = if geth_steps.len() > 1 {
+        Some(&geth_steps[1])
+    } else {
+        None
+    };
 
-    let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
-    if memory_enabled {
-        assert_eq!(
-            &state.call_ctx()?.memory,
-            &geth_steps[0].memory,
-            "last step of {:?} goes wrong",
-            opcode_id
+    if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
+        log::warn!(
+            "geth error {:?} occurred in  {:?}",
+            exec_error,
+            geth_step.op
         );
+
+        exec_step.error = Some(exec_error);
+        if geth_step.op.is_call_or_create() {
+            let call = state.parse_call(geth_step)?;
+            // Switch to callee's call context
+            state.push_call(call);
+        }
+
+        state.handle_return(geth_step)?;
+        return Ok(vec![exec_step]);
     }
 
+    // if no errors, continue as normal
+    let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
+    if memory_enabled {
+        let check_level = 0; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
+        match check_level {
+            1 => {
+                if state.call_ctx()?.memory != geth_steps[0].memory {
+                    log::error!("wrong mem: {:?} goes wrong. len in state {}, len in step0 {}. state mem {:?} step mem {:?}",
+                        opcode_id,
+                        &state.call_ctx()?.memory.len(),
+                        &geth_steps[0].memory.len(),
+                        &state.call_ctx()?.memory,
+                        &geth_steps[0].memory);
+                    state.call_ctx_mut()?.memory = geth_steps[0].memory.clone();
+                }
+            }
+            2 => {
+                assert_eq!(
+                    &state.call_ctx()?.memory,
+                    &geth_steps[0].memory,
+                    "last step of {:?} goes wrong. len in state {}, len in step0 {}",
+                    opcode_id,
+                    &state.call_ctx()?.memory.len(),
+                    &geth_steps[0].memory.len(),
+                );
+            }
+            _ => {}
+        }
+    }
     let steps = fn_gen_associated_ops(state, geth_steps)?;
-
     Ok(steps)
 }
 
@@ -281,7 +331,12 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     // Increase caller's nonce
     let caller_address = call.caller_address;
-    let nonce_prev = state.sdb.increase_nonce(&caller_address);
+    let mut nonce_prev = state.sdb.increase_nonce(&caller_address);
+    debug_assert!(nonce_prev <= state.tx.nonce);
+    while nonce_prev < state.tx.nonce {
+        nonce_prev = state.sdb.increase_nonce(&caller_address);
+        log::warn!("[debug] increase nonce to {}", nonce_prev);
+    }
     state.account_write(
         &mut exec_step,
         caller_address,
@@ -325,8 +380,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     )?;
 
     // Get code_hash of callee
-    let (_, callee_account) = state.sdb.get_account(&call.address);
-    let code_hash = callee_account.code_hash;
+    let (_, _callee_account) = state.sdb.get_account(&call.address);
+    let code_hash = call.code_hash; // callee_account.code_hash;
 
     // There are 4 branches from here.
     match (
@@ -334,12 +389,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         state.is_precompiled(&call.address),
         code_hash.to_fixed_bytes() == *EMPTY_HASH,
     ) {
-        // 1. Creation transaction.
-        (true, _, _) => {
-            warn!("Creation transaction is left unimplemented");
-            Ok(exec_step)
-        }
-        // 2. Call to precompiled.
         (_, true, _) => {
             warn!("Call to precompiled is left unimplemented");
             Ok(exec_step)
@@ -501,61 +550,6 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
 }
 
 #[derive(Debug, Copy, Clone)]
-struct DummyCall;
-
-impl Opcode for DummyCall {
-    fn gen_associated_ops(
-        state: &mut CircuitInputStateRef,
-        geth_steps: &[GethExecStep],
-    ) -> Result<Vec<ExecStep>, Error> {
-        dummy_gen_call_ops(state, geth_steps)
-    }
-}
-
-fn dummy_gen_call_ops(
-    state: &mut CircuitInputStateRef,
-    geth_steps: &[GethExecStep],
-) -> Result<Vec<ExecStep>, Error> {
-    let geth_step = &geth_steps[0];
-    let mut exec_step = state.new_step(geth_step)?;
-
-    let tx_id = state.tx_ctx.id();
-    let call = state.parse_call(geth_step)?;
-
-    let (_, account) = state.sdb.get_account(&call.address);
-    let callee_code_hash = account.code_hash;
-
-    let is_warm = state.sdb.check_account_in_access_list(&call.address);
-    state.push_op_reversible(
-        &mut exec_step,
-        RW::WRITE,
-        TxAccessListAccountOp {
-            tx_id,
-            address: call.address,
-            is_warm: true,
-            is_warm_prev: is_warm,
-        },
-    )?;
-
-    state.push_call(call.clone());
-
-    match (
-        state.is_precompiled(&call.address),
-        callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
-    ) {
-        // 1. Call to precompiled.
-        (true, _) => Ok(vec![exec_step]),
-        // 2. Call to account with empty code.
-        (_, true) => {
-            state.handle_return(geth_step)?;
-            Ok(vec![exec_step])
-        }
-        // 3. Call to account with non-empty code.
-        (_, false) => Ok(vec![exec_step]),
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
 struct DummySelfDestruct;
 
 impl Opcode for DummySelfDestruct {
@@ -572,6 +566,7 @@ fn dummy_gen_selfdestruct_ops(
 ) -> Result<Vec<ExecStep>, Error> {
     let geth_step = &geth_steps[0];
     let mut exec_step = state.new_step(geth_step)?;
+
     let sender = state.call()?.address;
     let receiver = geth_step.stack.last()?.to_address();
 
@@ -587,16 +582,21 @@ fn dummy_gen_selfdestruct_ops(
         },
     )?;
 
-    let (found, receiver_account) = state.sdb.get_account(&receiver);
+    let (found, _) = state.sdb.get_account(&receiver);
     if !found {
         return Err(Error::AccountNotFound(receiver));
     }
-    let value = receiver_account.balance;
+    let (found, sender_account) = state.sdb.get_account(&sender);
+    if !found {
+        return Err(Error::AccountNotFound(sender));
+    }
+    let value = sender_account.balance;
     state.transfer(&mut exec_step, sender, receiver, value)?;
 
     if state.call()?.is_persistent {
         state.sdb.destruct_account(sender);
     }
 
+    state.handle_return(geth_step)?;
     Ok(vec![exec_step])
 }

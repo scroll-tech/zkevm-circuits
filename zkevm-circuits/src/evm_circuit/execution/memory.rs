@@ -277,4 +277,22 @@ mod test {
             );
         }
     }
+
+    #[test]
+    fn oog_static_memory_case() {
+        test_ok(
+            OpcodeId::MSTORE,
+            Word::from(0x12FFFF),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            // insufficient gas
+            3000000,
+        );
+        test_ok(
+            OpcodeId::MLOAD,
+            Word::from(0x12FFFF),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            // insufficient gas
+            3000000,
+        );
+    }
 }

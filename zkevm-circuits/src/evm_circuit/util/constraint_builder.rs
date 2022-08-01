@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
-        table::{FixedTableTag, Lookup, Table},
+        table::{FixedTableTag, Lookup, RwValues, Table},
         util::{Cell, RandomLinearCombination, Word},
     },
     table::{
@@ -24,8 +24,8 @@ use super::{rlc, CachedRegion, CellType, StoredExpression};
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
 // but each ExecutionGadget has implicit selector degree 3, so here it only
 // allows 2^2+1-3 = 2.
-const MAX_DEGREE: usize = 5;
-const IMPLICIT_DEGREE: usize = 3;
+const MAX_DEGREE: usize = 9;
+const IMPLICIT_DEGREE: usize = 4;
 
 pub(crate) enum Transition<T> {
     Same,
@@ -494,10 +494,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         is_code: Expression<F>,
     ) {
         let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
-        self.add_constraint(
-            "The opcode source when is_root and is_create (Root creation transaction) is not determined yet",
-            is_root_create.clone(),
-        );
+        //self.add_constraint(
+        //    "The opcode source when is_root and is_create (Root creation transaction)
+        // is not determined yet",    is_root_create.clone(),
+        //);
         self.add_lookup(
             "Opcode lookup",
             Lookup::Bytecode {
@@ -616,8 +616,9 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         counter: Expression<F>,
         is_write: Expression<F>,
         tag: RwTableTag,
-        values: [Expression<F>; 8],
+        values: RwValues<F>,
     ) {
+        let name = Box::leak(format!("rw lookup {}", name).into_boxed_str());
         self.add_lookup(
             name,
             Lookup::Rw {
@@ -636,7 +637,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         name: &'static str,
         is_write: Expression<F>,
         tag: RwTableTag,
-        values: [Expression<F>; 8],
+        values: RwValues<F>,
     ) {
         self.rw_lookup_with_counter(
             name,
@@ -664,7 +665,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         &mut self,
         name: &'static str,
         tag: RwTableTag,
-        mut values: [Expression<F>; 8],
+        values: RwValues<F>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         debug_assert!(
@@ -677,15 +678,17 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         if let Some(reversion_info) = reversion_info {
             // Revert if is_persistent is 0
             self.condition(1.expr() - reversion_info.is_persistent(), |cb| {
-                // Swap value and value_prev
-                values.swap(4, 5);
-
+                let name = Box::leak(format!("{} with reversion", name).into_boxed_str());
                 cb.rw_lookup_with_counter(
                     name,
                     reversion_info.rw_counter_of_reversion(),
                     true.expr(),
                     tag,
-                    values,
+                    RwValues {
+                        value_prev: values.value,
+                        value: values.value_prev,
+                        ..values
+                    },
                 )
             });
         }
@@ -704,7 +707,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.reversible_write(
             "TxAccessListAccount write",
             RwTableTag::TxAccessListAccount,
-            [
+            RwValues::new(
                 tx_id,
                 account_address,
                 0.expr(),
@@ -713,7 +716,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 value_prev,
                 0.expr(),
                 0.expr(),
-            ],
+            ),
             reversion_info,
         );
     }
@@ -730,7 +733,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.reversible_write(
             "TxAccessListAccountStorage write",
             RwTableTag::TxAccessListAccountStorage,
-            [
+            RwValues::new(
                 tx_id,
                 account_address,
                 0.expr(),
@@ -739,7 +742,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 value_prev,
                 0.expr(),
                 0.expr(),
-            ],
+            ),
             reversion_info,
         );
     }
@@ -751,7 +754,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "TxRefund read",
             false.expr(),
             RwTableTag::TxRefund,
-            [
+            RwValues::new(
                 tx_id,
                 0.expr(),
                 0.expr(),
@@ -760,7 +763,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 value,
                 0.expr(),
                 0.expr(),
-            ],
+            ),
         );
     }
 
@@ -774,7 +777,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.reversible_write(
             "TxRefund write",
             RwTableTag::TxRefund,
-            [
+            RwValues::new(
                 tx_id,
                 0.expr(),
                 0.expr(),
@@ -783,7 +786,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 value_prev,
                 0.expr(),
                 0.expr(),
-            ],
+            ),
             reversion_info,
         );
     }
@@ -800,7 +803,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "Account read",
             false.expr(),
             RwTableTag::Account,
-            [
+            RwValues::new(
                 0.expr(),
                 account_address,
                 field_tag.expr(),
@@ -809,7 +812,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 value,
                 0.expr(),
                 0.expr(),
-            ],
+            ),
         );
     }
 
@@ -822,9 +825,9 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         self.reversible_write(
-            "Account write with reversion",
+            "Account write",
             RwTableTag::Account,
-            [
+            RwValues::new(
                 0.expr(),
                 account_address,
                 field_tag.expr(),
@@ -833,7 +836,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 value_prev,
                 0.expr(),
                 0.expr(),
-            ],
+            ),
             reversion_info,
         );
     }
@@ -852,7 +855,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "account_storage_read",
             false.expr(),
             RwTableTag::AccountStorage,
-            [
+            RwValues::new(
                 tx_id,
                 account_address,
                 0.expr(),
@@ -861,7 +864,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 value,
                 0.expr(),
                 committed_value,
-            ],
+            ),
         );
     }
 
@@ -879,7 +882,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.reversible_write(
             "AccountStorage write",
             RwTableTag::AccountStorage,
-            [
+            RwValues::new(
                 tx_id,
                 account_address,
                 0.expr(),
@@ -888,7 +891,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 value_prev,
                 0.expr(),
                 committed_value,
-            ],
+            ),
             reversion_info,
         );
     }
@@ -916,7 +919,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "CallContext lookup",
             is_write,
             RwTableTag::CallContext,
-            [
+            RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 0.expr(),
                 field_tag.expr(),
@@ -925,7 +928,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
                 0.expr(),
-            ],
+            ),
         );
     }
 
@@ -968,7 +971,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "Stack lookup",
             is_write,
             RwTableTag::Stack,
-            [
+            RwValues::new(
                 self.curr.state.call_id.expr(),
                 self.curr.state.stack_pointer.expr() + stack_pointer_offset,
                 0.expr(),
@@ -977,7 +980,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
                 0.expr(),
-            ],
+            ),
         );
     }
 
@@ -994,7 +997,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "Memory lookup",
             is_write,
             RwTableTag::Memory,
-            [
+            RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 memory_address,
                 0.expr(),
@@ -1003,7 +1006,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
                 0.expr(),
-            ],
+            ),
         );
     }
 
@@ -1019,7 +1022,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "log data lookup",
             1.expr(),
             RwTableTag::TxLog,
-            [
+            RwValues::new(
                 tx_id,
                 index + (1u64 << 32).expr() * field_tag.expr() + (1u64 << 48).expr() * log_id,
                 0.expr(),
@@ -1028,7 +1031,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
                 0.expr(),
-            ],
+            ),
         );
     }
 
@@ -1045,7 +1048,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "tx receipt lookup",
             is_write,
             RwTableTag::TxReceipt,
-            [
+            RwValues::new(
                 tx_id,
                 0.expr(),
                 tag.expr(),
@@ -1054,7 +1057,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 0.expr(),
                 0.expr(),
                 0.expr(),
-            ],
+            ),
         );
     }
 
