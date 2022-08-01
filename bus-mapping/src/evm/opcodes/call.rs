@@ -28,10 +28,10 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        let args_offset = geth_step.stack.nth_last(3)?.as_usize();
-        let args_length = geth_step.stack.nth_last(4)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(5)?.as_usize();
-        let ret_length = geth_step.stack.nth_last(6)?.as_usize();
+        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
+        let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
+        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.as_usize();
+        let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
 
         // we need to keep the memory until parse_call complete
         let call_ctx = state.call_ctx_mut()?;
