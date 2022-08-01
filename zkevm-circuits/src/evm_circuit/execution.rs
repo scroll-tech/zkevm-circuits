@@ -1135,14 +1135,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::DUMMY => {
                 assign_exec_step!(self.dummy_gadget)
             }
-            _ => {
-                log::error!(
-                    "unimplemented ExecutionState: {:?} {:?}",
-                    step.execution_state,
-                    step
-                );
-                assign_exec_step!(self.dummy_gadget)
-            }
+            _ => unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         };
 
         // Fill in the witness values for stored expressions

@@ -57,28 +57,6 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
         let call = state.parse_call(geth_step)?;
         let current_call = state.call()?.clone();
 
-        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
-        let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.as_usize();
-        let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
-
-        {
-            let call_ctx = state.call_ctx_mut()?;
-            let args_minimal = if args_length != 0 {
-                args_offset + args_length
-            } else {
-                0
-            };
-            let ret_minimal = if ret_length != 0 {
-                ret_offset + ret_length
-            } else {
-                0
-            };
-            if args_minimal != 0 || ret_minimal != 0 {
-                let minimal_length = max(args_minimal, ret_minimal);
-                call_ctx.memory.extend_at_least(minimal_length);
-            }
-        }
         // NOTE: For `RwCounterEndOfReversion` we use the `0` value as a placeholder,
         // and later set the proper value in
         // `CircuitInputBuilder::set_value_ops_call_context_rwc_eor`

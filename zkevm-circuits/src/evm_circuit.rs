@@ -155,7 +155,6 @@ pub mod test {
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
         rw_table::RwTableRlc,
         table::{BlockTable, BytecodeTable, CopyTable, TxTable},
-        util::power_of_randomness_from_instance,
         util::DEFAULT_RAND,
     };
     use bus_mapping::evm::OpcodeId;
@@ -279,13 +278,12 @@ pub mod test {
             let bytecode_table = BytecodeTable::construct(meta);
             let block_table = BlockTable::construct(meta);
             let q_copy_table = meta.fixed_column();
-            let _power_of_randomness: [Expression<F>; 31] = (1..32)
+            let power_of_randomness: [Expression<F>; 31] = (1..32)
                 .map(|exp| Expression::Constant(F::from_u128(DEFAULT_RAND).pow(&[exp, 0, 0, 0])))
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap();
             let copy_table = CopyTable::construct(meta, q_copy_table);
-            let power_of_randomness = power_of_randomness_from_instance(meta);
             let evm_circuit = EvmCircuit::configure(
                 meta,
                 power_of_randomness,

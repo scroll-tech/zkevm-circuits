@@ -99,7 +99,7 @@ async fn test_evm_circuit_block(block_num: u64) {
         tx.steps().iter().any(|step| {
             matches!(
                 step.exec_state,
-                ExecState::Op(OpcodeId::ADD)
+                ExecState::Op(OpcodeId::AND)
                     | ExecState::Op(OpcodeId::OR)
                     | ExecState::Op(OpcodeId::XOR)
             )

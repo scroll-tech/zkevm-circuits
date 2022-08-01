@@ -219,9 +219,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG4 => Log::gen_associated_ops,
         OpcodeId::CALL => Call::<7>::gen_associated_ops,
         OpcodeId::CALLCODE => Call::<7>::gen_associated_ops,
-        OpcodeId::REVERT => Return::gen_associated_ops,
         OpcodeId::DELEGATECALL => Call::<6>::gen_associated_ops,
         OpcodeId::STATICCALL => Call::<6>::gen_associated_ops,
+        OpcodeId::RETURN => Return::gen_associated_ops,
+        OpcodeId::REVERT => Return::gen_associated_ops,
         OpcodeId::INVALID(_) => Stop::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");

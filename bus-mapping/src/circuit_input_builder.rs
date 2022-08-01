@@ -26,7 +26,7 @@ use ethers_providers::JsonRpcClient;
 pub use execution::{CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, NumberOrHash};
 use hex::decode_to_slice;
 pub use input_state_ref::CircuitInputStateRef;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
 
 /// Builder to generate a complete circuit input from data gathered from a geth
