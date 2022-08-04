@@ -6,7 +6,7 @@ use crate::{
     operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
-use eth_types::evm_types::OpcodeId;
+use eth_types::{evm_types::OpcodeId, H256};
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
@@ -146,7 +146,11 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
         )?;
         let is_account_empty = callee_account.is_empty();
         let callee_nonce = callee_account.nonce;
-        let callee_code_hash = call.code_hash;
+        let mut callee_code_hash = call.code_hash;
+        if callee_code_hash.is_zero() {
+            callee_code_hash = H256::from(*EMPTY_HASH);
+            assert!(callee_code_hash.to_fixed_bytes() == *EMPTY_HASH);
+        }
         debug_assert!(!callee_code_hash.is_zero());
         for (field, value) in [
             (AccountField::Nonce, callee_nonce),
