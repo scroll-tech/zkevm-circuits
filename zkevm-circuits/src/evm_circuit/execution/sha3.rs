@@ -1,5 +1,5 @@
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Error;
 
@@ -102,8 +102,8 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction,
-        call: &Call,
+        _: &Transaction,
+        _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -117,26 +117,11 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         self.sha3_rlc
             .assign(region, offset, Some(sha3_output.to_le_bytes()))?;
 
-        let key = (tx.id, call.id, step.program_counter as usize);
-        let copy_rwc_inc = block
-            .copy_events
-            .get(&key)
-            .unwrap()
-            .steps
-            .first()
-            .map_or(F::zero(), |cs| F::from(cs.rwc_inc_left));
-        self.copy_rwc_inc
-            .assign(region, offset, Some(copy_rwc_inc))?;
+        self.copy_rwc_inc.assign(region, offset, size.to_scalar())?;
 
-        let values = block
-            .copy_events
-            .get(&key)
-            .unwrap()
-            .steps
-            .iter()
-            .filter(|s| s.rw.is_write())
-            .map(|s| s.value)
-            .collect::<Vec<u8>>();
+        let values: Vec<_> = (3..3 + (size.low_u64() as usize))
+            .map(|i| block.rws[step.rw_indices[i]].memory_value())
+            .collect();
         let rlc_acc = rlc::value(&values, block.randomness);
         self.rlc_acc.assign(region, offset, Some(rlc_acc))?;
 
