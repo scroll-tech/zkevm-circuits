@@ -240,7 +240,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         // --- Copy Circuit ---
         config
             .copy_circuit
-            .assign_block(&mut layouter, &self.block)?;
+            .assign_block(&mut layouter, &self.block, self.block.randomness)?;
         Ok(())
     }
 }
