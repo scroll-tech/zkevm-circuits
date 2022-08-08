@@ -1310,10 +1310,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::STATICCALL => dummy!(ExecutionState::STATICCALL),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     OpcodeId::INVALID(_) => ExecutionState::ErrorInvalidOpcode,
-                    _ => {
-                        log::warn!("unimplemented opcode {:?}", op);
-                        ExecutionState::DUMMY
-                    }
+                    _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
