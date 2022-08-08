@@ -90,8 +90,8 @@ pub fn test_circuits_using_witness_block(
     // TODO: use randomness as one of the circuit public input, since randomness in
     // state circuit and evm circuit must be same
     if config.enable_state_circuit_test {
-        const N_ROWS: usize = (1 << 12) - 100;
-        let state_circuit = StateCircuitLight::<Fr>::new(block.randomness, block.rws, N_ROWS);
+        let n_rows: usize = block.rws.0.values().flatten().count() + 1;
+        let state_circuit = StateCircuitLight::<Fr>::new(block.randomness, block.rws, n_rows);
         let power_of_randomness = state_circuit.instance();
         let prover = MockProver::<Fr>::run(
             state_circuit.estimate_k(),
@@ -100,8 +100,8 @@ pub fn test_circuits_using_witness_block(
         )
         .unwrap();
         prover.verify_at_rows(
-            N_ROWS - state_circuit.rows.len()..N_ROWS,
-            N_ROWS - state_circuit.rows.len()..N_ROWS,
+            n_rows - state_circuit.rows.len()..n_rows,
+            n_rows - state_circuit.rows.len()..n_rows,
         )?
     }
 

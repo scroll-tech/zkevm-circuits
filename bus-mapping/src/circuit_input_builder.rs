@@ -21,7 +21,7 @@ pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::evm_types::GasCost;
-use eth_types::{self, Address, GethExecStep, GethExecTrace, ToWord, Word, H256};
+use eth_types::{self, Address, GethExecStep, GethExecTrace, ToWord, Word, H256, U256};
 use ethers_providers::JsonRpcClient;
 pub use execution::{CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, NumberOrHash};
 use hex::decode_to_slice;
@@ -145,13 +145,18 @@ impl<'a> CircuitInputBuilder {
             if geth_trace.struct_logs.is_empty() {
                 // only update state
                 self.sdb.increase_nonce(&tx.from);
+                let (_, to_acc) = self.sdb.get_account_mut(&tx.to.unwrap());
+                to_acc.balance += tx.value;
                 let (_, from_acc) = self.sdb.get_account_mut(&tx.from);
                 from_acc.balance -= tx.value;
-                from_acc.balance -= tx.gas * tx.gas_price.unwrap();
-
-                let (_, to_acc) = self.sdb.get_account_mut(&tx.from);
-                to_acc.balance += tx.value;
-
+                let gas_cost = U256::from(geth_trace.gas.0) * tx.gas_price.unwrap();
+                debug_assert!(
+                    from_acc.balance >= gas_cost,
+                    "pay gas failed. tx {:?}, from_acc {:?}",
+                    tx,
+                    from_acc
+                );
+                from_acc.balance -= gas_cost;
                 log::warn!("Native transfer transaction is left unimplemented");
                 continue;
             }
