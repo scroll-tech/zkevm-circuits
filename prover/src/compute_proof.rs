@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use strum::IntoEnumIterator;
 use zkevm_circuits::evm_circuit::{
-    table::FixedTableTag, test::TestCircuit, witness::block_convert,
+    table::FixedTableTag, test::EvmTestCircuit, witness::block_convert,
 };
 use zkevm_circuits::state_circuit::StateCircuit;
 
@@ -42,7 +42,7 @@ pub async fn compute_proof(
     let block = block_convert(&builder.block, &builder.code_db);
     {
         // generate evm_circuit proof
-        let circuit = TestCircuit::<Fr>::new(block.clone(), FixedTableTag::iter().collect());
+        let circuit = EvmTestCircuit::<Fr>::new(block.clone(), FixedTableTag::iter().collect());
 
         // TODO: can this be pre-generated to a file?
         // related

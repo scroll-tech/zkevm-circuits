@@ -95,6 +95,18 @@ impl Call {
     pub fn is_create(&self) -> bool {
         self.kind.is_create()
     }
+
+    /// Get the code address if possible
+    pub fn code_address(&self) -> Option<Address> {
+        match self.kind {
+            CallKind::Call | CallKind::StaticCall => Some(self.address),
+            CallKind::CallCode | CallKind::DelegateCall => match self.code_source {
+                CodeSource::Address(address) => Some(address),
+                _ => None,
+            },
+            CallKind::Create | CallKind::Create2 => None,
+        }
+    }
 }
 
 /// Context of a [`Call`].

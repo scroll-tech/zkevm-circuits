@@ -49,13 +49,14 @@
 //!   - [ ] MPT Circuit
 
 use crate::copy_circuit::CopyCircuit;
+use crate::state_circuit::StateCircuitConfig;
 use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig};
 
 use crate::bytecode_circuit::bytecode_unroller::{
     unroll, Config as BytecodeConfig, UnrolledBytecode,
 };
 
-use crate::evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit};
+use crate::evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuitConfig};
 use crate::table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable};
 use crate::util::power_of_randomness_from_instance;
 use eth_types::Field;
@@ -73,7 +74,8 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     block_table: BlockTable,
     keccak_table: KeccakTable,
     copy_table: CopyTable,
-    evm_circuit: EvmCircuit<F>,
+    evm_circuit: EvmCircuitConfig<F>,
+    state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeConfig<F>,
     copy_circuit: CopyCircuit<F>,
@@ -123,7 +125,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let copy_table = CopyTable::construct(meta, q_copy_table);
 
         let power_of_randomness = power_of_randomness_from_instance(meta);
-        let evm_circuit = EvmCircuit::configure(
+        let evm_circuit = EvmCircuitConfig::configure(
             meta,
             power_of_randomness[..31].to_vec().try_into().unwrap(),
             &tx_table,
@@ -132,6 +134,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &block_table,
             &copy_table,
             &keccak_table,
+        );
+        let state_circuit = StateCircuitConfig::configure(
+            meta,
+            power_of_randomness[..31].to_vec().try_into().unwrap(),
+            &rw_table,
         );
 
         Self::Config {
@@ -142,6 +149,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             keccak_table: keccak_table.clone(),
             copy_table,
             evm_circuit,
+            state_circuit,
             copy_circuit: CopyCircuit::configure(
                 meta,
                 &tx_table,
@@ -176,9 +184,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             .evm_circuit
             .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
         config.evm_circuit.load_byte_table(&mut layouter)?;
-        config
-            .rw_table
-            .load(&mut layouter, &self.block.rws, self.block.randomness)?;
+        config.rw_table.load(
+            &mut layouter,
+            &self.block.rws.table_assignments(),
+            self.block.randomness,
+            self.block.state_circuit_pad_to,
+        )?;
+        config.state_circuit.load(&mut layouter)?;
         config
             .block_table
             .load(&mut layouter, &self.block.context, self.block.randomness)?;
@@ -188,6 +200,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config
             .evm_circuit
             .assign_block(&mut layouter, &self.block)?;
+        config.state_circuit.assign(
+            &mut layouter,
+            &self.block.rws.table_assignments(),
+            self.block.state_circuit_pad_to,
+            self.block.randomness,
+        )?;
         // --- Tx Circuit ---
         self.tx_circuit.assign(&config.tx_circuit, &mut layouter)?;
         // --- Bytecode Circuit ---
@@ -317,7 +335,7 @@ mod super_circuit_tests {
         let k = k.max(log2_ceil(64 + bytecodes_len));
         let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
         let k = k + 1;
-        log::debug!("evm circuit uses k = {}", k);
+        log::debug!("super circuit uses k = {}", k);
 
         let mut instance: Vec<Vec<F>> = (1..POW_RAND_SIZE + 1)
             .map(|exp| vec![block.randomness.pow(&[exp as u64, 0, 0, 0]); (1 << k) - 64])
@@ -337,7 +355,7 @@ mod super_circuit_tests {
             bytecode_size: bytecodes_len + 64,
         };
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
-        prover.verify()
+        prover.verify_par()
     }
 
     fn run_test_circuit_complete_fixed_table<F: Field>(

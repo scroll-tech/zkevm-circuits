@@ -1,8 +1,9 @@
+use super::lookups;
 use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_RW_COUNTER};
 use crate::util::Expr;
-use eth_types::{Address, Field, ToScalar};
+use eth_types::{Address, Field};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region},
+    circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -69,7 +70,7 @@ impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
         region: &mut Region<'_, F>,
         offset: usize,
         value: Address,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<(), Error> {
         for (i, &limb) in value.to_limbs().iter().enumerate() {
             region.assign_advice(
                 || format!("limb[{}] in address mpi", i),
@@ -78,12 +79,7 @@ impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
                 || Ok(F::from(limb as u64)),
             )?;
         }
-        region.assign_advice(
-            || "value in u32 mpi",
-            self.value,
-            offset,
-            || Ok(value.to_scalar().unwrap()), // do this better
-        )
+        Ok(())
     }
 }
 
@@ -93,7 +89,7 @@ impl Config<u32, N_LIMBS_RW_COUNTER> {
         region: &mut Region<'_, F>,
         offset: usize,
         value: u32,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<(), Error> {
         for (i, &limb) in value.to_limbs().iter().enumerate() {
             region.assign_advice(
                 || format!("limb[{}] in u32 mpi", i),
@@ -102,12 +98,7 @@ impl Config<u32, N_LIMBS_RW_COUNTER> {
                 || Ok(F::from(limb as u64)),
             )?;
         }
-        region.assign_advice(
-            || "value in u32 mpi",
-            self.value,
-            offset,
-            || Ok(F::from(value as u64)),
-        )
+        Ok(())
     }
 }
 
@@ -130,20 +121,17 @@ where
         }
     }
 
-    pub fn configure(
+    pub fn configure<const QUICK_CHECK: bool>(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
-        u16_range: Column<Fixed>,
+        value: Column<Advice>,
+        lookup: lookups::Config<QUICK_CHECK>,
     ) -> Config<T, N> {
-        let value = meta.advice_column();
         let limbs = [0; N].map(|_| meta.advice_column());
 
         for &limb in &limbs {
-            meta.lookup_any("mpi limb fits into u16", |meta| {
-                vec![(
-                    meta.query_advice(limb, Rotation::cur()),
-                    meta.query_fixed(u16_range, Rotation::cur()),
-                )]
+            lookup.range_check_u16(meta, "mpi limb fits into u16", |meta| {
+                meta.query_advice(limb, Rotation::cur())
             });
         }
         meta.create_gate("mpi value matches claimed limbs", |meta| {

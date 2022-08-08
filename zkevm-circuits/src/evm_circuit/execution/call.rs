@@ -25,10 +25,10 @@ use crate::{
 use bus_mapping::evm::OpcodeId;
 use eth_types::{
     evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE},
-    Field, ToLittleEndian, ToScalar,
+    Field, ToLittleEndian, ToScalar, U256,
 };
 use halo2_proofs::plonk::Error;
-use keccak256::EMPTY_HASH_LE;
+use keccak256::{EMPTY_HASH, EMPTY_HASH_LE};
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallGadget<F> {
@@ -57,6 +57,7 @@ pub(crate) struct CallGadget<F> {
     is_empty_code_hash: IsEqualGadget<F>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
+    gas_cost: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
@@ -210,7 +211,10 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
 
         // TODO: Handle precompiled
 
+        let gas_cost_cell = cb.query_cell();
         cb.condition(is_empty_code_hash.expr(), |cb| {
+            //cb.require_equal("gas cost when empty code", gas_cost_cell.expr(),
+            // gas_cost.clone() - has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr());
             // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
@@ -224,9 +228,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
                 rw_counter: Delta(24.expr()),
                 program_counter: Delta(1.expr()),
                 stack_pointer: Delta(6.expr()),
-                gas_left: Delta(
-                    has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
-                ),
+                gas_left: Delta(-gas_cost_cell.expr()),
                 memory_word_size: To(memory_expansion.next_memory_word_size()),
                 reversible_write_counter: Delta(3.expr()),
                 ..StepStateTransition::default()
@@ -325,6 +327,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             is_empty_code_hash,
             one_64th_gas,
             capped_callee_gas_left,
+            gas_cost: gas_cost_cell,
         }
     }
 
@@ -333,7 +336,7 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -472,6 +475,19 @@ impl<F: Field> ExecutionGadget<F> for CallGadget<F> {
             0
         } + memory_expansion_gas_cost;
         let gas_available = step.gas_left - gas_cost;
+
+        if callee_code_hash != U256::from(*EMPTY_HASH) {
+            // non empty
+            let gas_left_value = block.rws[step.rw_indices[23]].call_context_value();
+            let real_callee_gas_left =
+                std::cmp::min(gas_available - gas_available / 64, gas.low_u64());
+            debug_assert_eq!(
+                gas_left_value.as_u64(),
+                step.gas_left - gas_cost - real_callee_gas_left
+            );
+        }
+        self.gas_cost
+            .assign(region, offset, Some(F::from(step.gas_cost)))?;
         self.one_64th_gas
             .assign(region, offset, gas_available as u128)?;
         self.capped_callee_gas_left.assign(
