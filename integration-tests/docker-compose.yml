@@ -1,7 +1,10 @@
 version: '3'
 services:
   geth0:
-    image: "ethereum/client-go:v1.10.18"
+    # The reason to use nightly image here is to include `refund` in StructLogRes.
+    # Related commit [internal/ethapi: add refund to StructLogRes](https://github.com/ethereum/go-ethereum/commit/b5a129ea248f259a367d804cdf396ce442109d85) has not been included in stable release.
+    # TODO: change image back to stable when Geth v1.10.18 is released and the commit included.
+    image: "ethereum/client-go@sha256:7e7cbe5510625ad1db33e65803ef14d43e47c6d40f08f7e879d3106729ce99c7"
     container_name: zkevm-geth0
     ports:
       - 8545:8545

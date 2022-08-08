@@ -5,7 +5,7 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
-use zkevm_circuits::evm_circuit::{witness::Block, EvmCircuit};
+use zkevm_circuits::evm_circuit::{witness::Block, EvmCircuitConfig};
 use zkevm_circuits::table::{BlockTable, BytecodeTable, RwTable, TxTable};
 
 #[derive(Debug, Default)]
@@ -14,7 +14,7 @@ pub struct TestCircuit<F> {
 }
 
 impl<F: Field> Circuit<F> for TestCircuit<F> {
-    type Config = EvmCircuit<F>;
+    type Config = EvmCircuitConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -32,7 +32,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
         // reasonable benchmark.
         let power_of_randomness = [(); 31].map(|_| Expression::Constant(F::one()));
 
-        EvmCircuit::configure(
+        EvmCircuitConfig::configure(
             meta,
             power_of_randomness,
             &tx_table,

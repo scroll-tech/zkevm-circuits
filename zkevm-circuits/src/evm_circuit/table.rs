@@ -1,6 +1,6 @@
-use crate::evm_circuit::step::ExecutionState;
 use crate::impl_expr;
 pub use crate::table::TxContextFieldTag;
+use crate::{evm_circuit::step::ExecutionState, table::RwTableTag};
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
@@ -96,6 +96,12 @@ impl FixedTableTag {
     }
 }
 
+impl Default for RwTableTag {
+    fn default() -> Self {
+        RwTableTag::Start
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
 pub(crate) enum Table {
     Fixed,
@@ -106,6 +112,43 @@ pub(crate) enum Table {
     Byte,
     Copy,
     Keccak,
+}
+
+#[derive(Clone, Debug)]
+pub struct RwValues<F> {
+    pub id: Expression<F>,
+    pub address: Expression<F>,
+    pub field_tag: Expression<F>,
+    pub storage_key: Expression<F>,
+    pub value: Expression<F>,
+    pub value_prev: Expression<F>,
+    pub aux1: Expression<F>,
+    pub aux2: Expression<F>,
+}
+
+impl<F: Field> RwValues<F> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        id: Expression<F>,
+        address: Expression<F>,
+        field_tag: Expression<F>,
+        storage_key: Expression<F>,
+        value: Expression<F>,
+        value_prev: Expression<F>,
+        aux1: Expression<F>,
+        aux2: Expression<F>,
+    ) -> Self {
+        Self {
+            id,
+            address,
+            field_tag,
+            storage_key,
+            value,
+            value_prev,
+            aux1,
+            aux2,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -142,7 +185,7 @@ pub(crate) enum Lookup<F> {
         /// all tags.
         tag: Expression<F>,
         /// Values corresponding to the tag.
-        values: [Expression<F>; 8],
+        values: RwValues<F>,
     },
     /// Lookup to bytecode table, which contains all used creation code and
     /// contract code.
@@ -252,11 +295,21 @@ impl<F: Field> Lookup<F> {
                 is_write,
                 tag,
                 values,
-            } => [
-                vec![counter.clone(), is_write.clone(), tag.clone()],
-                values.to_vec(),
-            ]
-            .concat(),
+            } => {
+                vec![
+                    counter.clone(),
+                    is_write.clone(),
+                    tag.clone(),
+                    values.id.clone(),
+                    values.address.clone(),
+                    values.field_tag.clone(),
+                    values.storage_key.clone(),
+                    values.value.clone(),
+                    values.value_prev.clone(),
+                    values.aux1.clone(),
+                    values.aux2.clone(),
+                ]
+            }
             Self::Bytecode {
                 hash,
                 tag,

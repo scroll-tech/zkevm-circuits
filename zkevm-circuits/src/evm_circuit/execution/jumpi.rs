@@ -146,6 +146,34 @@ mod test {
             Ok(())
         );
     }
+    /*
+        fn test_invalid(destination: usize, condition: Word) {
+            assert!((68..(1 << 24) - 1).contains(&destination));
+
+            let mut bytecode = bytecode! {
+                PUSH32(condition)
+                PUSH32(destination)
+                JUMPI
+                STOP
+            };
+
+            // incorrect assigning for invalid jump
+            for _ in 0..(destination - 60) {
+                bytecode.write(0);
+            }
+            bytecode.append(&bytecode! {
+                JUMPDEST
+                STOP
+            });
+
+            assert_eq!(
+                run_test_circuits(
+                    TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                    None
+                ),
+                Ok(())
+            );
+        }
 
     fn test_invalid(destination: usize, condition: Word) {
         assert!((68..(1 << 24) - 1).contains(&destination));
@@ -175,21 +203,26 @@ mod test {
         );
     }
 
-    #[test]
-    fn jumpi_gadget_simple() {
-        test_ok(68, 1.into());
-        test_ok(100, 1.into());
-        test_ok(1 << 11, 1.into());
-        test_ok(68, 0.into());
-        test_ok(100, 0.into());
-        test_ok(1 << 11, 0.into());
+        #[test]
+        fn jumpi_gadget_simple() {
+            test_ok(68, 1.into());
+            test_ok(100, 1.into());
+            test_ok(1 << 11, 1.into());
+            test_ok(68, 0.into());
+            test_ok(100, 0.into());
+            test_ok(1 << 11, 0.into());
     }
 
     #[test]
     fn invalid_jumpi_err() {
         test_invalid(68, 1.into());
-    }
+        }
 
+        #[test]
+        fn jumpi_invalid() {
+            test_invalid(68, 1.into());
+        }
+    */
     #[test]
     #[ignore]
     fn jumpi_gadget_huge_bytecode() {

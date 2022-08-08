@@ -84,6 +84,7 @@ where
                 .iter()
                 .zip(&expressions)
                 .map(|(&bit, expression)| {
+                    //println!("value_equals_expr {:?}", bit);
                     if bit {
                         expression.clone()
                     } else {
@@ -101,7 +102,7 @@ where
 ///  - creating expressions (via the Config) that evaluate to 1 when the bits
 ///    match a specific value and 0 otherwise.
 #[derive(Clone, Debug)]
-pub struct BinaryNumberChip<F: Field, T, const N: usize> {
+pub struct BinaryNumberChip<F, T, const N: usize> {
     config: BinaryNumberConfig<T, N>,
     _marker: PhantomData<F>,
 }
@@ -122,6 +123,7 @@ where
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
+        value: Option<Column<Advice>>,
     ) -> BinaryNumberConfig<T, N> {
         let bits = [0; N].map(|_| meta.advice_column());
         bits.map(|bit| {
@@ -136,6 +138,17 @@ where
             bits,
             _marker: PhantomData,
         };
+
+        if let Some(value) = value {
+            meta.create_gate("binary number value", |meta| {
+                let selector = meta.query_fixed(selector, Rotation::cur());
+                vec![
+                    selector
+                        * (config.value(Rotation::cur())(meta)
+                            - meta.query_advice(value, Rotation::cur())),
+                ]
+            });
+        }
 
         // Disallow bit patterns (if any) that don't correspond to a variant of T.
         let valid_values: BTreeSet<usize> = T::iter().map(|t| from_bits(&t.as_bits())).collect();
@@ -164,6 +177,8 @@ where
         value: &T,
     ) -> Result<(), Error> {
         for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
+            //println!("tag chip assign {:?} col {:?} v {:?} off {:?}", value.as_bits(),
+            // column, bit, offset);
             region.assign_advice(
                 || format!("binary number {:?}", column),
                 column,

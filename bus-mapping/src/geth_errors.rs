@@ -6,3 +6,5 @@ pub const GETH_ERR_STACK_UNDERFLOW: &str = "stack underflow";
 pub const GETH_ERR_OUT_OF_GAS: &str = "out of gas";
 /// Geth error message for gas uint64 overflow
 pub const GETH_ERR_GAS_UINT_OVERFLOW: &str = "gas uint64 overflow";
+/// Geth error message for insufficient funds
+pub const GETH_ERR_INSUFFICIENT_FUNDS: &str = "insufficient funds for gas * price + value";

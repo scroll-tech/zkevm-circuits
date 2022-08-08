@@ -114,6 +114,21 @@ mod test {
             Ok(())
         );
     }
+    /*
+        fn test_invalid_jump(destination: usize) {
+            let mut bytecode = bytecode! {
+                PUSH32(destination)
+                JUMP
+            };
+
+            // incorrect assigning for invalid jump
+            for _ in 0..(destination - 33) {
+                bytecode.write(0);
+            }
+            bytecode.append(&bytecode! {
+                JUMPDEST
+                STOP
+            });
 
     fn test_invalid_jump(destination: usize) {
         let mut bytecode = bytecode! {
@@ -139,17 +154,23 @@ mod test {
         );
     }
 
-    #[test]
-    fn jump_gadget_simple() {
-        test_ok(34);
-        test_ok(100);
+        #[test]
+        fn jump_gadget_simple() {
+            test_ok(34);
+            test_ok(100);
     }
 
     #[test]
     fn invalid_jump_err() {
         test_invalid_jump(34);
-    }
+        }
 
+        #[test]
+        fn jump_invalid() {
+            test_invalid_jump(34);
+        }
+
+    */
     #[test]
     #[ignore]
     fn jump_gadget_huge_bytecode() {
