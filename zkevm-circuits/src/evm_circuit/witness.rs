@@ -139,6 +139,8 @@ impl BlockContext {
 pub struct Transaction {
     /// The transaction identifier in the block
     pub id: usize,
+    /// The hash of the transaction
+    pub hash: String,
     /// The sender account nonce of the transaction
     pub nonce: u64,
     /// The gas limit of the transaction
@@ -1369,6 +1371,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
 fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bool) -> Transaction {
     Transaction {
         id,
+        hash: tx.hash.clone(),
         nonce: tx.nonce,
         gas: tx.gas,
         gas_price: tx.gas_price,

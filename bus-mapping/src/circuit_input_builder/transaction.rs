@@ -182,6 +182,8 @@ impl TransactionContext {
 pub struct Transaction {
     /// Nonce
     pub nonce: u64,
+    /// Hash
+    pub hash: String,
     /// Gas
     pub gas: u64,
     /// Gas price
@@ -256,6 +258,7 @@ impl Transaction {
         };
 
         Ok(Self {
+            hash: eth_tx.hash.to_string(),
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
