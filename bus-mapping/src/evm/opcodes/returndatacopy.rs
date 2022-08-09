@@ -38,7 +38,13 @@ impl Opcode for Returndatacopy {
             } else {
                 // if overflows this opcode would fails current context, so
                 // there is no more steps.
-                debug_assert!(geth_steps.len() == 1 || geth_steps[1].depth != geth_steps[0].depth);
+                if !(geth_steps.len() == 1 || geth_steps[1].depth != geth_steps[0].depth) {
+                    log::warn!("read return data overflow, step {:?}", geth_steps[0]);
+                    memory.extend_at_least(minimal_length);
+                    let mut return_data = return_data[data_starts..].to_vec();
+                    return_data.resize(data_ends - data_starts, 0);
+                    memory[mem_starts..mem_ends].copy_from_slice(&return_data);
+                }
             }
         }
         Ok(vec![exec_step])
