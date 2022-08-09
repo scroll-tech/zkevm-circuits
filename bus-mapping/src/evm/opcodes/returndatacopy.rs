@@ -36,9 +36,9 @@ impl Opcode for Returndatacopy {
                 memory.extend_at_least(minimal_length);
                 memory[mem_starts..mem_ends].copy_from_slice(&return_data[data_starts..data_ends]);
             } else {
-                assert_eq!(geth_steps.len(), 1);
                 // if overflows this opcode would fails current context, so
                 // there is no more steps.
+                debug_assert!(geth_steps.len() == 1 || geth_steps[1].depth != geth_steps[0].depth);
             }
         }
         Ok(vec![exec_step])

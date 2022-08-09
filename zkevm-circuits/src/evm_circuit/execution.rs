@@ -75,7 +75,6 @@ mod sstore;
 mod stop;
 mod swap;
 
-use self::sha3::Sha3Gadget;
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use begin_tx::BeginTxGadget;
@@ -197,7 +196,7 @@ pub(crate) struct ExecutionConfig<F> {
     return_gadget: ReturnGadget<F>,
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
-    sha3_gadget: Sha3Gadget<F>,
+    sha3_gadget: DummyGadget<F, 0, 0, { ExecutionState::SHA3 }>,
     shr_gadget: ShrGadget<F>,
     address_gadget: DummyGadget<F, 0, 1, { ExecutionState::ADDRESS }>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,

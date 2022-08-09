@@ -212,12 +212,13 @@ impl<'a> CircuitInputBuilder {
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
             log::trace!(
-                "handle {}th tx depth {} {}th opcode {:?} pc: {} args: {}",
+                "handle {}th tx depth {} {}th opcode {:?} pc: {} gas_left: {} args: {}",
                 eth_tx.transaction_index.unwrap_or_default(),
                 geth_step.depth,
                 index,
                 geth_step.op,
                 geth_step.pc.0,
+                geth_step.gas.0,
                 if geth_step.op.is_push() {
                     match geth_step.stack.last() {
                         Ok(w) => format!("{:?}", w),
