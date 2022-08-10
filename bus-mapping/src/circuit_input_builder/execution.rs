@@ -71,6 +71,18 @@ impl ExecStep {
             error: None,
         }
     }
+
+    /// Returns `true` if `error` is oog and stack related..
+    pub fn oog_or_stack_error(&self) -> bool {
+        if self.error.is_none() {
+            return false;
+        }
+
+        matches!(
+            self.error.clone().unwrap(),
+            ExecError::OutOfGas(_) | ExecError::StackOverflow | ExecError::StackUnderflow
+        )
+    }
 }
 
 impl Default for ExecStep {

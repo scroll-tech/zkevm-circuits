@@ -303,7 +303,7 @@ pub fn gen_associated_ops(
         );
 
         exec_step.error = Some(exec_error);
-        if geth_step.op.is_call_or_create() {
+        if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
             let call = state.parse_call(geth_step)?;
             // Switch to callee's call context
             state.push_call(call);
