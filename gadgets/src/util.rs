@@ -1,5 +1,8 @@
 //! Utility traits, functions used in the crate.
-use eth_types::evm_types::{GasCost, OpcodeId};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    U256,
+};
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
 /// Returns the sum of the passed in cells
@@ -193,4 +196,22 @@ pub fn expr_from_bytes<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
 /// Returns 2**by as FieldExt
 pub fn pow_of_two<F: FieldExt>(by: usize) -> F {
     F::from(2).pow(&[by as u64, 0, 0, 0])
+}
+
+/// Returns tuple consists of low and high part of U256
+pub fn split_u256(value: &U256) -> (U256, U256) {
+    (
+        U256([value.0[0], value.0[1], 0, 0]),
+        U256([value.0[2], value.0[3], 0, 0]),
+    )
+}
+
+/// Split a U256 value into 4 64-bit limbs stored in U256 values.
+pub fn split_u256_limb64(value: &U256) -> [U256; 4] {
+    [
+        U256([value.0[0], 0, 0, 0]),
+        U256([value.0[1], 0, 0, 0]),
+        U256([value.0[2], 0, 0, 0]),
+        U256([value.0[3], 0, 0, 0]),
+    ]
 }
