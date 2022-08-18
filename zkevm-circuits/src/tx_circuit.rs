@@ -25,14 +25,12 @@ use num::Integer;
 use num_bigint::BigUint;
 // use rand_core::RngCore;
 use rlp::RlpStream;
+pub use secp256k1::Secp256k1Affine;
 use sha3::{Digest, Keccak256};
 use sign_verify::{pk_bytes_swap_endianness, SignData, SignVerifyChip, SignVerifyConfig};
+pub use sign_verify::{POW_RAND_SIZE, VERIF_HEIGHT};
 use std::marker::PhantomData;
 use subtle::CtOption;
-
-pub use group::{Curve, Group};
-pub use secp256k1::Secp256k1Affine;
-pub use sign_verify::{POW_RAND_SIZE, VERIF_HEIGHT};
 
 lazy_static! {
     // Curve Scalar.  Referece: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended Elliptic Curve
@@ -209,7 +207,7 @@ impl<F: Field> TxCircuitConfig<F> {
 }
 
 /// Tx Circuit for verifying transaction signatures
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default)]
 pub struct TxCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     /// SignVerify chip
     pub sign_verify: SignVerifyChip<F, MAX_TXS>,

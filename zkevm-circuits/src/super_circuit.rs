@@ -82,22 +82,16 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
 }
 
 /// The Super Circuit contains all the zkEVM circuits
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
     // EVM Circuit
-    /// Block witness. Usually derived via
-    /// `evm_circuit::witness::block_convert`.
-    pub block: Block<F>,
-    /// Passed down to the evm_circuit. Usually that will be
-    /// `FixedTableTag::iter().collect()`.
-    pub fixed_table_tags: Vec<FixedTableTag>,
+    block: Block<F>,
+    fixed_table_tags: Vec<FixedTableTag>,
     // Tx Circuit
-    /// The transaction circuit that will be used in the `synthesize` step.
-    pub tx_circuit: TxCircuit<F, MAX_TXS, MAX_CALLDATA>,
+    tx_circuit: TxCircuit<F, MAX_TXS, MAX_CALLDATA>,
     // Bytecode Circuit
     // bytecodes: Vec<UnrolledBytecode<F>>,
-    /// The maximium size for the underlying bytecode circuit.
-    pub bytecode_size: usize,
+    bytecode_size: usize,
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
