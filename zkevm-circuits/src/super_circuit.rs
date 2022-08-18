@@ -355,7 +355,7 @@ mod super_circuit_tests {
             bytecode_size: bytecodes_len + 64,
         };
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
-        prover.verify()
+        prover.verify_par()
     }
 
     fn run_test_circuit_complete_fixed_table<F: Field>(

@@ -13,7 +13,7 @@ use crate::{
         witness::{Rw, RwMap},
     },
     table::{RwTable, RwTableTag},
-    util::{power_of_randomness_from_instance, Expr},
+    util::{Expr, DEFAULT_RAND},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
@@ -239,9 +239,7 @@ impl<F: Field> StateCircuit<F> {
 
     /// powers of randomness for instance columns
     pub fn instance(&self) -> Vec<Vec<F>> {
-        (1..32)
-            .map(|exp| vec![self.randomness.pow(&[exp, 0, 0, 0]); self.n_rows])
-            .collect()
+        Vec::new()
     }
 }
 
@@ -258,7 +256,11 @@ where
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let rw_table = RwTable::construct(meta);
-        let power_of_randomness: [Expression<F>; 31] = power_of_randomness_from_instance(meta);
+        let power_of_randomness: [Expression<F>; 31] = (1..32)
+            .map(|exp| Expression::Constant(F::from_u128(DEFAULT_RAND).pow(&[exp, 0, 0, 0])))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
         Self::Config::configure(meta, power_of_randomness, &rw_table)
     }
 
@@ -344,6 +346,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             + final_bits_sum.clone() * (1.expr() - final_bits_sum),
         address: MpiQueries::new(meta, c.sort_keys.address),
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
+        value_prev_col: meta.query_advice(c.rw_table.value_prev, Rotation::cur()),
         initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
         lookups: LookupsQueries::new(meta, c.lookups),

@@ -4,7 +4,7 @@
 use crate::Error;
 use eth_types::{
     Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash, ResultGethExecTraces,
-    Transaction, Word, U64,
+    Transaction, Word, H256, U64,
 };
 pub use ethers_core::types::BlockNumber;
 use ethers_providers::JsonRpcClient;
@@ -100,6 +100,17 @@ impl<P: JsonRpcClient> GethClient<P> {
             .await
             .map_err(|e| Error::JSONRpcError(e.into()))
     }
+    /// ..
+    pub async fn get_tx_by_hash(&self, hash: H256) -> Result<Transaction, Error> {
+        let hash = serialize(&hash);
+        let tx = self
+            .0
+            .request("eth_getTransactionByHash", [hash])
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()));
+        println!("tx is {:#?}", tx);
+        tx
+    }
 
     /// Calls `debug_traceBlockByHash` via JSON-RPC returning a
     /// [`Vec<GethExecTrace>`] with each GethTrace corresponding to 1
@@ -130,6 +141,21 @@ impl<P: JsonRpcClient> GethClient<P> {
             .await
             .map_err(|e| Error::JSONRpcError(e.into()))?;
         Ok(resp.0.into_iter().map(|step| step.result).collect())
+    }
+    /// ..
+    pub async fn trace_tx_by_hash(&self, hash: H256) -> Result<Vec<GethExecTrace>, Error> {
+        let hash = serialize(&hash);
+        let cfg = GethLoggerConfig {
+            enable_memory: false,
+            ..Default::default()
+        };
+        let cfg = serialize(&cfg);
+        let resp: GethExecTrace = self
+            .0
+            .request("debug_traceTransaction", [hash, cfg])
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()))?;
+        Ok(vec![resp])
     }
 
     /// Calls `eth_getCode` via JSON-RPC returning a contract code

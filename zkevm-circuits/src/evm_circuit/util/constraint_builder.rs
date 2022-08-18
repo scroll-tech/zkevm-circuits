@@ -23,8 +23,8 @@ use super::{rlc, CachedRegion, CellType, StoredExpression};
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
 // but each ExecutionGadget has implicit selector degree 3, so here it only
 // allows 2^2+1-3 = 2.
-const MAX_DEGREE: usize = 5;
-const IMPLICIT_DEGREE: usize = 3;
+const MAX_DEGREE: usize = 9;
+const IMPLICIT_DEGREE: usize = 4;
 
 pub(crate) enum Transition<T> {
     Same,
@@ -498,10 +498,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         is_code: Expression<F>,
     ) {
         let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
-        self.add_constraint(
-            "The opcode source when is_root and is_create (Root creation transaction) is not determined yet",
-            is_root_create.clone(),
-        );
+        //self.add_constraint(
+        //    "The opcode source when is_root and is_create (Root creation transaction)
+        // is not determined yet",    is_root_create.clone(),
+        //);
         self.add_lookup(
             "Opcode lookup",
             Lookup::Bytecode {

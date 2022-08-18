@@ -4,6 +4,7 @@ use crate::{
     },
     table::{BytecodeFieldTag, BytecodeTable, DynamicTableColumns, KeccakTable},
     util::Expr,
+    util::DEFAULT_RAND,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, Word};
@@ -36,6 +37,7 @@ pub struct UnrolledBytecode<F: Field> {
 }
 
 #[derive(Clone, Debug)]
+/// byte code config
 pub struct Config<F> {
     randomness: Expression<F>,
     minimum_rows: usize,
@@ -583,6 +585,7 @@ impl<F: Field> Config<F> {
     }
 }
 
+/// unroll helper
 pub fn unroll<F: Field>(bytes: Vec<u8>, randomness: F) -> UnrolledBytecode<F> {
     let code_hash = keccak(&bytes[..], randomness);
     let mut rows = vec![BytecodeRow::<F> {
@@ -648,27 +651,34 @@ fn into_words(message: &[u8]) -> Vec<u64> {
     words
 }
 
-#[cfg(test)]
-mod tests {
+/// test module
+#[cfg(any(feature = "test", test))]
+pub mod tests {
     use super::*;
-    use crate::util::power_of_randomness_from_instance;
+    #[cfg(test)]
     use eth_types::{Bytecode, Word};
+    #[cfg(test)]
+    use halo2_proofs::pairing::bn256::Fr;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
-        pairing::bn256::Fr,
         plonk::{Circuit, ConstraintSystem, Error},
     };
 
+    /// test circuit
     #[derive(Default)]
-    struct MyCircuit<F: Field> {
-        bytecodes: Vec<UnrolledBytecode<F>>,
-        size: usize,
-        randomness: F,
+    pub struct MyCircuit<F: Field> {
+        /// byte codes
+        pub bytecodes: Vec<UnrolledBytecode<F>>,
+        /// 2^size rows
+        pub size: usize,
+        /// randomness
+        pub randomness: F,
     }
 
-    fn get_randomness<F: Field>() -> F {
-        F::from(123456)
+    /// get randomness value
+    pub fn get_randomness<F: Field>() -> F {
+        F::from(DEFAULT_RAND as u64)
     }
 
     impl<F: Field> Circuit<F> for MyCircuit<F> {
@@ -682,7 +692,12 @@ mod tests {
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let bytecode_table = BytecodeTable::construct(meta);
 
-            let randomness = power_of_randomness_from_instance::<_, 1>(meta);
+            //let randomness = power_of_randomness_from_instance::<_, 1>(meta);
+            let randomness: [Expression<F>; 31] = (1..32)
+                .map(|exp| Expression::Constant(F::from_u128(DEFAULT_RAND).pow(&[exp, 0, 0, 0])))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
             let keccak_table = KeccakTable::construct(meta);
 
             Config::configure(meta, randomness[0].clone(), bytecode_table, keccak_table)
@@ -711,10 +726,7 @@ mod tests {
             randomness,
         };
 
-        let num_rows = 1 << k;
-        const NUM_BLINDING_ROWS: usize = 7 - 1;
-        let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
-        let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
+        let prover = MockProver::<F>::run(k, &circuit, [].to_vec()).unwrap();
         let result = prover.verify();
         if let Err(failures) = &result {
             for failure in failures.iter() {

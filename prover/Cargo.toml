@@ -11,7 +11,7 @@ ethers-providers = "0.6"
 eth-types = { path = "../eth-types" }
 hyper = { version = "0.14.16", features = ["server"] }
 rand_xorshift = "0.3"
-halo2_proofs = { version = "0.1.0-beta.1" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0607" }
 log = "0.4.14"
 rand = "0.8.4"
 serde = { version = "1.0.136", features = ["derive"] }

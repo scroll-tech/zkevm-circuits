@@ -2,6 +2,7 @@ use super::{StateCircuit, StateCircuitConfig};
 use crate::{
     evm_circuit::witness::{Rw, RwMap},
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    util::DEFAULT_RAND,
 };
 use bus_mapping::operation::{
     MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
@@ -12,9 +13,8 @@ use eth_types::{
     Address, Field, ToAddress, Word, U256,
 };
 use gadgets::binary_number::AsBits;
-use halo2_proofs::poly::commitment::Params;
+use halo2_proofs::{arithmetic::FieldExt, poly::commitment::Params};
 use halo2_proofs::{
-    arithmetic::BaseExt,
     dev::{MockProver, VerifyFailure},
     pairing::bn256::{Bn256, Fr, G1Affine},
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
@@ -91,7 +91,7 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
-    let randomness = Fr::rand();
+    let randomness = Fr::from_u128(DEFAULT_RAND);
     let circuit = StateCircuit::<Fr>::new(randomness, rw_map, N_ROWS);
     let power_of_randomness = circuit.instance();
 
@@ -109,7 +109,7 @@ fn degree() {
 
 #[test]
 fn verifying_key_independent_of_rw_length() {
-    let randomness = Fr::rand();
+    let randomness = Fr::from_u128(DEFAULT_RAND);
     let degree = 17;
     let params = Params::<G1Affine>::unsafe_setup::<Bn256>(degree);
 
@@ -171,7 +171,7 @@ fn state_circuit_simple_2() {
     );
 
     let storage_op_0 = Operation::new(
-        RWCounter::from(0),
+        RWCounter::from(1),
         RW::WRITE,
         StorageOp::new(
             U256::from(100).to_address(),
@@ -518,7 +518,7 @@ fn nonlexicographic_order_tag() {
         is_write: true,
         call_id: 1,
         memory_address: 10,
-        byte: 12,
+        byte: 0,
     };
     let second = Rw::CallContext {
         rw_counter: 2,
@@ -590,7 +590,7 @@ fn nonlexicographic_order_address() {
         account_address: address!("0x2000000000000000000000000000000000000000"),
         field_tag: AccountFieldTag::CodeHash,
         value: U256::one(),
-        value_prev: U256::one(),
+        value_prev: U256::zero(),
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
@@ -981,7 +981,7 @@ fn bad_initial_tx_receipt_value() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
-    let randomness = Fr::rand();
+    let randomness = Fr::from_u128(DEFAULT_RAND);
     let circuit = StateCircuit::<Fr> {
         randomness,
         rows,

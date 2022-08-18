@@ -9,6 +9,7 @@ use crate::{
         AccountFieldTag, BlockContextFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag,
         TxContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
+    util::DEFAULT_RAND,
 };
 
 use bus_mapping::{
@@ -19,8 +20,8 @@ use bus_mapping::{
 
 use eth_types::{evm_types::OpcodeId, ToWord};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
-use eth_types::{ToAddress, U256};
-use halo2_proofs::arithmetic::{BaseExt, FieldExt};
+use eth_types::{ToAddress, H256, U256};
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::pairing::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
@@ -40,8 +41,12 @@ pub struct Block<F> {
     pub context: BlockContext,
     /// Copy events for the EVM circuit's copy table.
     pub copy_events: Vec<CopyEvent>,
+    /// ..
+    pub evm_circuit_pad_to: usize,
     /// Length to rw table rows in state circuit
     pub state_circuit_pad_to: usize,
+    /// ..
+    pub bytecode_circuit_pad_to: usize,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -132,10 +137,12 @@ impl BlockContext {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Transaction {
     /// The transaction identifier in the block
     pub id: usize,
+    /// The hash of the transaction
+    pub hash: H256,
     /// The sender account nonce of the transaction
     pub nonce: u64,
     /// The gas limit of the transaction
@@ -197,7 +204,13 @@ impl Transaction {
                     F::from(self.id as u64),
                     F::from(TxContextFieldTag::CalleeAddress as u64),
                     F::zero(),
-                    self.callee_address.to_scalar().unwrap(),
+                    (if self.is_create {
+                        self.calls[0].callee_address
+                    } else {
+                        self.callee_address
+                    })
+                    .to_scalar()
+                    .unwrap(),
                 ],
                 [
                     F::from(self.id as u64),
@@ -218,7 +231,11 @@ impl Transaction {
                     F::from(self.id as u64),
                     F::from(TxContextFieldTag::CallDataLength as u64),
                     F::zero(),
-                    F::from(self.call_data_length as u64),
+                    F::from(if self.is_create {
+                        0
+                    } else {
+                        self.call_data_length
+                    } as u64),
                 ],
                 [
                     F::from(self.id as u64),
@@ -244,7 +261,7 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Call {
     /// The unique identifier of call in the whole proof, using the
     /// `rw_counter` at the call step.
@@ -284,7 +301,7 @@ pub struct Call {
     pub is_static: bool,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExecStep {
     /// The index in the Transaction calls
     pub call_index: usize,
@@ -547,7 +564,6 @@ pub struct RwRow<F> {
     pub aux1: F,
     pub aux2: F,
 }
-
 impl<F: Field> RwRow<F> {
     pub fn values(&self) -> [F; 11] {
         [
@@ -1229,7 +1245,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
 
                 macro_rules! dummy {
                     ($name:expr) => {{
-                        log::warn!("{:?} is implemented with DummyGadget", $name);
+                        log::debug!("{:?} is implemented with DummyGadget", $name);
                         $name
                     }};
                 }
@@ -1301,6 +1317,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
                     OpcodeId::STATICCALL => dummy!(ExecutionState::STATICCALL),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
+                    OpcodeId::INVALID(_) => ExecutionState::ErrorInvalidOpcode,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
@@ -1360,6 +1377,7 @@ fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
 fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize, is_last_tx: bool) -> Transaction {
     Transaction {
         id,
+        hash: tx.hash,
         nonce: tx.nonce,
         gas: tx.gas,
         gas_price: tx.gas_price,
@@ -1423,7 +1441,7 @@ pub fn block_convert(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Block<Fr> {
     Block {
-        randomness: Fr::rand(),
+        randomness: Fr::from_u128(DEFAULT_RAND),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
@@ -1442,12 +1460,15 @@ pub fn block_convert(
                     .unique()
                     .into_iter()
                     .map(|code_hash| {
-                        let bytecode = Bytecode::new(code_db.0.get(&code_hash).unwrap().to_vec());
+                        let bytecode =
+                            Bytecode::new(code_db.0.get(&code_hash).cloned().unwrap_or_default());
                         (bytecode.hash, bytecode)
                     })
             })
             .collect(),
         copy_events: block.copy_events.clone(),
-        ..Default::default()
+        evm_circuit_pad_to: 0,
+        state_circuit_pad_to: 0,
+        bytecode_circuit_pad_to: 0,
     }
 }

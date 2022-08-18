@@ -135,36 +135,44 @@ impl<F: Field> EvmCircuit<F> {
     }
 
     pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
-        // Start at 1 so we can be sure there is an unused `next` row available
-        let mut num_rows = 1;
+        let mut num_rows = 0;
         for transaction in &block.txs {
             for step in &transaction.steps {
                 num_rows += self.execution.get_step_height(step.execution_state);
             }
         }
-        num_rows
+        if num_rows == 0 {
+            return 0;
+        }
+        // add 1 so we can be sure there is an unused `next` row available
+        num_rows + 1
     }
 }
 
 #[cfg(any(feature = "test", test))]
 pub mod test {
+
+    use std::convert::TryInto;
+
+    use strum::IntoEnumIterator;
+
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit},
         table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable},
-        util::power_of_randomness_from_instance,
+        util::DEFAULT_RAND,
     };
     use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+
     use eth_types::{Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        plonk::{Circuit, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error, Expression},
     };
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
     };
-    use strum::IntoEnumIterator;
 
     pub(crate) fn rand_range<T, R>(range: R) -> T
     where
@@ -228,7 +236,7 @@ pub mod test {
         fixed_table_tags: Vec<FixedTableTag>,
     }
 
-    impl<F> TestCircuit<F> {
+    impl<F: Field> TestCircuit<F> {
         pub fn new(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
             Self {
                 block,
@@ -246,15 +254,18 @@ pub mod test {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = TxTable::construct(meta);
             let rw_table = RwTable::construct(meta);
+            let tx_table = TxTable::construct(meta);
             let bytecode_table = BytecodeTable::construct(meta);
             let block_table = BlockTable::construct(meta);
             let q_copy_table = meta.fixed_column();
             let copy_table = CopyTable::construct(meta, q_copy_table);
             let keccak_table = KeccakTable::construct(meta);
-
-            let power_of_randomness = power_of_randomness_from_instance(meta);
+            let power_of_randomness: [Expression<F>; 31] = (1..32)
+                .map(|exp| Expression::Constant(F::from_u128(DEFAULT_RAND).pow(&[exp, 0, 0, 0])))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
             let evm_circuit = EvmCircuit::configure(
                 meta,
                 power_of_randomness,
@@ -324,7 +335,8 @@ pub mod test {
             )?;
             config
                 .evm_circuit
-                .assign_block_exact(&mut layouter, &self.block)
+                .assign_block_exact(&mut layouter, &self.block)?;
+            Ok(())
         }
     }
 
@@ -362,15 +374,11 @@ pub mod test {
                 .sum::<usize>(),
         ));
         let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
-        log::debug!("evm circuit uses k = {}", k);
-
-        let power_of_randomness = (1..32)
-            .map(|exp| vec![block.randomness.pow(&[exp, 0, 0, 0]); (1 << k) - 64])
-            .collect();
+        log::info!("evm circuit uses k = {}", k);
         let (active_gate_rows, active_lookup_rows) = TestCircuit::get_active_rows(&block);
         let circuit = TestCircuit::<F>::new(block, fixed_table_tags);
-        let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
-        prover.verify_at_rows(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
+        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
+        prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
 }
 

@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use eth_types::evm_types::Memory;
-use eth_types::{Address, GethExecTrace, Word};
+use eth_types::{Address, GethExecTrace, Word, H256};
 use ethers_core::utils::get_contract_address;
 
 use crate::{
@@ -182,6 +182,8 @@ impl TransactionContext {
 pub struct Transaction {
     /// Nonce
     pub nonce: u64,
+    /// Hash
+    pub hash: H256,
     /// Gas
     pub gas: u64,
     /// Gas price
@@ -256,6 +258,7 @@ impl Transaction {
         };
 
         Ok(Self {
+            hash: eth_tx.hash,
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
