@@ -20,7 +20,7 @@ use bus_mapping::{
 use eth_types::{evm_types::OpcodeId, ToWord};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use eth_types::{ToAddress, U256};
-use halo2_proofs::arithmetic::FieldExt;
+use halo2_proofs::arithmetic::{BaseExt, FieldExt};
 use halo2_proofs::pairing::bn256::Fr;
 use itertools::Itertools;
 use sha3::{Digest, Keccak256};
@@ -1423,7 +1423,7 @@ pub fn block_convert(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Block<Fr> {
     Block {
-        randomness: Fr::from(0xcafeu64),
+        randomness: Fr::rand(),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block

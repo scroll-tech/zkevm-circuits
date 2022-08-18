@@ -290,7 +290,7 @@ mod super_circuit_tests {
     };
     use ethers_signers::{LocalWallet, Signer};
     use group::{Curve, Group};
-    use halo2_proofs::arithmetic::CurveAffine;
+    use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
     use halo2_proofs::dev::{MockProver, VerifyFailure};
     use halo2_proofs::pairing::bn256::Fr;
     use mock::{TestContext, MOCK_CHAIN_ID};
@@ -426,7 +426,7 @@ mod super_circuit_tests {
             .handle_block(&block.eth_block, &block.geth_traces)
             .expect("could not handle block tx");
         let mut block = block_convert(&builder.block, &builder.code_db);
-        block.randomness = Fr::from(0xcafeu64);
+        block.randomness = Fr::random(&mut rng);
 
         let aux_generator =
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
