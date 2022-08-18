@@ -1,5 +1,10 @@
+use crate::circuit_input_builder::CopyEvent;
+use crate::circuit_input_builder::CopyStep;
+use crate::circuit_input_builder::NumberOrHash;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
+use crate::operation::MemoryOp;
+use crate::operation::RW;
 use crate::Error;
 use eth_types::GethExecStep;
 
@@ -12,7 +17,7 @@ impl Opcode for Returndatacopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         // TODO: complete `ExecStep` and circuit implementation
-        let exec_step = state.new_step(&geth_steps[0])?;
+        let mut exec_step = state.new_step(&geth_steps[0])?;
 
         // reconstruction
         let geth_step = &geth_steps[0];
@@ -23,6 +28,7 @@ impl Opcode for Returndatacopy {
         // can we reduce this clone?
         let return_data = state.call_ctx()?.return_data.clone();
 
+        let call_id = state.call()?.call_id;
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
         let length = size.as_usize();
@@ -44,6 +50,18 @@ impl Opcode for Returndatacopy {
                     let mut return_data = return_data[data_starts..].to_vec();
                     return_data.resize(data_ends - data_starts, 0);
                     memory[mem_starts..mem_ends].copy_from_slice(&return_data);
+
+                    for i in 0..length {
+                        state.push_op(
+                            &mut exec_step,
+                            RW::WRITE,
+                            MemoryOp::new(
+                                call_id,
+                                (mem_starts + i).into(),
+                                return_data[data_starts + i],
+                            ),
+                        );
+                    }
                 }
             }
         }
