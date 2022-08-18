@@ -13,7 +13,7 @@ serde_json = "1.0.66"
 serde = {version = "1.0.130", features = ["derive"] }
 bus-mapping = { path = "../bus-mapping"}
 eth-types = { path = "../eth-types"}
-zkevm-circuits = { path = "../zkevm-circuits", features = ["test", "dev"] }
+zkevm-circuits = { path = "../zkevm-circuits", features = ["test"] }
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 url = "2.2.2"
 pretty_assertions = "1.0.0"
@@ -21,9 +21,6 @@ log = "0.4.14"
 env_logger = "0.9"
 halo2_proofs = { version = "0.1.0-beta.1" }
 ff =  "0.11"
-rand_chacha = "0.3"
-group = "0.11"
-paste = "1.0"
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"

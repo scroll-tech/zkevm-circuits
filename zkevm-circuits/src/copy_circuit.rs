@@ -680,25 +680,32 @@ impl<F: Field> CopyCircuit<F> {
     }
 }
 
-#[cfg(feature = "dev")]
-/// Dev helpers
-pub mod dev {
+#[cfg(test)]
+mod tests {
     use super::*;
-    use eth_types::Field;
+    use bus_mapping::{
+        circuit_input_builder::{CircuitInputBuilder, CopyDataType},
+        evm::{gen_sha3_code, MemoryKind},
+        mock::BlockData,
+        operation::RWCounter,
+    };
+    use eth_types::{bytecode, geth_types::GethData, Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem},
     };
+    use mock::TestContext;
+    use rand::{prelude::SliceRandom, Rng};
 
     use crate::{
-        evm_circuit::witness::Block,
+        evm_circuit::witness::{block_convert, Block},
         table::{BytecodeTable, RwTable, TxTable},
         util::power_of_randomness_from_instance,
     };
 
     #[derive(Clone)]
-    struct CopyCircuitTesterConfig<F> {
+    struct MyConfig<F> {
         tx_table: TxTable,
         rw_table: RwTable,
         bytecode_table: BytecodeTable,
@@ -706,26 +713,23 @@ pub mod dev {
     }
 
     #[derive(Default)]
-    struct CopyCircuitTester<F> {
+    struct MyCircuit<F> {
         block: Block<F>,
         randomness: F,
     }
 
-    impl<F: Field> CopyCircuitTester<F> {
-        fn get_randomness() -> F {
-            F::random(rand::thread_rng())
-        }
+    fn get_randomness<F: Field>() -> F {
+        F::random(rand::thread_rng())
+    }
 
+    impl<F: Field> MyCircuit<F> {
         pub fn new(block: Block<F>, randomness: F) -> Self {
             Self { block, randomness }
         }
-        pub fn r() -> Expression<F> {
-            123456u64.expr()
-        }
     }
 
-    impl<F: Field> Circuit<F> for CopyCircuitTester<F> {
-        type Config = CopyCircuitTesterConfig<F>;
+    impl<F: Field> Circuit<F> for MyCircuit<F> {
+        type Config = MyConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -750,7 +754,7 @@ pub mod dev {
                 randomness[0].clone(),
             );
 
-            CopyCircuitTesterConfig {
+            MyConfig {
                 tx_table,
                 rw_table,
                 bytecode_table,
@@ -783,32 +787,18 @@ pub mod dev {
         }
     }
 
-    /// Test copy circuit with the provided block witness
-    pub fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let randomness = CopyCircuitTester::<F>::get_randomness();
-        let circuit = CopyCircuitTester::<F>::new(block, randomness);
+    fn run_circuit<F: Field>(
+        k: u32,
+        block: Block<F>,
+        randomness: F,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        let circuit = MyCircuit::<F>::new(block, randomness);
         let num_rows = 1 << k;
         const NUM_BLINDING_ROWS: usize = 7 - 1;
         let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
         let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
         prover.verify()
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::dev::test_copy_circuit;
-    use bus_mapping::evm::{gen_sha3_code, MemoryKind};
-    use bus_mapping::{
-        circuit_input_builder::{CircuitInputBuilder, CopyDataType},
-        mock::BlockData,
-        operation::RWCounter,
-    };
-    use eth_types::{bytecode, geth_types::GethData, Word};
-    use mock::TestContext;
-    use rand::{prelude::SliceRandom, Rng};
-
-    use crate::evm_circuit::witness::block_convert;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
         let code = bytecode! {
@@ -859,21 +849,21 @@ mod tests {
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(10, block).is_ok());
+        assert!(run_circuit(10, block, get_randomness()).is_ok());
     }
 
     #[test]
     fn copy_circuit_valid_codecopy() {
         let builder = gen_codecopy_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(10, block).is_ok());
+        assert!(run_circuit(10, block, get_randomness()).is_ok());
     }
 
     #[test]
     fn copy_circuit_valid_sha3() {
         let builder = gen_sha3_data();
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(20, block).is_ok());
+        assert!(run_circuit(20, block, get_randomness()).is_ok());
     }
 
     fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block, tag: CopyDataType) {
@@ -905,7 +895,7 @@ mod tests {
             false => perturb_tag(&mut builder.block, CopyDataType::TxCalldata),
         }
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(10, block).is_err());
+        assert!(run_circuit(10, block, get_randomness()).is_err());
     }
 
     #[test]
@@ -916,7 +906,7 @@ mod tests {
             false => perturb_tag(&mut builder.block, CopyDataType::Bytecode),
         }
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(10, block).is_err());
+        assert!(run_circuit(10, block, get_randomness()).is_err());
     }
 
     #[test]
@@ -927,6 +917,6 @@ mod tests {
             false => perturb_tag(&mut builder.block, CopyDataType::RlcAcc),
         }
         let block = block_convert(&builder.block, &builder.code_db);
-        assert!(test_copy_circuit(20, block).is_err());
+        assert!(run_circuit(20, block, get_randomness()).is_err());
     }
 }

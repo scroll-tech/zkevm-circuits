@@ -34,7 +34,7 @@ pub async fn compute_proof(
     let url = Http::from_str(rpc_url)?;
     let geth_client = GethClient::new(url);
     let builder = BuilderClient::new(geth_client).await?;
-    let (builder, _) = builder.gen_inputs(*block_num).await?;
+    let builder = builder.gen_inputs(*block_num).await?;
 
     // TODO: only {evm,state}_proof are implemented right now
     let evm_proof;

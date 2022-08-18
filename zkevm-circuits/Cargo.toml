@@ -59,5 +59,4 @@ harness = false
 
 [features]
 default = []
-test = [ "dev" ]
-dev = []
+test = []

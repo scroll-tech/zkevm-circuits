@@ -245,7 +245,6 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     ) -> Result<(EthBlock, Vec<eth_types::GethExecTrace>), Error> {
         let eth_block = self.cli.get_block_by_number(block_num.into()).await?;
         let geth_traces = self.cli.trace_block_by_number(block_num.into()).await?;
-
         Ok((eth_block, geth_traces))
     }
 
@@ -353,21 +352,12 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     }
 
     /// Perform all the steps to generate the circuit inputs
-    pub async fn gen_inputs(
-        &self,
-        block_num: u64,
-    ) -> Result<
-        (
-            CircuitInputBuilder,
-            eth_types::Block<eth_types::Transaction>,
-        ),
-        Error,
-    > {
+    pub async fn gen_inputs(&self, block_num: u64) -> Result<CircuitInputBuilder, Error> {
         let (eth_block, geth_traces) = self.get_block(block_num).await?;
         let access_set = self.get_state_accesses(&eth_block, &geth_traces)?;
         let (proofs, codes) = self.get_state(block_num, access_set).await?;
         let (state_db, code_db) = self.build_state_code_db(proofs, codes);
         let builder = self.gen_inputs_from_state(state_db, code_db, &eth_block, &geth_traces)?;
-        Ok((builder, eth_block))
+        Ok(builder)
     }
 }
