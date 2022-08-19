@@ -7,9 +7,10 @@ use crate::evm_circuit::{
     witness::{Block, BlockContext, Bytecode, RwMap, Transaction},
 };
 use crate::impl_expr;
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, ExpEvent};
 use eth_types::{Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
+use gadgets::util::{split_u256, split_u256_limb64};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
@@ -901,6 +902,18 @@ pub struct ExpTable {
 }
 
 impl ExpTable {
+    /// Get the list of columns associated with the exponentiation table.
+    pub fn columns(&self) -> Vec<Column<Advice>> {
+        vec![
+            self.is_first,
+            self.base_limb,
+            self.intermediate_exponent,
+            self.intermediate_exp_lo_hi,
+        ]
+    }
+}
+
+impl ExpTable {
     /// Construct the Exponentiation table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
@@ -909,6 +922,102 @@ impl ExpTable {
             intermediate_exponent: meta.advice_column(),
             intermediate_exp_lo_hi: meta.advice_column(),
         }
+    }
+
+    /// Given an exponentiation event and randomness, get assignments to the
+    /// exponentiation table.
+    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 4]> {
+        let mut assignments = Vec::new();
+        let base_limbs = split_u256_limb64(&exp_event.base);
+        let mut exponent = exp_event.exponent;
+        for (step_idx, exp_step) in exp_event.steps.iter().rev().enumerate() {
+            let is_first = if step_idx.eq(&0) { F::one() } else { F::zero() };
+            let (exp_lo, exp_hi) = split_u256(&exp_step.d);
+
+            // row 1
+            assignments.push([
+                is_first,
+                base_limbs[0].as_u64().into(),
+                exponent.to_scalar().expect("exponent should fit to scalar"),
+                exp_lo
+                    .to_scalar()
+                    .expect("exponentiation lo should fit to scalar"),
+            ]);
+            // row 2
+            assignments.push([
+                F::zero(),
+                base_limbs[1].as_u64().into(),
+                F::zero(),
+                exp_hi
+                    .to_scalar()
+                    .expect("exponentiation hi should fit to scalar"),
+            ]);
+            // row 3
+            assignments.push([
+                F::zero(),
+                base_limbs[2].as_u64().into(),
+                F::zero(),
+                F::zero(),
+            ]);
+            // row 4
+            assignments.push([
+                F::zero(),
+                base_limbs[3].as_u64().into(),
+                F::zero(),
+                F::zero(),
+            ]);
+
+            // update intermediate exponent.
+            let (exponent_div2, remainder) = exponent.div_mod(U256::from(2));
+            if remainder.is_zero() {
+                // exponent is even
+                exponent = exponent_div2;
+            } else {
+                // exponent is odd
+                exponent = exponent - 1;
+            }
+        }
+        assignments
+    }
+
+    /// Assign witness data from a block to the exponentiation table.
+    pub fn load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        block: &Block<F>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "exponentiation table",
+            |mut region| {
+                let mut offset = 0;
+                for column in self.columns() {
+                    region.assign_advice(
+                        || "exponentiation table all-zero row",
+                        column,
+                        offset,
+                        || Ok(F::zero()),
+                    )?;
+                }
+
+                offset += 1;
+                let exp_table_columns = self.columns();
+                for exp_event in block.exp_events.iter() {
+                    for row in Self::assignments(exp_event) {
+                        for (column, value) in exp_table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("exponentiation table row {}", offset),
+                                *column,
+                                offset,
+                                || Ok(value),
+                            )?;
+                        }
+                        offset += 1;
+                    }
+                }
+
+                Ok(())
+            },
+        )
     }
 }
 

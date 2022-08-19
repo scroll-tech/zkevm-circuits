@@ -12,7 +12,7 @@ use crate::{
 };
 
 use bus_mapping::{
-    circuit_input_builder::{self, CopyEvent},
+    circuit_input_builder::{self, CopyEvent, ExpEvent},
     error::{ExecError, OogError},
     operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
 };
@@ -38,8 +38,11 @@ pub struct Block<F> {
     pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContext,
-    /// Copy events for the EVM circuit's copy table.
+    /// Copy events for the copy circuit's copy table.
     pub copy_events: Vec<CopyEvent>,
+    /// Exponentiation events for the exponentiation circuit's exponentiation
+    /// table.
+    pub exp_events: Vec<ExpEvent>,
     /// Length to rw table rows in state circuit
     pub state_circuit_pad_to: usize,
 }
@@ -1448,6 +1451,7 @@ pub fn block_convert(
             })
             .collect(),
         copy_events: block.copy_events.clone(),
+        exp_events: block.exp_events.clone(),
         ..Default::default()
     }
 }
