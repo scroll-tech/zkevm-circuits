@@ -46,6 +46,7 @@ mod end_block;
 mod end_tx;
 mod error_oog_constant;
 mod error_oog_static_memory;
+mod exp;
 mod extcodehash;
 mod gas;
 mod gasprice;
@@ -98,6 +99,7 @@ use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use exp::ExponentiationGadget;
 use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
 use gasprice::GasPriceGadget;
@@ -177,6 +179,7 @@ pub(crate) struct ExecutionConfig<F> {
     codesize_gadget: CodesizeGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
     dup_gadget: DupGadget<F>,
+    exp_gadget: ExponentiationGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
     gas_gadget: GasGadget<F>,
     gasprice_gadget: GasPriceGadget<F>,
@@ -201,7 +204,6 @@ pub(crate) struct ExecutionConfig<F> {
     shr_gadget: ShrGadget<F>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
     blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
-    exp_gadget: DummyGadget<F, 2, 1, { ExecutionState::EXP }>,
     shl_gadget: DummyGadget<F, 2, 1, { ExecutionState::SHL }>,
     sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
     extcodesize_gadget: DummyGadget<F, 1, 1, { ExecutionState::EXTCODESIZE }>,
@@ -271,6 +273,7 @@ impl<F: Field> ExecutionConfig<F> {
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
+        exp_table: &dyn LookupTable<F>,
     ) -> Self {
         let q_usable = meta.complex_selector();
         let q_step = meta.advice_column();
@@ -511,6 +514,7 @@ impl<F: Field> ExecutionConfig<F> {
             block_table,
             copy_table,
             keccak_table,
+            exp_table,
             &power_of_randomness,
             &cell_manager,
         );
@@ -686,6 +690,7 @@ impl<F: Field> ExecutionConfig<F> {
         block_table: &dyn LookupTable<F>,
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
+        exp_table: &dyn LookupTable<F>,
         power_of_randomness: &[Expression<F>; 31],
         cell_manager: &CellManager<F>,
     ) {
@@ -702,6 +707,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Byte => byte_table,
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
+                        Table::Exp => exp_table,
                     }
                     .table_exprs(meta);
                     vec![(
@@ -902,6 +908,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CODESIZE => assign_exec_step!(self.codesize_gadget),
             ExecutionState::CMP => assign_exec_step!(self.comparator_gadget),
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
+            ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
             ExecutionState::EXTCODEHASH => assign_exec_step!(self.extcodehash_gadget),
             ExecutionState::GAS => assign_exec_step!(self.gas_gadget),
             ExecutionState::GASPRICE => assign_exec_step!(self.gasprice_gadget),
@@ -929,7 +936,6 @@ impl<F: Field> ExecutionConfig<F> {
             // dummy gadgets
             ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
-            ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
             ExecutionState::SHL => assign_exec_step!(self.shl_gadget),
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),

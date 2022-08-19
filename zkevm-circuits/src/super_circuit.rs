@@ -56,7 +56,7 @@ use crate::bytecode_circuit::bytecode_unroller::{
 };
 
 use crate::evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit};
-use crate::table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable};
+use crate::table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable};
 use crate::util::power_of_randomness_from_instance;
 use eth_types::Field;
 use halo2_proofs::{
@@ -139,6 +139,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let keccak_table = KeccakTable::construct(meta);
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
+        let q_exp_table = meta.complex_selector();
+        let exp_table = ExpTable::construct(meta, q_exp_table);
 
         let power_of_randomness = power_of_randomness_from_instance(meta);
         let evm_circuit = EvmCircuit::configure(
@@ -150,6 +152,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             &block_table,
             &copy_table,
             &keccak_table,
+            &exp_table,
         );
         let state_circuit = StateCircuitConfig::configure(
             meta,

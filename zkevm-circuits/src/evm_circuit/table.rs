@@ -106,6 +106,7 @@ pub(crate) enum Table {
     Byte,
     Copy,
     Keccak,
+    Exp,
 }
 
 #[derive(Clone, Debug)]
@@ -252,6 +253,13 @@ pub(crate) enum Lookup<F> {
         /// the final output keccak256 hash of the input.
         output_rlc: Expression<F>,
     },
+    /// Lookup to exponentiation table.
+    ExpTable {
+        a_limbs: [Expression<F>; 4],
+        b_limbs: [Expression<F>; 4],
+        c_lo_hi: [Expression<F>; 2],
+        d_lo_hi: [Expression<F>; 2],
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -271,6 +279,7 @@ impl<F: Field> Lookup<F> {
             Self::Byte { .. } => Table::Byte,
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
+            Self::ExpTable { .. } => Table::Exp,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -365,6 +374,26 @@ impl<F: Field> Lookup<F> {
                 input_rlc.clone(),
                 input_len.clone(),
                 output_rlc.clone(),
+            ],
+            Self::ExpTable {
+                a_limbs,
+                b_limbs,
+                c_lo_hi,
+                d_lo_hi,
+            } => vec![
+                1.expr(), // is_first
+                a_limbs[0].clone(),
+                a_limbs[1].clone(),
+                a_limbs[2].clone(),
+                a_limbs[3].clone(),
+                b_limbs[0].clone(),
+                b_limbs[1].clone(),
+                b_limbs[2].clone(),
+                b_limbs[3].clone(),
+                c_lo_hi[0].clone(),
+                c_lo_hi[1].clone(),
+                d_lo_hi[0].clone(),
+                d_lo_hi[1].clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

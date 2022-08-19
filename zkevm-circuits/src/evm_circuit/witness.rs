@@ -1263,6 +1263,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::MSIZE => ExecutionState::MSIZE,
                     OpcodeId::CALLER => ExecutionState::CALLER,
                     OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
+                    OpcodeId::EXP => ExecutionState::EXP,
                     OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
                     OpcodeId::TIMESTAMP | OpcodeId::NUMBER | OpcodeId::GASLIMIT => {
                         ExecutionState::BLOCKCTXU64
@@ -1288,7 +1289,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     // dummy ops
                     OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
                     OpcodeId::BLOCKHASH => dummy!(ExecutionState::BLOCKHASH),
-                    OpcodeId::EXP => dummy!(ExecutionState::EXP),
                     OpcodeId::SHL => dummy!(ExecutionState::SHL),
                     OpcodeId::SAR => dummy!(ExecutionState::SAR),
                     OpcodeId::EXTCODESIZE => dummy!(ExecutionState::EXTCODESIZE),

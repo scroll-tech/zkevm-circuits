@@ -10,6 +10,7 @@ use crate::impl_expr;
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::{Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
+use gadgets::mul_add::{MulAddChip, MulAddConfig};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
@@ -883,6 +884,45 @@ impl<F: Field> LookupTable<F> for CopyTable {
             meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
             meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
             meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
+        ]
+    }
+}
+
+/// Lookup table within the Exponentiation circuit.
+#[derive(Clone, Debug)]
+pub struct ExpTable<F> {
+    /// Whether this row is the first row in the circuit.
+    pub is_first: Column<Advice>,
+    /// Multiplication gadget for verification of each step.
+    pub mul_gadget: MulAddConfig<F>,
+}
+
+impl<F: Field> ExpTable<F> {
+    /// Construct the Exponentiation table.
+    pub fn construct(meta: &mut ConstraintSystem<F>, q_enable: Selector) -> Self {
+        Self {
+            is_first: meta.advice_column(),
+            mul_gadget: MulAddChip::configure(meta, q_enable),
+        }
+    }
+}
+
+impl<F: Field> LookupTable<F> for ExpTable<F> {
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            meta.query_advice(self.is_first, Rotation::cur()),
+            meta.query_advice(self.mul_gadget.col0, Rotation::cur()), // a_limb0
+            meta.query_advice(self.mul_gadget.col1, Rotation::cur()), // a_limb1
+            meta.query_advice(self.mul_gadget.col2, Rotation::cur()), // a_limb2
+            meta.query_advice(self.mul_gadget.col3, Rotation::cur()), // a_limb3
+            meta.query_advice(self.mul_gadget.col0, Rotation::next()), // b_limb0
+            meta.query_advice(self.mul_gadget.col1, Rotation::next()), // b_limb1
+            meta.query_advice(self.mul_gadget.col2, Rotation::next()), // b_limb2
+            meta.query_advice(self.mul_gadget.col3, Rotation::next()), // b_limb3
+            meta.query_advice(self.mul_gadget.col0, Rotation(2)),     // c_lo
+            meta.query_advice(self.mul_gadget.col1, Rotation(2)),     // c_hi
+            meta.query_advice(self.mul_gadget.col2, Rotation(2)),     // d_lo
+            meta.query_advice(self.mul_gadget.col3, Rotation(2)),     // d_hi
         ]
     }
 }

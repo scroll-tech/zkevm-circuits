@@ -17,14 +17,14 @@
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 
 use crate::util::{expr_from_bytes, pow_of_two, split_u256, split_u256_limb64, Expr};
 
 /// Config for the MulAddChip.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MulAddConfig<F> {
     /// Whether the row represents the first step.
     pub q_step: Selector,
@@ -48,7 +48,7 @@ pub struct MulAddConfig<F> {
 }
 
 /// Chip to constrain a * b + c == d (mod 2^256).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MulAddChip<F> {
     /// Config for the chip.
     pub config: MulAddConfig<F>,
@@ -57,10 +57,7 @@ pub struct MulAddChip<F> {
 impl<F: Field> MulAddChip<F> {
     /// Configure the MulAdd chip.
     #[allow(clippy::too_many_arguments)]
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
-    ) -> MulAddConfig<F> {
+    pub fn configure(meta: &mut ConstraintSystem<F>, q_enable: Selector) -> MulAddConfig<F> {
         let q_step = meta.complex_selector();
         let col0 = meta.advice_column();
         let col1 = meta.advice_column();
@@ -70,7 +67,7 @@ impl<F: Field> MulAddChip<F> {
         let mut overflow = 0.expr();
 
         meta.create_gate("mul add gate", |meta| {
-            let q_enable = q_enable(meta);
+            let q_enable = meta.query_selector(q_enable);
             let q_step = meta.query_selector(q_step);
 
             let a_limbs =
@@ -359,7 +356,7 @@ mod test {
 
             fn configure(meta: &mut halo2_proofs::plonk::ConstraintSystem<F>) -> Self::Config {
                 let q_enable = meta.complex_selector();
-                let mul_config = MulAddChip::configure(meta, |meta| meta.query_selector(q_enable));
+                let mul_config = MulAddChip::configure(meta, q_enable);
                 Self::Config {
                     q_enable,
                     mul_config,
