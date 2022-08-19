@@ -255,8 +255,7 @@ pub mod test {
             let q_copy_table = meta.fixed_column();
             let copy_table = CopyTable::construct(meta, q_copy_table);
             let keccak_table = KeccakTable::construct(meta);
-            let q_exp_table = meta.complex_selector();
-            let exp_table = ExpTable::construct(meta, q_exp_table);
+            let exp_table = ExpTable::construct(meta);
 
             let power_of_randomness = power_of_randomness_from_instance(meta);
             let evm_circuit = EvmCircuit::configure(

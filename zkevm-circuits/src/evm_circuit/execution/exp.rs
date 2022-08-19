@@ -1,6 +1,6 @@
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
-use gadgets::util::{or, Expr};
+use gadgets::util::{not, or, Expr};
 use halo2_proofs::plonk::Error;
 
 use crate::evm_circuit::{
@@ -9,7 +9,7 @@ use crate::evm_circuit::{
         common_gadget::SameContextGadget,
         constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
         from_bytes,
-        math_gadget::ComparisonGadget,
+        math_gadget::{ComparisonGadget, IsZeroGadget},
         CachedRegion, Cell, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
@@ -24,6 +24,8 @@ pub(crate) struct ExponentiationGadget<F> {
     exponent: Word<F>,
     exponentiation: Word<F>,
     exponent_byte_size: Cell<F>,
+    exponent_is_zero: IsZeroGadget<F>,
+    exponent_is_one: IsZeroGadget<F>,
     cmp1: ComparisonGadget<F, 8>,
     cmp2: ComparisonGadget<F, 8>,
 }
@@ -44,37 +46,35 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         cb.stack_pop(exponent_rlc.expr());
         cb.stack_push(exponentiation_rlc.expr());
 
-        let base_limbs = [
-            from_bytes::expr(&base_rlc.cells[0x00..0x08]),
-            from_bytes::expr(&base_rlc.cells[0x08..0x10]),
-            from_bytes::expr(&base_rlc.cells[0x10..0x18]),
-            from_bytes::expr(&base_rlc.cells[0x18..0x20]),
-        ];
-        let exponent_limbs = [
-            from_bytes::expr(&exponent_rlc.cells[0x00..0x08]),
-            from_bytes::expr(&exponent_rlc.cells[0x08..0x10]),
-            from_bytes::expr(&exponent_rlc.cells[0x10..0x18]),
-            from_bytes::expr(&exponent_rlc.cells[0x18..0x20]),
-        ];
-        let (exp_lo, exp_hi) = (
-            from_bytes::expr(&exponentiation_rlc.cells[0x00..0x10]),
-            from_bytes::expr(&exponentiation_rlc.cells[0x10..0x20]),
-        );
+        let base = from_bytes::expr(&base_rlc.cells);
+        let exponent = from_bytes::expr(&exponent_rlc.cells);
+        let exponentiation = from_bytes::expr(&exponentiation_rlc.cells);
 
-        let (d_lo, d_hi) = (cb.query_cell(), cb.query_cell());
-        cb.exp_table_lookup(
-            base_limbs,
-            exponent_limbs,
-            0.expr(), // c == 0 for multiplication.
-            0.expr(), // c == 0 for multiplication.
-            d_lo.expr(),
-            d_hi.expr(),
+        let exponent_is_zero = IsZeroGadget::construct(cb, exponent.clone());
+        let exponent_is_one = IsZeroGadget::construct(cb, exponent.clone() - 1.expr());
+
+        cb.condition(exponent_is_zero.expr(), |cb| {
+            cb.require_equal(
+                "exponentiation == 1 if exponent == 0",
+                exponentiation.clone(),
+                1.expr(),
+            );
+        });
+        cb.condition(exponent_is_one.expr(), |cb| {
+            cb.require_equal(
+                "exponentiation == base if exponent == 1",
+                exponentiation.clone(),
+                base.clone(),
+            );
+        });
+        cb.condition(
+            not::expr(or::expr([exponent_is_zero.expr(), exponent_is_one.expr()])),
+            |cb| {
+                cb.exp_table_lookup(base, exponent.clone(), exponentiation);
+            },
         );
-        cb.require_equal("exponentiation lo bytes", exp_lo, d_lo.expr());
-        cb.require_equal("exponentiation hi bytes", exp_hi, d_hi.expr());
 
         let exponent_byte_size = cb.query_cell();
-        let exponent = from_bytes::expr(&exponent_rlc.cells);
         let pow2_upper = cb.pow2_lookup(8.expr() * exponent_byte_size.expr());
         let pow2_lower = cb.pow2_lookup(8.expr() * (exponent_byte_size.expr() - 1.expr()));
         let cmp1 = ComparisonGadget::construct(cb, exponent.clone(), pow2_upper.expr());
@@ -111,6 +111,8 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             exponent: exponent_rlc,
             exponentiation: exponentiation_rlc,
             exponent_byte_size,
+            exponent_is_zero,
+            exponent_is_one,
             cmp1,
             cmp2,
         }

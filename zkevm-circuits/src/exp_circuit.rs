@@ -1,5 +1,6 @@
 //! Exponentiation verification circuit.
 
+use gadgets::mul_add::MulAddConfig;
 use halo2_proofs::plonk::{Advice, Column, Selector};
 
 use crate::table::ExpTable;
@@ -14,5 +15,7 @@ pub struct ExpCircuit<F> {
     /// Whether this row is the last row in the circuit.
     pub is_last: Column<Advice>,
     /// The Exponentiation circuit's table.
-    pub exp_table: ExpTable<F>,
+    pub exp_table: ExpTable,
+    /// Multiplication gadget for verification of each step.
+    pub mul_gadget: MulAddConfig<F>,
 }

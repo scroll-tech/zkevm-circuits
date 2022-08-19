@@ -1112,20 +1112,16 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn exp_table_lookup(
         &mut self,
-        a_limbs: [Expression<F>; 4],
-        b_limbs: [Expression<F>; 4],
-        c_lo: Expression<F>,
-        c_hi: Expression<F>,
-        d_lo: Expression<F>,
-        d_hi: Expression<F>,
+        base: Expression<F>,
+        exponent: Expression<F>,
+        exponentiation: Expression<F>,
     ) {
         self.add_lookup(
             "exponentiation lookup",
             Lookup::ExpTable {
-                a_limbs,
-                b_limbs,
-                c_lo_hi: [c_lo, c_hi],
-                d_lo_hi: [d_lo, d_hi],
+                base,
+                exponent,
+                exponentiation,
             },
         );
     }

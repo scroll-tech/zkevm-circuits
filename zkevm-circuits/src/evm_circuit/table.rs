@@ -255,10 +255,9 @@ pub(crate) enum Lookup<F> {
     },
     /// Lookup to exponentiation table.
     ExpTable {
-        a_limbs: [Expression<F>; 4],
-        b_limbs: [Expression<F>; 4],
-        c_lo_hi: [Expression<F>; 2],
-        d_lo_hi: [Expression<F>; 2],
+        base: Expression<F>,
+        exponent: Expression<F>,
+        exponentiation: Expression<F>,
     },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
@@ -376,24 +375,14 @@ impl<F: Field> Lookup<F> {
                 output_rlc.clone(),
             ],
             Self::ExpTable {
-                a_limbs,
-                b_limbs,
-                c_lo_hi,
-                d_lo_hi,
+                base,
+                exponent,
+                exponentiation,
             } => vec![
                 1.expr(), // is_first
-                a_limbs[0].clone(),
-                a_limbs[1].clone(),
-                a_limbs[2].clone(),
-                a_limbs[3].clone(),
-                b_limbs[0].clone(),
-                b_limbs[1].clone(),
-                b_limbs[2].clone(),
-                b_limbs[3].clone(),
-                c_lo_hi[0].clone(),
-                c_lo_hi[1].clone(),
-                d_lo_hi[0].clone(),
-                d_lo_hi[1].clone(),
+                base.clone(),
+                exponent.clone(),
+                exponentiation.clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()
