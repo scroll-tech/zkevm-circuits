@@ -3,7 +3,7 @@
 use eth_types::Field;
 use gadgets::{
     mul_add::{MulAddChip, MulAddConfig},
-    util::and,
+    util::{and, not, Expr},
 };
 use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Selector},
@@ -25,6 +25,8 @@ pub struct ExpCircuit<F> {
     pub exp_table: ExpTable,
     /// Multiplication gadget for verification of each step.
     pub mul_gadget: MulAddConfig<F>,
+    /// Boolean value to check whether intermediate_exponent is odd or even.
+    pub remainder: Column<Advice>,
 }
 
 impl<F: Field> ExpCircuit<F> {
@@ -35,6 +37,7 @@ impl<F: Field> ExpCircuit<F> {
         let is_last = meta.advice_column();
         let exp_table = ExpTable::construct(meta);
         let mul_gadget = MulAddChip::configure(meta, q_step);
+        let remainder = meta.advice_column();
 
         meta.create_gate("exp circuit", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -98,6 +101,42 @@ impl<F: Field> ExpCircuit<F> {
                 ]),
             );
 
+            // The intermediate exponent starts at the exponent, i.e.
+            // intermediate_exponent[0] == exponent.
+            // For every intermediate step, the intermediate exponent is reduced:
+            // 1. intermediate_exponent::next == intermediate_exponent::cur - 1, if odd.
+            // 2. intermediate_exponent::next == intermediate_exponent::cur/2, if even.
+            let remainder_expr = meta.query_advice(remainder, Rotation::cur());
+            cb.require_boolean("remainder is 0 or 1", remainder_expr.clone());
+
+            // remainder == 1 => odd
+            cb.condition(remainder_expr.clone(), |cb| {
+                cb.require_equal(
+                    "intermediate_exponent::next == intermediate_exponent::cur - 1",
+                    meta.query_advice(exp_table.intermediate_exponent, Rotation::next()),
+                    meta.query_advice(exp_table.intermediate_exponent, Rotation::cur()) - 1.expr(),
+                );
+            });
+            // remainder == 0 => even
+            cb.condition(not::expr(remainder_expr), |cb| {
+                cb.require_equal(
+                    "intermediate_exponent::next == intermediate_exponent::cur / 2",
+                    meta.query_advice(exp_table.intermediate_exponent, Rotation::next()) * 2.expr(),
+                    meta.query_advice(exp_table.intermediate_exponent, Rotation::cur()),
+                );
+            });
+
+            // For the last step, the intermediate_exponent MUST be 2, since we do not cover
+            // the case where exponent == 0 or exponent == 1 in exponentiation
+            // circuit.
+            cb.condition(meta.query_advice(is_last, Rotation::cur()), |cb| {
+                cb.require_equal(
+                    "if is_last is True: intermediate_exponent == 2",
+                    meta.query_advice(exp_table.intermediate_exponent, Rotation::cur()),
+                    2.expr(),
+                );
+            });
+
             cb.gate(meta.query_selector(q_step))
         });
 
@@ -107,6 +146,7 @@ impl<F: Field> ExpCircuit<F> {
             is_last,
             exp_table,
             mul_gadget,
+            remainder,
         }
     }
 }

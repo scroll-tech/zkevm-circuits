@@ -895,7 +895,7 @@ pub struct ExpTable {
     /// The integer base of the exponentiation.
     pub base_limb: Column<Advice>,
     /// The integer exponent of the exponentiation.
-    pub exponent_limb: Column<Advice>,
+    pub intermediate_exponent: Column<Advice>,
     /// The intermediate result of exponentiation by squaring.
     pub intermediate_exp_lo_hi: Column<Advice>,
 }
@@ -906,7 +906,7 @@ impl ExpTable {
         Self {
             is_first: meta.advice_column(),
             base_limb: meta.advice_column(),
-            exponent_limb: meta.advice_column(),
+            intermediate_exponent: meta.advice_column(),
             intermediate_exp_lo_hi: meta.advice_column(),
         }
     }
@@ -920,10 +920,7 @@ impl<F: Field> LookupTable<F> for ExpTable {
             meta.query_advice(self.base_limb, Rotation::next()),
             meta.query_advice(self.base_limb, Rotation(2)),
             meta.query_advice(self.base_limb, Rotation(3)),
-            meta.query_advice(self.exponent_limb, Rotation::cur()),
-            meta.query_advice(self.exponent_limb, Rotation::next()),
-            meta.query_advice(self.exponent_limb, Rotation(2)),
-            meta.query_advice(self.exponent_limb, Rotation(3)),
+            meta.query_advice(self.intermediate_exponent, Rotation::cur()),
             meta.query_advice(self.intermediate_exp_lo_hi, Rotation::cur()),
             meta.query_advice(self.intermediate_exp_lo_hi, Rotation::next()),
         ]
