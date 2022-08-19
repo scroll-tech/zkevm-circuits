@@ -1,6 +1,6 @@
 //! Block-related utility module
 
-use super::{transaction::Transaction, CopyEvent};
+use super::{transaction::Transaction, CopyEvent, ExpEvent};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
@@ -65,6 +65,8 @@ pub struct Block {
     pub txs: Vec<Transaction>,
     /// Copy events in this block.
     pub copy_events: Vec<CopyEvent>,
+    /// Exponentiation events in the block.
+    pub exp_events: Vec<ExpEvent>,
     code: HashMap<Hash, Vec<u8>>,
 }
 
@@ -98,6 +100,7 @@ impl Block {
             container: OperationContainer::new(),
             txs: Vec::new(),
             copy_events: Vec::new(),
+            exp_events: Vec::new(),
             code: HashMap::new(),
         })
     }
@@ -115,7 +118,11 @@ impl Block {
 
 impl Block {
     /// Push a copy event to the block.
-    pub fn add_copy_event(&mut self, copy: CopyEvent) {
-        self.copy_events.push(copy);
+    pub fn add_copy_event(&mut self, event: CopyEvent) {
+        self.copy_events.push(event);
+    }
+    /// Push an exponentiation event to the block.
+    pub fn add_exp_event(&mut self, event: ExpEvent) {
+        self.exp_events.push(event);
     }
 }

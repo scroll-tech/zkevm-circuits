@@ -893,6 +893,12 @@ impl<F: Field> LookupTable<F> for CopyTable {
 pub struct ExpTable<F> {
     /// Whether this row is the first row in the circuit.
     pub is_first: Column<Advice>,
+    /// The integer base of the exponentiation.
+    pub base: Column<Advice>,
+    /// The integer exponent of the exponentiation.
+    pub exponent: Column<Advice>,
+    /// The result of the exponentiation.
+    pub exponentiation: Column<Advice>,
     /// Multiplication gadget for verification of each step.
     pub mul_gadget: MulAddConfig<F>,
 }
@@ -902,6 +908,9 @@ impl<F: Field> ExpTable<F> {
     pub fn construct(meta: &mut ConstraintSystem<F>, q_enable: Selector) -> Self {
         Self {
             is_first: meta.advice_column(),
+            base: meta.advice_column(),
+            exponent: meta.advice_column(),
+            exponentiation: meta.advice_column(),
             mul_gadget: MulAddChip::configure(meta, q_enable),
         }
     }

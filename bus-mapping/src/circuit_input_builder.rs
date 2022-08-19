@@ -22,7 +22,9 @@ pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::{self, Address, GethExecStep, GethExecTrace, Word};
 use ethers_providers::JsonRpcClient;
-pub use execution::{CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, NumberOrHash};
+pub use execution::{
+    CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
+};
 pub use input_state_ref::CircuitInputStateRef;
 use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
