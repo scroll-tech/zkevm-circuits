@@ -70,7 +70,23 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         cb.condition(
             not::expr(or::expr([exponent_is_zero.expr(), exponent_is_one.expr()])),
             |cb| {
-                cb.exp_table_lookup(base, exponent.clone(), exponentiation);
+                let base_limbs = [
+                    from_bytes::expr(&base_rlc.cells[0x00..0x08]),
+                    from_bytes::expr(&base_rlc.cells[0x08..0x10]),
+                    from_bytes::expr(&base_rlc.cells[0x10..0x18]),
+                    from_bytes::expr(&base_rlc.cells[0x18..0x20]),
+                ];
+                let exponent_limbs = [
+                    from_bytes::expr(&exponent_rlc.cells[0x00..0x08]),
+                    from_bytes::expr(&exponent_rlc.cells[0x08..0x10]),
+                    from_bytes::expr(&exponent_rlc.cells[0x10..0x18]),
+                    from_bytes::expr(&exponent_rlc.cells[0x18..0x20]),
+                ];
+                let exponentiation_lo_hi = [
+                    from_bytes::expr(&exponentiation_rlc.cells[0x00..0x10]),
+                    from_bytes::expr(&exponentiation_rlc.cells[0x10..0x20]),
+                ];
+                cb.exp_table_lookup(base_limbs, exponent_limbs, exponentiation_lo_hi);
             },
         );
 

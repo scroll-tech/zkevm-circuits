@@ -893,11 +893,11 @@ pub struct ExpTable {
     /// Whether this row is the first row in the circuit.
     pub is_first: Column<Advice>,
     /// The integer base of the exponentiation.
-    pub base: Column<Advice>,
+    pub base_limb: Column<Advice>,
     /// The integer exponent of the exponentiation.
-    pub exponent: Column<Advice>,
-    /// The result of the exponentiation.
-    pub exponentiation: Column<Advice>,
+    pub exponent_limb: Column<Advice>,
+    /// The intermediate result of exponentiation by squaring.
+    pub intermediate_exp_lo_hi: Column<Advice>,
 }
 
 impl ExpTable {
@@ -905,9 +905,9 @@ impl ExpTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             is_first: meta.advice_column(),
-            base: meta.advice_column(),
-            exponent: meta.advice_column(),
-            exponentiation: meta.advice_column(),
+            base_limb: meta.advice_column(),
+            exponent_limb: meta.advice_column(),
+            intermediate_exp_lo_hi: meta.advice_column(),
         }
     }
 }
@@ -916,9 +916,16 @@ impl<F: Field> LookupTable<F> for ExpTable {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_advice(self.is_first, Rotation::cur()),
-            meta.query_advice(self.base, Rotation::cur()),
-            meta.query_advice(self.exponent, Rotation::cur()),
-            meta.query_advice(self.exponentiation, Rotation::cur()),
+            meta.query_advice(self.base_limb, Rotation::cur()),
+            meta.query_advice(self.base_limb, Rotation::next()),
+            meta.query_advice(self.base_limb, Rotation(2)),
+            meta.query_advice(self.base_limb, Rotation(3)),
+            meta.query_advice(self.exponent_limb, Rotation::cur()),
+            meta.query_advice(self.exponent_limb, Rotation::next()),
+            meta.query_advice(self.exponent_limb, Rotation(2)),
+            meta.query_advice(self.exponent_limb, Rotation(3)),
+            meta.query_advice(self.intermediate_exp_lo_hi, Rotation::cur()),
+            meta.query_advice(self.intermediate_exp_lo_hi, Rotation::next()),
         ]
     }
 }

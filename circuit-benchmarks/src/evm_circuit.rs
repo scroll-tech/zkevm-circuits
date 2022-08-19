@@ -28,7 +28,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
         let block_table = BlockTable::construct(meta);
         let copy_table = [(); 11].map(|_| meta.advice_column());
         let keccak_table = [(); 4].map(|_| meta.advice_column());
-        let exp_table = [(); 4].map(|_| meta.advice_column());
+        let exp_table = [(); 11].map(|_| meta.advice_column());
         // Use constant expression to mock constant instance column for a more
         // reasonable benchmark.
         let power_of_randomness = [(); 31].map(|_| Expression::Constant(F::one()));
