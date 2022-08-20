@@ -896,7 +896,7 @@ pub struct ExpTable {
     /// The integer base of the exponentiation.
     pub base_limb: Column<Advice>,
     /// The integer exponent of the exponentiation.
-    pub intermediate_exponent: Column<Advice>,
+    pub intermediate_exponent_lo_hi: Column<Advice>,
     /// The intermediate result of exponentiation by squaring.
     pub intermediate_exp_lo_hi: Column<Advice>,
 }
@@ -907,7 +907,7 @@ impl ExpTable {
         vec![
             self.is_first,
             self.base_limb,
-            self.intermediate_exponent,
+            self.intermediate_exponent_lo_hi,
             self.intermediate_exp_lo_hi,
         ]
     }
@@ -919,7 +919,7 @@ impl ExpTable {
         Self {
             is_first: meta.advice_column(),
             base_limb: meta.advice_column(),
-            intermediate_exponent: meta.advice_column(),
+            intermediate_exponent_lo_hi: meta.advice_column(),
             intermediate_exp_lo_hi: meta.advice_column(),
         }
     }
@@ -933,12 +933,15 @@ impl ExpTable {
         for (step_idx, exp_step) in exp_event.steps.iter().rev().enumerate() {
             let is_first = if step_idx.eq(&0) { F::one() } else { F::zero() };
             let (exp_lo, exp_hi) = split_u256(&exp_step.d);
+            let (exponent_lo, exponent_hi) = split_u256(&exponent);
 
             // row 1
             assignments.push([
                 is_first,
                 base_limbs[0].as_u64().into(),
-                exponent.to_scalar().expect("exponent should fit to scalar"),
+                exponent_lo
+                    .to_scalar()
+                    .expect("exponent should fit to scalar"),
                 exp_lo
                     .to_scalar()
                     .expect("exponentiation lo should fit to scalar"),
@@ -947,7 +950,9 @@ impl ExpTable {
             assignments.push([
                 F::zero(),
                 base_limbs[1].as_u64().into(),
-                F::zero(),
+                exponent_hi
+                    .to_scalar()
+                    .expect("exponent hi should fit to scalar"),
                 exp_hi
                     .to_scalar()
                     .expect("exponentiation hi should fit to scalar"),
@@ -1029,7 +1034,8 @@ impl<F: Field> LookupTable<F> for ExpTable {
             meta.query_advice(self.base_limb, Rotation::next()),
             meta.query_advice(self.base_limb, Rotation(2)),
             meta.query_advice(self.base_limb, Rotation(3)),
-            meta.query_advice(self.intermediate_exponent, Rotation::cur()),
+            meta.query_advice(self.intermediate_exponent_lo_hi, Rotation::cur()),
+            meta.query_advice(self.intermediate_exponent_lo_hi, Rotation::next()),
             meta.query_advice(self.intermediate_exp_lo_hi, Rotation::cur()),
             meta.query_advice(self.intermediate_exp_lo_hi, Rotation::next()),
         ]

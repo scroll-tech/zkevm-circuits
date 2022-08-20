@@ -1,6 +1,6 @@
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
-use gadgets::util::{not, or, Expr};
+use eth_types::{Field, ToLittleEndian, ToScalar, U256};
+use gadgets::util::{and, not, or, split_u256, Expr};
 use halo2_proofs::plonk::Error;
 
 use crate::evm_circuit::{
@@ -23,11 +23,13 @@ pub(crate) struct ExponentiationGadget<F> {
     base: Word<F>,
     exponent: Word<F>,
     exponentiation: Word<F>,
-    exponent_byte_size: Cell<F>,
     exponent_is_zero: IsZeroGadget<F>,
     exponent_is_one: IsZeroGadget<F>,
-    cmp1: ComparisonGadget<F, 8>,
-    cmp2: ComparisonGadget<F, 8>,
+    exponent_byte_size: Cell<F>,
+    exponent_lo_cmp_pow2: ComparisonGadget<F, 16>,
+    exponent_hi_cmp_pow2: ComparisonGadget<F, 16>,
+    pow2_cmp_exponent_lo: ComparisonGadget<F, 16>,
+    pow2_cmp_exponent_hi: ComparisonGadget<F, 16>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
@@ -46,27 +48,52 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         cb.stack_pop(exponent_rlc.expr());
         cb.stack_push(exponentiation_rlc.expr());
 
-        let base = from_bytes::expr(&base_rlc.cells);
-        let exponent = from_bytes::expr(&exponent_rlc.cells);
-        let exponentiation = from_bytes::expr(&exponentiation_rlc.cells);
+        let (base_lo, base_hi) = (
+            from_bytes::expr(&base_rlc.cells[0x00..0x10]),
+            from_bytes::expr(&base_rlc.cells[0x10..0x20]),
+        );
+        let (exponent_lo, exponent_hi) = (
+            from_bytes::expr(&exponent_rlc.cells[0x00..0x10]),
+            from_bytes::expr(&exponent_rlc.cells[0x10..0x20]),
+        );
+        let (exponentiation_lo, exponentiation_hi) = (
+            from_bytes::expr(&exponentiation_rlc.cells[0x00..0x10]),
+            from_bytes::expr(&exponentiation_rlc.cells[0x10..0x20]),
+        );
 
-        let exponent_is_zero = IsZeroGadget::construct(cb, exponent.clone());
-        let exponent_is_one = IsZeroGadget::construct(cb, exponent.clone() - 1.expr());
+        let exponent_is_zero = IsZeroGadget::construct(cb, exponent_lo.clone());
+        let exponent_is_one = IsZeroGadget::construct(cb, exponent_lo.clone() - 1.expr());
 
-        cb.condition(exponent_is_zero.expr(), |cb| {
-            cb.require_equal(
-                "exponentiation == 1 if exponent == 0",
-                exponentiation.clone(),
-                1.expr(),
-            );
-        });
-        cb.condition(exponent_is_one.expr(), |cb| {
-            cb.require_equal(
-                "exponentiation == base if exponent == 1",
-                exponentiation.clone(),
-                base.clone(),
-            );
-        });
+        cb.condition(
+            exponent_is_zero.expr() * not::expr(exponent_hi.clone()),
+            |cb| {
+                cb.require_equal(
+                    "exponentiation == 1 if exponent == 0 (lo == 1)",
+                    exponentiation_lo.clone(),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "exponentiation == 1 if exponent == 0 (hi == 0)",
+                    exponentiation_hi.clone(),
+                    0.expr(),
+                );
+            },
+        );
+        cb.condition(
+            exponent_is_one.expr() * not::expr(exponent_hi.clone()),
+            |cb| {
+                cb.require_equal(
+                    "exponentiation == base if exponent == 1 (lo)",
+                    exponentiation_lo.clone(),
+                    base_lo.clone(),
+                );
+                cb.require_equal(
+                    "exponentiation == base if exponent == 1 (hi)",
+                    exponentiation_hi.clone(),
+                    base_hi.clone(),
+                );
+            },
+        );
         cb.condition(
             not::expr(or::expr([exponent_is_zero.expr(), exponent_is_one.expr()])),
             |cb| {
@@ -80,26 +107,45 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                     from_bytes::expr(&exponentiation_rlc.cells[0x00..0x10]),
                     from_bytes::expr(&exponentiation_rlc.cells[0x10..0x20]),
                 ];
-                cb.exp_table_lookup(base_limbs, exponent.clone(), exponentiation_lo_hi);
+                cb.exp_table_lookup(
+                    base_limbs,
+                    [exponent_lo.clone(), exponent_hi.clone()],
+                    exponentiation_lo_hi,
+                );
             },
         );
 
         let exponent_byte_size = cb.query_cell();
         let pow2_upper = cb.pow2_lookup(8.expr() * exponent_byte_size.expr());
         let pow2_lower = cb.pow2_lookup(8.expr() * (exponent_byte_size.expr() - 1.expr()));
-        let cmp1 = ComparisonGadget::construct(cb, exponent.clone(), pow2_upper.expr());
-        let cmp2 = ComparisonGadget::construct(cb, pow2_lower.expr(), exponent);
+        let exponent_lo_cmp_pow2 =
+            ComparisonGadget::construct(cb, exponent_lo.clone(), pow2_upper.expr());
+        let exponent_hi_cmp_pow2 =
+            ComparisonGadget::construct(cb, exponent_hi.clone(), pow2_upper.expr());
+        let pow2_cmp_exponent_lo = ComparisonGadget::construct(cb, pow2_lower.expr(), exponent_lo);
+        let pow2_cmp_exponent_hi = ComparisonGadget::construct(cb, pow2_lower.expr(), exponent_hi);
 
-        let (cmp1_lt, _) = cmp1.expr();
-        let (cmp2_lt, cmp2_eq) = cmp2.expr();
+        let (exponent_lo_lt_pow2, _exponent_lo_eq_pow2) = exponent_lo_cmp_pow2.expr();
+        let (exponent_hi_lt_pow2, exponent_hi_eq_pow2) = exponent_hi_cmp_pow2.expr();
+        let (pow2_lt_exponent_lo, pow2_eq_exponent_lo) = pow2_cmp_exponent_lo.expr();
+        let (pow2_lt_exponent_hi, pow2_eq_exponent_hi) = pow2_cmp_exponent_hi.expr();
         cb.require_equal(
             "exponent < pow2(8 * byte_size(exponent))",
-            cmp1_lt,
+            or::expr([
+                exponent_hi_lt_pow2,
+                and::expr([exponent_hi_eq_pow2, exponent_lo_lt_pow2]),
+            ]),
             1.expr(),
         );
         cb.require_equal(
             "pow2(8 * (byte_size(exponent) - 1)) <= exponent",
-            or::expr([cmp2_lt, cmp2_eq]),
+            or::expr([
+                or::expr([
+                    pow2_lt_exponent_hi,
+                    and::expr([pow2_eq_exponent_hi.clone(), pow2_lt_exponent_lo]),
+                ]),
+                and::expr([pow2_eq_exponent_hi, pow2_eq_exponent_lo]),
+            ]),
             1.expr(),
         );
 
@@ -120,23 +166,133 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             base: base_rlc,
             exponent: exponent_rlc,
             exponentiation: exponentiation_rlc,
-            exponent_byte_size,
             exponent_is_zero,
             exponent_is_one,
-            cmp1,
-            cmp2,
+            exponent_byte_size,
+            exponent_lo_cmp_pow2,
+            exponent_hi_cmp_pow2,
+            pow2_cmp_exponent_lo,
+            pow2_cmp_exponent_hi,
         }
     }
 
     fn assign_exec_step(
         &self,
-        _region: &mut CachedRegion<'_, '_, F>,
-        _offset: usize,
-        _block: &Block<F>,
-        _transaction: &Transaction,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block<F>,
+        _tx: &Transaction,
         _call: &Call,
-        _step: &ExecStep,
+        step: &ExecStep,
     ) -> Result<(), Error> {
-        unimplemented!()
+        self.same_context.assign_exec_step(region, offset, step)?;
+
+        let [base, exponent, exponentiation] =
+            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
+                .map(|idx| block.rws[idx].stack_value());
+
+        self.base.assign(region, offset, Some(base.to_le_bytes()))?;
+        self.exponent
+            .assign(region, offset, Some(exponent.to_le_bytes()))?;
+        self.exponentiation
+            .assign(region, offset, Some(exponentiation.to_le_bytes()))?;
+
+        let (exponent_lo, exponent_hi) = split_u256(&exponent);
+
+        let exponent_scalar = exponent
+            .to_scalar()
+            .expect("exponent should fit into scalar");
+        self.exponent_is_zero
+            .assign(region, offset, exponent_scalar)?;
+
+        let exponent_minus_one = exponent.saturating_sub(1.into());
+        self.exponent_is_one.assign(
+            region,
+            offset,
+            exponent_minus_one
+                .to_scalar()
+                .expect("(exponent - 1) should fit into scalar"),
+        )?;
+
+        let exponent_byte_size = ((exponent.bits() as u32) + 7) / 8;
+        self.exponent_byte_size
+            .assign(region, offset, Some(F::from(exponent_byte_size as u64)))?;
+        let pow2_upper: U256 = 2u64.pow(8 * exponent_byte_size).into();
+        let pow2_lower: U256 = if exponent_byte_size > 0 {
+            2u64.pow(8 * (exponent_byte_size - 1)).into()
+        } else {
+            U256::zero()
+        };
+        let (pow2_upper_lo, pow2_upper_hi) = split_u256(&pow2_upper);
+        let (pow2_lower_lo, pow2_lower_hi) = split_u256(&pow2_lower);
+        self.exponent_lo_cmp_pow2.assign(
+            region,
+            offset,
+            exponent_lo.to_scalar().unwrap(),
+            pow2_upper_lo.to_scalar().unwrap(),
+        )?;
+        self.exponent_hi_cmp_pow2.assign(
+            region,
+            offset,
+            exponent_hi.to_scalar().unwrap(),
+            pow2_upper_hi.to_scalar().unwrap(),
+        )?;
+        self.pow2_cmp_exponent_lo.assign(
+            region,
+            offset,
+            pow2_lower_lo.to_scalar().unwrap(),
+            exponent_lo.to_scalar().unwrap(),
+        )?;
+        self.pow2_cmp_exponent_hi.assign(
+            region,
+            offset,
+            pow2_lower_hi.to_scalar().unwrap(),
+            exponent_hi.to_scalar().unwrap(),
+        )?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use eth_types::{bytecode, Word};
+    use mock::TestContext;
+
+    use crate::test_util::run_test_circuits;
+
+    fn test_ok(base: Word, exponent: Word) {
+        let code = bytecode! {
+            PUSH32(exponent)
+            PUSH32(base)
+            EXP
+            STOP
+        };
+        assert_eq!(
+            run_test_circuits(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+                None
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn exp_gadget_zero() {
+        test_ok(Word::one(), Word::zero());
+        test_ok(0xcafeu64.into(), Word::zero());
+    }
+
+    #[test]
+    fn exp_gadget_one() {
+        test_ok(Word::zero(), Word::one());
+        test_ok(Word::one(), Word::one());
+        test_ok(0xcafeu64.into(), Word::one());
+    }
+
+    #[test]
+    fn exp_gadget_simple() {
+        test_ok(2.into(), 101.into());
+        test_ok(3.into(), 259.into());
     }
 }

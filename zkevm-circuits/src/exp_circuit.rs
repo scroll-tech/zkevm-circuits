@@ -112,17 +112,27 @@ impl<F: Field> ExpCircuit<F> {
             // remainder == 1 => odd
             cb.condition(remainder_expr.clone(), |cb| {
                 cb.require_equal(
-                    "intermediate_exponent::next == intermediate_exponent::cur - 1",
-                    meta.query_advice(exp_table.intermediate_exponent, Rotation::next()),
-                    meta.query_advice(exp_table.intermediate_exponent, Rotation::cur()) - 1.expr(),
+                    "intermediate_exponent::next == intermediate_exponent::cur - 1 (lo::next == lo::cur - 1)",
+                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(2)),
+                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation::cur()) - 1.expr(),
+                );
+                cb.require_equal(
+                    "intermediate_exponent::next == intermediate_exponent::cur - 1 (hi::next == hi::cur)",
+                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(3)),
+                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation(1)),
                 );
             });
             // remainder == 0 => even
             cb.condition(not::expr(remainder_expr), |cb| {
                 cb.require_equal(
                     "intermediate_exponent::next == intermediate_exponent::cur / 2",
-                    meta.query_advice(exp_table.intermediate_exponent, Rotation::next()) * 2.expr(),
-                    meta.query_advice(exp_table.intermediate_exponent, Rotation::cur()),
+                    meta.query_advice(exp_table.intermediate_exp_lo_hi, Rotation::cur()),
+                    meta.query_advice(exp_table.intermediate_exp_lo_hi, Rotation(2)) * 2.expr(),
+                );
+                cb.require_equal(
+                    "intermediate_exponent::next == intermediate_exponent::cur / 2",
+                    meta.query_advice(exp_table.intermediate_exp_lo_hi, Rotation::next()),
+                    meta.query_advice(exp_table.intermediate_exp_lo_hi, Rotation(3)) * 2.expr(),
                 );
             });
 
@@ -131,9 +141,13 @@ impl<F: Field> ExpCircuit<F> {
             // circuit.
             cb.condition(meta.query_advice(is_last, Rotation::cur()), |cb| {
                 cb.require_equal(
-                    "if is_last is True: intermediate_exponent == 2",
-                    meta.query_advice(exp_table.intermediate_exponent, Rotation::cur()),
+                    "if is_last is True: intermediate_exponent == 2 (lo == 2)",
+                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation::cur()),
                     2.expr(),
+                );
+                cb.require_zero(
+                    "if is_last is True: intermediate_exponent == 2 (hi == 0)",
+                    meta.query_advice(exp_table.intermediate_exponent_lo_hi, Rotation::next()),
                 );
             });
 
