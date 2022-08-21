@@ -42,61 +42,83 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
+        // Query RLC-encoded values for base, exponent and exponentiation, where:
+        // base^exponent == exponentiation (mod 2^256).
         let base_rlc = cb.query_rlc();
         let exponent_rlc = cb.query_rlc();
         let exponentiation_rlc = cb.query_rlc();
 
+        // Pop RLC-encoded base and exponent from the stack.
         cb.stack_pop(base_rlc.expr());
         cb.stack_pop(exponent_rlc.expr());
+
+        // Push RLC-encoded exponentiation to the stack.
         cb.stack_push(exponentiation_rlc.expr());
 
+        // Extract low and high bytes of the base.
         let (base_lo, base_hi) = (
             from_bytes::expr(&base_rlc.cells[0x00..0x10]),
             from_bytes::expr(&base_rlc.cells[0x10..0x20]),
         );
+        // Extract low and high bytes of the exponent.
         let (exponent_lo, exponent_hi) = (
             from_bytes::expr(&exponent_rlc.cells[0x00..0x10]),
             from_bytes::expr(&exponent_rlc.cells[0x10..0x20]),
         );
+        // Extract low and high bytes of the exponentiation result.
         let (exponentiation_lo, exponentiation_hi) = (
             from_bytes::expr(&exponentiation_rlc.cells[0x00..0x10]),
             from_bytes::expr(&exponentiation_rlc.cells[0x10..0x20]),
         );
 
+        // We simplify constraints depending on whether or not the exponent is 0 or 1.
+        // In order to do this, we build some utility expressions.
         let exponent_is_zero = IsZeroGadget::construct(cb, exponent_lo.clone());
+        let exponent_is_zero_expr =
+            and::expr([exponent_is_zero.expr(), not::expr(exponent_hi.clone())]);
+        let exponent_is_not_zero_expr =
+            or::expr([not::expr(exponent_is_zero.expr()), exponent_hi.clone()]);
         let exponent_is_one = IsEqualGadget::construct(cb, exponent_lo.clone(), 1.expr());
+        let exponent_is_one_expr =
+            and::expr([exponent_is_one.expr(), not::expr(exponent_hi.clone())]);
+
+        // If exponent == 0, base^exponent == 1, which implies:
+        // 1. Low bytes of exponentiation == 1
+        // 2. High bytes of exponentiation == 0
+        cb.condition(exponent_is_zero_expr.clone(), |cb| {
+            cb.require_equal(
+                "exponentiation == 1 if exponent == 0 (lo == 1)",
+                exponentiation_lo.clone(),
+                1.expr(),
+            );
+            cb.require_equal(
+                "exponentiation == 1 if exponent == 0 (hi == 0)",
+                exponentiation_hi.clone(),
+                0.expr(),
+            );
+        });
+        // If exponent == 1, base^exponent == base, which implies:
+        // 1. Low bytes of exponentiation == low bytes of base.
+        // 2. High bytes of exponentiation == high bytes of base.
+        cb.condition(exponent_is_one_expr.clone(), |cb| {
+            cb.require_equal(
+                "exponentiation == base if exponent == 1 (lo)",
+                exponentiation_lo.clone(),
+                base_lo.clone(),
+            );
+            cb.require_equal(
+                "exponentiation == base if exponent == 1 (hi)",
+                exponentiation_hi.clone(),
+                base_hi.clone(),
+            );
+        });
+        // If exponent > 1, i.e. exponent != 0 && exponent != 1:
+        // We do a lookup to the exponentiation table.
         cb.condition(
-            and::expr([exponent_is_zero.expr(), not::expr(exponent_hi.clone())]),
-            |cb| {
-                cb.require_equal(
-                    "exponentiation == 1 if exponent == 0 (lo == 1)",
-                    exponentiation_lo.clone(),
-                    1.expr(),
-                );
-                cb.require_equal(
-                    "exponentiation == 1 if exponent == 0 (hi == 0)",
-                    exponentiation_hi.clone(),
-                    0.expr(),
-                );
-            },
-        );
-        cb.condition(
-            and::expr([exponent_is_one.expr(), not::expr(exponent_hi.clone())]),
-            |cb| {
-                cb.require_equal(
-                    "exponentiation == base if exponent == 1 (lo)",
-                    exponentiation_lo.clone(),
-                    base_lo.clone(),
-                );
-                cb.require_equal(
-                    "exponentiation == base if exponent == 1 (hi)",
-                    exponentiation_hi.clone(),
-                    base_hi.clone(),
-                );
-            },
-        );
-        cb.condition(
-            not::expr(or::expr([exponent_is_zero.expr(), exponent_is_one.expr()])),
+            not::expr(or::expr([
+                exponent_is_zero_expr.clone(),
+                exponent_is_one_expr,
+            ])),
             |cb| {
                 let base_limbs = [
                     from_bytes::expr(&base_rlc.cells[0x00..0x08]),
@@ -116,77 +138,87 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             },
         );
 
+        // In order to calculate the dynamic gas cost of the exponentiation operation,
+        // we need the byte-size of the exponent, i.e. the minimum number of
+        // bytes that can represent the exponent value. We validate this
+        // byte-size by constraining the exponent value:
+        // 1. exponent < 2^(exponent_bit_length)
+        // 2. exponent >= 2^(exponent_bit_length - 8)
         let exponent_byte_size = cb.query_cell();
         let pow2_upper = cb.query_cell();
         let pow2_lower = cb.query_cell();
-        cb.condition(
-            and::expr([exponent_is_zero.expr(), not::expr(exponent_hi.clone())]),
-            |cb| {
-                cb.require_zero(
-                    "exponent byte size == 0 if exponent == 0",
-                    exponent_byte_size.expr(),
-                );
-                cb.require_equal(
-                    "pow2_upper == 1 if exponent == 0",
-                    pow2_upper.expr(),
-                    1.expr(),
-                );
-                cb.require_zero("pow2_lower == 0 if exponent == 0", pow2_lower.expr());
-            },
-        );
+
+        // Exponent == 0 is again a trivial case where we constrain:
+        // 1. byte-size == 0
+        // 2. 2^(exponent_bit_length) == 1
+        // 3. 2^(exponent_bit_length - 8) == 0
+        cb.condition(exponent_is_zero_expr, |cb| {
+            cb.require_zero(
+                "exponent byte size == 0 if exponent == 0",
+                exponent_byte_size.expr(),
+            );
+            cb.require_equal(
+                "pow2_upper == 1 if exponent == 0",
+                pow2_upper.expr(),
+                1.expr(),
+            );
+            cb.require_zero("pow2_lower == 0 if exponent == 0", pow2_lower.expr());
+        });
+
+        // For the non-trivial case of exponent > 0, we do lookups to the fixed table
+        // (Pow2 lookup) as well as construct comparison gadgets to constrain
+        // the above mentioned range check.
         let (
             exponent_lo_cmp_pow2,
             exponent_hi_cmp_pow2,
             pow2_cmp_exponent_lo,
             pow2_cmp_exponent_hi,
-        ) = cb.condition(
-            or::expr([not::expr(exponent_is_zero.expr()), exponent_hi.clone()]),
-            |cb| {
-                cb.pow2_lookup(8.expr() * exponent_byte_size.expr(), pow2_upper.clone());
-                cb.pow2_lookup(
-                    8.expr() * (exponent_byte_size.expr() - 1.expr()),
-                    pow2_lower.clone(),
-                );
-                let exponent_lo_cmp_pow2 =
-                    ComparisonGadget::construct(cb, exponent_lo.clone(), pow2_upper.expr());
-                let exponent_hi_cmp_pow2 =
-                    ComparisonGadget::construct(cb, exponent_hi.clone(), 0.expr());
-                let pow2_cmp_exponent_lo =
-                    ComparisonGadget::construct(cb, pow2_lower.expr(), exponent_lo);
-                let pow2_cmp_exponent_hi = ComparisonGadget::construct(cb, 0.expr(), exponent_hi);
+        ) = cb.condition(exponent_is_not_zero_expr, |cb| {
+            cb.pow2_lookup(8.expr() * exponent_byte_size.expr(), pow2_upper.clone());
+            cb.pow2_lookup(
+                8.expr() * (exponent_byte_size.expr() - 1.expr()),
+                pow2_lower.clone(),
+            );
+            let exponent_lo_cmp_pow2 =
+                ComparisonGadget::construct(cb, exponent_lo.clone(), pow2_upper.expr());
+            let exponent_hi_cmp_pow2 =
+                ComparisonGadget::construct(cb, exponent_hi.clone(), 0.expr());
+            let pow2_cmp_exponent_lo =
+                ComparisonGadget::construct(cb, pow2_lower.expr(), exponent_lo);
+            let pow2_cmp_exponent_hi = ComparisonGadget::construct(cb, 0.expr(), exponent_hi);
 
-                let (exponent_lo_lt_pow2, _exponent_lo_eq_pow2) = exponent_lo_cmp_pow2.expr();
-                let (exponent_hi_lt_pow2, exponent_hi_eq_pow2) = exponent_hi_cmp_pow2.expr();
-                let (pow2_lt_exponent_lo, pow2_eq_exponent_lo) = pow2_cmp_exponent_lo.expr();
-                let (pow2_lt_exponent_hi, pow2_eq_exponent_hi) = pow2_cmp_exponent_hi.expr();
-                cb.require_equal(
-                    "exponent < pow2(8 * byte_size(exponent))",
+            let (exponent_lo_lt_pow2, _exponent_lo_eq_pow2) = exponent_lo_cmp_pow2.expr();
+            let (exponent_hi_lt_pow2, exponent_hi_eq_pow2) = exponent_hi_cmp_pow2.expr();
+            let (pow2_lt_exponent_lo, pow2_eq_exponent_lo) = pow2_cmp_exponent_lo.expr();
+            let (pow2_lt_exponent_hi, pow2_eq_exponent_hi) = pow2_cmp_exponent_hi.expr();
+            cb.require_equal(
+                "exponent < pow2(8 * byte_size(exponent))",
+                or::expr([
+                    exponent_hi_lt_pow2,
+                    and::expr([exponent_hi_eq_pow2, exponent_lo_lt_pow2]),
+                ]),
+                1.expr(),
+            );
+            cb.require_equal(
+                "pow2(8 * (byte_size(exponent) - 1)) <= exponent",
+                or::expr([
                     or::expr([
-                        exponent_hi_lt_pow2,
-                        and::expr([exponent_hi_eq_pow2, exponent_lo_lt_pow2]),
+                        pow2_lt_exponent_hi,
+                        and::expr([pow2_eq_exponent_hi.clone(), pow2_lt_exponent_lo]),
                     ]),
-                    1.expr(),
-                );
-                cb.require_equal(
-                    "pow2(8 * (byte_size(exponent) - 1)) <= exponent",
-                    or::expr([
-                        or::expr([
-                            pow2_lt_exponent_hi,
-                            and::expr([pow2_eq_exponent_hi.clone(), pow2_lt_exponent_lo]),
-                        ]),
-                        and::expr([pow2_eq_exponent_hi, pow2_eq_exponent_lo]),
-                    ]),
-                    1.expr(),
-                );
-                (
-                    exponent_lo_cmp_pow2,
-                    exponent_hi_cmp_pow2,
-                    pow2_cmp_exponent_lo,
-                    pow2_cmp_exponent_hi,
-                )
-            },
-        );
+                    and::expr([pow2_eq_exponent_hi, pow2_eq_exponent_lo]),
+                ]),
+                1.expr(),
+            );
+            (
+                exponent_lo_cmp_pow2,
+                exponent_hi_cmp_pow2,
+                pow2_cmp_exponent_lo,
+                pow2_cmp_exponent_hi,
+            )
+        });
 
+        // Finally we build an expression for the dynamic gas cost.
         let dynamic_gas_cost = 50.expr() * exponent_byte_size.expr();
         let step_state_transition = StepStateTransition {
             rw_counter: Transition::Delta(3.expr()),

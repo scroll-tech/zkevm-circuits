@@ -6,11 +6,14 @@ use gadgets::{
     util::{and, not, Expr},
 };
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
-use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, table::ExpTable};
+use crate::{
+    evm_circuit::{util::constraint_builder::BaseConstraintBuilder, witness::Block},
+    table::ExpTable,
+};
 
 /// Layout for the Exponentiation circuit.
 #[derive(Clone, Debug)]
@@ -162,5 +165,10 @@ impl<F: Field> ExpCircuit<F> {
             mul_gadget,
             remainder,
         }
+    }
+
+    /// Assign witness to the exponentiation circuit.
+    pub fn assign_block(&self, _block: &Block<F>) -> Result<(), Error> {
+        unimplemented!()
     }
 }
