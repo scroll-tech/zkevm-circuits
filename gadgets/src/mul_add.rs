@@ -3,16 +3,16 @@
 //!
 //! The circuit layout is as follows:
 #[rustfmt::skip]
-// | q_enable | q_step | col0      | col1      | col2      | col3      | col4      |
-// |----------|--------|-----------|-----------|-----------|-----------|-----------|
-// | 1        | 1      | a_limb0   | a_limb1   | a_limb2   | a_limb3   | -         |
-// | 1        | 0      | b_limb0   | b_limb1   | b_limb2   | b_limb3   | -         |
-// | 1        | 0      | c_lo      | c_hi      | d_lo      | d_hi      | -         |
-// | 1        | 0      | carry_lo0 | carry_lo1 | carry_lo2 | carry_lo3 | carry_lo4 |
-// | 1        | 0      | carry_lo5 | carry_lo6 | carry_lo7 | carry_lo8 | -         |
-// | 1        | 0      | carry_hi0 | carry_hi1 | carry_hi2 | carry_hi3 | carry_hi4 |
-// | 1        | 0      | carry_hi5 | carry_hi6 | carry_hi7 | carry_hi8 | -         |
-// |----------|--------|-----------|-----------|-----------|-----------|-----------|
+// | q_step | col0      | col1      | col2      | col3      | col4      |
+// |--------|-----------|-----------|-----------|-----------|-----------|
+// | 1      | a_limb0   | a_limb1   | a_limb2   | a_limb3   | -         |
+// | 0      | b_limb0   | b_limb1   | b_limb2   | b_limb3   | -         |
+// | 0      | c_lo      | c_hi      | d_lo      | d_hi      | -         |
+// | 0      | carry_lo0 | carry_lo1 | carry_lo2 | carry_lo3 | carry_lo4 |
+// | 0      | carry_lo5 | carry_lo6 | carry_lo7 | carry_lo8 | -         |
+// | 0      | carry_hi0 | carry_hi1 | carry_hi2 | carry_hi3 | carry_hi4 |
+// | 0      | carry_hi5 | carry_hi6 | carry_hi7 | carry_hi8 | -         |
+// |--------|-----------|-----------|-----------|-----------|-----------|
 
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::{
@@ -26,8 +26,6 @@ use crate::util::{expr_from_bytes, pow_of_two, split_u256, split_u256_limb64, Ex
 /// Config for the MulAddChip.
 #[derive(Clone, Debug)]
 pub struct MulAddConfig<F> {
-    /// Whether the row represents the first step.
-    pub q_step: Selector,
     /// First of the columns which we use over multiple rows to represent the
     /// schema described above.
     pub col0: Column<Advice>,
@@ -57,8 +55,7 @@ pub struct MulAddChip<F> {
 impl<F: Field> MulAddChip<F> {
     /// Configure the MulAdd chip.
     #[allow(clippy::too_many_arguments)]
-    pub fn configure(meta: &mut ConstraintSystem<F>, q_enable: Selector) -> MulAddConfig<F> {
-        let q_step = meta.complex_selector();
+    pub fn configure(meta: &mut ConstraintSystem<F>, q_step: Selector) -> MulAddConfig<F> {
         let col0 = meta.advice_column();
         let col1 = meta.advice_column();
         let col2 = meta.advice_column();
@@ -67,7 +64,6 @@ impl<F: Field> MulAddChip<F> {
         let mut overflow = 0.expr();
 
         meta.create_gate("mul add gate", |meta| {
-            let q_enable = meta.query_selector(q_enable);
             let q_step = meta.query_selector(q_step);
 
             let a_limbs =
@@ -119,11 +115,10 @@ impl<F: Field> MulAddChip<F> {
 
             [check_a, check_b]
                 .into_iter()
-                .map(move |poly| q_enable.clone() * q_step.clone() * poly)
+                .map(move |poly| q_step.clone() * poly)
         });
 
         MulAddConfig {
-            q_step,
             col0,
             col1,
             col2,
@@ -168,9 +163,6 @@ impl<F: Field> MulAddChip<F> {
         let temp = t2 + (t3 << 64) + c_hi;
         let (carry_hi, _) = temp.overflowing_add(carry_lo_minus_d_hi);
         let carry_hi = carry_hi >> 128;
-
-        // enable q_step at rotation 0.
-        self.config.q_step.enable(region, offset)?;
 
         // a limbs.
         for (i, (column, value)) in [
