@@ -365,15 +365,15 @@ pub mod dev {
 #[cfg(test)]
 mod tests {
     use bus_mapping::{circuit_input_builder::CircuitInputBuilder, mock::BlockData};
-    use eth_types::{bytecode, geth_types::GethData, U256};
+    use eth_types::{bytecode, geth_types::GethData, Word};
     use mock::TestContext;
 
     use crate::{evm_circuit::witness::block_convert, exp_circuit::dev::test_exp_circuit};
 
-    fn gen_data() -> CircuitInputBuilder {
+    fn gen_data(base: Word, exponent: Word) -> CircuitInputBuilder {
         let code = bytecode! {
-            PUSH32(U256::from(7u64))
-            PUSH32(U256::from(3u64))
+            PUSH32(exponent)
+            PUSH32(base)
             EXP
             STOP
         };
@@ -386,10 +386,19 @@ mod tests {
         builder
     }
 
-    #[test]
-    fn exp_circuit_valid() {
-        let builder = gen_data();
+    fn test_ok(base: Word, exponent: Word) {
+        let builder = gen_data(base, exponent);
         let block = block_convert(&builder.block, &builder.code_db);
         assert_eq!(test_exp_circuit(10, block), Ok(()));
+    }
+
+    #[test]
+    fn exp_circuit_valid() {
+        test_ok(3.into(), 7.into());
+        test_ok(5.into(), 11.into());
+        test_ok(7.into(), 13.into());
+        test_ok(11.into(), 17.into());
+        test_ok(13.into(), 23.into());
+        test_ok(29.into(), 43.into());
     }
 }
