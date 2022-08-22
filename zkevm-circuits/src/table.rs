@@ -889,7 +889,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
 }
 
 /// Lookup table within the Exponentiation circuit.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct ExpTable {
     /// Whether this row is the first row in the circuit.
     pub is_first: Column<Advice>,

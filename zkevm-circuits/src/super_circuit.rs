@@ -13,6 +13,7 @@
 //! - [x] Tx Circuit
 //! - [x] Bytecode Circuit
 //! - [x] Copy Circuit
+//! - [x] Exponentiation Circuit
 //! - [ ] Keccak Circuit
 //! - [ ] MPT Circuit
 //! - [ ] PublicInputs Circuit
@@ -21,6 +22,8 @@
 //!
 //! - [x] Copy Table
 //!   - [x] Copy Circuit
+//!   - [x] EVM Circuit
+//! - [x] Exponentiation Table
 //!   - [x] EVM Circuit
 //! - [ ] Rw Table
 //!   - [ ] State Circuit
@@ -48,6 +51,7 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
+use crate::exp_circuit::ExpCircuit;
 use crate::state_circuit::StateCircuitConfig;
 use crate::tx_circuit::{self, TxCircuit, TxCircuitConfig};
 
@@ -84,11 +88,13 @@ pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA
     block_table: BlockTable,
     keccak_table: KeccakTable,
     copy_table: CopyTable,
+    exp_table: ExpTable,
     evm_circuit: EvmCircuit<F>,
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeConfig<F>,
     copy_circuit: CopyCircuit<F>,
+    exp_circuit: ExpCircuit<F>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -166,6 +172,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             block_table,
             keccak_table: keccak_table.clone(),
             copy_table,
+            exp_table,
             evm_circuit,
             state_circuit,
             copy_circuit: CopyCircuit::configure(
@@ -189,6 +196,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 bytecode_table,
                 keccak_table,
             ),
+            exp_circuit: ExpCircuit::configure(meta, exp_table),
         }
     }
 
@@ -215,6 +223,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config
             .copy_table
             .load(&mut layouter, &self.block, self.block.randomness)?;
+        config.exp_table.load(&mut layouter, &self.block)?;
         config
             .evm_circuit
             .assign_block(&mut layouter, &self.block)?;
@@ -244,7 +253,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config
             .copy_circuit
             .assign_block(&mut layouter, &self.block, self.block.randomness)?;
-
+        // --- Exponentiation Circuit ---
+        config
+            .exp_circuit
+            .assign_block(&mut layouter, &self.block)?;
         // --- Keccak Table ---
         let mut keccak_inputs = Vec::new();
         // Lookups from TxCircuit
@@ -260,10 +272,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config
             .keccak_table
             .load(&mut layouter, keccak_inputs, self.block.randomness)?;
-        // --- Copy Circuit ---
-        config
-            .copy_circuit
-            .assign_block(&mut layouter, &self.block, self.block.randomness)?;
         Ok(())
     }
 }
