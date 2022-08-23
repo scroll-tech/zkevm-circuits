@@ -28,6 +28,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+      - name: set HOME env
+        run: |
+          echo "HOME=/home/ubuntu" >> $GITHUB_ENV
       - uses: actions-rs/toolchain@v1
         with:
           override: false
