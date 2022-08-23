@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep, CodeSource},
+    circuit_input_builder::{CircuitInputStateRef, CodeSource, ExecStep},
     operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
@@ -119,6 +119,8 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
 
         let (_, callee_account) = state.sdb.get_account(&call.address);
         let callee_account = callee_account.clone();
+        dbg!("call");
+        dbg!(N_ARGS);
         state.transfer(
             &mut exec_step,
             call.caller_address,
@@ -156,6 +158,7 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
         // there isn't next geth_step (e.g. callee doesn't have code).
         debug_assert_eq!(exec_step.memory_size % 32, 0);
         let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
+        // you need to check this math....
         let next_memory_word_size = [
             curr_memory_word_size,
             (call.call_data_offset + call.call_data_length + 31) / 32,
@@ -166,6 +169,7 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
         .unwrap();
 
         let has_value = !call.value.is_zero();
+        dbg!(has_value, GasCost::CALL_WITH_VALUE.as_u64());
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let gas_cost = if is_warm {
@@ -182,7 +186,7 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
         } else {
             0
         } + memory_expansion_gas_cost;
-        let gas_specified = geth_step.stack.last()?;
+        let gas_specified = geth_step.stack.last()?; // hahahaaaaaa
         let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, gas_specified);
 
         if geth_steps[0].op == OpcodeId::CALL
@@ -273,6 +277,10 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
             }
             // 3. Call to account with non-empty code.
             (_, false) => {
+                dbg!(gas_cost);
+                // let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
+                dbg!(geth_steps[0].gas.0);
+                dbg!(geth_steps[1].gas.0);
                 for (field, value) in [
                     (
                         CallContextField::ProgramCounter,
@@ -280,11 +288,14 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
                     ),
                     (
                         CallContextField::StackPointer,
-                        (geth_step.stack.stack_pointer().0 + 6).into(),
+                        // this was probalbly wrong for delegate call?
+                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
                     ),
                     (
                         CallContextField::GasLeft,
-                        (geth_step.gas.0 - gas_cost - callee_gas_left).into(),
+                        // something is wrong here....
+                        // it's a delegate call again....
+                        (geth_step.gas.0 - geth_step.gas_cost.0).into(),
                     ),
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
@@ -324,10 +335,10 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
                     (CallContextField::IsSuccess, (call.is_success as u64).into()),
                     (CallContextField::IsStatic, (call.is_static as u64).into()),
                     (CallContextField::LastCalleeId, 0.into()),
-                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                    (CallContextField::LastCalleeReturnDataOffset, 0.into()), // are these correct?
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                     (CallContextField::IsRoot, 0.into()),
-                    (CallContextField::IsCreate, 0.into()),
+                    (CallContextField::IsCreate, call.is_create().to_word()),
                     (CallContextField::CodeHash, call.code_hash.to_word()),
                 ] {
                     state.call_context_read(&mut exec_step, call.call_id, field, value);

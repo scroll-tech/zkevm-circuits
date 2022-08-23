@@ -418,6 +418,7 @@ impl<'a> CircuitInputStateRef<'a> {
             return Err(Error::AccountNotFound(sender));
         }
         let sender_balance_prev = sender_account.balance;
+        dbg!(sender_account.balance, value + fee);
         let sender_balance = sender_account.balance - value - fee;
         self.push_op_reversible(
             step,
@@ -589,7 +590,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 step.stack.nth_last(2)?,
             ),
             CallKind::CallCode => (caller.address, caller.address, step.stack.nth_last(2)?),
-            CallKind::DelegateCall => (caller.caller_address, caller.address, Word::zero()),
+            CallKind::DelegateCall => (caller.caller_address, caller.address, caller.value),
             CallKind::StaticCall => (
                 caller.address,
                 step.stack.nth_last(1)?.to_address(),
@@ -862,7 +863,7 @@ impl<'a> CircuitInputStateRef<'a> {
             (CallContextField::GasLeft, caller_gas_left.into()),
             (
                 CallContextField::MemorySize,
-                geth_step_next.memory.word_size().into(),
+                self.caller_ctx()?.memory.word_size().into(), // this may be wrong????
             ),
             (
                 CallContextField::ReversibleWriteCounter,

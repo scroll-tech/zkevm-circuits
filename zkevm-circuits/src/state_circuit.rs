@@ -186,6 +186,17 @@ impl<F: Field> StateCircuitConfig<F> {
                     } else {
                         row.value_prev_assignment(randomness).unwrap_or_default()
                     };
+                } else {
+                    if !row.is_write() {
+                        // something is very wrong....
+                        // why does this not trigger on the constraints itself?
+                        assert_eq!(
+                            row.value_assignment(randomness),
+                            prev_row.value_assignment(randomness),
+                            "{:#?}",
+                            [prev_row, row]
+                        );
+                    }
                 }
             }
 
@@ -228,9 +239,33 @@ impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
     pub fn new(randomness: F, rw_map: RwMap, n_rows: usize) -> Self {
         let rows = rw_map.table_assignments();
+
+        dbg!(rows.len());
+        let x: Vec<Rw> = rows
+            .iter()
+            .filter(|row| {
+                matches!(
+                    row.tag(),
+                    // RwTableTag::Stack // not working....
+                    // RwTableTag::Memory // not workinggg
+                    // RwTableTag::AccountStorage // 39
+                    // | RwTableTag::TxAccessListAccount // 18
+                    // | RwTableTag::TxAccessListAccountStorage
+                    // | RwTableTag::TxRefund // 13
+                    // | RwTableTag::Account //
+                    // | RwTableTag::AccountDestructed
+                    RwTableTag::CallContext /* not working....
+                                             * | RwTableTag::TxLog // 13
+                                             * | RwTableTag::TxReceipt */
+                )
+            })
+            .cloned()
+            .collect();
+        dbg!(x.len());
+
         Self {
             randomness,
-            rows,
+            rows: x,
             n_rows,
             #[cfg(test)]
             overrides: HashMap::new(),

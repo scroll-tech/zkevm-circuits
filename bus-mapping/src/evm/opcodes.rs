@@ -439,7 +439,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
-                (CallContextField::IsCreate, 0.into()),
+                (CallContextField::IsCreate, call.is_create().to_word()),
                 (CallContextField::CodeHash, code_hash.to_word()),
             ] {
                 state.call_context_read(&mut exec_step, call.call_id, field, value);
@@ -599,6 +599,7 @@ fn dummy_gen_selfdestruct_ops(
         return Err(Error::AccountNotFound(sender));
     }
     let value = sender_account.balance;
+    dbg!("are we herreeeee???");
     state.transfer(&mut exec_step, sender, receiver, value)?;
 
     if state.call()?.is_persistent {

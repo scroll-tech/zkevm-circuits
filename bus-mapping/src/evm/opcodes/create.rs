@@ -96,6 +96,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
+        dbg!("create");
         state.transfer(
             &mut exec_step,
             call.caller_address,
