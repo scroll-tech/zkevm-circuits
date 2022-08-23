@@ -11,90 +11,20 @@ on:
 ## `rust-toolchain` is always used and the only source of truth.
 
 jobs:
-
-  consecutiveness:
-    if: github.event.pull_request.draft == false && github.repository == 'privacy-scaling-explorations/zkevm-circuits'
-
-    runs-on: ubuntu-latest
-    steps:
-    - uses: mktcode/consecutive-workflow-action@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-  wakeuprunner:
-    if: github.event.pull_request.draft == false && github.repository == 'privacy-scaling-explorations/zkevm-circuits'
-
-    needs: [consecutiveness]
-    name: Wake up self-hosted runner
-    runs-on: pse-runner
-
-    steps:
-      - uses: actions/checkout@v2
-      - run: |
-          .github/ciChecksScripts/wakeUpRunner.sh
+  runner:
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/select-runner.yml
 
   test:
-    if: github.event.pull_request.draft == false && github.repository == 'privacy-scaling-explorations/zkevm-circuits'
-
-    needs: [wakeuprunner]
     name: Test
+    needs: [runner]
     runs-on: ${{ matrix.os }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group }}
     strategy:
       matrix:
         # We don't need to test across multiple platforms yet
         # os: [ubuntu-latest, windows-latest, macOS-latest]
-        os: [ci-checks-runner]
-
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          override: false
-      - name: Setup golang
-        uses: actions/setup-go@v3
-        with:
-          go-version: ~1.18
-      # Go cache for building geth-utils
-      - name: Go cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-      - name: Cargo cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Run light tests # light tests are run in parallel
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks
-      - name: Run heavy tests # heavy tests are run serially to avoid OOM
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
-
-  test_forks:
-    if: github.event.pull_request.draft == false && github.repository != 'privacy-scaling-explorations/zkevm-circuits'
-
-    name: Test_forks
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        # We don't need to test across multiple platforms yet
-        # os: [ubuntu-latest, windows-latest, macOS-latest]
-        os: [ubuntu-latest]
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix) }}
 
     steps:
       - uses: actions/checkout@v2
