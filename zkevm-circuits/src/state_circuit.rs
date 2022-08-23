@@ -246,17 +246,17 @@ impl<F: Field> StateCircuit<F> {
             .filter(|row| {
                 matches!(
                     row.tag(),
-                    // RwTableTag::Stack // not working....
-                    // RwTableTag::Memory // not workinggg
-                    // RwTableTag::AccountStorage // 39
-                    // | RwTableTag::TxAccessListAccount // 18
-                    // | RwTableTag::TxAccessListAccountStorage
-                    // | RwTableTag::TxRefund // 13
-                    // | RwTableTag::Account //
-                    // | RwTableTag::AccountDestructed
-                    RwTableTag::CallContext /* not working....
-                                             * | RwTableTag::TxLog // 13
-                                             * | RwTableTag::TxReceipt */
+                    RwTableTag::Stack /* not working....
+                                       * RwTableTag::Memory // not workinggg
+                                       * | RwTableTag::AccountStorage
+                                       * | RwTableTag::TxAccessListAccount
+                                       * | RwTableTag::TxAccessListAccountStorage
+                                       * | RwTableTag::TxRefund
+                                       * | RwTableTag::Account
+                                       * | RwTableTag::AccountDestructed
+                                       * | RwTableTag::CallContext
+                                       * | RwTableTag::TxLog
+                                       * | RwTableTag::TxReceipt */
                 )
             })
             .cloned()

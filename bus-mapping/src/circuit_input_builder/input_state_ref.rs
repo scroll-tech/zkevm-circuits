@@ -418,7 +418,6 @@ impl<'a> CircuitInputStateRef<'a> {
             return Err(Error::AccountNotFound(sender));
         }
         let sender_balance_prev = sender_account.balance;
-        dbg!(sender_account.balance, value + fee);
         let sender_balance = sender_account.balance - value - fee;
         self.push_op_reversible(
             step,
@@ -549,7 +548,7 @@ impl<'a> CircuitInputStateRef<'a> {
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
-        Ok(get_contract_address(sender, account.nonce))
+        Ok(get_contract_address(sender, account.nonce + 1))
     }
 
     /// Return the contract address of a CREATE2 step.  This is calculated
@@ -884,10 +883,6 @@ impl<'a> CircuitInputStateRef<'a> {
             _ => unreachable!(),
         };
 
-        dbg!(
-            last_callee_return_data_offset,
-            last_callee_return_data_length
-        );
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),
             (

@@ -2,7 +2,7 @@ use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::operation::{AccountField, AccountOp, TxAccessListAccountOp, RW};
 use crate::Error;
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, ToWord};
 use keccak256::EMPTY_HASH;
 
 #[derive(Debug, Copy, Clone)]
@@ -28,6 +28,16 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         let mut exec_step = state.new_step(geth_step)?;
 
+        let n_stack_reads = if IS_CREATE2 { 4 } else { 3 };
+
+        for i in 0..n_stack_reads {
+            state.stack_read(
+                &mut exec_step,
+                geth_step.stack.nth_last_filled(i),
+                geth_step.stack.nth_last(i)?,
+            )?;
+        }
+
         let tx_id = state.tx_ctx.id();
         let call = state.parse_call(geth_step)?;
 
@@ -42,6 +52,13 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         } else {
             state.create_address()?
         };
+
+        state.stack_write(
+            &mut exec_step,
+            geth_step.stack.nth_last_filled(n_stack_reads - 1),
+            address.to_word(),
+        )?;
+
         let is_warm = state.sdb.check_account_in_access_list(&address);
         state.push_op_reversible(
             &mut exec_step,
