@@ -121,12 +121,14 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
         let callee_account = callee_account.clone();
         dbg!("call");
         dbg!(N_ARGS);
-        state.transfer(
-            &mut exec_step,
-            call.caller_address,
-            call.address,
-            call.value,
-        )?;
+        if N_ARGS == 7 {
+            state.transfer(
+                &mut exec_step,
+                call.caller_address,
+                call.address,
+                call.value,
+            )?;
+        }    
         let is_empty_account = callee_account.is_empty();
         let callee_nonce = callee_account.nonce;
         let mut callee_code_hash = call.code_hash;
