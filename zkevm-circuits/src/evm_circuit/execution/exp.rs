@@ -108,10 +108,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         // If exponent > 1, i.e. exponent != 0 && exponent != 1:
         // We do a lookup to the exponentiation table.
         cb.condition(
-            not::expr(or::expr([
-                exponent_is_zero_expr.clone(),
-                exponent_is_one_expr,
-            ])),
+            not::expr(or::expr([exponent_is_zero_expr, exponent_is_one_expr])),
             |cb| {
                 let base_limbs = [
                     from_bytes::expr(&base_rlc.cells[0x00..0x08]),
@@ -142,8 +139,8 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         );
 
         let byte_inverse = cb.query_cell();
-        for i in 0..32 {
-            cb.condition(most_significant_nonzero_byte_index[i].expr(), |cb| {
+        for (i, byte_index) in most_significant_nonzero_byte_index.iter().enumerate() {
+            cb.condition(byte_index.expr(), |cb| {
                 cb.require_zero(
                     "more significant bytes are 0",
                     sum::expr(&exponent_rlc.cells[i..32]),
