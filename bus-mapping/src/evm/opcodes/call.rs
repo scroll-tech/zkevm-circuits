@@ -119,8 +119,6 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
 
         let (_, callee_account) = state.sdb.get_account(&call.address);
         let callee_account = callee_account.clone();
-        dbg!("call");
-        dbg!(N_ARGS);
         if N_ARGS == 7 {
             state.transfer(
                 &mut exec_step,
@@ -171,7 +169,6 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
         .unwrap();
 
         let has_value = !call.value.is_zero();
-        dbg!(has_value, GasCost::CALL_WITH_VALUE.as_u64());
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let gas_cost = if is_warm {
@@ -279,10 +276,6 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
             }
             // 3. Call to account with non-empty code.
             (_, false) => {
-                dbg!(gas_cost);
-                // let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
-                dbg!(geth_steps[0].gas.0);
-                dbg!(geth_steps[1].gas.0);
                 for (field, value) in [
                     (
                         CallContextField::ProgramCounter,
