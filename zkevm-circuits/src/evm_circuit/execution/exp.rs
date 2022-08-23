@@ -4,14 +4,13 @@ use gadgets::util::{and, not, or, Expr};
 use halo2_proofs::plonk::Error;
 
 use crate::evm_circuit::{
-    param::N_BYTES_WORD,
     step::ExecutionState,
     util::{
         common_gadget::SameContextGadget,
         constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
         from_bytes,
-        math_gadget::{IsEqualGadget, IsZeroGadget},
-        sum, CachedRegion, Cell, Word,
+        math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
+        CachedRegion, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -26,8 +25,7 @@ pub(crate) struct ExponentiationGadget<F> {
     exponentiation: Word<F>,
     exponent_is_zero: IsZeroGadget<F>,
     exponent_is_one: IsEqualGadget<F>,
-    msb_index: [Cell<F>; N_BYTES_WORD + 1],
-    msb_inverse: Cell<F>,
+    exponent_byte_size: ByteSizeGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
@@ -132,39 +130,10 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         // In order to calculate the dynamic gas cost of the exponentiation operation,
         // we need the byte-size of the exponent, i.e. the minimum number of
         // bytes that can represent the exponent value.
-        let msb_index = [(); N_BYTES_WORD + 1].map(|()| cb.query_bool());
-        cb.require_equal(
-            "exactly one cell in msb_index is 1",
-            sum::expr(&msb_index),
-            1.expr(),
-        );
-
-        let msb_inverse = cb.query_cell();
-        for (i, byte_index) in msb_index.iter().enumerate() {
-            cb.condition(byte_index.expr(), |cb| {
-                cb.require_zero(
-                    "more significant bytes are 0",
-                    sum::expr(&exponent_rlc.cells[i..32]),
-                );
-                if i > 0 {
-                    cb.require_equal(
-                        "most significant nonzero byte's inverse exists",
-                        exponent_rlc.cells[i - 1].expr() * msb_inverse.expr(),
-                        1.expr(),
-                    )
-                }
-            });
-        }
-
-        let exponent_byte_size = sum::expr(
-            msb_index
-                .iter()
-                .enumerate()
-                .map(|(i, cell)| i.expr() * cell.expr()),
-        );
+        let exponent_byte_size = ByteSizeGadget::construct(cb, &exponent_rlc);
 
         // Finally we build an expression for the dynamic gas cost.
-        let dynamic_gas_cost = 50.expr() * exponent_byte_size;
+        let dynamic_gas_cost = 50.expr() * exponent_byte_size.byte_size();
         let step_state_transition = StepStateTransition {
             rw_counter: Transition::Delta(3.expr()),
             program_counter: Transition::Delta(1.expr()), // 2 stack pops, 1 stack push
@@ -183,8 +152,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             exponentiation: exponentiation_rlc,
             exponent_is_zero,
             exponent_is_one,
-            msb_index,
-            msb_inverse,
+            exponent_byte_size,
         }
     }
 
@@ -217,30 +185,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         self.exponent_is_one
             .assign(region, offset, exponent_scalar, F::one())?;
 
-        let exponent_byte_size = (exponent.bits() + 7) / 8;
-        for (i, byte_index) in self.msb_index.iter().enumerate() {
-            byte_index.assign(
-                region,
-                offset,
-                Some(if i == exponent_byte_size {
-                    F::one()
-                } else {
-                    F::zero()
-                }),
-            )?;
-        }
-        if exponent_byte_size > 0 {
-            let most_significant_nonzero_byte = exponent.to_le_bytes()[exponent_byte_size - 1];
-            self.msb_inverse.assign(
-                region,
-                offset,
-                Some(
-                    F::from(u64::try_from(most_significant_nonzero_byte).unwrap())
-                        .invert()
-                        .unwrap(),
-                ),
-            )?;
-        }
+        self.exponent_byte_size.assign(region, offset, exponent)?;
 
         Ok(())
     }
