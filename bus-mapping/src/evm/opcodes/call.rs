@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep, CodeSource},
     operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
@@ -133,12 +133,24 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
             assert!(callee_code_hash.to_fixed_bytes() == *EMPTY_HASH);
         }
         debug_assert!(!callee_code_hash.is_zero());
-        for (field, value) in [
-            (AccountField::Nonce, callee_nonce),
-            (AccountField::CodeHash, callee_code_hash.to_word()),
-        ] {
-            state.account_read(&mut exec_step, call.address, field, value, value)?;
-        }
+        state.account_read(
+            &mut exec_step,
+            call.address,
+            AccountField::Nonce,
+            callee_nonce,
+            callee_nonce,
+        )?;
+        let code_source = match call.code_source {
+            CodeSource::Address(address) => address,
+            _ => unreachable!(),
+        };
+        state.account_read(
+            &mut exec_step,
+            code_source,
+            AccountField::CodeHash,
+            callee_code_hash.to_word(),
+            callee_code_hash.to_word(),
+        )?;
 
         // Calculate next_memory_word_size and callee_gas_left manually in case
         // there isn't next geth_step (e.g. callee doesn't have code).
