@@ -1,6 +1,6 @@
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::{and, not, or, split_u256, Expr};
+use eth_types::{Field, ToLittleEndian, ToScalar};
+use gadgets::util::{and, not, or, Expr};
 use halo2_proofs::plonk::Error;
 
 use crate::evm_circuit::{
@@ -9,8 +9,8 @@ use crate::evm_circuit::{
         common_gadget::SameContextGadget,
         constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
         from_bytes,
-        math_gadget::{ComparisonGadget, IsEqualGadget, IsZeroGadget},
-        CachedRegion, Cell, Word,
+        math_gadget::{IsEqualGadget, IsZeroGadget},
+        sum, CachedRegion, Cell, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -25,13 +25,8 @@ pub(crate) struct ExponentiationGadget<F> {
     exponentiation: Word<F>,
     exponent_is_zero: IsZeroGadget<F>,
     exponent_is_one: IsEqualGadget<F>,
-    exponent_byte_size: Cell<F>,
-    pow2_upper: Cell<F>,
-    pow2_lower: Cell<F>,
-    exponent_lo_cmp_pow2: ComparisonGadget<F, 16>,
-    exponent_hi_cmp_pow2: ComparisonGadget<F, 16>,
-    pow2_cmp_exponent_lo: ComparisonGadget<F, 16>,
-    pow2_cmp_exponent_hi: ComparisonGadget<F, 16>,
+    most_significant_nonzero_byte_index: [Cell<F>; 33],
+    byte_inverse: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
@@ -76,8 +71,6 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         let exponent_is_zero = IsZeroGadget::construct(cb, exponent_lo.clone());
         let exponent_is_zero_expr =
             and::expr([exponent_is_zero.expr(), not::expr(exponent_hi.clone())]);
-        let exponent_is_not_zero_expr =
-            or::expr([not::expr(exponent_is_zero.expr()), exponent_hi.clone()]);
         let exponent_is_one = IsEqualGadget::construct(cb, exponent_lo.clone(), 1.expr());
         let exponent_is_one_expr =
             and::expr([exponent_is_one.expr(), not::expr(exponent_hi.clone())]);
@@ -140,86 +133,40 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
 
         // In order to calculate the dynamic gas cost of the exponentiation operation,
         // we need the byte-size of the exponent, i.e. the minimum number of
-        // bytes that can represent the exponent value. We validate this
-        // byte-size by constraining the exponent value:
-        // 1. exponent < 2^(exponent_bit_length)
-        // 2. exponent >= 2^(exponent_bit_length - 8)
-        let exponent_byte_size = cb.query_cell();
-        let pow2_upper = cb.query_cell();
-        let pow2_lower = cb.query_cell();
+        // bytes that can represent the exponent value.
+        let most_significant_nonzero_byte_index = [(); 33].map(|()| cb.query_bool());
+        cb.require_equal(
+            "exactly one cell in most_significant_nonzero_byte_index is 1",
+            sum::expr(&most_significant_nonzero_byte_index),
+            1.expr(),
+        );
 
-        // Exponent == 0 is again a trivial case where we constrain:
-        // 1. byte-size == 0
-        // 2. 2^(exponent_bit_length) == 1
-        // 3. 2^(exponent_bit_length - 8) == 0
-        cb.condition(exponent_is_zero_expr, |cb| {
-            cb.require_zero(
-                "exponent byte size == 0 if exponent == 0",
-                exponent_byte_size.expr(),
-            );
-            cb.require_equal(
-                "pow2_upper == 1 if exponent == 0",
-                pow2_upper.expr(),
-                1.expr(),
-            );
-            cb.require_zero("pow2_lower == 0 if exponent == 0", pow2_lower.expr());
-        });
+        let byte_inverse = cb.query_cell();
+        for i in 0..32 {
+            cb.condition(most_significant_nonzero_byte_index[i].expr(), |cb| {
+                cb.require_zero(
+                    "more significant bytes are 0",
+                    sum::expr(&exponent_rlc.cells[i..32]),
+                );
+                if i > 0 {
+                    cb.require_equal(
+                        "most significant nonzero byte inverse exists",
+                        exponent_rlc.cells[i - 1].expr() * byte_inverse.expr(),
+                        1.expr(),
+                    )
+                }
+            });
+        }
 
-        // For the non-trivial case of exponent > 0, we do lookups to the fixed table
-        // (Pow2 lookup) as well as construct comparison gadgets to constrain
-        // the above mentioned range check.
-        let (
-            exponent_lo_cmp_pow2,
-            exponent_hi_cmp_pow2,
-            pow2_cmp_exponent_lo,
-            pow2_cmp_exponent_hi,
-        ) = cb.condition(exponent_is_not_zero_expr, |cb| {
-            cb.pow2_lookup(8.expr() * exponent_byte_size.expr(), pow2_upper.clone());
-            cb.pow2_lookup(
-                8.expr() * (exponent_byte_size.expr() - 1.expr()),
-                pow2_lower.clone(),
-            );
-            let exponent_lo_cmp_pow2 =
-                ComparisonGadget::construct(cb, exponent_lo.clone(), pow2_upper.expr());
-            let exponent_hi_cmp_pow2 =
-                ComparisonGadget::construct(cb, exponent_hi.clone(), 0.expr());
-            let pow2_cmp_exponent_lo =
-                ComparisonGadget::construct(cb, pow2_lower.expr(), exponent_lo);
-            let pow2_cmp_exponent_hi = ComparisonGadget::construct(cb, 0.expr(), exponent_hi);
-
-            let (exponent_lo_lt_pow2, _exponent_lo_eq_pow2) = exponent_lo_cmp_pow2.expr();
-            let (exponent_hi_lt_pow2, exponent_hi_eq_pow2) = exponent_hi_cmp_pow2.expr();
-            let (pow2_lt_exponent_lo, pow2_eq_exponent_lo) = pow2_cmp_exponent_lo.expr();
-            let (pow2_lt_exponent_hi, pow2_eq_exponent_hi) = pow2_cmp_exponent_hi.expr();
-            cb.require_equal(
-                "exponent < pow2(8 * byte_size(exponent))",
-                or::expr([
-                    exponent_hi_lt_pow2,
-                    and::expr([exponent_hi_eq_pow2, exponent_lo_lt_pow2]),
-                ]),
-                1.expr(),
-            );
-            cb.require_equal(
-                "pow2(8 * (byte_size(exponent) - 1)) <= exponent",
-                or::expr([
-                    or::expr([
-                        pow2_lt_exponent_hi,
-                        and::expr([pow2_eq_exponent_hi.clone(), pow2_lt_exponent_lo]),
-                    ]),
-                    and::expr([pow2_eq_exponent_hi, pow2_eq_exponent_lo]),
-                ]),
-                1.expr(),
-            );
-            (
-                exponent_lo_cmp_pow2,
-                exponent_hi_cmp_pow2,
-                pow2_cmp_exponent_lo,
-                pow2_cmp_exponent_hi,
-            )
-        });
+        let exponent_byte_size = sum::expr(
+            most_significant_nonzero_byte_index
+                .iter()
+                .enumerate()
+                .map(|(i, cell)| i.expr() * cell.expr()),
+        );
 
         // Finally we build an expression for the dynamic gas cost.
-        let dynamic_gas_cost = 50.expr() * exponent_byte_size.expr();
+        let dynamic_gas_cost = 50.expr() * exponent_byte_size;
         let step_state_transition = StepStateTransition {
             rw_counter: Transition::Delta(3.expr()),
             program_counter: Transition::Delta(1.expr()), // 2 stack pops, 1 stack push
@@ -238,13 +185,8 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             exponentiation: exponentiation_rlc,
             exponent_is_zero,
             exponent_is_one,
-            exponent_byte_size,
-            pow2_upper,
-            pow2_lower,
-            exponent_lo_cmp_pow2,
-            exponent_hi_cmp_pow2,
-            pow2_cmp_exponent_lo,
-            pow2_cmp_exponent_hi,
+            most_significant_nonzero_byte_index,
+            byte_inverse,
         }
     }
 
@@ -277,48 +219,31 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         self.exponent_is_one
             .assign(region, offset, exponent_scalar, F::one())?;
 
-        let exponent_byte_size = ((exponent.bits() as u32) + 7) / 8;
-        self.exponent_byte_size
-            .assign(region, offset, Some(F::from(exponent_byte_size as u64)))?;
-        let pow2_upper: U256 = 2u64.pow(8 * exponent_byte_size).into();
-        let pow2_lower: U256 = if exponent_byte_size > 0 {
-            2u64.pow(8 * (exponent_byte_size - 1)).into()
-        } else {
-            U256::zero()
-        };
-        let (pow2_upper_lo, pow2_upper_hi) = split_u256(&pow2_upper);
-        let (pow2_lower_lo, pow2_lower_hi) = split_u256(&pow2_lower);
-        let (exponent_lo, exponent_hi) = split_u256(&exponent);
-
-        self.pow2_upper
-            .assign(region, offset, Some(pow2_upper.to_scalar().unwrap()))?;
-        self.pow2_lower
-            .assign(region, offset, Some(pow2_lower.to_scalar().unwrap()))?;
-
-        self.exponent_lo_cmp_pow2.assign(
-            region,
-            offset,
-            exponent_lo.to_scalar().unwrap(),
-            pow2_upper_lo.to_scalar().unwrap(),
-        )?;
-        self.exponent_hi_cmp_pow2.assign(
-            region,
-            offset,
-            exponent_hi.to_scalar().unwrap(),
-            pow2_upper_hi.to_scalar().unwrap(),
-        )?;
-        self.pow2_cmp_exponent_lo.assign(
-            region,
-            offset,
-            pow2_lower_lo.to_scalar().unwrap(),
-            exponent_lo.to_scalar().unwrap(),
-        )?;
-        self.pow2_cmp_exponent_hi.assign(
-            region,
-            offset,
-            pow2_lower_hi.to_scalar().unwrap(),
-            exponent_hi.to_scalar().unwrap(),
-        )?;
+        let most_significant_nonzero_byte_index = (exponent.bits() + 7) / 8;
+        for i in 0..33 {
+            self.most_significant_nonzero_byte_index[i].assign(
+                region,
+                offset,
+                Some(if i == most_significant_nonzero_byte_index {
+                    F::one()
+                } else {
+                    F::zero()
+                }),
+            )?;
+        }
+        if most_significant_nonzero_byte_index > 0 {
+            let most_significant_nonzero_byte =
+                exponent.to_le_bytes()[most_significant_nonzero_byte_index];
+            self.byte_inverse.assign(
+                region,
+                offset,
+                Some(
+                    F::from(u64::try_from(most_significant_nonzero_byte).unwrap())
+                        .invert()
+                        .unwrap(),
+                ),
+            )?;
+        }
 
         Ok(())
     }
