@@ -97,15 +97,6 @@ impl<'a> CircuitInputStateRef<'a> {
     /// bus-mapping instance of the current [`ExecStep`].  Then increase the
     /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
     pub fn push_op<T: Op>(&mut self, step: &mut ExecStep, rw: RW, op: T) {
-        match op.clone().into_enum() {
-            OpEnum::Memory(m) => {
-                if m.address == 324.into() {
-                    dbg!((self.block_ctx.rwc, step.pc, rw, m, self.call().unwrap().call_id));
-                }
-                ()
-            }
-            _ => (),
-        };
         let op_ref =
             self.block
                 .container

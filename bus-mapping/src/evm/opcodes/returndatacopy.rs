@@ -62,18 +62,7 @@ impl Opcode for Returndatacopy {
                     let mut return_data = return_data[data_starts..].to_vec();
                     return_data.resize(data_ends - data_starts, 0);
                     memory[mem_starts..mem_ends].copy_from_slice(&return_data);
-                    // 
-                    // for i in 0..length {
-                    //     state.push_op(
-                    //         &mut exec_step,
-                    //         RW::WRITE,
-                    //         MemoryOp::new(
-                    //             call_id,
-                    //             (mem_starts + i).into(),
-                    //             return_data[data_starts + i],
-                    //         ),
-                    //     );
-                    // }
+                    // TODO: figure out what should go here?
                 }
             }
         }

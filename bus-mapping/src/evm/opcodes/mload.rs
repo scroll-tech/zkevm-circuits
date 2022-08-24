@@ -30,7 +30,6 @@ impl Opcode for Mload {
 
         // Read the memory
         let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
-        // dbg!(mem_read_addr.clone());
         // Accesses to memory that hasn't been initialized are valid, and return
         // 0.
         let mem_read_value = geth_steps[1].stack.last()?;
@@ -44,11 +43,7 @@ impl Opcode for Mload {
         // First mem read -> 32 MemoryOp generated.
         //
         for byte in mem_read_value.to_be_bytes() {
-            if mem_read_addr == 324.into() {
-                dbg!(mem_read_value, byte);
-            }
-            // TODO fix meeeeeee
-            state.memory_write(&mut exec_step, mem_read_addr, byte)?;
+            state.memory_read(&mut exec_step, mem_read_addr, byte)?;
 
             // Update mem_read_addr to next byte's one
             mem_read_addr += MemoryAddress::from(1);

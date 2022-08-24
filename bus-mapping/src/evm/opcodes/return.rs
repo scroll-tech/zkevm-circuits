@@ -86,9 +86,7 @@ impl Opcode for Return {
             let copy_len = std::cmp::min(call.return_data_length.try_into().unwrap(), length);
             caller_ctx.memory.0[return_offset..return_offset + copy_len]
                 .copy_from_slice(&memory.0[offset..offset + copy_len]);
-            caller_ctx.return_data.resize(length, 0);
-            caller_ctx.return_data[0..copy_len]
-                .copy_from_slice(&memory.0[offset..offset + copy_len]);
+            caller_ctx.return_data = memory.0[offset..offset + length].to_vec();
 
             if length > 0 {
                 handle_copy(
