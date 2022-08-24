@@ -277,7 +277,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
             .eth_block
             .transactions
             .iter()
-            .map(geth_types::Transaction::from_eth_tx)
+            .map(geth_types::Transaction::from)
             .collect();
 
         let mut builder =

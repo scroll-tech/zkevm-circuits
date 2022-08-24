@@ -124,10 +124,30 @@ pub struct Transaction {
     pub s: Word,
 }
 
-impl Transaction {
-    /// Create Self from a web3 transaction
-    pub fn from_eth_tx(tx: &crate::Transaction) -> Self {
-        Self {
+impl From<&Transaction> for crate::Transaction {
+    fn from(tx: &Transaction) -> crate::Transaction {
+        crate::Transaction {
+            from: tx.from,
+            to: tx.to,
+            nonce: tx.nonce,
+            gas: tx.gas_limit,
+            value: tx.value,
+            gas_price: Some(tx.gas_price),
+            max_priority_fee_per_gas: Some(tx.gas_fee_cap),
+            max_fee_per_gas: Some(tx.gas_tip_cap),
+            input: tx.call_data.clone(),
+            access_list: tx.access_list.clone(),
+            v: tx.v.into(),
+            r: tx.r,
+            s: tx.s,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&crate::Transaction> for Transaction {
+    fn from(tx: &crate::Transaction) -> Transaction {
+        Transaction {
             from: tx.from,
             to: tx.to,
             nonce: tx.nonce,
@@ -142,6 +162,19 @@ impl Transaction {
             r: tx.r,
             s: tx.s,
         }
+    }
+}
+
+impl From<Transaction> for ethers_core::types::TransactionRequest {
+    fn from(tx: Transaction) -> ethers_core::types::TransactionRequest {
+        TransactionRequest::new()
+            .from(tx.from)
+            .to(tx.to.unwrap())
+            .nonce(tx.nonce)
+            .value(tx.value)
+            .data(tx.call_data.clone())
+            .gas(tx.gas_limit)
+            .gas_price(tx.gas_price)
     }
 }
 

@@ -37,7 +37,6 @@ maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong"
 integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_06_03", features = ["kzg"] }
 group = "0.11"
 libsecp256k1 = "0.7"
-rlp = "0.5"
 num-bigint = { version = "0.4" }
 subtle = "2.4"
 

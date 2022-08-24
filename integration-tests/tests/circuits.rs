@@ -83,7 +83,7 @@ async fn test_tx_circuit_block(block_num: u64) {
     let txs: Vec<_> = eth_block
         .transactions
         .iter()
-        .map(geth_types::Transaction::from_eth_tx)
+        .map(geth_types::Transaction::from)
         .collect();
 
     let mut rng = ChaCha20Rng::seed_from_u64(2);

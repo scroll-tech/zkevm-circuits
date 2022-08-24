@@ -2439,9 +2439,13 @@ version = "0.1.0"
 dependencies = [
  "eth-types",
  "ethbloom",
+ "ethers-core",
+ "ethers-signers",
  "external-tracer",
  "itertools",
  "lazy_static",
+ "rand",
+ "rand_chacha",
 ]
 
 [[package]]
@@ -4409,7 +4413,6 @@ dependencies = [
  "rand",
  "rand_chacha",
  "rand_xorshift",
- "rlp",
  "secp256k1",
  "serde_json",
  "sha3 0.10.1",

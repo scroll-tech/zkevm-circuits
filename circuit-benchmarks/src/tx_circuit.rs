@@ -5,7 +5,6 @@ mod tests {
     use crate::bench_params::DEGREE;
     use ark_std::{end_timer, start_timer};
     use env_logger::Env;
-    use eth_types::{address, geth_types::Transaction, word, Bytes};
     use group::{Curve, Group};
     use halo2_proofs::arithmetic::{BaseExt, CurveAffine};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, SingleVerifier};
@@ -15,7 +14,7 @@ mod tests {
         transcript::{Blake2bRead, Blake2bWrite, Challenge255},
     };
     use rand::SeedableRng;
-    use rand_xorshift::XorShiftRng;
+    use rand_chacha::ChaCha20Rng;
     use secp256k1::Secp256k1Affine;
     use std::marker::PhantomData;
     use zkevm_circuits::tx_circuit::{
@@ -33,31 +32,13 @@ mod tests {
         const MAX_TXS: usize = 2_usize.pow(DEGREE as u32) / ROWS_PER_TX;
         const MAX_CALLDATA: usize = 1024;
 
-        let mut rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
-        ]);
+        let mut rng = ChaCha20Rng::seed_from_u64(42);
+
         let aux_generator =
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
         let chain_id: u64 = 1337;
 
-        // Transaction generated with `zkevm-circuits/src/tx_circuit.rs:rand_tx` using
-        // `rng = ChaCha20Rng::seed_from_u64(42)`
-        let txs = vec![Transaction {
-            from: address!("0x5f9b7e36af4ff81688f712fb738bbbc1b7348aae"),
-            to: Some(address!("0x701653d7ae8ddaa5c8cee1ee056849f271827926")),
-            nonce: word!("0x3"),
-            gas_limit: word!("0x7a120"),
-            value: word!("0x3e8"),
-            gas_price: word!("0x4d2"),
-            gas_fee_cap: word!("0x0"),
-            gas_tip_cap: word!("0x0"),
-            call_data: Bytes::from(b"hello"),
-            access_list: None,
-            v: 2710,
-            r: word!("0xaf180d27f90b2b20808bc7670ce0aca862bc2b5fa39c195ab7b1a96225ee14d7"),
-            s: word!("0x61159fa4664b698ea7d518526c96cd94cf4d8adf418000754be106a3a133f866"),
-        }];
+        let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
 
         let randomness = Fr::from(0xcafeu64);
         let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)

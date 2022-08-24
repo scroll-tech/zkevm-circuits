@@ -246,7 +246,7 @@ fn gen_geth_traces<const NACC: usize, const NTX: usize>(
         transactions: block
             .transactions
             .iter()
-            .map(eth_types::geth_types::Transaction::from_eth_tx)
+            .map(eth_types::geth_types::Transaction::from)
             .collect(),
         logger_config,
     };

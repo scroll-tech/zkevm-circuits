@@ -1,7 +1,10 @@
 //! Mock types and functions to generate GethData used for tests
 
 use eth_types::{address, Address, Word};
+use ethers_signers::LocalWallet;
 use lazy_static::lazy_static;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 mod account;
 mod block;
 pub mod test_ctx;
@@ -10,7 +13,7 @@ mod transaction;
 pub(crate) use account::MockAccount;
 pub(crate) use block::MockBlock;
 pub use test_ctx::TestContext;
-pub(crate) use transaction::MockTransaction;
+pub use transaction::{AddrOrWallet, MockTransaction, CORRECT_MOCK_TXS};
 
 lazy_static! {
     /// Mock coinbase value
@@ -28,12 +31,23 @@ lazy_static! {
         address!("0x000000000000000000000000000000000cafe444"),
         address!("0x000000000000000000000000000000000cafe555"),
     ];
+    /// Mock wallets used to generate correctly signed and hashed Transactions.
+    pub static ref MOCK_WALLETS: Vec<LocalWallet> = {
+        let mut rng = ChaCha20Rng::seed_from_u64(2u64);
+        vec![
+            LocalWallet::new(&mut rng),
+            LocalWallet::new(&mut rng),
+            LocalWallet::new(&mut rng),
+    ]
+    };
 }
 
+/// Generate a [`Word`] which corresponds to a certain amount of ETH.
 pub fn eth(x: u64) -> Word {
     Word::from(x) * Word::from(10u64.pow(18))
 }
 
+/// Express an amount of ETH in GWei.
 pub fn gwei(x: u64) -> Word {
     Word::from(x) * Word::from(10u64.pow(9))
 }
