@@ -8,10 +8,6 @@ dns_ipaddr=$(dig prover.cirunners.internal +short)
 zone_id=$($aws route53 --profile $profile list-hosted-zones --query 'HostedZones[?Name==`cirunners.internal.`].[Id]' --output text | awk -F \/ '{ print $3 }')
 route53_dir=".github/proverCiScripts/misc"
 
-sshprover () {
-    ssh -o ConnectTimeout=5 prover
-}
-
 # Get running provers IDs
 provers_running=$($aws ec2 describe-instances --profile $profile --filters Name=tag:Name,Values=[proverbench-multiAZ] Name=instance-state-name,Values=[running] Name=network-interface.vpc-id,Values=[$provers_vpc_id] --query "Reservations[*].Instances[*][InstanceId]" --output text)
 provers_running_num=$(echo $provers_running | wc -w)
@@ -44,6 +40,10 @@ for prover in $provers; do
     fi
     sleep 2
 done
+
+sshprover () {
+    ssh -o ConnectTimeout=5 prover
+}
 
 # Wait until prover is accessible
 while true; do
