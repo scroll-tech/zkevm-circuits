@@ -156,7 +156,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
             (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
             (CallContextFieldTag::IsRoot, 1.expr()),
-            (CallContextFieldTag::IsCreate, 0.expr()),
+            (CallContextFieldTag::IsCreate, tx_is_create.expr()),
             (CallContextFieldTag::CodeHash, code_hash.expr()),
         ] {
             cb.call_context_lookup(false.expr(), Some(call_id.expr()), field_tag, value);

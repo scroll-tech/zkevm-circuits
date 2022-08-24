@@ -1227,10 +1227,12 @@ impl<F: Field> ExecutionConfig<F> {
             }
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
+            // dbg!(&block.rws);
             let table_assignments = rw.table_assignment(block.randomness);
             let rlc = table_assignments.rlc(block.randomness);
             if rlc != assigned_rw_values[idx].1 {
                 log_ctx();
+                log::error!("step = {:?}", step.execution_state);
                 log::error!(
                     "incorrect rw witness. input_value {:?}, name \"{}\". table_value {:?}, table_assignments {:?}, rw {:?}, index {:?}, {}th rw of step",
                     assigned_rw_values[idx].1,
