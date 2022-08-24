@@ -154,19 +154,19 @@ impl<F: Field> RestoreContextGadget<F> {
             + not::expr(is_success.expr()) * cb.curr.state.reversible_write_counter.expr();
 
         // Do step state transition
-        cb.require_step_state_transition(StepStateTransition {
-            rw_counter: Delta(rw_counter_offset),
-            call_id: To(caller_id.expr()),
-            is_root: To(caller_is_root.expr()),
-            is_create: To(caller_is_create.expr()),
-            code_hash: To(caller_code_hash.expr()),
-            program_counter: To(caller_program_counter.expr()),
-            stack_pointer: To(caller_stack_pointer.expr()),
-            gas_left: To(gas_left.expr()),
-            memory_word_size: To(caller_memory_word_size.expr()),
-            reversible_write_counter: To(reversible_write_counter),
-            log_id: Same,
-        });
+        // cb.require_step_state_transition(StepStateTransition {
+        //     rw_counter: Delta(rw_counter_offset),
+        //     call_id: To(caller_id.expr()),
+        //     is_root: To(caller_is_root.expr()),
+        //     is_create: To(caller_is_create.expr()),
+        //     code_hash: To(caller_code_hash.expr()),
+        //     program_counter: To(caller_program_counter.expr()),
+        //     stack_pointer: To(caller_stack_pointer.expr()),
+        //     gas_left: To(gas_left.expr()),
+        //     memory_word_size: To(caller_memory_word_size.expr()),
+        //     reversible_write_counter: To(reversible_write_counter),
+        //     log_id: Same,
+        // });
 
         Self {
             caller_id,

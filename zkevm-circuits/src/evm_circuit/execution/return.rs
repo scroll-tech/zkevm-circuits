@@ -87,43 +87,43 @@ impl<F: Field> ExecutionGadget<F> for ReturnGadget<F> {
             )
         });
 
-        cb.condition(
-            not::expr(is_create.expr()) * not::expr(is_root.expr()) * range.has_length(),
-            |cb| {
-                cb.copy_table_lookup(
-                    cb.curr.state.call_id.expr(),
-                    CopyDataType::Memory.expr(),
-                    caller_id.expr(),
-                    CopyDataType::Memory.expr(),
-                    range.offset(),
-                    range.offset() + copy_length.clone(),
-                    return_data_offset.expr(),
-                    copy_length.clone(),
-                    0.expr(),
-                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
-                    copy_length.clone() + copy_length,
-                );
-            },
-        );
+        // cb.condition(
+        //     not::expr(is_create.expr()) * not::expr(is_root.expr()) * range.has_length(),
+        //     |cb| {
+        //         cb.copy_table_lookup(
+        //             cb.curr.state.call_id.expr(),
+        //             CopyDataType::Memory.expr(),
+        //             caller_id.expr(),
+        //             CopyDataType::Memory.expr(),
+        //             range.offset(),
+        //             range.offset() + copy_length.clone(),
+        //             return_data_offset.expr(),
+        //             copy_length.clone(),
+        //             0.expr(),
+        //             cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+        //             copy_length.clone() + copy_length,
+        //         );
+        //     },
+        // );
 
-        cb.condition(
-            is_create.expr() * is_success.expr() * range.has_length(),
-            |cb| {
-                cb.copy_table_lookup(
-                    cb.curr.state.call_id.expr(),  // source id
-                    CopyDataType::Memory.expr(),   // source tag
-                    caller_id.expr(),              // destination id
-                    CopyDataType::Bytecode.expr(), // destination tag
-                    range.offset(),                // source address
-                    range.address(),               //
-                    0.expr(),                      // destination address
-                    range.length(),                // length
-                    0.expr(),
-                    cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
-                    range.length(),
-                );
-            },
-        );
+        // cb.condition(
+        //     is_create.expr() * is_success.expr() * range.has_length(),
+        //     |cb| {
+        //         cb.copy_table_lookup(
+        //             cb.curr.state.call_id.expr(),  // source id
+        //             CopyDataType::Memory.expr(),   // source tag
+        //             caller_id.expr(),              // destination id
+        //             CopyDataType::Bytecode.expr(), // destination tag
+        //             range.offset(),                // source address
+        //             range.address(),               //
+        //             0.expr(),                      // destination address
+        //             range.length(),                // length
+        //             0.expr(),
+        //             cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
+        //             range.length(),
+        //         );
+        //     },
+        // );
 
         Self {
             opcode,
