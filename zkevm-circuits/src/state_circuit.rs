@@ -243,21 +243,22 @@ impl<F: Field> StateCircuit<F> {
         dbg!(rows.len());
         let x: Vec<Rw> = rows
             .iter()
-            .filter(|row| {
-                matches!(
-                    row.tag(),
-                    RwTableTag::Stack
-                        | RwTableTag::AccountStorage
-                        | RwTableTag::TxAccessListAccount
-                        | RwTableTag::TxAccessListAccountStorage
-                        | RwTableTag::TxRefund
-                        | RwTableTag::Account
-                        | RwTableTag::AccountDestructed
-                        | RwTableTag::CallContext
-                        | RwTableTag::TxLog
-                        | RwTableTag::TxReceipt // RwTableTag::Memory
-                )
-            })
+            // .filter(|row| {
+            //     matches!(
+            //         row.tag(),
+            //         // RwTableTag::Stack
+            //         //     | RwTableTag::AccountStorage
+            //         //     | RwTableTag::TxAccessListAccount
+            //         //     | RwTableTag::TxAccessListAccountStorage
+            //         //     | RwTableTag::TxRefund
+            //         //     | RwTableTag::Account
+            //         //     | RwTableTag::AccountDestructed
+            //         //     | RwTableTag::CallContext
+            //         //     | RwTableTag::TxLog
+            //         //     | RwTableTag::TxReceipt
+            //         RwTableTag::Memory
+            //     )
+            // })
             .cloned()
             .collect();
         dbg!(x.len());

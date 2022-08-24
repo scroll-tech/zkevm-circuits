@@ -22,6 +22,11 @@ impl Opcode for Calldatacopy {
         let length = geth_step.stack.nth_last(2)?.as_usize();
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
+        // if memory.clone() != geth_step.memory {
+        //     dbg!(geth_step);
+        //     dbg!(memory);
+        //     panic!();
+        // }
         if length != 0 {
             let minimal_length = memory_offset as usize + length;
             memory.extend_at_least(minimal_length);
@@ -119,6 +124,9 @@ fn gen_copy_steps(
         let addr = src_addr + idx;
         let rwc = state.block_ctx.rwc;
         let (value, is_pad) = if addr < src_addr_end {
+            if addr == 324 {
+                dbg!(state.call()?.caller_id, state.call()?.call_id);
+            }
             let byte =
                 state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
             if !is_root {
