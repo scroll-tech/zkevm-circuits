@@ -755,6 +755,51 @@ impl<F: Field> ExecutionConfig<F> {
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
+                // handle empty block conditions
+                let is_empty_block = block.txs.is_empty();
+                if is_empty_block {
+                    // set 0 for rows which constraints refer to
+                    let end_row = if !exact && block.evm_circuit_pad_to != 0 {
+                        block.evm_circuit_pad_to
+                    } else {
+                        2
+                    };
+
+                    for column in iter::empty()
+                        .chain([
+                            self.q_used,
+                            self.q_step,
+                            self.num_rows_until_next_step,
+                            self.num_rows_inv,
+                            self.q_step_last,
+                        ])
+                        .chain(self.advices)
+                    {
+                        for i in 0..end_row {
+                            region
+                                .assign_advice(|| "assign advice rows", column, i, || Ok(F::zero()))
+                                .unwrap();
+                            region
+                                .assign_fixed(
+                                    || "assgin fixed q_usable rows ",
+                                    self.q_usable,
+                                    i,
+                                    || Ok(F::one()),
+                                )
+                                .unwrap();
+                        }
+                    }
+
+                    //adjust q_step_last to 1
+                    region.assign_advice(
+                        || "assign q_step_last rows",
+                        self.q_step_last,
+                        end_row - 1,
+                        || Ok(F::one()),
+                    )?;
+                    return Ok(());
+                }
+
                 // Collect all steps
                 let mut steps = block
                     .txs

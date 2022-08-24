@@ -45,8 +45,6 @@ pub struct Block<F> {
     pub evm_circuit_pad_to: usize,
     /// Length to rw table rows in state circuit
     pub state_circuit_pad_to: usize,
-    /// ..
-    pub bytecode_circuit_pad_to: usize,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -1469,6 +1467,5 @@ pub fn block_convert(
         copy_events: block.copy_events.clone(),
         evm_circuit_pad_to: 0,
         state_circuit_pad_to: 0,
-        bytecode_circuit_pad_to: 0,
     }
 }
