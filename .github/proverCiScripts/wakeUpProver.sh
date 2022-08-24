@@ -48,16 +48,11 @@ for prover in $provers; do
 done
 
 # Wait until prover is accessible
-num=0
 while true; do
-    $num++
     sshprover
     if [ $? -eq 0 ]; then
         break
     else
         sleep 2
-        if $num >20
-            exit 1
-        fi
     fi
 done
