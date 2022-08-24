@@ -11,7 +11,7 @@ route53_dir=".github/proverCiScripts/misc"
 
 
 sshprover () {
-    ssh -o ConnectTimeout=5 prover "uptime"
+    ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no prover "uptime" 
 }
 
 # Get running provers IDs
