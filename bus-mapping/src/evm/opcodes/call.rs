@@ -185,7 +185,7 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
         } else {
             0
         } + memory_expansion_gas_cost;
-        let gas_specified = geth_step.stack.last()?; // hahahaaaaaa
+        let gas_specified = geth_step.stack.last()?;
         let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, gas_specified);
 
         if geth_steps[0].op == OpcodeId::CALL

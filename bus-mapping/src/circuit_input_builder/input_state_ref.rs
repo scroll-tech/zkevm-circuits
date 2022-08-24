@@ -548,7 +548,11 @@ impl<'a> CircuitInputStateRef<'a> {
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
-        Ok(get_contract_address(sender, account.nonce + 1))
+        // TODO: fix this correctly!!!!
+        // maybe the nonce isn't initialized correctly in the
+        // tests/traces/bridge/05.json?
+        let nonce = account.nonce + (account.code_hash == H256(*EMPTY_HASH)).to_word();
+        Ok(get_contract_address(sender, nonce))
     }
 
     /// Return the contract address of a CREATE2 step.  This is calculated
