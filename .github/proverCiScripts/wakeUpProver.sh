@@ -1,13 +1,12 @@
 #!/bin/bash
-#set -e 
-#set -x
+set -ex
 
 profile="cirunner"
 provers_vpc_id="vpc-1176d875"
+aws="/home/ubuntu/.local/bin/aws"
 dns_ipaddr=$(dig prover.cirunners.internal +short)
 zone_id=$($aws route53 --profile $profile list-hosted-zones --query 'HostedZones[?Name==`cirunners.internal.`].[Id]' --output text | awk -F \/ '{ print $3 }')
 route53_dir=".github/proverCiScripts/misc"
-aws="/home/ubuntu/.local/bin/aws"
 
 sshprover () {
     ssh -o ConnectTimeout=5 prover
