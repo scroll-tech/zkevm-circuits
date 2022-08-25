@@ -593,7 +593,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 step.stack.nth_last(2)?,
             ),
             CallKind::CallCode => (caller.address, caller.address, step.stack.nth_last(2)?),
-            CallKind::DelegateCall => (caller.caller_address, caller.address, Word::zero()),
+            CallKind::DelegateCall => (caller.caller_address, caller.address, caller.value),
             CallKind::StaticCall => (
                 caller.address,
                 step.stack.nth_last(1)?.to_address(),

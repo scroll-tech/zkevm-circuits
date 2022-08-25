@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{CircuitInputStateRef, CodeSource, ExecStep},
     operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
@@ -119,12 +119,16 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
 
         let (_, callee_account) = state.sdb.get_account(&call.address);
         let callee_account = callee_account.clone();
-        state.transfer(
-            &mut exec_step,
-            call.caller_address,
-            call.address,
-            call.value,
-        )?;
+
+        // Only transfer for CALL and CALLCODE
+        if N_ARGS == 7 {
+            state.transfer(
+                &mut exec_step,
+                call.caller_address,
+                call.address,
+                call.value,
+            )?;
+        }
         let is_empty_account = callee_account.is_empty();
         let callee_nonce = callee_account.nonce;
         let mut callee_code_hash = call.code_hash;
@@ -133,12 +137,26 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
             assert!(callee_code_hash.to_fixed_bytes() == *EMPTY_HASH);
         }
         debug_assert!(!callee_code_hash.is_zero());
-        for (field, value) in [
-            (AccountField::Nonce, callee_nonce),
-            (AccountField::CodeHash, callee_code_hash.to_word()),
-        ] {
-            state.account_read(&mut exec_step, call.address, field, value, value)?;
-        }
+
+        // TODO: remove value_prev argument from account_read
+        state.account_read(
+            &mut exec_step,
+            call.address,
+            AccountField::Nonce,
+            callee_nonce,
+            callee_nonce,
+        )?;
+        let code_source = match call.code_source {
+            CodeSource::Address(address) => address,
+            _ => unreachable!(),
+        };
+        state.account_read(
+            &mut exec_step,
+            code_source,
+            AccountField::CodeHash,
+            callee_code_hash.to_word(),
+            callee_code_hash.to_word(),
+        )?;
 
         // Calculate next_memory_word_size and callee_gas_left manually in case
         // there isn't next geth_step (e.g. callee doesn't have code).
@@ -268,11 +286,11 @@ impl<const N_ARGS: usize> Opcode for Call<N_ARGS> {
                     ),
                     (
                         CallContextField::StackPointer,
-                        (geth_step.stack.stack_pointer().0 + 6).into(),
+                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
                     ),
                     (
                         CallContextField::GasLeft,
-                        (geth_step.gas.0 - gas_cost - callee_gas_left).into(),
+                        (geth_step.gas.0 - geth_step.gas_cost.0).into(),
                     ),
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
