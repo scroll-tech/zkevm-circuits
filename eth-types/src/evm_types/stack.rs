@@ -118,7 +118,7 @@ impl Stack {
         StackAddress::from(1024 - self.0.len())
     }
 
-    /// Returns the second last filled `StackAddress`.
+    /// Returns the n-th last filled `StackAddress`.
     pub fn nth_last_filled(&self, nth: usize) -> StackAddress {
         StackAddress::from(1024 - self.0.len() + nth)
     }
@@ -128,7 +128,7 @@ impl Stack {
         self.0.last().cloned().ok_or(Error::InvalidStackPointer)
     }
 
-    /// Returns the second last [`Word`] allocated in the `Stack`.
+    /// Returns the n-th last [`Word`] allocated in the `Stack`.
     pub fn nth_last(&self, nth: usize) -> Result<Word, Error> {
         self.0
             .get(self.0.len() - (nth + 1))
