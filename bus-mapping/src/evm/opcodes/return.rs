@@ -1,6 +1,9 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::Opcode;
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::Opcode,
+    operation::{MemoryOp, RW},
+    Error,
+};
 use eth_types::GethExecStep;
 
 #[derive(Debug, Copy, Clone)]
@@ -12,7 +15,7 @@ impl Opcode for Return {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_step = state.new_step(geth_step)?;
+        let mut exec_step = state.new_step(geth_step)?;
 
         let current_call = state.call()?.clone();
         let offset = geth_step.stack.nth_last(0)?.as_usize();
@@ -27,15 +30,26 @@ impl Opcode for Return {
                 // copy return data
                 // update to the caller memory
                 let caller_ctx = state.caller_ctx_mut()?;
+                caller_ctx.return_data = memory.0[offset..offset + length].to_vec();
+
                 let return_offset = current_call.return_data_offset as usize;
-                // already resized in Call::reconstruct_memory
+                // TODO: check that this is correct? memory should not be extended if length is
+                // 0. already resized in Call::reconstruct_memory
                 // caller_ctx.memory.extend_at_least(return_offset + length);
                 let copy_len = std::cmp::min(current_call.return_data_length as usize, length);
                 caller_ctx.memory.0[return_offset..return_offset + copy_len]
-                    .copy_from_slice(&memory.0[offset..offset + copy_len]);
-                caller_ctx.return_data.resize(length as usize, 0);
-                caller_ctx.return_data[0..copy_len]
-                    .copy_from_slice(&memory.0[offset..offset + copy_len]);
+                    .copy_from_slice(&caller_ctx.return_data[0..copy_len]);
+                for i in 0..copy_len {
+                    state.push_op(
+                        &mut exec_step,
+                        RW::WRITE,
+                        MemoryOp::new(
+                            current_call.caller_id,
+                            (return_offset + i).into(),
+                            memory.0[offset + i],
+                        ),
+                    );
+                }
             } else {
                 // dealing with contract creation
                 assert!(offset + length <= memory.0.len());
