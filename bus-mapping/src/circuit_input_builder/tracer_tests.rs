@@ -1695,7 +1695,15 @@ fn create_address() {
     // Set up call context at CREATE
     builder.tx_ctx.call_is_success.push(false);
     builder.state_ref().push_call(mock_internal_create());
-    builder.builder.sdb.set_account(&ADDR_B, Account::zero());
+    builder.builder.sdb.set_account(
+        &ADDR_B,
+        Account {
+            nonce: Word::from(1),
+            balance: Word::zero(),
+            storage: HashMap::new(),
+            code_hash: Hash::zero(),
+        },
+    );
     let addr = builder.state_ref().create_address().unwrap();
 
     assert_eq!(addr.to_word(), addr_expect);

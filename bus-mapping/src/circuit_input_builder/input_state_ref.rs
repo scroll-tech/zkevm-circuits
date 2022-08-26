@@ -17,7 +17,7 @@ use crate::{
 };
 use eth_types::{
     evm_types::{Gas, MemoryAddress, OpcodeId, StackAddress},
-    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
+    Address, GethExecStep, ToAddress, ToBigEndian, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use keccak256::EMPTY_HASH;
@@ -548,11 +548,7 @@ impl<'a> CircuitInputStateRef<'a> {
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
-
-        // TODO: figure out why this hack is needed!! maybe the nonce isn't initialized
-        // correctly in tests/traces/bridge/05.json?
-        let nonce = account.nonce + (account.code_hash == H256(*EMPTY_HASH)).to_word();
-        Ok(get_contract_address(sender, nonce))
+        Ok(get_contract_address(sender, account.nonce))
     }
 
     /// Return the contract address of a CREATE2 step.  This is calculated
