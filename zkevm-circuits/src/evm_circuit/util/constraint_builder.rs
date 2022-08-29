@@ -596,14 +596,16 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     pub(crate) fn block_lookup(
         &mut self,
         tag: Expression<F>,
-        number: Option<Expression<F>>,
+        current_block_number: Expression<F>,
+        parent_block_number: Option<Expression<F>>,
         val: Expression<F>,
     ) {
         self.add_lookup(
             "Block lookup",
             Lookup::Block {
                 field_tag: tag,
-                number: number.unwrap_or_else(|| 0.expr()),
+                current_block_number,
+                parent_block_number: parent_block_number.unwrap_or_else(|| 0.expr()),
                 value: val,
             },
         );

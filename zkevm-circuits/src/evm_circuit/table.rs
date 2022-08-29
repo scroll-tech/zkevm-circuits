@@ -201,9 +201,11 @@ pub(crate) enum Lookup<F> {
     Block {
         /// Tag to specify which field to read.
         field_tag: Expression<F>,
+        /// Number of the current block.
+        current_block_number: Expression<F>,
         /// Stores the block number only when field_tag is BlockHash, otherwise
         /// should be set to 0.
-        number: Expression<F>,
+        parent_block_number: Expression<F>,
         /// Value of the field.
         value: Expression<F>,
     },
@@ -321,10 +323,16 @@ impl<F: Field> Lookup<F> {
             }
             Self::Block {
                 field_tag,
-                number,
+                current_block_number,
+                parent_block_number,
                 value,
             } => {
-                vec![field_tag.clone(), number.clone(), value.clone()]
+                vec![
+                    field_tag.clone(),
+                    current_block_number.clone(),
+                    parent_block_number.clone(),
+                    value.clone(),
+                ]
             }
             Self::Byte { value } => {
                 vec![value.clone()]

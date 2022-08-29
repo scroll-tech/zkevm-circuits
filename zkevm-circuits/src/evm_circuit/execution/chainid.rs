@@ -2,6 +2,7 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
+        table::TxContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
@@ -19,6 +20,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ChainIdGadget<F> {
     same_context: SameContextGadget<F>,
+    curr_block_number: Cell<F>,
     chain_id: Cell<F>,
 }
 
@@ -33,8 +35,19 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
         // Push the value to the stack
         cb.stack_push(chain_id.expr());
 
+        let curr_block_number = cb.tx_context(
+            cb.curr.state.tx_id.expr(),
+            TxContextFieldTag::BlockNumber,
+            None,
+        );
+
         // Lookup block table with chain_id
-        cb.block_lookup(BlockContextFieldTag::ChainId.expr(), None, chain_id.expr());
+        cb.block_lookup(
+            BlockContextFieldTag::ChainId.expr(),
+            curr_block_number.expr(),
+            None,
+            chain_id.expr(),
+        );
 
         // State transition
         let opcode = cb.query_cell();
@@ -49,6 +62,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
 
         Self {
             same_context,
+            curr_block_number,
             chain_id,
         }
     }
@@ -58,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        tx: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -73,6 +87,9 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
                 block.randomness,
             )),
         )?;
+        self.curr_block_number
+            .assign(region, offset, Some(F::from(tx.block_number)))?;
+
         Ok(())
     }
 }

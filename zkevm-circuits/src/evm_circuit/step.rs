@@ -331,6 +331,8 @@ pub(crate) struct StepState<F> {
     /// The unique identifier of call in the whole proof, using the
     /// `rw_counter` at the call step.
     pub(crate) call_id: Cell<F>,
+    /// The transaction id of this transaction within the block.
+    pub(crate) tx_id: Cell<F>,
     /// Whether the call is root call
     pub(crate) is_root: Cell<F>,
     /// Whether the call is a create call
@@ -375,6 +377,7 @@ impl<F: FieldExt> Step<F> {
                     .query_cells(CellType::Storage, ExecutionState::amount()),
                 rw_counter: cell_manager.query_cell(CellType::Storage),
                 call_id: cell_manager.query_cell(CellType::Storage),
+                tx_id: cell_manager.query_cell(CellType::Storage),
                 is_root: cell_manager.query_cell(CellType::Storage),
                 is_create: cell_manager.query_cell(CellType::Storage),
                 code_hash: cell_manager.query_cell(CellType::Storage),
@@ -408,7 +411,7 @@ impl<F: FieldExt> Step<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -429,6 +432,9 @@ impl<F: FieldExt> Step<F> {
         self.state
             .call_id
             .assign(region, offset, Some(F::from(call.id as u64)))?;
+        self.state
+            .tx_id
+            .assign(region, offset, Some(F::from(tx.id as u64)))?;
         self.state
             .is_root
             .assign(region, offset, Some(F::from(call.is_root as u64)))?;

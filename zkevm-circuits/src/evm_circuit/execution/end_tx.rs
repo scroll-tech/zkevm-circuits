@@ -26,6 +26,7 @@ use strum::EnumCount;
 #[derive(Clone, Debug)]
 pub(crate) struct EndTxGadget<F> {
     tx_id: Cell<F>,
+    curr_block_number: Cell<F>,
     tx_gas: Cell<F>,
     max_refund: ConstantDivisionGadget<F, N_BYTES_GAS>,
     refund: Cell<F>,
@@ -50,6 +51,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
+        let curr_block_number = cb.tx_context(tx_id.expr(), TxContextFieldTag::BlockNumber, None);
 
         let [tx_gas, tx_caller_address] =
             [TxContextFieldTag::Gas, TxContextFieldTag::CallerAddress]
@@ -87,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             (BlockContextFieldTag::Coinbase, coinbase.expr()),
             (BlockContextFieldTag::BaseFee, base_fee.expr()),
         ] {
-            cb.block_lookup(tag.expr(), None, value);
+            cb.block_lookup(tag.expr(), curr_block_number.expr(), None, value);
         }
         let effective_tip = cb.query_word();
         let sub_gas_price_by_base_fee =
@@ -170,6 +172,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         Self {
             tx_id,
+            curr_block_number,
             tx_gas,
             max_refund,
             refund,
@@ -203,6 +206,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         self.tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
+        self.curr_block_number
+            .assign(region, offset, Some(F::from(tx.block_number)))?;
         self.tx_gas.assign(region, offset, Some(F::from(tx.gas)))?;
         let (max_refund, _) = self.max_refund.assign(region, offset, gas_used as u128)?;
         self.refund.assign(region, offset, Some(F::from(refund)))?;
