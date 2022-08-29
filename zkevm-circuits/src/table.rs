@@ -536,6 +536,10 @@ pub enum BlockContextFieldTag {
     /// Chain ID field.  Although this is not a field in the block header, we
     /// add it here for convenience.
     ChainId,
+    /// In a multi-block setup, this variant represents the total number of txs
+    /// included in the blocks upto this block, including the txs in this
+    /// block.
+    NumTxs,
 }
 impl_expr!(BlockContextFieldTag);
 
@@ -567,26 +571,31 @@ impl BlockTable {
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        blocks: &BlockContexts,
+        block_ctxs: &BlockContexts,
+        txs: &[Transaction],
         randomness: F,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "block table",
             |mut region| {
                 let mut offset = 0;
-                for column in self.columns() {
+                let block_table_columns = self.columns();
+                for column in block_table_columns.iter() {
                     region.assign_advice(
                         || "block table all-zero row",
-                        column,
+                        *column,
                         offset,
                         || Ok(F::zero()),
                     )?;
                 }
                 offset += 1;
 
-                for block in blocks.blocks.values() {
-                    let block_table_columns = self.columns();
-                    for row in block.table_assignments(randomness) {
+                for block_ctx in block_ctxs.ctxs.values() {
+                    let num_txs = txs
+                        .iter()
+                        .filter(|tx| tx.block_number == block_ctx.number.as_u64())
+                        .count();
+                    for row in block_ctx.table_assignments(num_txs, randomness) {
                         for (column, value) in block_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("block table row {}", offset),

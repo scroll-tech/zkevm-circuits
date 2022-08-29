@@ -309,9 +309,12 @@ pub mod test {
                 self.block.bytecodes.values(),
                 self.block.randomness,
             )?;
-            config
-                .block_table
-                .load(&mut layouter, &self.block.context, self.block.randomness)?;
+            config.block_table.load(
+                &mut layouter,
+                &self.block.context,
+                &self.block.txs,
+                self.block.randomness,
+            )?;
             config
                 .copy_table
                 .load(&mut layouter, &self.block, self.block.randomness)?;

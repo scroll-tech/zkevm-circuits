@@ -53,14 +53,14 @@ pub struct Block<F> {
 
 #[derive(Debug, Default, Clone)]
 pub struct BlockContexts {
-    /// ..
-    pub blocks: BTreeMap<u64, BlockContext>,
+    /// Hashmap that maps block number to its block context.
+    pub ctxs: BTreeMap<u64, BlockContext>,
 }
 
 impl BlockContexts {
-    /// ..
+    /// Get the chain ID for the block.
     pub fn chain_id(&self) -> Word {
-        self.blocks.iter().next().unwrap().1.chain_id
+        self.ctxs.iter().next().unwrap().1.chain_id
     }
 }
 
@@ -85,7 +85,7 @@ pub struct BlockContext {
 }
 
 impl BlockContext {
-    pub fn table_assignments<F: Field>(&self, randomness: F) -> Vec<[F; 4]> {
+    pub fn table_assignments<F: Field>(&self, num_txs: usize, randomness: F) -> Vec<[F; 4]> {
         let current_block_number = self.number.to_scalar().unwrap();
         [
             vec![
@@ -139,6 +139,12 @@ impl BlockContext {
                         self.chain_id.to_le_bytes(),
                         randomness,
                     ),
+                ],
+                [
+                    F::from(BlockContextFieldTag::NumTxs as u64),
+                    current_block_number,
+                    F::zero(),
+                    F::from(num_txs as u64),
                 ],
             ],
             self.history_hashes
@@ -980,7 +986,7 @@ impl Rw {
 impl From<&circuit_input_builder::Block> for BlockContexts {
     fn from(block: &circuit_input_builder::Block) -> Self {
         Self {
-            blocks: block
+            ctxs: block
                 .headers
                 .values()
                 .map(|block| {

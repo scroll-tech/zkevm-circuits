@@ -207,9 +207,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             self.block.randomness,
         )?;
         config.state_circuit.load(&mut layouter)?;
-        config
-            .block_table
-            .load(&mut layouter, &self.block.context, self.block.randomness)?;
+        config.block_table.load(
+            &mut layouter,
+            &self.block.context,
+            &self.block.txs,
+            self.block.randomness,
+        )?;
         config
             .copy_table
             .load(&mut layouter, &self.block, self.block.randomness)?;

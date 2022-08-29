@@ -235,7 +235,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             vec![gas_fee_refund],
             caller_balance,
         )?;
-        let context = &block.context.blocks[&tx.block_number];
+        let context = &block.context.ctxs[&tx.block_number];
         let effective_tip = tx.gas_price - context.base_fee;
         self.sub_gas_price_by_base_fee.assign(
             region,
