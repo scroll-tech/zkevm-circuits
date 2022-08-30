@@ -3,11 +3,10 @@ use crate::{
         execution::ExecutionGadget,
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
-        table::TxContextFieldTag,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, CachedRegion, Cell, RandomLinearCombination,
+            from_bytes, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -22,7 +21,6 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct BlockCtxGadget<F, const N_BYTES: usize> {
     same_context: SameContextGadget<F>,
-    block_number: Cell<F>,
     value: RandomLinearCombination<F, N_BYTES>,
 }
 
@@ -35,11 +33,6 @@ impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
 
         // Get op's FieldTag
         let opcode = cb.query_cell();
-        let block_number = cb.tx_context(
-            cb.curr.state.tx_id.expr(),
-            TxContextFieldTag::BlockNumber,
-            None,
-        );
         let blockctx_tag = BlockContextFieldTag::Coinbase.expr()
             + (opcode.expr() - OpcodeId::COINBASE.as_u64().expr());
 
@@ -50,7 +43,7 @@ impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
         } else {
             from_bytes::expr(&value.cells)
         };
-        cb.block_lookup(blockctx_tag, block_number.expr(), None, value_expr);
+        cb.block_lookup(blockctx_tag, cb.curr.state.block_number.expr(), value_expr);
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -64,7 +57,6 @@ impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
 
         Self {
             same_context,
-            block_number,
             value,
         }
     }
@@ -91,7 +83,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction,
+        _: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -106,9 +98,6 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
             offset,
             Some(u64::try_from(value).unwrap().to_le_bytes()),
         )?;
-        self.value_u64
-            .block_number
-            .assign(region, offset, Some(F::from(tx.block_number)))?;
 
         Ok(())
     }
@@ -135,7 +124,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction,
+        _: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -154,9 +143,6 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
                     .unwrap(),
             ),
         )?;
-        self.value_u160
-            .block_number
-            .assign(region, offset, Some(F::from(tx.block_number)))?;
 
         Ok(())
     }
@@ -183,7 +169,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction,
+        _: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -196,9 +182,6 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
         self.value_u256
             .value
             .assign(region, offset, Some(value.to_le_bytes()))?;
-        self.value_u256
-            .block_number
-            .assign(region, offset, Some(F::from(tx.block_number)))?;
 
         Ok(())
     }

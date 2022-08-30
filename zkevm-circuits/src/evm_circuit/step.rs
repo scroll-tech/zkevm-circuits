@@ -337,6 +337,10 @@ pub(crate) struct StepState<F> {
     pub(crate) is_root: Cell<F>,
     /// Whether the call is a create call
     pub(crate) is_create: Cell<F>,
+    /// The block number the state currently is in. This is particularly
+    /// important as multiple blocks can be assigned and proven in a single
+    /// circuit instance.
+    pub(crate) block_number: Cell<F>,
     /// Denotes the hash of the bytecode for the current call.
     /// In the case of a contract creation root call, this denotes the hash of
     /// the tx calldata.
@@ -380,6 +384,7 @@ impl<F: FieldExt> Step<F> {
                 tx_id: cell_manager.query_cell(CellType::Storage),
                 is_root: cell_manager.query_cell(CellType::Storage),
                 is_create: cell_manager.query_cell(CellType::Storage),
+                block_number: cell_manager.query_cell(CellType::Storage),
                 code_hash: cell_manager.query_cell(CellType::Storage),
                 program_counter: cell_manager.query_cell(CellType::Storage),
                 stack_pointer: cell_manager.query_cell(CellType::Storage),
@@ -441,6 +446,9 @@ impl<F: FieldExt> Step<F> {
         self.state
             .is_create
             .assign(region, offset, Some(F::from(call.is_create as u64)))?;
+        self.state
+            .block_number
+            .assign(region, offset, Some(F::from(tx.block_number)))?;
         self.state.code_hash.assign(
             region,
             offset,

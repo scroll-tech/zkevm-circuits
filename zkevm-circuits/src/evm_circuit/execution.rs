@@ -5,8 +5,9 @@ use crate::{
         step::{ExecutionState, Step},
         table::Table,
         util::{
+            and as expr_and,
             constraint_builder::{BaseConstraintBuilder, ConstraintBuilder},
-            rlc, CellType,
+            not as expr_not, rlc, CellType,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -382,6 +383,38 @@ impl<F: Field> ExecutionConfig<F> {
 
         let mut stored_expressions_map = HashMap::new();
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
+
+        meta.create_gate("multi-block transition", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            let end_tx = step_curr.execution_state_selector([ExecutionState::EndTx]);
+            let next_end_block = step_next.execution_state_selector([ExecutionState::EndBlock]);
+
+            // If this is the last step in the transaction, and the next step is not
+            // EndBlock.
+            cb.condition(
+                expr_and::expr([end_tx.clone(), expr_not::expr(next_end_block)]),
+                |cb| {
+                    cb.require_equal(
+                        "block number monotonically increases",
+                        step_curr.state.block_number.expr() + 1.expr(),
+                        step_next.state.block_number.expr(),
+                    );
+                },
+            );
+
+            // If this is not the last step in the transaction.
+            cb.condition(expr_not::expr(end_tx), |cb| {
+                cb.require_equal(
+                    "block number remains the same",
+                    step_curr.state.block_number.expr(),
+                    step_next.state.block_number.expr(),
+                );
+            });
+
+            cb.gate(meta.query_advice(q_step, Rotation::cur()))
+        });
+
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(

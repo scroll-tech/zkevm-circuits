@@ -80,8 +80,6 @@ pub enum TxFieldTag {
     TxSignHash,
     /// CallData
     CallData,
-    /// The block number in which this tx is included.
-    BlockNumber,
 }
 impl_expr!(TxFieldTag);
 
@@ -548,8 +546,6 @@ impl_expr!(BlockContextFieldTag);
 pub struct BlockTable {
     /// Tag
     pub tag: Column<Advice>,
-    /// Block number.
-    pub block_number: Column<Advice>,
     /// Index
     pub index: Column<Advice>,
     /// Value
@@ -561,7 +557,6 @@ impl BlockTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             tag: meta.advice_column(),
-            block_number: meta.advice_column(),
             index: meta.advice_column(),
             value: meta.advice_column(),
         }
@@ -617,7 +612,7 @@ impl BlockTable {
 
 impl DynamicTableColumns for BlockTable {
     fn columns(&self) -> Vec<Column<Advice>> {
-        vec![self.tag, self.block_number, self.index, self.value]
+        vec![self.tag, self.index, self.value]
     }
 }
 

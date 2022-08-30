@@ -85,32 +85,28 @@ pub struct BlockContext {
 }
 
 impl BlockContext {
-    pub fn table_assignments<F: Field>(&self, num_txs: usize, randomness: F) -> Vec<[F; 4]> {
+    pub fn table_assignments<F: Field>(&self, num_txs: usize, randomness: F) -> Vec<[F; 3]> {
         let current_block_number = self.number.to_scalar().unwrap();
         [
             vec![
                 [
                     F::from(BlockContextFieldTag::Coinbase as u64),
                     current_block_number,
-                    F::zero(),
                     self.coinbase.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Timestamp as u64),
                     current_block_number,
-                    F::zero(),
                     self.timestamp.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Number as u64),
                     current_block_number,
-                    F::zero(),
                     current_block_number,
                 ],
                 [
                     F::from(BlockContextFieldTag::Difficulty as u64),
                     current_block_number,
-                    F::zero(),
                     RandomLinearCombination::random_linear_combine(
                         self.difficulty.to_le_bytes(),
                         randomness,
@@ -119,13 +115,11 @@ impl BlockContext {
                 [
                     F::from(BlockContextFieldTag::GasLimit as u64),
                     current_block_number,
-                    F::zero(),
                     F::from(self.gas_limit),
                 ],
                 [
                     F::from(BlockContextFieldTag::BaseFee as u64),
                     current_block_number,
-                    F::zero(),
                     RandomLinearCombination::random_linear_combine(
                         self.base_fee.to_le_bytes(),
                         randomness,
@@ -134,7 +128,6 @@ impl BlockContext {
                 [
                     F::from(BlockContextFieldTag::ChainId as u64),
                     current_block_number,
-                    F::zero(),
                     RandomLinearCombination::random_linear_combine(
                         self.chain_id.to_le_bytes(),
                         randomness,
@@ -143,7 +136,6 @@ impl BlockContext {
                 [
                     F::from(BlockContextFieldTag::NumTxs as u64),
                     current_block_number,
-                    F::zero(),
                     F::from(num_txs as u64),
                 ],
             ],
@@ -153,7 +145,6 @@ impl BlockContext {
                 .map(|(idx, hash)| {
                     [
                         F::from(BlockContextFieldTag::BlockHash as u64),
-                        current_block_number,
                         (self.number - idx - 1).to_scalar().unwrap(),
                         RandomLinearCombination::random_linear_combine(
                             hash.to_le_bytes(),
@@ -274,12 +265,6 @@ impl Transaction {
                     F::from(TxContextFieldTag::CallDataGasCost as u64),
                     F::zero(),
                     F::from(self.call_data_gas_cost),
-                ],
-                [
-                    F::from(self.id as u64),
-                    F::from(TxContextFieldTag::BlockNumber as u64),
-                    F::zero(),
-                    F::from(self.block_number),
                 ],
             ],
             self.call_data
