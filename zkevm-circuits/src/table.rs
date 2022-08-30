@@ -590,8 +590,9 @@ impl BlockTable {
                 }
                 offset += 1;
 
+                let mut num_txs = 0;
                 for block_ctx in block_ctxs.ctxs.values() {
-                    let num_txs = txs
+                    num_txs += txs
                         .iter()
                         .filter(|tx| tx.block_number == block_ctx.number.as_u64())
                         .count();
