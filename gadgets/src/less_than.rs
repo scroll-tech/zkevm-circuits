@@ -8,6 +8,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
+use crate::util::sum;
+
 use super::{
     bool_check,
     util::{expr_from_bytes, pow_of_two},
@@ -41,6 +43,12 @@ impl<F: Field, const N_BYTES: usize> LtConfig<F, N_BYTES> {
     /// Returns an expression that denotes whether lhs < rhs, or not.
     pub fn is_lt(&self, meta: &mut VirtualCells<F>, rotation: Option<Rotation>) -> Expression<F> {
         meta.query_advice(self.lt, rotation.unwrap_or_else(Rotation::cur))
+    }
+
+    /// Returns an expression representing the difference between LHS and RHS.
+    pub fn diff(&self, meta: &mut VirtualCells<F>, rotation: Option<Rotation>) -> Expression<F> {
+        let rotation = rotation.unwrap_or_else(Rotation::cur);
+        sum::expr(self.diff.iter().map(|c| meta.query_advice(*c, rotation)))
     }
 }
 

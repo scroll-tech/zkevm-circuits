@@ -1,13 +1,12 @@
 use super::util::{CachedRegion, CellManager, StoredExpression};
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, N_BYTES_U64, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::Table,
         util::{
-            and as expr_and,
             constraint_builder::{BaseConstraintBuilder, ConstraintBuilder},
-            not as expr_not, rlc, CellType,
+            rlc, CellType,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -16,6 +15,10 @@ use crate::{
 };
 use eth_types::Field;
 
+use gadgets::{
+    comparison::{ComparisonChip, ComparisonConfig},
+    util::or,
+};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
@@ -155,6 +158,7 @@ pub(crate) struct ExecutionConfig<F> {
     num_rows_inv: Column<Advice>,
     q_step_first: Selector,
     q_step_last: Column<Advice>,
+    block_number_cmp: ComparisonConfig<F, N_BYTES_U64>,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
     height_map: HashMap<ExecutionState, usize>,
@@ -384,33 +388,21 @@ impl<F: Field> ExecutionConfig<F> {
         let mut stored_expressions_map = HashMap::new();
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
 
+        let block_number_cmp = ComparisonChip::configure(
+            meta,
+            q_step,
+            step_curr.state.block_number.expr(),
+            step_next.state.block_number.expr(),
+        );
         meta.create_gate("multi-block transition", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let end_tx = step_curr.execution_state_selector([ExecutionState::EndTx]);
-            let next_end_block = step_next.execution_state_selector([ExecutionState::EndBlock]);
-
-            // If this is the last step in the transaction, and the next step is not
-            // EndBlock.
-            cb.condition(
-                expr_and::expr([end_tx.clone(), expr_not::expr(next_end_block)]),
-                |cb| {
-                    cb.require_equal(
-                        "block number monotonically increases",
-                        step_curr.state.block_number.expr() + 1.expr(),
-                        step_next.state.block_number.expr(),
-                    );
-                },
+            let (lt, eq) = block_number_cmp.expr(meta, None);
+            cb.require_equal(
+                "block number monotonically increases",
+                or::expr([lt, eq]),
+                1.expr(),
             );
-
-            // If this is not the last step in the transaction.
-            cb.condition(expr_not::expr(end_tx), |cb| {
-                cb.require_equal(
-                    "block number remains the same",
-                    step_curr.state.block_number.expr(),
-                    step_next.state.block_number.expr(),
-                );
-            });
 
             cb.gate(meta.query_advice(q_step, Rotation::cur()))
         });
@@ -444,6 +436,7 @@ impl<F: Field> ExecutionConfig<F> {
             num_rows_inv,
             q_step_first,
             q_step_last,
+            block_number_cmp,
             advices,
             // internal states
             begin_tx_gadget: configure_gadget!(),
@@ -781,6 +774,7 @@ impl<F: Field> ExecutionConfig<F> {
             .collect::<Vec<F>>()
             .try_into()
             .unwrap();
+        let block_number_cmp_chip = ComparisonChip::construct(self.block_number_cmp.clone());
 
         layouter.assign_region(
             || "Execution step",
@@ -892,6 +886,14 @@ impl<F: Field> ExecutionConfig<F> {
                         next,
                         power_of_randomness,
                     )?;
+                    if let Some((next_tx, _, _)) = next {
+                        block_number_cmp_chip.assign(
+                            &mut region,
+                            offset,
+                            F::from(transaction.block_number),
+                            F::from(next_tx.block_number),
+                        )?;
+                    }
                     // q_step logic
                     for idx in 0..height {
                         let offset = offset + idx;
