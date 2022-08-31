@@ -22,6 +22,7 @@ pub enum ExecutionState {
     // Internal state
     BeginTx,
     EndTx,
+    EndInnerBlock,
     EndBlock,
     // Opcode successful cases
     STOP,
@@ -448,7 +449,7 @@ impl<F: FieldExt> Step<F> {
             .assign(region, offset, Some(F::from(call.is_create as u64)))?;
         self.state
             .block_number
-            .assign(region, offset, Some(F::from(tx.block_number)))?;
+            .assign(region, offset, Some(F::from(step.block_num)))?;
         self.state.code_hash.assign(
             region,
             offset,

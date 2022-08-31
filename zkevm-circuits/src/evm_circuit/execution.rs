@@ -1,7 +1,7 @@
 use super::util::{CachedRegion, CellManager, StoredExpression};
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, N_BYTES_U64, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::Table,
         util::{
@@ -15,10 +15,6 @@ use crate::{
 };
 use eth_types::Field;
 
-use gadgets::{
-    comparison::{ComparisonChip, ComparisonConfig},
-    util::or,
-};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region},
@@ -48,6 +44,7 @@ mod comparator;
 mod dummy;
 mod dup;
 mod end_block;
+mod end_inner_block;
 mod end_tx;
 mod error_oog_constant;
 mod error_oog_static_memory;
@@ -101,6 +98,7 @@ use comparator::ComparatorGadget;
 use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
+use end_inner_block::EndInnerBlockGadget;
 use end_tx::EndTxGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use extcodehash::ExtcodehashGadget;
@@ -158,7 +156,6 @@ pub(crate) struct ExecutionConfig<F> {
     num_rows_inv: Column<Advice>,
     q_step_first: Selector,
     q_step_last: Column<Advice>,
-    block_number_cmp: ComparisonConfig<F, N_BYTES_U64>,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
     height_map: HashMap<ExecutionState, usize>,
@@ -166,6 +163,7 @@ pub(crate) struct ExecutionConfig<F> {
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
+    end_inner_block_gadget: EndInnerBlockGadget<F>,
     end_tx_gadget: EndTxGadget<F>,
     // opcode gadgets
     add_sub_gadget: AddSubGadget<F>,
@@ -388,25 +386,6 @@ impl<F: Field> ExecutionConfig<F> {
         let mut stored_expressions_map = HashMap::new();
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT);
 
-        let block_number_cmp = ComparisonChip::configure(
-            meta,
-            q_step,
-            step_curr.state.block_number.expr(),
-            step_next.state.block_number.expr(),
-        );
-        meta.create_gate("multi-block transition", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            let (lt, eq) = block_number_cmp.expr(meta, None);
-            cb.require_equal(
-                "block number monotonically increases",
-                or::expr([lt, eq]),
-                1.expr(),
-            );
-
-            cb.gate(meta.query_advice(q_step, Rotation::cur()))
-        });
-
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -436,11 +415,11 @@ impl<F: Field> ExecutionConfig<F> {
             num_rows_inv,
             q_step_first,
             q_step_last,
-            block_number_cmp,
             advices,
             // internal states
             begin_tx_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
+            end_inner_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
@@ -669,9 +648,14 @@ impl<F: Field> ExecutionConfig<F> {
                 .chain(
                     IntoIterator::into_iter([
                         (
-                            "EndTx can only transit to BeginTx or EndBlock",
+                            "EndTx can only transit to BeginTx or EndInnerBlock",
                             ExecutionState::EndTx,
-                            vec![ExecutionState::BeginTx, ExecutionState::EndBlock],
+                            vec![ExecutionState::BeginTx, ExecutionState::EndInnerBlock],
+                        ),
+                        (
+                            "EndInnerBlock can only transition to BeginTx, EndInnerBlock or EndBlock",
+                            ExecutionState::EndInnerBlock,
+                            vec![ExecutionState::BeginTx, ExecutionState::EndInnerBlock, ExecutionState::EndBlock],
                         ),
                         (
                             "EndBlock can only transit to EndBlock",
@@ -685,9 +669,9 @@ impl<F: Field> ExecutionConfig<F> {
                 .chain(
                     IntoIterator::into_iter([
                         (
-                            "Only EndTx can transit to BeginTx",
+                            "Only EndTx or EndInnerBlock can transit to BeginTx",
                             ExecutionState::BeginTx,
-                            vec![ExecutionState::EndTx],
+                            vec![ExecutionState::EndTx, ExecutionState::EndInnerBlock],
                         ),
                         (
                             "Only ExecutionState which halts or BeginTx can transit to EndTx",
@@ -698,13 +682,47 @@ impl<F: Field> ExecutionConfig<F> {
                                 .collect(),
                         ),
                         (
-                            "Only EndTx or EndBlock can transit to EndBlock",
+                            "Only EndInnerBlock or EndBlock can transit to EndBlock",
                             ExecutionState::EndBlock,
-                            vec![ExecutionState::EndTx, ExecutionState::EndBlock],
+                            vec![ExecutionState::EndInnerBlock, ExecutionState::EndBlock],
+                        ),
+                        (
+                            "Only EndTx or EndInnerBlock can transit to EndInnerBlock",
+                            ExecutionState::EndInnerBlock,
+                            vec![ExecutionState::EndTx, ExecutionState::EndInnerBlock],
                         ),
                     ])
                     .filter(move |(_, _, from)| !from.contains(&G::EXECUTION_STATE))
                     .map(|(_, to, _)| step_next.execution_state_selector([to])),
+                )
+                .chain(
+                    IntoIterator::into_iter([
+                        (
+                            "EndInnerBlock -> BeginTx/EndInnerBlock: block number increases by one",
+                            ExecutionState::EndInnerBlock,
+                            vec![ExecutionState::BeginTx, ExecutionState::EndInnerBlock],
+                            step_next.state.block_number.expr() - step_curr.state.block_number.expr() - 1.expr(),
+                        ),
+                        (
+                            "EndInnerBlock -> EndBlock: block number does not change",
+                            ExecutionState::EndInnerBlock,
+                            vec![ExecutionState::EndBlock],
+                            step_next.state.block_number.expr() - step_curr.state.block_number.expr(),
+                        ),
+                    ])
+                    .filter(move |(_, from, _, _)| *from == G::EXECUTION_STATE)
+                    .map(|(_, _, to, expr)| step_next.execution_state_selector(to) * expr)
+                )
+                .chain(
+                    IntoIterator::into_iter([
+                        (
+                            "step_cur != EndInnerBlock: block number does not change",
+                            ExecutionState::EndInnerBlock,
+                            step_next.state.block_number.expr() - step_curr.state.block_number.expr(),
+                        ),
+                    ])
+                    .filter(move |(_, from, _)| *from != G::EXECUTION_STATE)
+                    .map(|(_, _, expr)| expr)
                 )
                 // Accumulate all state transition checks.
                 // This can be done because all summed values are enforced to be boolean.
@@ -774,7 +792,6 @@ impl<F: Field> ExecutionConfig<F> {
             .collect::<Vec<F>>()
             .try_into()
             .unwrap();
-        let block_number_cmp_chip = ComparisonChip::construct(self.block_number_cmp.clone());
 
         layouter.assign_region(
             || "Execution step",
@@ -886,14 +903,6 @@ impl<F: Field> ExecutionConfig<F> {
                         next,
                         power_of_randomness,
                     )?;
-                    if let Some((next_tx, _, _)) = next {
-                        block_number_cmp_chip.assign(
-                            &mut region,
-                            offset,
-                            F::from(transaction.block_number),
-                            F::from(next_tx.block_number),
-                        )?;
-                    }
                     // q_step logic
                     for idx in 0..height {
                         let offset = offset + idx;
@@ -1063,6 +1072,7 @@ impl<F: Field> ExecutionConfig<F> {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
+            ExecutionState::EndInnerBlock => assign_exec_step!(self.end_inner_block_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),

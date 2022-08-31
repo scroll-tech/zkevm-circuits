@@ -3,7 +3,7 @@
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Chip, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    plonk::{ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 
@@ -44,23 +44,13 @@ impl<F: Field, const N_BYTES: usize> ComparisonChip<F, N_BYTES> {
     /// Configure the comparison gadget to get its config.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_enable: Column<Advice>,
+        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> ComparisonConfig<F, N_BYTES> {
         let diff_inv = meta.advice_column();
-        let lt = LtChip::configure(
-            meta,
-            |meta| meta.query_advice(q_enable, Rotation::cur()),
-            |_| lhs,
-            |_| rhs,
-        );
-        let eq = IsZeroChip::configure(
-            meta,
-            |meta| meta.query_advice(q_enable, Rotation::cur()),
-            |meta| lt.diff(meta, None),
-            diff_inv,
-        );
+        let lt = LtChip::configure(meta, &q_enable, |_| lhs, |_| rhs);
+        let eq = IsZeroChip::configure(meta, &q_enable, |meta| lt.diff(meta, None), diff_inv);
 
         ComparisonConfig { lt, eq }
     }
