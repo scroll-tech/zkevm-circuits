@@ -80,6 +80,8 @@ pub enum TxFieldTag {
     TxSignHash,
     /// CallData
     CallData,
+    /// The block number in which this tx is included.
+    BlockNumber,
 }
 impl_expr!(TxFieldTag);
 
@@ -585,9 +587,8 @@ impl BlockTable {
                 }
                 offset += 1;
 
-                let mut num_txs = 0;
                 for block_ctx in block_ctxs.ctxs.values() {
-                    num_txs += txs
+                    let num_txs = txs
                         .iter()
                         .filter(|tx| tx.block_number == block_ctx.number.as_u64())
                         .count();

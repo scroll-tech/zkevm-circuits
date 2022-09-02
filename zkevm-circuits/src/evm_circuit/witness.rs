@@ -268,6 +268,12 @@ impl Transaction {
                     F::zero(),
                     F::from(self.call_data_gas_cost),
                 ],
+                [
+                    F::from(self.id as u64),
+                    F::from(TxContextFieldTag::BlockNumber as u64),
+                    F::zero(),
+                    F::from(self.block_number),
+                ],
             ],
             self.call_data
                 .iter()
