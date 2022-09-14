@@ -90,14 +90,25 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
 
     fn assign_exec_step(
         &self,
-        _region: &mut CachedRegion<'_, '_, F>,
-        _offset: usize,
-        _: &Block<F>,
-        _: &Transaction,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block<F>,
+        tx: &Transaction,
         _: &Call,
-        _step: &ExecStep,
+        step: &ExecStep,
     ) -> Result<(), Error> {
-        // TODO(rohit): assignment to end inner block gadget.
+        let num_txs = block
+            .txs
+            .iter()
+            .filter(|t| t.block_number == step.block_num)
+            .count();
+
+        self.last_tx_id
+            .assign(region, offset, Some(F::from(tx.id as u64)))?;
+        self.num_txs
+            .assign(region, offset, Some(F::from(num_txs as u64)))?;
+        self.is_empty_block
+            .assign(region, offset, F::from(num_txs as u64))?;
 
         Ok(())
     }
