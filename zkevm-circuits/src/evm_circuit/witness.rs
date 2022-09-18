@@ -86,7 +86,12 @@ pub struct BlockContext {
 }
 
 impl BlockContext {
-    pub fn table_assignments<F: Field>(&self, num_txs: usize, randomness: F) -> Vec<[F; 3]> {
+    pub fn table_assignments<F: Field>(
+        &self,
+        num_txs: usize,
+        cum_num_txs: usize,
+        randomness: F,
+    ) -> Vec<[F; 3]> {
         let current_block_number = self.number.to_scalar().unwrap();
         [
             vec![
@@ -138,6 +143,11 @@ impl BlockContext {
                     F::from(BlockContextFieldTag::NumTxs as u64),
                     current_block_number,
                     F::from(num_txs as u64),
+                ],
+                [
+                    F::from(BlockContextFieldTag::CumNumTxs as u64),
+                    current_block_number,
+                    F::from(cum_num_txs as u64),
                 ],
             ],
             self.history_hashes

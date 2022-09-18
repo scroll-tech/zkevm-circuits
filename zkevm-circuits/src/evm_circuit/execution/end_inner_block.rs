@@ -24,6 +24,9 @@ pub(crate) struct EndInnerBlockGadget<F> {
     last_tx_id: Cell<F>,
     /// The number of transactions in this inner block.
     num_txs: Cell<F>,
+    /// The number of transactions up until this block, including the txs in
+    /// this block.
+    cum_num_txs: Cell<F>,
     /// Gadget used to check if the inner block was empty.
     is_empty_block: IsZeroGadget<F>,
     _marker: PhantomData<F>,
@@ -39,15 +42,22 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
         // block.
         let last_tx_id = cb.query_cell();
         let num_txs = cb.query_cell();
+        let cum_num_txs = cb.query_cell();
         cb.block_lookup(
             BlockContextFieldTag::NumTxs.expr(),
             cb.curr.state.block_number.expr(),
             num_txs.expr(),
         );
+        cb.block_lookup(
+            BlockContextFieldTag::CumNumTxs.expr(),
+            cb.curr.state.block_number.expr(),
+            cum_num_txs.expr(),
+        );
+
         cb.require_equal(
-            "last tx id == Block::NumTxs",
+            "last tx_id MUST equal the cumulative number of txs up until this block",
             last_tx_id.expr(),
-            num_txs.expr(),
+            cum_num_txs.expr(),
         );
 
         // if the block had transactions, the last tx's block number is the current
@@ -83,6 +93,7 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
         Self {
             last_tx_id,
             num_txs,
+            cum_num_txs,
             is_empty_block,
             _marker: PhantomData,
         }
@@ -102,11 +113,18 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
             .iter()
             .filter(|t| t.block_number == step.block_num)
             .count();
+        let cum_num_txs = block
+            .txs
+            .iter()
+            .filter(|t| t.block_number <= step.block_num)
+            .count();
 
         self.last_tx_id
             .assign(region, offset, Some(F::from(tx.id as u64)))?;
         self.num_txs
             .assign(region, offset, Some(F::from(num_txs as u64)))?;
+        self.cum_num_txs
+            .assign(region, offset, Some(F::from(cum_num_txs as u64)))?;
         self.is_empty_block
             .assign(region, offset, F::from(num_txs as u64))?;
 
