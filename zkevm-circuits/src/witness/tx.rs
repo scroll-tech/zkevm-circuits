@@ -77,7 +77,7 @@ impl Transaction {
                     F::from(self.id as u64),
                     F::from(TxContextFieldTag::CalleeAddress as u64),
                     F::zero(),
-                    (if self.is_create {
+                    (if false && self.is_create {
                         self.calls[0].callee_address
                     } else {
                         self.callee_address
@@ -104,7 +104,7 @@ impl Transaction {
                     F::from(self.id as u64),
                     F::from(TxContextFieldTag::CallDataLength as u64),
                     F::zero(),
-                    F::from(if self.is_create {
+                    F::from(if false && self.is_create {
                         0
                     } else {
                         self.call_data_length

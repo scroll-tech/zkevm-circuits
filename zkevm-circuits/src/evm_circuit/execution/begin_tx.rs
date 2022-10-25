@@ -244,7 +244,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
 
-        let callee_addr = call.callee_address; // block.rws[step.rw_indices[5]].tx_access_list_value_pair();
+        let _callee_addr = call.callee_address; // block.rws[step.rw_indices[5]].tx_access_list_value_pair();
         let [caller_balance_pair, callee_balance_pair, (callee_code_hash, _)] =
             [step.rw_indices[7], step.rw_indices[8], step.rw_indices[9]]
                 .map(|idx| block.rws[idx].account_value_pair());
@@ -274,7 +274,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             Value::known(
-                callee_addr
+                tx.callee_address
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
@@ -282,11 +282,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_is_create
             .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
 
-        let call_data_length = block.rws[step.rw_indices[14]].call_context_value().as_u64();
+        let _call_data_length = block.rws[step.rw_indices[14]].call_context_value().as_u64();
         self.tx_call_data_length.assign(
             region,
             offset,
-            Value::known(F::from(call_data_length as u64)),
+            Value::known(F::from(tx.call_data_length as u64)),
         )?;
         self.tx_call_data_gas_cost.assign(
             region,

@@ -519,7 +519,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         if callee_code_hash != U256::from(*EMPTY_HASH) {
             // non empty
-            let gas_left_value = block.rws[step.rw_indices[23]].call_context_value();
+            let gas_left_value = block.rws[step.rw_indices[22 + is_call]].call_context_value();
             let real_callee_gas_left =
                 std::cmp::min(gas_available - gas_available / 64, gas.low_u64());
             debug_assert_eq!(

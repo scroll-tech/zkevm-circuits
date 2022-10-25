@@ -401,7 +401,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            state.account_read(
+            state.account_write(
                 &mut exec_step,
                 call.address,
                 AccountField::CodeHash,

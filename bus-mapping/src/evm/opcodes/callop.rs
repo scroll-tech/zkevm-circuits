@@ -74,7 +74,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             (call.is_success as u64).into(),
         )?;
 
-        // if no errors, continue as normal
         let is_warm = state.sdb.check_account_in_access_list(&call.address);
         state.push_op_reversible(
             &mut exec_step,
@@ -100,18 +99,16 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
+        state.transfer(
+            &mut exec_step,
+            call.caller_address,
+            call.address,
+            call.value,
+        )?;
+
         let (_, callee_account) = state.sdb.get_account(&call.address);
         let callee_account = callee_account.clone();
 
-        // Only transfer for CALL and CALLCODE
-        if N_ARGS == 7 {
-            state.transfer(
-                &mut exec_step,
-                call.caller_address,
-                call.address,
-                call.value,
-            )?;
-        }
         let is_empty_account = callee_account.is_empty();
         let callee_nonce = callee_account.nonce;
         let mut callee_code_hash = call.code_hash;
