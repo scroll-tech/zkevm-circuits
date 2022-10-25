@@ -2,7 +2,7 @@ use crate::evm_circuit::{util::RandomLinearCombination, witness::Rw};
 use crate::table::{AccountFieldTag, ProofType};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use itertools::Itertools;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// An MPT update whose validility is proved by the MptCircuit
 #[derive(Debug, Clone, Copy)]
@@ -16,7 +16,7 @@ pub struct MptUpdate {
 
 /// All the MPT updates in the MptCircuit, accessible by their key
 #[derive(Default, Clone)]
-pub struct MptUpdates(HashMap<Key, MptUpdate>);
+pub struct MptUpdates(BTreeMap<Key, MptUpdate>);
 
 /// The field element encoding of an MPT update, which is used by the MptTable
 #[derive(Debug, Clone, Copy)]
@@ -28,7 +28,7 @@ impl MptUpdates {
     }
 
     pub(crate) fn mock_from(rows: &[Rw]) -> Self {
-        let map: HashMap<_, _> = rows
+        let map: BTreeMap<_, _> = rows
             .iter()
             .group_by(|row| key(row))
             .into_iter()
@@ -99,7 +99,7 @@ impl MptUpdate {
     }
 }
 
-#[derive(Eq, PartialEq, Hash, Clone, Debug, Copy)]
+#[derive(Eq, PartialEq, Hash, Clone, Debug, Copy, PartialOrd, Ord)]
 enum Key {
     Account {
         address: Address,

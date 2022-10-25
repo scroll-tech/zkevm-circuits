@@ -1,6 +1,7 @@
 use super::{StateCircuit, StateCircuitConfig};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    util::DEFAULT_RAND,
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -12,6 +13,7 @@ use eth_types::{
     Address, Field, ToAddress, Word, U256,
 };
 use gadgets::binary_number::AsBits;
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
@@ -91,7 +93,7 @@ fn test_state_circuit_ok(
         ..Default::default()
     });
 
-    let randomness = Fr::from(0xcafeu64);
+    let randomness = Fr::from_u128(DEFAULT_RAND);
     let circuit = StateCircuit::<Fr>::new(randomness, rw_map, N_ROWS);
     let power_of_randomness = circuit.instance();
 
@@ -109,7 +111,7 @@ fn degree() {
 
 #[test]
 fn verifying_key_independent_of_rw_length() {
-    let randomness = Fr::from(0xcafeu64);
+    let randomness = Fr::from_u128(DEFAULT_RAND);
     let params = ParamsKZG::<Bn256>::setup(17, rand_chacha::ChaCha20Rng::seed_from_u64(2));
 
     let no_rows = StateCircuit::<Fr>::new(randomness, RwMap::default(), N_ROWS);
@@ -170,7 +172,7 @@ fn state_circuit_simple_2() {
     );
 
     let storage_op_0 = Operation::new(
-        RWCounter::from(0),
+        RWCounter::from(1),
         RW::WRITE,
         StorageOp::new(
             U256::from(100).to_address(),
@@ -484,9 +486,12 @@ fn storage_key_byte_out_of_range() {
         committed_value: U256::from(500),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0xcafeu64)), /* 0xcafeu64 is the fixed
-                                                                    * "randomness" we use for
-                                                                    * this test. */
+        (
+            (AdviceColumn::StorageKeyByte0, 0),
+            Fr::from_u128(DEFAULT_RAND),
+        ), /* 0xcafeu64 is the fixed
+            * "randomness" we use for
+            * this test. */
         ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
     ]);
 
@@ -518,7 +523,7 @@ fn nonlexicographic_order_tag() {
         is_write: true,
         call_id: 1,
         memory_address: 10,
-        byte: 12,
+        byte: 0,
     };
     let second = Rw::CallContext {
         rw_counter: 2,
@@ -590,7 +595,7 @@ fn nonlexicographic_order_address() {
         account_address: address!("0x2000000000000000000000000000000000000000"),
         field_tag: AccountFieldTag::CodeHash,
         value: U256::one(),
-        value_prev: U256::one(),
+        value_prev: U256::zero(),
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
@@ -981,7 +986,7 @@ fn bad_initial_tx_receipt_value() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
-    let randomness = Fr::from(0xcafeu64);
+    let randomness = Fr::from_u128(DEFAULT_RAND);
     let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         randomness,

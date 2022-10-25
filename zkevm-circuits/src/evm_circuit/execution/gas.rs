@@ -156,7 +156,8 @@ mod test {
         // wrong `gas_left` value for the second step, to assert that
         // the circuit verification fails for this scenario.
         assert_eq!(block.txs.len(), 1);
-        assert_eq!(block.txs[0].steps.len(), 4);
+        // BeginTx, Gas, Stop, EndTx, EndInnerBlock, EndBlock
+        assert_eq!(block.txs[0].steps.len(), 5);
         block.txs[0].steps[2].gas_left -= 1;
         assert!(run_test_circuit(block).is_err());
     }

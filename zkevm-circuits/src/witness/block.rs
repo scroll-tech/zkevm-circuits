@@ -1,10 +1,15 @@
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use bus_mapping::circuit_input_builder::{self, CopyEvent};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::halo2curves::bn256::Fr;
+
 use itertools::Itertools;
 
+use crate::util::DEFAULT_RAND;
 use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextFieldTag};
 
 use super::{tx::tx_convert, Bytecode, RwMap, Transaction};
@@ -22,7 +27,7 @@ pub struct Block<F> {
     /// Bytecode used in the block
     pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
-    pub context: BlockContext,
+    pub context: BlockContexts,
     /// Copy events for the EVM circuit's copy table.
     pub copy_events: Vec<CopyEvent>,
     /// Pad evm circuit to make selectors fixed, so vk/pk can be universal.
@@ -31,6 +36,20 @@ pub struct Block<F> {
     pub state_circuit_pad_to: usize,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
+}
+
+/// ...
+#[derive(Debug, Default, Clone)]
+pub struct BlockContexts {
+    /// Hashmap that maps block number to its block context.
+    pub ctxs: BTreeMap<u64, BlockContext>,
+}
+
+impl BlockContexts {
+    /// Get the chain ID for the block.
+    pub fn chain_id(&self) -> Word {
+        self.ctxs.iter().next().unwrap().1.chain_id
+    }
 }
 
 /// Block context for execution
@@ -56,27 +75,33 @@ pub struct BlockContext {
 
 impl BlockContext {
     /// Assignments for block table
-    pub fn table_assignments<F: Field>(&self, randomness: F) -> Vec<[F; 3]> {
+    pub fn table_assignments<F: Field>(
+        &self,
+        num_txs: usize,
+        cum_num_txs: usize,
+        randomness: F,
+    ) -> Vec<[F; 3]> {
+        let current_block_number = self.number.to_scalar().unwrap();
         [
             vec![
                 [
                     F::from(BlockContextFieldTag::Coinbase as u64),
-                    F::zero(),
+                    current_block_number,
                     self.coinbase.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Timestamp as u64),
-                    F::zero(),
+                    current_block_number,
                     self.timestamp.to_scalar().unwrap(),
                 ],
                 [
                     F::from(BlockContextFieldTag::Number as u64),
-                    F::zero(),
-                    self.number.to_scalar().unwrap(),
+                    current_block_number,
+                    current_block_number,
                 ],
                 [
                     F::from(BlockContextFieldTag::Difficulty as u64),
-                    F::zero(),
+                    current_block_number,
                     RandomLinearCombination::random_linear_combine(
                         self.difficulty.to_le_bytes(),
                         randomness,
@@ -84,12 +109,12 @@ impl BlockContext {
                 ],
                 [
                     F::from(BlockContextFieldTag::GasLimit as u64),
-                    F::zero(),
+                    current_block_number,
                     F::from(self.gas_limit),
                 ],
                 [
                     F::from(BlockContextFieldTag::BaseFee as u64),
-                    F::zero(),
+                    current_block_number,
                     RandomLinearCombination::random_linear_combine(
                         self.base_fee.to_le_bytes(),
                         randomness,
@@ -97,11 +122,21 @@ impl BlockContext {
                 ],
                 [
                     F::from(BlockContextFieldTag::ChainId as u64),
-                    F::zero(),
+                    current_block_number,
                     RandomLinearCombination::random_linear_combine(
                         self.chain_id.to_le_bytes(),
                         randomness,
                     ),
+                ],
+                [
+                    F::from(BlockContextFieldTag::NumTxs as u64),
+                    current_block_number,
+                    F::from(num_txs as u64),
+                ],
+                [
+                    F::from(BlockContextFieldTag::CumNumTxs as u64),
+                    current_block_number,
+                    F::from(cum_num_txs as u64),
                 ],
             ],
             {
@@ -126,17 +161,28 @@ impl BlockContext {
     }
 }
 
-impl From<&circuit_input_builder::Block> for BlockContext {
+impl From<&circuit_input_builder::Block> for BlockContexts {
     fn from(block: &circuit_input_builder::Block) -> Self {
         Self {
-            coinbase: block.coinbase,
-            gas_limit: block.gas_limit,
-            number: block.number,
-            timestamp: block.timestamp,
-            difficulty: block.difficulty,
-            base_fee: block.base_fee,
-            history_hashes: block.history_hashes.clone(),
-            chain_id: block.chain_id,
+            ctxs: block
+                .headers
+                .values()
+                .map(|block| {
+                    (
+                        block.number.as_u64(),
+                        BlockContext {
+                            coinbase: block.coinbase,
+                            gas_limit: block.gas_limit,
+                            number: block.number,
+                            timestamp: block.timestamp,
+                            difficulty: block.difficulty,
+                            base_fee: block.base_fee,
+                            history_hashes: block.history_hashes.clone(),
+                            chain_id: block.chain_id,
+                        },
+                    )
+                })
+                .collect::<BTreeMap<_, _>>(),
         }
     }
 }
@@ -146,15 +192,23 @@ pub fn block_convert(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Block<Fr> {
+    let num_txs = block.txs().len();
     Block {
-        randomness: Fr::from(0xcafeu64),
+        randomness: Fr::from_u128(DEFAULT_RAND),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
             .txs()
             .iter()
             .enumerate()
-            .map(|(idx, tx)| tx_convert(tx, idx + 1))
+            .map(|(idx, tx)| {
+                let next_tx = if idx + 1 < num_txs {
+                    Some(&block.txs()[idx + 1])
+                } else {
+                    None
+                };
+                tx_convert(tx, idx + 1, next_tx)
+            })
             .collect(),
         bytecodes: block
             .txs()

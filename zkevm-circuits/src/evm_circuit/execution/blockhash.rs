@@ -40,11 +40,12 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         cb.stack_pop(block_number.expr());
 
         let current_block_number = cb.query_cell();
-        cb.block_lookup(
-            BlockContextFieldTag::Number.expr(),
-            None,
-            current_block_number.expr(),
-        );
+        // FIXME
+        //cb.block_lookup(
+        //    BlockContextFieldTag::Number.expr(),
+        //    None,
+        //    current_block_number.expr(),
+        //);
 
         let block_lt = LtGadget::construct(
             cb,
@@ -62,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         cb.condition(block_lt.expr() * diff_lt.expr(), |cb| {
             cb.block_lookup(
                 BlockContextFieldTag::BlockHash.expr(),
-                Some(from_bytes::expr(&block_number.cells)),
+                from_bytes::expr(&block_number.cells),
                 block_hash.expr(),
             );
         });
@@ -96,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        tx: &Transaction,
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -114,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         )?;
         let block_number: F = block_number.to_scalar().unwrap();
 
-        let current_block_number = block.context.number;
+        let current_block_number = block.context.ctxs[&tx.block_number].number;
         self.current_block_number.assign(
             region,
             offset,

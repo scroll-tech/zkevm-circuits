@@ -91,7 +91,13 @@ impl From<MockBlock> for Block<Transaction> {
             transactions: mock
                 .transactions
                 .iter_mut()
-                .map(|mock_tx| (mock_tx.chain_id(mock.chain_id).to_owned()).into())
+                .map(|mock_tx| {
+                    (mock_tx
+                        .chain_id(mock.chain_id)
+                        .block_number(mock.number.as_u64())
+                        .to_owned())
+                    .into()
+                })
                 .collect::<Vec<Transaction>>(),
             size: Some(mock.size),
             mix_hash: Some(mock.mix_hash),

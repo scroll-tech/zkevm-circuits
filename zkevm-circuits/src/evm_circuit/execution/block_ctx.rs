@@ -43,7 +43,7 @@ impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
         } else {
             from_bytes::expr(&value.cells)
         };
-        cb.block_lookup(blockctx_tag, None, value_expr);
+        cb.block_lookup(blockctx_tag, cb.curr.state.block_number.expr(), value_expr);
 
         // State transition
         let step_state_transition = StepStateTransition {

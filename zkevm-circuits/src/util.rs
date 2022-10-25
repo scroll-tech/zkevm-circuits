@@ -2,7 +2,7 @@
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Value},
-    plonk::{Challenge, ConstraintSystem, Expression, FirstPhase, VirtualCells},
+    plonk::{ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
 
@@ -46,25 +46,24 @@ pub fn power_of_randomness_from_instance<F: FieldExt, const N: usize>(
 
 /// All challenges used in `SuperCircuit`.
 #[derive(Clone, Copy, Debug)]
-pub struct Challenges<T = Challenge> {
+pub struct Challenges<T = u128> {
     evm_word: T,
     keccak_input: T,
 }
 
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
-    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: FieldExt>(_meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            evm_word: meta.challenge_usable_after(FirstPhase),
-            keccak_input: meta.challenge_usable_after(FirstPhase),
+            evm_word: DEFAULT_RAND,
+            keccak_input: DEFAULT_RAND,
         }
     }
 
     /// Returns `Expression` of challenges from `ConstraintSystem`.
-    pub fn exprs<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
-        let [evm_word, keccak_input] = query_expression(meta, |meta| {
-            [self.evm_word, self.keccak_input].map(|challenge| meta.query_challenge(challenge))
-        });
+    pub fn exprs<F: FieldExt>(&self, _meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
+        let [evm_word, keccak_input] = [self.evm_word, self.keccak_input]
+            .map(|challenge| Expression::Constant(F::from_u128(challenge)));
         Challenges {
             evm_word,
             keccak_input,
@@ -72,10 +71,10 @@ impl Challenges {
     }
 
     /// Returns `Value` of challenges from `Layouter`.
-    pub fn values<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
+    pub fn values<F: FieldExt>(&self, _layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
         Challenges {
-            evm_word: layouter.get_challenge(self.evm_word),
-            keccak_input: layouter.get_challenge(self.keccak_input),
+            evm_word: Value::known(F::from_u128(self.evm_word)),
+            keccak_input: Value::known(F::from_u128(self.keccak_input)),
         }
     }
 }
@@ -111,3 +110,6 @@ pub(crate) fn build_tx_log_expression<F: Field>(
 ) -> Expression<F> {
     index + (1u64 << 32).expr() * field_tag + ((1u64 << 48).expr()) * log_id
 }
+
+/// the magic number is `echo 'zkevm-circuits' | hexdump`
+pub const DEFAULT_RAND: u128 = 0x10000; //0x6b7a76652d6d6963637269757374u128;

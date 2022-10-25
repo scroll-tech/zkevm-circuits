@@ -27,6 +27,16 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         }
 
         let mut exec_step = state.new_step(geth_step)?;
+        let n_stack_reads = if IS_CREATE2 { 4 } else { 3 };
+        // First three are value, offset, length, respectively, and in the case of
+        // CREATE2, the fourth one is the salt.
+        for i in 0..n_stack_reads {
+            state.stack_read(
+                &mut exec_step,
+                geth_step.stack.nth_last_filled(i),
+                geth_step.stack.nth_last(i)?,
+            )?;
+        }
 
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
         for i in 0..n_pop {
@@ -58,6 +68,13 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         // > whether or not the address is unclaimed)
         // > add the address being created to accessed_addresses,
         // > but gas costs of CREATE and CREATE2 are unchanged
+        // CREATE/CREATE2 both push the address of the new contract onto the stack.
+        state.stack_write(
+            &mut exec_step,
+            geth_step.stack.nth_last_filled(n_stack_reads - 1),
+            address.to_word(),
+        )?;
+
         let is_warm = state.sdb.check_account_in_access_list(&address);
         state.push_op_reversible(
             &mut exec_step,

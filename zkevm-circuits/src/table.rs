@@ -6,7 +6,7 @@ use crate::impl_expr;
 use crate::util::build_tx_log_address;
 use crate::util::Challenges;
 use crate::witness::{
-    Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
+    Block, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
 use core::iter::once;
@@ -83,6 +83,8 @@ pub enum TxFieldTag {
     TxSignHash,
     /// CallData
     CallData,
+    /// The block number in which this tx is included.
+    BlockNumber,
 }
 impl_expr!(TxFieldTag);
 
@@ -109,7 +111,7 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag: meta.advice_column(),
             index: meta.advice_column(),
-            value: meta.advice_column_in(SecondPhase),
+            value: meta.advice_column(),
         }
     }
 
@@ -213,7 +215,7 @@ impl From<RwTableTag> for usize {
 }
 
 /// Tag for an AccountField in RwTable
-#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccountFieldTag {
     /// Nonce field
     Nonce = 1,
@@ -544,7 +546,7 @@ impl BytecodeTable {
     /// Construct a new BytecodeTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
-        let code_hash = meta.advice_column_in(SecondPhase);
+        let code_hash = meta.advice_column();
         Self {
             code_hash,
             tag,
@@ -629,6 +631,12 @@ pub enum BlockContextFieldTag {
     /// Chain ID field.  Although this is not a field in the block header, we
     /// add it here for convenience.
     ChainId,
+    /// In a multi-block setup, this variant represents the total number of txs
+    /// included in this block.
+    NumTxs,
+    /// In a multi-block setup, this variant represents the cumulative number of
+    /// txs included up to this block, including the txs in this block.
+    CumNumTxs,
 }
 impl_expr!(BlockContextFieldTag);
 
@@ -657,34 +665,43 @@ impl BlockTable {
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        block: &BlockContext,
+        block_ctxs: &BlockContexts,
+        txs: &[Transaction],
         randomness: F,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "block table",
             |mut region| {
                 let mut offset = 0;
-                for column in self.columns() {
+                let block_table_columns = self.columns();
+                for column in block_table_columns.iter() {
                     region.assign_advice(
                         || "block table all-zero row",
-                        column,
+                        *column,
                         offset,
                         || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
 
-                let block_table_columns = self.columns();
-                for row in block.table_assignments(randomness) {
-                    for (column, value) in block_table_columns.iter().zip_eq(row) {
-                        region.assign_advice(
-                            || format!("block table row {}", offset),
-                            *column,
-                            offset,
-                            || Value::known(value),
-                        )?;
+                let mut cum_num_txs = 0usize;
+                for block_ctx in block_ctxs.ctxs.values() {
+                    let num_txs = txs
+                        .iter()
+                        .filter(|tx| tx.block_number == block_ctx.number.as_u64())
+                        .count();
+                    cum_num_txs += num_txs;
+                    for row in block_ctx.table_assignments(num_txs, cum_num_txs, randomness) {
+                        for (column, value) in block_table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("block table row {}", offset),
+                                *column,
+                                offset,
+                                || Value::known(value),
+                            )?;
+                        }
+                        offset += 1;
                     }
-                    offset += 1;
                 }
 
                 Ok(())
@@ -717,9 +734,9 @@ impl KeccakTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             is_enabled: meta.advice_column(),
-            input_rlc: meta.advice_column_in(SecondPhase),
+            input_rlc: meta.advice_column(),
             input_len: meta.advice_column(),
-            output_rlc: meta.advice_column_in(SecondPhase),
+            output_rlc: meta.advice_column(),
         }
     }
 

@@ -236,9 +236,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
             self.block.randomness,
         )?;
         config.state_circuit.load(&mut layouter)?;
-        config
-            .block_table
-            .load(&mut layouter, &self.block.context, self.block.randomness)?;
+        config.block_table.load(
+            &mut layouter,
+            &self.block.context,
+            &self.block.txs,
+            self.block.randomness,
+        )?;
         config
             .evm_circuit
             .assign_block(&mut layouter, &self.block)?;
@@ -338,20 +341,22 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
         log::debug!("super circuit uses k = {}", k);
 
         let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng).to_affine();
-        let chain_id = block.context.chain_id;
+        let chain_id = block.context.chain_id();
         let tx_circuit = TxCircuit::new(aux_generator, chain_id.as_u64(), txs);
 
+        // TODO: fixme
+        let context = block.context.ctxs.iter().next().unwrap().1;
         let public_data = PublicData {
             chain_id: geth_data.chain_id,
             history_hashes: block_data.history_hashes,
             eth_block: geth_data.eth_block,
             block_constants: geth_types::BlockConstants {
-                coinbase: block.context.coinbase,
-                timestamp: block.context.timestamp,
-                number: block.context.number.as_u64().into(),
-                difficulty: block.context.difficulty,
-                gas_limit: block.context.gas_limit.into(),
-                base_fee: block.context.base_fee,
+                coinbase: context.coinbase,
+                timestamp: context.timestamp,
+                number: context.number.as_u64().into(),
+                difficulty: context.difficulty,
+                gas_limit: context.gas_limit.into(),
+                base_fee: context.base_fee,
             },
             prev_state_root: H256::default(),
         };

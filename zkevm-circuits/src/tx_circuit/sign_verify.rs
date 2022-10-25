@@ -18,7 +18,7 @@ use halo2_proofs::{
     circuit::{AssignedCell, Cell, Layouter, Value},
     halo2curves::secp256k1,
     halo2curves::secp256k1::Secp256k1Affine,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use integer::{AssignedInteger, IntegerChip, IntegerConfig, IntegerInstructions, Range};
@@ -84,7 +84,7 @@ impl SignVerifyConfig {
         // RLC
         let q_rlc_evm_word = meta.selector();
         let q_rlc_keccak_input = meta.selector();
-        let rlc = meta.advice_column_in(SecondPhase);
+        let rlc = meta.advice_column();
         meta.enable_equality(rlc);
 
         Self::configure_rlc(

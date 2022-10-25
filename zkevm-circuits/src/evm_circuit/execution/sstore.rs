@@ -212,6 +212,12 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.tx_refund_prev
             .assign(region, offset, Value::known(F::from(tx_refund_prev)))?;
 
+        debug_assert_eq!(
+            calc_expected_gas_cost(value, value_prev, original_value, is_warm),
+            step.gas_cost,
+            "invalid gas cost in sstore value {:?} value_prev {:?} original_value {:?} is_warm {:?} contract addr {:?} storage key {:?}",
+            value, value_prev, original_value, is_warm, call.callee_address, key
+        );
         self.gas_cost.assign(
             region,
             offset,
@@ -302,7 +308,7 @@ impl<F: Field> SstoreGasGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        gas_cost: u64,
+        _gas_cost: u64,
         value: eth_types::Word,
         value_prev: eth_types::Word,
         original_value: eth_types::Word,
@@ -349,10 +355,6 @@ impl<F: Field> SstoreGasGadget<F> {
             offset,
             Word::random_linear_combine(original_value.to_le_bytes(), randomness),
         )?;
-        debug_assert_eq!(
-            calc_expected_gas_cost(value, value_prev, original_value, is_warm),
-            gas_cost
-        );
         Ok(())
     }
 }

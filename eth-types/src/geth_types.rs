@@ -206,7 +206,7 @@ impl Transaction {
             .to_vec()
             .try_into()
             .expect("hash length isn't 32 bytes");
-        let v = (self.v - 35 - chain_id * 2) as u8;
+        let v = ((self.v + 1) % 2) as u8;
         let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());

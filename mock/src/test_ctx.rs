@@ -221,7 +221,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
             None,
             account_0_code_account_1_no_code(bytecode),
             tx_from_1_to_0,
-            |block, _txs| block,
+            |block, _txs| block.number(0xcafeu64),
         )
     }
 }

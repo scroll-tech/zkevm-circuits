@@ -87,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             (BlockContextFieldTag::Coinbase, coinbase.expr()),
             (BlockContextFieldTag::BaseFee, base_fee.expr()),
         ] {
-            cb.block_lookup(tag.expr(), None, value);
+            cb.block_lookup(tag.expr(), cb.curr.state.block_number.expr(), value);
         }
         let effective_tip = cb.query_word();
         let sub_gas_price_by_base_fee =
@@ -145,7 +145,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.next.execution_state_selector([ExecutionState::BeginTx]),
             |cb| {
                 cb.call_context_lookup(
-                    false.expr(),
+                    true.expr(),
                     Some(cb.next.state.rw_counter.expr()),
                     CallContextFieldTag::TxId,
                     tx_id.expr() + 1.expr(),
@@ -239,11 +239,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             vec![gas_fee_refund],
             caller_balance,
         )?;
-        let effective_tip = tx.gas_price - block.context.base_fee;
+        let context = &block.context.ctxs[&tx.block_number];
+        let effective_tip = tx.gas_price - context.base_fee;
         self.sub_gas_price_by_base_fee.assign(
             region,
             offset,
-            [effective_tip, block.context.base_fee],
+            [effective_tip, context.base_fee],
             tx.gas_price,
         )?;
         self.mul_effective_tip_by_gas_used.assign(
@@ -257,8 +258,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             region,
             offset,
             Value::known(
-                block
-                    .context
+                context
                     .coinbase
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),

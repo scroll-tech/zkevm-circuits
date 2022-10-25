@@ -1,7 +1,7 @@
 //! Mock types and functions to generate mock data useful for tests
 
 use crate::{
-    circuit_input_builder::{Block, CircuitInputBuilder},
+    circuit_input_builder::{BlockHead, CircuitInputBuilder},
     state_db::{self, CodeDB, StateDB},
 };
 use eth_types::{geth_types::GethData, Word};
@@ -32,7 +32,10 @@ impl BlockData {
         CircuitInputBuilder::new(
             self.sdb.clone(),
             self.code_db.clone(),
-            Block::new(self.chain_id, self.history_hashes.clone(), &self.eth_block).unwrap(),
+            &[
+                BlockHead::new(self.chain_id, self.history_hashes.clone(), &self.eth_block)
+                    .unwrap(),
+            ],
         )
     }
 
@@ -74,4 +77,11 @@ impl BlockData {
             geth_traces: geth_data.geth_traces,
         }
     }
+}
+
+#[cfg(test)]
+#[ctor::ctor]
+fn init_env_logger() {
+    // Enable RUST_LOG during tests
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }

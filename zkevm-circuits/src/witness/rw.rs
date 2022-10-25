@@ -231,7 +231,7 @@ impl<F: Field> RwRow<F> {
 }
 
 impl Rw {
-    pub(crate) fn tx_access_list_value_pair(&self) -> (bool, bool) {
+    pub fn tx_access_list_value_pair(&self) -> (bool, bool) {
         match self {
             Self::TxAccessListAccount {
                 is_warm,
@@ -247,7 +247,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn tx_refund_value_pair(&self) -> (u64, u64) {
+    pub fn tx_refund_value_pair(&self) -> (u64, u64) {
         match self {
             Self::TxRefund {
                 value, value_prev, ..
@@ -256,7 +256,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn account_value_pair(&self) -> (Word, Word) {
+    pub fn account_value_pair(&self) -> (Word, Word) {
         match self {
             Self::Account {
                 value, value_prev, ..
@@ -265,7 +265,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn aux_pair(&self) -> (usize, Word) {
+    pub fn aux_pair(&self) -> (usize, Word) {
         match self {
             Self::AccountStorage {
                 tx_id,
@@ -276,7 +276,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn storage_value_aux(&self) -> (Word, Word, usize, Word) {
+    pub fn storage_value_aux(&self) -> (Word, Word, usize, Word) {
         match self {
             Self::AccountStorage {
                 value,
@@ -289,42 +289,42 @@ impl Rw {
         }
     }
 
-    pub(crate) fn call_context_value(&self) -> Word {
+    pub fn call_context_value(&self) -> Word {
         match self {
             Self::CallContext { value, .. } => *value,
             _ => unreachable!(),
         }
     }
 
-    pub(crate) fn stack_value(&self) -> Word {
+    pub fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,
             _ => unreachable!(),
         }
     }
 
-    pub(crate) fn log_value(&self) -> Word {
+    pub fn log_value(&self) -> Word {
         match self {
             Self::TxLog { value, .. } => *value,
             _ => unreachable!(),
         }
     }
 
-    pub(crate) fn receipt_value(&self) -> u64 {
+    pub fn receipt_value(&self) -> u64 {
         match self {
             Self::TxReceipt { value, .. } => *value,
             _ => unreachable!(),
         }
     }
 
-    pub(crate) fn memory_value(&self) -> u8 {
+    pub fn memory_value(&self) -> u8 {
         match self {
             Self::Memory { byte, .. } => *byte,
             _ => unreachable!(),
         }
     }
 
-    pub(crate) fn table_assignment<F: Field>(&self, randomness: F) -> RwRow<F> {
+    pub fn table_assignment<F: Field>(&self, randomness: F) -> RwRow<F> {
         RwRow {
             rw_counter: F::from(self.rw_counter() as u64),
             is_write: F::from(self.is_write() as u64),
@@ -345,7 +345,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn rw_counter(&self) -> usize {
+    pub fn rw_counter(&self) -> usize {
         match self {
             Self::Start { rw_counter }
             | Self::Memory { rw_counter, .. }
@@ -362,7 +362,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn is_write(&self) -> bool {
+    pub fn is_write(&self) -> bool {
         match self {
             Self::Start { .. } => false,
             Self::Memory { is_write, .. }
@@ -379,7 +379,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn tag(&self) -> RwTableTag {
+    pub fn tag(&self) -> RwTableTag {
         match self {
             Self::Start { .. } => RwTableTag::Start,
             Self::Memory { .. } => RwTableTag::Memory,
@@ -396,7 +396,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn id(&self) -> Option<usize> {
+    pub fn id(&self) -> Option<usize> {
         match self {
             Self::AccountStorage { tx_id, .. }
             | Self::TxAccessListAccount { tx_id, .. }
@@ -411,7 +411,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn address(&self) -> Option<Address> {
+    pub fn address(&self) -> Option<Address> {
         match self {
             Self::TxAccessListAccount {
                 account_address, ..
@@ -448,7 +448,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn field_tag(&self) -> Option<u64> {
+    pub fn field_tag(&self) -> Option<u64> {
         match self {
             Self::Account { field_tag, .. } => Some(*field_tag as u64),
             Self::CallContext { field_tag, .. } => Some(*field_tag as u64),
@@ -465,7 +465,7 @@ impl Rw {
         }
     }
 
-    pub(crate) fn storage_key(&self) -> Option<Word> {
+    pub fn storage_key(&self) -> Option<Word> {
         match self {
             Self::AccountStorage { storage_key, .. }
             | Self::TxAccessListAccountStorage { storage_key, .. } => Some(*storage_key),

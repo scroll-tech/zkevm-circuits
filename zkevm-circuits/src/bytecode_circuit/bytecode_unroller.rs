@@ -10,10 +10,7 @@ use eth_types::{Field, ToLittleEndian, Word};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, Selector,
-        VirtualCells,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
 use keccak256::plain::Keccak;
@@ -71,7 +68,7 @@ impl<F: Field> Config<F> {
         let q_last = meta.selector();
         let value = bytecode_table.value;
         let push_rindex = meta.advice_column();
-        let hash_input_rlc = meta.advice_column_in(SecondPhase);
+        let hash_input_rlc = meta.advice_column();
         let code_length = meta.advice_column();
         let byte_push_size = meta.advice_column();
         let is_final = meta.advice_column();
@@ -687,15 +684,18 @@ fn into_words(message: &[u8]) -> Vec<u64> {
     words
 }
 
+/// test module
+#[cfg(any(feature = "test", test))]
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
-    use crate::bytecode_circuit::dev::test_bytecode_circuit_unrolled;
+    use crate::{bytecode_circuit::dev::test_bytecode_circuit_unrolled, util::DEFAULT_RAND};
     use eth_types::Bytecode;
     use halo2_proofs::halo2curves::bn256::Fr;
 
-    fn get_randomness<F: Field>() -> F {
-        F::from(123456)
+    /// get randomness value
+    pub fn get_randomness<F: Field>() -> F {
+        F::from(DEFAULT_RAND as u64)
     }
 
     /// Verify unrolling code

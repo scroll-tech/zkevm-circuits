@@ -47,6 +47,25 @@ lazy_static! {
         Err(VarError::NotPresent) => GETH0_URL_DEFAULT.to_string(),
         Err(e) => panic!("Error in GETH0_URL env var: {:?}", e),
     };
+    /// ..
+    pub static ref START_BLOCK: usize =  match env::var("START_BLOCK") {
+        Ok(val) => str::parse::<usize>(&val).unwrap(),
+        Err(VarError::NotPresent) => 1,
+        Err(e) => panic!("Error in START_BLOCK env var: {:?}", e),
+    };
+    /// ..
+    pub static ref END_BLOCK: usize =  match env::var("END_BLOCK") {
+        Ok(val) => str::parse::<usize>(&val).unwrap(),
+        Err(VarError::NotPresent) => 8,
+        Err(e) => panic!("Error in END_BLOCK env var: {:?}", e),
+    };
+    /// ..
+    pub static ref TX_ID: String =  match env::var("TX_ID") {
+        Ok(val) => val,
+        Err(VarError::NotPresent) => "".to_string(),
+        Err(e) => panic!("Error in TX_ID env var: {:?}", e),
+    };
+
 }
 
 static LOG_INIT: Once = Once::new();

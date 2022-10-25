@@ -44,8 +44,9 @@ fn get_num_bits_per_theta_lookup() -> usize {
     num_bits as usize
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct KeccakRow<F> {
+/// ..
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeccakRow<F> {
     q_padding: bool,
     q_padding_last: bool,
     state: [u8; KECCAK_WIDTH_IN_BITS],
@@ -965,7 +966,8 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], r: F) {
     debug!("data rlc: {:x?}", data_rlc);
 }
 
-fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
+/// ...
+pub fn multi_keccak<F: Field>(bytes: &[Vec<u8>], r: F) -> Vec<KeccakRow<F>> {
     // Dummy first row so that the initial data can be absorbed
     // The initial data doesn't really matter, `is_final` just needs to be disabled.
     let mut rows: Vec<KeccakRow<F>> = vec![KeccakRow {

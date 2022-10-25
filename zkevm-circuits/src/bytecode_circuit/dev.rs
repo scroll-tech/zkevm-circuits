@@ -11,7 +11,8 @@ use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit}
 /// BytecodeCircuitTester
 #[derive(Default)]
 pub struct BytecodeCircuitTester<F: Field> {
-    bytecodes: Vec<UnrolledBytecode<F>>,
+    /// byte codes
+    pub bytecodes: Vec<UnrolledBytecode<F>>,
     size: usize,
 }
 
@@ -32,6 +33,7 @@ impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let bytecode_table = BytecodeTable::construct(meta);
+
         let keccak_table = KeccakTable::construct(meta);
         let challenges = Challenges::construct(meta);
 

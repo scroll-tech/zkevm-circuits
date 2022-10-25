@@ -19,7 +19,7 @@ use eth_types::evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE};
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
-use keccak256::EMPTY_HASH_LE;
+use keccak256::{EMPTY_HASH, EMPTY_HASH_LE};
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL` and
 /// `OpcodeId::STATICCALL` for now (will add `OpcodeId::CALLCODE` and
@@ -51,6 +51,7 @@ pub(crate) struct CallOpGadget<F> {
     is_empty_code_hash: IsEqualGadget<F>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
+    gas_cost: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
@@ -175,12 +176,22 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
 
         // Verify gas cost
-        let [callee_nonce, callee_code_hash] = [AccountFieldTag::Nonce, AccountFieldTag::CodeHash]
-            .map(|field_tag| {
-                let value = cb.query_cell();
-                cb.account_read(callee_address.clone(), field_tag, value.expr());
-                value
-            });
+        let callee_nonce = cb.query_cell();
+        cb.account_read(
+            callee_address.clone(),
+            AccountFieldTag::Nonce,
+            callee_nonce.expr(),
+        );
+
+        let callee_code_hash = cb.query_cell();
+        cb.account_write(
+            callee_address.clone(),
+            AccountFieldTag::CodeHash,
+            callee_code_hash.expr(),
+            callee_code_hash.expr(),
+            None,
+        );
+
         let is_empty_nonce_and_balance = BatchedIsZeroGadget::construct(
             cb,
             [
@@ -220,7 +231,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // TODO: Handle precompiled
 
         let stack_pointer_delta = select::expr(is_call.expr(), 6.expr(), 5.expr());
+        let gas_cost_cell = cb.query_cell();
         cb.condition(is_empty_code_hash.expr(), |cb| {
+            //cb.require_equal("gas cost when empty code", gas_cost_cell.expr(),
+            // gas_cost.clone() - has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr());
             // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
@@ -235,9 +249,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 rw_counter: Delta(rw_counter_delta),
                 program_counter: Delta(1.expr()),
                 stack_pointer: Delta(stack_pointer_delta.expr()),
-                gas_left: Delta(
-                    has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
-                ),
+                gas_left: Delta(-gas_cost_cell.expr()),
                 memory_word_size: To(memory_expansion.next_memory_word_size()),
                 reversible_write_counter: Delta(3.expr()),
                 ..StepStateTransition::default()
@@ -340,6 +352,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_empty_code_hash,
             one_64th_gas,
             capped_callee_gas_left,
+            gas_cost: gas_cost_cell,
         }
     }
 
@@ -348,7 +361,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -503,6 +516,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             0
         } + memory_expansion_gas_cost;
         let gas_available = step.gas_left - gas_cost;
+
+        if callee_code_hash != U256::from(*EMPTY_HASH) {
+            // non empty
+            let gas_left_value = block.rws[step.rw_indices[23]].call_context_value();
+            let real_callee_gas_left =
+                std::cmp::min(gas_available - gas_available / 64, gas.low_u64());
+            debug_assert_eq!(
+                gas_left_value.as_u64(),
+                step.gas_left - gas_cost - real_callee_gas_left
+            );
+        }
+        self.gas_cost
+            .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
         self.one_64th_gas
             .assign(region, offset, gas_available as u128)?;
         self.capped_callee_gas_left.assign(

@@ -34,7 +34,11 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
         cb.stack_push(chain_id.expr());
 
         // Lookup block table with chain_id
-        cb.block_lookup(BlockContextFieldTag::ChainId.expr(), None, chain_id.expr());
+        cb.block_lookup(
+            BlockContextFieldTag::ChainId.expr(),
+            cb.curr.state.block_number.expr(),
+            chain_id.expr(),
+        );
 
         // State transition
         let opcode = cb.query_cell();
@@ -73,6 +77,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
                 block.randomness,
             )),
         )?;
+
         Ok(())
     }
 }

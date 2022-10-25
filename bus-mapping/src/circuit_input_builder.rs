@@ -11,6 +11,7 @@ mod tracer_tests;
 mod transaction;
 
 use self::access::gen_state_access_trace;
+pub use self::block::BlockHead;
 use crate::error::Error;
 use crate::evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops};
 use crate::operation::{CallContextField, RW};
@@ -20,13 +21,16 @@ pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
+use eth_types::evm_types::GasCost;
+use eth_types::geth_types;
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
-use eth_types::{self, geth_types, Address, GethExecStep, GethExecTrace, Word};
+use eth_types::{self, Address, GethExecStep, GethExecTrace, ToWord, Word, H256, U256};
 use ethers_providers::JsonRpcClient;
 pub use execution::{CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, NumberOrHash};
+use hex::decode_to_slice;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 pub use transaction::{Transaction, TransactionContext};
 
 /// Builder to generate a complete circuit input from data gathered from a geth
@@ -62,11 +66,21 @@ pub struct CircuitInputBuilder {
 impl<'a> CircuitInputBuilder {
     /// Create a new CircuitInputBuilder from the given `eth_block` and
     /// `constants`.
-    pub fn new(sdb: StateDB, code_db: CodeDB, block: Block) -> Self {
+    pub fn new(sdb: StateDB, code_db: CodeDB, headers: &[BlockHead]) -> Self {
         Self {
             sdb,
             code_db,
-            block,
+            // lispczz@scroll:
+            // the `block` here is in fact "batch" for l2.
+            // while "headers" in the "block"(usually single tx) for l2.
+            // But to reduce the code conflicts with upstream, we still use the name `block`
+            block: Block {
+                headers: headers
+                    .iter()
+                    .map(|b| (b.number.as_u64(), b.clone()))
+                    .collect::<BTreeMap<_, _>>(),
+                ..Default::default()
+            },
             block_ctx: BlockContext::new(),
         }
     }
@@ -108,7 +122,13 @@ impl<'a> CircuitInputBuilder {
             ),
         );
 
-        Transaction::new(call_id, &self.sdb, &mut self.code_db, eth_tx, is_success)
+        Transaction::new(
+            call_id,
+            &mut self.sdb,
+            &mut self.code_db,
+            eth_tx,
+            is_success,
+        )
     }
 
     /// Iterate over all generated CallContext RwCounterEndOfReversion
@@ -139,12 +159,62 @@ impl<'a> CircuitInputBuilder {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<(), Error> {
+        self.handle_block_inner(eth_block, geth_traces, true, true)
+    }
+    /// Handle a block by handling each transaction to generate all the
+    /// associated operations.
+    pub fn handle_block_inner(
+        &mut self,
+        eth_block: &EthBlock,
+        geth_traces: &[eth_types::GethExecTrace],
+        handle_rwc_reversion: bool,
+        check_last_tx: bool,
+    ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
+        log::info!("handling block {:?}", eth_block.number);
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let geth_trace = &geth_traces[tx_index];
-            self.handle_tx(tx, geth_trace, tx_index + 1 == eth_block.transactions.len())?;
+            if geth_trace.struct_logs.is_empty() {
+                // only update state
+                self.sdb.increase_nonce(&tx.from);
+                let (_, to_acc) = self.sdb.get_account_mut(&tx.to.unwrap());
+                to_acc.balance += tx.value;
+                let (_, from_acc) = self.sdb.get_account_mut(&tx.from);
+                from_acc.balance -= tx.value;
+                let gas_cost = U256::from(geth_trace.gas.0) * tx.gas_price.unwrap();
+                debug_assert!(
+                    from_acc.balance >= gas_cost,
+                    "pay gas failed. tx {:?}, from_acc {:?}",
+                    tx,
+                    from_acc
+                );
+                from_acc.balance -= gas_cost;
+                log::trace!(
+                    "native transfer: from {} to {}, value {} fee {}",
+                    tx.from,
+                    tx.to.unwrap(),
+                    tx.value,
+                    gas_cost
+                );
+                continue;
+            }
+            log::info!(
+                "handling {}th(inner idx: {}) tx {:?}",
+                tx.transaction_index.unwrap_or_default(),
+                self.block.txs.len(),
+                tx.hash
+            );
+            let mut tx = tx.clone();
+            tx.transaction_index = Some(self.block.txs.len().into());
+            self.handle_tx(
+                &tx,
+                geth_trace,
+                check_last_tx && tx_index + 1 == eth_block.transactions.len(),
+            )?;
         }
-        self.set_value_ops_call_context_rwc_eor();
+        if handle_rwc_reversion {
+            self.set_value_ops_call_context_rwc_eor();
+        }
         Ok(())
     }
 
@@ -161,17 +231,69 @@ impl<'a> CircuitInputBuilder {
     ) -> Result<(), Error> {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
-
+        let mut debug_tx = tx.clone();
+        debug_tx.input.clear();
+        log::trace!("handle_tx tx {:?}", debug_tx);
+        if let Some(al) = &eth_tx.access_list {
+            for item in &al.0 {
+                self.sdb.add_account_to_access_list(item.address);
+                for k in &item.storage_keys {
+                    self.sdb
+                        .add_account_storage_to_access_list((item.address, (*k).to_word()));
+                }
+            }
+        }
         // TODO: Move into gen_associated_steps with
         // - execution_state: BeginTx
         // - op: None
         // Generate BeginTx step
-        let begin_tx_step = gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        let mut begin_tx_step = gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        begin_tx_step.gas_cost = GasCost(tx.gas - geth_trace.struct_logs[0].gas.0);
+        log::trace!("begin_tx_step {:?}", begin_tx_step);
         tx.steps_mut().push(begin_tx_step);
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
-            log::trace!("handle {}th opcode {:?} ", index, geth_step.op);
+            log::trace!(
+                "handle {}th tx depth {} {}th opcode {:?} pc: {} gas_left: {} rwc: {} call_id: {} args: {}",
+                eth_tx.transaction_index.unwrap_or_default(),
+                geth_step.depth,
+                index,
+                geth_step.op,
+                geth_step.pc.0,
+                geth_step.gas.0,
+                state_ref.block_ctx.rwc.0,
+                state_ref.call().map(|c| c.call_id).unwrap_or(0),
+                if geth_step.op.is_push() {
+                    match geth_step.stack.last() {
+                        Ok(w) => format!("{:?}", w),
+                        Err(_) => "".to_string(),
+                    }
+                } else if geth_step.op.is_call6() {
+                    format!(
+                        "{:?} {:40x} {:?} {:?} {:?} {:?}",
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1).unwrap(),
+                        geth_step.stack.nth_last(2),
+                        geth_step.stack.nth_last(3),
+                        geth_step.stack.nth_last(4),
+                        geth_step.stack.nth_last(5)
+                    )
+                } else if geth_step.op.is_call7() {
+                    format!(
+                        "{:?} {:40x} {:?} {:?} {:?} {:?} {:?}",
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1).unwrap(),
+                        geth_step.stack.nth_last(2),
+                        geth_step.stack.nth_last(3),
+                        geth_step.stack.nth_last(4),
+                        geth_step.stack.nth_last(5),
+                        geth_step.stack.nth_last(6),
+                    )
+                } else {
+                    "".to_string()
+                }
+            );
             let exec_steps = gen_associated_ops(
                 &geth_step.op,
                 &mut state_ref,
@@ -201,7 +323,7 @@ impl<'a> CircuitInputBuilder {
         let txs: Vec<geth_types::Transaction> = self.block.txs.iter().map(|tx| tx.into()).collect();
         keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(
             &txs,
-            self.block.chain_id.as_u64(),
+            self.block.chain_id().as_u64(),
         )?);
         // Bytecode Circuit
         for bytecode in self.code_db.0.values() {
@@ -308,7 +430,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         &self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
-    ) -> Result<AccessSet, Error> {
+    ) -> Result<Vec<Access>, Error> {
         let mut block_access_trace = vec![Access::new(
             None,
             RW::WRITE,
@@ -324,7 +446,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             block_access_trace.extend(tx_access_trace);
         }
 
-        Ok(AccessSet::from(block_access_trace))
+        Ok(block_access_trace)
     }
 
     /// Step 3. Query geth for all accounts, storage keys, and codes from
@@ -402,9 +524,27 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<CircuitInputBuilder, Error> {
-        let block = Block::new(self.chain_id, self.history_hashes.clone(), eth_block)?;
-        let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
+        let block = BlockHead::new(self.chain_id, self.history_hashes.clone(), eth_block)?;
+        let mut builder = CircuitInputBuilder::new(sdb, code_db, &[block]);
         builder.handle_block(eth_block, geth_traces)?;
+        Ok(builder)
+    }
+
+    /// Step 5. For each step in TxExecTraces, gen the associated ops and state
+    /// circuit inputs
+    pub fn gen_inputs_from_state_multi(
+        &self,
+        sdb: StateDB,
+        code_db: CodeDB,
+        blocks_and_traces: &[(EthBlock, Vec<eth_types::GethExecTrace>)],
+    ) -> Result<CircuitInputBuilder, Error> {
+        let mut builder = CircuitInputBuilder::new(sdb, code_db, Default::default());
+        for (idx, (eth_block, geth_traces)) in blocks_and_traces.iter().enumerate() {
+            let is_last = idx == blocks_and_traces.len() - 1;
+            let header = BlockHead::new(self.chain_id, self.history_hashes.clone(), eth_block)?;
+            builder.block.headers.insert(header.number.as_u64(), header);
+            builder.handle_block_inner(eth_block, geth_traces, is_last, is_last)?;
+        }
         Ok(builder)
     }
 
@@ -421,9 +561,75 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     > {
         let (eth_block, geth_traces) = self.get_block(block_num).await?;
         let access_set = self.get_state_accesses(&eth_block, &geth_traces)?;
-        let (proofs, codes) = self.get_state(block_num, access_set).await?;
+        let (proofs, codes) = self.get_state(block_num, access_set.into()).await?;
         let (state_db, code_db) = self.build_state_code_db(proofs, codes);
         let builder = self.gen_inputs_from_state(state_db, code_db, &eth_block, &geth_traces)?;
         Ok((builder, eth_block))
+    }
+
+    /// Perform all the steps to generate the circuit inputs
+    pub async fn gen_inputs_multi_blocks(
+        &self,
+        block_num_begin: u64,
+        block_num_end: u64,
+    ) -> Result<CircuitInputBuilder, Error> {
+        let mut blocks_and_traces = Vec::new();
+        let mut access_set = AccessSet::default();
+        for block_num in block_num_begin..block_num_end {
+            let (eth_block, geth_traces) = self.get_block(block_num).await?;
+            let access_list = self.get_state_accesses(&eth_block, &geth_traces)?;
+            access_set.add(access_list);
+            blocks_and_traces.push((eth_block, geth_traces));
+        }
+        let (proofs, codes) = self.get_state(block_num_begin, access_set).await?;
+        let (state_db, code_db) = self.build_state_code_db(proofs, codes);
+        let builder = self.gen_inputs_from_state_multi(state_db, code_db, &blocks_and_traces)?;
+        Ok(builder)
+    }
+
+    /// Perform all the steps to generate the circuit inputs
+    pub async fn gen_inputs_tx(&self, hash_str: &str) -> Result<CircuitInputBuilder, Error> {
+        let mut hash: [u8; 32] = [0; 32];
+        let hash_str = if &hash_str[0..2] == "0x" {
+            &hash_str[2..]
+        } else {
+            hash_str
+        };
+        decode_to_slice(hash_str, &mut hash).unwrap();
+        let tx_hash = H256::from(hash);
+
+        let mut tx: eth_types::Transaction = self.cli.get_tx_by_hash(tx_hash).await?;
+        tx.transaction_index = Some(0.into());
+        let geth_traces = self.cli.trace_tx_by_hash(tx_hash).await?;
+        let mut eth_block = self
+            .cli
+            .get_block_by_number(tx.block_number.unwrap().into())
+            .await?;
+
+        eth_block.transactions = vec![tx.clone()];
+
+        let mut block_access_trace = vec![Access::new(
+            None,
+            RW::WRITE,
+            AccessValue::Account {
+                address: eth_block.author.unwrap(),
+            },
+        )];
+        let geth_trace = &geth_traces[0];
+        let tx_access_trace = gen_state_access_trace(
+            &eth_types::Block::<eth_types::Transaction>::default(),
+            &tx,
+            geth_trace,
+        )?;
+        block_access_trace.extend(tx_access_trace);
+
+        let access_set = AccessSet::from(block_access_trace);
+
+        let (proofs, codes) = self
+            .get_state(tx.block_number.unwrap().as_u64(), access_set)
+            .await?;
+        let (state_db, code_db) = self.build_state_code_db(proofs, codes);
+        let builder = self.gen_inputs_from_state(state_db, code_db, &eth_block, &geth_traces)?;
+        Ok(builder)
     }
 }
