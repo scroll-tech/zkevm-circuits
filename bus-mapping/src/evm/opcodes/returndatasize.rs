@@ -26,6 +26,14 @@ impl Opcode for Returndatasize {
             value,
         );
 
+        // TODO: fix error in deposit_ether.json...
+        if value.as_usize() != state.call_ctx()?.return_data.len() {
+            log::error!(
+                "return_data.len() != RETURNDATASIZE value in {:?}",
+                geth_step
+            );
+        }
+
         state.stack_write(
             &mut exec_step,
             geth_step.stack.last_filled().map(|a| a - 1),
