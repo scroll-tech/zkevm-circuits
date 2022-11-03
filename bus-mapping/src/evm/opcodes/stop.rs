@@ -33,6 +33,8 @@ impl Opcode for Stop {
         );
 
         if !call.is_root {
+            state.caller_ctx_mut()?.return_data = vec![];
+
             // The following part corresponds to
             // Instruction.step_state_transition_to_restored_context
             // in python spec, and should be reusable among all expected halting opcodes or

@@ -84,18 +84,16 @@ impl Opcode for Return {
                 state.call_context_read(&mut exec_step, call.call_id, field, value.into());
             }
 
+            let callee_memory = state.call_ctx()?.memory.clone();
+            let caller_ctx = state.caller_ctx_mut()?;
+            caller_ctx.return_data = callee_memory.0[offset..offset + length].to_vec();
+
             let return_data_length = usize::try_from(call.return_data_length).unwrap();
             let copy_length = std::cmp::min(return_data_length, length);
             if copy_length > 0 {
                 // reconstruction
-                let callee_memory = state.call_ctx()?.memory.clone();
-                let caller_ctx = state.caller_ctx_mut()?;
                 let return_offset = call.return_data_offset.try_into().unwrap();
-
                 caller_ctx.memory.0[return_offset..return_offset + copy_length]
-                    .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
-                caller_ctx.return_data.resize(length, 0);
-                caller_ctx.return_data[0..copy_length]
                     .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
 
                 handle_copy(
