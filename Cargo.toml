@@ -12,8 +12,8 @@ members = [
     "mock",
 ]
 
-[patch.crates-io]
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0902" }
+[patch."https://github.com/scroll-tech/halo2.git"]
+halo2_proofs = { git = "https://github.com/lispc/halo2.git", branch = "scroll-dev-0902-mem" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]

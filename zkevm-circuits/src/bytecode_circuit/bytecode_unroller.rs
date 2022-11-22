@@ -403,8 +403,8 @@ impl<F: Field> Config<F> {
         let length_is_zero_chip = IsZeroChip::construct(self.length_is_zero.clone());
 
         // Subtract the unusable rows from the size
+        debug_assert!(size > self.minimum_rows);
         let last_row_offset = size - self.minimum_rows + 1;
-
         layouter.assign_region(
             || "assign bytecode",
             |mut region| {

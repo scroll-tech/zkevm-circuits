@@ -29,10 +29,10 @@ const RHO_PI_LOOKUP_RANGE: usize = 4;
 const CHI_BASE_LOOKUP_RANGE: usize = 5;
 
 fn get_num_rows_per_round() -> usize {
-    var("ROWS")
-        .unwrap_or_else(|_| "5".to_string())
+    var("KECCAK_ROWS")
+        .unwrap_or_else(|_| "28".to_string())
         .parse()
-        .expect("Cannot parse ROWS env var as usize")
+        .expect("Cannot parse KECCAK_ROWS env var as usize")
 }
 
 fn get_num_bits_per_absorb_lookup() -> usize {

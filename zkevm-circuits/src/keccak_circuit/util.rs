@@ -326,12 +326,12 @@ impl WordParts {
     }
 }
 
-/// Get the degree of the circuit from the DEGREE env variable
+/// Get the degree of the circuit from the KECCAK_DEGREE env variable
 pub fn get_degree() -> usize {
-    var("DEGREE")
+    var("KECCAK_DEGREE")
         .unwrap_or_else(|_| "8".to_string())
         .parse()
-        .expect("Cannot parse DEGREE env var as usize")
+        .expect("Cannot parse KECCAK_DEGREE env var as usize")
 }
 
 /// Returns how many bits we can process in a single lookup given the range of

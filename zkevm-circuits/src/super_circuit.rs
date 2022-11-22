@@ -177,14 +177,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
         let exp_table = ExpTable::construct(meta);
-
         let power_of_randomness = array::from_fn(|i| {
             Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
         });
 
         let keccak_circuit = KeccakConfig::configure(meta, power_of_randomness[0].clone());
         let keccak_table = keccak_circuit.keccak_table.clone();
-
+        meta.evaluation_group_seperator("<keccak|evm>");
         let evm_circuit = EvmCircuit::configure(
             meta,
             power_of_randomness.clone(),
@@ -196,45 +195,46 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &keccak_table,
             &exp_table,
         );
+        meta.evaluation_group_seperator("<evm|state>");
         let state_circuit =
             StateCircuitConfig::configure(meta, power_of_randomness.clone(), &rw_table, &mpt_table);
         let pi_circuit = PiCircuitConfig::new(meta, block_table.clone(), tx_table.clone());
         let challenges = Challenges::mock(power_of_randomness[0].clone());
 
+        let copy_circuit = CopyCircuit::configure(
+            meta,
+            &tx_table,
+            &rw_table,
+            &bytecode_table,
+            copy_table,
+            q_copy_table,
+            power_of_randomness[0].clone(),
+        );
+        let tx_circuit = TxCircuitConfig::new(
+            meta,
+            tx_table.clone(),
+            keccak_table.clone(),
+            challenges.clone(),
+        );
+        let bytecode_circuit =
+            BytecodeConfig::configure(meta, bytecode_table.clone(), keccak_table, challenges);
+        let exp_circuit = ExpCircuit::configure(meta, exp_table);
         Self::Config {
-            tx_table: tx_table.clone(),
+            tx_table,
             rw_table,
             mpt_table,
-            bytecode_table: bytecode_table.clone(),
+            bytecode_table,
             block_table,
             copy_table,
             exp_table,
             evm_circuit,
             state_circuit,
-            copy_circuit: CopyCircuit::configure(
-                meta,
-                &tx_table,
-                &rw_table,
-                &bytecode_table,
-                copy_table,
-                q_copy_table,
-                power_of_randomness[0].clone(),
-            ),
-            tx_circuit: TxCircuitConfig::new(
-                meta,
-                tx_table,
-                keccak_table.clone(),
-                challenges.clone(),
-            ),
-            bytecode_circuit: BytecodeConfig::configure(
-                meta,
-                bytecode_table,
-                keccak_table,
-                challenges,
-            ),
+            copy_circuit,
+            tx_circuit,
+            bytecode_circuit,
             keccak_circuit,
             pi_circuit,
-            exp_circuit: ExpCircuit::configure(meta, exp_table),
+            exp_circuit,
         }
     }
 
@@ -251,12 +251,20 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             .evm_circuit
             .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
         config.evm_circuit.load_byte_table(&mut layouter)?;
+
         config.rw_table.load(
             &mut layouter,
             &rws,
             self.block.circuits_params.max_rws,
             self.block.randomness,
         )?;
+        config.tx_table.load(
+            &mut layouter,
+            &self.block.txs,
+            self.block.circuits_params.max_txs,
+            self.block.randomness,
+        )?;
+
         config.state_circuit.load(&mut layouter)?;
         config.block_table.load(
             &mut layouter,
@@ -267,6 +275,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         config
             .evm_circuit
             .assign_block(&mut layouter, &self.block)?;
+
         // --- State Circuit ---
         config.mpt_table.load(
             &mut layouter,
@@ -279,24 +288,29 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             self.block.circuits_params.max_rws,
             self.block.randomness,
         )?;
+
         // --- Tx Circuit ---
         config.tx_circuit.load(&mut layouter)?;
         self.tx_circuit
             .assign(&config.tx_circuit, &mut layouter, &challenges)?;
         // --- Bytecode Circuit ---
+
         let bytecodes: Vec<UnrolledBytecode<F>> = self
             .block
             .bytecodes
             .iter()
             .map(|(_, b)| unroll(b.bytes.clone()))
             .collect();
+
         config.bytecode_circuit.load(&mut layouter)?;
+
         config.bytecode_circuit.assign(
             &mut layouter,
             self.bytecode_size,
             &bytecodes,
             &challenges,
         )?;
+
         // --- Exponentiation Circuit ---
         config
             .exp_circuit
@@ -308,12 +322,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &self.keccak_inputs,
             self.block.randomness,
         )?;
+
         // --- Copy Circuit ---
         config
             .copy_circuit
             .assign_block(&mut layouter, &self.block, self.block.randomness)?;
         // --- Public Input Circuit ---
         self.pi_circuit.synthesize(config.pi_circuit, layouter)?;
+
         Ok(())
     }
 }
@@ -398,7 +414,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
             // Instead of using 1 << k - NUM_BLINDING_ROWS, we use a much smaller number of enabled
             // rows for the Bytecode Circuit because otherwise it penalizes significantly the
             // MockProver verification time.
-            bytecode_size: bytecodes_len + 64,
+            bytecode_size: bytecodes_len + 128,
             pi_circuit,
         };
 
