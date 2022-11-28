@@ -1214,15 +1214,13 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn keccak_table_lookup(
         &mut self,
-        input_rlc: Expression<F>,
-        input_len: Expression<F>,
+        hash_id: Expression<F>,
         output_rlc: Expression<F>,
     ) {
         self.add_lookup(
             "keccak lookup",
             Lookup::KeccakTable {
-                input_rlc,
-                input_len,
+                hash_id,
                 output_rlc,
             },
         );

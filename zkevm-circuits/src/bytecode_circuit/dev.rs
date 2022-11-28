@@ -103,6 +103,7 @@ pub fn test_bytecode_circuit_unrolled<F: Field>(
     bytecodes: Vec<UnrolledBytecode<F>>,
     success: bool,
 ) {
+    let k = k + 3;
     let circuit = BytecodeCircuitTester::<F> {
         bytecodes,
         size: 2usize.pow(k),

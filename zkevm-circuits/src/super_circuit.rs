@@ -64,17 +64,20 @@ use crate::table::{BlockTable, BytecodeTable, CopyTable, ExpTable, MptTable, RwT
 use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
 use crate::util::Challenges;
 use crate::witness::{block_convert, Block, MptUpdates};
+use bus_mapping::circuit_input_builder::CopyDataType;
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::{self, GethData, Transaction};
 use eth_types::Field;
 use ethers_core::types::H256;
+use gadgets::util::not;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::halo2curves::{
     bn256::Fr,
     group::{Curve, Group},
     secp256k1::Secp256k1Affine,
 };
+use halo2_proofs::poly::Rotation;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
@@ -205,6 +208,39 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let state_circuit =
             StateCircuitConfig::configure(meta, &rw_table, &mpt_table, challenges.clone());
         let pi_circuit = PiCircuitConfig::new(meta, block_table.clone(), tx_table.clone());
+        let copy_circuit = CopyCircuit::configure(
+            meta,
+            &tx_table,
+            &rw_table,
+            &bytecode_table,
+            copy_table,
+            q_copy_table,
+            power_of_randomness[0].clone(),
+        );
+        // copy circuit <-> keccak circuit
+        meta.lookup_any("copy<->keccak", |meta| {
+            let input_enabled = meta.query_fixed(copy_circuit.q_enable, Rotation::cur())
+                * not::expr(meta.query_selector(copy_circuit.q_step))
+                * copy_table
+                    .tag
+                    .value_equals(CopyDataType::SHA3, Rotation::cur())(meta);
+
+            vec![
+                (
+                    input_enabled.clone() * meta.query_advice(copy_table.id, Rotation::cur()),
+                    meta.query_advice(keccak_table.hash_id, Rotation::cur()),
+                ),
+                (
+                    input_enabled.clone()
+                        * meta.query_advice(copy_table.bytes_left, Rotation::cur()),
+                    meta.query_advice(keccak_table.bytes_left, Rotation::cur()),
+                ),
+                (
+                    input_enabled * meta.query_advice(copy_circuit.value, Rotation::cur()),
+                    meta.query_advice(keccak_table.byte_value, Rotation::cur()),
+                ),
+            ]
+        });
 
         Self::Config {
             tx_table: tx_table.clone(),
@@ -216,15 +252,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             exp_table,
             evm_circuit,
             state_circuit,
-            copy_circuit: CopyCircuit::configure(
-                meta,
-                &tx_table,
-                &rw_table,
-                &bytecode_table,
-                copy_table,
-                q_copy_table,
-                power_of_randomness[0].clone(),
-            ),
+            copy_circuit,
             tx_circuit: TxCircuitConfig::new(
                 meta,
                 tx_table,
@@ -458,7 +486,12 @@ mod super_circuit_tests {
         let chain_id = (*MOCK_CHAIN_ID).as_u64();
 
         let bytecode = bytecode! {
-            GAS
+            PUSH32(100) // size
+            PUSH32(0) // offset
+            SHA3
+            PUSH32(200)
+            PUSH32(0)
+            SHA3
             STOP
         };
 
@@ -495,6 +528,7 @@ mod super_circuit_tests {
         let (k, circuit, instance, _) =
             SuperCircuit::<_, 1, 32, 256>::build(block, &mut ChaCha20Rng::seed_from_u64(2))
                 .unwrap();
+        println!("k is {}", k);
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {

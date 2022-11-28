@@ -158,15 +158,17 @@ pub enum CopyDataType {
     /// When the source for the copy event is the bytecode table.
     Bytecode = 1,
     /// When the source/destination for the copy event is memory.
-    Memory,
+    Memory = 2,
     /// When the source for the copy event is tx's calldata.
-    TxCalldata,
+    TxCalldata = 3,
     /// When the destination for the copy event is tx's log.
-    TxLog,
+    TxLog = 4,
+    ///
+    SHA3 = 5,
     /// When the destination rows are not directly for copying but for a special
     /// scenario where we wish to accumulate the value (RLC) over all rows.
     /// This is used for Copy Lookup from SHA3 opcode verification.
-    RlcAcc,
+    RlcAcc = 6,
 }
 
 impl From<CopyDataType> for usize {
@@ -252,10 +254,10 @@ impl CopyEvent {
                     .checked_sub(self.src_addr)
                     .unwrap_or_default(),
             ),
-            CopyDataType::RlcAcc | CopyDataType::TxLog => unreachable!(),
+            CopyDataType::RlcAcc | CopyDataType::TxLog | CopyDataType::SHA3 => unreachable!(),
         };
         let destination_rw_increase = match self.dst_type {
-            CopyDataType::RlcAcc | CopyDataType::Bytecode => 0,
+            CopyDataType::RlcAcc | CopyDataType::Bytecode | CopyDataType::SHA3 => 0,
             CopyDataType::TxLog | CopyDataType::Memory => u64::try_from(step_index).unwrap() / 2,
             CopyDataType::TxCalldata => unreachable!(),
         };

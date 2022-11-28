@@ -52,13 +52,13 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                cb.curr.state.call_id.expr(),
-                CopyDataType::RlcAcc.expr(),
+                sha3_rlc.expr(),
+                CopyDataType::SHA3.expr(),
                 memory_address.offset(),
                 memory_address.address(),
                 0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
                 memory_address.length(),
-                rlc_acc.expr(),
+                0.expr(),
                 copy_rwc_inc.expr(),
             );
         });
@@ -66,7 +66,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             cb.require_zero("copy_rwc_inc == 0 for size = 0", copy_rwc_inc.expr());
             cb.require_zero("rlc_acc == 0 for size = 0", rlc_acc.expr());
         });
-        cb.keccak_table_lookup(rlc_acc.expr(), memory_address.length(), sha3_rlc.expr());
+        cb.keccak_table_lookup(sha3_rlc.expr(), sha3_rlc.expr());
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
@@ -167,7 +167,7 @@ mod tests {
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
                 None,
                 CircuitsParams {
-                    max_rws: 5500,
+                    max_rws: 11000,
                     ..Default::default()
                 }
             ),
