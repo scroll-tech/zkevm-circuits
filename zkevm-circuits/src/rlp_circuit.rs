@@ -83,15 +83,15 @@ pub struct RlpCircuitConfig<F> {
     /// Denotes if tag is DataPrefix
     is_dp_tag: Column<Advice>,
     /// Comparison chip to check: 1 <= tag_index.
-    tag_index_cmp_1: ComparatorConfig<F, 1>,
+    tag_index_cmp_1: ComparatorConfig<F, 3>,
     /// Comparison chip to check: tag_index <= tag_length.
-    tag_index_length_cmp: ComparatorConfig<F, 1>,
+    tag_index_length_cmp: ComparatorConfig<F, 3>,
     /// Comparison chip to check: 1 <= tag_length.
-    tag_length_cmp_1: ComparatorConfig<F, 1>,
+    tag_length_cmp_1: ComparatorConfig<F, 3>,
     /// Lt chip to check: tag_index < 10.
-    tag_index_lt_10: LtConfig<F, 1>,
+    tag_index_lt_10: LtConfig<F, 3>,
     /// Lt chip to check: tag_index < 34.
-    tag_index_lt_34: LtConfig<F, 1>,
+    tag_index_lt_34: LtConfig<F, 3>,
     /// Lt chip to check: 127 < value.
     value_gt_127: LtConfig<F, 1>,
     /// Lt chip to check: 183 < value.
@@ -111,7 +111,7 @@ pub struct RlpCircuitConfig<F> {
     /// Lt chip to check: value < 248.
     value_lt_248: LtConfig<F, 1>,
     /// Comparison chip to check: 0 <= length_acc.
-    length_acc_cmp_0: ComparatorConfig<F, 1>,
+    length_acc_cmp_0: ComparatorConfig<F, 3>,
 }
 
 impl<F: Field> RlpCircuitConfig<F> {
@@ -1345,6 +1345,15 @@ impl<F: Field> RlpCircuitConfig<F> {
                         for (chip, lhs, rhs) in [
                             (&tag_index_lt_10_chip, row.tag_rindex, 10),
                             (&tag_index_lt_34_chip, row.tag_rindex, 34),
+                        ] {
+                            chip.assign(
+                                &mut region,
+                                offset,
+                                F::from(lhs as u64),
+                                F::from(rhs as u64),
+                            )?;
+                        }
+                        for (chip, lhs, rhs) in [
                             (&value_gt_127_chip, 127, row.value),
                             (&value_gt_183_chip, 183, row.value),
                             (&value_gt_191_chip, 191, row.value),
@@ -1468,6 +1477,16 @@ impl<F: Field> RlpCircuitConfig<F> {
                         for (chip, lhs, rhs) in [
                             (&tag_index_lt_10_chip, row.tag_rindex, 10),
                             (&tag_index_lt_34_chip, row.tag_rindex, 34),
+                        ] {
+                            chip.assign(
+                                &mut region,
+                                offset,
+                                F::from(lhs as u64),
+                                F::from(rhs as u64),
+                            )?;
+                        }
+
+                        for (chip, lhs, rhs) in [
                             (&value_gt_127_chip, 127, row.value),
                             (&value_gt_183_chip, 183, row.value),
                             (&value_gt_191_chip, 191, row.value),
