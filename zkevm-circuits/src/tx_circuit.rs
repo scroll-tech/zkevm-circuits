@@ -231,7 +231,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             });
 
             // on the final call data byte, tx_id must change.
-            // FIXME: tx id change is not necessary as tx id can change from 4 -> 5 -> 4
+            // FIXME: tx id change is not sufficient as tx id can change from 4 -> 5 -> 4
             //  instead we need to ensure that tx_id_next > tx_id if tx_id_next != 0
             cb.condition(is_final_cur, |cb| {
                 cb.require_zero(
