@@ -1,8 +1,12 @@
 use crate::evm_circuit::step::ExecutionState;
-use crate::util::Challenges;
+use crate::util::{rlc_be_bytes, Challenges};
 use crate::{evm_circuit::util::RandomLinearCombination, table::TxContextFieldTag};
 use bus_mapping::circuit_input_builder;
-use eth_types::{Address, Field, Signature, ToLittleEndian, ToScalar, ToWord, Word, H256};
+use eth_types::{
+    Address, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
+};
+use ethers_core::types::TransactionRequest;
+use ethers_core::utils::keccak256;
 use halo2_proofs::circuit::Value;
 use mock::MockTransaction;
 use rlp::Encodable;
@@ -40,6 +44,16 @@ pub struct Transaction {
     pub call_data_gas_cost: u64,
     /// Chain ID as per EIP-155.
     pub chain_id: u64,
+    /// Rlp-encoded bytes of unsigned tx
+    pub rlp_unsigned: Vec<u8>,
+    /// Rlp-encoded bytes of unsigned tx
+    pub rlp_signed: Vec<u8>,
+    /// "v" value of the transaction signature
+    pub v: u64,
+    /// "r" value of the transaction signature
+    pub r: Word,
+    /// "s" value of the transaction signature
+    pub s: Word,
     /// The calls made in the transaction
     pub calls: Vec<Call>,
     /// The steps executioned in the transaction
@@ -52,10 +66,11 @@ impl Transaction {
         &self,
         challenges: Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 4]> {
-        let mut tx_hash_le_bytes = self.hash.to_fixed_bytes();
-        tx_hash_le_bytes.reverse();
+        let tx_hash_be_bytes = self.hash.to_fixed_bytes();
+        let tx_sign_hash_be_bytes = keccak256(&self.rlp_unsigned);
+        assert_eq!(self.hash.to_fixed_bytes(), keccak256(&self.rlp_signed));
 
-        vec![
+        let ret = vec![
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::Nonce as u64)),
@@ -122,11 +137,57 @@ impl Transaction {
             ],
             [
                 Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::SigV as u64)),
+                Value::known(F::zero()),
+                Value::known(F::from(self.v)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::SigR as u64)),
+                Value::known(F::zero()),
+                rlc_be_bytes(&self.r.to_be_bytes(), challenges.evm_word()),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::SigS as u64)),
+                Value::known(F::zero()),
+                rlc_be_bytes(&self.s.to_be_bytes(), challenges.evm_word()),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::TxSignLength as u64)),
+                Value::known(F::zero()),
+                Value::known(F::from(self.rlp_unsigned.len() as u64)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::TxSignRLC as u64)),
+                Value::known(F::zero()),
+                rlc_be_bytes(&self.rlp_unsigned, challenges.keccak_input()),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::TxSignHash as u64)),
+                Value::known(F::zero()),
+                rlc_be_bytes(&tx_sign_hash_be_bytes, challenges.evm_word()),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::TxHashLength as u64)),
+                Value::known(F::zero()),
+                Value::known(F::from(self.rlp_signed.len() as u64)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::TxHashRLC as u64)),
+                Value::known(F::zero()),
+                rlc_be_bytes(&self.rlp_signed, challenges.keccak_input()),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::TxHash as u64)),
                 Value::known(F::zero()),
-                challenges.evm_word().map(|evm_word| {
-                    RandomLinearCombination::random_linear_combine(tx_hash_le_bytes, evm_word)
-                }),
+                rlc_be_bytes(&tx_hash_be_bytes, challenges.evm_word()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -134,7 +195,9 @@ impl Transaction {
                 Value::known(F::zero()),
                 Value::known(F::from(self.block_number)),
             ],
-        ]
+        ];
+
+        ret
     }
 
     /// Assignments for tx table
@@ -153,6 +216,15 @@ impl Transaction {
                     Value::known(F::from(*byte as u64)),
                 ]
             })
+            // TODO: use max_calldata
+            .chain((0..1).into_iter().map(|_| {
+                [
+                    Value::known(F::from(0)),
+                    Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                    Value::known(F::from(0)),
+                    Value::known(F::from(0)),
+                ]
+            }))
             .collect()
     }
 }
@@ -232,6 +304,18 @@ pub(super) fn tx_convert(
     chain_id: u64,
     next_tx: Option<&circuit_input_builder::Transaction>,
 ) -> Transaction {
+    let (rlp_unsigned_tx, rlp_signed_tx) = {
+        let geth_tx = eth_types::geth_types::Transaction::from(tx);
+        let unsigned =
+            <TransactionRequest as From<&eth_types::geth_types::Transaction>>::from(&geth_tx)
+                .chain_id(chain_id);
+        let signed = <ethers_core::types::Transaction as From<
+            &eth_types::geth_types::Transaction,
+        >>::from(&geth_tx);
+
+        (unsigned, signed)
+    };
+
     Transaction {
         block_number: tx.block_num,
         id,
@@ -250,6 +334,11 @@ pub(super) fn tx_convert(
             .iter()
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
         chain_id,
+        rlp_unsigned: rlp_unsigned_tx.rlp().to_vec(),
+        rlp_signed: rlp_signed_tx.rlp().to_vec(),
+        v: tx.signature.v,
+        r: tx.signature.r,
+        s: tx.signature.s,
         calls: tx
             .calls()
             .iter()
@@ -320,12 +409,23 @@ pub fn signed_tx_from_geth_tx(
 ) -> Vec<SignedTransaction> {
     let mut signed_txs = Vec::with_capacity(txs.len());
     for (i, geth_tx) in txs.iter().enumerate() {
+        let (rlp_unsigned_tx, rlp_signed_tx) = {
+            let unsigned =
+                <TransactionRequest as From<&eth_types::geth_types::Transaction>>::from(geth_tx)
+                    .chain_id(chain_id);
+            let signed = <ethers_core::types::Transaction as From<
+                &eth_types::geth_types::Transaction,
+            >>::from(geth_tx);
+
+            (unsigned, signed)
+        };
         signed_txs.push(SignedTransaction {
             tx: Transaction {
                 id: i + 1,
                 nonce: geth_tx.nonce.as_u64(),
                 gas: geth_tx.gas_limit.as_u64(),
                 gas_price: geth_tx.gas_price,
+                hash: geth_tx.hash,
                 caller_address: geth_tx.from,
                 callee_address: geth_tx.to.unwrap_or(Address::zero()),
                 is_create: geth_tx.to.is_none(),
@@ -337,6 +437,11 @@ pub fn signed_tx_from_geth_tx(
                     .iter()
                     .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
                 chain_id,
+                rlp_unsigned: rlp_unsigned_tx.rlp().to_vec(),
+                rlp_signed: rlp_signed_tx.rlp().to_vec(),
+                v: geth_tx.v,
+                r: geth_tx.r,
+                s: geth_tx.s,
                 ..Default::default()
             },
             signature: Signature {

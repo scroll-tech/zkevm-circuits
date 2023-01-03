@@ -28,6 +28,14 @@ pub(crate) fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomnes
     crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
 }
 
+pub(crate) fn rlc_be_bytes<F: Field>(bytes: &[u8], rand: Value<F>) -> Value<F> {
+    rand.map(|rand| {
+        bytes
+            .iter()
+            .fold(F::zero(), |acc, byte| acc * rand + F::from(*byte as u64))
+    })
+}
+
 /// Query N instances at current rotation and return their expressions.  This
 /// function is used to get the power of randomness (passed as
 /// instances) in our tests.

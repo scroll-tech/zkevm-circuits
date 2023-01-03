@@ -399,7 +399,7 @@ pub fn handle_bytes<F: FieldExt>(
             index: idx + 1,
             data_type,
             value: (0x80 + length) as u8,
-            value_acc: Value::known(F::from((128 + length) as u64)),
+            value_acc: Value::known(F::from(length as u64)),
             value_rlc_acc: Value::known(F::zero()),
             tag: prefix_tag,
             tag_length: 1,

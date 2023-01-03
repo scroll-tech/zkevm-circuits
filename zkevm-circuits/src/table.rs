@@ -98,15 +98,29 @@ pub enum TxFieldTag {
     SigR,
     /// Signature field S.
     SigS,
+    /// TxSignLength: Length of the RLP-encoded transaction without the
+    /// signature, used for signing
+    TxSignLength,
+    /// TxSignRLC: RLC of the RLP-encoded transaction without the signature,
+    /// used for signing
+    TxSignRLC,
     /// TxSignHash: Hash of the transaction without the signature, used for
     /// signing.
     TxSignHash,
+    /// TxHashLength: Length of the RLP-encoded transaction without the
+    /// signature, used for signing
+    TxHashLength,
+    /// TxHashRLC: RLC of the RLP-encoded transaction without the signature,
+    /// used for signing
+    TxHashRLC,
     /// TxHash: Hash of the transaction with the signature
     TxHash,
     /// CallData
     CallData,
     /// The block number in which this tx is included.
     BlockNumber,
+    /// Padding row
+    Padding,
 }
 impl_expr!(TxFieldTag);
 

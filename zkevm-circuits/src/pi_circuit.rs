@@ -113,15 +113,6 @@ impl PublicData {
     }
 }
 
-// fn rlc_be_bytes<F: Field, const N: usize>(bytes: [u8; N], rand: Value<F>) ->
-// Value<F> {     bytes
-//         .into_iter()
-//         .fold(Value::known(F::zero()), |acc, byte| {
-//             acc.zip(rand)
-//                 .and_then(|(acc, rand)| Value::known(acc * rand +
-// F::from(byte as u64)))         })
-// }
-
 /// Config for PiCircuit
 #[derive(Clone, Debug)]
 pub struct PiCircuitConfig<F: Field> {

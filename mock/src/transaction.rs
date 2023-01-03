@@ -30,7 +30,7 @@ lazy_static! {
                 .nonce(word!("0x103"))
                 .value(word!("0x3e8"))
                 .gas_price(word!("0x4d2"))
-                .input(vec![1, 2, 3, 4, 5, 6, 7, 8, 9].into())
+                .input(vec![1, 2, 3, 4, 5, 0, 6, 7, 8, 9].into()) // call data gas cost of 0 is 4
                 .build(),
             MockTransaction::default()
                 .transaction_idx(2u64)

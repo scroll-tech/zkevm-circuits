@@ -106,7 +106,7 @@ pub struct SuperCircuitConfig<
     tx_table: TxTable,
     evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
-    //tx_circuit: TxCircuitConfig<F>,
+    // tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeCircuitConfig<F>,
     copy_circuit: CopyCircuitConfig<F>,
     keccak_circuit: KeccakCircuitConfig<F>,
