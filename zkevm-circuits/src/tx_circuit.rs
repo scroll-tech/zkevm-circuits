@@ -30,6 +30,7 @@ use itertools::Itertools;
 use log::error;
 use num::Zero;
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
+use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use crate::table::TxFieldTag::{
@@ -63,6 +64,20 @@ impl TagTable {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+enum LookupCondition {
+    // lookup into tx table
+    TxCalldata,
+    // lookup into tag table
+    Tag,
+    // lookup into rlp table
+    RlpCalldata,
+    RlpSignTag,
+    RlpHashTag,
+    // lookup into keccak table
+    Keccak,
+}
+
 /// Config for TxCircuit
 #[derive(Clone, Debug)]
 pub struct TxCircuitConfig<F: Field> {
@@ -79,7 +94,9 @@ pub struct TxCircuitConfig<F: Field> {
     /// We use an equality gadget to know whether the tx id changes between
     /// subsequent rows or not.
     tx_id_unchanged: IsEqualConfig<F>,
+    is_calldata: Column<Advice>,
 
+    lookup_conditions: HashMap<LookupCondition, Column<Advice>>,
     /// A boolean advice column, which is turned on only for the last byte in
     /// call data.
     is_final: Column<Advice>,
@@ -133,10 +150,52 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let tag = BinaryNumberChip::configure(meta, q_enable, None);
         let rlp_tag = meta.advice_column();
         let value_inv = meta.advice_column();
+        let is_calldata = meta.advice_column(); // to reduce degree
+        let lookup_conditions = [
+            LookupCondition::TxCalldata,
+            LookupCondition::Tag,
+            LookupCondition::RlpCalldata,
+            LookupCondition::RlpSignTag,
+            LookupCondition::RlpHashTag,
+            LookupCondition::Keccak,
+        ]
+        .into_iter()
+        .map(|condition| (condition, meta.advice_column()))
+        .collect::<HashMap<LookupCondition, Column<Advice>>>();
+
         let tag_table = TagTable::construct(meta);
         let sv_address = meta.advice_column();
         meta.enable_equality(tx_table.value);
         meta.enable_equality(sv_address);
+
+        let log_deg = |s: &'static str, meta: &mut ConstraintSystem<F>| {
+            log::info!("after {}, meta.degree: {}", s, meta.degree());
+        };
+
+        macro_rules! is_tx_tag {
+            ($var:ident, $tag_variant:ident) => {
+                let $var = |meta: &mut VirtualCells<F>| {
+                    tag.value_equals(TxFieldTag::$tag_variant, Rotation::cur())(meta)
+                };
+            };
+        }
+        is_tx_tag!(is_nonce, Nonce);
+        is_tx_tag!(is_gas_price, GasPrice);
+        is_tx_tag!(is_gas, Gas);
+        is_tx_tag!(is_to, CalleeAddress);
+        is_tx_tag!(is_value, Value);
+        is_tx_tag!(is_data, CallData);
+        is_tx_tag!(is_data_length, CallDataLength);
+        is_tx_tag!(is_sig_v, SigV);
+        is_tx_tag!(is_sig_r, SigR);
+        is_tx_tag!(is_sig_s, SigS);
+        is_tx_tag!(is_sign_length, TxSignLength);
+        is_tx_tag!(is_sign_rlc, TxSignRLC);
+        is_tx_tag!(is_hash_length, TxHashLength);
+        is_tx_tag!(is_hash_rlc, TxHashRLC);
+        // is_tx_tag!(is_sign_hash, TxSignHash);
+        // is_tx_tag!(is_hash, TxHash);
+        // is_tx_tag!(is_padding, Padding);
 
         let tx_id_is_zero = IsEqualChip::configure(
             meta,
@@ -164,6 +223,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             |meta| meta.query_advice(tx_table.value, Rotation::cur()),
             value_inv,
         );
+        log_deg("value_is_zero", meta);
+
         let tx_id_unchanged = IsEqualChip::configure(
             meta,
             |meta| meta.query_fixed(q_enable, Rotation::cur()),
@@ -176,24 +237,165 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let calldata_gas_cost_acc = meta.advice_column();
         let chain_id = meta.advice_column();
 
+        meta.create_gate("calldata lookup into tx table condition", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "condition",
+                and::expr([
+                    is_data_length(meta),
+                    not::expr(value_is_zero.is_zero_expression.expr()),
+                ]),
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::TxCalldata],
+                    Rotation::cur(),
+                ),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        meta.create_gate("lookup into tag table condition", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            let is_tag_in_set = sum::expr([
+                is_nonce(meta),
+                is_gas_price(meta),
+                is_gas(meta),
+                is_to(meta),
+                is_value(meta),
+                is_data_length(meta),
+                is_sig_v(meta),
+                is_sig_r(meta),
+                is_sig_s(meta),
+                is_sign_length(meta),
+                is_sign_rlc(meta),
+                is_hash_length(meta),
+                is_hash_rlc(meta),
+            ]);
+            cb.require_equal(
+                "condition",
+                is_tag_in_set,
+                meta.query_advice(lookup_conditions[&LookupCondition::Tag], Rotation::cur()),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        meta.create_gate("calldata lookup into rlp table condition", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "condition",
+                and::expr([
+                    is_data(meta),
+                    not::expr(tx_id_is_zero.is_equal_expression.expr()),
+                ]),
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::RlpCalldata],
+                    Rotation::cur(),
+                ),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        meta.create_gate("sign tag lookup into rlp table condition", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            let is_tag_in_tx_sign = sum::expr([
+                is_nonce(meta),
+                is_gas_price(meta),
+                is_gas(meta),
+                is_to(meta),
+                is_value(meta),
+                is_data_length(meta), // call data length in DataPrefix
+                is_sign_length(meta),
+                is_sign_rlc(meta),
+            ]);
+
+            cb.require_equal(
+                "condition",
+                is_tag_in_tx_sign,
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::RlpSignTag],
+                    Rotation::cur(),
+                ),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        meta.create_gate("hash tag lookup into rlp table condition", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            let is_tag_in_tx_hash = sum::expr([
+                is_nonce(meta),
+                is_gas_price(meta),
+                is_gas(meta),
+                is_to(meta),
+                is_value(meta),
+                is_data_length(meta),
+                is_sig_v(meta),
+                is_sig_r(meta),
+                is_sig_s(meta),
+                is_hash_length(meta),
+                is_hash_rlc(meta),
+            ]);
+
+            cb.require_equal(
+                "condition",
+                is_tag_in_tx_hash,
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::RlpHashTag],
+                    Rotation::cur(),
+                ),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        meta.create_gate("calldata length lookup condition", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            let is_tag_sign_or_hash = sum::expr([is_sign_length(meta), is_hash_length(meta)]);
+            cb.require_equal(
+                "condition",
+                is_tag_sign_or_hash,
+                meta.query_advice(lookup_conditions[&LookupCondition::Keccak], Rotation::cur()),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
         Self::configure_lookups(
             meta,
             q_enable,
-            tag,
             rlp_tag,
+            &lookup_conditions,
             &tag_table,
             is_final,
             calldata_length,
             calldata_gas_cost_acc,
             // chain_id,
-            &tx_id_is_zero,
-            &value_is_zero,
             tx_table.clone(),
             keccak_table.clone(),
             rlp_table,
         );
 
         let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);
+
+        meta.create_gate("is_calldata", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_calldata",
+                tag.value_equals(CallData, Rotation::cur())(meta),
+                meta.query_advice(is_calldata, Rotation::cur()),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
 
         meta.create_gate("tx call data bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -247,7 +449,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                tag.value_equals(CallData, Rotation::cur())(meta),
+                meta.query_advice(is_calldata, Rotation::cur()),
                 not::expr(tx_id_is_zero.is_equal_expression.expr()),
             ]))
         });
@@ -348,6 +550,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             tx_id_is_zero,
             value_is_zero,
             tx_id_unchanged,
+            is_calldata,
+            lookup_conditions,
             is_final,
             calldata_length,
             calldata_gas_cost_acc,
@@ -483,6 +687,86 @@ impl<F: Field> TxCircuitConfig<F> {
             || Value::known(F::zero()),
         )?;
 
+        let mut conditions = HashMap::<LookupCondition, Value<F>>::new();
+        conditions.insert(LookupCondition::TxCalldata, {
+            let is_data_length = tag == CallDataLength;
+            value.map(|value| F::from((!value.is_zero_vartime() && is_data_length) as u64))
+        });
+        conditions.insert(LookupCondition::Tag, {
+            let set = [
+                Nonce,
+                GasPrice,
+                Gas,
+                CalleeAddress,
+                TxFieldTag::Value,
+                CallDataLength,
+                SigV,
+                SigR,
+                SigS,
+                TxSignLength,
+                TxSignRLC,
+                TxHashLength,
+                TxHashRLC,
+            ];
+            let is_tag_in_set = set.into_iter().filter(|_tag| tag == *_tag).count();
+            Value::known(F::from(is_tag_in_set as u64))
+        });
+        conditions.insert(LookupCondition::RlpCalldata, {
+            let is_data = tag == CallData;
+            Value::known(F::from((is_data && tx_id != 0) as u64))
+        });
+        conditions.insert(LookupCondition::RlpSignTag, {
+            let sign_set = [
+                Nonce,
+                GasPrice,
+                Gas,
+                CalleeAddress,
+                TxFieldTag::Value,
+                CallDataLength,
+                TxSignLength,
+                TxSignRLC,
+            ];
+            let is_tag_in_set = sign_set.into_iter().filter(|_tag| tag == *_tag).count();
+            Value::known(F::from(is_tag_in_set as u64))
+        });
+        conditions.insert(LookupCondition::RlpHashTag, {
+            let hash_set = [
+                Nonce,
+                GasPrice,
+                Gas,
+                CalleeAddress,
+                TxFieldTag::Value,
+                CallDataLength,
+                SigV,
+                SigR,
+                SigS,
+                TxHashLength,
+                TxHashRLC,
+            ];
+            let is_tag_in_set = hash_set.into_iter().filter(|_tag| tag == *_tag).count();
+            Value::known(F::from(is_tag_in_set as u64))
+        });
+        conditions.insert(LookupCondition::Keccak, {
+            let set = [TxSignLength, TxHashLength];
+            let is_tag_in_set = set.into_iter().filter(|_tag| tag == *_tag).count();
+            Value::known(F::from(is_tag_in_set as u64))
+        });
+
+        for (condition, value) in conditions {
+            region.assign_advice(
+                || format!("lookup condition {:?}", condition),
+                self.lookup_conditions[&condition],
+                *offset,
+                || value,
+            )?;
+        }
+        region.assign_advice(
+            || "is_calldata",
+            self.is_calldata,
+            *offset,
+            || Value::known(F::from((tag == CallData) as u64)),
+        )?;
+
         *offset += 1;
 
         Ok(())
@@ -500,44 +784,17 @@ impl<F: Field> TxCircuitConfig<F> {
     fn configure_lookups(
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
-        tag: BinaryNumberConfig<TxFieldTag, 5>,
         rlp_tag: Column<Advice>,
+        lookup_conditions: &HashMap<LookupCondition, Column<Advice>>,
         tag_table: &TagTable,
         is_final: Column<Advice>,
         calldata_length: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
         // chain_id: Column<Advice>,
-        tx_id_is_zero: &IsEqualConfig<F>,
-        value_is_zero: &IsZeroConfig<F>,
         tx_table: TxTable,
         keccak_table: KeccakTable,
         rlp_table: RlpTable,
     ) {
-        macro_rules! is_tx_tag {
-            ($var:ident, $tag_variant:ident) => {
-                let $var = |meta: &mut VirtualCells<F>| {
-                    tag.value_equals(TxFieldTag::$tag_variant, Rotation::cur())(meta)
-                };
-            };
-        }
-        is_tx_tag!(is_nonce, Nonce);
-        is_tx_tag!(is_gas_price, GasPrice);
-        is_tx_tag!(is_gas, Gas);
-        is_tx_tag!(is_to, CalleeAddress);
-        is_tx_tag!(is_value, Value);
-        is_tx_tag!(is_data, CallData);
-        is_tx_tag!(is_data_length, CallDataLength);
-        is_tx_tag!(is_sig_v, SigV);
-        is_tx_tag!(is_sig_r, SigR);
-        is_tx_tag!(is_sig_s, SigS);
-        is_tx_tag!(is_sign_length, TxSignLength);
-        is_tx_tag!(is_sign_rlc, TxSignRLC);
-        is_tx_tag!(is_hash_length, TxHashLength);
-        is_tx_tag!(is_hash_rlc, TxHashRLC);
-        // is_tx_tag!(is_sign_hash, TxSignHash);
-        // is_tx_tag!(is_hash, TxHash);
-        // is_tx_tag!(is_padding, Padding);
-
         /////////////////////////////////////////////////////////////////
         /////////////////    tx table lookups     ///////////////////////
         /////////////////////////////////////////////////////////////////
@@ -547,8 +804,10 @@ impl<F: Field> TxCircuitConfig<F> {
             // last row of the tx's call data bytes.
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                is_data_length(meta),
-                not::expr(value_is_zero.is_zero_expression.expr()),
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::TxCalldata],
+                    Rotation::cur(),
+                ),
             ]);
 
             vec![
@@ -577,8 +836,10 @@ impl<F: Field> TxCircuitConfig<F> {
         meta.lookup_any("is_final call data byte should be present", |meta| {
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                is_data_length(meta),
-                not::expr(value_is_zero.is_zero_expression.clone()),
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::TxCalldata],
+                    Rotation::cur(),
+                ),
             ]);
             vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
@@ -619,20 +880,9 @@ impl<F: Field> TxCircuitConfig<F> {
             // sign_rlc -> rlp
             // hash_length -> rlp_length
             // hash_rlc -> rlp
-            let is_tag_in_set = sum::expr([
-                is_nonce(meta),
-                is_gas_price(meta),
-                is_gas(meta),
-                is_to(meta),
-                is_value(meta),
-                is_data_length(meta),
-                is_sig_v(meta),
-                is_sig_r(meta),
-                is_sig_s(meta),
-                is_sign_length(meta),
-                is_sign_rlc(meta),
-                is_hash_length(meta),
-                is_hash_rlc(meta),
+            let enable = and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(lookup_conditions[&LookupCondition::Tag], Rotation::cur()),
             ]);
             let tx_tag = meta.query_advice(tx_table.tag, Rotation::cur());
             let rlp_tag = meta.query_advice(rlp_tag, Rotation::cur());
@@ -640,29 +890,21 @@ impl<F: Field> TxCircuitConfig<F> {
             let rlp_tag_table = meta.query_fixed(tag_table.rlp_tag, Rotation::cur());
 
             vec![
-                (is_tag_in_set.expr() * tx_tag, tx_tag_table),
-                (is_tag_in_set.expr() * rlp_tag, rlp_tag_table),
+                (enable.expr() * tx_tag, tx_tag_table),
+                (enable.expr() * rlp_tag, rlp_tag_table),
             ]
         });
 
         // lookup tx tag in rlp table for TxSign.
         meta.lookup_any("tx tag in RLP Table::TxSign", |meta| {
-            let is_tag_in_tx_sign = sum::expr([
-                is_nonce(meta),
-                is_gas_price(meta),
-                is_gas(meta),
-                is_to(meta),
-                is_data_length(meta), // call data length in DataPrefix
-                is_value(meta),
-                is_sign_length(meta),
-                is_sign_rlc(meta),
-            ]);
-            let rlp_tag = meta.query_advice(rlp_tag, Rotation::cur());
-
             let enable = and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
-                is_tag_in_tx_sign,
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::RlpSignTag],
+                    Rotation::cur(),
+                ),
             ]);
+            let rlp_tag = meta.query_advice(rlp_tag, Rotation::cur());
 
             vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
@@ -679,23 +921,13 @@ impl<F: Field> TxCircuitConfig<F> {
 
         // lookup tx tag in rlp table for TxHash
         meta.lookup_any("tx tag in RLP Table::TxHash", |meta| {
-            let is_tag_in_tx_hash = sum::expr([
-                is_nonce(meta),
-                is_gas_price(meta),
-                is_gas(meta),
-                is_to(meta),
-                is_value(meta),
-                is_data_length(meta),
-                is_sig_v(meta),
-                is_sig_r(meta),
-                is_sig_s(meta),
-                is_hash_length(meta),
-                is_hash_rlc(meta),
-            ]);
             let rlp_tag = meta.query_advice(rlp_tag, Rotation::cur());
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                is_tag_in_tx_hash,
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::RlpHashTag],
+                    Rotation::cur(),
+                ),
             ]);
 
             vec![
@@ -737,8 +969,10 @@ impl<F: Field> TxCircuitConfig<F> {
         meta.lookup_any("tx calldata::index in RLP Table::TxSign", |meta| {
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                is_data(meta),
-                not::expr(tx_id_is_zero.is_equal_expression.expr()),
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::RlpCalldata],
+                    Rotation::cur(),
+                ),
             ]);
             vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
@@ -758,8 +992,10 @@ impl<F: Field> TxCircuitConfig<F> {
         meta.lookup_any("tx calldata::index in RLP Table::TxHash", |meta| {
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                is_data(meta),
-                not::expr(tx_id_is_zero.is_equal_expression.expr()),
+                meta.query_advice(
+                    lookup_conditions[&LookupCondition::RlpCalldata],
+                    Rotation::cur(),
+                ),
             ]);
             vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
@@ -782,10 +1018,9 @@ impl<F: Field> TxCircuitConfig<F> {
         // signed.
         // lookup Keccak table for tx hash too.
         meta.lookup_any("Keccak table lookup for TxSignHash", |meta| {
-            let is_tag_sign_or_hash = sum::expr([is_sign_length(meta), is_hash_length(meta)]);
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                is_tag_sign_or_hash,
+                meta.query_advice(lookup_conditions[&LookupCondition::Keccak], Rotation::cur()),
             ]);
 
             vec![
