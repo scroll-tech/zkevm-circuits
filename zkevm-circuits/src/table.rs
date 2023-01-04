@@ -14,7 +14,7 @@ use bus_mapping::circuit_input_builder::{
     get_dummy_tx, CopyDataType, CopyEvent, CopyStep, ExpEvent,
 };
 use core::iter::once;
-use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use ethers_core::types::H256;
 use ethers_core::utils::keccak256;
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
@@ -200,9 +200,27 @@ impl TxTable {
 
                 let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
                     .map(|i| Transaction {
+                        block_number: 0, // FIXME
                         id: i + 1,
                         hash: H256(dummy_tx_hash),
-                        ..Default::default()
+                        nonce: 0,
+                        gas: 0,
+                        gas_price: Word::zero(),
+                        caller_address: Address::zero(),
+                        callee_address: Address::zero(),
+                        is_create: true,
+                        value: *dummy_tx.value().unwrap(),
+                        call_data: Vec::new(),
+                        call_data_length: 0,
+                        call_data_gas_cost: 0,
+                        chain_id,
+                        rlp_unsigned: dummy_tx.rlp().to_vec(),
+                        rlp_signed: dummy_tx.rlp_signed(&dummy_sig).to_vec(),
+                        v: dummy_sig.v,
+                        r: dummy_sig.r,
+                        s: dummy_sig.s,
+                        calls: Vec::new(),
+                        steps: Vec::new(),
                     })
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {

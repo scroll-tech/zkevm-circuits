@@ -591,7 +591,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 tx_hash_cell.cell(),
                 Cell {
                     region_index: RegionIndex(1), // FIXME: this is not safe
-                    row_offset: i * 11 + 10,
+                    row_offset: i * 19 + 18,
                     column: self.tx_table.value.into(),
                 },
             )?;
