@@ -258,6 +258,9 @@ impl GethData {
             tx.v = U64::from(sig.v);
             tx.r = sig.r;
             tx.s = sig.s;
+            // The previous tx.hash is calculated without signature.
+            // Therefore we need to update tx.hash.
+            tx.hash = tx.hash();
         }
     }
 }

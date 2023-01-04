@@ -210,6 +210,7 @@ pub struct Transaction {
 impl From<&Transaction> for geth_types::Transaction {
     fn from(tx: &Transaction) -> geth_types::Transaction {
         geth_types::Transaction {
+            hash: tx.hash,
             from: tx.from,
             to: Some(tx.to),
             nonce: Word::from(tx.nonce),
@@ -305,10 +306,18 @@ impl Transaction {
                 ..Default::default()
             }
         };
+        // note that eth_tx.hash is not correct if eth_tx.to is None.
+        let mut new_eth_tx = eth_tx.clone();
+        new_eth_tx.to = Some(
+            eth_tx
+                .to
+                .unwrap_or_else(|| get_contract_address(eth_tx.from, eth_tx.nonce)),
+        );
+        new_eth_tx.hash = new_eth_tx.hash();
 
         Ok(Self {
             block_num: eth_tx.block_number.unwrap().as_u64(),
-            hash: eth_tx.hash,
+            hash: new_eth_tx.hash,
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
