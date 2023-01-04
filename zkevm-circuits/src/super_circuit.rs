@@ -83,6 +83,7 @@ use halo2_proofs::{
 
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
 use crate::rlp_circuit::{RlpCircuit, RlpCircuitConfig};
+use crate::tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs};
 use std::array;
 use strum::IntoEnumIterator;
 
@@ -106,7 +107,7 @@ pub struct SuperCircuitConfig<
     tx_table: TxTable,
     evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
-    // tx_circuit: TxCircuitConfig<F>,
+    tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeCircuitConfig<F>,
     copy_circuit: CopyCircuitConfig<F>,
     keccak_circuit: KeccakCircuitConfig<F>,
@@ -128,8 +129,8 @@ pub struct SuperCircuit<
     pub evm_circuit: EvmCircuit<F>,
     /// State Circuit
     pub state_circuit: StateCircuit<F>,
-    /// The transaction circuit that will be used in the `synthesize` step.
-    //pub tx_circuit: TxCircuit<F>,
+    /// Transaction Circuit
+    pub tx_circuit: TxCircuit<F>,
     /// Public Input Circuit
     pub pi_circuit: PiCircuit<F>,
     /// Bytecode Circuit
@@ -159,7 +160,7 @@ impl<
             let config = Self::configure(&mut cs);
             config.evm_circuit.get_num_rows_required(block)
         };
-        let num_rows_tx_circuit = 0; //TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
+        let num_rows_tx_circuit = TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
         log::debug!(
             "num_rows_evm_circuit {}, num_rows_tx_circuit {}",
             num_rows_evm_circuit,
@@ -256,7 +257,6 @@ impl<
         );
 
         log_circuit_info(meta, "pi");
-        /*
         let tx_circuit = TxCircuitConfig::new(
             meta,
             TxCircuitConfigArgs {
@@ -266,7 +266,8 @@ impl<
                 challenges: challenges.clone(),
             },
         );
-        */
+        log_circuit_info(meta, "tx circuit");
+
         let bytecode_circuit = BytecodeCircuitConfig::new(
             meta,
             BytecodeCircuitConfigArgs {
@@ -330,6 +331,7 @@ impl<
             keccak_circuit,
             pi_circuit,
             rlp_circuit,
+            tx_circuit,
             exp_circuit,
         }
     }
@@ -390,6 +392,8 @@ impl<
             .synthesize_sub(&config.evm_circuit, &challenges, &mut layouter)?;
         self.rlp_circuit
             .synthesize_sub(&config.rlp_circuit, &challenges, &mut layouter)?;
+        self.tx_circuit
+            .synthesize_sub(&config.tx_circuit, &challenges, &mut layouter)?;
         self.pi_circuit
             .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
         Ok(())
@@ -482,7 +486,7 @@ impl<
 
         let evm_circuit = EvmCircuit::new_from_block(&block);
         let state_circuit = StateCircuit::new_from_block(&block);
-        //let tx_circuit = TxCircuit::new_from_block(&block);
+        let tx_circuit = TxCircuit::new_from_block(&block);
         let pi_circuit = PiCircuit::new_from_block(&block);
         let bytecode_circuit = BytecodeCircuit::new_from_block(&block);
         let copy_circuit = CopyCircuit::new_from_block(&block);
@@ -493,7 +497,7 @@ impl<
         let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS> {
             evm_circuit,
             state_circuit,
-            //tx_circuit,
+            tx_circuit,
             pi_circuit,
             bytecode_circuit,
             copy_circuit,
@@ -508,11 +512,12 @@ impl<
 
     /// Returns suitable inputs for the SuperCircuit.
     pub fn instance(&self) -> Vec<Vec<Fr>> {
+        let mut instance = self.pi_circuit.instance();
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
         // FIXME: why two columns??
-        //let instance = vec![pi_instance[0].clone()];
+        instance.push(vec![]);
 
-        self.pi_circuit.instance()
+        instance
     }
 }
 
