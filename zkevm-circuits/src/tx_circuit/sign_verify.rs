@@ -677,7 +677,7 @@ impl<F: Field> SignVerifyChip<F> {
     }
 }
 
-fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
+pub(crate) fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
     pk_hash[32 - 20..]
         .iter()
         .fold(F::zero(), |acc, b| acc * F::from(256) + F::from(*b as u64))

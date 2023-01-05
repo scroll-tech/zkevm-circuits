@@ -8,18 +8,25 @@ pub mod sign_verify;
 
 use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
 use crate::table::{KeccakTable, LookupTable, RlpTable, TxFieldTag, TxTable};
+#[cfg(not(feature = "enable-sign-verify"))]
+use crate::tx_circuit::sign_verify::pub_key_hash_to_address;
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
 use crate::witness::{signed_tx_from_geth_tx, RlpDataType, RlpTxTag};
 use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
+#[cfg(not(feature = "enable-sign-verify"))]
+use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness};
 use eth_types::{
     sign_types::SignData,
     {geth_types::Transaction, Address, Field, ToLittleEndian, ToScalar},
 };
 use ethers_core::types::TransactionRequest;
+#[cfg(not(feature = "enable-sign-verify"))]
+use ethers_core::utils::keccak256;
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use gadgets::is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction};
 use gadgets::util::{and, not, select, sum, Expr};
+#[cfg(feature = "enable-sign-verify")]
 use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::poly::Rotation;
 use halo2_proofs::{
@@ -1070,18 +1077,24 @@ impl<F: Field> TxCircuit<F> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
         assigned_sig_verifs: Vec<AssignedSignatureVerify<F>>,
+        sign_datas: Vec<SignData>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "tx table",
             |mut region| {
                 let mut offset = 0;
+                #[cfg(feature = "enable-sign-verify")]
+                let sigs = &assigned_sig_verifs;
+                #[cfg(not(feature = "enable-sign-verify"))]
+                let sigs = &sign_datas;
 
+                debug_assert_eq!(assigned_sig_verifs.len() + sign_datas.len(), sigs.len());
                 // Empty entry
                 config.assign_row(
                     &mut region,
                     &mut offset,
-                    0,                                        // tx_id
-                    !assigned_sig_verifs.is_empty() as usize, // tx_id_next
+                    0,                         // tx_id
+                    !sigs.is_empty() as usize, // tx_id_next
                     TxFieldTag::Null,
                     RlpTxTag::Padding,
                     Value::known(F::zero()),
@@ -1092,7 +1105,8 @@ impl<F: Field> TxCircuit<F> {
 
                 // Assign all tx fields except for call data
                 let tx_default = Transaction::default();
-                for (i, assigned_sig_verif) in assigned_sig_verifs.iter().enumerate() {
+
+                for (i, assigned_sig_verif) in sigs.iter().enumerate() {
                     let tx = if i < self.txs.len() {
                         &self.txs[i]
                     } else {
@@ -1109,6 +1123,18 @@ impl<F: Field> TxCircuit<F> {
                         .0
                         .iter()
                         .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 });
+                    #[cfg(feature = "enable-sign-verify")]
+                    let tx_sign_hash = assigned_sig_verif.msg_hash_rlc.value().copied();
+                    #[cfg(not(feature = "enable-sign-verify"))]
+                    let tx_sign_hash = {
+                        challenges.evm_word().map(|rand| {
+                            assigned_sig_verif
+                                .msg
+                                .to_vec()
+                                .into_iter()
+                                .fold(F::zero(), |acc, byte| acc * rand + F::from(byte as u64))
+                        })
+                    };
                     for (tag, rlp_tag, value) in [
                         // need to be in same order as that tx table load function uses
                         (
@@ -1197,7 +1223,7 @@ impl<F: Field> TxCircuit<F> {
                         (
                             TxSignHash,
                             RlpTxTag::Padding, // FIXME
-                            assigned_sig_verif.msg_hash_rlc.value().copied(),
+                            tx_sign_hash,
                         ),
                         (
                             TxHashLength,
@@ -1233,7 +1259,7 @@ impl<F: Field> TxCircuit<F> {
                     ] {
                         let tx_id_next = match tag {
                             TxFieldTag::BlockNumber => {
-                                if i == assigned_sig_verifs.len() - 1 {
+                                if i == sigs.len() - 1 {
                                     self.txs
                                         .iter()
                                         .enumerate()
@@ -1262,24 +1288,44 @@ impl<F: Field> TxCircuit<F> {
                         // between the tx rows and the SignVerifyChip
                         match tag {
                             CallerAddress => {
-                                assigned_sig_verif.address.copy_advice(
-                                    || "sv_address == SignVerify.address",
-                                    &mut region,
-                                    config.sv_address,
-                                    offset - 1,
-                                )?;
+                                #[cfg(feature = "enable-sign-verify")]
+                                {
+                                    assigned_sig_verif.address.copy_advice(
+                                        || "sv_address == SignVerify.address",
+                                        &mut region,
+                                        config.sv_address,
+                                        offset - 1,
+                                    )?;
+                                }
+                                #[cfg(not(feature = "enable-sign-verify"))]
+                                {
+                                    let pk_le = pk_bytes_le(&assigned_sig_verif.pk);
+                                    let pk_be = pk_bytes_swap_endianness(&pk_le);
+                                    let pk_hash = keccak256(pk_be);
+                                    let address =
+                                        Value::known(pub_key_hash_to_address::<F>(&pk_hash));
+                                    region.assign_advice(
+                                        || "sv_address",
+                                        config.sv_address,
+                                        offset - 1,
+                                        || address,
+                                    )?;
+                                }
                             }
                             TxSignHash => {
-                                region.constrain_equal(
-                                    assigned_sig_verif.msg_hash_rlc.cell(),
-                                    Cell {
-                                        // FIXME
-                                        region_index: RegionIndex(1),
-                                        row_offset: offset - 1, /* offset is increased by 1
-                                                                 * inside assign_row */
-                                        column: config.tx_table.value.into(),
-                                    },
-                                )?;
+                                #[cfg(feature = "enable-sign-verify")]
+                                {
+                                    region.constrain_equal(
+                                        assigned_sig_verif.msg_hash_rlc.cell(),
+                                        Cell {
+                                            // FIXME
+                                            region_index: RegionIndex(1),
+                                            row_offset: offset - 1, /* offset is increased by 1
+                                                                     * inside assign_row */
+                                            column: config.tx_table.value.into(),
+                                        },
+                                    )?;
+                                }
                             }
                             SigV => {
                                 region.assign_advice(
@@ -1396,10 +1442,23 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             .try_collect()?;
 
         config.load_aux_tables(layouter)?;
-        let assigned_sig_verifs =
-            self.sign_verify
-                .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
-        self.assign_tx_table(config, challenges, layouter, assigned_sig_verifs)?;
+        #[cfg(feature = "enable-sign-verify")]
+        {
+            let assigned_sig_verifs =
+                self.sign_verify
+                    .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
+            self.assign_tx_table(
+                config,
+                challenges,
+                layouter,
+                assigned_sig_verifs,
+                Vec::new(),
+            )?;
+        }
+        #[cfg(not(feature = "enable-sign-verify"))]
+        {
+            self.assign_tx_table(config, challenges, layouter, Vec::new(), sign_datas)?;
+        }
         Ok(())
     }
 }
