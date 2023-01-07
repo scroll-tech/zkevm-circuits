@@ -306,24 +306,18 @@ impl Transaction {
                 ..Default::default()
             }
         };
-        // note that eth_tx.hash is not correct if eth_tx.to is None.
-        let mut new_eth_tx = eth_tx.clone();
-        new_eth_tx.to = Some(
-            eth_tx
-                .to
-                .unwrap_or_else(|| get_contract_address(eth_tx.from, eth_tx.nonce)),
-        );
-        new_eth_tx.hash = new_eth_tx.hash();
 
         Ok(Self {
             block_num: eth_tx.block_number.unwrap().as_u64(),
-            hash: new_eth_tx.hash,
+            hash: eth_tx.hash,
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
             from: eth_tx.from,
             to: eth_tx
                 .to
+                // FIXME: this will change tx.to which will make it very hard to find the original
+                //        tx.to at other places.
                 .unwrap_or_else(|| get_contract_address(eth_tx.from, eth_tx.nonce)),
             value: eth_tx.value,
             input: eth_tx.input.to_vec(),
