@@ -350,7 +350,7 @@ pub mod test {
                 .load(&mut layouter, block.bytecodes.values(), &challenges)?;
             config
                 .block_table
-                .load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
+                .load(&mut layouter, &block.context, &block.txs, block.randomness)?;
             config.copy_table.load(&mut layouter, block, &challenges)?;
             config
                 .keccak_table

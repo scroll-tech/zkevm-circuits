@@ -10,13 +10,12 @@ use bus_mapping::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 
 use halo2_proofs::arithmetic::FieldExt;
-use halo2_proofs::circuit::Value;
 use halo2_proofs::halo2curves::bn256::Fr;
 
 use itertools::Itertools;
 
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
-use crate::util::{Challenges, DEFAULT_RAND};
+use crate::util::DEFAULT_RAND;
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -108,71 +107,64 @@ impl BlockContext {
         &self,
         num_txs: usize,
         cum_num_txs: usize,
-        challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 3]> {
+        randomness: F,
+    ) -> Vec<[F; 3]> {
         let current_block_number = self.number.to_scalar().unwrap();
-        let evm_word_rand = challenges.evm_word();
         [
             vec![
                 [
-                    Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
-                    Value::known(current_block_number),
-                    Value::known(self.coinbase.to_scalar().unwrap()),
+                    F::from(BlockContextFieldTag::Coinbase as u64),
+                    current_block_number,
+                    self.coinbase.to_scalar().unwrap(),
                 ],
                 [
-                    Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
-                    Value::known(current_block_number),
-                    Value::known(self.timestamp.to_scalar().unwrap()),
+                    F::from(BlockContextFieldTag::Timestamp as u64),
+                    current_block_number,
+                    self.timestamp.to_scalar().unwrap(),
                 ],
                 [
-                    Value::known(F::from(BlockContextFieldTag::Number as u64)),
-                    Value::known(current_block_number),
-                    Value::known(current_block_number),
+                    F::from(BlockContextFieldTag::Number as u64),
+                    current_block_number,
+                    current_block_number,
                 ],
                 [
-                    Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
-                    Value::known(current_block_number),
-                    evm_word_rand.map(|rand| {
-                        RandomLinearCombination::random_linear_combine(
-                            self.difficulty.to_le_bytes(),
-                            rand,
-                        )
-                    }),
+                    F::from(BlockContextFieldTag::Difficulty as u64),
+                    current_block_number,
+                    RandomLinearCombination::random_linear_combine(
+                        self.difficulty.to_le_bytes(),
+                        randomness,
+                    ),
                 ],
                 [
-                    Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
-                    Value::known(current_block_number),
-                    Value::known(F::from(self.gas_limit)),
+                    F::from(BlockContextFieldTag::GasLimit as u64),
+                    current_block_number,
+                    F::from(self.gas_limit),
                 ],
                 [
-                    Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
-                    Value::known(current_block_number),
-                    evm_word_rand.map(|rand| {
-                        RandomLinearCombination::random_linear_combine(
-                            self.base_fee.to_le_bytes(),
-                            rand,
-                        )
-                    }),
+                    F::from(BlockContextFieldTag::BaseFee as u64),
+                    current_block_number,
+                    RandomLinearCombination::random_linear_combine(
+                        self.base_fee.to_le_bytes(),
+                        randomness,
+                    ),
                 ],
                 [
-                    Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
-                    Value::known(current_block_number),
-                    evm_word_rand.map(|rand| {
-                        RandomLinearCombination::random_linear_combine(
-                            self.chain_id.to_le_bytes(),
-                            rand,
-                        )
-                    }),
+                    F::from(BlockContextFieldTag::ChainId as u64),
+                    current_block_number,
+                    RandomLinearCombination::random_linear_combine(
+                        self.chain_id.to_le_bytes(),
+                        randomness,
+                    ),
                 ],
                 [
-                    Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),
-                    Value::known(current_block_number),
-                    Value::known(F::from(num_txs as u64)),
+                    F::from(BlockContextFieldTag::NumTxs as u64),
+                    current_block_number,
+                    F::from(num_txs as u64),
                 ],
                 [
-                    Value::known(F::from(BlockContextFieldTag::CumNumTxs as u64)),
-                    Value::known(current_block_number),
-                    Value::known(F::from(cum_num_txs as u64)),
+                    F::from(BlockContextFieldTag::CumNumTxs as u64),
+                    current_block_number,
+                    F::from(cum_num_txs as u64),
                 ],
             ],
             {
@@ -182,14 +174,12 @@ impl BlockContext {
                     .enumerate()
                     .map(|(idx, hash)| {
                         [
-                            Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
-                            Value::known((self.number - len_history + idx).to_scalar().unwrap()),
-                            evm_word_rand.map(|rand| {
-                                RandomLinearCombination::random_linear_combine(
-                                    hash.to_le_bytes(),
-                                    rand,
-                                )
-                            }),
+                            F::from(BlockContextFieldTag::BlockHash as u64),
+                            (self.number - len_history + idx).to_scalar().unwrap(),
+                            RandomLinearCombination::random_linear_combine(
+                                hash.to_le_bytes(),
+                                randomness,
+                            ),
                         ]
                     })
                     .collect()

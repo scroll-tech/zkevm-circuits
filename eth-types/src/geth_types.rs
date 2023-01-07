@@ -5,7 +5,7 @@ use crate::{
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
     Word, U64,
 };
-use ethers_core::types::{TransactionRequest, H256};
+use ethers_core::types::TransactionRequest;
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
@@ -129,9 +129,6 @@ pub struct Transaction {
     pub r: Word,
     /// "s" value of the transaction signature
     pub s: Word,
-
-    /// Transaction hash
-    pub hash: H256,
 }
 
 impl From<&Transaction> for crate::Transaction {
@@ -150,7 +147,6 @@ impl From<&Transaction> for crate::Transaction {
             v: tx.v.into(),
             r: tx.r,
             s: tx.s,
-            hash: tx.hash,
             ..Default::default()
         }
     }
@@ -172,7 +168,6 @@ impl From<&crate::Transaction> for Transaction {
             v: tx.v.as_u64(),
             r: tx.r,
             s: tx.s,
-            hash: tx.hash,
         }
     }
 }
@@ -203,7 +198,7 @@ impl Transaction {
             secp256k1::Fq::from_repr(sig_s_le),
             Error::Signature(libsecp256k1::Error::InvalidSignature),
         )?;
-        // msg = rlp([nonce, gasPrice, gas, to, value, data, chain_id, 0, 0])
+        // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
         let req: TransactionRequest = self.into();
         let msg = req.chain_id(chain_id).rlp();
         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
@@ -224,7 +219,6 @@ impl Transaction {
         Ok(SignData {
             signature: (sig_r, sig_s),
             pk,
-            msg,
             msg_hash,
         })
     }

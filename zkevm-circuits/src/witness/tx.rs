@@ -48,112 +48,97 @@ pub struct Transaction {
 
 impl Transaction {
     /// Assignments for tx table
-    pub fn table_assignments_fixed<F: Field>(
+    pub fn table_assignments<F: Field>(
         &self,
         challenges: Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 4]> {
-        let mut tx_hash_le_bytes = self.hash.to_fixed_bytes();
-        tx_hash_le_bytes.reverse();
-
-        vec![
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::Nonce as u64)),
-                Value::known(F::zero()),
-                Value::known(F::from(self.nonce)),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::Gas as u64)),
-                Value::known(F::zero()),
-                Value::known(F::from(self.gas)),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::GasPrice as u64)),
-                Value::known(F::zero()),
-                challenges.evm_word().map(|evm_word| {
-                    RandomLinearCombination::random_linear_combine(
-                        self.gas_price.to_le_bytes(),
-                        evm_word,
-                    )
-                }),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::CallerAddress as u64)),
-                Value::known(F::zero()),
-                Value::known(self.caller_address.to_scalar().unwrap()),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::CalleeAddress as u64)),
-                Value::known(F::zero()),
-                Value::known(self.callee_address.to_scalar().unwrap()),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::IsCreate as u64)),
-                Value::known(F::zero()),
-                Value::known(F::from(self.is_create as u64)),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::Value as u64)),
-                Value::known(F::zero()),
-                challenges.evm_word().map(|evm_word| {
-                    RandomLinearCombination::random_linear_combine(
-                        self.value.to_le_bytes(),
-                        evm_word,
-                    )
-                }),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::CallDataLength as u64)),
-                Value::known(F::zero()),
-                Value::known(F::from(self.call_data_length as u64)),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::CallDataGasCost as u64)),
-                Value::known(F::zero()),
-                Value::known(F::from(self.call_data_gas_cost)),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::TxHash as u64)),
-                Value::known(F::zero()),
-                challenges.evm_word().map(|evm_word| {
-                    RandomLinearCombination::random_linear_combine(tx_hash_le_bytes, evm_word)
-                }),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::BlockNumber as u64)),
-                Value::known(F::zero()),
-                Value::known(F::from(self.block_number)),
-            ],
-        ]
-    }
-
-    /// Assignments for tx table
-    pub fn table_assignments_dyn<F: Field>(
-        &self,
-        _challenges: Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 4]> {
-        self.call_data
-            .iter()
-            .enumerate()
-            .map(|(idx, byte)| {
+        [
+            vec![
                 [
                     Value::known(F::from(self.id as u64)),
-                    Value::known(F::from(TxContextFieldTag::CallData as u64)),
-                    Value::known(F::from(idx as u64)),
-                    Value::known(F::from(*byte as u64)),
-                ]
-            })
-            .collect()
+                    Value::known(F::from(TxContextFieldTag::Nonce as u64)),
+                    Value::known(F::zero()),
+                    Value::known(F::from(self.nonce)),
+                ],
+                [
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::Gas as u64)),
+                    Value::known(F::zero()),
+                    Value::known(F::from(self.gas)),
+                ],
+                [
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::GasPrice as u64)),
+                    Value::known(F::zero()),
+                    challenges.evm_word().map(|evm_word| {
+                        RandomLinearCombination::random_linear_combine(
+                            self.gas_price.to_le_bytes(),
+                            evm_word,
+                        )
+                    }),
+                ],
+                [
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::CallerAddress as u64)),
+                    Value::known(F::zero()),
+                    Value::known(self.caller_address.to_scalar().unwrap()),
+                ],
+                [
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::CalleeAddress as u64)),
+                    Value::known(F::zero()),
+                    Value::known(self.callee_address.to_scalar().unwrap()),
+                ],
+                [
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::IsCreate as u64)),
+                    Value::known(F::zero()),
+                    Value::known(F::from(self.is_create as u64)),
+                ],
+                [
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::Value as u64)),
+                    Value::known(F::zero()),
+                    challenges.evm_word().map(|evm_word| {
+                        RandomLinearCombination::random_linear_combine(
+                            self.value.to_le_bytes(),
+                            evm_word,
+                        )
+                    }),
+                ],
+                [
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::CallDataLength as u64)),
+                    Value::known(F::zero()),
+                    Value::known(F::from(self.call_data_length as u64)),
+                ],
+                [
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::CallDataGasCost as u64)),
+                    Value::known(F::zero()),
+                    Value::known(F::from(self.call_data_gas_cost)),
+                ],
+                [
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::BlockNumber as u64)),
+                    Value::known(F::zero()),
+                    Value::known(F::from(self.block_number)),
+                ],
+            ],
+            self.call_data
+                .iter()
+                .enumerate()
+                .map(|(idx, byte)| {
+                    [
+                        Value::known(F::from(self.id as u64)),
+                        Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                        Value::known(F::from(idx as u64)),
+                        Value::known(F::from(*byte as u64)),
+                    ]
+                })
+                .collect(),
+        ]
+        .concat()
     }
 }
 

@@ -71,7 +71,7 @@ mod tests {
 
         block.sign(&wallets);
 
-        let (_, circuit, instance, _) = SuperCircuit::<_, 1, 32, 64, 512>::build(block).unwrap();
+        let (_, circuit, instance, _) = SuperCircuit::<_, 1, 32, 512>::build(block).unwrap();
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation
@@ -96,7 +96,7 @@ mod tests {
             Challenge255<G1Affine>,
             ChaChaRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            SuperCircuit<Fr, 1, 32, 64, 512>,
+            SuperCircuit<Fr, 1, 32, 512>,
         >(
             &general_params,
             &pk,

@@ -1,7 +1,6 @@
 //! secp256k1 signature types and helper functions.
 
 use crate::{ToBigEndian, Word};
-use ethers_core::types::Bytes;
 use halo2_proofs::{
     arithmetic::{CurveAffine, FieldExt},
     halo2curves::{
@@ -15,7 +14,6 @@ use halo2_proofs::{
 };
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
-use sha3::{Digest, Keccak256};
 use subtle::CtOption;
 
 /// Do a secp256k1 signature with a given randomness value.
@@ -51,8 +49,6 @@ pub struct SignData {
     pub signature: (secp256k1::Fq, secp256k1::Fq),
     /// Secp256k1 public key
     pub pk: Secp256k1Affine,
-    /// Message being hashed before signing.
-    pub msg: Bytes,
     /// Hash of the message that is being signed
     pub msg_hash: secp256k1::Fq,
 }
@@ -63,20 +59,13 @@ lazy_static! {
         let sk = secp256k1::Fq::one();
         let pk = generator * sk;
         let pk = pk.to_affine();
-        let msg = b"1";
-        let msg_hash: [u8; 32] = Keccak256::digest(&msg)
-            .as_slice()
-            .to_vec()
-            .try_into()
-            .expect("hash length isn't 32 bytes");
-        let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
+        let msg_hash = secp256k1::Fq::one();
         let randomness = secp256k1::Fq::one();
         let (sig_r, sig_s) = sign(randomness, sk, msg_hash);
 
         SignData {
             signature: (sig_r, sig_s),
             pk,
-            msg: msg.into(),
             msg_hash,
         }
     };
