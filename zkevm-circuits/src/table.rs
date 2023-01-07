@@ -10,13 +10,9 @@ use crate::witness::{
     Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw,
     RwMap, RwRow, SignedTransaction, Transaction,
 };
-use bus_mapping::circuit_input_builder::{
-    get_dummy_tx, CopyDataType, CopyEvent, CopyStep, ExpEvent,
-};
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
-use ethers_core::types::H256;
-use ethers_core::utils::keccak256;
+use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use gadgets::util::{split_u256, split_u256_limb64};
 use halo2_proofs::plonk::{Any, Expression, Fixed, VirtualCells};
@@ -193,37 +189,18 @@ impl TxTable {
                 )?;
                 offset += 1;
 
-                // FIXME: remove this hardcoded default chain_id
                 let chain_id = if !txs.is_empty() { txs[0].chain_id } else { 1 };
-                let (dummy_tx, dummy_sig) = get_dummy_tx(chain_id);
-                let dummy_tx_hash = keccak256(dummy_tx.rlp_signed(&dummy_sig));
+                let padding_txs = (txs.len()..max_txs)
+                    .into_iter()
+                    .map(|tx_id| {
+                        let mut padding_tx = Transaction::dummy(chain_id);
+                        padding_tx.id = tx_id + 1;
 
-                let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
-                    .map(|i| Transaction {
-                        block_number: 0, // FIXME
-                        id: i + 1,
-                        hash: H256(dummy_tx_hash),
-                        nonce: 0,
-                        gas: 0,
-                        gas_price: Word::zero(),
-                        caller_address: Address::zero(),
-                        callee_address: Address::zero(),
-                        is_create: true,
-                        value: *dummy_tx.value().unwrap(),
-                        call_data: Vec::new(),
-                        call_data_length: 0,
-                        call_data_gas_cost: 0,
-                        chain_id,
-                        rlp_unsigned: dummy_tx.rlp().to_vec(),
-                        rlp_signed: dummy_tx.rlp_signed(&dummy_sig).to_vec(),
-                        v: dummy_sig.v,
-                        r: dummy_sig.r,
-                        s: dummy_sig.s,
-                        calls: Vec::new(),
-                        steps: Vec::new(),
+                        padding_tx
                     })
-                    .collect();
-                for tx in txs.iter().chain(padding_txs.iter()) {
+                    .collect::<Vec<Transaction>>();
+                for (i, tx) in txs.iter().chain(padding_txs.iter()).enumerate() {
+                    debug_assert_eq!(i + 1, tx.id);
                     for row in tx.table_assignments_fixed(*challenges) {
                         for (index, column) in advice_columns.iter().enumerate() {
                             region.assign_advice(
@@ -242,7 +219,7 @@ impl TxTable {
                         offset += 1;
                     }
                 }
-                for tx in txs.iter().chain(padding_txs.iter()) {
+                for tx in txs.iter() {
                     for row in tx.table_assignments_dyn(*challenges) {
                         for (index, column) in advice_columns.iter().enumerate() {
                             region.assign_advice(

@@ -354,6 +354,8 @@ impl MockTransaction {
         // Compute tx hash in case is not already set
         if self.hash.is_none() {
             let tmp_tx = Transaction::from(self.to_owned());
+            // FIXME: Note that tmp_tx does not have sigs if self.from.is_wallet() = false.
+            //  This means tmp_tx.hash() is not correct.
             self.hash(tmp_tx.hash());
         }
 

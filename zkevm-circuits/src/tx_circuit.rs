@@ -12,15 +12,14 @@ use crate::table::{KeccakTable, LookupTable, RlpTable, TxFieldTag, TxTable};
 use crate::tx_circuit::sign_verify::pub_key_hash_to_address;
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
-use crate::witness::{signed_tx_from_geth_tx, RlpDataType, RlpTxTag};
-use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
+use crate::witness::{RlpDataType, RlpTxTag, Transaction};
+use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 #[cfg(not(feature = "enable-sign-verify"))]
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness};
 use eth_types::{
     sign_types::SignData,
-    {geth_types::Transaction, Address, Field, ToLittleEndian, ToScalar},
+    {Field, ToLittleEndian, ToScalar},
 };
-use ethers_core::types::TransactionRequest;
 #[cfg(not(feature = "enable-sign-verify"))]
 use ethers_core::utils::keccak256;
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
@@ -33,11 +32,11 @@ use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, VirtualCells},
 };
-use itertools::Itertools;
 use log::error;
 use num::Zero;
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
 use std::collections::HashMap;
+use std::iter;
 use std::marker::PhantomData;
 
 use crate::table::TxFieldTag::{
@@ -1044,7 +1043,10 @@ impl<F: Field> TxCircuitConfig<F> {
     }
 }
 
-/// Tx Circuit for verifying transaction signatures
+/// Tx Circuit for verifying transaction signatures and tx table. (**legacy tx
+/// only right now**) PI circuit ensures that each tx's hash in the tx table is
+/// equal to the one in public input. Then we can use RLP circuit to decode each
+/// tx field's value from RLP-encoded tx bytes.
 #[derive(Clone, Default, Debug)]
 pub struct TxCircuit<F: Field> {
     /// Max number of supported transactions
@@ -1062,6 +1064,14 @@ pub struct TxCircuit<F: Field> {
 impl<F: Field> TxCircuit<F> {
     /// Return a new TxCircuit
     pub fn new(max_txs: usize, max_calldata: usize, chain_id: u64, txs: Vec<Transaction>) -> Self {
+        log::info!(
+            "TxCircuit::new(max_txs = {}, max_calldata = {}, chain_id = {}",
+            max_txs,
+            max_calldata,
+            chain_id
+        );
+        debug_assert!(txs.len() <= max_txs);
+
         TxCircuit::<F> {
             max_txs,
             max_calldata,
@@ -1071,13 +1081,60 @@ impl<F: Field> TxCircuit<F> {
         }
     }
 
-    fn assign_tx_table(
+    fn keccak_inputs(&self) -> Result<Vec<Vec<u8>>, Error> {
+        let mut inputs = Vec::new();
+
+        let padding_tx = {
+            let mut tx = Transaction::dummy(self.chain_id);
+            tx.id = self.txs.len() + 1;
+            tx
+        };
+        let hash_datas = self
+            .txs
+            .iter()
+            .chain(iter::once(&padding_tx))
+            .map(|tx| tx.rlp_signed.clone())
+            .collect::<Vec<Vec<u8>>>();
+        inputs.extend_from_slice(&hash_datas);
+
+        let sign_datas: Vec<SignData> = self
+            .txs
+            .iter()
+            .chain(iter::once(&padding_tx))
+            .enumerate()
+            .filter(|(_, tx)| {
+                if tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
+                    log::warn!(
+                        "tx {} is not signed, skipping tx circuit keccak input",
+                        tx.id
+                    );
+                    false
+                } else {
+                    true
+                }
+            })
+            .map(|(_, tx)| {
+                tx.sign_data().map_err(|e| {
+                    error!("keccak_inputs_tx_circuit error: {:?}", e);
+                    Error::Synthesis
+                })
+            })
+            .collect::<Result<Vec<SignData>, Error>>()?;
+        // Keccak inputs from SignVerify Chip
+        let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
+        inputs.extend_from_slice(&sign_verify_inputs);
+
+        Ok(inputs)
+    }
+
+    fn assign(
         &self,
         config: &TxCircuitConfig<F>,
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
         assigned_sig_verifs: Vec<AssignedSignatureVerify<F>>,
         sign_datas: Vec<SignData>,
+        padding_txs: &[Transaction],
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "tx table",
@@ -1089,6 +1146,8 @@ impl<F: Field> TxCircuit<F> {
                 let sigs = &sign_datas;
 
                 debug_assert_eq!(assigned_sig_verifs.len() + sign_datas.len(), sigs.len());
+                debug_assert_eq!(padding_txs.len() + self.txs.len(), sigs.len());
+
                 // Empty entry
                 config.assign_row(
                     &mut region,
@@ -1104,25 +1163,15 @@ impl<F: Field> TxCircuit<F> {
                 )?;
 
                 // Assign all tx fields except for call data
-                let tx_default = Transaction::default();
-
                 for (i, assigned_sig_verif) in sigs.iter().enumerate() {
                     let tx = if i < self.txs.len() {
                         &self.txs[i]
                     } else {
-                        &tx_default
+                        &padding_txs[i - self.txs.len()]
                     };
-                    let tx_req: TransactionRequest = tx.into();
-                    let rlp_unsigned_tx_be_bytes = tx_req.chain_id(self.chain_id).rlp().to_vec();
+                    let rlp_unsigned_tx_be_bytes = tx.rlp_unsigned.clone();
+                    let rlp_signed_tx_be_bytes = tx.rlp_signed.clone();
 
-                    let signed_tx: ethers_core::types::Transaction = tx.into();
-                    let rlp_signed_tx_be_bytes = signed_tx.rlp().to_vec();
-
-                    let call_data_gas_cost = tx
-                        .call_data
-                        .0
-                        .iter()
-                        .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 });
                     #[cfg(feature = "enable-sign-verify")]
                     let tx_sign_hash = assigned_sig_verif.msg_hash_rlc.value().copied();
                     #[cfg(not(feature = "enable-sign-verify"))]
@@ -1137,16 +1186,8 @@ impl<F: Field> TxCircuit<F> {
                     };
                     for (tag, rlp_tag, value) in [
                         // need to be in same order as that tx table load function uses
-                        (
-                            Nonce,
-                            RlpTxTag::Nonce,
-                            Value::known(F::from(tx.nonce.as_u64())),
-                        ),
-                        (
-                            Gas,
-                            RlpTxTag::Gas,
-                            Value::known(F::from(tx.gas_limit.as_u64())),
-                        ),
+                        (Nonce, RlpTxTag::Nonce, Value::known(F::from(tx.nonce))),
+                        (Gas, RlpTxTag::Gas, Value::known(F::from(tx.gas))),
                         (
                             GasPrice,
                             RlpTxTag::GasPrice,
@@ -1157,22 +1198,17 @@ impl<F: Field> TxCircuit<F> {
                         (
                             CallerAddress,
                             RlpTxTag::Padding, // FIXME
-                            Value::known(tx.from.to_scalar().expect("tx.from too big")),
+                            Value::known(tx.caller_address.to_scalar().expect("tx.from too big")),
                         ),
                         (
                             CalleeAddress,
                             RlpTxTag::To,
-                            Value::known(
-                                tx.to
-                                    .unwrap_or_else(Address::zero)
-                                    .to_scalar()
-                                    .expect("tx.to too big"),
-                            ),
+                            Value::known(tx.callee_address.to_scalar().expect("tx.to too big")),
                         ),
                         (
                             IsCreate,
                             RlpTxTag::Padding, // FIXME
-                            Value::known(F::from(tx.to.is_none() as u64)),
+                            Value::known(F::from(tx.is_create as u64)),
                         ),
                         (
                             TxFieldTag::Value,
@@ -1184,12 +1220,12 @@ impl<F: Field> TxCircuit<F> {
                         (
                             CallDataLength,
                             RlpTxTag::DataPrefix,
-                            Value::known(F::from(tx.call_data.0.len() as u64)),
+                            Value::known(F::from(tx.call_data.len() as u64)),
                         ),
                         (
                             CallDataGasCost,
                             RlpTxTag::Padding, // FIXME
-                            Value::known(F::from(call_data_gas_cost)),
+                            Value::known(F::from(tx.call_data_gas_cost)),
                         ),
                         (SigV, RlpTxTag::SigV, Value::known(F::from(tx.v))),
                         (
@@ -1263,7 +1299,7 @@ impl<F: Field> TxCircuit<F> {
                                     self.txs
                                         .iter()
                                         .enumerate()
-                                        .find(|(_i, tx)| tx.call_data.len() > 0)
+                                        .find(|(_i, tx)| !tx.call_data.is_empty())
                                         .map(|(i, _tx)| i + 1)
                                         .unwrap_or_else(|| 0)
                                 } else {
@@ -1346,7 +1382,7 @@ impl<F: Field> TxCircuit<F> {
                 for (i, tx) in self.txs.iter().enumerate() {
                     let mut calldata_gas_cost = 0;
                     let calldata_length = tx.call_data.len();
-                    for (index, byte) in tx.call_data.0.iter().enumerate() {
+                    for (index, byte) in tx.call_data.iter().enumerate() {
                         assert!(calldata_count < self.max_calldata);
                         let (tx_id_next, is_final) = if index == calldata_length - 1 {
                             if i == self.txs.len() - 1 {
@@ -1357,7 +1393,7 @@ impl<F: Field> TxCircuit<F> {
                                         .iter()
                                         .skip(i + 1)
                                         .enumerate()
-                                        .find(|(_, tx)| tx.call_data.len() > 0)
+                                        .find(|(_, tx)| !tx.call_data.is_empty())
                                         .map(|(j, _)| j + 1)
                                         .unwrap_or_else(|| 0),
                                     true,
@@ -1413,12 +1449,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             block.context.chain_id().as_u64(),
-            block
-                .context
-                .ctxs
-                .values()
-                .flat_map(|block| block.eth_block.transactions.iter().map(|tx| tx.into()))
-                .collect(),
+            block.txs.clone(),
         )
     }
 
@@ -1430,16 +1461,26 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= self.max_txs);
+
+        let padding_txs = (self.txs.len()..self.max_txs)
+            .into_iter()
+            .map(|i| {
+                let mut tx = Transaction::dummy(self.chain_id);
+                tx.id = i + 1;
+                tx
+            })
+            .collect::<Vec<Transaction>>();
         let sign_datas: Vec<SignData> = self
             .txs
             .iter()
+            .chain(padding_txs.iter())
             .map(|tx| {
-                tx.sign_data(self.chain_id).map_err(|e| {
+                tx.sign_data().map_err(|e| {
                     error!("tx_to_sign_data error for tx {:?}", e);
                     Error::Synthesis
                 })
             })
-            .try_collect()?;
+            .collect::<Result<Vec<SignData>, Error>>()?;
 
         config.load_aux_tables(layouter)?;
         #[cfg(feature = "enable-sign-verify")]
@@ -1447,17 +1488,25 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             let assigned_sig_verifs =
                 self.sign_verify
                     .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
-            self.assign_tx_table(
+            self.assign(
                 config,
                 challenges,
                 layouter,
                 assigned_sig_verifs,
                 Vec::new(),
+                &padding_txs,
             )?;
         }
         #[cfg(not(feature = "enable-sign-verify"))]
         {
-            self.assign_tx_table(config, challenges, layouter, Vec::new(), sign_datas)?;
+            self.assign(
+                config,
+                challenges,
+                layouter,
+                Vec::new(),
+                sign_datas,
+                &padding_txs,
+            )?;
         }
         Ok(())
     }
@@ -1501,26 +1550,28 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
 
-        config.keccak_table.dev_load(
-            &mut layouter,
-            &keccak_inputs_tx_circuit(&self.txs[..], self.chain_id).map_err(|e| {
-                error!("keccak_inputs_tx_circuit error: {:?}", e);
-                Error::Synthesis
-            })?,
-            &challenges,
-        )?;
-        config.tx_table.load(
-            &mut layouter,
-            &signed_tx_from_geth_tx(&self.txs, self.chain_id)
-                .into_iter()
-                .map(|tx| tx.tx)
-                .collect::<Vec<witness::Transaction>>(),
-            self.max_txs,
-            &challenges,
-        )?;
+        let padding_txs = (self.txs.len()..self.max_txs)
+            .into_iter()
+            .map(|i| {
+                let mut tx = Transaction::dummy(self.chain_id);
+                tx.id = i + 1;
+                tx
+            })
+            .collect::<Vec<Transaction>>();
+
+        config
+            .keccak_table
+            .dev_load(&mut layouter, &self.keccak_inputs()?, &challenges)?;
+        config
+            .tx_table
+            .load(&mut layouter, &self.txs, self.max_txs, &challenges)?;
         config.rlp_table.dev_load(
             &mut layouter,
-            signed_tx_from_geth_tx(self.txs.as_slice(), self.chain_id),
+            self.txs
+                .iter()
+                .chain(padding_txs.iter())
+                .map(|tx| tx.into())
+                .collect(),
             &challenges,
         )?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
@@ -1558,7 +1609,7 @@ mod tx_circuit_tests {
     #[test]
     fn tx_circuit_2tx() {
         const NUM_TXS: usize = 2;
-        const MAX_TXS: usize = 2;
+        const MAX_TXS: usize = 4;
         const MAX_CALLDATA: usize = 32;
 
         let k = 19;
@@ -1570,8 +1621,13 @@ mod tx_circuit_tests {
                     mock::CORRECT_MOCK_TXS[3].clone()
                 ]
                 .iter()
-                .map(|tx| Transaction::from(tx.clone()))
-                .collect_vec(),
+                .enumerate()
+                .map(|(i, tx)| {
+                    let mut mock_tx = tx.clone();
+                    mock_tx.transaction_idx((i + 1) as u64);
+                    mock_tx.into()
+                })
+                .collect(),
                 mock::MOCK_CHAIN_ID.as_u64(),
                 MAX_TXS,
                 MAX_CALLDATA

@@ -593,7 +593,7 @@ mod super_circuit_tests {
 
         block.sign(&wallets);
 
-        let (k, circuit, instance, _) = SuperCircuit::<_, 1, 32, 64, 256>::build(block).unwrap();
+        let (k, circuit, instance, _) = SuperCircuit::<_, 2, 32, 64, 256>::build(block).unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {
