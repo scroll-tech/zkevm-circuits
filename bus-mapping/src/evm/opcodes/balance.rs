@@ -1,7 +1,6 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
-use crate::state_db::Account;
 use crate::Error;
 use eth_types::{GethExecStep, ToAddress, ToWord, Word, U256};
 
@@ -59,14 +58,15 @@ impl Opcode for Balance {
         )?;
 
         // Read account balance.
-        let (exists, &Account { balance, .. }) = state.sdb.get_account(&address);
+        let account = state.sdb.get_account(&address).1;
+        let exists = !account.is_empty();
         if exists {
             state.account_read(
                 &mut exec_step,
                 address,
                 AccountField::Balance,
-                balance,
-                balance,
+                account.balance,
+                account.balance,
             )?;
         } else {
             state.account_read(

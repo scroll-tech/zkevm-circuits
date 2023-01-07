@@ -165,6 +165,7 @@ mod test {
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word,
     };
+    use halo2_proofs::halo2curves::bn256::Fr;
 
     use mock::TestContext;
 
@@ -320,7 +321,7 @@ mod test {
         builder
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db);
         assert_eq!(run_test_circuit(block.unwrap()), Ok(()));
     }
 

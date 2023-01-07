@@ -37,7 +37,7 @@ pub struct MptUpdates(BTreeMap<Key, MptUpdate>);
 
 /// The field element encoding of an MPT update, which is used by the MptTable
 #[derive(Debug, Clone, Copy)]
-pub struct MptUpdateRow<F>([F; 7]);
+pub struct MptUpdateRow<F>(pub(crate) [F; 7]);
 
 impl MptUpdates {
     pub(crate) fn get(&self, row: &Rw) -> Option<MptUpdate> {

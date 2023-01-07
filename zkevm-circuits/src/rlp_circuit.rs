@@ -1628,6 +1628,10 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, SignedTransaction> {
     ) -> Result<(), Error> {
         config.assign(layouter, &self.inputs, self.size, challenges)
     }
+
+    fn min_num_rows_block(_block: &crate::witness::Block<F>) -> usize {
+        todo!()
+    }
 }
 
 impl<F: Field> Circuit<F> for RlpCircuit<F, SignedTransaction> {

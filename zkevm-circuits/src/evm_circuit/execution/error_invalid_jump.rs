@@ -238,6 +238,7 @@ mod test {
     use eth_types::evm_types::OpcodeId;
     use eth_types::geth_types::Account;
     use eth_types::{address, bytecode, Address, ToWord, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::TestContext;
 
     fn test_invalid_jump(destination: usize, out_of_range: bool) {
@@ -448,7 +449,7 @@ mod test {
         builder
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(run_test_circuit(block), Ok(()));
     }
 

@@ -247,7 +247,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
         // rw_counter increase from copy table lookup is `msize` memory reads + `msize`
-        // log writes.
+        // log writes when `is_persistent` is true.
         self.copy_rwc_inc.assign(
             region,
             offset,
@@ -270,24 +270,46 @@ mod test {
 
     use crate::test_util::run_test_circuits;
 
-    //TODO：add is_persistent = false cases
     #[test]
     fn log_gadget_simple() {
+        // 1. tests for is_persistent = true cases
         // zero topic: log0
-        test_log_ok(&[]);
+        test_log_ok(&[], true);
         // one topic: log1
-        test_log_ok(&[Word::from(0xA0)]);
+        test_log_ok(&[Word::from(0xA0)], true);
         // two topics: log2
-        test_log_ok(&[Word::from(0xA0), Word::from(0xef)]);
+        test_log_ok(&[Word::from(0xA0), Word::from(0xef)], true);
         // three topics: log3
-        test_log_ok(&[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)]);
+        test_log_ok(
+            &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
+            true,
+        );
         // four topics: log4
-        test_log_ok(&[
-            Word::from(0xA0),
-            Word::from(0xef),
-            Word::from(0xb0),
-            Word::from(0x37),
-        ]);
+        test_log_ok(
+            &[
+                Word::from(0xA0),
+                Word::from(0xef),
+                Word::from(0xb0),
+                Word::from(0x37),
+            ],
+            true,
+        );
+
+        // 2. tests for is_persistent = false cases
+        // log0
+        test_log_ok(&[], false);
+        // log1
+        test_log_ok(&[Word::from(0xA0)], false);
+        // log4
+        test_log_ok(
+            &[
+                Word::from(0xA0),
+                Word::from(0xef),
+                Word::from(0xb0),
+                Word::from(0x37),
+            ],
+            false,
+        );
     }
 
     #[test]
@@ -310,7 +332,7 @@ mod test {
     }
 
     // test single log code and single copy log step
-    fn test_log_ok(topics: &[Word]) {
+    fn test_log_ok(topics: &[Word], is_persistent: bool) {
         let mut pushdata = [0u8; 320];
         rand::thread_rng().try_fill(&mut pushdata[..]).unwrap();
         let mut code_prepare = prepare_code(&pushdata, 1);
@@ -337,7 +359,13 @@ mod test {
         code.push(32, Word::from(msize));
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
-        code.write_op(OpcodeId::STOP);
+        if is_persistent {
+            code.write_op(OpcodeId::STOP);
+        } else {
+            // make current call failed with false persistent
+            code.write_op(OpcodeId::INVALID(0xfe));
+        }
+
         code_prepare.append(&code);
 
         assert_eq!(

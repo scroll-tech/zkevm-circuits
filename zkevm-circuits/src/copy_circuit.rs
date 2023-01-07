@@ -432,10 +432,15 @@ impl<F: Field> CopyCircuitConfig<F> {
                 let mut offset = 0;
                 for (ev_idx, copy_event) in block.copy_events.iter().enumerate() {
                     log::debug!(
-                        "offset is {} before {}th copy event: {:?}",
+                        "offset is {} before {}th copy event(bytes len: {}): {:?}",
                         offset,
                         ev_idx,
-                        copy_event
+                        copy_event.bytes.len(),
+                        {
+                            let mut copy_event = copy_event.clone();
+                            copy_event.bytes.clear();
+                            copy_event
+                        }
                     );
                     for (step_idx, (tag, table_row, circuit_row)) in
                         CopyTable::assignments(copy_event, challenges)
@@ -653,6 +658,11 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
         Self::new(block.circuits_params.max_txs, block.clone())
     }
 
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+        block.copy_events.iter().map(|c| c.bytes.len() * 2).sum()
+    }
+
     /// Make the assignments to the CopyCircuit
     fn synthesize_sub(
         &self,
@@ -762,6 +772,7 @@ mod tests {
         mock::BlockData,
     };
     use eth_types::{bytecode, geth_types::GethData, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::TestContext;
 
@@ -863,28 +874,28 @@ mod tests {
     #[test]
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(14, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_codecopy() {
         let builder = gen_codecopy_data();
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(10, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_sha3() {
         let builder = gen_sha3_data();
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(20, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_tx_log() {
         let builder = gen_tx_log_data();
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(10, block), Ok(()));
     }
 

@@ -184,7 +184,7 @@ async fn test_evm_circuit_all_block() {
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         if builder.block.txs.is_empty() {
             log::info!("skip empty block");
             return;
@@ -215,7 +215,7 @@ async fn test_print_circuits_size() {
             return;
         }
 
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         let evm_rows = EvmCircuit::get_num_rows_required(&block);
         let keccak_inputs = keccak_inputs(&builder.block, &builder.code_db).unwrap();
 
@@ -252,7 +252,7 @@ async fn test_evm_circuit_batch() {
         return;
     }
 
-    let block = block_convert(&builder.block, &builder.code_db).unwrap();
+    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
     log::info!("tx num: {}", builder.block.txs.len());
     run_test_circuit(block).unwrap();
     log::info!("prove done");

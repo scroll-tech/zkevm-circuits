@@ -124,8 +124,8 @@ impl<F: Field> MulAddWordsGadget<F> {
             + a_limbs[2] * b_limbs[1]
             + a_limbs[3] * b_limbs[0];
 
-        let carry_lo = (t0 + (t1 << 64) + c_lo - d_lo) >> 128;
-        let carry_hi = (t2 + (t3 << 64) + c_hi + carry_lo - d_hi) >> 128;
+        let carry_lo = (t0 + (t1 << 64) + c_lo).saturating_sub(d_lo) >> 128;
+        let carry_hi = (t2 + (t3 << 64) + c_hi + carry_lo).saturating_sub(d_hi) >> 128;
 
         self.carry_lo
             .iter()
@@ -347,7 +347,20 @@ mod tests {
             false,
         );
 
-        // 100 * 54 + low_max == low_max + 5400, no overflow
+        // 1 * 1 + 1 != word_max, no underflow
+        try_test!(
+            MulAddGadgetContainer<Fr>,
+            vec![
+                Word::from(1),
+                Word::from(1),
+                Word::from(1),
+                Word::MAX,
+                Word::from(0)
+            ],
+            false,
+        );
+
+        // 100 * 54 + high_max == high_max + 5400, no overflow
         try_test!(
             MulAddGadgetContainer<Fr>,
             vec![
@@ -360,7 +373,7 @@ mod tests {
             false,
         );
 
-        // high_max + low_max + 1 == 0 with overflow 1
+        // (low_max + 1) * 1 + high_max == 0 with overflow 1
         try_test!(
             MulAddGadgetContainer<Fr>,
             vec![

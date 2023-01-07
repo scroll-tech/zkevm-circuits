@@ -1,4 +1,4 @@
-//! State circuit benchmarks
+//! Bytecode circuit benchmarks
 
 #[cfg(test)]
 mod tests {

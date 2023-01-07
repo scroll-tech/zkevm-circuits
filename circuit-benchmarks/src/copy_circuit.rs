@@ -1,4 +1,4 @@
-//! State circuit benchmarks
+//! Copy circuit benchmarks
 
 #[cfg(test)]
 mod tests {

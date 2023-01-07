@@ -92,6 +92,7 @@ mod test {
     };
     use bus_mapping::mock::BlockData;
     use eth_types::{address, bytecode, geth_types::GethData, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::TestContext;
 
     fn test_ok() {
@@ -150,7 +151,7 @@ mod test {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .expect("could not handle block tx");
-        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 
         // The above block has 2 steps (GAS and STOP). We forcefully assign a
         // wrong `gas_left` value for the second step, to assert that

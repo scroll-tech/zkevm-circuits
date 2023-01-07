@@ -1318,7 +1318,16 @@ fn tracer_err_invalid_opcode() {
 }
 
 #[test]
-fn tracer_err_write_protection() {
+fn test_tracer_err_write_protection() {
+    // test write_protection error happens in sstore
+    tracer_err_write_protection(false);
+    // test write_protection error happens in call
+    tracer_err_write_protection(true);
+}
+
+// this helper generates write_protection error for sstore by default, if
+// is_call, for call opcode.
+fn tracer_err_write_protection(is_call: bool) {
     // code_a calls code_b via static call, which tries to SSTORE and fails.
     let code_a = bytecode! {
         PUSH1(0x0) // retLength
@@ -1331,13 +1340,22 @@ fn tracer_err_write_protection() {
 
         PUSH2(0xaa)
     };
-    let code_b = bytecode! {
+    let mut code_b = bytecode! {
         PUSH1(0x01) // value
         PUSH1(0x02) // key
-        SSTORE
-
-        PUSH3(0xbb)
     };
+    if is_call {
+        code_b.push(1, Word::zero());
+        code_b.push(1, Word::from(0x20));
+        code_b.push(1, Word::from(0x10)); // value
+        code_b.push(32, *WORD_ADDR_B); //addr
+        code_b.push(32, Word::from(0x1000)); // gas
+        code_b.write_op(OpcodeId::CALL);
+    } else {
+        code_b.write_op(OpcodeId::SSTORE);
+    }
+    code_b.push(2, Word::from(0xbb));
+
     // Get the execution steps from the external tracer
     let block: GethData = TestContext::<3, 2>::new_with_logger_config(
         None,
@@ -1363,10 +1381,15 @@ fn tracer_err_write_protection() {
     .unwrap()
     .into();
 
-    let index = 9; // SSTORE
+    let index = if is_call { 14 } else { 9 };
     let step = &block.geth_traces[0].struct_logs[index];
     let next_step = block.geth_traces[0].struct_logs.get(index + 1);
-    assert_eq!(step.op, OpcodeId::SSTORE);
+    let opcode = if is_call {
+        OpcodeId::CALL
+    } else {
+        OpcodeId::SSTORE
+    };
+    assert_eq!(step.op, opcode);
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     builder.tx_ctx.call_is_success.push(false);

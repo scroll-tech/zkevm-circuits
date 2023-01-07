@@ -55,6 +55,11 @@ pub use halo2_proofs::halo2curves::{
 };
 use halo2_proofs::plonk::Fixed;
 
+/// Number of rows of one tx occupies in the fixed part of tx table
+pub const TX_LEN: usize = 19;
+/// Offset of TxHash tag in the tx table
+pub const TX_HASH_OFFSET: usize = 18;
+
 #[derive(Clone, Debug)]
 struct TagTable {
     tx_tag: Column<Fixed>,
@@ -1127,6 +1132,13 @@ impl<F: Field> TxCircuit<F> {
         Ok(inputs)
     }
 
+    /// Return the minimum number of rows required to prove an input of a
+    /// particular size.
+    pub fn min_num_rows(txs_len: usize, call_data_len: usize) -> usize {
+        let tx_table_len = txs_len * TX_LEN + call_data_len;
+        std::cmp::max(tx_table_len, SignVerifyChip::<F>::min_num_rows(txs_len))
+    }
+
     fn assign(
         &self,
         config: &TxCircuitConfig<F>,
@@ -1453,6 +1465,14 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         )
     }
 
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+        Self::min_num_rows(
+            block.circuits_params.max_txs,
+            block.circuits_params.max_calldata,
+        )
+    }
+
     /// Make the assignments to the TxCircuit
     fn synthesize_sub(
         &self,
@@ -1581,6 +1601,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
 #[cfg(test)]
 mod tx_circuit_tests {
     use super::*;
+    use crate::util::log2_ceil;
     use eth_types::address;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
@@ -1589,13 +1610,15 @@ mod tx_circuit_tests {
     use mock::AddrOrWallet;
     use pretty_assertions::assert_eq;
 
+    const NUM_BLINDING_ROWS: usize = 64;
+
     fn run<F: Field>(
-        k: u32,
         txs: Vec<Transaction>,
         chain_id: u64,
         max_txs: usize,
         max_calldata: usize,
     ) -> Result<(), Vec<VerifyFailure>> {
+        let k = log2_ceil(NUM_BLINDING_ROWS + TxCircuit::<Fr>::min_num_rows(max_txs, max_calldata));
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
         let circuit = TxCircuit::<F>::new(max_txs, max_calldata, chain_id, txs);
 
@@ -1607,15 +1630,13 @@ mod tx_circuit_tests {
     }
 
     #[test]
-    fn tx_circuit_2tx() {
+    fn tx_circuit_2tx_2max_tx() {
         const NUM_TXS: usize = 2;
         const MAX_TXS: usize = 4;
         const MAX_CALLDATA: usize = 32;
 
-        let k = 19;
         assert_eq!(
             run::<Fr>(
-                k,
                 [
                     mock::CORRECT_MOCK_TXS[1].clone(),
                     mock::CORRECT_MOCK_TXS[3].clone()
@@ -1637,7 +1658,7 @@ mod tx_circuit_tests {
     }
 
     #[test]
-    fn tx_circuit_1tx() {
+    fn tx_circuit_1tx_1max_tx() {
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
 
@@ -1645,11 +1666,19 @@ mod tx_circuit_tests {
 
         let tx: Transaction = mock::CORRECT_MOCK_TXS[0].clone().into();
 
-        let k = 19;
-        assert_eq!(
-            run::<Fr>(k, vec![tx], chain_id, MAX_TXS, MAX_CALLDATA),
-            Ok(())
-        );
+        assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
+    }
+
+    #[test]
+    fn tx_circuit_1tx_2max_tx() {
+        const MAX_TXS: usize = 2;
+        const MAX_CALLDATA: usize = 32;
+
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
+
+        let tx: Transaction = mock::CORRECT_MOCK_TXS[0].clone().into();
+
+        assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
     }
 
     #[test]
@@ -1661,9 +1690,7 @@ mod tx_circuit_tests {
         // This address doesn't correspond to the account that signed this tx.
         tx.from = AddrOrWallet::from(address!("0x1230000000000000000000000000000000000456"));
 
-        let k = 19;
         assert!(run::<Fr>(
-            k,
             vec![tx.into()],
             mock::MOCK_CHAIN_ID.as_u64(),
             MAX_TXS,

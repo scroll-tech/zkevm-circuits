@@ -20,7 +20,7 @@ use halo2_proofs::plonk::Error;
 pub(crate) struct ModGadget<F> {
     k: util::Word<F>,
     a_or_zero: util::Word<F>,
-    mul: MulAddWordsGadget<F>,
+    mul_add_words: MulAddWordsGadget<F>,
     n_is_zero: IsZeroGadget<F>,
     a_or_is_zero: IsZeroGadget<F>,
     eq: IsEqualGadget<F>,
@@ -33,11 +33,11 @@ impl<F: Field> ModGadget<F> {
         let a_or_zero = cb.query_word();
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
         let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.cells));
-        let mul = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
+        let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
         let eq = IsEqualGadget::construct(cb, a.expr(), a_or_zero.expr());
         let lt = LtWordGadget::construct(cb, r, n);
-        // Constraint the aux variable a_or_zero to be =a or =0 if n==0:
-        // (a == a_zero) ^ (n == 0 & a_or_zero == 0)
+        // Constrain the aux variable a_or_zero to be =a or =0 if n==0:
+        // (a == a_or_zero) ^ (n == 0 & a_or_zero == 0)
         cb.add_constraint(
             " (1 - (a == a_or_zero)) * ( 1 - (n == 0) * (a_or_zero == 0)",
             (1.expr() - eq.expr()) * (1.expr() - n_is_zero.expr() * a_or_is_zero.expr()),
@@ -49,10 +49,13 @@ impl<F: Field> ModGadget<F> {
             1.expr() - lt.expr() - n_is_zero.expr(),
         );
 
+        // Constrain k * n + r no overflow
+        cb.add_constraint("overflow == 0 for k * n + r", mul_add_words.overflow());
+
         Self {
             k,
             a_or_zero,
-            mul,
+            mul_add_words,
             n_is_zero,
             a_or_is_zero,
             eq,
@@ -60,6 +63,7 @@ impl<F: Field> ModGadget<F> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -67,9 +71,9 @@ impl<F: Field> ModGadget<F> {
         a: Word,
         n: Word,
         r: Word,
+        k: Word,
         randomness: F,
     ) -> Result<(), Error> {
-        let k = if n.is_zero() { Word::zero() } else { a / n };
         let a_or_zero = if n.is_zero() { Word::zero() } else { a };
 
         self.k.assign(region, offset, Some(k.to_le_bytes()))?;
@@ -80,7 +84,8 @@ impl<F: Field> ModGadget<F> {
         self.n_is_zero.assign(region, offset, F::from(n_sum))?;
         self.a_or_is_zero
             .assign(region, offset, F::from(a_or_zero_sum))?;
-        self.mul.assign(region, offset, [k, n, r, a_or_zero])?;
+        self.mul_add_words
+            .assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
         self.eq.assign(
             region,
@@ -97,7 +102,7 @@ impl<F: Field> ModGadget<F> {
 mod tests {
     use super::test_util::*;
     use super::*;
-    use eth_types::Word;
+    use eth_types::{Word, U256, U512};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
 
@@ -131,14 +136,20 @@ mod tests {
         ) -> Result<(), Error> {
             let a = witnesses[0];
             let n = witnesses[1];
-            let a_reduced = witnesses[2];
+            let r = witnesses[2];
+            let k =
+                witnesses
+                    .get(3)
+                    .copied()
+                    .unwrap_or(if n.is_zero() { Word::zero() } else { a / n });
+
             let offset = 0;
 
             self.a.assign(region, offset, Some(a.to_le_bytes()))?;
             self.n.assign(region, offset, Some(n.to_le_bytes()))?;
-            self.r
-                .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
-            self.mod_gadget.assign(region, 0, a, n, a_reduced, F::one())
+            self.r.assign(region, offset, Some(r.to_le_bytes()))?;
+
+            self.mod_gadget.assign(region, 0, a, n, r, k, F::one())
         }
     }
 
@@ -183,6 +194,25 @@ mod tests {
 
     #[test]
     fn test_mod_n_unexpected_rem() {
+        // test soundness by manipulating k to make a' = k * n + r and a' >=
+        // 2^256 cause overflow and trigger soundness bug: (a' != a) ^ a' ≡ a
+        // (mod 2^256)
+        // Here, the attacker tries to convince you of a false statement `2 % 3 = 0` by
+        // showing you `2 = ((2^256 + 2) / 3) * 3 + 0`. In the `MulAddWordsGadget`, `k *
+        // n + r = a  (modulo 2**256)` would have been a valid statement. But the gadget
+        // would have the overflow = 1. Since we constrain the overflow to be 0 in the
+        // ModGadget, the statement would be invalid in the ModGadget.
+        try_test!(
+            ModGadgetTestContainer<Fr>,
+            vec![
+                Word::from(2),
+                Word::from(3),
+                Word::from(0),
+                /* magic number (2^256 + 2) / 3, and 2^256 + 2 is divisible by 3 */
+                U256::try_from(U512([2, 0, 0, 0, 1, 0, 0, 0]) / U512::from(3)).unwrap(),
+            ],
+            false,
+        );
         try_test!(
             ModGadgetTestContainer<Fr>,
             vec![Word::from(1), Word::from(1), Word::from(1)],

@@ -9,7 +9,7 @@ use ethers_core::types::TransactionRequest;
 use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
-use halo2_proofs::dev::MockProver;
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{super_circuit::SuperCircuit, test_util::BytecodeTestConfig};
@@ -330,7 +330,7 @@ pub fn run_test(
         geth_data.sign(&wallets);
 
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<_, 1, 32, 255>::build(geth_data).unwrap();
+            SuperCircuit::<Fr, 1, 32, 255>::build(geth_data).unwrap();
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();

@@ -100,9 +100,10 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         }
     }
 
-    /// Repeatedly assign the locally cached witnesses.
-    /// This method can be used as a "quick" path for assignment for repeated
-    /// padding rows
+    /// This method replicates the assignment of 1 row at height_start (which
+    /// must be already assigned via the CachedRegion) into a range of rows
+    /// indicated by offset_begin, offset_end. It can be used as a "quick"
+    /// path for assignment for repeated padding rows.
     pub fn replicate_assignment_for_range<A, AR>(
         &mut self,
         annotation: A,

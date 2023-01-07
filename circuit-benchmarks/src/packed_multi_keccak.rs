@@ -1,4 +1,4 @@
-//! State circuit benchmarks
+//! Packed multi keccak circuit benchmarks
 
 #[cfg(test)]
 mod tests {

@@ -9,11 +9,17 @@ use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::H256;
 use eth_types::{Field, ToBigEndian, Word};
 use ethers_core::utils::keccak256;
-use halo2_proofs::plonk::{Expression, Fixed, Instance, SecondPhase};
+use halo2_proofs::plonk::{Expression, Fixed, Instance};
+
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
 
 use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
+use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness::{Block, BlockContext, BlockContexts, Transaction};
+use crate::witness::{self, Block, BlockContext, BlockContexts, Transaction};
 use gadgets::util::{not, select, Expr};
 use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{
@@ -591,7 +597,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 tx_hash_cell.cell(),
                 Cell {
                     region_index: RegionIndex(1), // FIXME: this is not safe
-                    row_offset: i * 19 + 18,
+                    row_offset: i * TX_LEN + TX_HASH_OFFSET,
                     column: self.tx_table.value.into(),
                 },
             )?;
@@ -849,6 +855,13 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             block.circuits_params.max_inner_blocks,
             block,
         )
+    }
+
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+        BLOCK_HEADER_BYTES_NUM * block.circuits_params.max_inner_blocks
+            + KECCAK_DIGEST_SIZE * block.circuits_params.max_txs
+            + 33
     }
 
     /// Compute the public inputs for this circuit.

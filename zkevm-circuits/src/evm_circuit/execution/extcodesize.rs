@@ -16,20 +16,21 @@ use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
-pub(crate) struct BalanceGadget<F> {
+pub(crate) struct ExtcodesizeGadget<F> {
     same_context: SameContextGadget<F>,
     address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
     reversion_info: ReversionInfo<F>,
     tx_id: Cell<F>,
     is_warm: Cell<F>,
-    balance: Cell<F>,
     exists: Cell<F>,
+    code_hash: Cell<F>,
+    code_size: Cell<F>,
 }
 
-impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
-    const NAME: &'static str = "BALANCE";
+impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
+    const NAME: &'static str = "EXTCODESIZE";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::BALANCE;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODESIZE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let address = cb.query_rlc();
@@ -46,14 +47,15 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             Some(&mut reversion_info),
         );
 
-        let balance = cb.query_cell();
         let exists = cb.query_bool();
-        cb.condition(exists.expr(), |cb| {
+        let code_hash = cb.query_cell();
+        let code_size = cb.condition(exists.expr(), |cb| {
             cb.account_read(
                 from_bytes::expr(&address.cells),
-                AccountFieldTag::Balance,
-                balance.expr(),
+                AccountFieldTag::CodeHash,
+                code_hash.expr(),
             );
+            cb.bytecode_length(code_hash.expr())
         });
         cb.condition(1.expr() - exists.expr(), |cb| {
             cb.account_read(
@@ -63,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             );
         });
 
-        cb.stack_push(select::expr(exists.expr(), balance.expr(), 0.expr()));
+        cb.stack_push(select::expr(exists.expr(), code_size.expr(), 0.expr()));
 
         let gas_cost = select::expr(
             is_warm.expr(),
@@ -86,11 +88,12 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         Self {
             same_context,
             address,
-            reversion_info,
             tx_id,
+            reversion_info,
             is_warm,
-            balance,
             exists,
+            code_hash,
+            code_size,
         }
     }
 
@@ -124,28 +127,33 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm)))?;
 
-        let (balance, exists) = match block.rws[step.rw_indices[5]] {
+        let (exists, code_hash) = match block.rws[step.rw_indices[5]] {
             Rw::Account {
-                field_tag: AccountFieldTag::Balance,
+                field_tag: AccountFieldTag::CodeHash,
                 value,
                 ..
-            } => (value, true),
+            } => (true, value),
             Rw::Account {
                 field_tag: AccountFieldTag::NonExisting,
                 ..
-            } => (0.into(), false),
+            } => (false, 0.into()),
             _ => unreachable!(),
         };
-        self.balance.assign(
+
+        let code_size = block.rws[step.rw_indices[6]].stack_value().as_u64();
+
+        self.exists
+            .assign(region, offset, Value::known(F::from(exists)))?;
+        self.code_hash.assign(
             region,
             offset,
             Value::known(RandomLinearCombination::random_linear_combine(
-                balance.to_le_bytes(),
+                code_hash.to_le_bytes(),
                 block.randomness,
             )),
         )?;
-        self.exists
-            .assign(region, offset, Value::known(F::from(exists)))?;
+        self.code_size
+            .assign(region, offset, Value::known(F::from(code_size)))?;
 
         Ok(())
     }
@@ -156,129 +164,48 @@ mod test {
     use crate::evm_circuit::test::rand_bytes;
     use crate::test_util::run_test_circuits;
     use eth_types::geth_types::Account;
-    use eth_types::{address, bytecode, Address, Bytecode, ToWord, Word, U256};
-    use lazy_static::lazy_static;
-    use mock::TestContext;
-
-    lazy_static! {
-        static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
-    }
+    use eth_types::{bytecode, Bytecode, ToWord, Word};
+    use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
 
     #[test]
-    fn balance_gadget_non_existing_account() {
-        test_root_ok(&None, false);
-        test_internal_ok(0x20, 0x00, &None, false);
-        test_internal_ok(0x1010, 0xff, &None, false);
-    }
-
-    #[test]
-    fn balance_gadget_empty_account() {
-        let account = Some(Account::default());
-
-        test_root_ok(&account, false);
-        test_internal_ok(0x20, 0x00, &account, false);
-        test_internal_ok(0x1010, 0xff, &account, false);
-    }
-
-    #[test]
-    fn balance_gadget_cold_account() {
-        let account = Some(Account {
-            address: *TEST_ADDRESS,
-            balance: U256::from(900),
+    fn test_extcodesize_gadget() {
+        let account = Account {
+            address: MOCK_ACCOUNTS[4],
+            code: MOCK_CODES[4].clone(),
             ..Default::default()
-        });
+        };
 
-        test_root_ok(&account, false);
-        test_internal_ok(0x20, 0x00, &account, false);
-        test_internal_ok(0x1010, 0xff, &account, false);
+        // Test for empty account.
+        test_ok(&Account::default(), false);
+        // Test for cold account.
+        test_ok(&account, false);
+        // Test for warm account.
+        test_ok(&account, true);
     }
 
-    #[test]
-    fn balance_gadget_warm_account() {
-        let account = Some(Account {
-            address: *TEST_ADDRESS,
-            balance: U256::from(900),
-            ..Default::default()
-        });
+    fn test_ok(account: &Account, is_warm: bool) {
+        let account_exists = !account.is_empty();
 
-        test_root_ok(&account, true);
-        test_internal_ok(0x20, 0x00, &account, true);
-        test_internal_ok(0x1010, 0xff, &account, true);
-    }
-
-    fn test_root_ok(account: &Option<Account>, is_warm: bool) {
-        let address = account.as_ref().map(|a| a.address).unwrap_or(*TEST_ADDRESS);
-
-        let mut code = Bytecode::default();
-        if is_warm {
-            code.append(&bytecode! {
-                PUSH20(address.to_word())
-                BALANCE
-                POP
-            });
-        }
-        code.append(&bytecode! {
-            PUSH20(address.to_word())
-            BALANCE
-            STOP
-        });
-
-        let ctx = TestContext::<3, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(address!("0x000000000000000000000000000000000000cafe"))
-                    .balance(Word::from(1_u64 << 20))
-                    .code(code);
-                // Set balance if account exists.
-                if let Some(account) = account {
-                    accs[1].address(address).balance(account.balance);
-                } else {
-                    accs[1]
-                        .address(address!("0x0000000000000000000000000000000000000010"))
-                        .balance(Word::from(1_u64 << 20));
-                }
-                accs[2]
-                    .address(address!("0x0000000000000000000000000000000000000020"))
-                    .balance(Word::from(1_u64 << 20));
-            },
-            |mut txs, accs| {
-                txs[0].to(accs[0].address).from(accs[2].address);
-            },
-            |block, _tx| block,
-        )
-        .unwrap();
-
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
-    }
-
-    fn test_internal_ok(
-        call_data_offset: usize,
-        call_data_length: usize,
-        account: &Option<Account>,
-        is_warm: bool,
-    ) {
-        let address = account.as_ref().map(|a| a.address).unwrap_or(*TEST_ADDRESS);
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
-        let mut code_b = Bytecode::default();
+        let mut bytecode_b = Bytecode::default();
         if is_warm {
-            code_b.append(&bytecode! {
-                PUSH20(address.to_word())
-                BALANCE
+            bytecode_b.append(&bytecode! {
+                PUSH20(account.address.to_word())
+                EXTCODESIZE
                 POP
             });
         }
-        code_b.append(&bytecode! {
-            PUSH20(address.to_word())
-            BALANCE
-            STOP
+        bytecode_b.append(&bytecode! {
+            PUSH20(account.address.to_word())
+            EXTCODESIZE
+            POP
         });
 
         // code A calls code B.
         let pushdata = rand_bytes(8);
-        let code_a = bytecode! {
+        let bytecode_a = bytecode! {
             // populate memory in A's context.
             PUSH8(Word::from_big_endian(&pushdata))
             PUSH1(0x00) // offset
@@ -286,8 +213,8 @@ mod test {
             // call ADDR_B.
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
+            PUSH32(0xff) // argsLength
+            PUSH32(0x1010) // argsOffset
             PUSH1(0x00) // value
             PUSH32(addr_b.to_word()) // addr
             PUSH32(0x1_0000) // gas
@@ -298,19 +225,15 @@ mod test {
         let ctx = TestContext::<4, 1>::new(
             None,
             |accs| {
-                accs[0].address(addr_b).code(code_b);
-                accs[1].address(addr_a).code(code_a);
-                // Set balance if account exists.
-                if let Some(account) = account {
-                    accs[2].address(address).balance(account.balance);
+                accs[0].address(addr_b).code(bytecode_b);
+                accs[1].address(addr_a).code(bytecode_a);
+                // Set code if account exists.
+                if account_exists {
+                    accs[2].address(account.address).code(account.code.clone());
                 } else {
-                    accs[2]
-                        .address(mock::MOCK_ACCOUNTS[2])
-                        .balance(Word::from(1_u64 << 20));
+                    accs[2].address(mock::MOCK_ACCOUNTS[2]).balance(*MOCK_1_ETH);
                 }
-                accs[3]
-                    .address(mock::MOCK_ACCOUNTS[3])
-                    .balance(Word::from(1_u64 << 20));
+                accs[3].address(mock::MOCK_ACCOUNTS[3]).balance(*MOCK_1_ETH);
             },
             |mut txs, accs| {
                 txs[0].to(accs[1].address).from(accs[3].address);

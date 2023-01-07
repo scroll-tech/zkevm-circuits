@@ -120,8 +120,12 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         self.words[1].assign(region, offset, Some(b.to_le_bytes()))?;
         self.words[2].assign(region, offset, Some(n.to_le_bytes()))?;
         self.words[3].assign(region, offset, Some(r.to_le_bytes()))?;
-        // 1. Reduction of a mod n
-        let a_reduced = if n.is_zero() { U256::zero() } else { a % n };
+        // 1. quotient and reduction of a mod n
+        let (k1, a_reduced) = if n.is_zero() {
+            (U256::zero(), U256::zero())
+        } else {
+            a.div_mod(n)
+        };
 
         // 2. Compute r = a*b mod n
         let prod = a_reduced.full_mul(b);
@@ -130,25 +134,25 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let d = U256::from_little_endian(&prod_bytes[32..64]);
         let e = U256::from_little_endian(&prod_bytes[0..32]);
 
-        let (r, k) = if n.is_zero() {
+        let (r, k2) = if n.is_zero() {
             (U256::zero(), U256::zero())
         } else {
             // k2 <= b , always fits in U256
             (r, U256::try_from(prod / n).unwrap())
         };
 
-        self.k.assign(region, offset, Some(k.to_le_bytes()))?;
+        self.k.assign(region, offset, Some(k2.to_le_bytes()))?;
         self.a_reduced
             .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
         self.d.assign(region, offset, Some(d.to_le_bytes()))?;
         self.e.assign(region, offset, Some(e.to_le_bytes()))?;
 
         self.modword
-            .assign(region, offset, a, n, a_reduced, block.randomness)?;
+            .assign(region, offset, a, n, a_reduced, k1, block.randomness)?;
         self.mul512_left
             .assign(region, offset, [a_reduced, b, d, e], None)?;
         self.mul512_right
-            .assign(region, offset, [k, n, d, e], Some(r))?;
+            .assign(region, offset, [k2, n, d, e], Some(r))?;
 
         self.lt.assign(region, offset, r, n)?;
 

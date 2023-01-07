@@ -330,6 +330,7 @@ mod test {
     use eth_types::{address, bytecode};
     use eth_types::{bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account};
     use eth_types::{Address, ToWord, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use itertools::Itertools;
     use mock::TestContext;
     use std::default::Default;
@@ -420,7 +421,7 @@ mod test {
         builder
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db);
         assert_eq!(run_test_circuit(block.unwrap()), Ok(()));
     }
 

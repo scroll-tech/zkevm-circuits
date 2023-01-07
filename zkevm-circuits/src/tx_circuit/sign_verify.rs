@@ -69,6 +69,28 @@ impl<F: Field> SignVerifyChip<F> {
             _marker: PhantomData,
         }
     }
+
+    /// Return the minimum number of rows required to prove an input of a
+    /// particular size.
+    pub fn min_num_rows(num_verif: usize) -> usize {
+        // The values rows_ecc_chip_aux, rows_ecdsa_chip_verification and
+        // rows_ecdsa_chip_verification have been obtained from log debugs while running
+        // the tx circuit with max_txs=1. For example:
+        // `RUST_LOG=debug RUST_BACKTRACE=1 cargo test tx_circuit_1tx_1max_tx --release
+        // --all-features -- --nocapture`
+        // The value rows_range_chip_table has been optained by patching the halo2
+        // library to report the number of rows used in the range chip table
+        // region. TODO: Figure out a way to get these numbers automatically.
+        let rows_range_chip_table = 295188;
+        let rows_ecc_chip_aux = 226;
+        let rows_ecdsa_chip_verification = 140360;
+        let rows_signature_address_verify = 76;
+        std::cmp::max(
+            rows_range_chip_table,
+            (rows_ecc_chip_aux + rows_ecdsa_chip_verification + rows_signature_address_verify)
+                * num_verif,
+        )
+    }
 }
 
 impl<F: Field> Default for SignVerifyChip<F> {
@@ -622,7 +644,12 @@ impl<F: Field> SignVerifyChip<F> {
 
         layouter.assign_region(
             || "ecc chip aux",
-            |region| self.assign_aux(&mut RegionCtx::new(region, 0), &mut ecc_chip),
+            |region| {
+                let mut ctx = RegionCtx::new(region, 0);
+                self.assign_aux(&mut ctx, &mut ecc_chip)?;
+                log::debug!("ecc chip aux: {} rows", ctx.offset());
+                Ok(())
+            },
         )?;
 
         let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
@@ -650,6 +677,7 @@ impl<F: Field> SignVerifyChip<F> {
                     let assigned_ecdsa = self.assign_ecdsa(&mut ctx, &chips, &signature)?;
                     assigned_ecdsas.push(assigned_ecdsa);
                 }
+                log::debug!("ecdsa chip verification: {} rows", ctx.offset());
                 Ok(assigned_ecdsas)
             },
         )?;
@@ -671,6 +699,7 @@ impl<F: Field> SignVerifyChip<F> {
                     )?;
                     assigned_sig_verifs.push(assigned_sig_verif);
                 }
+                log::debug!("signature address verify: {} rows", ctx.offset());
                 Ok(assigned_sig_verifs)
             },
         )

@@ -9,11 +9,7 @@ use bus_mapping::{
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 
-use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::circuit::Value;
-use halo2_proofs::halo2curves::bn256::Fr;
-
-use itertools::Itertools;
 
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 use crate::util::{Challenges, DEFAULT_RAND};
@@ -227,10 +223,10 @@ impl From<&circuit_input_builder::Block> for BlockContexts {
 }
 
 /// Convert a block struct in bus-mapping to a witness block used in circuits
-pub fn block_convert(
+pub fn block_convert<F: Field>(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
-) -> Result<Block<Fr>, Error> {
+) -> Result<Block<F>, Error> {
     let num_txs = block.txs().len();
     let last_block_num = block
         .headers
@@ -248,7 +244,7 @@ pub fn block_convert(
         .unwrap_or(1);
 
     Ok(Block {
-        randomness: Fr::from_u128(DEFAULT_RAND),
+        randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
@@ -267,24 +263,18 @@ pub fn block_convert(
         sigs: block.txs().iter().map(|tx| tx.signature).collect(),
         end_block_not_last: step_convert(&block.block_steps.end_block_not_last, last_block_num),
         end_block_last: step_convert(&block.block_steps.end_block_last, last_block_num),
-        bytecodes: block
-            .txs()
+        bytecodes: code_db
+            .0
             .iter()
-            .flat_map(|tx| {
-                tx.calls()
-                    .iter()
-                    .map(|call| call.code_hash)
-                    .unique()
-                    .into_iter()
-                    .map(|code_hash| {
-                        let bytes = code_db
-                            .0
-                            .get(&code_hash)
-                            .cloned()
-                            .expect("code db should has contain the code");
-                        let hash = Word::from_big_endian(code_hash.as_bytes());
-                        (hash, Bytecode { hash, bytes })
-                    })
+            .map(|(code_hash, bytes)| {
+                let hash = Word::from_big_endian(code_hash.as_bytes());
+                (
+                    hash,
+                    Bytecode {
+                        hash,
+                        bytes: bytes.clone(),
+                    },
+                )
             })
             .collect(),
         copy_events: block.copy_events.clone(),

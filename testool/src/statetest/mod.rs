@@ -1,5 +1,6 @@
 mod executor;
 mod json;
+mod parse;
 mod results;
 pub mod spec;
 mod suite;

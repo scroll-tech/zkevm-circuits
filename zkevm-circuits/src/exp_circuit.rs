@@ -404,6 +404,15 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         Self::new(block.clone())
     }
 
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+        block
+            .exp_events
+            .iter()
+            .map(|e| e.steps.len() * OFFSET_INCREMENT)
+            .sum()
+    }
+
     /// Make the assignments to the ExpCircuit
     fn synthesize_sub(
         &self,
@@ -462,6 +471,7 @@ pub mod dev {
 mod tests {
     use bus_mapping::{circuit_input_builder::CircuitInputBuilder, evm::OpcodeId, mock::BlockData};
     use eth_types::{bytecode, geth_types::GethData, Bytecode, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::TestContext;
 
     use crate::{evm_circuit::witness::block_convert, exp_circuit::dev::test_exp_circuit};
@@ -499,14 +509,14 @@ mod tests {
     fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
         let code = gen_code_single(base, exponent);
         let builder = gen_data(code);
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_exp_circuit(k.unwrap_or(10), block), Ok(()));
     }
 
     fn test_ok_multiple(args: Vec<(Word, Word)>) {
         let code = gen_code_multiple(args);
         let builder = gen_data(code);
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_exp_circuit(20, block), Ok(()));
     }
 

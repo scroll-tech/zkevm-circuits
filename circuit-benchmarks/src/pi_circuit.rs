@@ -1,4 +1,4 @@
-//! State circuit benchmarks
+//! Public input circuit benchmarks
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
