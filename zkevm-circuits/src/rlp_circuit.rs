@@ -24,7 +24,7 @@ use halo2_proofs::{
 
 // use crate::evm_circuit::table::FixedTableTag;
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness::Block;
+use crate::witness::{Block, Transaction};
 use crate::witness::RlpTxTag::{
     ChainId, DataPrefix, Gas, GasPrice, Nonce, Prefix, SigR, SigS, SigV, To,
 };
@@ -1583,6 +1583,8 @@ impl<F: Field> SubCircuitConfig<F> for RlpCircuitConfig<F> {
 pub struct RlpCircuit<F, RLP> {
     /// Rlp encoding inputs
     pub inputs: Vec<RLP>,
+    /// Max txs
+    pub max_txs: usize,
     /// Size of the circuit
     pub size: usize,
     _marker: PhantomData<F>,
@@ -1592,6 +1594,7 @@ impl<F: Field, RLP> Default for RlpCircuit<F, RLP> {
     fn default() -> Self {
         Self {
             inputs: vec![],
+            max_txs: 0,
             size: 0,
             _marker: PhantomData,
         }
@@ -1602,6 +1605,9 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, SignedTransaction> {
     type Config = RlpCircuitConfig<F>;
 
     fn new_from_block(block: &Block<F>) -> Self {
+        let max_txs = block.circuits_params.max_txs;
+        debug_assert!(block.txs.len() <= max_txs);
+
         let signed_txs = block
             .txs
             .iter()
@@ -1610,10 +1616,21 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, SignedTransaction> {
                 tx: tx.clone(),
                 signature: *sig,
             })
+            .chain(
+                (block.txs.len()..max_txs)
+                    .into_iter()
+                    .map(|tx_id| {
+                        let mut padding_tx = Transaction::dummy(block.context.chain_id().as_u64());
+                        padding_tx.id = tx_id + 1;
+
+                        (&padding_tx).into()
+                    })
+            )
             .collect::<Vec<_>>();
 
         Self {
             inputs: signed_txs,
+            max_txs: block.circuits_params.max_txs,
             // FIXME: this hard-coded size is used to pass unit test, we should use 1 << k instead.
             size: 1 << 18,
             _marker: Default::default(),
@@ -1678,9 +1695,10 @@ mod tests {
 
     use super::RlpCircuit;
 
-    fn verify_txs<F: Field>(k: u32, inputs: Vec<SignedTransaction>, success: bool) {
+    fn verify_txs<F: Field>(k: u32, inputs: Vec<SignedTransaction>, max_txs: usize, success: bool) {
         let circuit = RlpCircuit::<F, SignedTransaction> {
             inputs,
+            max_txs,
             size: 1 << k,
             _marker: PhantomData,
         };
@@ -1703,18 +1721,18 @@ mod tests {
 
     #[test]
     fn rlp_circuit_tx_1() {
-        verify_txs::<Fr>(8, vec![CORRECT_MOCK_TXS[0].clone().into()], true);
-        verify_txs::<Fr>(8, vec![CORRECT_MOCK_TXS[4].clone().into()], true);
+        verify_txs::<Fr>(8, vec![CORRECT_MOCK_TXS[0].clone().into()], 1, true);
+        verify_txs::<Fr>(8, vec![CORRECT_MOCK_TXS[4].clone().into()], 1, true);
     }
 
     #[test]
     fn rlp_circuit_tx_2() {
-        verify_txs::<Fr>(8, vec![CORRECT_MOCK_TXS[1].clone().into()], true);
+        verify_txs::<Fr>(8, vec![CORRECT_MOCK_TXS[1].clone().into()], 2, true);
     }
 
     #[test]
     fn rlp_circuit_tx_3() {
-        verify_txs::<Fr>(20, vec![CORRECT_MOCK_TXS[2].clone().into()], true);
+        verify_txs::<Fr>(20, vec![CORRECT_MOCK_TXS[2].clone().into()], 2, true);
     }
 
     #[test]
@@ -1726,6 +1744,7 @@ mod tests {
                 CORRECT_MOCK_TXS[1].clone().into(),
                 CORRECT_MOCK_TXS[2].clone().into(),
             ],
+            5,
             true,
         );
     }

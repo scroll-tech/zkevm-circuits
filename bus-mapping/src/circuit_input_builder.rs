@@ -494,6 +494,7 @@ pub fn get_dummy_tx(chain_id: u64) -> (TransactionRequest, Signature) {
         .data(Bytes::default())
         .chain_id(chain_id);
 
+    // FIXME: need to check if this is deterministic which means sig is fixed.
     let sig = wallet.sign_transaction_sync(&tx.clone().into());
 
     (tx, sig)
@@ -611,6 +612,15 @@ pub fn keccak_inputs_tx_circuit(
     // Keccak inputs from SignVerify Chip
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
     inputs.extend_from_slice(&sign_verify_inputs);
+
+    // Since the SignData::default() already includes pk = [1]G which is also the one
+    // that we use in get_dummy_tx, so we only need to include the tx sign hash of the
+    // dummy tx.
+    let dummy_sign_input = {
+        let (dummy_tx, _) = get_dummy_tx(chain_id);
+        dummy_tx.rlp().to_vec()
+    };
+    inputs.push(dummy_sign_input);
     // NOTE: We don't verify the Tx Hash in the circuit yet, so we don't have more
     // hash inputs.
     Ok(inputs)

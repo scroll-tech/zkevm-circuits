@@ -662,6 +662,16 @@ mod super_circuit_tests {
     }
     #[ignore]
     #[test]
+    fn serial_test_super_circuit_2tx_4max_tx() {
+        let block = block_2tx();
+        const MAX_TXS: usize = 4;
+        const MAX_CALLDATA: usize = 320;
+        const MAX_INNER_BLOCKS: usize = 1;
+        const MAX_RWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+    }
+    #[ignore]
+    #[test]
     fn serial_test_super_circuit_2tx_2max_tx() {
         let block = block_2tx();
         const MAX_TXS: usize = 2;
