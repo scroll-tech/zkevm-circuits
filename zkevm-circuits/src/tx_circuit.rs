@@ -1608,7 +1608,6 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
 
 #[cfg(test)]
 mod tx_circuit_tests {
-    use std::cmp::max;
     use super::*;
     use crate::util::log2_ceil;
     use eth_types::address;
@@ -1618,6 +1617,7 @@ mod tx_circuit_tests {
     };
     use mock::AddrOrWallet;
     use pretty_assertions::assert_eq;
+    use std::cmp::max;
 
     const NUM_BLINDING_ROWS: usize = 64;
 
@@ -1627,7 +1627,10 @@ mod tx_circuit_tests {
         max_txs: usize,
         max_calldata: usize,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let k = max(12, log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)));
+        let k = max(
+            12,
+            log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)),
+        );
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
         let circuit = TxCircuit::<F>::new(max_txs, max_calldata, chain_id, txs);
 
