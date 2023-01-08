@@ -199,6 +199,8 @@ pub struct Transaction {
     pub value: Word,
     /// Input / Call Data
     pub input: Vec<u8>,
+    /// Chain_id
+    pub chain_id: u64,
     /// Signature
     pub signature: Signature,
     /// Calls made in the transaction
@@ -237,6 +239,7 @@ impl Transaction {
             to: Address::zero(),
             value: Word::zero(),
             input: Vec::new(),
+            chain_id: 0,
             signature: Signature {
                 r: Word::zero(),
                 s: Word::zero(),
@@ -307,6 +310,13 @@ impl Transaction {
             }
         };
 
+        log::debug!(
+            "eth_tx's type: {:?}, idx: {:?}, hash: {:?}, tx: {:?}",
+            eth_tx.transaction_type,
+            eth_tx.transaction_index,
+            eth_tx.hash,
+            eth_tx
+        );
         Ok(Self {
             block_num: eth_tx.block_number.unwrap().as_u64(),
             hash: eth_tx.hash,
@@ -321,6 +331,7 @@ impl Transaction {
                 .unwrap_or_else(|| get_contract_address(eth_tx.from, eth_tx.nonce)),
             value: eth_tx.value,
             input: eth_tx.input.to_vec(),
+            chain_id: eth_tx.chain_id.unwrap_or_default().as_u64(), // FIXME
             calls: vec![call],
             steps: Vec::new(),
             signature: Signature {

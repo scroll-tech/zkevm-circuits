@@ -24,10 +24,10 @@ use halo2_proofs::{
 
 // use crate::evm_circuit::table::FixedTableTag;
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness::{Block, Transaction};
 use crate::witness::RlpTxTag::{
     ChainId, DataPrefix, Gas, GasPrice, Nonce, Prefix, SigR, SigS, SigV, To,
 };
+use crate::witness::{Block, Transaction};
 use crate::{
     evm_circuit::{
         util::{and, constraint_builder::BaseConstraintBuilder, not, or},
@@ -1616,16 +1616,12 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, SignedTransaction> {
                 tx: tx.clone(),
                 signature: *sig,
             })
-            .chain(
-                (block.txs.len()..max_txs)
-                    .into_iter()
-                    .map(|tx_id| {
-                        let mut padding_tx = Transaction::dummy(block.context.chain_id().as_u64());
-                        padding_tx.id = tx_id + 1;
+            .chain((block.txs.len()..max_txs).into_iter().map(|tx_id| {
+                let mut padding_tx = Transaction::dummy(block.context.chain_id().as_u64());
+                padding_tx.id = tx_id + 1;
 
-                        (&padding_tx).into()
-                    })
-            )
+                (&padding_tx).into()
+            }))
             .collect::<Vec<_>>();
 
         Self {

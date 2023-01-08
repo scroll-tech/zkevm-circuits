@@ -1070,7 +1070,7 @@ impl<F: Field> TxCircuit<F> {
     /// Return a new TxCircuit
     pub fn new(max_txs: usize, max_calldata: usize, chain_id: u64, txs: Vec<Transaction>) -> Self {
         log::info!(
-            "TxCircuit::new(max_txs = {}, max_calldata = {}, chain_id = {}",
+            "TxCircuit::new(max_txs = {}, max_calldata = {}, chain_id = {})",
             max_txs,
             max_calldata,
             chain_id
@@ -1136,7 +1136,12 @@ impl<F: Field> TxCircuit<F> {
     /// particular size.
     pub fn min_num_rows(txs_len: usize, call_data_len: usize) -> usize {
         let tx_table_len = txs_len * TX_LEN + call_data_len;
-        std::cmp::max(tx_table_len, SignVerifyChip::<F>::min_num_rows(txs_len))
+        #[cfg(feature = "enable-sign-verify")]
+        let min_rows = std::cmp::max(tx_table_len, SignVerifyChip::<F>::min_num_rows(txs_len));
+        #[cfg(not(feature = "enable-sign-verify"))]
+        let min_rows = tx_table_len;
+
+        min_rows
     }
 
     fn assign(
@@ -1403,8 +1408,8 @@ impl<F: Field> TxCircuit<F> {
                                 (
                                     self.txs
                                         .iter()
-                                        .skip(i + 1)
                                         .enumerate()
+                                        .skip(i + 1)
                                         .find(|(_, tx)| !tx.call_data.is_empty())
                                         .map(|(j, _)| j + 1)
                                         .unwrap_or_else(|| 0),
@@ -1432,20 +1437,20 @@ impl<F: Field> TxCircuit<F> {
                 }
                 // for _ in calldata_count..self.max_calldata {
                 // TODO: use self.max_calldata instead
-                for _ in calldata_count..(calldata_count + 1) {
-                    config.assign_row(
-                        &mut region,
-                        &mut offset,
-                        0, // tx_id
-                        0, // tx_id_next
-                        CallData,
-                        RlpTxTag::Data,
-                        Value::known(F::zero()),
-                        true,
-                        None,
-                        None,
-                    )?;
-                }
+                // for _ in calldata_count..(calldata_count + 1) {
+                //     config.assign_row(
+                //         &mut region,
+                //         &mut offset,
+                //         0, // tx_id
+                //         0, // tx_id_next
+                //         CallData,
+                //         RlpTxTag::Data,
+                //         Value::known(F::zero()),
+                //         true,
+                //         None,
+                //         None,
+                //     )?;
+                // }
 
                 Ok(())
             },
@@ -1601,7 +1606,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
 #[cfg(test)]
 mod tx_circuit_tests {
     use super::*;
-    use crate::util::log2_ceil;
+    // use crate::util::log2_ceil;
     use eth_types::address;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
@@ -1618,7 +1623,7 @@ mod tx_circuit_tests {
         max_txs: usize,
         max_calldata: usize,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let k = log2_ceil(NUM_BLINDING_ROWS + TxCircuit::<Fr>::min_num_rows(max_txs, max_calldata));
+        let k = 19;
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
         let circuit = TxCircuit::<F>::new(max_txs, max_calldata, chain_id, txs);
 

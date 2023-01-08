@@ -286,15 +286,6 @@ impl Transaction {
                     Value::known(F::from(*byte as u64)),
                 ]
             })
-            // TODO: use max_calldata
-            .chain((0..1).into_iter().map(|_| {
-                [
-                    Value::known(F::from(0)),
-                    Value::known(F::from(TxContextFieldTag::CallData as u64)),
-                    Value::known(F::from(0)),
-                    Value::known(F::from(0)),
-                ]
-            }))
             .collect()
     }
 }
@@ -407,6 +398,11 @@ pub(super) fn tx_convert(
     chain_id: u64,
     next_tx: Option<&circuit_input_builder::Transaction>,
 ) -> Transaction {
+    debug_assert_eq!(
+        chain_id, tx.chain_id,
+        "block.chain_id = {}, tx.chain_id = {}",
+        chain_id, tx.chain_id
+    );
     let (rlp_unsigned, rlp_signed) = {
         let legacy_tx = TransactionRequest::new()
             .from(tx.from)
