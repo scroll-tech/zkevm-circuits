@@ -618,7 +618,10 @@ impl<F: Field> TxCircuitConfig<F> {
                 Ok(())
             },
         )?;
-        self.sign_verify.load_range(layouter)
+        #[cfg(feature = "enable-sign-verify")]
+        self.sign_verify.load_range(layouter)?;
+
+        Ok(())
     }
 
     /// Assigns a tx circuit row and returns the assigned cell of the value in
@@ -1605,8 +1608,9 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
 
 #[cfg(test)]
 mod tx_circuit_tests {
+    use std::cmp::max;
     use super::*;
-    // use crate::util::log2_ceil;
+    use crate::util::log2_ceil;
     use eth_types::address;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
@@ -1623,7 +1627,7 @@ mod tx_circuit_tests {
         max_txs: usize,
         max_calldata: usize,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let k = 19;
+        let k = max(12, log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)));
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
         let circuit = TxCircuit::<F>::new(max_txs, max_calldata, chain_id, txs);
 
