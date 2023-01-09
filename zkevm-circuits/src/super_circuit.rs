@@ -529,11 +529,17 @@ mod super_circuit_tests {
         assert!(cs.degree() <= 9);
     }
 
-    fn test_super_circuit<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize, const MAX_RWS: usize>(
+    fn test_super_circuit<
+        const MAX_TXS: usize,
+        const MAX_CALLDATA: usize,
+        const MAX_INNER_BLOCKS: usize,
+        const MAX_RWS: usize,
+    >(
         block: GethData,
     ) {
         let (k, circuit, instance, _) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>::build(block).unwrap();
+            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>::build(block)
+                .unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {

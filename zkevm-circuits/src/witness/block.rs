@@ -268,7 +268,13 @@ pub fn block_convert<F: Field>(
             .iter()
             .map(|(code_hash, bytes)| {
                 let hash = Word::from_big_endian(code_hash.as_bytes());
-                (hash, Bytecode { hash, bytes: bytes.clone() })
+                (
+                    hash,
+                    Bytecode {
+                        hash,
+                        bytes: bytes.clone(),
+                    },
+                )
             })
             .collect(),
         copy_events: block.copy_events.clone(),
