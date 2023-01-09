@@ -4,13 +4,13 @@ on:
   workflow_call:
     inputs:
       enabled:
-        default: ${{ github.repository == 'privacy-scaling-explorations/zkevm-circuits' }}
+        default: ${{ github.repository == 'scroll-tech/zkevm-circuits' }}
         required: false
         type: boolean
 
       matrices:
         description: 'The matrix at index 0 is intended for not running on the self-hosted runner'
-        default: '[["ubuntu-latest"], ["ci-checks-runner"]]'
+        default: '[["ubuntu-latest"], ["jenkins"]]'
         required: false
         type: string
 

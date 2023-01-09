@@ -5,7 +5,7 @@ on:
     types: [synchronize, labeled]
   push:
     branches:
-      - main
+      - scroll-stable
 
 jobs:
   consecutiveness:

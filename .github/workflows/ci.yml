@@ -5,7 +5,7 @@ on:
     types: [synchronize, opened, reopened, ready_for_review]
   push:
     branches:
-      - main
+      - scroll-stable
 
 ## `actions-rs/toolchain@v1` overwrite set to false so that
 ## `rust-toolchain` is always used and the only source of truth.
@@ -28,6 +28,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+      - name: set HOME env
+        run: |
+          echo "HOME=/home/ubuntu" >> $GITHUB_ENV
       - uses: actions-rs/toolchain@v1
         with:
           override: false
