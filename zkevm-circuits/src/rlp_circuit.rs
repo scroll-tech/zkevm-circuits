@@ -65,6 +65,9 @@ pub struct RlpCircuitConfig<F> {
     /// Denotes the index of this row, but reversed. It starts from `n` where
     /// `n` is the byte length of the RLP-encoded data and ends at `1`.
     rindex: Column<Advice>,
+    /// Placeholder row do not increase the index and mainly used for
+    /// DataPrefix when |tx.data| = 1 and tx.data < 0x80.
+    placeholder: Column<Advice>,
     /// Denotes the byte value at this row index from the RLP-encoded data.
     byte_value: Column<Advice>,
     /// Denotes the RLC accumulator value used for call data bytes.
@@ -130,6 +133,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         let is_last = meta.advice_column();
         let index = meta.advice_column();
         let rindex = meta.advice_column();
+        let placeholder = meta.advice_column();
         let byte_value = meta.advice_column();
         let calldata_bytes_rlc_acc = meta.advice_column_in(SecondPhase);
         let tag_length = meta.advice_column();
@@ -579,6 +583,11 @@ impl<F: Field> RlpCircuitConfig<F> {
                         ChainId.expr(),
                     );
                     cb.require_equal(
+                        "value_acc == length_acc",
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()),
+                        meta.query_advice(length_acc, Rotation::cur()),
+                    );
+                    cb.require_equal(
                         "tag::next == RlpTxTag::ChainId",
                         meta.query_advice(rlp_table.tag, Rotation::next()),
                         tag_next,
@@ -608,6 +617,11 @@ impl<F: Field> RlpCircuitConfig<F> {
                     cb.require_equal(
                         "tag_length::next == length_acc",
                         meta.query_advice(tag_length, Rotation::next()),
+                        meta.query_advice(length_acc, Rotation::cur()),
+                    );
+                    cb.require_equal(
+                        "value_acc == length_acc",
+                        meta.query_advice(rlp_table.value_acc, Rotation::cur()),
                         meta.query_advice(length_acc, Rotation::cur()),
                     );
                 },
@@ -648,12 +662,16 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.condition(
                 is_dp_tag.expr() * tindex_eq_tlength * tlength_eq,
                 |cb| {
-                    cb.require_equal("127 < value", value_gt_127.is_lt(meta, None), 1.expr());
                     cb.require_equal("value < 184", value_lt_184.is_lt(meta, None), 1.expr());
+                    let real_length_acc = select::expr(
+                        value_gt_127.is_lt(meta, None),
+                        meta.query_advice(byte_value, Rotation::cur()) - 128.expr(), // value > 127
+                        1.expr(),
+                    );
                     cb.require_equal(
-                        "length_acc == value - 0x80",
+                        "length_acc == value > 127 ? value - 0x80 : 1",
                         meta.query_advice(length_acc, Rotation::cur()),
-                        meta.query_advice(byte_value, Rotation::cur()) - 128.expr(),
+                        real_length_acc,
                     );
                 },
             );
@@ -966,16 +984,50 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta.create_gate("is_last == 0", |meta| {
             let mut cb = BaseConstraintBuilder::new(9);
 
-            cb.require_equal(
-                "index' == index + 1",
-                meta.query_advice(index, Rotation::next()),
-                meta.query_advice(index, Rotation::cur()) + 1.expr(),
+            cb.condition(
+                not::expr(meta.query_advice(placeholder, Rotation::cur())),
+                |cb| {
+                    cb.require_equal(
+                        "index' == index + 1",
+                        meta.query_advice(index, Rotation::next()),
+                        meta.query_advice(index, Rotation::cur()) + 1.expr(),
+                    );
+                    cb.require_equal(
+                        "rindex' == rindex - 1",
+                        meta.query_advice(rindex, Rotation::next()),
+                        meta.query_advice(rindex, Rotation::cur()) - 1.expr(),
+                    );
+                    cb.require_equal(
+                        "all_bytes_rlc_acc' == (all_bytes_rlc_acc * r) + byte_value'",
+                        meta.query_advice(all_bytes_rlc_acc, Rotation::next()),
+                        meta.query_advice(all_bytes_rlc_acc, Rotation::cur()) * keccak_input_rand
+                            + meta.query_advice(byte_value, Rotation::next()),
+                    );
+                },
             );
-            cb.require_equal(
-                "rindex' == rindex - 1",
-                meta.query_advice(rindex, Rotation::next()),
-                meta.query_advice(rindex, Rotation::cur()) - 1.expr(),
-            );
+            cb.condition(meta.query_advice(placeholder, Rotation::cur()), |cb| {
+                cb.require_equal(
+                    "index' == index",
+                    meta.query_advice(index, Rotation::next()),
+                    meta.query_advice(index, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "rindex' == rindex",
+                    meta.query_advice(rindex, Rotation::next()),
+                    meta.query_advice(rindex, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "all_bytes_rlc_acc' == all_bytes_rlc_acc",
+                    meta.query_advice(all_bytes_rlc_acc, Rotation::next()),
+                    meta.query_advice(all_bytes_rlc_acc, Rotation::cur()),
+                );
+                cb.require_equal(
+                    "byte_value' == byte_value",
+                    meta.query_advice(byte_value, Rotation::next()),
+                    meta.query_advice(byte_value, Rotation::cur()),
+                );
+            });
+
             cb.require_equal(
                 "tx_id' == tx_id",
                 meta.query_advice(rlp_table.tx_id, Rotation::next()),
@@ -986,17 +1038,24 @@ impl<F: Field> RlpCircuitConfig<F> {
                 meta.query_advice(rlp_table.data_type, Rotation::next()),
                 meta.query_advice(rlp_table.data_type, Rotation::cur()),
             );
-            cb.require_equal(
-                "all_bytes_rlc_acc' == (all_bytes_rlc_acc * r) + byte_value'",
-                meta.query_advice(all_bytes_rlc_acc, Rotation::next()),
-                meta.query_advice(all_bytes_rlc_acc, Rotation::cur()) * keccak_input_rand
-                    + meta.query_advice(byte_value, Rotation::next()),
-            );
 
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_usable, Rotation::cur()),
                 not::expr(meta.query_advice(is_last, Rotation::cur())),
                 not::expr(is_padding(meta)),
+            ]))
+        });
+
+        meta.create_gate("placeholder row only happens on DataPrefix", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            let (_, tag_length_eq_one) = tag_length_cmp_1.expr(meta, Some(Rotation::cur()));
+
+            cb.require_equal("tag == DataPrefix", is_data_prefix(meta), 1.expr());
+            cb.require_equal("tag_length == 1", tag_length_eq_one, 1.expr());
+
+            cb.gate(and::expr(vec![
+                meta.query_fixed(q_usable, Rotation::cur()),
+                meta.query_advice(placeholder, Rotation::cur()),
             ]))
         });
 
@@ -1119,6 +1178,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             rlp_table: *rlp_table,
             index,
             rindex,
+            placeholder,
             byte_value,
             calldata_bytes_rlc_acc,
             tag_bits,
@@ -1245,16 +1305,27 @@ impl<F: Field> RlpCircuitConfig<F> {
                     // tx hash (signed tx)
                     let mut all_bytes_rlc_acc = Value::known(F::zero());
                     let tx_hash_rows = signed_tx.gen_witness(challenges);
-                    let n_rows = tx_hash_rows.len();
+                    let has_placeholder =
+                        signed_tx.tx.call_data.len() == 1 && signed_tx.tx.call_data[0] < 0x80;
+                    let n_rows = if has_placeholder {
+                        tx_hash_rows.len() - 1
+                    } else {
+                        tx_hash_rows.len()
+                    };
                     for (idx, row) in tx_hash_rows
                         .iter()
                         .chain(signed_tx.rlp_rows(keccak_input_rand).iter())
                         .enumerate()
                     {
+                        let prev_row_placeholder = row.tag == RlpTxTag::Data && has_placeholder;
+                        let cur_row_placeholder = row.tag == DataPrefix && has_placeholder;
                         // update value accumulator over the entire RLP encoding.
-                        all_bytes_rlc_acc = all_bytes_rlc_acc
-                            .zip(keccak_input_rand)
-                            .map(|(acc, rand)| acc * rand + F::from(row.value as u64));
+                        if !prev_row_placeholder {
+                            // prev row has already accumulate the byte_value
+                            all_bytes_rlc_acc = all_bytes_rlc_acc
+                                .zip(keccak_input_rand)
+                                .map(|(acc, rand)| acc * rand + F::from(row.value as u64));
+                        }
 
                         // q_usable
                         region.assign_fixed(
@@ -1289,6 +1360,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                             ("data_type", rlp_table.data_type, (row.data_type as u64)),
                             ("index", self.index, (row.index as u64)),
                             ("rindex", self.rindex, (rindex)),
+                            ("placeholder", self.placeholder, cur_row_placeholder as u64),
                             ("value", self.byte_value, (row.value as u64)),
                             ("tag_length", self.tag_length, (row.tag_length as u64)),
                             ("length_acc", self.length_acc, (row.length_acc)),
@@ -1382,16 +1454,27 @@ impl<F: Field> RlpCircuitConfig<F> {
                     // tx sign (unsigned tx)
                     let mut all_bytes_rlc_acc = Value::known(F::zero());
                     let tx_sign_rows = signed_tx.tx.gen_witness(challenges);
-                    let n_rows = tx_sign_rows.len();
+                    let has_placeholder =
+                        signed_tx.tx.call_data.len() == 1 && signed_tx.tx.call_data[0] < 0x80;
+                    let n_rows = if has_placeholder {
+                        tx_sign_rows.len() - 1
+                    } else {
+                        tx_sign_rows.len()
+                    };
                     for (idx, row) in tx_sign_rows
                         .iter()
                         .chain(signed_tx.tx.rlp_rows(challenges.keccak_input()).iter())
                         .enumerate()
                     {
+                        let prev_row_placeholder = row.tag == RlpTxTag::Data && has_placeholder;
+                        let cur_row_placeholder = row.tag == DataPrefix && has_placeholder;
                         // update value accumulator over the entire RLP encoding.
-                        all_bytes_rlc_acc = all_bytes_rlc_acc
-                            .zip(keccak_input_rand)
-                            .map(|(acc, rand)| acc * rand + F::from(row.value as u64));
+                        if !prev_row_placeholder {
+                            // prev row has already accumulate the byte_value
+                            all_bytes_rlc_acc = all_bytes_rlc_acc
+                                .zip(keccak_input_rand)
+                                .map(|(acc, rand)| acc * rand + F::from(row.value as u64));
+                        }
 
                         // q_usable
                         region.assign_fixed(
@@ -1425,6 +1508,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                             ("data_type", rlp_table.data_type, row.data_type as u64),
                             ("index", self.index, row.index as u64),
                             ("rindex", self.rindex, rindex),
+                            ("placeholder", self.placeholder, cur_row_placeholder as u64),
                             ("byte value", self.byte_value, row.value as u64),
                             ("tag_length", self.tag_length, row.tag_length as u64),
                             ("length_acc", self.length_acc, row.length_acc),
@@ -1705,6 +1789,12 @@ mod tests {
     fn rlp_circuit_tx_1() {
         verify_txs::<Fr>(8, vec![CORRECT_MOCK_TXS[0].clone().into()], true);
         verify_txs::<Fr>(8, vec![CORRECT_MOCK_TXS[4].clone().into()], true);
+
+        // test against the case in which tx.data has only one byte and is less than
+        // 0x80
+        let mut mock_tx = CORRECT_MOCK_TXS[0].clone();
+        mock_tx.input(vec![0x3f].into());
+        verify_txs::<Fr>(8, vec![mock_tx.into()], true);
     }
 
     #[test]

@@ -374,6 +374,19 @@ pub fn handle_bytes<F: FieldExt>(
 
     if length == 1 && call_data[0] < 0x80 {
         assert_eq!(rlp_data[idx], call_data[0]);
+        // add a placeholder row for this case
+        rows.push(RlpWitnessRow {
+            tx_id,
+            index: idx + 1,
+            data_type,
+            value: call_data[0],
+            value_acc: Value::known(F::from(1)),
+            value_rlc_acc: Value::known(F::zero()),
+            tag: prefix_tag,
+            tag_length: 1,
+            tag_rindex: 1,
+            length_acc: 1,
+        });
         rows.push(RlpWitnessRow {
             tx_id,
             index: idx + 1,
@@ -399,7 +412,7 @@ pub fn handle_bytes<F: FieldExt>(
             index: idx + 1,
             data_type,
             value: (0x80 + length) as u8,
-            value_acc: Value::known(F::from((128 + length) as u64)),
+            value_acc: Value::known(F::from((length) as u64)),
             value_rlc_acc: Value::known(F::zero()),
             tag: prefix_tag,
             tag_length: 1,
