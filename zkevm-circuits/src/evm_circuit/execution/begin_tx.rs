@@ -33,7 +33,6 @@ pub(crate) struct BeginTxGadget<F> {
     tx_caller_address: Cell<F>,
     tx_caller_address_is_zero: IsZeroGadget<F>,
     tx_callee_address: Cell<F>,
-    tx_callee_address_is_zero: IsZeroGadget<F>,
     call_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
@@ -83,13 +82,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
-        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, tx_callee_address.expr());
         let call_callee_address = cb.query_cell();
-        cb.condition(tx_callee_address_is_zero.expr(), |cb| {
+        cb.condition(tx_is_create.expr(), |cb| {
             // TODO: require call_callee_address to be
             // address(keccak(rlp([tx_caller_address, tx_nonce])))
         });
-        cb.condition(not::expr(tx_callee_address_is_zero.expr()), |cb| {
+        cb.condition(not::expr(tx_is_create.expr()), |cb| {
             cb.require_equal(
                 "Tx to non-zero address",
                 tx_callee_address.expr(),
@@ -289,7 +287,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_caller_address,
             tx_caller_address_is_zero,
             tx_callee_address,
-            tx_callee_address_is_zero,
             call_callee_address,
             tx_is_create,
             tx_value,
@@ -339,19 +336,20 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(caller_address))?;
         self.tx_caller_address_is_zero
             .assign(region, offset, caller_address)?;
-        let tx_callee_address = tx
-            .callee_address
-            .to_scalar()
-            .expect("unexpected Address -> Scalar conversion failure");
-        self.tx_callee_address
-            .assign(region, offset, Value::known(tx_callee_address))?;
-        self.tx_callee_address_is_zero
-            .assign(region, offset, tx_callee_address)?;
+        self.tx_callee_address.assign(
+            region,
+            offset,
+            Value::known(
+                tx.callee_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
         self.call_callee_address.assign(
             region,
             offset,
             Value::known(
-                if tx.callee_address.is_zero() {
+                if tx.is_create {
                     get_contract_address(tx.caller_address, tx.nonce)
                 } else {
                     tx.callee_address
