@@ -82,6 +82,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
+
+        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, tx_callee_address.expr());
+        let call_callee_address = cb.query_cell();
+        cb.condition(tx_callee_address_is_zero.expr(), |cb| {
+            // TODO: require call_callee_address to be
+            // address(keccak(rlp([tx_caller_address, tx_nonce])))
+        });
+        cb.condition(not::expr(tx_callee_address_is_zero.expr()), |cb| {
+            cb.require_equal(
+                "Tx to non-zero address",
+                tx_callee_address.expr(),
+                call_callee_address.expr(),
+            );
+        });
+
         let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
         cb.require_equal(
             "CallerAddress != 0 (not a padding tx)",
@@ -136,7 +151,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         );
         cb.account_access_list_write(
             tx_id.expr(),
-            tx_callee_address.expr(),
+            call_callee_address.expr(),
             1.expr(),
             0.expr(),
             None,
@@ -146,7 +161,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
             tx_caller_address.expr(),
-            tx_callee_address.expr(),
+            call_callee_address.expr(),
             tx_value.clone(),
             mul_gas_fee_by_gas.product().clone(),
             &mut reversion_info,
@@ -157,12 +172,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Read code_hash of callee
         let code_hash = cb.query_cell();
-        cb.account_write(
-            tx_callee_address.expr(),
+        cb.account_read(
+            call_callee_address.expr(),
             AccountFieldTag::CodeHash,
             code_hash.expr(),
-            code_hash.expr(),
-            None,
         );
 
         let is_empty_code_hash = IsEqualGadget::construct(
@@ -202,20 +215,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 call_id: To(call_id.expr()),
                 ..StepStateTransition::any()
             });
-        });
-
-        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, tx_callee_address.expr());
-        let call_callee_address = cb.query_cell();
-        cb.condition(tx_callee_address_is_zero.expr(), |cb| {
-            // TODO: require call_callee_address to be
-            // address(keccak(rlp([tx_caller_address, tx_nonce])))
-        });
-        cb.condition(not::expr(tx_callee_address_is_zero.expr()), |cb| {
-            cb.require_equal(
-                "Tx to non-zero address",
-                tx_callee_address.expr(),
-                call_callee_address.expr(),
-            );
         });
 
         cb.condition(1.expr() - is_empty_code_hash.expr(), |cb| {
@@ -353,7 +352,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Value::known(
                 if tx.callee_address.is_zero() {
-                    get_contract_address(tx.callee_address, tx.nonce)
+                    get_contract_address(tx.caller_address, tx.nonce)
                 } else {
                     tx.callee_address
                 }
