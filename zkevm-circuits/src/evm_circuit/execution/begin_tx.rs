@@ -10,14 +10,15 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
-            CachedRegion, Cell, RandomLinearCombination, Word,
+            not, select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
     util::Expr,
 };
-use eth_types::{Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use ethers_core::utils::get_contract_address;
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 use keccak256::EMPTY_HASH_LE;
@@ -32,6 +33,8 @@ pub(crate) struct BeginTxGadget<F> {
     tx_caller_address: Cell<F>,
     tx_caller_address_is_zero: IsZeroGadget<F>,
     tx_callee_address: Cell<F>,
+    tx_callee_address_is_zero: IsZeroGadget<F>,
+    call_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
     tx_call_data_length: Cell<F>,
@@ -201,12 +204,29 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             });
         });
 
+        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, tx_callee_address.expr());
+        let call_callee_address = cb.query_cell();
+        cb.condition(tx_callee_address_is_zero.expr(), |cb| {
+            // TODO: require call_callee_address to be
+            // address(keccak(rlp([tx_caller_address, tx_nonce])))
+        });
+        cb.condition(not::expr(tx_callee_address_is_zero.expr()), |cb| {
+            cb.require_equal(
+                "Tx to non-zero address",
+                tx_callee_address.expr(),
+                call_callee_address.expr(),
+            );
+        });
+
         cb.condition(1.expr() - is_empty_code_hash.expr(), |cb| {
             // Setup first call's context.
             for (field_tag, value) in [
                 (CallContextFieldTag::Depth, 1.expr()),
                 (CallContextFieldTag::CallerAddress, tx_caller_address.expr()),
-                (CallContextFieldTag::CalleeAddress, tx_callee_address.expr()),
+                (
+                    CallContextFieldTag::CalleeAddress,
+                    call_callee_address.expr(),
+                ),
                 (CallContextFieldTag::CallDataOffset, 0.expr()),
                 (
                     CallContextFieldTag::CallDataLength,
@@ -270,6 +290,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_caller_address,
             tx_caller_address_is_zero,
             tx_callee_address,
+            tx_callee_address_is_zero,
+            call_callee_address,
             tx_is_create,
             tx_value,
             tx_call_data_length,
@@ -318,13 +340,25 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(caller_address))?;
         self.tx_caller_address_is_zero
             .assign(region, offset, caller_address)?;
-        self.tx_callee_address.assign(
+        let tx_callee_address = tx
+            .callee_address
+            .to_scalar()
+            .expect("unexpected Address -> Scalar conversion failure");
+        self.tx_callee_address
+            .assign(region, offset, Value::known(tx_callee_address))?;
+        self.tx_callee_address_is_zero
+            .assign(region, offset, tx_callee_address)?;
+        self.call_callee_address.assign(
             region,
             offset,
             Value::known(
-                tx.callee_address
-                    .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
+                if tx.callee_address.is_zero() {
+                    get_contract_address(tx.callee_address, tx.nonce)
+                } else {
+                    tx.callee_address
+                }
+                .to_scalar()
+                .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
         self.tx_is_create

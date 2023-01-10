@@ -13,6 +13,7 @@ use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     GethExecStep, ToAddress, ToWord, Word,
 };
+use ethers_core::utils::get_contract_address;
 use keccak256::EMPTY_HASH;
 use log::warn;
 
@@ -442,7 +443,10 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                     CallContextField::CallerAddress,
                     call.caller_address.to_word(),
                 ),
-                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CalleeAddress,
+                    get_contract_address(call.caller_address, nonce_prev).to_word(),
+                ),
                 (
                     CallContextField::CallDataOffset,
                     call.call_data_offset.into(),
