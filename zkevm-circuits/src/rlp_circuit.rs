@@ -1713,8 +1713,24 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, SignedTransaction> {
         config.assign(layouter, &self.inputs, self.size, challenges)
     }
 
-    fn min_num_rows_block(_block: &crate::witness::Block<F>) -> usize {
-        todo!()
+    fn min_num_rows_block(block: &crate::witness::Block<F>) -> usize {
+        std::cmp::max(
+            1 << 18,
+            block
+                .txs
+                .iter()
+                .zip(block.sigs.iter())
+                .map(|(tx, sig)| {
+                    let mut len = rlp::encode(tx).len() + 1; // 1 for DataPrefix placeholder
+                    let signed_tx = SignedTransaction {
+                        tx: tx.clone(),
+                        signature: *sig,
+                    };
+                    len += rlp::encode(&signed_tx).len() + 1; // 1 for DataPrefix placeholder
+                    len
+                })
+                .count(),
+        )
     }
 }
 
