@@ -10,14 +10,14 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
-            not, select, CachedRegion, Cell, RandomLinearCombination, Word,
+            not, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::get_contract_address;
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
@@ -83,7 +83,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
         let call_callee_address = cb.query_cell();
-        cb.condition(tx_is_create.expr(), |cb| {
+        cb.condition(tx_is_create.expr(), |_cb| {
             // TODO: require call_callee_address to be
             // address(keccak(rlp([tx_caller_address, tx_nonce])))
         });
