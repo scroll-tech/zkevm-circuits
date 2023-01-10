@@ -1052,6 +1052,15 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             cb.require_equal("tag == DataPrefix", is_data_prefix(meta), 1.expr());
             cb.require_equal("tag_length == 1", tag_length_eq_one, 1.expr());
+            cb.require_equal(
+                "byte_value <= 0x80",
+                value_lt_129.is_lt(meta, None),
+                1.expr(),
+            );
+            cb.require_zero(
+                "byte_value != 0x80",
+                value_eq_128.is_equal_expression.expr(),
+            );
 
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_usable, Rotation::cur()),
