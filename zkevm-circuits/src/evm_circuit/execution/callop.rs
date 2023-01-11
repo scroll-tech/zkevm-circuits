@@ -642,7 +642,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let callee_code_hash =
             RandomLinearCombination::random_linear_combine(callee_code_hash, block.randomness);
         if is_precompile {
-            let last_caller_return_data_length_rw = block.rws[step.rw_indices[19 + rw_offset]];
+            let last_caller_return_data_length_rw = block.rws[step.rw_indices[20 + rw_offset]];
             assert_eq!(
                 last_caller_return_data_length_rw.field_tag().unwrap(),
                 CallContextFieldTag::LastCalleeReturnDataLength as u64
