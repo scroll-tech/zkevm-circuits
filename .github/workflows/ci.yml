@@ -3,9 +3,13 @@ name: CI checks
 on:
   pull_request:
     types: [synchronize, opened, reopened, ready_for_review]
+    # Ignore when target branch is `main` and source branch is scroll-stable.
+    # It could avoid running twice. Since scroll-stable is set as `push` below.
+    branches-ignore:
+      - main
   push:
     branches:
-      - main
+      - scroll-stable
 
 ## `actions-rs/toolchain@v1` overwrite set to false so that
 ## `rust-toolchain` is always used and the only source of truth.
@@ -28,6 +32,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+      - name: set HOME env
+        run: |
+          echo "HOME=/home/ubuntu" >> $GITHUB_ENV
       - uses: actions-rs/toolchain@v1
         with:
           override: false

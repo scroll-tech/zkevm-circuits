@@ -6,8 +6,13 @@ use crate::{
 };
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::plonk::Error;
+
 /// Construction of 256-bit word original and absolute values, which is useful
 /// for opcodes operated on signed values.
+/// For a special case, when `x = -2^255` then absolute value should be `2^255`.
+/// But a signed word could only express value from `-2^255` to `2^255 - 1`.
+/// So in this case both `x` and `x_abs` should be equal to `-2^255`
+/// (expressed as an U256 of `2^255`).
 #[derive(Clone, Debug)]
 pub(crate) struct AbsWordGadget<F> {
     x: util::Word<F>,
@@ -160,6 +165,17 @@ mod tests {
     #[test]
     fn test_abs_word_low_max() {
         try_test!(AbsWordGadgetContainer<Fr, false>, [WORD_LOW_MAX, WORD_LOW_MAX], true);
+    }
+
+    #[test]
+    fn test_abs_word_signed_max() {
+        try_test!(AbsWordGadgetContainer<Fr, false>, [WORD_SIGNED_MAX, WORD_SIGNED_MAX], true);
+    }
+
+    // In this special case both `x` and `x_abs` are equal to `-2^255`.
+    #[test]
+    fn test_abs_word_signed_min() {
+        try_test!(AbsWordGadgetContainer<Fr, true>, [WORD_SIGNED_MIN, WORD_SIGNED_MIN], true);
     }
 
     #[test]

@@ -14,10 +14,6 @@ use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{super_circuit::SuperCircuit, test_util::BytecodeTestConfig};
 
-const EVMERR_OOG: &str = "out of gas";
-const EVMERR_STACKUNDERFLOW: &str = "stack underflow";
-const EVMERR_GAS_UINT64OVERFLOW: &str = "gas uint64 overflow";
-
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
     #[error("CannotGenerateCircuitInput({0})")]
@@ -144,6 +140,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 gas_limit: U256::from(st.env.current_gas_limit),
                 base_fee: U256::one(),
             },
+
             transactions: vec![geth_types::Transaction {
                 from: st.from,
                 to: st.to,
@@ -224,16 +221,6 @@ pub fn run_test(
             "OPCODE {:?}",
             step.op
         )));
-    }
-
-    for err in [EVMERR_STACKUNDERFLOW, EVMERR_OOG, EVMERR_GAS_UINT64OVERFLOW] {
-        if geth_traces[0]
-            .struct_logs
-            .iter()
-            .any(|step| step.error.as_ref().map(|e| e.contains(err)) == Some(true))
-        {
-            return Err(StateTestError::SkipUnimplemented(format!("Error {}", err)));
-        }
     }
 
     if geth_traces[0].gas.0 > suite.max_gas {

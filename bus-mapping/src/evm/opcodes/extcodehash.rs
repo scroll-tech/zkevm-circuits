@@ -21,8 +21,9 @@ impl Opcode for Extcodehash {
         let stack_address = step.stack.last_filled();
 
         // Pop external address off stack
-        let external_address = step.stack.last()?.to_address();
-        state.stack_read(&mut exec_step, stack_address, external_address.to_word())?;
+        let external_address_word = step.stack.last()?;
+        let external_address = external_address_word.to_address();
+        state.stack_read(&mut exec_step, stack_address, external_address_word)?;
 
         // Read transaction id, rw_counter_end_of_reversion, and is_persistent from call
         // context

@@ -17,6 +17,11 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
+
 use crate::{
     evm_circuit::{
         util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
@@ -116,7 +121,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
     ) -> Self {
         let q_step = meta.complex_selector();
         let is_last = meta.advice_column();
-        let value = meta.advice_column();
+        let value = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
         let is_pad = meta.advice_column();
         let is_first = copy_table.is_first;
@@ -362,9 +367,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .collect()
         });
 
-        /*
         // create case unimplemented for poseidon hash
+        #[cfg(feature = "codehash")]
         meta.lookup_any("Bytecode lookup", |meta| {
+            use crate::table::BytecodeFieldTag;
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()));
@@ -380,7 +386,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .map(|(arg, table)| (cond.clone() * arg, table))
             .collect()
         });
-        */
 
         meta.lookup_any("Tx calldata lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())

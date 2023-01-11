@@ -1,7 +1,9 @@
 use bus_mapping::circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::dev::MockProver;
+use halo2_proofs::dev::VerifyFailure;
 use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::plonk::Circuit;
 use integration_tests::{get_client, log_init};
 use integration_tests::{CIRCUIT, END_BLOCK, START_BLOCK, TX_ID};
 use zkevm_circuits::evm_circuit::EvmCircuit;
@@ -14,7 +16,9 @@ use zkevm_circuits::rlp_circuit::RlpCircuit;
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::TxCircuit;
-use zkevm_circuits::util::{Challenges, SubCircuit};
+use zkevm_circuits::util::{log2_ceil, Challenges, SubCircuit};
+use zkevm_circuits::witness;
+use zkevm_circuits::witness::SignedTransaction;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 30000,
@@ -51,34 +55,45 @@ async fn test_mock_prove_tx() {
         return;
     }
 
-    let block = block_convert(&builder.block, &builder.code_db).unwrap();
-    let prover = if *CIRCUIT == "evm" {
-        let k = get_test_degree(&block);
-        let circuit = get_test_cicuit_from_block(block);
-        let instance = vec![];
-        MockProver::<Fr>::run(k, &circuit, instance).unwrap()
-    } else if *CIRCUIT == "rlp" {
-        let k = 18;
-        let circuit = RlpCircuit::new_from_block(&block);
-        let instance = vec![];
-        MockProver::<Fr>::run(k, &circuit, instance).unwrap()
-    } else if *CIRCUIT == "state" {
-        let k = 18;
-        let circuit = StateCircuit::new_from_block(&block);
-        let instance = vec![];
-        MockProver::<Fr>::run(k, &circuit, instance).unwrap()
-    } else {
-        unimplemented!()
-    };
-
-    let result = prover.verify_par();
-    let errs = result.err().unwrap_or_default();
+    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let errs = test_witness_block(&block);
     for err in &errs {
         log::error!("ERR: {}", err);
     }
     println!("err num: {}", errs.len());
 
     log::info!("prove done");
+}
+
+fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(
+    block: &witness::Block<Fr>,
+    instance: Vec<Vec<Fr>>,
+) -> MockProver<Fr> {
+    let rows_needed = C::min_num_rows_block(block);
+    let k = log2_ceil(128 + rows_needed);
+    log::debug!("{} circuit needs k = {}", *CIRCUIT, k);
+    let circuit = C::new_from_block(block);
+    MockProver::<Fr>::run(k, &circuit, instance).unwrap()
+}
+fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
+    let prover = if *CIRCUIT == "evm" {
+        let k = get_test_degree(block);
+        let circuit = get_test_cicuit_from_block(block.clone());
+        let instance = vec![];
+        MockProver::<Fr>::run(k, &circuit, instance).unwrap()
+    } else if *CIRCUIT == "rlp" {
+        test_with::<RlpCircuit<Fr, SignedTransaction>>(block, vec![])
+    } else if *CIRCUIT == "tx" {
+        test_with::<TxCircuit<Fr>>(block, vec![vec![]])
+    } else if *CIRCUIT == "state" {
+        test_with::<StateCircuit<Fr>>(block, vec![])
+    } else {
+        unimplemented!()
+    };
+
+    let result = prover.verify_par();
+
+    result.err().unwrap_or_default()
 }
 
 #[tokio::test]
@@ -96,7 +111,7 @@ async fn test_super_circuit_all_block() {
             max_txs: 500,
             max_calldata: 2_000_000,
             max_inner_blocks: 64,
-            max_bytecode: 2_000_000,
+            max_bytecode: 3_000_000,
             keccak_padding: None,
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
@@ -127,20 +142,20 @@ async fn test_super_circuit_all_block() {
 }
 
 #[tokio::test]
-async fn test_tx_circuit_all_block() {
+async fn test_circuit_all_block() {
     log_init();
     let start: usize = *START_BLOCK;
     let end: usize = *END_BLOCK;
     for blk in start..=end {
         let block_num = blk as u64;
-        log::info!("test tx circuit, block number: {}", block_num);
+        log::info!("test {} circuit, block number: {}", *CIRCUIT, block_num);
         let cli = get_client();
         let params = CircuitsParams {
-            max_rws: 200_000,
-            max_txs: 14, // so max_txs * num_rows_per_tx < 2**21
-            max_calldata: 200_000,
+            max_rws: 4_000_000,
+            max_txs: 500,
+            max_calldata: 2_000_000,
             max_inner_blocks: 64,
-            max_bytecode: 200_000,
+            max_bytecode: 3_000_000,
             keccak_padding: None,
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
@@ -152,15 +167,16 @@ async fn test_tx_circuit_all_block() {
         }
 
         let block = block_convert(&builder.block, &builder.code_db).unwrap();
-        let circuit = TxCircuit::<Fr>::new_from_block(&block);
-        let k = 21;
-        let prover = MockProver::<Fr>::run(k, &circuit, vec![vec![]]).unwrap();
-        let result = prover.verify_par();
+        let errs = test_witness_block(&block);
         log::info!(
-            "test tx circuit, block number: {} result {:?}",
+            "test {} circuit, block number: {} err num {:?}",
+            *CIRCUIT,
             block_num,
-            result
+            errs.len()
         );
+        for err in errs {
+            log::error!("circuit err: {}", err);
+        }
     }
 }
 

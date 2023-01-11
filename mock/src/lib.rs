@@ -46,6 +46,7 @@ lazy_static! {
         Bytes::from([0x60, 0x01, 0x60, 0x02, 0x02, 0x00]), // PUSH1(1), PUSH1(2), MUL, STOP
         Bytes::from([0x60, 0x02, 0x60, 0x01, 0x03, 0x00]), // PUSH1(2), PUSH1(1), SUB, STOP
         Bytes::from([0x60, 0x09, 0x60, 0x03, 0x04, 0x00]), // PUSH1(9), PUSH1(3), DIV, STOP
+        Bytes::from([0x30; 256]), // ADDRESS * 256
     ];
     /// Mock wallets used to generate correctly signed and hashed Transactions.
     pub static ref MOCK_WALLETS: Vec<LocalWallet> = {

@@ -28,6 +28,11 @@ use integer::{AssignedInteger, IntegerChip, IntegerConfig, IntegerInstructions, 
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
+
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use log::error;
@@ -143,7 +148,7 @@ impl SignVerifyConfig {
         // RLC
         let q_rlc_evm_word = meta.selector();
         let q_rlc_keccak_input = meta.selector();
-        let rlc = meta.advice_column();
+        let rlc = meta.advice_column_in(SecondPhase);
         meta.enable_equality(rlc);
 
         Self::configure_rlc(

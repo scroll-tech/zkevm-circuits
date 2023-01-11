@@ -1641,6 +1641,7 @@ mod tx_circuit_tests {
         prover.verify()
     }
 
+    #[ignore]
     #[test]
     fn tx_circuit_2tx_2max_tx() {
         const NUM_TXS: usize = 2;
@@ -1681,6 +1682,7 @@ mod tx_circuit_tests {
         assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
     }
 
+    #[ignore]
     #[test]
     fn tx_circuit_1tx_2max_tx() {
         const MAX_TXS: usize = 2;

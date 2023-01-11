@@ -3,9 +3,13 @@ name: Integration Tests
 on:
   pull_request:
     types: [synchronize, labeled]
+    # Ignore when target branch is `main` and source branch is scroll-stable.
+    # It could avoid running twice. Since scroll-stable is set as `push` below.
+    branches-ignore:
+      - main
   push:
     branches:
-      - main
+      - scroll-stable
 
 jobs:
   consecutiveness:

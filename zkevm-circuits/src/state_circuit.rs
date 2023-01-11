@@ -29,6 +29,11 @@ use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as
 use std::collections::HashMap;
 use std::{iter::once, marker::PhantomData};
 
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
+
 use self::{
     constraint_builder::{MptUpdateTableQueries, RwTableQueries},
     lexicographic_ordering::LimbIndex,
@@ -104,9 +109,9 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             challenges.evm_word_powers_of_randomness(),
         );
 
-        let initial_value = meta.advice_column();
-        let is_non_exist = meta.advice_column();
-        let state_root = meta.advice_column();
+        let initial_value = meta.advice_column_in(SecondPhase);
+        let is_non_exist = meta.advice_column_in(SecondPhase);
+        let state_root = meta.advice_column_in(SecondPhase);
 
         let sort_keys = SortKeysConfig {
             tag,

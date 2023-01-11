@@ -19,19 +19,15 @@ mod tests {
     use mock::TestContext;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    use std::env::var;
     use zkevm_circuits::pi_circuit::{PiCircuit, PiTestCircuit};
     use zkevm_circuits::util::SubCircuit;
     use zkevm_circuits::witness::{block_convert, Block};
 
+    use crate::bench_params::DEGREE;
+
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_pi_circuit_prover() {
-        let degree: u32 = var("DEGREE")
-            .unwrap_or_else(|_| "15".to_string())
-            .parse()
-            .expect("Cannot parse DEGREE env var as u32");
-
         const MAX_TXS: usize = 10;
         const MAX_CALLDATA: usize = 128;
         const MAX_INNER_BLOCKS: usize = 64;
@@ -42,7 +38,7 @@ mod tests {
         );
         let public_inputs = circuit.0.instance();
         let instance: Vec<&[Fr]> = public_inputs.iter().map(|input| &input[..]).collect();
-        let instances = &[&instance[..]][..];
+        let instances = &[&instance[..]];
 
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
@@ -50,9 +46,9 @@ mod tests {
         ]);
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", degree);
+        let setup_message = format!("Setup generation with degree = {}", DEGREE);
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(DEGREE as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
@@ -63,7 +59,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("PI_circuit Proof generation with {} rows", degree);
+        let proof_message = format!("PI_circuit Proof generation with {} rows", DEGREE);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,

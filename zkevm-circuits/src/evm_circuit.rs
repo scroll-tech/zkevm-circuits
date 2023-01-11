@@ -466,17 +466,18 @@ pub mod test {
             ]
         );
         log::debug!("evm circuit uses k = {}, rows = {}", k, rows_needed);
-
         k
     }
 
     pub fn get_test_cicuit_from_block<F: Field>(block: Block<F>) -> EvmCircuit<F> {
         let fixed_table_tags = detect_fixed_table_tags(&block);
+
         EvmCircuit::<F>::new_dev(block, fixed_table_tags)
     }
 
     pub fn get_test_instance<F: Field>(block: &Block<F>) -> Vec<Vec<F>> {
         let k = get_test_degree(block);
+
         (1..32)
             .map(|exp| vec![block.randomness.pow(&[exp, 0, 0, 0]); (1 << k) - 64])
             .collect()
@@ -484,6 +485,7 @@ pub mod test {
 
     pub fn run_test_circuit<F: Field>(block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
         let k = get_test_degree(&block);
+
         let (active_gate_rows, active_lookup_rows) = EvmCircuit::<F>::get_active_rows(&block);
         let circuit = get_test_cicuit_from_block(block);
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();

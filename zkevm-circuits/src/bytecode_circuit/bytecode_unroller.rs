@@ -17,6 +17,11 @@ use halo2_proofs::{
 use keccak256::plain::Keccak;
 use std::vec;
 
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
+
 use super::param::PUSH_TABLE_WIDTH;
 /// Public data for the bytecode
 #[derive(Clone, Debug, PartialEq)]
@@ -85,7 +90,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
         let q_last = meta.complex_selector();
         let value = bytecode_table.value;
         let push_rindex = meta.advice_column();
-        let hash_input_rlc = meta.advice_column();
+        let hash_input_rlc = meta.advice_column_in(SecondPhase);
         let code_length = meta.advice_column();
         let byte_push_size = meta.advice_column();
         let is_final = meta.advice_column();
@@ -354,9 +359,10 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             constraints
         });
 
-        /*
+        #[cfg(feature = "codehash")]
         // keccak lookup
         meta.lookup_any("keccak", |meta| {
+            use crate::table::DynamicTableColumns;
             // Conditions:
             // - On the row with the last byte (`is_final == 1`)
             // - Not padding
@@ -377,7 +383,6 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             }
             constraints
         });
-        */
 
         BytecodeCircuitConfig {
             minimum_rows: meta.minimum_rows(),

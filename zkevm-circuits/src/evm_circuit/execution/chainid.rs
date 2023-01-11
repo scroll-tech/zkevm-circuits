@@ -77,7 +77,6 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
                 block.randomness,
             )),
         )?;
-
         Ok(())
     }
 }

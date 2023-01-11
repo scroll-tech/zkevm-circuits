@@ -259,6 +259,8 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
     match error {
         ExecError::InvalidJump => Some(ErrorInvalidJump::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
+        // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
+        ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         // more future errors place here
         _ => {
             warn!("TODO: error state {:?} not implemented", error);
@@ -330,7 +332,6 @@ pub fn gen_associated_ops(
         } else {
             // For exceptions that already enter next call context, but fail immediately
             // (e.g. Depth, InsufficientBalance), we still need to parse the call.
-
             if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
                 let call = state.parse_call(geth_step)?;
                 state.push_call(call);

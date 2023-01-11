@@ -457,13 +457,13 @@ impl RwTable {
             id: meta.advice_column(),
             address: meta.advice_column(),
             field_tag: meta.advice_column(),
-            storage_key: meta.advice_column(),
-            value: meta.advice_column(),
-            value_prev: meta.advice_column(),
+            storage_key: meta.advice_column_in(SecondPhase),
+            value: meta.advice_column_in(SecondPhase),
+            value_prev: meta.advice_column_in(SecondPhase),
             // It seems that aux1 for the moment is not using randomness
             // TODO check in a future review
-            aux1: meta.advice_column(),
-            aux2: meta.advice_column(),
+            aux1: meta.advice_column_in(SecondPhase),
+            aux2: meta.advice_column_in(SecondPhase),
         }
     }
     fn assign<F: Field>(
@@ -635,7 +635,7 @@ impl BytecodeTable {
     /// Construct a new BytecodeTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
-        let code_hash = meta.advice_column();
+        let code_hash = meta.advice_column_in(SecondPhase);
         Self {
             code_hash,
             tag,
@@ -828,9 +828,9 @@ impl KeccakTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             is_enabled: meta.advice_column(),
-            input_rlc: meta.advice_column(),
+            input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
-            output_rlc: meta.advice_column(),
+            output_rlc: meta.advice_column_in(SecondPhase),
         }
     }
 
@@ -971,12 +971,12 @@ impl CopyTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
             is_first: meta.advice_column(),
-            id: meta.advice_column(),
+            id: meta.advice_column_in(SecondPhase),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
-            rlc_acc: meta.advice_column(),
+            rlc_acc: meta.advice_column_in(SecondPhase),
             rw_counter: meta.advice_column(),
             rwc_inc_left: meta.advice_column(),
         }

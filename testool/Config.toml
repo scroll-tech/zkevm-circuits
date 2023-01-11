@@ -15,20 +15,9 @@ max_steps = 1000
 max_rws = 51000
 unimplemented_opcodes = [
     "SAR",
-    "RETURN",
-    "REVERT",
-    "SHA3",
-    "ADDRESS",
-    "BALANCE",
-    "EXTCODESIZE",
     "EXTCODECOPY",
-    "RETURNDATASIZE",
-    "RETURNDATACOPY",
     "CREATE",
     "CREATE2",
-    "CALLCODE",
-    "DELEGATECALL",
-    "STATICCALL",
     "SELFDESTRUCT"
 ]
 ignore_tests=["&tofix"]

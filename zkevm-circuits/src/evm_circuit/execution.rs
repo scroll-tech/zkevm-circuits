@@ -110,7 +110,6 @@ use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
 use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
-
 use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
@@ -400,7 +399,6 @@ impl<F: Field> ExecutionConfig<F> {
 
         let mut stored_expressions_map = HashMap::new();
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -637,7 +635,6 @@ impl<F: Field> ExecutionConfig<F> {
                 meta.create_gate(G::NAME, |meta| {
                     let q_usable = meta.query_selector(q_usable);
                     let selector = selector(meta);
-
                     constraints.into_iter().map(move |(name, constraint)| {
                         (name, q_usable.clone() * selector.clone() * constraint)
                     })
@@ -1321,6 +1318,7 @@ impl<F: Field> ExecutionConfig<F> {
                 );
             }
         }
+        //}
         Ok(())
     }
 
@@ -1344,6 +1342,7 @@ impl<F: Field> ExecutionConfig<F> {
         }
         Ok(assigned_stored_expressions)
     }
+
     fn check_rw_lookup(
         assigned_stored_expressions: &[(String, F)],
         offset: usize,
