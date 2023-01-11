@@ -311,6 +311,7 @@ pub fn handle_address<F: FieldExt>(
             tag_rindex: 1,
             length_acc: 0,
         });
+        idx += 1;
     } else {
         assert_eq!(
             rlp_data[idx], 0x94,

@@ -296,7 +296,11 @@ impl Encodable for Transaction {
         s.append(&Word::from(self.nonce));
         s.append(&self.gas_price);
         s.append(&Word::from(self.gas));
-        s.append(&self.callee_address);
+        if self.callee_address == Address::zero() {
+            s.append(&""); // address == 0, rlp = 0x80
+        } else {
+            s.append(&self.callee_address);
+        }
         s.append(&self.value);
         s.append(&self.call_data);
         s.append(&Word::from(self.chain_id));
@@ -320,7 +324,11 @@ impl Encodable for SignedTransaction {
         s.append(&Word::from(self.tx.nonce));
         s.append(&self.tx.gas_price);
         s.append(&Word::from(self.tx.gas));
-        s.append(&self.tx.callee_address);
+        if self.tx.callee_address == Address::zero() {
+            s.append(&""); // address == 0, rlp = 0x80
+        } else {
+            s.append(&self.tx.callee_address);
+        }
         s.append(&self.tx.value);
         s.append(&self.tx.call_data);
         s.append(&self.signature.v);
@@ -404,15 +412,17 @@ pub(super) fn tx_convert(
         chain_id, tx.chain_id
     );
     let (rlp_unsigned, rlp_signed) = {
-        let legacy_tx = TransactionRequest::new()
+        let mut legacy_tx = TransactionRequest::new()
             .from(tx.from)
             .nonce(tx.nonce)
             .gas_price(tx.gas_price)
             .gas(tx.gas)
-            .to(tx.to)
             .value(tx.value)
             .data(tx.input.clone())
             .chain_id(chain_id);
+        if tx.to != Address::zero() {
+            legacy_tx = legacy_tx.to(tx.to);
+        }
 
         let unsigned = legacy_tx.rlp().to_vec();
         let signed = legacy_tx.rlp_signed(&tx.signature).to_vec();

@@ -26,7 +26,7 @@ use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
 use eth_types::{self, Address, GethExecStep, GethExecTrace, ToWord, Word, H256, U256};
 use eth_types::{geth_types, ToBigEndian};
 use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::types::{Bytes, Signature, TransactionRequest};
+use ethers_core::types::{Bytes, NameOrAddress, Signature, TransactionRequest};
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
@@ -584,7 +584,19 @@ pub fn keccak_inputs_tx_circuit(
                 s: tx.s,
                 v: tx.v,
             };
-            let tx: TransactionRequest = tx.into();
+            let mut tx: TransactionRequest = tx.into();
+            if tx.to.is_some() {
+                let to = tx.to.clone().unwrap();
+                match to {
+                    NameOrAddress::Name(_) => {}
+                    NameOrAddress::Address(addr) => {
+                        // the rlp of zero addr is 0x80
+                        if addr == Address::zero() {
+                            tx.to = None;
+                        }
+                    }
+                }
+            }
             tx.rlp_signed(&sig).to_vec()
         })
         .collect::<Vec<Vec<u8>>>();
