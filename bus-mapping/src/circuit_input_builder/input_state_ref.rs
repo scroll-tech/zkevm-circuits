@@ -843,6 +843,24 @@ impl<'a> CircuitInputStateRef<'a> {
                         }
                         (offset, length)
                     }
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::STATICCALL
+                    | OpcodeId::DELEGATECALL => {
+                        if self
+                            .call()?
+                            .code_address()
+                            .map(|ref addr| is_precompiled(addr))
+                            .unwrap_or(false)
+                        {
+                            let caller_ctx = self.caller_ctx_mut()?;
+                            (0, caller_ctx.return_data.len())
+                        } else {
+                            let caller_ctx = self.caller_ctx_mut()?;
+                            caller_ctx.return_data.truncate(0);
+                            (0, 0)
+                        }
+                    }
                     _ => {
                         let caller_ctx = self.caller_ctx_mut()?;
                         caller_ctx.return_data.truncate(0);
@@ -1119,6 +1137,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // The *CALL*/CREATE* code was not executed
+
         let next_pc = next_step.map(|s| s.pc.0).unwrap_or(1);
         if matches!(
             step.op,

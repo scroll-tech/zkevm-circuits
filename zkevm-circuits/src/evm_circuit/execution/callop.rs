@@ -67,7 +67,10 @@ pub(crate) struct CallOpGadget<F> {
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
     is_code_address_zero: IsZeroGadget<F>,
     is_precompile_lt: LtGadget<F, N_BYTES_ACCOUNT_ADDRESS>,
+    // FIXME: free cells
     gas_cost: Cell<F>,
+    // used only in precompiled contracts
+    return_len_cell: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
@@ -151,7 +154,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let gas = from_bytes::expr(&gas_word.cells[..N_BYTES_GAS]);
         let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
         let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
-        let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length.clone());
+        let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 
@@ -262,7 +265,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 callee_code_hash.expr(),
             );
         });
-        cb.condition(1.expr() - callee_exists.expr(), |cb| {
+        cb.condition(not::expr(callee_exists.expr()), |cb| {
             cb.account_read(code_address.expr(), AccountFieldTag::NonExisting, 0.expr());
         });
 
@@ -303,16 +306,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             not::expr(is_code_address_zero.expr()),
             is_precompile_lt.expr(),
         ]);
-        let precompile_memory_writes = is_precompile.expr() * from_bytes::expr(&rd_length.cells);
+        let return_len_cell = cb.query_cell();
+        let precompile_memory_writes = 2.expr() * is_precompile.expr() * return_len_cell.expr();
 
         let stack_pointer_delta =
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let gas_cost_cell = cb.query_cell();
 
-        let is_empty_or_precompile = or::expr(&[is_precompile.expr(), is_empty_code_hash.expr()]);
         cb.condition(
-            and::expr(&[
-                is_empty_or_precompile.expr(),
+            and::expr([
+                is_empty_code_hash.expr(),
+                not::expr(is_precompile.expr()),
                 not::expr(is_insufficient_balance.expr()),
             ]),
             |cb| {
@@ -324,7 +328,34 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 ] {
                     cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
                 }
+            },
+        );
+        cb.condition(
+            and::expr([
+                is_precompile.expr(),
+                not::expr(is_insufficient_balance.expr()),
+            ]),
+            |cb| {
+                // Save caller's call state
+                for (field_tag, value) in [
+                    (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),
+                    (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
+                    (
+                        CallContextFieldTag::LastCalleeReturnDataLength,
+                        return_len_cell.expr(),
+                    ),
+                ] {
+                    cb.call_context_lookup(true.expr(), None, field_tag, value);
+                }
+            },
+        );
 
+        cb.condition(
+            and::expr([
+                is_empty_code_hash.expr(),
+                not::expr(is_insufficient_balance.expr()),
+            ]),
+            |cb| {
                 // For CALL opcode, it has an extra stack pop `value` and two account write for
                 // `transfer` call (+3).
                 //
@@ -379,7 +410,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         cb.condition(
             and::expr(&[
-                not::expr(is_empty_or_precompile.expr()),
+                not::expr(is_empty_code_hash.expr()),
                 not::expr(is_insufficient_balance.expr()),
             ]),
             |cb| {
@@ -511,6 +542,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             capped_callee_gas_left,
             is_code_address_zero,
             is_precompile_lt,
+            return_len_cell,
             gas_cost: gas_cost_cell,
         }
     }
@@ -551,6 +583,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.rw_indices[7 + rw_offset],
         ]
         .map(|idx| block.rws[idx].stack_value());
+        let is_precompile = code_address < 10.into() && !code_address.is_zero();
         let value = if is_call || is_callcode {
             rw_offset += 1;
             block.rws[step.rw_indices[7 + rw_offset]].stack_value()
@@ -608,6 +641,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         };
         let callee_code_hash =
             RandomLinearCombination::random_linear_combine(callee_code_hash, block.randomness);
+        if is_precompile {
+            let last_caller_return_data_length_rw = block.rws[step.rw_indices[20 + rw_offset]];
+            assert_eq!(
+                last_caller_return_data_length_rw.field_tag().unwrap(),
+                CallContextFieldTag::LastCalleeReturnDataLength as u64
+            );
+            let return_len = last_caller_return_data_length_rw.call_context_value();
+            self.return_len_cell.assign(
+                region,
+                offset,
+                Value::known(F::from(return_len.as_u64())),
+            )?;
+        }
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
