@@ -1,5 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep};
+use crate::operation::MemoryOp;
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
 use crate::precompile::{execute_precompiled, is_precompiled};
 use crate::Error;
@@ -247,13 +248,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         ) {
             // 1. Call to precompiled.
             (false, true, _) => {
-                for (field, value) in [
-                    (CallContextField::LastCalleeId, 0.into()),
-                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
-                ] {
-                    state.call_context_write(&mut exec_step, current_call.call_id, field, value);
-                }
                 assert!(call.is_success, "call to precompile should not fail");
                 let caller_ctx = state.caller_ctx_mut()?;
                 let code_address = code_address.unwrap();
@@ -262,14 +256,38 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     &caller_ctx.memory.0[args_offset..args_offset + args_length],
                     callee_gas_left,
                 );
+                caller_ctx.return_data = result.clone();
                 let length = min(result.len(), ret_length);
                 caller_ctx.memory.extend_at_least(ret_offset + length);
                 caller_ctx.memory.0[ret_offset..ret_offset + length]
                     .copy_from_slice(&result[..length]);
-                for (i, value) in result[..length].iter().enumerate() {
-                    state.memory_write(&mut exec_step, (ret_offset + i).into(), *value)?;
+                for (field, value) in [
+                    (CallContextField::LastCalleeId, call.call_id.into()),
+                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                    (
+                        CallContextField::LastCalleeReturnDataLength,
+                        result.len().into(),
+                    ),
+                ] {
+                    state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
+                for (i, value) in result.iter().enumerate() {
+                    state.push_op(
+                        &mut exec_step,
+                        RW::WRITE,
+                        MemoryOp::new(call.call_id, (i).into(), *value),
+                    );
+                }
+                for (i, value) in result[..length].iter().enumerate() {
+                    state.push_op(
+                        &mut exec_step,
+                        RW::WRITE,
+                        MemoryOp::new(call.caller_id, (ret_offset + i).into(), *value),
+                    );
+                }
+
                 state.handle_return(geth_step)?;
+
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
                 debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
                 if real_cost != exec_step.gas_cost.0 {
