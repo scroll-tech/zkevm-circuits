@@ -73,7 +73,7 @@ lazy_static! {
         //     .data(Bytes::default())
         //     .chain_id(1)
         //     .rlp().to_vec();
-        let msg_hash: [u8; 32] = Keccak256::digest(&msg)
+        let msg_hash: [u8; 32] = Keccak256::digest(msg)
             .as_slice()
             .to_vec()
             .try_into()
