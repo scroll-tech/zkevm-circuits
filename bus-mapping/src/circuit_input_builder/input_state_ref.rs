@@ -5,6 +5,7 @@ use super::{
     CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
     TransactionContext,
 };
+use crate::precompile::is_precompiled;
 use crate::{
     error::{get_step_reported_error, ExecError},
     exec_trace::OperationRef,
@@ -591,12 +592,6 @@ impl<'a> CircuitInputStateRef<'a> {
         ))
     }
 
-    /// Check if address is a precompiled or not.
-    /// FIXME: we should move this to a more common place.
-    pub fn is_precompiled(&self, address: &Address) -> bool {
-        address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
-    }
-
     // TODO: Remove unwrap() and add err handling.
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
@@ -643,7 +638,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     }
                     _ => address,
                 };
-                if self.is_precompiled(&code_address) {
+                if is_precompiled(&code_address) {
                     (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
                 } else {
                     let (found, account) = self.sdb.get_account(&code_address);

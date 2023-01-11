@@ -25,6 +25,15 @@ strum = "0.24"
 hex = "0.4.3"
 strum_macros = "0.24"
 
+# precompile related crates
+fp-evm = { version = "3.0.0-dev", git = "https://github.com/paritytech/frontier", rev = "73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca" }
+pallet-evm-precompile-blake2 = { version = "2.0.0-dev", git = "https://github.com/paritytech/frontier", rev = "73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca" }
+pallet-evm-precompile-bn128 = { version = "2.0.0-dev", git = "https://github.com/paritytech/frontier", rev = "73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca" }
+pallet-evm-precompile-curve25519 = { version = "1.0.0-dev", git = "https://github.com/paritytech/frontier", rev = "73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca" }
+pallet-evm-precompile-modexp = { version = "2.0.0-dev", git = "https://github.com/paritytech/frontier", rev = "73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca" }
+pallet-evm-precompile-simple = { version = "2.0.0-dev", git = "https://github.com/paritytech/frontier", rev = "73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca" }
+primitive-types-12 = { package = "primitive-types", version = "0.12" }
+
 [dev-dependencies]
 hex = "0.4.3"
 pretty_assertions = "1.0.0"

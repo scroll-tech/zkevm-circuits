@@ -61,6 +61,7 @@ mod error_oog_call;
 mod memory_expansion_test;
 
 use self::sha3::Sha3;
+use crate::precompile::is_precompiled;
 use address::Address;
 use balance::Balance;
 use calldatacopy::Calldatacopy;
@@ -425,7 +426,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // There are 4 branches from here.
     match (
         call.is_create(),
-        state.is_precompiled(&call.address),
+        is_precompiled(&call.address),
         code_hash.to_fixed_bytes() == *EMPTY_HASH,
     ) {
         // 1. Creation transaction.

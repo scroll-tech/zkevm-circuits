@@ -1,6 +1,7 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
+use crate::precompile::is_precompiled;
 use eth_types::{Address, Hash, Word, H256, U256};
 use ethers_core::utils::keccak256;
 use lazy_static::lazy_static;
@@ -9,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 lazy_static! {
     static ref ACCOUNT_ZERO: Account = Account::zero();
     static ref VALUE_ZERO: Word = Word::zero();
-    static ref CODE_HASH_ZERO: Hash = H256(keccak256(&[]));
+    static ref CODE_HASH_ZERO: Hash = H256(keccak256([]));
 }
 
 /// Define any object can encode the code to a 32 bytes hash
@@ -243,8 +244,11 @@ impl StateDB {
     }
 
     /// Check whether `addr` exists in account access list.
+    ///
+    /// Note: After the hardfork Berlin,
+    /// all the precompiled contracts addresses are always considered warm.
     pub fn check_account_in_access_list(&self, addr: &Address) -> bool {
-        self.access_list_account.contains(addr)
+        is_precompiled(addr) || self.access_list_account.contains(addr)
     }
 
     /// Add `addr` into account access list. Returns `true` if it's not in the

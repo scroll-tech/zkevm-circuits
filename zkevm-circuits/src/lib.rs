@@ -10,6 +10,7 @@
 #![allow(dead_code)]
 // We want to have UPPERCASE idents sometimes.
 #![allow(clippy::upper_case_acronyms)]
+#![allow(clippy::result_large_err)] // it's large, but what can we do?
 // Catch documentation errors caused by code changes.
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]

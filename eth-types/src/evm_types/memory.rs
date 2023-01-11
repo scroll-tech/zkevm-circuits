@@ -349,10 +349,10 @@ mod memory_tests {
         let first_usize = 64536usize;
         // Parsing on both ways works.
         assert_eq!(
-            MemoryAddress::from_le_bytes(&first_usize.to_le_bytes())?,
-            MemoryAddress::from_be_bytes(&first_usize.to_be_bytes())?
+            MemoryAddress::from_le_bytes(first_usize.to_le_bytes())?,
+            MemoryAddress::from_be_bytes(first_usize.to_be_bytes())?
         );
-        let addr = MemoryAddress::from_le_bytes(&first_usize.to_le_bytes())?;
+        let addr = MemoryAddress::from_le_bytes(first_usize.to_le_bytes())?;
         assert_eq!(addr, MemoryAddress::from(first_usize));
 
         // Little endian export

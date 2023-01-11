@@ -223,6 +223,7 @@
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
+#![allow(clippy::result_large_err)] // it's large, but what can we do?
 
 extern crate alloc;
 extern crate core;
@@ -234,6 +235,8 @@ pub mod exec_trace;
 pub(crate) mod geth_errors;
 pub mod mock;
 pub mod operation;
+pub mod precompile;
 pub mod rpc;
 pub mod state_db;
+
 pub use error::Error;

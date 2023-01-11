@@ -342,7 +342,7 @@ async fn main() {
     for (i, tx_hash) in tx_hashes.iter().enumerate() {
         let pending_tx = PendingTransaction::new(*tx_hash, wallets[i].inner());
         let receipt = pending_tx.confirmations(0usize).await.unwrap().unwrap();
-        let expected_status = if i % 2 == 0 { 1u64 } else { 0u64 };
+        let expected_status = u64::from(i % 2 == 0);
         assert_eq!(
             receipt.status,
             Some(U64::from(expected_status)),
