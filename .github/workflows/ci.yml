@@ -52,6 +52,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+      # https://github.com/actions/cache/issues/133#issuecomment-599102035
+      - name: Change cargo dir owner
+        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -102,6 +105,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+      # https://github.com/actions/cache/issues/133#issuecomment-599102035
+      - name: Change cargo dir owner
+        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -145,6 +151,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+      # https://github.com/actions/cache/issues/133#issuecomment-599102035
+      - name: Change cargo dir owner
+        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -183,6 +192,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+      # https://github.com/actions/cache/issues/133#issuecomment-599102035
+      - name: Change cargo dir owner
+        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -227,6 +239,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+      # https://github.com/actions/cache/issues/133#issuecomment-599102035
+      - name: Change cargo dir owner
+        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
       - name: Cargo cache
         uses: actions/cache@v3
         with:
