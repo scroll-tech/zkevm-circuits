@@ -546,7 +546,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
             cb.require_equal(
                 "tag equality (fixed tag == binary number config's tag",
-                meta.query_advice(tx_table.tag, Rotation::cur()),
+                meta.query_fixed(tx_table.tag, Rotation::cur()),
                 tag.value(Rotation::cur())(meta),
             );
 
@@ -834,7 +834,7 @@ impl<F: Field> TxCircuitConfig<F> {
             .zip(
                 vec![
                     meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                    meta.query_advice(tx_table.tag, Rotation::cur()),
+                    meta.query_fixed(tx_table.tag, Rotation::cur()),
                     meta.query_advice(calldata_gas_cost_acc, Rotation::cur()),
                     meta.query_advice(is_final, Rotation::cur()),
                 ]
@@ -865,7 +865,7 @@ impl<F: Field> TxCircuitConfig<F> {
             .zip(
                 vec![
                     meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                    meta.query_advice(tx_table.tag, Rotation::cur()),
+                    meta.query_fixed(tx_table.tag, Rotation::cur()),
                     meta.query_advice(tx_table.index, Rotation::cur()),
                     meta.query_advice(is_final, Rotation::cur()),
                 ]
@@ -898,7 +898,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_advice(lookup_conditions[&LookupCondition::Tag], Rotation::cur()),
             ]);
-            let tx_tag = meta.query_advice(tx_table.tag, Rotation::cur());
+            let tx_tag = meta.query_fixed(tx_table.tag, Rotation::cur());
             let rlp_tag = meta.query_advice(rlp_tag, Rotation::cur());
             let tx_tag_table = meta.query_fixed(tag_table.tx_tag, Rotation::cur());
             let rlp_tag_table = meta.query_fixed(tag_table.rlp_tag, Rotation::cur());
