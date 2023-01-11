@@ -302,14 +302,26 @@ dependencies = [
 
 [[package]]
 name = "bitvec"
+version = "0.22.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5237f00a8c86130a0cc317830e558b966dd7850d48a953d998c813f01a41b527"
+dependencies = [
+ "funty 1.2.0",
+ "radium 0.6.2",
+ "tap",
+ "wyz 0.4.0",
+]
+
+[[package]]
+name = "bitvec"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
 dependencies = [
- "funty",
+ "funty 2.0.0",
  "radium 0.7.0",
  "tap",
- "wyz",
+ "wyz 0.5.1",
 ]
 
 [[package]]
@@ -2165,6 +2177,11 @@ dependencies = [
 
 [[package]]
 name = "funty"
+version = "1.2.0"
+source = "git+https://github.com/ferrilab/funty/?rev=7ef0d890fbcd8b3def1635ac1a877fc298488446#7ef0d890fbcd8b3def1635ac1a877fc298488446"
+
+[[package]]
+name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
@@ -2435,6 +2452,22 @@ name = "half"
 version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
+
+[[package]]
+name = "halo2-mpt-circuits"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0111#723309fb71ef83b87aa1a908bc8e50cb14c4a64e"
+dependencies = [
+ "halo2_proofs",
+ "hex",
+ "lazy_static",
+ "num-bigint",
+ "poseidon-circuit",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "halo2_proofs"
@@ -3244,6 +3277,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mpt-zktrie"
+version = "0.1.0"
+dependencies = [
+ "bus-mapping",
+ "env_logger",
+ "eth-types",
+ "halo2-mpt-circuits",
+ "halo2_proofs",
+ "lazy_static",
+ "log",
+ "num-bigint",
+ "zktrie",
+]
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3834,6 +3882,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "poseidon-circuit"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0111#f1cc833b70841b43a7914cb0ec3b7dceed1c8ef6"
+dependencies = [
+ "bitvec 0.22.3",
+ "halo2_proofs",
+ "lazy_static",
+ "thiserror",
+]
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3986,6 +4045,12 @@ name = "radium"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "def50a86306165861203e7f84ecffbbdfdea79f0e51039b33de1e952358c47ac"
+
+[[package]]
+name = "radium"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "643f8f41a8ebc4c5dc4515c82bb8abd397b527fc20fd681b7c011c2aee5d44fb"
 
 [[package]]
 name = "radium"
@@ -6323,6 +6388,15 @@ dependencies = [
 
 [[package]]
 name = "wyz"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "129e027ad65ce1453680623c3fb5163cbf7107bfe1aa32257e7d0e63f9ced188"
+dependencies = [
+ "tap",
+]
+
+[[package]]
+name = "wyz"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
@@ -6394,6 +6468,7 @@ dependencies = [
  "log",
  "maingate",
  "mock",
+ "mpt-zktrie",
  "num",
  "num-bigint",
  "pretty_assertions",
@@ -6406,4 +6481,12 @@ dependencies = [
  "strum",
  "strum_macros",
  "subtle",
+]
+
+[[package]]
+name = "zktrie"
+version = "0.1.1"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=dev-1102#f7ba2ca825f087ecba2240daacc63e2ee166e1e4"
+dependencies = [
+ "gobuild",
 ]

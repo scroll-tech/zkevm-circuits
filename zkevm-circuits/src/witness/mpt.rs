@@ -1,9 +1,12 @@
 use crate::evm_circuit::{util::RandomLinearCombination, witness::Rw};
 use crate::table::{AccountFieldTag, ProofType};
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 use std::collections::BTreeMap;
+use mpt_zktrie::{state, serde::SMTTrace, MPTProofType};
+
+pub use state::ZktrieState;
 
 /// An MPT update whose validility is proved by the MptCircuit
 #[derive(Debug, Clone, Copy)]
@@ -42,6 +45,52 @@ pub struct MptUpdateRow<F>(pub(crate) [F; 7]);
 impl MptUpdates {
     pub(crate) fn get(&self, row: &Rw) -> Option<MptUpdate> {
         key(row).map(|key| *self.0.get(&key).expect("missing key in mpt updates"))
+    }
+
+    pub(crate) fn construct(rows: &[Rw], init_trie: &ZktrieState) -> (Self, Vec<SMTTrace>, Vec<MPTProofType>) {
+
+        use state::witness::WitnessGenerator;
+
+        let mut update_without_root = Self::mock_from(rows);
+
+        let mut wit_gen = WitnessGenerator::from(init_trie);
+        let mut smt_traces = Vec::new();
+        let mut tips = Vec::new();
+
+        for (key, update) in &mut update_without_root.0 {
+            let proof_tip = state::as_proof_type(
+                match key {
+                    Key::AccountStorage { .. } => {
+                        if update.old_value.is_zero() && update.new_value.is_zero() {
+                            ProofType::StorageDoesNotExist as i32
+                        } else {
+                            ProofType::StorageChanged as i32
+                        } 
+                    }
+                    Key::Account { field_tag, .. } => *field_tag as i32,
+                }
+            );
+            let smt_trace = wit_gen.handle_new_state(
+                proof_tip,
+                match key {
+                    Key::Account { address, .. } | Key::AccountStorage { address, .. } => *address,
+                },
+                update.new_value,
+                update.old_value,
+                match key {
+                    Key::Account { .. } => None,
+                    Key::AccountStorage { storage_key, .. } => Some(*storage_key),
+                }
+            );
+            update.old_root = U256::from_little_endian(smt_trace.account_path[0].root.as_ref());
+            update.new_root = U256::from_little_endian(smt_trace.account_path[1].root.as_ref());
+            smt_traces.push(smt_trace);
+            tips.push(proof_tip);
+            
+        }
+
+        let updates = update_without_root;
+        (updates, smt_traces, tips)
     }
 
     pub(crate) fn mock_from(rows: &[Rw]) -> Self {
@@ -137,6 +186,7 @@ enum Key {
 }
 
 impl Key {
+    
     fn address<F: Field>(&self) -> F {
         match self {
             Self::Account { address, .. } | Self::AccountStorage { address, .. } => {

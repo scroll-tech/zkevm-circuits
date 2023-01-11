@@ -553,7 +553,7 @@ impl From<AccountFieldTag> for ProofType {
 
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
-pub struct MptTable([Column<Advice>; 7]);
+pub struct MptTable(pub [Column<Advice>; 7]);
 
 impl DynamicTableColumns for MptTable {
     fn columns(&self) -> Vec<Column<Advice>> {
@@ -604,6 +604,60 @@ impl MptTable {
         Ok(())
     }
 }
+
+
+/// The Poseidon hash table shared between Hash Circuit, Mpt Circuit and Bytecode Circuit
+#[derive(Clone, Copy, Debug)]
+pub struct PoseidonTable(pub [Column<Advice>; 4]);
+
+impl DynamicTableColumns for PoseidonTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        self.0.to_vec()
+    }
+}
+
+impl PoseidonTable {
+    /// Construct a new PoseidonTable
+    pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self([0; 4].map(|_| meta.advice_column()))
+    }
+
+    pub(crate) fn assign<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        row: &[Value<F>],
+    ) -> Result<(), Error> {
+        for (column, value) in self.0.iter().zip_eq(row) {
+            region.assign_advice(|| "assign mpt table row value", *column, offset, || *value)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn load<'d, F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        hashes: impl Iterator<Item=&'d [Value<F>]> + Clone,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "mpt table",
+            |mut region| self.load_with_region(&mut region, hashes.clone()),
+        )
+    }
+
+    pub(crate) fn load_with_region<'d, F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        hashes: impl Iterator<Item=&'d [Value<F>]>,
+    ) -> Result<(), Error> {
+        self.assign(region, 0, [Value::known(F::zero()); 7].as_slice())?;
+        for (offset, row) in hashes.enumerate() {
+            self.assign(region, offset + 1, row)?;
+        }
+        Ok(())
+    }
+}
+
 
 /// Tag to identify the field in a Bytecode Table row
 #[derive(Clone, Copy, Debug)]

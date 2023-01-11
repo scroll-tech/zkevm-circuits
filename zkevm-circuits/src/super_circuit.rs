@@ -365,6 +365,8 @@ impl<
             &challenges,
         )?;
 
+        // TODO: if we have mpt circuit, mpt table should be assigned within it
+        // rather than being loaded externally
         config.mpt_table.load(
             &mut layouter,
             &MptUpdates::mock_from(rws),

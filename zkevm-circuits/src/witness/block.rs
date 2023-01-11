@@ -11,7 +11,7 @@ use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 
 use halo2_proofs::circuit::Value;
 
-use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
+use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction, mpt::ZktrieState as MptState};
 use crate::util::{Challenges, DEFAULT_RAND};
 
 // TODO: Remove fields that are duplicated in`eth_block`
@@ -36,6 +36,8 @@ pub struct Block<F> {
     pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContexts,
+    /// The init state of mpt
+    pub mpt_state: Option<MptState>,
     /// Copy events for the copy circuit's table.
     pub copy_events: Vec<CopyEvent>,
     /// Exponentiation traces for the exponentiation circuit's table.
@@ -109,6 +111,7 @@ pub struct BlockContext {
 }
 
 impl BlockContext {
+
     /// Assignments for block table
     pub fn table_assignments<F: Field>(
         &self,
@@ -256,6 +259,7 @@ pub fn block_convert<F: Field>(
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
+        mpt_state: None,
         rws: RwMap::from(&block.container),
         txs: block
             .txs()
@@ -297,4 +301,11 @@ pub fn block_convert<F: Field>(
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
     })
+}
+
+/// Attach witness block with mpt states
+pub fn block_attach_mpt_state<F: Field>(mut block: Block<F>, mpt_state: MptState) -> Block<F> {
+
+    block.mpt_state.replace(mpt_state);
+    block
 }
