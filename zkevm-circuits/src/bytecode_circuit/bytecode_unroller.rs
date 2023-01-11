@@ -927,6 +927,7 @@ pub mod tests {
     }
 
     /// Tests a circuit with incomplete bytecode
+    #[ignore = "this test needs to set fail_fast to false"]
     #[test]
     fn bytecode_incomplete() {
         let k = 9;
