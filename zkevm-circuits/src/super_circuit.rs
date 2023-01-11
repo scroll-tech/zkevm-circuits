@@ -503,10 +503,11 @@ impl<
         let copy = CopyCircuit::min_num_rows_block(block);
         let keccak = KeccakCircuit::min_num_rows_block(block);
         let tx = TxCircuit::min_num_rows_block(block);
+        let rlp = RlpCircuit::min_num_rows_block(block);
         let exp = ExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
 
-        itertools::max([evm, state, bytecode, copy, keccak, tx, exp, pi]).unwrap()
+        itertools::max([evm, state, bytecode, copy, keccak, tx, rlp, exp, pi]).unwrap()
     }
 }
 
@@ -517,12 +518,13 @@ mod super_circuit_tests {
     use halo2_proofs::dev::MockProver;
     use halo2_proofs::halo2curves::bn256::Fr;
     use log::error;
-    use mock::{TestContext, MOCK_CHAIN_ID};
+    use mock::{eth, TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use std::collections::HashMap;
 
-    use eth_types::{address, bytecode, geth_types::GethData, Word};
+    use eth_types::evm_types::OpcodeId;
+    use eth_types::{address, bytecode, geth_types::GethData, Bytecode, Word};
 
     #[test]
     fn super_circuit_degree() {
@@ -550,6 +552,53 @@ mod super_circuit_tests {
             error!("Verification failures: {:#?}", err);
             panic!("Failed verification");
         }
+    }
+
+    fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
+        let memory_bytes = [0x60; 10];
+        let memory_address = 0;
+        let memory_value = Word::from_big_endian(&memory_bytes);
+        let mut code = bytecode! {
+            PUSH10(memory_value)
+            PUSH1(memory_address)
+            MSTORE
+            PUSH2(length)
+            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap() + offset)
+        };
+        code.write_op(if is_return {
+            OpcodeId::RETURN
+        } else {
+            OpcodeId::REVERT
+        });
+        code
+    }
+
+    fn block_1tx_deploy() -> GethData {
+        let mut rng = ChaCha20Rng::seed_from_u64(2);
+
+        let chain_id = (*MOCK_CHAIN_ID).as_u64();
+
+        let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+        let addr_a = wallet_a.address();
+
+        let mut wallets = HashMap::new();
+        wallets.insert(wallet_a.address(), wallet_a);
+
+        let tx_input = callee_bytecode(true, 300, 20).code();
+        let mut block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(addr_a).balance(eth(10));
+            },
+            |mut txs, accs| {
+                txs[0].from(accs[0].address).input(tx_input.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+        block.sign(&wallets);
+        block
     }
 
     fn block_1tx() -> GethData {
@@ -650,6 +699,18 @@ mod super_circuit_tests {
         const MAX_RWS: usize = 256;
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
     }
+
+    #[ignore]
+    #[test]
+    fn serial_test_super_circuit_1tx_deploy_1max_tx() {
+        let block = block_1tx_deploy();
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+        const MAX_INNER_BLOCKS: usize = 1;
+        const MAX_RWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+    }
+
     #[ignore]
     #[test]
     fn serial_test_super_circuit_1tx_2max_tx() {
