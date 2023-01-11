@@ -234,9 +234,10 @@ impl<'a> CircuitInputBuilder {
             }
             let geth_trace = &geth_traces[tx_index];
             log::info!(
-                "handling {}th(inner idx: {}) tx {:?}",
+                "handling {}th(inner idx: {}) tx(rwc: {:?}): {:?}",
                 tx.transaction_index.unwrap_or_default(),
                 self.block.txs.len(),
+                self.block_ctx.rwc,
                 tx.hash
             );
             let mut tx = tx.clone();

@@ -1318,7 +1318,6 @@ impl<F: Field> ExecutionConfig<F> {
                 );
             }
         }
-        //}
         Ok(())
     }
 
@@ -1375,33 +1374,38 @@ impl<F: Field> ExecutionConfig<F> {
             })
             .collect();
 
-        for (idx, (_name, value)) in assigned_rw_values.iter().enumerate() {
-            let log_ctx = || {
-                log::error!("assigned_rw_values {:?}", assigned_rw_values);
-                for (idx, rw_idx) in step.rw_indices.iter().enumerate() {
-                    log::error!(
-                        "{}th rw of step: {:?} rlc {:?}",
-                        idx,
-                        block.rws[*rw_idx],
-                        block.rws[*rw_idx]
-                            .table_assignment_aux(block.randomness)
-                            .rlc(block.randomness)
-                    );
-                }
-                let mut tx = transaction.clone();
-                tx.call_data.clear();
-                tx.calls.clear();
-                tx.steps.clear();
+        let mut log_ctx_done = false;
+        let mut log_ctx = |assigned_rw_values: &[(String, F)]| {
+            if log_ctx_done {
+                return;
+            }
+            log_ctx_done = true;
+            log::error!("assigned_rw_values {:?}", assigned_rw_values);
+            for (idx, rw_idx) in step.rw_indices.iter().enumerate() {
                 log::error!(
-                    "ctx: offset {} step {:?}. call: {:?}, tx: {:?}",
-                    offset,
-                    step,
-                    call,
-                    tx
+                    "{}th rw of step: {:?} rlc {:?}",
+                    idx,
+                    block.rws[*rw_idx],
+                    block.rws[*rw_idx]
+                        .table_assignment_aux(block.randomness)
+                        .rlc(block.randomness)
                 );
-            };
+            }
+            let mut tx = transaction.clone();
+            tx.call_data.clear();
+            tx.calls.clear();
+            tx.steps.clear();
+            log::error!(
+                "ctx: offset {} step {:?}. call: {:?}, tx: {:?}",
+                offset,
+                step,
+                call,
+                tx
+            );
+        };
+        for (idx, (_name, value)) in assigned_rw_values.iter().enumerate() {
             if idx >= step.rw_indices.len() {
-                log_ctx();
+                log_ctx(&assigned_rw_values);
                 panic!(
                     "invalid rw len exp {} witness {}",
                     assigned_rw_values.len(),
@@ -1415,7 +1419,7 @@ impl<F: Field> ExecutionConfig<F> {
             let rlc = table_assignments.rlc(block.randomness);
 
             if !rlc_assignments.contains(value) {
-                log_ctx();
+                log_ctx(&assigned_rw_values);
                 log::error!(
                     "incorrect rw witness. input_value {:?}, name \"{}\". table_value {:?}, table_assignments {:?}, rw {:?}, index {:?}, {}th rw of step",
                     assigned_rw_values[idx].1,
