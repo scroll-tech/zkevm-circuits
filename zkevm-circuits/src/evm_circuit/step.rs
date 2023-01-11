@@ -301,6 +301,7 @@ impl ExecutionState {
             ],
             Self::RETURN_REVERT => vec![OpcodeId::RETURN, OpcodeId::REVERT],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
+            Self::ErrorInvalidOpcode => OpcodeId::invalid_opcodes(),
             _ => vec![],
         }
     }
