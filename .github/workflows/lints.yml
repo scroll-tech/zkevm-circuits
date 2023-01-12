@@ -29,8 +29,7 @@ jobs:
       # https://github.com/actions/cache/issues/133#issuecomment-599102035
       - name: Change cached dir owner
         run: |
-          [ -d ~/.cache/go-build ] && sudo chown -R $(whoami):$(id -ng) ~/.cache/go-build
-          [ -d ~/go/pkg/mod ] && sudo chown -R $(whoami):$(id -ng) ~/go/pkg/mod
+          [ -d ~/go/pkg/mod/ ] && sudo rm -rf ~/go/pkg/mod/*
           [ -d ~/.cargo/ ] && sudo chown -R $(whoami):$(id -ng) ~/.cargo/
       # Go cache for building geth-utils
       - name: Go cache
