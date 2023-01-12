@@ -417,6 +417,14 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     let (_, _callee_account) = state.sdb.get_account(&call.address);
     let code_hash = call.code_hash; // callee_account.code_hash;
 
+    state.account_write(
+        &mut exec_step,
+        call.address,
+        AccountField::CodeHash,
+        code_hash.to_word(),
+        code_hash.to_word(),
+    )?;
+
     // There are 4 branches from here.
     match (
         call.is_create(),
@@ -425,13 +433,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            state.account_write(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                call.code_hash.to_word(),
-                call.code_hash.to_word(),
-            )?;
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),
                 (
@@ -464,19 +465,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         // 2. Call to precompiled.
-        (_, true, _) => {
-            warn!("Call to precompiled is left unimplemented");
-            Ok(exec_step)
-        }
+        (_, true, _) => Ok(exec_step),
         (_, _, is_empty_code_hash) => {
-            state.account_write(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                code_hash.to_word(),
-                code_hash.to_word(),
-            )?;
-
             // 3. Call to account with empty code.
             if is_empty_code_hash {
                 return Ok(exec_step);

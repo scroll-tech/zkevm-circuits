@@ -1,15 +1,16 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_GAS,
+        param::{N_BYTES_GAS, N_BYTES_ACCOUNT_ADDRESS},
         step::ExecutionState,
         util::{
+            and, or,
             common_gadget::TransferWithGasFeeGadget,
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget, MulWordByU64Gadget, RangeCheckGadget},
             not, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -33,6 +34,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_caller_address: Cell<F>,
     tx_caller_address_is_zero: IsZeroGadget<F>,
     tx_callee_address: Cell<F>,
+    tx_callee_address_is_zero: IsZeroGadget<F>,
     call_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
@@ -42,6 +44,7 @@ pub(crate) struct BeginTxGadget<F> {
     intrinsic_gas_cost: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
+    is_precompile_lt: LtGadget<F, N_BYTES_ACCOUNT_ADDRESS>,
     code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
 }
@@ -96,6 +99,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
 
         let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
+        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, tx_callee_address.expr());
         cb.require_equal(
             "CallerAddress != 0 (not a padding tx)",
             tx_caller_address_is_zero.expr(),
@@ -167,6 +171,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // TODO: Handle creation transaction
         // TODO: Handle precompiled
+        let is_precompile_lt = LtGadget::construct(cb, tx_callee_address.expr(), 0xA.expr());
+        let is_precompile = and::expr(&[
+            not::expr(tx_callee_address_is_zero.expr()),
+            is_precompile_lt.expr(),
+        ]);
 
         // Read code_hash of callee
         let code_hash = cb.query_cell();
@@ -187,7 +196,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ),
         );
 
-        cb.condition(is_empty_code_hash.expr(), |cb| {
+        let is_call_empty = and::expr(&[
+            is_empty_code_hash.expr(),
+            not::expr(is_precompile.expr())
+        ]);
+
+        // is this equivalent to is_empty_code_hash.expr()?
+        // possible not, when it is:
+        // - not a precompile
+        // - not empty code_hash
+        let is_call_empty_or_precompile = or::expr(&[
+            is_precompile.expr(),
+            is_call_empty.expr(),
+        ]);
+
+        cb.condition(is_call_empty_or_precompile.expr(), |cb| {
             cb.require_equal(
                 "Tx to account with empty code should be persistent",
                 reversion_info.is_persistent(),
@@ -217,7 +240,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             });
         });
 
-        cb.condition(1.expr() - is_empty_code_hash.expr(), |cb| {
+        cb.condition(1.expr() - is_call_empty_or_precompile.expr(), |cb| {
             // Setup first call's context.
             for (field_tag, value) in [
                 (CallContextFieldTag::Depth, 1.expr()),
@@ -289,6 +312,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_caller_address,
             tx_caller_address_is_zero,
             tx_callee_address,
+            tx_callee_address_is_zero,
             call_callee_address,
             tx_is_create,
             tx_value,
@@ -297,6 +321,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             reversion_info,
             sufficient_gas_left,
             transfer_with_gas_fee,
+            is_precompile_lt,
             code_hash,
             intrinsic_gas_cost,
             is_empty_code_hash,
@@ -338,6 +363,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(caller_address))?;
         self.tx_caller_address_is_zero
             .assign(region, offset, caller_address)?;
+        let callee_address = tx
+            .callee_address
+            .to_scalar()
+            .expect("unexpected Address -> Scalar conversion failure");
         self.tx_callee_address.assign(
             region,
             offset,
@@ -360,6 +389,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
+        self.tx_callee_address_is_zero
+            .assign(region, offset, callee_address)?;
         self.tx_is_create
             .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
         self.tx_call_data_length.assign(
@@ -390,6 +421,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.value,
             gas_fee,
         )?;
+        self.is_precompile_lt.assign(
+            region,
+            offset,
+            callee_address,
+            F::from(0xA),
+        )?;
         self.code_hash.assign(
             region,
             offset,
@@ -410,11 +447,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use ethers_core::types::Bytes;
     use crate::evm_circuit::test::{rand_bytes, run_test_circuit_geth_data_default};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{
-        self, bytecode, evm_types::GasCost, geth_types::GethData, word, Bytecode, Word,
-    };
+    use eth_types::{self, bytecode, evm_types::GasCost, geth_types::GethData, word, Bytecode, Word, address};
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS};
 
@@ -485,6 +521,28 @@ mod test {
             input: calldata.into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn begin_tx_precompile() {
+        let block: GethData = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000cafe111"))
+                    .balance(Word::from(10) * Word::from(10u64.pow(18)));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .to(address!("0x0000000000000000000000000000000000000004"))
+                    .from(accs[0].address)
+                    .input(Bytes::from(vec![0x01, 0x02, 0x03]));
+            },
+            |block, _| block,
+        )
+            .unwrap()
+            .into();
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
     #[test]
