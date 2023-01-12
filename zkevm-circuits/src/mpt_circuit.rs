@@ -69,7 +69,7 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
         MptCircuit(circuit)
     }
 
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let rows = block.rws.table_assignments();
         let (_, traces, _) = MptUpdates::construct(
             rows.as_slice(), 
@@ -78,7 +78,7 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
         let mut eth_trie : EthTrie<F> = Default::default();
         eth_trie.add_ops(traces.iter().map(|tr|AccountOp::try_from(tr).unwrap()));
         let (mpt_rows, _) = eth_trie.use_rows();
-        mpt_rows
+        (mpt_rows, block.circuits_params.max_rws.max(mpt_rows))
     }
 
     /// Make the assignments to the MptCircuit, notice it fill mpt table

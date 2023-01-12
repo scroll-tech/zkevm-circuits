@@ -1,12 +1,58 @@
 //! utils for build state trie
 
-use eth_types::{Word, Address, Bytes, H256, U256, U64};
-use num_bigint::BigUint;
+use eth_types::{Address, Bytes, Word, H256, U256, U64};
 use std::{
     convert::TryFrom,
     io::{Error, ErrorKind, Read},
 };
 
+use halo2_proofs::arithmetic::FieldExt;
+use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::halo2curves::group::ff::PrimeField;
+use mpt_circuits::hash::Hashable;
+
+use lazy_static::lazy_static;
+
+lazy_static! {
+    pub(crate) static ref HASH_SCHEME_DONE: bool = {
+        zktrie::init_hash_scheme(hash_scheme);
+        true
+    };
+}
+
+static FILED_ERROR_READ: &str = "invalid input field";
+static FILED_ERROR_OUT: &str = "output field fail";
+
+extern "C" fn hash_scheme(a: *const u8, b: *const u8, out: *mut u8) -> *const i8 {
+    use std::slice;
+    let a: [u8; 32] =
+        TryFrom::try_from(unsafe { slice::from_raw_parts(a, 32) }).expect("length specified");
+    let b: [u8; 32] =
+        TryFrom::try_from(unsafe { slice::from_raw_parts(b, 32) }).expect("length specified");
+    let out = unsafe { slice::from_raw_parts_mut(out, 32) };
+
+    let fa = Fr::from_bytes(&a);
+    let fa = if fa.is_some().into() {
+        fa.unwrap()
+    } else {
+        return FILED_ERROR_READ.as_ptr().cast();
+    };
+    let fb = Fr::from_bytes(&b);
+    let fb = if fb.is_some().into() {
+        fb.unwrap()
+    } else {
+        return FILED_ERROR_READ.as_ptr().cast();
+    };
+
+    let h = Fr::hash([fa, fb]);
+    let repr_h = h.to_repr();
+    if repr_h.len() == 32 {
+        out.copy_from_slice(repr_h.as_ref());
+        std::ptr::null()
+    } else {
+        FILED_ERROR_OUT.as_ptr().cast()
+    }
+}
 
 const NODE_TYPE_MIDDLE: u8 = 0;
 const NODE_TYPE_LEAF: u8 = 1;
@@ -62,9 +108,8 @@ impl CanRead for AccountData {
     }
 }
 
-
 #[derive(Debug, Default, Clone)]
-struct StorageData(Word);
+pub(crate) struct StorageData(Word);
 
 impl AsRef<Word> for StorageData {
     fn as_ref(&self) -> &Word {
@@ -94,15 +139,15 @@ pub(crate) struct TrieProof<T> {
     pub path: Vec<(U256, U256)>,
 }
 
-type AccountProof = TrieProof<AccountData>;
-type StorageProof = TrieProof<StorageData>;
+pub(crate) type AccountProof = TrieProof<AccountData>;
+pub(crate) type StorageProof = TrieProof<StorageData>;
 
-pub(crate) struct BytesArray<T> (pub T);
+pub(crate) struct BytesArray<T>(pub T);
 
-impl<'d, T, BYTES> TryFrom<BytesArray<BYTES>> for TrieProof<T> 
+impl<'d, T, BYTES> TryFrom<BytesArray<BYTES>> for TrieProof<T>
 where
-    T : CanRead + Default,
-    BYTES: Iterator<Item= &'d [u8]>,
+    T: CanRead + Default,
+    BYTES: Iterator<Item = &'d [u8]>,
 {
     type Error = Error;
 
@@ -146,23 +191,14 @@ where
     }
 }
 
-
-impl<T : CanRead + Default> TryFrom<&[Bytes]> for TrieProof<T> 
-{
+impl<T: CanRead + Default> TryFrom<&[Bytes]> for TrieProof<T> {
     type Error = Error;
     fn try_from(src: &[Bytes]) -> Result<Self, Self::Error> {
         Self::try_from(BytesArray(src.iter().map(Bytes::as_ref)))
     }
 }
 
-pub(crate) fn verify_proof_leaf<T: Default>(
-    inp: TrieProof<T>,
-    key_buf: &[u8; 32],
-) -> TrieProof<T> {
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::arithmetic::FieldExt;
-    use mpt_circuits::hash::Hashable;
-
+pub(crate) fn verify_proof_leaf<T: Default>(inp: TrieProof<T>, key_buf: &[u8; 32]) -> TrieProof<T> {
     let first_16bytes: [u8; 16] = key_buf[..16].try_into().expect("expect first 16 bytes");
     let last_16bytes: [u8; 16] = key_buf[16..].try_into().expect("expect last 16 bytes");
 
@@ -184,7 +220,6 @@ pub(crate) fn verify_proof_leaf<T: Default>(
         inp
     }
 }
-
 
 /*
 pub fn build_statedb_and_codedb(blocks: &[BlockTrace]) -> Result<(StateDB, CodeDB), anyhow::Error> {

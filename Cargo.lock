@@ -3285,9 +3285,12 @@ dependencies = [
  "eth-types",
  "halo2-mpt-circuits",
  "halo2_proofs",
+ "hex",
  "lazy_static",
  "log",
  "num-bigint",
+ "serde",
+ "serde_json",
  "zktrie",
 ]
 
