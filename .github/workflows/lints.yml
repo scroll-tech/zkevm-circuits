@@ -26,6 +26,12 @@ jobs:
         with:
           components: clippy
           override: false
+      # https://github.com/actions/cache/issues/133#issuecomment-599102035
+      - name: Change cached dir owner
+        run: |
+          [ -d ~/.cache/go-build ] && sudo chown -R $(whoami):$(id -ng) ~/.cache/go-build
+          [ -d ~/go/pkg/mod ] && sudo chown -R $(whoami):$(id -ng) ~/go/pkg/mod
+          [ -d ~/.cargo/ ] && sudo chown -R $(whoami):$(id -ng) ~/.cargo/
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -36,9 +42,6 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-      # https://github.com/actions/cache/issues/133#issuecomment-599102035
-      - name: Change cargo dir owner
-        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
       - name: Cargo cache
         uses: actions/cache@v3
         with:
