@@ -2,14 +2,14 @@
 use crate::{
     table::{PoseidonTable, MptTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
-    witness::{self, MptUpdates, Rw, RwMap},
+    witness::{self, MptUpdates},
 };
 use mpt_zktrie::{EthTrie, EthTrieConfig, EthTrieCircuit, operation::AccountOp};
 use mpt_zktrie::hash::Hashable;
-use eth_types::{Address, Field};
+use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{ConstraintSystem, Error, Expression},
+    plonk::{ConstraintSystem, Circuit, Error, Expression},
 };
 
 /// re-wrapping for mpt circuit
@@ -27,6 +27,7 @@ pub struct MptCircuitConfigArgs<F: Field> {
 }
 
 /// re-wrapping for mpt config
+#[derive(Debug, Clone)]
 pub struct MptCircuitConfig (EthTrieConfig);
 
 impl<F: Field> SubCircuitConfig<F> for MptCircuitConfig {
@@ -80,7 +81,8 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
         mpt_rows
     }
 
-    /// Make the assignments to the MptCircuit
+    /// Make the assignments to the MptCircuit, notice it fill mpt table
+    /// but not fill hash table
     fn synthesize_sub(
         &self,
         config: &Self::Config,
@@ -96,7 +98,7 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
             self.0.calcs)?;
         config.0.synthesize_core(
             layouter, 
-            self.0.ops.as_slice(), 
+            self.0.ops.iter(), 
             self.0.calcs
         )
 
@@ -106,4 +108,54 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
     fn instance(&self) -> Vec<Vec<F>> {
         vec![]
     }    
+}
+
+
+#[cfg(any(feature = "test", test))]
+impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
+
+    type Config = (MptCircuitConfig, Challenges);
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        let mut out = Self::default();
+        out.0.calcs = self.0.calcs;
+        out
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let poseidon_table = PoseidonTable::construct(meta);
+        let mpt_table = MptTable::construct(meta);
+        let challenges = Challenges::construct(meta);
+
+        let config = {
+            let challenges = challenges.exprs(meta);
+
+            MptCircuitConfig::new(
+                meta, 
+                MptCircuitConfigArgs{
+                    poseidon_table,
+                    mpt_table,
+                    challenges,
+                },
+            )
+        };
+
+        (config, challenges)
+    }
+
+    fn synthesize(
+        &self,
+        (config, challenges): Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let challenges = challenges.values(&mut layouter);
+        config.0.load_hash_table(
+            &mut layouter, 
+            self.0.ops.iter().flat_map(|op| op.hash_traces()),
+            self.0.calcs
+        )?; 
+        self.synthesize_sub(&config, &challenges, &mut layouter)
+    }
+
 }
