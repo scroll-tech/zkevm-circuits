@@ -115,8 +115,6 @@ pub enum TxFieldTag {
     CallData,
     /// The block number in which this tx is included.
     BlockNumber,
-    /// Padding row
-    Padding,
 }
 impl_expr!(TxFieldTag);
 
