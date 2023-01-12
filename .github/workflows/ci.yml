@@ -1,6 +1,5 @@
 name: CI checks
 
-
 on:
   pull_request:
     types: [synchronize, opened, reopened, ready_for_review]
