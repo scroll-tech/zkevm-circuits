@@ -1,17 +1,19 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_GAS, N_BYTES_ACCOUNT_ADDRESS},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS},
         step::ExecutionState,
         util::{
-            and, or,
+            and,
             common_gadget::TransferWithGasFeeGadget,
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget, MulWordByU64Gadget, RangeCheckGadget},
-            not, CachedRegion, Cell, RandomLinearCombination, Word,
+            math_gadget::{
+                IsEqualGadget, IsZeroGadget, LtGadget, MulWordByU64Gadget, RangeCheckGadget,
+            },
+            not, or, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -196,19 +198,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ),
         );
 
-        let is_call_empty = and::expr(&[
-            is_empty_code_hash.expr(),
-            not::expr(is_precompile.expr())
-        ]);
+        let is_call_empty =
+            and::expr(&[is_empty_code_hash.expr(), not::expr(is_precompile.expr())]);
 
         // is this equivalent to is_empty_code_hash.expr()?
         // possible not, when it is:
         // - not a precompile
         // - not empty code_hash
-        let is_call_empty_or_precompile = or::expr(&[
-            is_precompile.expr(),
-            is_call_empty.expr(),
-        ]);
+        let is_call_empty_or_precompile = or::expr(&[is_precompile.expr(), is_call_empty.expr()]);
 
         cb.condition(is_call_empty_or_precompile.expr(), |cb| {
             cb.require_equal(
@@ -421,12 +418,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.value,
             gas_fee,
         )?;
-        self.is_precompile_lt.assign(
-            region,
-            offset,
-            callee_address,
-            F::from(0xA),
-        )?;
+        self.is_precompile_lt
+            .assign(region, offset, callee_address, F::from(0xA))?;
         self.code_hash.assign(
             region,
             offset,
@@ -447,10 +440,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use ethers_core::types::Bytes;
     use crate::evm_circuit::test::{rand_bytes, run_test_circuit_geth_data_default};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{self, bytecode, evm_types::GasCost, geth_types::GethData, word, Bytecode, Word, address};
+    use eth_types::{
+        self, address, bytecode, evm_types::GasCost, geth_types::GethData, word, Bytecode, Word,
+    };
+    use ethers_core::types::Bytes;
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS};
 
@@ -540,8 +535,8 @@ mod test {
             },
             |block, _| block,
         )
-            .unwrap()
-            .into();
+        .unwrap()
+        .into();
         assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
