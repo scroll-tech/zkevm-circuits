@@ -41,7 +41,7 @@ use std::marker::PhantomData;
 
 use crate::table::TxFieldTag::{
     CallData, CallDataGasCost, CallDataLength, CalleeAddress, CallerAddress, Gas, GasPrice,
-    IsCreate, Nonce, Padding, SigR, SigS, SigV, TxHashLength, TxHashRLC, TxSignHash, TxSignLength,
+    IsCreate, Nonce, SigR, SigS, SigV, TxHashLength, TxHashRLC, TxSignHash, TxSignLength,
     TxSignRLC,
 };
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
@@ -1267,7 +1267,8 @@ impl<F: Field> TxCircuit<F> {
         #[cfg(not(feature = "enable-sign-verify"))]
         let min_rows = tx_table_len;
 
-        min_rows
+        // FIXME: remove this hardcoded constant
+        std::cmp::max(min_rows, 1 << 18)
     }
 
     fn assign(
@@ -1745,11 +1746,13 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
 mod tx_circuit_tests {
     use super::*;
     use crate::util::log2_ceil;
+    #[cfg(feature = "non-legacy-tx")]
     use eth_types::address;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
+    #[cfg(feature = "non-legacy-tx")]
     use mock::AddrOrWallet;
     use pretty_assertions::assert_eq;
     use std::cmp::max;
@@ -1776,7 +1779,6 @@ mod tx_circuit_tests {
         prover.verify()
     }
 
-    #[ignore]
     #[test]
     fn tx_circuit_2tx_2max_tx() {
         const NUM_TXS: usize = 2;
@@ -1817,7 +1819,6 @@ mod tx_circuit_tests {
         assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
     }
 
-    #[ignore]
     #[test]
     fn tx_circuit_1tx_2max_tx() {
         const MAX_TXS: usize = 2;
@@ -1830,6 +1831,7 @@ mod tx_circuit_tests {
         assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
     }
 
+    #[cfg(feature = "non-legacy-tx")]
     #[test]
     fn tx_circuit_bad_address() {
         const MAX_TXS: usize = 1;
