@@ -52,7 +52,7 @@ use lazy_static::lazy_static;
 
 lazy_static! {
     pub(crate) static ref TEST_SAMPLE_STR: String =
-        { std::env::var("ZKTRIE_TEST_SAMPLE").unwrap_or_default() };
+        std::env::var("ZKTRIE_TEST_SAMPLE").unwrap_or_default();
 }
 
 fn init() {
@@ -248,7 +248,7 @@ fn witgen_update_one() {
     let trace = w.handle_new_state(
         MPTProofType::BalanceChanged,
         target_addr,
-        start_state.balance + U256::from(1 as u64),
+        start_state.balance + U256::from(1_u64),
         start_state.balance,
         None,
     );

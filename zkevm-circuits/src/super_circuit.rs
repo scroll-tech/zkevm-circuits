@@ -60,7 +60,14 @@ use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
 use crate::keccak_circuit::keccak_packed_multi::{
     KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs,
 };
-//use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
+
+#[cfg(feature = "zktrie")]
+use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
+#[cfg(feature = "zktrie")]
+use crate::table::PoseidonTable;
+#[cfg(not(feature = "zktrie"))]
+use crate::witness::MptUpdates;
+
 use crate::state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs};
 use crate::table::{
     BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RlpTable, RwTable,
@@ -68,7 +75,7 @@ use crate::table::{
 };
 
 use crate::util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness::{block_convert, Block, MptUpdates, SignedTransaction};
+use crate::witness::{block_convert, Block, SignedTransaction};
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
@@ -110,6 +117,9 @@ pub struct SuperCircuitConfig<
     pi_circuit: PiCircuitConfig<F>,
     exp_circuit: ExpCircuitConfig<F>,
     rlp_circuit: RlpCircuitConfig<F>,
+    /// Mpt Circuit
+    #[cfg(feature = "zktrie")]
+    mpt_circuit: MptCircuitConfig,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
@@ -139,6 +149,9 @@ pub struct SuperCircuit<
     pub keccak_circuit: KeccakCircuit<F>,
     /// Rlp Circuit
     pub rlp_circuit: RlpCircuit<F, SignedTransaction>,
+    /// Mpt Circuit
+    #[cfg(feature = "zktrie")]
+    pub mpt_circuit: MptCircuit<F>,
 }
 
 impl<
@@ -202,8 +215,15 @@ impl<
         log_circuit_info(meta, "tx");
         let rw_table = RwTable::construct(meta);
         log_circuit_info(meta, "rw");
+
         let mpt_table = MptTable::construct(meta);
         log_circuit_info(meta, "mpt");
+
+        #[cfg(feature = "zktrie")]
+        let poseidon_table = PoseidonTable::construct(meta);
+        #[cfg(feature = "zktrie")]
+        log_circuit_info(meta, "poseidon");
+
         let bytecode_table = BytecodeTable::construct(meta);
         log_circuit_info(meta, "bytecode");
         let block_table = BlockTable::construct(meta);
@@ -286,6 +306,19 @@ impl<
             },
         );
         log_circuit_info(meta, "copy");
+
+        #[cfg(feature = "zktrie")]
+        let mpt_circuit = MptCircuitConfig::new(
+            meta,
+            MptCircuitConfigArgs {
+                poseidon_table,
+                mpt_table,
+                challenges: challenges.clone(),
+            },
+        );
+        #[cfg(feature = "zktrie")]
+        log_circuit_info(meta, "zktrie");
+
         let state_circuit = StateCircuitConfig::new(
             meta,
             StateCircuitConfigArgs {
@@ -329,6 +362,8 @@ impl<
             rlp_circuit,
             tx_circuit,
             exp_circuit,
+            #[cfg(feature = "zktrie")]
+            mpt_circuit,
         }
     }
 
@@ -342,7 +377,6 @@ impl<
             Value::known(block.randomness),
             Value::known(block.randomness),
         );
-        let rws = &self.state_circuit.rows;
 
         // PI circuit had the hardcoded constants for RegionIndex of block table
         // and tx table (which are 0 and 1).
@@ -367,11 +401,16 @@ impl<
 
         // TODO: if we have mpt circuit, mpt table should be assigned within it
         // rather than being loaded externally
-        config.mpt_table.load(
-            &mut layouter,
-            &MptUpdates::mock_from(rws),
-            Value::known(block.randomness),
-        )?;
+        // TODO: use challenge API here??
+        #[cfg(not(feature = "zktrie"))]
+        {
+            let rws = &self.state_circuit.rows;
+            config.mpt_table.load(
+                &mut layouter,
+                &MptUpdates::mock_from(rws),
+                Value::known(block.randomness),
+            )?;
+        }
 
         self.keccak_circuit
             .synthesize_sub(&config.keccak_circuit, &challenges, &mut layouter)?;
@@ -380,6 +419,24 @@ impl<
             &challenges,
             &mut layouter,
         )?;
+
+        // load both poseidon table and zktrie table
+        #[cfg(feature = "zktrie")]
+        {
+            // TODO: wrap this as `poseidon_table.load`
+            config.mpt_circuit.0.load_hash_table(
+                &mut layouter,
+                self.mpt_circuit
+                    .0
+                    .ops
+                    .iter()
+                    .flat_map(|op| op.hash_traces()),
+                self.mpt_circuit.0.calcs,
+            )?;
+            self.mpt_circuit
+                .synthesize_sub(&config.mpt_circuit, &challenges, &mut layouter)?;
+        }
+
         self.state_circuit
             .synthesize_sub(&config.state_circuit, &challenges, &mut layouter)?;
         self.copy_circuit
@@ -471,6 +528,9 @@ impl<
         let keccak_circuit = KeccakCircuit::new_from_block(&block);
         let rlp_circuit = RlpCircuit::new_from_block(&block);
 
+        #[cfg(feature = "zktrie")]
+        let mpt_circuit = MptCircuit::new_from_block(&block);
+
         let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS> {
             evm_circuit,
             state_circuit,
@@ -481,6 +541,8 @@ impl<
             exp_circuit,
             keccak_circuit,
             rlp_circuit,
+            #[cfg(feature = "zktrie")]
+            mpt_circuit,
         };
 
         let instance = circuit.instance();
@@ -508,8 +570,22 @@ impl<
         let rlp = RlpCircuit::min_num_rows_block(block);
         let exp = ExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
+        #[cfg(feature = "zktrie")]
+        let mpt = MptCircuit::min_num_rows_block(block);
 
-        let rows: Vec<(usize, usize)> = vec![evm, state, bytecode, copy, keccak, tx, rlp, exp, pi];
+        let rows: Vec<(usize, usize)> = vec![
+            evm,
+            state,
+            bytecode,
+            copy,
+            keccak,
+            tx,
+            rlp,
+            exp,
+            pi,
+            #[cfg(feature = "zktrie")]
+            mpt,
+        ];
         let (rows_without_padding, rows_with_padding): (Vec<usize>, Vec<usize>) =
             rows.into_iter().unzip();
         log::debug!(

@@ -603,8 +603,8 @@ impl MptTable {
     }
 }
 
-
-/// The Poseidon hash table shared between Hash Circuit, Mpt Circuit and Bytecode Circuit
+/// The Poseidon hash table shared between Hash Circuit, Mpt Circuit and
+/// Bytecode Circuit
 #[derive(Clone, Copy, Debug)]
 pub struct PoseidonTable(pub [Column<Advice>; 4]);
 
@@ -635,7 +635,7 @@ impl PoseidonTable {
     pub(crate) fn load<'d, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        hashes: impl Iterator<Item=&'d [Value<F>]> + Clone,
+        hashes: impl Iterator<Item = &'d [Value<F>]> + Clone,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "mpt table",
@@ -646,7 +646,7 @@ impl PoseidonTable {
     pub(crate) fn load_with_region<'d, F: Field>(
         &self,
         region: &mut Region<'_, F>,
-        hashes: impl Iterator<Item=&'d [Value<F>]>,
+        hashes: impl Iterator<Item = &'d [Value<F>]>,
     ) -> Result<(), Error> {
         self.assign(region, 0, [Value::known(F::zero()); 7].as_slice())?;
         for (offset, row) in hashes.enumerate() {
@@ -655,7 +655,6 @@ impl PoseidonTable {
         Ok(())
     }
 }
-
 
 /// Tag to identify the field in a Bytecode Table row
 #[derive(Clone, Copy, Debug)]

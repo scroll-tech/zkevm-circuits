@@ -1530,6 +1530,7 @@ version = "0.1.0"
 dependencies = [
  "ethers-core",
  "ethers-signers",
+ "halo2-mpt-circuits",
  "halo2_proofs",
  "hex",
  "itertools",
@@ -2456,7 +2457,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0111#222cd0e73acdd0c339f686fc59e5427cbca1b1c8"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0111-zz#f754de78877b0284b06138f2b48517012936a192"
 dependencies = [
  "halo2_proofs",
  "hex",

@@ -11,7 +11,10 @@ use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 
 use halo2_proofs::circuit::Value;
 
-use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction, mpt::ZktrieState as MptState};
+use super::{
+    mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap,
+    Transaction,
+};
 use crate::util::{Challenges, DEFAULT_RAND};
 
 // TODO: Remove fields that are duplicated in`eth_block`
@@ -111,7 +114,6 @@ pub struct BlockContext {
 }
 
 impl BlockContext {
-
     /// Assignments for block table
     pub fn table_assignments<F: Field>(
         &self,
@@ -305,7 +307,6 @@ pub fn block_convert<F: Field>(
 
 /// Attach witness block with mpt states
 pub fn block_attach_mpt_state<F: Field>(mut block: Block<F>, mpt_state: MptState) -> Block<F> {
-
     block.mpt_state.replace(mpt_state);
     block
 }
