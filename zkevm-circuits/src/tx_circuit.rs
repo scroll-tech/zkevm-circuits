@@ -92,6 +92,8 @@ enum LookupCondition {
 /// Config for TxCircuit
 #[derive(Clone, Debug)]
 pub struct TxCircuitConfig<F: Field> {
+    minimum_rows: usize,
+
     q_enable: Column<Fixed>,
 
     /// TxFieldTag assigned to the row.
@@ -555,6 +557,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         });
 
         Self {
+            minimum_rows: meta.minimum_rows(),
             q_enable,
             tag,
             rlp_tag,
@@ -670,6 +673,33 @@ impl<F: Field> TxCircuitConfig<F> {
             Value::known(F::from(tx_id_next as u64)),
         )?;
 
+        /*
+        region.assign_fixed(
+            || "tx_table.tag",
+            self.tx_table.tag,
+            *offset,
+            || Value::known(F::from(tag as u64)),
+        )?;
+        region.assign_advice(
+            || "tx_table.tx_id",
+            self.tx_table.tx_id,
+            *offset,
+            || Value::known(F::from(tx_id as u64)),
+        )?;
+        region.assign_advice(
+            || "tx_table.index",
+            self.tx_table.index,
+            *offset,
+            || Value::known(F::from())
+        )?;
+        region.assign_advice(
+            || "tx_table.value",
+            self.tx_table.value,
+            *offset,
+            value,
+        )?;
+        */
+
         region.assign_advice(
             || "rlp tag",
             self.rlp_tag,
@@ -783,6 +813,94 @@ impl<F: Field> TxCircuitConfig<F> {
         )?;
 
         *offset += 1;
+
+        Ok(())
+    }
+
+    fn assign_calldata_zeros(
+        &self,
+        region: &mut Region<'_, F>,
+        start: usize,
+        end: usize,
+    ) -> Result<(), Error> {
+        let rlp_data = F::from(RlpTxTag::Data as u64);
+        let tag = F::from(CallData as u64);
+        let tx_id_is_zero_chip = IsEqualChip::construct(self.tx_id_is_zero.clone());
+        let value_is_zero_chip = IsZeroChip::construct(self.value_is_zero.clone());
+        let tx_id_unchanged = IsEqualChip::construct(self.tx_id_unchanged.clone());
+        let tag_chip = BinaryNumberChip::construct(self.tag);
+
+        for offset in start..end {
+            region.assign_fixed(
+                || "q_enable",
+                self.q_enable,
+                offset,
+                || Value::known(F::one()),
+            )?;
+            region.assign_fixed(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
+            tag_chip.assign(region, offset, &CallData)?;
+            // no need to assign tx_id_is_zero_chip for real prover as tx_id = 0
+            tx_id_is_zero_chip.assign(
+                region,
+                offset,
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+            )?;
+            // no need to assign value_is_zero_chip for real prover as value = 0
+            value_is_zero_chip.assign(region, offset, Value::known(F::zero()))?;
+            tx_id_unchanged.assign(
+                region,
+                offset,
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+            )?;
+
+            for (col, value) in [
+                (self.tx_table.tx_id, F::zero()),
+                (self.tx_table.index, F::zero()),
+                (self.tx_table.value, F::zero()),
+                (self.rlp_tag, rlp_data),
+                (self.is_final, F::one()),
+                (self.is_calldata, F::one()),
+                (self.calldata_length, F::zero()),
+                (self.calldata_gas_cost_acc, F::zero()),
+                (self.chain_id, F::zero()),
+            ] {
+                region.assign_advice(|| "", col, offset, || Value::known(value))?;
+            }
+            for col in self.lookup_conditions.values() {
+                region.assign_advice(
+                    || "lookup condition",
+                    *col,
+                    offset,
+                    || Value::known(F::zero()),
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn assign_paddings(
+        &self,
+        region: &mut Region<'_, F>,
+        start: usize,
+        end: usize,
+    ) -> Result<(), Error> {
+        for offset in start..end {
+            region.assign_fixed(
+                || "q_enable",
+                self.q_enable,
+                offset,
+                || Value::known(F::zero()),
+            )?;
+            region.assign_fixed(
+                || "tag",
+                self.tx_table.tag,
+                offset,
+                || Value::known(F::from(TxFieldTag::Null as u64)),
+            )?;
+        }
 
         Ok(())
     }
@@ -1068,6 +1186,8 @@ pub struct TxCircuit<F: Field> {
     pub txs: Vec<Transaction>,
     /// Chain ID
     pub chain_id: u64,
+    /// Size
+    pub size: usize,
 }
 
 impl<F: Field> TxCircuit<F> {
@@ -1086,6 +1206,8 @@ impl<F: Field> TxCircuit<F> {
             max_calldata,
             sign_verify: SignVerifyChip::new(max_txs),
             txs,
+            // FIXME: remove this hardcoded constant
+            size: 1 << 18,
             chain_id,
         }
     }
@@ -1145,7 +1267,8 @@ impl<F: Field> TxCircuit<F> {
         #[cfg(not(feature = "enable-sign-verify"))]
         let min_rows = tx_table_len;
 
-        min_rows
+        // FIXME: remove this hardcoded constant
+        std::cmp::max(min_rows, 1 << 18)
     }
 
     fn assign(
@@ -1157,7 +1280,7 @@ impl<F: Field> TxCircuit<F> {
         sign_datas: Vec<SignData>,
         padding_txs: &[Transaction],
     ) -> Result<(), Error> {
-        layouter.assign_region(
+        let last_off = layouter.assign_region(
             || "tx table",
             |mut region| {
                 let mut offset = 0;
@@ -1439,22 +1562,25 @@ impl<F: Field> TxCircuit<F> {
                         calldata_count += 1;
                     }
                 }
-                // for _ in calldata_count..self.max_calldata {
-                // TODO: use self.max_calldata instead
-                // for _ in calldata_count..(calldata_count + 1) {
-                //     config.assign_row(
-                //         &mut region,
-                //         &mut offset,
-                //         0, // tx_id
-                //         0, // tx_id_next
-                //         CallData,
-                //         RlpTxTag::Data,
-                //         Value::known(F::zero()),
-                //         true,
-                //         None,
-                //         None,
-                //     )?;
-                // }
+
+                debug_assert_eq!(offset, self.max_txs * TX_LEN + 1 + calldata_count);
+
+                Ok(offset)
+            },
+        )?;
+        layouter.assign_region(
+            || "tx table (calldata zeros and paddings)",
+            |mut region| {
+                config.assign_calldata_zeros(
+                    &mut region,
+                    0,
+                    self.max_calldata + self.max_txs * TX_LEN + 1 - last_off,
+                )?;
+                config.assign_paddings(
+                    &mut region,
+                    self.max_calldata + self.max_txs * TX_LEN + 1 - last_off,
+                    self.size - config.minimum_rows - last_off,
+                )?;
 
                 Ok(())
             },
@@ -1481,9 +1607,12 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                 block.txs.len(),
                 block.txs.iter().map(|tx| tx.call_data.len()).sum(),
             ),
-            Self::min_num_rows(
-                block.circuits_params.max_txs,
-                block.circuits_params.max_calldata,
+            std::cmp::max(
+                1 << 18,
+                Self::min_num_rows(
+                    block.circuits_params.max_txs,
+                    block.circuits_params.max_calldata,
+                ),
             ),
         )
     }
@@ -1617,11 +1746,13 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
 mod tx_circuit_tests {
     use super::*;
     use crate::util::log2_ceil;
+    #[cfg(feature = "non-legacy-tx")]
     use eth_types::address;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
+    #[cfg(feature = "non-legacy-tx")]
     use mock::AddrOrWallet;
     use pretty_assertions::assert_eq;
     use std::cmp::max;
@@ -1635,7 +1766,7 @@ mod tx_circuit_tests {
         max_calldata: usize,
     ) -> Result<(), Vec<VerifyFailure>> {
         let k = max(
-            12,
+            18,
             log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)),
         );
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
@@ -1648,7 +1779,6 @@ mod tx_circuit_tests {
         prover.verify()
     }
 
-    #[ignore]
     #[test]
     fn tx_circuit_2tx_2max_tx() {
         const NUM_TXS: usize = 2;
@@ -1689,7 +1819,6 @@ mod tx_circuit_tests {
         assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
     }
 
-    #[ignore]
     #[test]
     fn tx_circuit_1tx_2max_tx() {
         const MAX_TXS: usize = 2;
@@ -1702,6 +1831,7 @@ mod tx_circuit_tests {
         assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
     }
 
+    #[cfg(feature = "non-legacy-tx")]
     #[test]
     fn tx_circuit_bad_address() {
         const MAX_TXS: usize = 1;
