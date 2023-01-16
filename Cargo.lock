@@ -2457,7 +2457,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0111-zz#f754de78877b0284b06138f2b48517012936a192"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0111#9c3cace5fe0ce4fc05a2691a1a5213aebdb8ed89"
 dependencies = [
  "halo2_proofs",
  "hex",
@@ -5798,7 +5798,7 @@ checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if 1.0.0",
  "digest 0.10.6",
- "rand 0.8.5",
+ "rand 0.7.3",
  "static_assertions",
 ]
 
