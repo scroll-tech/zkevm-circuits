@@ -94,16 +94,10 @@ pub enum OogError {
     Sload,
     /// Out of Gas for SSTORE
     Sstore,
-    /// Out of Gas for CALL
+    /// Out of Gas for CALL, CALLCODE, DELEGATECALL and STATICCALL
     Call,
-    /// Out of Gas for CALLCODE
-    CallCode,
-    /// Out of Gas for DELEGATECALL
-    DelegateCall,
     /// Out of Gas for CREATE2
     Create2,
-    /// Out of Gas for STATICCALL
-    StaticCall,
     /// Out of Gas for SELFDESTRUCT
     SelfDestruct,
 }
@@ -166,11 +160,10 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             OpcodeId::EXTCODECOPY => OogError::ExtCodeCopy,
             OpcodeId::SLOAD => OogError::Sload,
             OpcodeId::SSTORE => OogError::Sstore,
-            OpcodeId::CALL => OogError::Call,
-            OpcodeId::CALLCODE => OogError::CallCode,
-            OpcodeId::DELEGATECALL => OogError::DelegateCall,
+            OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
+                OogError::Call
+            }
             OpcodeId::CREATE2 => OogError::Create2,
-            OpcodeId::STATICCALL => OogError::StaticCall,
             OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
             _ => OogError::Constant,
         };

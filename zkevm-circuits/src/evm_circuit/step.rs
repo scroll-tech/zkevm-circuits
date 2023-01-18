@@ -107,11 +107,8 @@ pub enum ExecutionState {
     ErrorOutOfGasEXTCODECOPY,
     ErrorOutOfGasSLOAD,
     ErrorOutOfGasSSTORE,
-    ErrorOutOfGasCALL,
-    ErrorOutOfGasCALLCODE,
-    ErrorOutOfGasDELEGATECALL,
+    ErrorOutOfGasCall,
     ErrorOutOfGasCREATE2,
-    ErrorOutOfGasSTATICCALL,
     ErrorOutOfGasSELFDESTRUCT,
 }
 
@@ -155,11 +152,8 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasEXTCODECOPY
                 | Self::ErrorOutOfGasSLOAD
                 | Self::ErrorOutOfGasSSTORE
-                | Self::ErrorOutOfGasCALL
-                | Self::ErrorOutOfGasCALLCODE
-                | Self::ErrorOutOfGasDELEGATECALL
+                | Self::ErrorOutOfGasCall
                 | Self::ErrorOutOfGasCREATE2
-                | Self::ErrorOutOfGasSTATICCALL
                 | Self::ErrorOutOfGasSELFDESTRUCT
         )
     }

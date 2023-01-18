@@ -85,11 +85,8 @@ impl From<&ExecError> for ExecutionState {
                 OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
                 OogError::Sload => ExecutionState::ErrorOutOfGasSLOAD,
                 OogError::Sstore => ExecutionState::ErrorOutOfGasSSTORE,
-                OogError::Call => ExecutionState::ErrorOutOfGasCALL,
-                OogError::CallCode => ExecutionState::ErrorOutOfGasCALLCODE,
-                OogError::DelegateCall => ExecutionState::ErrorOutOfGasDELEGATECALL,
+                OogError::Call => ExecutionState::ErrorOutOfGasCall,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
-                OogError::StaticCall => ExecutionState::ErrorOutOfGasSTATICCALL,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
             },
         }
