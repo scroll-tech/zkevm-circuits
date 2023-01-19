@@ -15,8 +15,21 @@ on:
 ## `rust-toolchain` is always used and the only source of truth.
 
 jobs:
+  skip_check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@v5
+        with:
+          cancel_others: 'true'
+          concurrent_skipping: 'same_content_newer'
+          paths_ignore: '["**/README.md"]'
+
   runner:
-    if: github.event.pull_request.draft == false
+    needs: [skip_check]
+    if: github.event.pull_request.draft == false && needs.skip_check.outputs.should_skip != 'true'
     uses: ./.github/workflows/select-runner.yml
 
   test:
@@ -81,7 +94,8 @@ jobs:
           args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
 
   build:
-    if: false
+    needs: [skip_check]
+    if: github.event.pull_request.draft == false && needs.skip_check.outputs.should_skip != 'true'
 
     name: Build target ${{ matrix.target }}
     runs-on: ubuntu-latest
@@ -136,7 +150,8 @@ jobs:
           args: --verbose --release --all-features -p circuit-benchmarks --no-run
 
   bitrot:
-    if: github.event.pull_request.draft == false
+    needs: [skip_check]
+    if: github.event.pull_request.draft == false && needs.skip_check.outputs.should_skip != 'true'
 
     name: Bitrot check
     runs-on: ubuntu-latest
@@ -179,7 +194,8 @@ jobs:
           args: --benches --examples --all-features
 
   doc-links:
-    if: github.event.pull_request.draft == false
+    needs: [skip_check]
+    if: github.event.pull_request.draft == false && needs.skip_check.outputs.should_skip != 'true'
 
     name: Intra-doc links
     runs-on: ubuntu-latest
@@ -228,7 +244,8 @@ jobs:
           args: --no-deps --all --document-private-items
 
   fmt:
-    if: github.event.pull_request.draft == false
+    needs: [skip_check]
+    if: github.event.pull_request.draft == false && needs.skip_check.outputs.should_skip != 'true'
 
     name: Rustfmt
     timeout-minutes: 30
