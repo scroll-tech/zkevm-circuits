@@ -112,7 +112,9 @@ impl<F: Field> IsZeroInstruction<F> for IsZeroChip<F> {
     ) -> Result<(), Error> {
         let config = self.config();
 
-        let value_invert = value.map(|value| value.invert().unwrap_or(F::zero()));
+        // postpone the invert to prover which has batch_invert function to
+        // amortize among all is_zero_chip assignments.
+        let value_invert = value.into_field().invert();
         region.assign_advice(
             || "witness inverse of value",
             config.value_inv,
