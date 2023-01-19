@@ -29,7 +29,9 @@ jobs:
 
   runner:
     needs: [skip_check]
-    if: github.event.pull_request.draft == false && needs.skip_check.outputs.should_skip != 'true'
+    if: |
+      github.event.pull_request.draft == false &&
+      (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
     uses: ./.github/workflows/select-runner.yml
 
   test:
@@ -95,7 +97,9 @@ jobs:
 
   build:
     needs: [skip_check]
-    if: github.event.pull_request.draft == false && needs.skip_check.outputs.should_skip != 'true'
+    if: |
+      github.event.pull_request.draft == false &&
+      (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
 
     name: Build target ${{ matrix.target }}
     runs-on: ubuntu-latest
@@ -151,7 +155,9 @@ jobs:
 
   bitrot:
     needs: [skip_check]
-    if: github.event.pull_request.draft == false && needs.skip_check.outputs.should_skip != 'true'
+    if: |
+      github.event.pull_request.draft == false &&
+      (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
 
     name: Bitrot check
     runs-on: ubuntu-latest
@@ -195,7 +201,9 @@ jobs:
 
   doc-links:
     needs: [skip_check]
-    if: github.event.pull_request.draft == false && needs.skip_check.outputs.should_skip != 'true'
+    if: |
+      github.event.pull_request.draft == false &&
+      (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
 
     name: Intra-doc links
     runs-on: ubuntu-latest
@@ -245,7 +253,9 @@ jobs:
 
   fmt:
     needs: [skip_check]
-    if: github.event.pull_request.draft == false && needs.skip_check.outputs.should_skip != 'true'
+    if: |
+      github.event.pull_request.draft == false &&
+      (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
 
     name: Rustfmt
     timeout-minutes: 30

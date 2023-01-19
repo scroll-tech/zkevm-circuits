@@ -27,7 +27,9 @@ jobs:
 
   clippy:
     needs: [skip_check]
-    if: github.event.pull_request.draft == false && needs.skip_check.outputs.should_skip != 'true'
+    if: |
+      github.event.pull_request.draft == false &&
+      (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
 
     name: Clippy
     timeout-minutes: 30
