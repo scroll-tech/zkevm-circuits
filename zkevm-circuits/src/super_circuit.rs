@@ -376,7 +376,7 @@ impl<
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let (config, challenges) = config;
+        let (mut config, challenges) = config;
         let challenges = challenges.values(&mut layouter);
 
         let block = self.evm_circuit.block.as_ref().unwrap();
@@ -438,7 +438,6 @@ impl<
 
         self.state_circuit
             .synthesize_sub(&config.state_circuit, &challenges, &mut layouter)?;
-        let _state_root_exports = self.state_circuit.exports.borrow().clone().expect("should be assigned");
         self.copy_circuit
             .synthesize_sub(&config.copy_circuit, &challenges, &mut layouter)?;
         self.exp_circuit
@@ -449,6 +448,8 @@ impl<
             .synthesize_sub(&config.rlp_circuit, &challenges, &mut layouter)?;
         self.tx_circuit
             .synthesize_sub(&config.tx_circuit, &challenges, &mut layouter)?;
+
+        config.pi_circuit.state_roots = self.state_circuit.exports.borrow().clone();
         self.pi_circuit
             .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
         Ok(())

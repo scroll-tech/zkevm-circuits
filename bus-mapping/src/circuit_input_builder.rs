@@ -436,6 +436,7 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     // PI circuit
     keccak_inputs.push(keccak_inputs_pi_circuit(
         block.chain_id().as_u64(),
+        block.prev_state_root,
         &block.headers,
         block.txs(),
         block.circuits_params.max_txs,
@@ -517,6 +518,7 @@ pub fn get_dummy_tx_hash(chain_id: u64) -> H256 {
 
 fn keccak_inputs_pi_circuit(
     chain_id: u64,
+    prev_state_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
     max_txs: usize,
@@ -551,6 +553,18 @@ fn keccak_inputs_pi_circuit(
         //         .flat_map(|tx_hash| tx_hash.to_fixed_bytes()),
         // )
         // state roots
+        .chain(prev_state_root.to_be_bytes())
+        .chain(
+            block_headers
+                .iter()
+                .skip(block_headers.len().saturating_sub(1))
+                .next()
+                .expect("batch is not empty")
+                .1
+                .eth_block
+                .state_root
+                .to_fixed_bytes(),
+        )
         // .chain(
         //     extra.state_root.to_fixed_bytes()
         // )

@@ -6,10 +6,10 @@ use std::marker::PhantomData;
 use crate::table::TxTable;
 use crate::table::{BlockTable, KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
-use eth_types::H256;
 use eth_types::{Field, ToBigEndian, Word};
+use eth_types::{Hash, H256};
 use ethers_core::utils::keccak256;
-use halo2_proofs::plonk::{Expression, Fixed, Instance};
+use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -17,6 +17,7 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 use halo2_proofs::plonk::SecondPhase;
 
 use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
+use crate::state_circuit::StateCircuitExports;
 #[cfg(feature = "non-legacy-tx")]
 use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
@@ -49,6 +50,8 @@ pub struct PublicData {
     pub transactions: Vec<Transaction>,
     /// Block contexts
     pub block_ctxs: BlockContexts,
+    /// Previous State Root
+    pub prev_state_root: Option<Hash>,
 }
 
 impl PublicData {
@@ -87,12 +90,27 @@ impl PublicData {
             //         .flat_map(|tx_hash| tx_hash.to_fixed_bytes()),
             // )
             // state roots
-            // .chain(
-            //     extra.state_root.to_fixed_bytes()
-            // )
-            // .chain(
-            //     extra.prev_state_root.to_fixed_bytes()
-            // )
+            .chain({
+                let mut state_roots_bytes = vec![];
+                if self.prev_state_root.is_some() {
+                    state_roots_bytes
+                        .extend_from_slice(&self.prev_state_root.unwrap().to_fixed_bytes());
+                    state_roots_bytes.extend_from_slice(
+                        &self
+                            .block_ctxs
+                            .ctxs
+                            .iter()
+                            .skip(self.block_ctxs.ctxs.len().saturating_sub(1))
+                            .next()
+                            .expect("batch is not empty")
+                            .1
+                            .eth_block
+                            .state_root
+                            .to_fixed_bytes(),
+                    );
+                }
+                state_roots_bytes.into_iter()
+            })
             // Tx Hashes
             .chain(
                 self.transactions
@@ -154,6 +172,8 @@ pub struct PiCircuitConfig<F: Field> {
     block_table: BlockTable,
     tx_table: TxTable,
     keccak_table: KeccakTable,
+
+    pub(crate) state_roots: Option<StateCircuitExports<Assigned<F>>>,
 
     _marker: PhantomData<F>,
 }
@@ -378,6 +398,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             q_keccak,
             pi,
             _marker: PhantomData,
+            state_roots: None,
         }
     }
 }
@@ -543,6 +564,62 @@ impl<F: Field> PiCircuitConfig<F> {
             block_table_offset += 9 + block.history_hashes.len();
         }
         debug_assert_eq!(offset, BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks);
+
+        // assign state roots
+        debug_assert_eq!(
+            self.state_roots.is_some(),
+            public_data.prev_state_root.is_some(),
+            "state_roots.is_some = {}, public_data.prev_state_root.is_some() = {}",
+            self.state_roots.is_some(),
+            public_data.prev_state_root.is_some(),
+        );
+        if self.state_roots.is_some() {
+            // previous_state_root before applying this batch
+            let prev_state_cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &public_data.prev_state_root.unwrap().to_fixed_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                false,
+                false,
+                challenges,
+                false,
+            )?;
+
+            // state_root after applying this batch
+            let next_state_root = block_values
+                .ctxs
+                .iter()
+                .skip(block_values.ctxs.len().saturating_sub(1))
+                .next()
+                .expect("batch is not empty")
+                .1
+                .eth_block
+                .state_root
+                .clone();
+            let next_state_cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &next_state_root.to_fixed_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                false,
+                false,
+                challenges,
+                false,
+            )?;
+
+            let state_roots = self.state_roots.clone().unwrap();
+            region.constrain_equal(
+                prev_state_cells[RPI_CELL_IDX].cell(),
+                state_roots.start_state_root.0,
+            )?;
+            region.constrain_equal(
+                next_state_cells[RPI_CELL_IDX].cell(),
+                state_roots.end_state_root.0,
+            )?;
+        }
 
         // assign tx hashes
         let num_txs = tx_hashes.len();
@@ -831,6 +908,10 @@ impl<F: Field> PiCircuit<F> {
             // history_hashes: context.history_hashes.clone(),
             transactions: block.txs.clone(),
             block_ctxs: block.context.clone(),
+            prev_state_root: block
+                .mpt_state
+                .as_ref()
+                .map(|mpt_state| H256(mpt_state.root().clone())),
         };
         Self {
             public_data,
@@ -861,7 +942,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let row_num = |inner_block_num, tx_num| {
+        let row_num = |inner_block_num, tx_num| -> usize {
             BLOCK_HEADER_BYTES_NUM * inner_block_num + KECCAK_DIGEST_SIZE * tx_num + 33
         };
         (
