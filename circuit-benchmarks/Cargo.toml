@@ -17,9 +17,13 @@ rand = "0.8"
 itertools = "0.10"
 eth-types = { path = "../eth-types" }
 env_logger = "0.9"
+log="0.4"
+tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 ethers-signers = "0.17.0"
+ethers = { version = "0.17.0", features = ["ethers-solc"] }
 mock = { path="../mock" }
 rand_chacha = "0.3"
+url="2.2.2"
 
 [features]
 default = []
