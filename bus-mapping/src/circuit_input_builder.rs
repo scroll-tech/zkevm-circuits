@@ -565,12 +565,6 @@ fn keccak_inputs_pi_circuit(
                 .state_root
                 .to_fixed_bytes(),
         )
-        // .chain(
-        //     extra.state_root.to_fixed_bytes()
-        // )
-        // .chain(
-        //     extra.prev_state_root.to_fixed_bytes()
-        // )
         // Tx Hashes
         .chain(transactions.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
         .chain(

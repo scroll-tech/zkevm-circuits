@@ -21,7 +21,7 @@ use crate::state_circuit::StateCircuitExports;
 #[cfg(feature = "non-legacy-tx")]
 use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness::{self, Block, BlockContext, BlockContexts, Transaction};
+use crate::witness::{self, Block, BlockContext, BlockContexts, MptUpdates, Transaction};
 use gadgets::util::{not, select, Expr};
 use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{
@@ -51,7 +51,7 @@ pub struct PublicData {
     /// Block contexts
     pub block_ctxs: BlockContexts,
     /// Previous State Root
-    pub prev_state_root: Option<Hash>,
+    pub prev_state_root: Hash,
 }
 
 impl PublicData {
@@ -90,27 +90,19 @@ impl PublicData {
             //         .flat_map(|tx_hash| tx_hash.to_fixed_bytes()),
             // )
             // state roots
-            .chain({
-                let mut state_roots_bytes = vec![];
-                if self.prev_state_root.is_some() {
-                    state_roots_bytes
-                        .extend_from_slice(&self.prev_state_root.unwrap().to_fixed_bytes());
-                    state_roots_bytes.extend_from_slice(
-                        &self
-                            .block_ctxs
-                            .ctxs
-                            .iter()
-                            .skip(self.block_ctxs.ctxs.len().saturating_sub(1))
-                            .next()
-                            .expect("batch is not empty")
-                            .1
-                            .eth_block
-                            .state_root
-                            .to_fixed_bytes(),
-                    );
-                }
-                state_roots_bytes.into_iter()
-            })
+            .chain(self.prev_state_root.to_fixed_bytes())
+            .chain(
+                self.block_ctxs
+                    .ctxs
+                    .iter()
+                    .skip(self.block_ctxs.ctxs.len().saturating_sub(1))
+                    .next()
+                    .expect("batch is not empty")
+                    .1
+                    .eth_block
+                    .state_root
+                    .to_fixed_bytes(),
+            )
             // Tx Hashes
             .chain(
                 self.transactions
@@ -126,7 +118,9 @@ impl PublicData {
 
         assert_eq!(
             result.len(),
-            BLOCK_HEADER_BYTES_NUM * self.block_ctxs.ctxs.len() + KECCAK_DIGEST_SIZE * max_txs
+            BLOCK_HEADER_BYTES_NUM * self.block_ctxs.ctxs.len()
+                + KECCAK_DIGEST_SIZE * 2
+                + KECCAK_DIGEST_SIZE * max_txs
         );
         result
     }
@@ -566,59 +560,58 @@ impl<F: Field> PiCircuitConfig<F> {
         debug_assert_eq!(offset, BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks);
 
         // assign state roots
-        debug_assert_eq!(
-            self.state_roots.is_some(),
-            public_data.prev_state_root.is_some(),
-            "state_roots.is_some = {}, public_data.prev_state_root.is_some() = {}",
-            self.state_roots.is_some(),
-            public_data.prev_state_root.is_some(),
-        );
+        // previous_state_root before applying this batch
+        let prev_state_cells = self.assign_field_in_pi(
+            region,
+            &mut offset,
+            &public_data.prev_state_root.to_fixed_bytes(),
+            &mut rpi_rlc_acc,
+            &mut rpi_length_acc,
+            false,
+            false,
+            challenges,
+            false,
+        )?;
+
+        // state_root after applying this batch
+        let next_state_root = block_values
+            .ctxs
+            .iter()
+            .skip(block_values.ctxs.len().saturating_sub(1))
+            .next()
+            .expect("batch is not empty")
+            .1
+            .eth_block
+            .state_root
+            .clone();
+        let next_state_cells = self.assign_field_in_pi(
+            region,
+            &mut offset,
+            &next_state_root.to_fixed_bytes(),
+            &mut rpi_rlc_acc,
+            &mut rpi_length_acc,
+            false,
+            false,
+            challenges,
+            false,
+        )?;
+
+        // copy state roots to pi circuit when we are in super circuit.
         if self.state_roots.is_some() {
-            // previous_state_root before applying this batch
-            let prev_state_cells = self.assign_field_in_pi(
-                region,
-                &mut offset,
-                &public_data.prev_state_root.unwrap().to_fixed_bytes(),
-                &mut rpi_rlc_acc,
-                &mut rpi_length_acc,
-                false,
-                false,
-                challenges,
-                false,
-            )?;
-
-            // state_root after applying this batch
-            let next_state_root = block_values
-                .ctxs
-                .iter()
-                .skip(block_values.ctxs.len().saturating_sub(1))
-                .next()
-                .expect("batch is not empty")
-                .1
-                .eth_block
-                .state_root
-                .clone();
-            let next_state_cells = self.assign_field_in_pi(
-                region,
-                &mut offset,
-                &next_state_root.to_fixed_bytes(),
-                &mut rpi_rlc_acc,
-                &mut rpi_length_acc,
-                false,
-                false,
-                challenges,
-                false,
-            )?;
-
-            let state_roots = self.state_roots.clone().unwrap();
-            region.constrain_equal(
-                prev_state_cells[RPI_CELL_IDX].cell(),
-                state_roots.start_state_root.0,
-            )?;
-            region.constrain_equal(
-                next_state_cells[RPI_CELL_IDX].cell(),
-                state_roots.end_state_root.0,
-            )?;
+            // the values in state_roots are guaranteed to be correct when zktrie feature is
+            // enabled.
+            #[cfg(feature = "zktrie")]
+            {
+                let state_roots = self.state_roots.clone().unwrap();
+                region.constrain_equal(
+                    prev_state_cells[RPI_CELL_IDX].cell(),
+                    state_roots.start_state_root.0,
+                )?;
+                region.constrain_equal(
+                    next_state_cells[RPI_CELL_IDX].cell(),
+                    state_roots.end_state_root.0,
+                )?;
+            }
         }
 
         // assign tx hashes
@@ -646,7 +639,9 @@ impl<F: Field> PiCircuitConfig<F> {
 
         debug_assert_eq!(
             offset,
-            BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks + KECCAK_DIGEST_SIZE * self.max_txs
+            BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks
+                + KECCAK_DIGEST_SIZE * 2
+                + KECCAK_DIGEST_SIZE * self.max_txs
         );
 
         for i in 0..(offset - 1) {
@@ -908,10 +903,14 @@ impl<F: Field> PiCircuit<F> {
             // history_hashes: context.history_hashes.clone(),
             transactions: block.txs.clone(),
             block_ctxs: block.context.clone(),
-            prev_state_root: block
-                .mpt_state
-                .as_ref()
-                .map(|mpt_state| H256(mpt_state.root().clone())),
+            prev_state_root: match &block.mpt_state {
+                Some(mpt_state) => H256(mpt_state.root().clone()),
+                None => H256(
+                    MptUpdates::mock_from(&block.rws.table_assignments())
+                        .old_root()
+                        .to_be_bytes(),
+                ),
+            },
         };
         Self {
             public_data,
