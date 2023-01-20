@@ -400,7 +400,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     (CallContextFieldTag::IsCreate, 0.expr()),
                     (
                         CallContextFieldTag::CodeHash,
-                        // callee_code_hash using phase2 randomness
                         call_gadget.phase2_callee_code_hash.expr(),
                     ),
                 ] {
