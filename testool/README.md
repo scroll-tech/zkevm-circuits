@@ -44,7 +44,7 @@ or
 ```
 
 The "official EVM" ethereum tests are cloned as a gitmodule in `testool/tests`.
-We are using the tests located in `testtool/tests/src/GeneralStateTestsFiller`, but other locations can be specified, also.
+We are using the tests located in `testool/tests/src/GeneralStateTestsFiller`, but other locations can be specified, also.
 
 
 ### The ethereum tests files
