@@ -656,3 +656,36 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         Ok(gas_cost)
     }
 }
+
+#[derive(Clone, Debug)]
+pub(crate) struct SloadGasGadget<F> {
+    is_warm: Expression<F>,
+    gas_cost: Expression<F>,
+}
+
+impl<F: Field> SloadGasGadget<F> {
+    pub(crate) fn cal_gas_cost_for_assignment(is_warm: bool) -> u64 {
+        let gas_cost = if is_warm {
+            GasCost::WARM_ACCESS
+        } else {
+            GasCost::COLD_SLOAD
+        };
+
+        gas_cost.0
+    }
+
+    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
+        let gas_cost = select::expr(
+            is_warm.expr(),
+            GasCost::WARM_ACCESS.expr(),
+            GasCost::COLD_SLOAD.expr(),
+        );
+
+        Self { is_warm, gas_cost }
+    }
+
+    pub(crate) fn expr(&self) -> Expression<F> {
+        // Return the gas cost
+        self.gas_cost.clone()
+    }
+}
