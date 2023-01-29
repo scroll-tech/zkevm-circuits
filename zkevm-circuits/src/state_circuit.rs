@@ -20,8 +20,10 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value, AssignedCell, Cell},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells, Assigned},
+    circuit::{AssignedCell, Cell, Layouter, Region, SimpleFloorPlanner, Value},
+    plonk::{
+        Advice, Assigned, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells,
+    },
     poly::Rotation,
 };
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
@@ -85,12 +87,12 @@ pub struct StateCircuitConfigArgs<F: Field> {
 
 /// Circuit exported cells after synthesis, used for subcircuit
 #[derive(Clone, Debug)]
-pub struct StateCircuitExports<V>{
+pub struct StateCircuitExports<V> {
     /// start state root
     pub start_state_root: (Cell, Value<V>),
     /// final state root
     pub end_state_root: (Cell, Value<V>),
-} 
+}
 
 impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
     type ConfigArgs = StateCircuitConfigArgs<F>;
@@ -230,8 +232,8 @@ impl<F: Field> StateCircuitConfig<F> {
         let mut state_root =
             randomness.map(|randomness| rlc::value(&updates.old_root().to_le_bytes(), randomness));
 
-        let mut start_state_root : Option<AssignedCell<_, F>> = None;
-        let mut end_state_root : Option<AssignedCell<_, F>> = None;
+        let mut start_state_root: Option<AssignedCell<_, F>> = None;
+        let mut end_state_root: Option<AssignedCell<_, F>> = None;
 
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
             if offset >= padding_length {
@@ -399,9 +401,9 @@ impl<F: Field> StateCircuitConfig<F> {
 
         let start_state_root = start_state_root.expect("should be assigned");
         let end_state_root = end_state_root.expect("should be assigned");
-        Ok(StateCircuitExports { 
-            start_state_root: (start_state_root.cell(), start_state_root.value_field()), 
-            end_state_root: (end_state_root.cell(), end_state_root.value_field()) 
+        Ok(StateCircuitExports {
+            start_state_root: (start_state_root.cell(), start_state_root.value_field()),
+            end_state_root: (end_state_root.cell(), end_state_root.value_field()),
         })
     }
 }
