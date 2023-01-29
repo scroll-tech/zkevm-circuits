@@ -95,8 +95,7 @@ impl PublicData {
                 self.block_ctxs
                     .ctxs
                     .iter()
-                    .skip(self.block_ctxs.ctxs.len().saturating_sub(1))
-                    .next()
+                    .nth(self.block_ctxs.ctxs.len().saturating_sub(1))
                     .expect("batch is not empty")
                     .1
                     .eth_block
@@ -577,13 +576,11 @@ impl<F: Field> PiCircuitConfig<F> {
         let next_state_root = block_values
             .ctxs
             .iter()
-            .skip(block_values.ctxs.len().saturating_sub(1))
-            .next()
+            .nth(block_values.ctxs.len().saturating_sub(1))
             .expect("batch is not empty")
             .1
             .eth_block
-            .state_root
-            .clone();
+            .state_root;
         let next_state_cells = self.assign_field_in_pi(
             region,
             &mut offset,
@@ -904,7 +901,7 @@ impl<F: Field> PiCircuit<F> {
             transactions: block.txs.clone(),
             block_ctxs: block.context.clone(),
             prev_state_root: match &block.mpt_state {
-                Some(mpt_state) => H256(mpt_state.root().clone()),
+                Some(mpt_state) => H256(*mpt_state.root()),
                 None => H256(
                     MptUpdates::mock_from(&block.rws.table_assignments())
                         .old_root()

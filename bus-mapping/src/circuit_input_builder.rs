@@ -557,8 +557,7 @@ fn keccak_inputs_pi_circuit(
         .chain(
             block_headers
                 .iter()
-                .skip(block_headers.len().saturating_sub(1))
-                .next()
+                .nth(block_headers.len().saturating_sub(1))
                 .expect("batch is not empty")
                 .1
                 .eth_block
