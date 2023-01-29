@@ -1,6 +1,14 @@
 use super::bytecode_unroller::{unroll, UnrolledBytecode};
-use super::circuit::{BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs};
+use super::circuit::{BytecodeCircuit, BytecodeCircuitConfigArgs};
+#[cfg(not(feature = "poseidon-codehash"))]
+use super::circuit::BytecodeCircuitConfig;
+#[cfg(feature = "poseidon-codehash")]
+use super::circuit::to_poseidon_hash::{
+    ToHashBlockBytecodeCircuitConfigArgs, ToHashBlockCircuitConfig, HASHBLOCK_BYTES_IN_FIELD,
+};
 use crate::table::{BytecodeTable, KeccakTable};
+#[cfg(feature = "poseidon-codehash")]
+use crate::table::PoseidonTable;
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use eth_types::Field;
 use halo2_proofs::{
@@ -10,8 +18,16 @@ use halo2_proofs::{
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
 use log::error;
 
+#[cfg(feature = "poseidon-codehash")]
+///alias for circuit config
+pub type CircuitConfig<F> = ToHashBlockCircuitConfig<F, HASHBLOCK_BYTES_IN_FIELD>;
+#[cfg(not(feature = "poseidon-codehash"))]
+///alias for circuit config
+pub type CircuitConfig<F> = BytecodeCircuitConfig<F>;
+
 impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
-    type Config = (BytecodeCircuitConfig<F>, Challenges);
+
+    type Config = (CircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -22,16 +38,25 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
         let bytecode_table = BytecodeTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
         let challenges = Challenges::construct(meta);
+        #[cfg(feature = "poseidon-codehash")]
+        let poseidon_table = PoseidonTable::construct(meta);
 
         let config = {
             let challenges = challenges.exprs(meta);
-            BytecodeCircuitConfig::new(
+            let args = BytecodeCircuitConfigArgs {
+                bytecode_table,
+                keccak_table,
+                challenges,
+            };
+            #[cfg(feature = "poseidon-codehash")]
+            let args = ToHashBlockBytecodeCircuitConfigArgs{
+                base_args: args, 
+                poseidon_table,
+            };
+
+            CircuitConfig::new(
                 meta,
-                BytecodeCircuitConfigArgs {
-                    bytecode_table,
-                    keccak_table,
-                    challenges,
-                },
+                args,
             )
         };
 
@@ -50,6 +75,13 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
             self.bytecodes.iter().map(|b| &b.bytes),
             &challenges,
         )?;
+        #[cfg(feature = "poseidon-codehash")]
+        config.poseidon_table.dev_load(
+            &mut layouter,
+            self.bytecodes.iter().map(|b| &b.bytes),
+            &challenges,
+        )?;
+
         self.synthesize_sub(&config, &challenges, &mut layouter)?;
         Ok(())
     }

@@ -7,6 +7,7 @@ pub use mpt_circuits::serde;
 pub use mpt_circuits::EthTrie;
 pub use mpt_circuits::EthTrieCircuit;
 pub use mpt_circuits::EthTrieConfig;
+pub use mpt_circuits::CommitmentIndexs;
 pub use mpt_circuits::MPTProofType;
 
 /// the hash scheme (poseidon) used by mpt-zktrie

@@ -65,9 +65,8 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
                 .map(|tr| AccountOp::try_from(tr).unwrap()),
         );
         let (circuit, _) = eth_trie.to_circuits(
-            (block.circuits_params.max_rws / 3, None),
-            &block.mpt_updates.proof_types,
-        );
+            (block.circuits_params.max_rws, Some(block.circuits_params.max_rws)), 
+            &block.mpt_updates.proof_types);
         MptCircuit(circuit)
     }
 
@@ -149,7 +148,7 @@ impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
-        config.0.load_hash_table(
+        config.0.dev_load_hash_table(
             &mut layouter,
             self.0.ops.iter().flat_map(|op| op.hash_traces()),
             self.0.calcs,
