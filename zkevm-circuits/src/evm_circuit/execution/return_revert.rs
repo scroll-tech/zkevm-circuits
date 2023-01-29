@@ -277,7 +277,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             let values: Vec<_> = (3..3 + length.as_usize())
                 .map(|i| block.rws[step.rw_indices[i]].memory_value())
                 .collect();
-            let mut code_hash = keccak256(&values);
+            let mut code_hash = keccak256(values);
             code_hash.reverse();
             self.code_hash.assign(
                 region,

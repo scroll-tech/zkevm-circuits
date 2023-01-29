@@ -639,9 +639,9 @@ pub fn keccak_inputs_tx_circuit(
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
-pub fn get_create_init_code<'a, 'b>(
+pub fn get_create_init_code<'a>(
     call_ctx: &'a CallContext,
-    step: &'b GethExecStep,
+    step: &GethExecStep,
 ) -> Result<&'a [u8], Error> {
     let offset = step.stack.nth_last(1)?;
     let length = step.stack.nth_last(2)?;

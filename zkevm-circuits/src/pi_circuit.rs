@@ -115,7 +115,7 @@ impl PublicData {
 
     fn get_pi(&self, max_txs: usize) -> H256 {
         let rpi_bytes = self.raw_public_input_bytes(max_txs);
-        let rpi_keccak = keccak256(&rpi_bytes);
+        let rpi_keccak = keccak256(rpi_bytes);
         H256(rpi_keccak)
     }
 }
@@ -410,8 +410,8 @@ impl<F: Field> PiCircuitConfig<F> {
 
         for (i, block) in block_values
             .ctxs
-            .iter()
-            .map(|(_, block)| block.clone())
+            .values()
+            .cloned()
             .chain(
                 (block_values.ctxs.len()..self.max_inner_blocks)
                     .into_iter()
