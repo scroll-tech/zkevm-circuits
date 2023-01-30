@@ -6,6 +6,7 @@ use crate::{
     operation::{
         AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
     },
+    state_db::CodeDB,
     Error,
 };
 use core::fmt::Debug;
@@ -497,6 +498,17 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         (_, _, is_empty_code_hash) => {
             // 3. Call to account with empty code.
             if is_empty_code_hash {
+                // if the transfer values make an account from non-exist to exist
+                // we need to handle to codehash change
+                if !call.value.is_zero() {
+                    state.account_write(
+                        &mut exec_step,
+                        call.address,
+                        AccountField::CodeHash,
+                        CodeDB::empty_code_hash().to_word(),
+                        CodeDB::empty_code_hash().to_word(), // or Word::zero()?
+                    )?;
+                }
                 return Ok(exec_step);
             }
 
