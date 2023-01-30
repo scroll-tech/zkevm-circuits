@@ -326,8 +326,7 @@ pub fn block_convert<F: Field>(
 }
 
 /// Attach witness block with mpt states
-pub fn block_attach_mpt_state<F: Field>(mut block: Block<F>, mpt_state: MptState) -> Block<F> {
+pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: MptState) {
     block.mpt_updates.fill_state_roots(&mpt_state);
     block.mpt_state.replace(mpt_state);
-    block
 }

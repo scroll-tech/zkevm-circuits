@@ -101,7 +101,8 @@ impl MptUpdates {
         old_root: U256,
         new_root: U256,
     ) -> Self {
-        let mut updates: BTreeMap<_, _> = rows
+        let rows_len = rows.len();
+        let updates: BTreeMap<_, _> = rows
             .iter()
             .group_by(|row| key(row))
             .into_iter()
@@ -117,16 +118,17 @@ impl MptUpdates {
                     MptUpdate {
                         key,
                         old_root: Word::from(i as u64) + old_root,
-                        new_root: Word::from(i as u64 + 1) + old_root,
+                        new_root: if i + 1 == rows_len {
+                            new_root
+                        } else {
+                            Word::from(i as u64 + 1) + old_root
+                        },
                         old_value: value_prev(first),
                         new_value: value(last),
                     },
                 )
             })
             .collect();
-        if let Some(mut entry) = updates.last_entry() {
-            entry.get_mut().new_root = new_root;
-        }
         MptUpdates {
             updates,
             old_root,
