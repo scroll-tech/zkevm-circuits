@@ -269,7 +269,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write TxAccessListAccount
                 //   - Write Account Balance
                 //   - Write Account Balance
-                //   - Read Account CodeHash (only if tx is not create)
+                //   - Read Account CodeHash
                 //   - Write CallContext Depth
                 //   - Write CallContext CallerAddress
                 //   - Write CallContext CalleeAddress
@@ -283,7 +283,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(22.expr() + (1.expr() - tx_is_create.expr())),
+                rw_counter: Delta(23.expr()),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
