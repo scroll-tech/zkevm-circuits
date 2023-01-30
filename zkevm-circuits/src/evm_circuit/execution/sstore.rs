@@ -8,7 +8,7 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            not, select, CachedRegion, Cell, CellType,
+            not, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -56,16 +56,16 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         let mut reversion_info = cb.reversion_info_read(None);
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
-        let phase2_key = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_key = cb.query_cell_phase2();
         // Pop the key from the stack
         cb.stack_pop(phase2_key.expr());
 
-        let phase2_value = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_value = cb.query_cell_phase2();
         // Pop the value from the stack
         cb.stack_pop(phase2_value.expr());
 
-        let phase2_value_prev = cb.query_cell_with_type(CellType::StoragePhase2);
-        let phase2_original_value = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_value_prev = cb.query_cell_phase2();
+        let phase2_original_value = cb.query_cell_phase2();
         cb.account_storage_write(
             callee_address.expr(),
             phase2_key.expr(),

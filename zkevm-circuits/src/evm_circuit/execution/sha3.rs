@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let offset = cb.query_cell();
+        let offset = cb.query_cell_phase2();
         let size = cb.query_word_rlc();
         let sha3_rlc = cb.query_word_rlc();
 
@@ -47,7 +47,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         let memory_address = MemoryAddressGadget::construct(cb, offset, size);
 
         let copy_rwc_inc = cb.query_cell();
-        let rlc_acc = cb.query_cell();
+        let rlc_acc = cb.query_cell_phase2();
 
         cb.condition(memory_address.has_length(), |cb| {
             cb.copy_table_lookup(

@@ -60,7 +60,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let dest_offset = cb.query_cell();
+        let dest_offset = cb.query_cell_phase2();
         let data_offset = cb.query_word_rlc();
         let size = cb.query_word_rlc();
 

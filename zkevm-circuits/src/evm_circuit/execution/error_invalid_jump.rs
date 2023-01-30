@@ -11,7 +11,7 @@ use crate::{
             },
             from_bytes,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
-            CachedRegion, Cell, CellType, RandomLinearCombination,
+            CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -34,6 +34,7 @@ pub(crate) struct ErrorInvalidJumpGadget<F> {
     is_jumpi: IsEqualGadget<F>,
     phase2_condition: Cell<F>,
     is_condition_zero: IsZeroGadget<F>,
+    rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -47,7 +48,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let opcode = cb.query_cell();
         let value = cb.query_cell();
         let is_code = cb.query_cell();
-        let phase2_condition = cb.query_cell_with_type(CellType::StoragePhase2);
+        let rw_counter_end_of_reversion = cb.query_cell();
+        let phase2_condition = cb.query_cell_phase2();
 
         cb.require_in_set(
             "ErrorInvalidJump only happend in JUMP or JUMPI",
@@ -96,6 +98,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            rw_counter_end_of_reversion.expr(),
+        );
+
         // Go to EndTx only when is_root
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(
@@ -110,7 +119,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
                 rw_counter: Delta(
-                    2.expr() + is_jumpi.expr() + cb.curr.state.reversible_write_counter.expr(),
+                    3.expr() + is_jumpi.expr() + cb.curr.state.reversible_write_counter.expr(),
                 ),
 
                 ..StepStateTransition::any()
@@ -131,6 +140,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             )
         });
 
+        // constrain RwCounterEndOfReversion
+        let rw_counter_end_of_step =
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+        cb.require_equal(
+            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        );
+
         Self {
             opcode,
             destination,
@@ -142,6 +160,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             is_jumpi,
             phase2_condition,
             is_condition_zero,
+            rw_counter_end_of_reversion,
             restore_context,
         }
     }
@@ -222,8 +241,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         self.is_condition_zero
             .assign_value(region, offset, condition_rlc)?;
 
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
         self.restore_context
-            .assign(region, offset, block, call, step, 2 + is_jumpi as usize)?;
+            .assign(region, offset, block, call, step, 3 + is_jumpi as usize)?;
         Ok(())
     }
 }

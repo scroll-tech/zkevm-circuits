@@ -3,7 +3,7 @@ set -e
 
 ARG_DEFAULT_SUDO=
 ARG_DEFAULT_STEPS="setup gendata tests cleanup"
-ARG_DEFAULT_TESTS="rpc circuit_input_builder circuits_mock"
+ARG_DEFAULT_TESTS="rpc circuit_input_builder circuits:mock_prover"
 
 usage() {
     cat >&2 << EOF
@@ -98,7 +98,7 @@ fi
 if [ -n "$STEP_TESTS" ]; then
     for testname in $ARG_TESTS; do
         echo "+ Running test group $testname"
-        cargo test --profile release --test $testname --features $testname -- --nocapture
+	cargo test --profile release --test $(echo $testname | sed -e 's/::/ /g') --all-features -- --nocapture
     done
 fi
 

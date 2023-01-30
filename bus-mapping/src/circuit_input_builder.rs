@@ -53,6 +53,8 @@ pub struct CircuitsParams {
     pub max_txs: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
+    /// Max ammount of rows that the CopyCircuit can have.
+    pub max_copy_rows: usize,
     /// Maximum number of inner blocks in a batch
     pub max_inner_blocks: usize,
     /// Maximum number of bytes supported in the Bytecode Circuit
@@ -71,6 +73,9 @@ impl Default for CircuitsParams {
             max_txs: 1,
             max_calldata: 256,
             max_inner_blocks: 64,
+            // TODO: Check whether this value is correct or we should increase/decrease based on
+            // this lib tests
+            max_copy_rows: 1000,
             max_bytecode: 512,
             keccak_padding: None,
         }
@@ -170,13 +175,7 @@ impl<'a> CircuitInputBuilder {
             ),
         );
 
-        Transaction::new(
-            call_id,
-            &mut self.sdb,
-            &mut self.code_db,
-            eth_tx,
-            is_success,
-        )
+        Transaction::new(call_id, &self.sdb, &mut self.code_db, eth_tx, is_success)
     }
 
     /// Iterate over all generated CallContext RwCounterEndOfReversion
@@ -250,7 +249,7 @@ impl<'a> CircuitInputBuilder {
         }
         if handle_rwc_reversion {
             self.set_value_ops_call_context_rwc_eor();
-            self.set_end_block();
+            self.set_end_block()?;
         }
         log::info!(
             "handling block done, total gas {:?}",
@@ -260,7 +259,7 @@ impl<'a> CircuitInputBuilder {
     }
 
     /// ..
-    pub fn set_end_block(&mut self) {
+    pub fn set_end_block(&mut self) -> Result<(), Error> {
         let max_rws = self.block.circuits_params.max_rws;
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
@@ -289,12 +288,14 @@ impl<'a> CircuitInputBuilder {
         // We need at least 1 extra Start row
         #[allow(clippy::int_plus_one)]
         {
-            assert!(
-                total_rws + 1 <= max_rws,
-                "total_rws + 1 <= max_rws, total_rws={}, max_rws={}",
-                total_rws,
-                max_rws
-            );
+            if total_rws + 1 > max_rws {
+                log::error!(
+                    "total_rws + 1 > max_rws, total_rws={}, max_rws={}",
+                    total_rws,
+                    max_rws
+                );
+                return Err(Error::InternalError("rws not enough"));
+            };
         }
         push_op(&mut end_block_last, RWCounter(1), RW::READ, StartOp {});
         push_op(
@@ -306,6 +307,7 @@ impl<'a> CircuitInputBuilder {
 
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
+        Ok(())
     }
 
     /// Handle a transaction with its corresponding execution trace to generate
@@ -507,11 +509,6 @@ pub fn get_dummy_tx_hash(chain_id: u64) -> H256 {
     let (tx, sig) = get_dummy_tx(chain_id);
 
     let tx_hash = keccak256(tx.rlp_signed(&sig));
-    log::debug!(
-        "DUMMY TX HASH for CHAIN_ID({}): {}",
-        chain_id,
-        hex::encode(tx_hash)
-    );
 
     H256(tx_hash)
 }
@@ -525,6 +522,12 @@ fn keccak_inputs_pi_circuit(
 ) -> Vec<u8> {
     // TODO: add history hashes and state roots
     let dummy_tx_hash = get_dummy_tx_hash(chain_id);
+
+    log::debug!(
+        "DUMMY TX HASH for CHAIN_ID({}): {}",
+        chain_id,
+        hex::encode(dummy_tx_hash.to_fixed_bytes())
+    );
 
     let result = block_headers
         .iter()
@@ -646,9 +649,9 @@ pub fn keccak_inputs_tx_circuit(
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
-pub fn get_create_init_code<'a, 'b>(
+pub fn get_create_init_code<'a>(
     call_ctx: &'a CallContext,
-    step: &'b GethExecStep,
+    step: &GethExecStep,
 ) -> Result<&'a [u8], Error> {
     let offset = step.stack.nth_last(1)?;
     let length = step.stack.nth_last(2)?;
@@ -807,7 +810,9 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         for proof in proofs {
             let mut storage = HashMap::new();
             for storage_proof in proof.storage_proof {
-                storage.insert(storage_proof.key, storage_proof.value);
+                if !storage_proof.value.is_zero() {
+                    storage.insert(storage_proof.key, storage_proof.value);
+                }
             }
             log::trace!(
                 "statedb set_account {:?} balance {:?}",

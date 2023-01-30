@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, CellType,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let value = cb.query_cell_with_type(CellType::StoragePhase2);
+        let value = cb.query_cell_phase2();
 
         // The stack index we have to peek, deduced from the 'x' value of 'dupx'
         // The offset starts at 0 for DUP1

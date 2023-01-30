@@ -4,7 +4,7 @@ use crate::{
     operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
-use eth_types::{GethExecStep, ToAddress, ToWord};
+use eth_types::{GethExecStep, ToAddress, ToWord, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL` `OpcodeId`.
@@ -60,6 +60,23 @@ impl Opcode for OOGCall {
             (0u64).into(), // must fail
         )?;
 
+        let (_, callee_account) = state.sdb.get_account(&call_address);
+        let callee_exists = !callee_account.is_empty();
+        let callee_code_hash = callee_account.code_hash;
+        let callee_code_hash_word = if callee_exists {
+            callee_code_hash.to_word()
+        } else {
+            Word::zero()
+        };
+
+        state.account_read(
+            &mut exec_step,
+            call_address,
+            AccountField::CodeHash,
+            callee_code_hash_word,
+            callee_code_hash_word,
+        )?;
+
         let is_warm = state.sdb.check_account_in_access_list(&call_address);
         state.push_op(
             &mut exec_step,
@@ -71,15 +88,6 @@ impl Opcode for OOGCall {
                 is_warm_prev: is_warm,
             },
         );
-
-        let (_, callee_account) = state.sdb.get_account(&call_address);
-        let callee_code_hash = callee_account.code_hash;
-        for (field, value) in [
-            (AccountField::Balance, callee_account.balance),
-            (AccountField::CodeHash, callee_code_hash.to_word()),
-        ] {
-            state.account_read(&mut exec_step, call_address, field, value, value)?;
-        }
 
         state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         state.handle_return(geth_step)?;

@@ -56,7 +56,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let offset = cb.query_cell();
+        let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
         cb.stack_pop(offset.expr());
         cb.stack_pop(length.expr());
@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         // There are 4 cases non-mutually exclusive, A to D, to handle, depending on if
         // the call is, or is not, a create, root, or successful. See the specs at
-        // https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/opcode/F3RETURN.md
+        // https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/opcode/F3RETURN_FDREVERT.md
         // for more details.
         let is_create = cb.curr.state.is_create.expr();
         let is_root = cb.curr.state.is_root.expr();
@@ -99,7 +99,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             cb.condition(is_contract_deployment.clone(), |cb| {
                 // We don't need to place any additional constraints on code_hash because the
                 // copy circuit enforces that it is the hash of the bytes in the copy lookup.
-                let code_hash = cb.query_cell();
+                let code_hash = cb.query_cell_phase2();
                 cb.copy_table_lookup(
                     cb.curr.state.call_id.expr(),
                     CopyDataType::Memory.expr(),
@@ -277,7 +277,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             let values: Vec<_> = (3..3 + length.as_usize())
                 .map(|i| block.rws[step.rw_indices[i]].memory_value())
                 .collect();
-            let mut code_hash = keccak256(&values);
+            let mut code_hash = keccak256(values);
             code_hash.reverse();
             self.code_hash.assign(
                 region,

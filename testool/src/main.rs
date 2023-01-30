@@ -6,11 +6,12 @@ mod statetest;
 mod utils;
 
 use crate::config::TestSuite;
+use crate::statetest::ResultLevel;
 use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
 use config::Config;
-use log::{debug, error, info};
+use log::info;
 use statetest::{
     geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
     StateTest,
@@ -50,7 +51,7 @@ struct Args {
 
     /// Cache execution results
     #[clap(long)]
-    cache: bool,
+    cache: Option<String>,
 
     /// Generates log and and html file with info.
     #[clap(long)]
@@ -69,18 +70,14 @@ struct Args {
     v: bool,
 }
 
-const RESULT_CACHE: &str = "result.cache";
-
 fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
-    debug!("{}", &test);
-
+    println!("{}", &test);
     let trace = geth_trace(test.clone())?;
     crate::utils::print_trace(trace)?;
-    debug!(
+    println!(
         "result={:?}",
         run_test(test, TestSuite::default(), circuits_config)
     );
-
     Ok(())
 }
 
@@ -120,12 +117,10 @@ fn go() -> Result<()> {
         }
         return Ok(());
     }
-
     if let Some(test_id) = args.inspect {
         // Test only one and return
         let mut state_tests_filtered: Vec<_> =
             state_tests.iter().filter(|t| t.id == test_id).collect();
-
         if state_tests_filtered.is_empty() {
             info!(
                 "Test '{}' not found but found some that partially matches:",
@@ -141,10 +136,6 @@ fn go() -> Result<()> {
     };
 
     if args.report {
-        if args.cache {
-            bail!("--cache is not compartible with --report");
-        }
-
         let git_hash = utils::current_git_commit()?;
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -161,8 +152,18 @@ fn go() -> Result<()> {
             REPORT_FOLDER, args.suite, timestamp, git_hash
         );
 
-        let mut results = Results::with_cache(PathBuf::from(csv_filename))?;
-
+        // when running a report, the tests result of the containing cache file
+        // are used, but removing all Ignored tests
+        let mut results = if let Some(cache_filename) = args.cache {
+            let mut results = Results::from_file(PathBuf::from(cache_filename))?;
+            results
+                .tests
+                .retain(|_, test| test.level != ResultLevel::Ignored);
+            results
+        } else {
+            Results::default()
+        };
+        results.set_cache(PathBuf::from(csv_filename));
         run_statetests_suite(state_tests, &circuits_config, &suite, &mut results)?;
 
         // filter non-csv files and files from the same commit
@@ -192,8 +193,8 @@ fn go() -> Result<()> {
         report.print_tty()?;
         info!("{}", html_filename);
     } else {
-        let mut results = if args.cache {
-            Results::with_cache(PathBuf::from(RESULT_CACHE))?
+        let mut results = if let Some(cache_filename) = args.cache {
+            Results::with_cache(PathBuf::from(cache_filename))?
         } else {
             Results::default()
         };
@@ -215,6 +216,6 @@ fn go() -> Result<()> {
 
 fn main() {
     if let Err(err) = go() {
-        error!("{}", err);
+        eprintln!("Error found {}", err);
     }
 }

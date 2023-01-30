@@ -2,26 +2,39 @@ use itertools::Itertools;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
-use crate::table::LookupTable;
-use crate::{
-    evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
-        step::{ExecutionState, Step},
-        table::{FixedTableTag, Table},
-        util::{
-            constraint_builder::ConstraintBuilder, rlc, CachedRegion, CellType, Expr,
-            StoredExpression,
-        },
-        Advice, Column, Fixed,
+use crate::evm_circuit::{
+    param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
+    step::{ExecutionState, Step},
+    table::{FixedTableTag, Table},
+    util::{
+        constraint_builder::ConstraintBuilder, rlc, CachedRegion, CellType, Expr, StoredExpression,
+        LOOKUP_CONFIG,
     },
-    util::Challenges,
+    Advice, Column, Fixed,
 };
+use crate::table::LookupTable;
+
+#[cfg(not(feature = "onephase"))]
+use crate::util::Challenges;
+#[cfg(feature = "onephase")]
+use crate::util::MockChallenges as Challenges;
+
+use halo2_proofs::plonk::FirstPhase;
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as ThirdPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::ThirdPhase;
+
 use eth_types::{Field, Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,
-    plonk::{Circuit, ConstraintSystem, Error, Expression, Selector},
+    plonk::{Circuit, ConstraintSystem, Error, Selector},
 };
 
 pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);
@@ -66,7 +79,6 @@ where
     stored_expressions: Vec<StoredExpression<F>>,
     math_gadget_container: G,
     _marker: PhantomData<F>,
-    challenges: Challenges<Expression<F>>,
 }
 
 pub(crate) struct UnitTestMathGadgetBaseCircuit<G> {
@@ -98,13 +110,31 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let q_usable = meta.selector();
-        let fixed_table = [(); 4].map(|_| meta.fixed_column());
-        let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
-        let step_curr = Step::new(meta, advices, 0, false);
-        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
         let challenges = Challenges::construct(meta);
         let challenges_exprs = challenges.exprs(meta);
+
+        let q_usable = meta.selector();
+        let fixed_table = [(); 4].map(|_| meta.fixed_column());
+
+        let lookup_column_count: usize = LOOKUP_CONFIG.iter().map(|(_, count)| *count).sum();
+        let advices = [(); STEP_WIDTH]
+            .iter()
+            .enumerate()
+            .map(|(n, _)| {
+                if n < lookup_column_count {
+                    meta.advice_column_in(ThirdPhase)
+                } else if n < lookup_column_count + N_PHASE2_COLUMNS {
+                    meta.advice_column_in(SecondPhase)
+                } else {
+                    meta.advice_column_in(FirstPhase)
+                }
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        let step_curr = Step::new(meta, advices, 0, false);
+        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
         let evm_word_powers_of_randomness = challenges_exprs.evm_word_powers_of_randomness();
         let lookup_input_powers_of_randomness =
             challenges_exprs.lookup_input_powers_of_randomness();
@@ -154,7 +184,6 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                 stored_expressions,
                 math_gadget_container,
                 _marker: PhantomData,
-                challenges: challenges_exprs,
             },
             challenges,
         )
@@ -187,9 +216,11 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                 config
                     .math_gadget_container
                     .assign_gadget_container(&self.witnesses, cached_region)?;
+
                 for stored_expr in &config.stored_expressions {
                     stored_expr.assign(cached_region, offset)?;
                 }
+
                 Ok(())
             },
         )?;

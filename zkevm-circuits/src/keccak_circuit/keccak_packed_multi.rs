@@ -26,6 +26,11 @@ use rayon::iter::IntoParallelRefIterator;
 use rayon::prelude::ParallelIterator;
 use std::{env::var, marker::PhantomData, vec};
 
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
+
 const MAX_DEGREE: usize = 9;
 const ABSORB_LOOKUP_RANGE: usize = 3;
 const THETA_C_LOOKUP_RANGE: usize = 6;
@@ -260,7 +265,7 @@ impl<F: FieldExt> CellManager<F> {
         let column = if column_idx < self.columns.len() {
             self.columns[column_idx].advice
         } else {
-            let advice = meta.advice_column();
+            let advice = meta.advice_column_in(SecondPhase);
             let mut expr = 0.expr();
             meta.create_gate("Query column", |meta| {
                 expr = meta.query_advice(advice, Rotation::cur());

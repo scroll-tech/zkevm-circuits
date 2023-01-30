@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, CellType,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -27,7 +27,7 @@ impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::POP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let phase2_value = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_value = cb.query_cell_phase2();
 
         // Pop the value from the stack
         cb.stack_pop(phase2_value.expr());

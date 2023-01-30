@@ -24,6 +24,7 @@ pub(crate) struct ErrorOOGConstantGadget<F> {
     // constrain gas left is less than required
     gas_required: Cell<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
+    rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -37,6 +38,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
         let gas_required = cb.query_cell();
+        let rw_counter_end_of_reversion = cb.query_cell();
 
         cb.constant_gas_lookup(opcode.expr(), gas_required.expr());
         // Check if the amount of gas available is less than the amount of gas
@@ -52,6 +54,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         // current call must be failed.
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            rw_counter_end_of_reversion.expr(),
+        );
+
         // Go to EndTx only when is_root
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(
@@ -65,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(1.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(2.expr() + cb.curr.state.reversible_write_counter.expr()),
                 ..StepStateTransition::any()
             });
         });
@@ -85,10 +94,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             )
         });
 
+        // constrain RwCounterEndOfReversion
+        let rw_counter_end_of_step =
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+        cb.require_equal(
+            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        );
+
         Self {
             opcode,
             gas_required,
             insufficient_gas,
+            rw_counter_end_of_reversion,
             restore_context,
         }
     }
@@ -118,8 +137,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             F::from(step.gas_cost),
         )?;
 
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
+
         self.restore_context
-            .assign(region, offset, block, call, step, 1)?;
+            .assign(region, offset, block, call, step, 2)?;
 
         Ok(())
     }

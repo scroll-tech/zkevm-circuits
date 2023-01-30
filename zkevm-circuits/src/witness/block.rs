@@ -51,8 +51,6 @@ pub struct Block<F> {
     pub evm_circuit_pad_to: usize,
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
-    /// Pad copy circuit to make selectors fixed.
-    pub copy_circuit_pad_to: usize,
     /// Circuit Setup Parameters
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
@@ -89,6 +87,21 @@ impl BlockContexts {
     }
 }
 
+impl<F: Field> Block<F> {
+    /// For each tx, for each step, print the rwc at the beginning of the step,
+    /// and all the rw operations of the step.
+    pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
+        for (tx_idx, tx) in self.txs.iter().enumerate() {
+            println!("tx {}", tx_idx);
+            for step in &tx.steps {
+                println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
+                for rw_ref in &step.rw_indices {
+                    println!("  - {:?}", self.rws[*rw_ref]);
+                }
+            }
+        }
+    }
+}
 /// Block context for execution
 #[derive(Debug, Default, Clone)]
 pub struct BlockContext {
@@ -298,7 +311,6 @@ pub fn block_convert<F: Field>(
         circuits_params: block.circuits_params.clone(),
         evm_circuit_pad_to: <usize>::default(),
         exp_circuit_pad_to: <usize>::default(),
-        copy_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
     })

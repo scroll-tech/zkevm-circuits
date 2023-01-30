@@ -151,20 +151,6 @@ impl<F: Field> EvmCircuitConfig<F> {
             },
         )
     }
-
-    /// Calculate which rows are "actually" used in the circuit
-    pub fn get_active_rows(&self, block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
-        let max_offset = self.get_num_rows_required(block);
-        // some gates are enabled on all rows
-        let gates_row_ids = (0..max_offset).collect();
-        // lookups are enabled at "q_step" rows and byte lookup rows
-        let lookup_row_ids = (0..max_offset).collect();
-        (gates_row_ids, lookup_row_ids)
-    }
-
-    pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
-        self.execution.get_num_rows_required(block)
-    }
 }
 
 /// Tx Circuit for verifying transaction signatures
@@ -190,6 +176,33 @@ impl<F: Field> EvmCircuit<F> {
             fixed_table_tags,
         }
     }
+
+    /// Calculate which rows are "actually" used in the circuit
+    pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
+        let max_offset = Self::get_num_rows_required(block);
+        // some gates are enabled on all rows
+        let gates_row_ids = (0..max_offset).collect();
+        // lookups are enabled at "q_step" rows and byte lookup rows
+        let lookup_row_ids = (0..max_offset).collect();
+        (gates_row_ids, lookup_row_ids)
+    }
+
+    pub fn get_num_rows_required(block: &Block<F>) -> usize {
+        // Start at 1 so we can be sure there is an unused `next` row available
+        let mut num_rows = 1;
+        let evm_rows = block.evm_circuit_pad_to;
+        if evm_rows == 0 {
+            for transaction in &block.txs {
+                for step in &transaction.steps {
+                    num_rows += step.execution_state.get_step_height();
+                }
+            }
+            num_rows += 1; // EndBlock
+        } else {
+            num_rows += block.evm_circuit_pad_to;
+        }
+        num_rows
+    }
 }
 
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
@@ -201,8 +214,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let num_rows_required_for_execution_steps: usize =
-            EvmCircuit::<F>::get_num_rows_required(block);
+        let num_rows_required_for_execution_steps: usize = Self::get_num_rows_required(block);
         let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(block)
             .iter()
             .map(|tag| tag.build::<F>().count())
@@ -374,20 +386,6 @@ pub mod test {
         }
     }
 
-    impl<F: Field> EvmCircuit<F> {
-        pub fn get_num_rows_required(block: &Block<F>) -> usize {
-            let mut cs = ConstraintSystem::default();
-            let config = EvmCircuit::<F>::configure(&mut cs);
-            config.0.get_num_rows_required(block)
-        }
-
-        pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
-            let mut cs = ConstraintSystem::default();
-            let config = EvmCircuit::<F>::configure(&mut cs);
-            config.0.get_active_rows(block)
-        }
-    }
-
     pub fn run_test_circuit_geth_data_default<F: Field>(
         block: GethData,
     ) -> Result<(), Vec<VerifyFailure>> {
@@ -493,7 +491,6 @@ mod evm_circuit_stats {
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
     use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::ConstraintSystem;
     use mock::test_ctx::{helpers::*, TestContext};
     use strum::IntoEnumIterator;
 
@@ -536,12 +533,9 @@ mod evm_circuit_stats {
     #[ignore]
     #[test]
     pub fn get_evm_states_stats() {
-        let mut meta = ConstraintSystem::<Fr>::default();
-        let circuit = EvmCircuit::configure(&mut meta);
-
         let mut implemented_states = Vec::new();
         for state in ExecutionState::iter() {
-            let height = circuit.0.execution.get_step_height_option(state);
+            let height = state.get_step_height_option();
             if let Some(h) = height {
                 implemented_states.push((state, h));
             }

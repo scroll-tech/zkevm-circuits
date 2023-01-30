@@ -47,7 +47,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let opcode = cb.query_cell();
 
         let external_address = cb.query_word_rlc();
-        let memory_offset = cb.query_cell();
+        let memory_offset = cb.query_cell_phase2();
         let data_offset = cb.query_word_rlc();
         let memory_length = cb.query_word_rlc();
 
@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             Some(&mut reversion_info),
         );
 
-        let code_hash = cb.query_cell();
+        let code_hash = cb.query_cell_phase2();
         cb.account_read(
             from_bytes::expr(&external_address.cells),
             AccountFieldTag::CodeHash,

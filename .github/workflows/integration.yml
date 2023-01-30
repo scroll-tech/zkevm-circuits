@@ -81,10 +81,10 @@ jobs:
       - name: Build bins
         run: cargo build --bin gen_blockchain_data
       - name: Build tests
-        run: for testname in rpc circuit_input_builder circuits_mock; do cargo test --profile release --test $testname --features $testname --no-run; done
+        run: for testname in rpc circuit_input_builder circuits; do cargo test --profile release --test $testname --features $testname --no-run; done
       - run: ./run.sh --steps "setup"
       - run: ./run.sh --steps "gendata"
       - run: ./run.sh --steps "tests" --tests "rpc"
       - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
-      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits_mock"
+      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits::mock_prover"
       - run: ./run.sh --steps "cleanup"

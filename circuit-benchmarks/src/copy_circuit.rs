@@ -25,6 +25,7 @@ mod tests {
     use std::env::var;
     use zkevm_circuits::copy_circuit::CopyCircuit;
     use zkevm_circuits::evm_circuit::witness::{block_convert, Block};
+    use zkevm_circuits::util::SubCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -42,7 +43,7 @@ mod tests {
 
         // Create the circuit
         let block = generate_full_events_block(degree);
-        let circuit = CopyCircuit::<Fr>::new(1, block);
+        let circuit = CopyCircuit::<Fr>::new_from_block(&block);
 
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", degree);

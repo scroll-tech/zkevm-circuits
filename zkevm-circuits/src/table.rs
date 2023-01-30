@@ -563,13 +563,13 @@ impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         Self([
-            meta.advice_column(),
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column(),
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column_in(SecondPhase),
+            meta.advice_column(),               // Address
+            meta.advice_column_in(SecondPhase), // Storage key
+            meta.advice_column(),               // Proof type
+            meta.advice_column_in(SecondPhase), // New root
+            meta.advice_column_in(SecondPhase), // Old root
+            meta.advice_column_in(SecondPhase), // New value
+            meta.advice_column_in(SecondPhase), // Old value
         ])
     }
 
@@ -592,7 +592,7 @@ impl MptTable {
         randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "mpt table",
+            || "mpt table zkevm",
             |mut region| self.load_with_region(&mut region, updates, randomness),
         )
     }
@@ -603,9 +603,8 @@ impl MptTable {
         updates: &MptUpdates,
         randomness: Value<F>,
     ) -> Result<(), Error> {
-        self.assign(region, 0, &MptUpdateRow([Value::known(F::zero()); 7]))?;
         for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
-            self.assign(region, offset + 1, row)?;
+            self.assign(region, offset, row)?;
         }
         Ok(())
     }

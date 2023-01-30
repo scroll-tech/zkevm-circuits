@@ -50,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             Some(&mut reversion_info),
         );
 
-        let code_hash = cb.query_cell();
+        let code_hash = cb.query_cell_phase2();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
         cb.account_read(address, AccountFieldTag::CodeHash, code_hash.expr());
         cb.stack_push(code_hash.expr());
@@ -241,7 +241,7 @@ mod test {
             ..Default::default()
         };
         // This account state should no longer be possible because contract nonces start
-        // at 1, per EIP-161. However, the requirement that the code be emtpy is still
+        // at 1, per EIP-161. However, the requirement that the code be empty is still
         // in the yellow paper and our constraints, so we test this case
         // anyways.
         let contract_only_account = Account {

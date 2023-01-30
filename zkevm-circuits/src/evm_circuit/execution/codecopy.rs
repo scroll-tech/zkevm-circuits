@@ -50,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let opcode = cb.query_cell();
 
         // Query elements to be popped from the stack.
-        let dst_memory_offset = cb.query_cell();
+        let dst_memory_offset = cb.query_cell_phase2();
         let code_offset = cb.query_word_rlc();
         let size = cb.query_word_rlc();
 

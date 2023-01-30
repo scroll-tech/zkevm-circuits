@@ -103,7 +103,8 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
         )?;
         config
             .0
-            .synthesize_core(layouter, self.0.ops.iter(), self.0.calcs)
+            .synthesize_core(layouter, self.0.ops.iter(), self.0.calcs)?;
+        Ok(())
     }
 
     /// powers of randomness for instance columns

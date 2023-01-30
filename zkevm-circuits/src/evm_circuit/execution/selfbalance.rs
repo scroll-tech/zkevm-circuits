@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, CellType,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -31,7 +31,7 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
-        let phase2_self_balance = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_self_balance = cb.query_cell_phase2();
         cb.account_read(
             callee_address.expr(),
             AccountFieldTag::Balance,

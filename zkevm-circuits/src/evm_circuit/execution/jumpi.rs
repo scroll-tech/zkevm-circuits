@@ -11,7 +11,7 @@ use crate::{
             },
             from_bytes,
             math_gadget::IsZeroGadget,
-            select, CachedRegion, Cell, CellType, RandomLinearCombination,
+            select, CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -35,7 +35,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let destination = cb.query_word_rlc();
-        let phase2_condition = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_condition = cb.query_cell_phase2();
 
         // Pop the value from the stack
         cb.stack_pop(destination.expr());

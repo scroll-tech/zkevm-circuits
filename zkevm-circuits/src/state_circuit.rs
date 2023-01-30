@@ -677,11 +677,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
 #[cfg(test)]
 mod state_circuit_stats {
     use crate::evm_circuit::step::ExecutionState;
-    use crate::evm_circuit::EvmCircuit;
     use bus_mapping::{circuit_input_builder::ExecState, mock::BlockData};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Address};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::{Circuit, ConstraintSystem};
     use mock::{eth, test_ctx::TestContext, MOCK_ACCOUNTS};
     use strum::IntoEnumIterator;
 
@@ -701,12 +698,10 @@ mod state_circuit_stats {
         // Get the list of implemented execution states by configuring the EVM Circuit
         // and querying the step height for each possible execution state (only those
         // implemented will return a Some value).
-        let mut meta = ConstraintSystem::<Fr>::default();
-        let circuit = EvmCircuit::configure(&mut meta);
 
         let mut implemented_states = Vec::new();
         for state in ExecutionState::iter() {
-            let height = circuit.0.execution.get_step_height_option(state);
+            let height = state.get_step_height_option();
             if height.is_some() {
                 implemented_states.push(state);
             }

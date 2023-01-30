@@ -6,7 +6,7 @@ use crate::{
             constraint_builder::ConstraintBuilder,
             from_bytes,
             math_gadget::{ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, RangeCheckGadget},
-            select, sum, Cell, MemoryAddress,
+            select, sum, Cell, CellType, MemoryAddress,
         },
     },
     util::Expr,
@@ -75,6 +75,10 @@ impl<F: Field> MemoryAddressGadget<F> {
         memory_offset: Cell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
+        debug_assert_eq!(
+            CellType::StoragePhase2,
+            cb.curr.cell_manager.columns()[memory_offset.cell_column_index].cell_type
+        );
         let memory_length_is_zero = IsZeroGadget::construct(cb, sum::expr(&memory_length.cells));
         let memory_offset_bytes = cb.query_word_rlc();
 
@@ -96,7 +100,7 @@ impl<F: Field> MemoryAddressGadget<F> {
     }
 
     pub(crate) fn construct_2(cb: &mut ConstraintBuilder<F>) -> Self {
-        let offset = cb.query_cell();
+        let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
         Self::construct(cb, offset, length)
     }

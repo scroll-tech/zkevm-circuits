@@ -3,32 +3,20 @@ id="default"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
-max_rws = 51000
-unimplemented_opcodes = []
 ignore_tests = []
 
 [[suite]]
 id="nightly"
 path="tests/src/GeneralStateTestsFiller/**/*"
-max_gas = 500000
-max_steps = 1000
-max_rws = 51000
-unimplemented_opcodes = [
-    "SAR",
-    "EXTCODECOPY",
-    "CREATE",
-    "CREATE2",
-    "SELFDESTRUCT"
-]
-ignore_tests=["&tofix"]
+max_gas = 0
+max_steps = 100000
+ignore_tests=["&sigkill"]
 
 [[suite]]
 id = "light"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
-max_rws = 51000
-unimplemented_opcodes = []
 allow_tests=[
 	"add_d0(add_neg1_neg1)_g0_v0",
 	"mul_d0(mul_2_3)_g0_v0",
@@ -175,165 +163,23 @@ allow_tests=[
 # must fix  ------------------------------------------------------------------------------
 
 [[set]]
-id  = "tofix"
-desc = "***panicked at 'circuit should pass', contraint error"
-tests=["random_d3(random3)_g0_v0","random_d4(random4)_g0_v0"]
-
-[[set]]
-id = "tofix"
-desc = "***incorrect rw witness."
-tests = ["invalidAddr_d31(ok)_g0_v0"]
-
-[[set]]
-id = "tofix"
-desc = "gen_associated_ops memory check error"
+id = "sigkill"
+desc = "tests that sigkill"
 tests = [
-    "callDataCopyOffset_d0_g0_v0",
-    "calldatacopy_dejavu2_d0_g0_v0",
-    "codeCopyOffset_d0_g0_v0",
-    "bufferSrcOffset_d10(ok)_g0_v0",
-	"bufferSrcOffset_d12(ok)_g0_v0",
-	"bufferSrcOffset_d13(ok)_g0_v0",
-	"bufferSrcOffset_d14(ok)_g0_v0",
-	"bufferSrcOffset_d2(ok)_g0_v0",
-	"bufferSrcOffset_d20(ok)_g0_v0",
-	"bufferSrcOffset_d21(ok)_g0_v0",
-	"bufferSrcOffset_d22(ok)_g0_v0",
-	"bufferSrcOffset_d23(ok)_g0_v0",
-	"bufferSrcOffset_d26(ok)_g0_v0",
-	"bufferSrcOffset_d30(ok)_g0_v0",
-	"bufferSrcOffset_d34(ok)_g0_v0",
-	"bufferSrcOffset_d36(ok)_g0_v0",
-	"bufferSrcOffset_d37(ok)_g0_v0",
-	"bufferSrcOffset_d38(ok)_g0_v0",
-	"bufferSrcOffset_d44(ok)_g0_v0",
-	"bufferSrcOffset_d45(ok)_g0_v0",
-	"bufferSrcOffset_d46(ok)_g0_v0",
-	"bufferSrcOffset_d47(ok)_g0_v0",
-	"bufferSrcOffset_d6(ok)_g0_v0"
+	"CallToNameRegistratorMemOOGAndInsufficientBalance_d0_g0_v0",
+	"randomStatetest101_d0_g0_v0"
 ]
 
 [[set]]
-id = "tofix"
-desc = "NotEnoughRowsAvailable { current_k: 12 }"
-tests = [
-    "oog_d2(success)_g0_v0", 
-    "oog_d4(success)_g0_v0",
-    "push32withoutByte_d0_g0_v0"
-]
-
-[[set]]
-id = "tofix"
-desc = "a an inexistent contract at address is called, but parse_call() (or alike) does not support it yet"
-tests = [
-    "invalidAddr_d41(ok)_g0_v0",
-    "underflowTest_d91(CALL-7)_g0_v0",
-    "CallToNameRegistratorAddressTooBigRight_d0_g0_v0",
-    "ZeroValue_CALL_d0_g0_v0",
-    "NonZeroValue_CALL_d0_g0_v0",
-    "randomStatetest138_d0_g0_v0",
-]
-
-[[set]]
-id = "tofix"
+id = "sigkill"
 desc = "Integer overflow when casting to u64"
 tests = ["envInfo_d3(codecopy_neg_offset)_g0_v0", "codecopy_dejavu2_d0_g0_v0","randomStatetest222_d0_g0_v0"]
-
-[[set]]
-id = "tofix"
-desc = "call with value and not enough value to send"
-tests= ["callWithHighValue_d0_g0_v0"]
-
-[[set]]
-id = "tofix"
-desc = "Fully implement PUSHn #633"
-tests = ["randomStatetest0_d0_g0_v0"]
 
 # skipped tests, do not need to be fixed  --------------------------------------------------
 
 [[skip_tests]]
-desc = "maximum geth trace size (10MB)"
-tests = [
-    "randomStatetest163_d0_g0_v0",
-    "randomStatetest150_d0_g0_v0",
-    "randomStatetest154_d0_g0_v0",
-    "randomStatetest159_d0_g0_v0",
-    "randomStatetest36_d0_g0_v0",
-    "randomStatetest101_d0_g0_v0",
-    "randomStatetest185_d0_g0_v0",
-    "randomStatetest326_d0_g0_v0",
-    "randomStatetest177_d0_g0_v0",
-    "randomStatetest178_d0_g0_v0",
-    "randomStatetest263_d0_g0_v0",
-    "randomStatetest205_d0_g0_v0",
-    "randomStatetest209_d0_g0_v0",
-    "randomStatetest306_d0_g0_v0",
-    "randomStatetest384_d0_g0_v0",
-    "randomStatetest48_d0_g0_v0",
-    "MLOAD_Bounds3_d0_g0_v0",
-    "MLOAD_Bounds3_d0_g1_v0",
-    "MSTORE_Bounds2a_d0_g1_v0",
-    "Call1024PreCalls_d0_g2_v0",
-    "Call1024PreCalls_d0_g1_v0",
-    "msize_d5(farChunk)_g0_v0",
-    "CallcodeToPrecompileFromTransaction_d0_g0_v0",
-    "CallcodeToPrecompileFromCalledContract_d0_g0_v0",
-    "CallcodeToPrecompileFromContractInitialization_d0_g0_v0",
-    "Call1024PreCalls_d0_g1_v0",
-    "Call1024PreCalls_d0_g0_v0",
-    "static_Call1024PreCalls2_d0_g0_v0",
-    "shiftSignedCombinations_d0_g0_v0",
-    "CreateOOGafterMaxCodesize_d5(HighContractCount_DelegateCreate_CallCreate_SelfDestruct)_g0_v0",
-    "CallInfiniteLoop_d0_g0_v0",
-    "static_callCreate2_d2_g0_v0",
-    "static_CallIdentity_5_d0_g0_v0",
-    "static_CallSha256_5_d0_g0_v0",
-    "static_CallRipemd160_5_d0_g0_v0",
-    "static_callChangeRevert_d1_g0_v0",
-    "static_callcallcodecall_010_OOGE_d0_g0_v0",
-    "static_callcallcall_000_OOGMBefore_d0_g0_v0",
-    "static_callcallcodecall_010_OOGMBefore_d1_g0_v0",
-    "static_callcallcodecall_010_OOGMBefore2_d0_g0_v0",
-    "static_callcallcallcode_001_OOGMBefore2_d1_g0_v0",
-    "static_callcallcallcode_001_OOGMBefore_d0_g0_v0",
-    "static_Call10_d1_g0_v0",
-    "static_Call10_d0_g0_v0",
-    "jsonCall10_d0_g0_v0",
-    "block504980_d0_g0_v0",
-    "shiftCombinations_d0_g0_v0",
-    "static_LoopCallsThenRevert_d0_g1_v0",
-    "CallRecursiveMethods_d0_g0_v0",
-    "static_LoopCallsThenRevert_d0_g0_v0",
-    "static_callcallcodecall_010_OOGMAfter_d1_g0_v0",
-    "static_callcallcodecall_010_OOGMAfter_2_d1_g0_v0",
-    "static_callcallcallcode_001_OOGMAfter2_d1_g0_v0",
-    "static_callcallcallcode_001_OOGMAfter_3_d1_g0_v0",
-    "static_callcallcodecall_010_OOGMAfter_3_d1_g0_v0",
-    "static_callcodecallcall_100_OOGMAfter2_d0_g0_v0",
-    "static_callcallcallcode_001_OOGMAfter_d1_g0_v0",
-    "static_callcodecallcall_100_OOGMAfter_2_d0_g0_v0",
-    "static_callcodecallcall_100_OOGMAfter2_d0_g0_v1",
-    "ContractCreationSpam_d0_g0_v0",
-    "CreateOOGafterMaxCodesize_d4(HighContractCount_DelegateCreate_CallCreateOOG)_g0_v0",
-    "static_callcallcall_000_OOGMAfter2_d0_g0_v0",
-    "static_callcodecallcallcode_101_OOGMAfter_1_d0_g0_v0",
-    "createInitFailStackSizeLargerThan1024_d0_g0_v0",
-    "costRevert_d27(stackOver)_g0_v0",
-    "costRevert_d20(stackOver)_g0_v0",
-    "costRevert_d13(stackOver)_g0_v0",
-    "costRevert_d6(stackOver)_g0_v0",
-    "static_Call1MB1024Calldepth_d1_g0_v0",
-    "stateRevert_d6(stackOver)_g0_v0",
-    "DelegatecallToPrecompileFromTransaction_d0_g0_v0",
-    "DelegatecallToPrecompileFromCalledContract_d0_g0_v0",
-    "DelegatecallToPrecompileFromContractInitialization_d0_g0_v0",
-    "CallWithZeroValueToPrecompileFromTransaction_d0_g0_v0",
-    "CallWithZeroValueToPrecompileFromCalledContract_d0_g0_v0",
-    "CallWithZeroValueToPrecompileFromContractInitialization_d0_g0_v0",
-    "CreateOOGafterMaxCodesize_d3(HighContractCount_NoDelegateCreate_CallCreateOOG)_g0_v0",
-    "twoOps_d0_g0_v0",
-    "Call10_d0_g0_v0"
-]
+desc = ""
+tests = []
 
 # ignored paths -------------------------------------------------------------------------
 
@@ -343,7 +189,7 @@ paths = [
     "EIP1559",
     "EIP2930",
     "stPreCompiledContracts",
-    "stZeroKnowledge"
+	"stZeroKnowledge"
 ]
 
 [[skip_paths]]

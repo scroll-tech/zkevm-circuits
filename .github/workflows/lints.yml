@@ -13,8 +13,23 @@ on:
       - scroll-stable
 
 jobs:
+  skip_check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@v5
+        with:
+          cancel_others: 'true'
+          concurrent_skipping: 'same_content_newer'
+          paths_ignore: '["**/README.md"]'
+
   clippy:
-    if: github.event.pull_request.draft == false
+    needs: [skip_check]
+    if: |
+      github.event.pull_request.draft == false &&
+      (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
 
     name: Clippy
     timeout-minutes: 30
@@ -56,4 +71,4 @@ jobs:
         with:
           name: Clippy
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features --all-targets -- -D warnings
+          args: --all-features --all-targets -- -D warnings -Aclippy::format_in_format_args -Aclippy::uninlined_format_args -Aclippy::unnecessary_cast

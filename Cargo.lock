@@ -623,14 +623,18 @@ dependencies = [
  "bus-mapping",
  "env_logger",
  "eth-types",
+ "ethers",
  "ethers-signers",
  "halo2_proofs",
  "itertools",
  "keccak256",
+ "log",
  "mock",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rand_xorshift",
+ "tokio",
+ "url",
  "zkevm-circuits",
 ]
 

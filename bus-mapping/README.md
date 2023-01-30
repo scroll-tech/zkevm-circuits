@@ -109,7 +109,7 @@ let block_ctants = BlockConstants::new(
     pasta_curves::Fp::zero(),
 );
 
-// Here we have the ExecutionTrace completelly formed with all of the data to witness structured.
+// Here we have the ExecutionTrace completely formed with all of the data to witness structured.
 let obtained_exec_trace = ExecutionTrace::from_trace_bytes(
     input_trace.as_bytes(),
     block_ctants,

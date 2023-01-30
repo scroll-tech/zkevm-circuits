@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLVALUE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let call_value = cb.query_cell();
+        let call_value = cb.query_cell_phase2();
 
         // Lookup rw_table -> call_context with call value
         cb.call_context_lookup(

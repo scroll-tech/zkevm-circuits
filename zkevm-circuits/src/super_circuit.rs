@@ -51,6 +51,8 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
+use std::collections::BTreeSet;
+
 use crate::bytecode_circuit::bytecode_unroller::{
     BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
 };
@@ -132,6 +134,7 @@ pub struct SuperCircuit<
     const MAX_CALLDATA: usize,
     const MAX_INNER_BLOCKS: usize,
     const MAX_RWS: usize,
+    const MAX_COPY_ROWS: usize,
 > {
     /// EVM Circuit
     pub evm_circuit: EvmCircuit<F>,
@@ -162,15 +165,12 @@ impl<
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MAX_RWS: usize,
-    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>
+        const MAX_COPY_ROWS: usize,
+    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>
 {
     /// Return the number of rows required to verify a given block
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        let num_rows_evm_circuit = {
-            let mut cs = ConstraintSystem::default();
-            let config = Self::configure(&mut cs);
-            config.0.evm_circuit.get_num_rows_required(block)
-        };
+        let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block);
         let num_rows_tx_circuit = TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
         log::debug!(
             "num_rows_evm_circuit {}, num_rows_tx_circuit {}",
@@ -189,7 +189,9 @@ impl<
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MAX_RWS: usize,
-    > Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>
+        const MAX_COPY_ROWS: usize,
+    > Circuit<F>
+    for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>
 {
     type Config = (
         SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>,
@@ -203,46 +205,69 @@ impl<
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let log_circuit_info = |meta: &mut ConstraintSystem<F>, tag: &'static str| {
-            log::debug!("circuit info after {}: num_fixed_columns {}, num_advice_columns {}, num_instance_columns {}, num_selectors {}, num_permutation_columns {}, degree {}, num_challenges {}, max_phase {}",
-            tag,
-            meta.num_fixed_columns,
-            meta.num_advice_columns,
-            meta.num_instance_columns,
-            meta.num_selectors,
-            meta.permutation.columns.len(),
-            meta.degree(),
-            meta.num_challenges(),
-            meta.max_phase()
-        );
+            let rotations = meta
+                .advice_queries
+                .iter()
+                .map(|(_, q)| q.0)
+                .collect::<BTreeSet<i32>>();
+            log::debug!(
+                "circuit info after {} (~total ecmul:{}):
+num_fixed_columns {}
+num_lookups {}
+num_advice_columns {}
+num_instance_columns {}
+num_selectors {}
+num_permutation_columns {}
+degree {}
+num_challenges {}
+max_phase {}
+num_rotation {}
+min_rotation {}
+max_rotation {}",
+                tag,
+                meta.num_advice_columns + 3 * meta.lookups.len() + rotations.len(),
+                meta.num_fixed_columns,
+                meta.lookups.len(),
+                meta.num_advice_columns,
+                meta.num_instance_columns,
+                meta.num_selectors,
+                meta.permutation.columns.len(),
+                meta.degree(),
+                meta.num_challenges(),
+                meta.max_phase(),
+                rotations.len(),
+                rotations.first().cloned().unwrap_or_default(),
+                rotations.last().cloned().unwrap_or_default(),
+            );
         };
 
         let tx_table = TxTable::construct(meta);
-        log_circuit_info(meta, "tx");
+        log_circuit_info(meta, "tx table");
         let rw_table = RwTable::construct(meta);
-        log_circuit_info(meta, "rw");
+        log_circuit_info(meta, "rw table");
 
         let mpt_table = MptTable::construct(meta);
-        log_circuit_info(meta, "mpt");
+        log_circuit_info(meta, "mpt table");
 
         #[cfg(feature = "zktrie")]
         let poseidon_table = PoseidonTable::construct(meta);
         #[cfg(feature = "zktrie")]
-        log_circuit_info(meta, "poseidon");
+        log_circuit_info(meta, "poseidon table");
 
         let bytecode_table = BytecodeTable::construct(meta);
-        log_circuit_info(meta, "bytecode");
+        log_circuit_info(meta, "bytecode table");
         let block_table = BlockTable::construct(meta);
-        log_circuit_info(meta, "block");
+        log_circuit_info(meta, "block table");
         let q_copy_table = meta.fixed_column();
         log::debug!("q_copy_table {:?}", q_copy_table);
         let copy_table = CopyTable::construct(meta, q_copy_table);
-        log_circuit_info(meta, "copy");
+        log_circuit_info(meta, "copy table");
         let exp_table = ExpTable::construct(meta);
-        log_circuit_info(meta, "exp");
+        log_circuit_info(meta, "exp table");
         let rlp_table = RlpTable::construct(meta);
-        log_circuit_info(meta, "rlp");
+        log_circuit_info(meta, "rlp table");
         let keccak_table = KeccakTable::construct(meta);
-        log_circuit_info(meta, "keccak");
+        log_circuit_info(meta, "keccak table");
 
         let challenges_config = Challenges::construct(meta);
         let challenges = challenges_config.exprs(meta);
@@ -254,10 +279,10 @@ impl<
                 challenges: challenges.clone(),
             },
         );
-        log_circuit_info(meta, "keccak");
+        log_circuit_info(meta, "keccak circuit");
 
         let rlp_circuit = RlpCircuitConfig::configure(meta, &rlp_table, &challenges);
-        log_circuit_info(meta, "rlp");
+        log_circuit_info(meta, "rlp circuit");
 
         let pi_circuit = PiCircuitConfig::new(
             meta,
@@ -271,7 +296,7 @@ impl<
                 challenges: challenges.clone(),
             },
         );
-        log_circuit_info(meta, "pi");
+        log_circuit_info(meta, "pi circuit");
 
         let tx_circuit = TxCircuitConfig::new(
             meta,
@@ -292,7 +317,7 @@ impl<
                 challenges: challenges.clone(),
             },
         );
-        log_circuit_info(meta, "bytecode");
+        log_circuit_info(meta, "bytecode circuit");
 
         let copy_circuit = CopyCircuitConfig::new(
             meta,
@@ -305,7 +330,7 @@ impl<
                 challenges: challenges.clone(),
             },
         );
-        log_circuit_info(meta, "copy");
+        log_circuit_info(meta, "copy circuit");
 
         #[cfg(feature = "zktrie")]
         let mpt_circuit = MptCircuitConfig::new(
@@ -317,7 +342,7 @@ impl<
             },
         );
         #[cfg(feature = "zktrie")]
-        log_circuit_info(meta, "zktrie");
+        log_circuit_info(meta, "zktrie circuit");
 
         let state_circuit = StateCircuitConfig::new(
             meta,
@@ -327,10 +352,10 @@ impl<
                 challenges: challenges.clone(),
             },
         );
-        log_circuit_info(meta, "state");
+        log_circuit_info(meta, "state circuit");
 
         let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
-        log_circuit_info(meta, "exp");
+        log_circuit_info(meta, "exp circuit");
 
         let evm_circuit = EvmCircuitConfig::new(
             meta,
@@ -345,7 +370,7 @@ impl<
                 exp_table,
             },
         );
-        log_circuit_info(meta, "evm");
+        log_circuit_info(meta, "evm circuit");
 
         #[cfg(feature = "onephase")]
         debug_assert_eq!(meta.max_phase(), 0);
@@ -402,15 +427,6 @@ impl<
             &challenges,
         )?;
 
-        // TODO: if we have mpt circuit, mpt table should be assigned within it
-        // rather than being loaded externally
-        // TODO: use challenge API here??
-        config.mpt_table.load(
-            &mut layouter,
-            &self.state_circuit.updates,
-            challenges.evm_word(),
-        )?;
-
         self.keccak_circuit
             .synthesize_sub(&config.keccak_circuit, &challenges, &mut layouter)?;
         self.bytecode_circuit.synthesize_sub(
@@ -435,6 +451,13 @@ impl<
             self.mpt_circuit
                 .synthesize_sub(&config.mpt_circuit, &challenges, &mut layouter)?;
         }
+
+        // TODO: move it above, beside xxtable?
+        config.mpt_table.load(
+            &mut layouter,
+            &self.state_circuit.updates,
+            challenges.evm_word(),
+        )?;
 
         self.state_circuit
             .synthesize_sub(&config.state_circuit, &challenges, &mut layouter)?;
@@ -462,7 +485,8 @@ impl<
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MAX_RWS: usize,
-    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>
+        const MAX_COPY_ROWS: usize,
+    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>
 {
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
@@ -480,6 +504,7 @@ impl<
                 max_calldata: MAX_CALLDATA,
                 max_inner_blocks: 64,
                 max_rws: MAX_RWS,
+                max_copy_rows: MAX_COPY_ROWS,
                 max_bytecode: 512,
                 keccak_padding: None,
             },
@@ -525,7 +550,7 @@ impl<
         let tx_circuit = TxCircuit::new_from_block(&block);
         let pi_circuit = PiCircuit::new_from_block(&block);
         let bytecode_circuit = BytecodeCircuit::new_from_block(&block);
-        let copy_circuit = CopyCircuit::new_from_block(&block);
+        let copy_circuit = CopyCircuit::new_from_block_no_external(&block);
         let exp_circuit = ExpCircuit::new_from_block(&block);
         let keccak_circuit = KeccakCircuit::new_from_block(&block);
         let rlp_circuit = RlpCircuit::new_from_block(&block);
@@ -533,19 +558,20 @@ impl<
         #[cfg(feature = "zktrie")]
         let mpt_circuit = MptCircuit::new_from_block(&block);
 
-        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS> {
-            evm_circuit,
-            state_circuit,
-            tx_circuit,
-            pi_circuit,
-            bytecode_circuit,
-            copy_circuit,
-            exp_circuit,
-            keccak_circuit,
-            rlp_circuit,
-            #[cfg(feature = "zktrie")]
-            mpt_circuit,
-        };
+        let circuit =
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS> {
+                evm_circuit,
+                state_circuit,
+                tx_circuit,
+                pi_circuit,
+                bytecode_circuit,
+                copy_circuit,
+                exp_circuit,
+                keccak_circuit,
+                rlp_circuit,
+                #[cfg(feature = "zktrie")]
+                mpt_circuit,
+            };
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))
@@ -620,7 +646,7 @@ mod super_circuit_tests {
     #[test]
     fn super_circuit_degree() {
         let mut cs = ConstraintSystem::<Fr>::default();
-        SuperCircuit::<_, 1, 32, 64, 256>::configure(&mut cs);
+        SuperCircuit::<_, 1, 32, 64, 256, 32>::configure(&mut cs);
         log::info!("super circuit degree: {}", cs.degree());
         log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
         assert!(cs.degree() <= 9);
@@ -631,12 +657,19 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MAX_RWS: usize,
+        const MAX_COPY_ROWS: usize,
     >(
         block: GethData,
     ) {
-        let (k, circuit, instance, _) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>::build(block)
-                .unwrap();
+        let (k, circuit, instance, _) = SuperCircuit::<
+            Fr,
+            MAX_TXS,
+            MAX_CALLDATA,
+            MAX_INNER_BLOCKS,
+            MAX_RWS,
+            MAX_COPY_ROWS,
+        >::build(block)
+        .unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {
@@ -788,7 +821,10 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
 
     #[ignore]
@@ -799,7 +835,10 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
 
     #[ignore]
@@ -810,7 +849,10 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
     #[ignore]
     #[test]
@@ -820,7 +862,10 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 320;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
     #[ignore]
     #[test]
@@ -830,6 +875,9 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
 }

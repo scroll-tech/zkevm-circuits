@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CHAINID;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let chain_id = cb.query_cell();
+        let chain_id = cb.query_cell_phase2();
 
         // Push the value to the stack
         cb.stack_push(chain_id.expr());

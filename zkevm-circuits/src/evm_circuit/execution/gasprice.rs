@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // Query gasprice value
-        let gas_price = cb.query_cell();
+        let gas_price = cb.query_cell_phase2();
 
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
