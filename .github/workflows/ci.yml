@@ -73,6 +73,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -83,6 +86,9 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Run light tests # light tests are run in parallel
         uses: actions-rs/cargo@v1
         with:
@@ -131,6 +137,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -141,6 +150,9 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: cargo build
         uses: actions-rs/cargo@v1
         with:
@@ -182,6 +194,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -192,6 +207,9 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       # Build benchmarks to prevent bitrot
       - name: Build benchmarks
         uses: actions-rs/cargo@v1
@@ -228,6 +246,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -238,6 +259,9 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: cargo fetch
         uses: actions-rs/cargo@v1
         with:
@@ -280,6 +304,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -290,6 +317,9 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: cargo check
         uses: actions-rs/cargo@v1
         with:
