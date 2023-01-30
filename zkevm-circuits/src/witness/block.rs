@@ -10,6 +10,7 @@ use bus_mapping::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
+use super::MptUpdates;
 use super::{
     mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap,
     Transaction,
@@ -59,6 +60,8 @@ pub struct Block<F> {
     pub prev_state_root: Word, // TODO: Make this H256
     /// Keccak inputs
     pub keccak_inputs: Vec<Vec<u8>>,
+    /// Mpt updates
+    pub mpt_updates: MptUpdates,
 }
 
 /// ...
@@ -270,11 +273,12 @@ pub fn block_convert<F: Field>(
         .map(|header| header.chain_id.as_u64())
         .unwrap_or(1);
 
+    let rws = RwMap::from(&block.container);
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
         mpt_state: None,
-        rws: RwMap::from(&block.container),
+        rws: rws.clone(),
         txs: block
             .txs()
             .iter()
@@ -313,11 +317,17 @@ pub fn block_convert<F: Field>(
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
+        mpt_updates: MptUpdates::from_rws_with_mock_state_roots(
+            &rws.table_assignments(),
+            block.prev_state_root,
+            block.end_state_root(),
+        ),
     })
 }
 
 /// Attach witness block with mpt states
 pub fn block_attach_mpt_state<F: Field>(mut block: Block<F>, mpt_state: MptState) -> Block<F> {
+    block.mpt_updates.fill_state_roots(&mpt_state);
     block.mpt_state.replace(mpt_state);
     block
 }

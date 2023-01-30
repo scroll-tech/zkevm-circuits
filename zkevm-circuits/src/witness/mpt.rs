@@ -3,6 +3,7 @@ use crate::table::{AccountFieldTag, ProofType};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
+use mpt_zktrie::state::witness::WitnessGenerator;
 use mpt_zktrie::{serde::SMTTrace, state, MPTProofType};
 use std::collections::BTreeMap;
 
@@ -38,7 +39,10 @@ impl MptUpdate {
 #[derive(Default, Clone, Debug)]
 pub struct MptUpdates {
     old_root: Word,
+    new_root: Word,
     updates: BTreeMap<Key, MptUpdate>,
+    pub(crate) smt_traces: Vec<SMTTrace>,
+    pub(crate) proof_types: Vec<MPTProofType>,
 }
 
 /// The field element encoding of an MPT update, which is used by the MptTable
@@ -54,20 +58,14 @@ impl MptUpdates {
         key(row).map(|key| *self.updates.get(&key).expect("missing key in mpt updates"))
     }
 
-    pub(crate) fn construct(
-        rows: &[Rw],
-        init_trie: &ZktrieState,
-    ) -> (Self, Vec<SMTTrace>, Vec<MPTProofType>) {
-        use state::witness::WitnessGenerator;
-
-        let mut update_without_root = Self::mock_from(rows);
-        update_without_root.old_root = U256::from_big_endian(init_trie.root());
+    pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) {
+        self.old_root = U256::from_big_endian(init_trie.root());
 
         let mut wit_gen = WitnessGenerator::from(init_trie);
-        let mut smt_traces = Vec::new();
-        let mut tips = Vec::new();
+        self.smt_traces = Vec::new();
+        self.proof_types = Vec::new();
 
-        for (key, update) in &mut update_without_root.updates {
+        for (key, update) in &mut self.updates {
             let proof_tip = state::as_proof_type(match key {
                 Key::AccountStorage { .. } => {
                     if update.old_value.is_zero() && update.new_value.is_zero() {
@@ -92,17 +90,18 @@ impl MptUpdates {
             );
             update.old_root = U256::from_little_endian(smt_trace.account_path[0].root.as_ref());
             update.new_root = U256::from_little_endian(smt_trace.account_path[1].root.as_ref());
-            smt_traces.push(smt_trace);
-            tips.push(proof_tip);
+            self.new_root = update.new_root;
+            self.smt_traces.push(smt_trace);
+            self.proof_types.push(proof_tip);
         }
-
-        let updates = update_without_root;
-        (updates, smt_traces, tips)
     }
 
-    pub(crate) fn mock_from(rows: &[Rw]) -> Self {
-        let mock_old_root = Word::from(0xcafeu64);
-        let map: BTreeMap<_, _> = rows
+    pub(crate) fn from_rws_with_mock_state_roots(
+        rows: &[Rw],
+        old_root: U256,
+        new_root: U256,
+    ) -> Self {
+        let mut updates: BTreeMap<_, _> = rows
             .iter()
             .group_by(|row| key(row))
             .into_iter()
@@ -117,17 +116,22 @@ impl MptUpdates {
                     key_exists,
                     MptUpdate {
                         key,
-                        old_root: Word::from(i as u64) + mock_old_root,
-                        new_root: Word::from(i as u64 + 1) + mock_old_root,
+                        old_root: Word::from(i as u64) + old_root,
+                        new_root: Word::from(i as u64 + 1) + old_root,
                         old_value: value_prev(first),
                         new_value: value(last),
                     },
                 )
             })
             .collect();
+        if let Some(mut entry) = updates.last_entry() {
+            entry.get_mut().new_root = new_root;
+        }
         MptUpdates {
-            updates: map,
-            old_root: mock_old_root,
+            updates,
+            old_root,
+            new_root,
+            ..Default::default()
         }
     }
 

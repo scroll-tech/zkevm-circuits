@@ -84,7 +84,7 @@ use crate::witness::{block_convert, Block, SignedTransaction};
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
-use eth_types::{Field, Word};
+use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
@@ -510,7 +510,6 @@ impl<
             },
         );
         let mut builder = block_data.new_circuit_input_builder();
-        builder.block.prev_state_root = Word::from(0xcafe_u64); // Since we are using mocked MptUpdates
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");

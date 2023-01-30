@@ -195,14 +195,14 @@ impl<F: Field> StateCircuitConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         rows: &[Rw],
+        updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let updates = MptUpdates::mock_from(rows);
         layouter.assign_region(
             || "state circuit",
             |mut region| {
-                self.assign_with_region(&mut region, rows, &updates, n_rows, challenges.evm_word())
+                self.assign_with_region(&mut region, rows, updates, n_rows, challenges.evm_word())
             },
         )?;
         Ok(())
@@ -438,7 +438,12 @@ impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
     pub fn new(rw_map: RwMap, n_rows: usize) -> Self {
         let rows = rw_map.table_assignments();
-        let updates = MptUpdates::mock_from(&rows);
+        log::warn!("build StateCircuit from mock MptUpdates");
+        let updates = MptUpdates::from_rws_with_mock_state_roots(
+            &rows,
+            0xcafeu64.into(),
+            0xdeadbeefu64.into(),
+        );
         Self {
             rows,
             updates,
@@ -457,13 +462,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         let rows = block.rws.table_assignments();
-        let updates = match &block.mpt_state {
-            None => MptUpdates::mock_from(&rows),
-            Some(mpt_state) => {
-                let (updates, _, _) = MptUpdates::construct(rows.as_slice(), mpt_state);
-                updates
-            }
-        };
+        let updates = block.mpt_updates.clone();
         Self {
             rows,
             updates,

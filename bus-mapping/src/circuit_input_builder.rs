@@ -529,6 +529,11 @@ fn keccak_inputs_pi_circuit(
         hex::encode(dummy_tx_hash.to_fixed_bytes())
     );
 
+    let end_state_root = block_headers
+        .last_key_value()
+        .map(|(_, blk)| blk.eth_block.state_root.to_word())
+        .unwrap_or(prev_state_root);
+
     let result = block_headers
         .iter()
         .flat_map(|(block_num, block)| {
@@ -557,16 +562,7 @@ fn keccak_inputs_pi_circuit(
         // )
         // state roots
         .chain(prev_state_root.to_be_bytes())
-        .chain(
-            block_headers
-                .iter()
-                .nth(block_headers.len().saturating_sub(1))
-                .expect("batch is not empty")
-                .1
-                .eth_block
-                .state_root
-                .to_fixed_bytes(),
-        )
+        .chain(end_state_root.to_be_bytes())
         // Tx Hashes
         .chain(transactions.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
         .chain(

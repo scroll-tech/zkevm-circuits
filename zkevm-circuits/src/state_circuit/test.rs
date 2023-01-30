@@ -998,7 +998,8 @@ fn bad_initial_tx_receipt_value() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
-    let updates = MptUpdates::mock_from(&rows);
+    let updates =
+        MptUpdates::from_rws_with_mock_state_roots(&rows, 0xcafeu64.into(), 0xdeadbeefu64.into());
     let circuit = StateCircuit::<Fr> {
         rows,
         updates,
