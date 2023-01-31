@@ -58,6 +58,7 @@ mod swap;
 
 mod error_invalid_jump;
 mod error_oog_call;
+mod error_oog_sstore;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -78,6 +79,7 @@ use create::Create;
 use dup::Dup;
 use error_invalid_jump::ErrorInvalidJump;
 use error_oog_call::OOGCall;
+use error_oog_sstore::OOGSstore;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -257,6 +259,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
     match error {
         ExecError::InvalidJump => Some(ErrorInvalidJump::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Sstore) => Some(OOGSstore::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         // more future errors place here
