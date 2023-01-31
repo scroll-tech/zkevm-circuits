@@ -230,7 +230,7 @@ impl StateDB {
     }
 
     /// Get nonce of account with `addr`.
-    pub fn get_nonce(&mut self, addr: &Address) -> u64 {
+    pub fn get_nonce(&self, addr: &Address) -> u64 {
         let (_, account) = self.get_account(addr);
         account.nonce.as_u64()
     }

@@ -15,7 +15,7 @@ For [`./example/mstore_mload.go`](./example/mstore_mload.go) as an example, it d
 go run ./example/mstore_mload.go > ./mstore_mload.json
 ```
 
-### Debuging
+### Debugging
 
 The execution traces returned by geth omit some information like execution
 errors in some situations.  Moreover you may want to inspect some intermediate

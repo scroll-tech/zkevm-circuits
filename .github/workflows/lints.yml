@@ -56,6 +56,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -66,6 +69,9 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Run clippy
         uses: actions-rs/clippy-check@v1
         with:

@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
 use crate::evm_circuit::{
-    param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
+    param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
     step::{ExecutionState, Step},
     table::{FixedTableTag, Table},
     util::{
@@ -121,9 +121,9 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < N_PHASE3_COLUMNS + lookup_column_count {
+                if n < lookup_column_count {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < N_PHASE3_COLUMNS + lookup_column_count + N_PHASE2_COLUMNS {
+                } else if n < lookup_column_count + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)

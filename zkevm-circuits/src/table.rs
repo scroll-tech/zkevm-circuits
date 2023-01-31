@@ -23,7 +23,6 @@ use halo2_proofs::{
 };
 use halo2_proofs::{circuit::Layouter, poly::Rotation};
 
-use halo2_proofs::plonk::FirstPhase;
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
@@ -564,13 +563,13 @@ impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         Self([
-            meta.advice_column_in(FirstPhase),
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column_in(FirstPhase),
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column_in(SecondPhase),
+            meta.advice_column(),               // Address
+            meta.advice_column_in(SecondPhase), // Storage key
+            meta.advice_column(),               // Proof type
+            meta.advice_column_in(SecondPhase), // New root
+            meta.advice_column_in(SecondPhase), // Old root
+            meta.advice_column_in(SecondPhase), // New value
+            meta.advice_column_in(SecondPhase), // Old value
         ])
     }
 
@@ -604,9 +603,8 @@ impl MptTable {
         updates: &MptUpdates,
         randomness: Value<F>,
     ) -> Result<(), Error> {
-        self.assign(region, 0, &MptUpdateRow([Value::known(F::zero()); 7]))?;
         for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
-            self.assign(region, offset + 1, row)?;
+            self.assign(region, offset, row)?;
         }
         Ok(())
     }

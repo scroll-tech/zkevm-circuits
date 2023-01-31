@@ -2,7 +2,7 @@
 use crate::{
     table::{MptTable, PoseidonTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::{self, MptUpdates},
+    witness,
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -56,32 +56,30 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
     type Config = MptCircuitConfig;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        let rows = block.rws.table_assignments();
-        let (_, traces, tips) = MptUpdates::construct(
-            rows.as_slice(),
-            block
-                .mpt_state
-                .as_ref()
-                .expect("need block with trie state"),
-        );
         let mut eth_trie: EthTrie<F> = Default::default();
-        eth_trie.add_ops(traces.iter().map(|tr| AccountOp::try_from(tr).unwrap()));
-        let (circuit, _) =
-            eth_trie.to_circuits((block.circuits_params.max_rws / 3, None), tips.as_slice());
+        eth_trie.add_ops(
+            block
+                .mpt_updates
+                .smt_traces
+                .iter()
+                .map(|tr| AccountOp::try_from(tr).unwrap()),
+        );
+        let (circuit, _) = eth_trie.to_circuits(
+            (block.circuits_params.max_rws / 3, None),
+            &block.mpt_updates.proof_types,
+        );
         MptCircuit(circuit)
     }
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let rows = block.rws.table_assignments();
-        let (_, traces, _) = MptUpdates::construct(
-            rows.as_slice(),
-            block
-                .mpt_state
-                .as_ref()
-                .expect("need block with trie state"),
-        );
         let mut eth_trie: EthTrie<F> = Default::default();
-        eth_trie.add_ops(traces.iter().map(|tr| AccountOp::try_from(tr).unwrap()));
+        eth_trie.add_ops(
+            block
+                .mpt_updates
+                .smt_traces
+                .iter()
+                .map(|tr| AccountOp::try_from(tr).unwrap()),
+        );
         let (mpt_rows, _) = eth_trie.use_rows();
         (mpt_rows, block.circuits_params.max_rws.max(mpt_rows))
     }

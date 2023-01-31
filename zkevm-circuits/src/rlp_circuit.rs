@@ -1,4 +1,4 @@
-//! Circuit implementation for RLP-encoding verification. Please refer: https://hackmd.io/@rohitnarurkar/S1zSz0KM9.
+//! Circuit implementation for RLP-encoding verification. Please refer: <https://hackmd.io/@rohitnarurkar/S1zSz0KM9>.
 
 use std::marker::PhantomData;
 

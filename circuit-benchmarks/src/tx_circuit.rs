@@ -56,6 +56,7 @@ mod tests {
         // target k = 19
         let params = CircuitsParams {
             max_rws: 4_000_000,
+            max_copy_rows: 4_000_000,
             max_txs: 500,
             max_calldata: 2_000_000,
             max_inner_blocks: 64,

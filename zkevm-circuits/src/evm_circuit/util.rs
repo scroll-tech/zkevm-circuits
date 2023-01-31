@@ -1,8 +1,7 @@
 use crate::{
     evm_circuit::{
         param::{
-            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
-            N_PHASE3_COLUMNS,
+            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
         },
         table::Table,
     },
@@ -154,18 +153,21 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         to: V,
     ) -> Result<AssignedCell<VR, F>, Error>
     where
-        V: FnMut() -> Value<VR> + 'v,
+        V: Fn() -> Value<VR> + 'v,
         for<'vr> Assigned<F>: From<&'vr VR>,
         A: Fn() -> AR,
         AR: Into<String>,
     {
         // Actually set the value
-        let res = self.region.assign_advice(annotation, column, offset, to);
+        let res = self.region.assign_advice(annotation, column, offset, &to);
         // Cache the value
-        if let Result::Ok(cell) = &res {
-            cell.value_field().map(|f| {
+        // Note that the `value_field` in `AssignedCell` might be `Value::unkonwn` if
+        // the column has different phase than current one, so we call to `to`
+        // again here to cache the value.
+        if res.is_ok() {
+            to().map(|f| {
                 self.advice[column.index() - self.width_start][offset - self.height_start] =
-                    f.evaluate();
+                    Assigned::from(&f).evaluate();
             });
         }
         res
@@ -230,7 +232,7 @@ impl<F: FieldExt> StoredExpression<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<Value<F>, Error> {
         let value = self.expr.evaluate(
             &|scalar| Value::known(scalar),
             &|_| unimplemented!("selector column"),
@@ -255,7 +257,8 @@ impl<F: FieldExt> StoredExpression<F> {
             &|a, b| a * b,
             &|a, scalar| a * Value::known(scalar),
         );
-        self.cell.assign(region, offset, value)
+        self.cell.assign(region, offset, value)?;
+        Ok(value)
     }
 }
 
@@ -263,8 +266,8 @@ impl<F: FieldExt> StoredExpression<F> {
 pub(crate) enum CellType {
     StoragePhase1,
     StoragePhase2,
-    StoragePhase3,
     StoragePermutation,
+    LookupByte,
     Lookup(Table),
 }
 
@@ -274,8 +277,8 @@ impl CellType {
         use Expression::*;
         match expr {
             Challenge(challenge) => challenge.phase() + 1,
-            Constant(_) | Selector(_) | Fixed(_) | Instance(_) => 0,
             Advice(query) => query.phase(),
+            Constant(_) | Selector(_) | Fixed(_) | Instance(_) => 0,
             Negated(a) | Expression::Scaled(a, _) => Self::expr_phase(a),
             Sum(a, b) | Product(a, b) => std::cmp::max(Self::expr_phase(a), Self::expr_phase(b)),
         }
@@ -286,7 +289,6 @@ impl CellType {
         match phase {
             0 => CellType::StoragePhase1,
             1 => CellType::StoragePhase2,
-            2 => CellType::StoragePhase3,
             _ => unreachable!(),
         }
     }
@@ -344,12 +346,7 @@ impl<F: FieldExt> CellManager<F> {
             }
         });
 
-        // Mark columns used for Phase3 constraints
         let mut column_idx = 0;
-        for _ in 0..N_PHASE3_COLUMNS {
-            columns[column_idx].cell_type = CellType::StoragePhase3;
-            column_idx += 1;
-        }
 
         // Mark columns used for lookups in Phase3
         for &(table, count) in LOOKUP_CONFIG {
@@ -369,6 +366,13 @@ impl<F: FieldExt> CellManager<F> {
         for _ in 0..N_COPY_COLUMNS {
             meta.enable_equality(advices[column_idx]);
             columns[column_idx].cell_type = CellType::StoragePermutation;
+            column_idx += 1;
+        }
+
+        // Mark columns used for byte lookup
+        for _ in 0..N_BYTE_LOOKUPS {
+            columns[column_idx].cell_type = CellType::LookupByte;
+            assert_eq!(advices[column_idx].column_type().phase(), 0);
             column_idx += 1;
         }
 

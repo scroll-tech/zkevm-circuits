@@ -10,6 +10,7 @@ use bus_mapping::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
+use super::MptUpdates;
 use super::{
     mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap,
     Transaction,
@@ -51,8 +52,6 @@ pub struct Block<F> {
     pub evm_circuit_pad_to: usize,
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
-    /// Pad copy circuit to make selectors fixed.
-    pub copy_circuit_pad_to: usize,
     /// Circuit Setup Parameters
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
@@ -61,6 +60,8 @@ pub struct Block<F> {
     pub prev_state_root: Word, // TODO: Make this H256
     /// Keccak inputs
     pub keccak_inputs: Vec<Vec<u8>>,
+    /// Mpt updates
+    pub mpt_updates: MptUpdates,
 }
 
 /// ...
@@ -89,6 +90,21 @@ impl BlockContexts {
     }
 }
 
+impl<F: Field> Block<F> {
+    /// For each tx, for each step, print the rwc at the beginning of the step,
+    /// and all the rw operations of the step.
+    pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
+        for (tx_idx, tx) in self.txs.iter().enumerate() {
+            println!("tx {}", tx_idx);
+            for step in &tx.steps {
+                println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
+                for rw_ref in &step.rw_indices {
+                    println!("  - {:?}", self.rws[*rw_ref]);
+                }
+            }
+        }
+    }
+}
 /// Block context for execution
 #[derive(Debug, Default, Clone)]
 pub struct BlockContext {
@@ -257,11 +273,12 @@ pub fn block_convert<F: Field>(
         .map(|header| header.chain_id.as_u64())
         .unwrap_or(1);
 
+    let rws = RwMap::from(&block.container);
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
         mpt_state: None,
-        rws: RwMap::from(&block.container),
+        rws: rws.clone(),
         txs: block
             .txs()
             .iter()
@@ -298,14 +315,18 @@ pub fn block_convert<F: Field>(
         circuits_params: block.circuits_params.clone(),
         evm_circuit_pad_to: <usize>::default(),
         exp_circuit_pad_to: <usize>::default(),
-        copy_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
+        mpt_updates: MptUpdates::from_rws_with_mock_state_roots(
+            &rws.table_assignments(),
+            block.prev_state_root,
+            block.end_state_root(),
+        ),
     })
 }
 
 /// Attach witness block with mpt states
-pub fn block_attach_mpt_state<F: Field>(mut block: Block<F>, mpt_state: MptState) -> Block<F> {
+pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: MptState) {
+    block.mpt_updates.fill_state_roots(&mpt_state);
     block.mpt_state.replace(mpt_state);
-    block
 }

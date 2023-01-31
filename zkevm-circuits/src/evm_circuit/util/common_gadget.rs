@@ -521,6 +521,11 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         );
 
         let phase2_callee_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
+        cb.account_read(
+            from_bytes::expr(&callee_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]),
+            AccountFieldTag::CodeHash,
+            phase2_callee_code_hash.expr(),
+        );
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_hash_rlc());
         let callee_not_exists = IsZeroGadget::construct(cb, phase2_callee_code_hash.expr());
@@ -552,16 +557,9 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
     pub fn gas_cost_expr(
         &self,
-        cb: &mut ConstraintBuilder<F>,
         is_warm_prev: Expression<F>,
         is_call: Expression<F>,
     ) -> Expression<F> {
-        cb.account_read(
-            self.callee_address_expr(),
-            AccountFieldTag::CodeHash,
-            self.phase2_callee_code_hash.expr(),
-        );
-
         select::expr(
             is_warm_prev,
             GasCost::WARM_ACCESS.expr(),

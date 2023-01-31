@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         // There are 4 cases non-mutually exclusive, A to D, to handle, depending on if
         // the call is, or is not, a create, root, or successful. See the specs at
-        // https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/opcode/F3RETURN.md
+        // https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/opcode/F3RETURN_FDREVERT.md
         // for more details.
         let is_create = cb.curr.state.is_create.expr();
         let is_root = cb.curr.state.is_root.expr();

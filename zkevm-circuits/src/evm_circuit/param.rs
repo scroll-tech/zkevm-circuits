@@ -1,4 +1,9 @@
 use super::table::Table;
+use crate::evm_circuit::step::ExecutionState;
+use crate::evm_circuit::EvmCircuit;
+use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::plonk::{Circuit, ConstraintSystem};
+use std::collections::HashMap;
 
 // Step dimension
 pub(crate) const STEP_WIDTH: usize = 140;
@@ -11,13 +16,12 @@ pub(crate) const STEP_STATE_HEIGHT: usize = 1;
 pub(crate) const N_CELLS_STEP_STATE: usize = 11;
 
 // Number of phase2 columns
-pub(crate) const N_PHASE2_COLUMNS: usize = 10;
-
-// Number of phase3 columns
-pub(crate) const N_PHASE3_COLUMNS: usize = 10;
+pub(crate) const N_PHASE2_COLUMNS: usize = 3;
 
 // Number of copy columns
 pub(crate) const N_COPY_COLUMNS: usize = 2;
+
+pub(crate) const N_BYTE_LOOKUPS: usize = 24;
 
 /// Lookups done per row.
 pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
@@ -26,7 +30,6 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Rw, 8),
     (Table::Bytecode, 4),
     (Table::Block, 1),
-    (Table::Byte, 24),
     (Table::Copy, 1),
     (Table::Keccak, 1),
     (Table::Exp, 1),
@@ -64,3 +67,14 @@ pub(crate) const N_BYTES_GAS: usize = N_BYTES_U64;
 
 // Number of bytes that will be used for call data's size.
 pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
+
+lazy_static::lazy_static! {
+    // Step slot height in evm circuit
+    pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map();
+}
+fn get_step_height_map() -> HashMap<ExecutionState, usize> {
+    let mut meta = ConstraintSystem::<Fr>::default();
+    let circuit = EvmCircuit::configure(&mut meta);
+
+    circuit.0.execution.height_map
+}

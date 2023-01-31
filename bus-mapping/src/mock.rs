@@ -7,6 +7,8 @@ use crate::{
 };
 use eth_types::{geth_types::GethData, Word};
 
+const MOCK_OLD_STATE_ROOT: u64 = 0xcafeu64;
+
 /// BlockData is a type that contains all the information from a block required
 /// to build the circuit inputs.
 #[derive(Debug)]
@@ -39,6 +41,8 @@ impl BlockData {
             ],
             Default::default(),
         );
+        // FIXME: better fetch a real state root instead of a mock one
+        block.prev_state_root = MOCK_OLD_STATE_ROOT.into();
         block.circuits_params = self.circuits_params.clone();
         CircuitInputBuilder::new(self.sdb.clone(), self.code_db.clone(), &block)
     }

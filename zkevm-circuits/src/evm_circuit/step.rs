@@ -1,4 +1,5 @@
 use super::util::{CachedRegion, CellManager, CellType};
+use crate::evm_circuit::param::EXECUTION_STATE_HEIGHT_MAP;
 use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
@@ -310,6 +311,15 @@ impl ExecutionState {
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
             _ => vec![],
         }
+    }
+
+    pub fn get_step_height_option(&self) -> Option<usize> {
+        EXECUTION_STATE_HEIGHT_MAP.get(self).copied()
+    }
+
+    pub fn get_step_height(&self) -> usize {
+        self.get_step_height_option()
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
     }
 }
 

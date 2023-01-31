@@ -134,6 +134,7 @@ pub struct SuperCircuit<
     const MAX_CALLDATA: usize,
     const MAX_INNER_BLOCKS: usize,
     const MAX_RWS: usize,
+    const MAX_COPY_ROWS: usize,
 > {
     /// EVM Circuit
     pub evm_circuit: EvmCircuit<F>,
@@ -164,15 +165,12 @@ impl<
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MAX_RWS: usize,
-    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>
+        const MAX_COPY_ROWS: usize,
+    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>
 {
     /// Return the number of rows required to verify a given block
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        let num_rows_evm_circuit = {
-            let mut cs = ConstraintSystem::default();
-            let config = Self::configure(&mut cs);
-            config.0.evm_circuit.get_num_rows_required(block)
-        };
+        let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block);
         let num_rows_tx_circuit = TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
         log::debug!(
             "num_rows_evm_circuit {}, num_rows_tx_circuit {}",
@@ -191,7 +189,9 @@ impl<
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MAX_RWS: usize,
-    > Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>
+        const MAX_COPY_ROWS: usize,
+    > Circuit<F>
+    for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>
 {
     type Config = (
         SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>,
@@ -401,7 +401,7 @@ max_rotation {}",
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let (config, challenges) = config;
+        let (mut config, challenges) = config;
         let challenges = challenges.values(&mut layouter);
 
         let block = self.evm_circuit.block.as_ref().unwrap();
@@ -471,6 +471,8 @@ max_rotation {}",
             .synthesize_sub(&config.rlp_circuit, &challenges, &mut layouter)?;
         self.tx_circuit
             .synthesize_sub(&config.tx_circuit, &challenges, &mut layouter)?;
+
+        config.pi_circuit.state_roots = self.state_circuit.exports.borrow().clone();
         self.pi_circuit
             .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
         Ok(())
@@ -483,7 +485,8 @@ impl<
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MAX_RWS: usize,
-    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>
+        const MAX_COPY_ROWS: usize,
+    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>
 {
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
@@ -501,6 +504,7 @@ impl<
                 max_calldata: MAX_CALLDATA,
                 max_inner_blocks: 64,
                 max_rws: MAX_RWS,
+                max_copy_rows: MAX_COPY_ROWS,
                 max_bytecode: 512,
                 keccak_padding: None,
             },
@@ -545,7 +549,7 @@ impl<
         let tx_circuit = TxCircuit::new_from_block(&block);
         let pi_circuit = PiCircuit::new_from_block(&block);
         let bytecode_circuit = BytecodeCircuit::new_from_block(&block);
-        let copy_circuit = CopyCircuit::new_from_block(&block);
+        let copy_circuit = CopyCircuit::new_from_block_no_external(&block);
         let exp_circuit = ExpCircuit::new_from_block(&block);
         let keccak_circuit = KeccakCircuit::new_from_block(&block);
         let rlp_circuit = RlpCircuit::new_from_block(&block);
@@ -553,19 +557,20 @@ impl<
         #[cfg(feature = "zktrie")]
         let mpt_circuit = MptCircuit::new_from_block(&block);
 
-        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS> {
-            evm_circuit,
-            state_circuit,
-            tx_circuit,
-            pi_circuit,
-            bytecode_circuit,
-            copy_circuit,
-            exp_circuit,
-            keccak_circuit,
-            rlp_circuit,
-            #[cfg(feature = "zktrie")]
-            mpt_circuit,
-        };
+        let circuit =
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS> {
+                evm_circuit,
+                state_circuit,
+                tx_circuit,
+                pi_circuit,
+                bytecode_circuit,
+                copy_circuit,
+                exp_circuit,
+                keccak_circuit,
+                rlp_circuit,
+                #[cfg(feature = "zktrie")]
+                mpt_circuit,
+            };
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))
@@ -640,7 +645,7 @@ mod super_circuit_tests {
     #[test]
     fn super_circuit_degree() {
         let mut cs = ConstraintSystem::<Fr>::default();
-        SuperCircuit::<_, 1, 32, 64, 256>::configure(&mut cs);
+        SuperCircuit::<_, 1, 32, 64, 256, 32>::configure(&mut cs);
         log::info!("super circuit degree: {}", cs.degree());
         log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
         assert!(cs.degree() <= 9);
@@ -651,12 +656,19 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize,
         const MAX_INNER_BLOCKS: usize,
         const MAX_RWS: usize,
+        const MAX_COPY_ROWS: usize,
     >(
         block: GethData,
     ) {
-        let (k, circuit, instance, _) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>::build(block)
-                .unwrap();
+        let (k, circuit, instance, _) = SuperCircuit::<
+            Fr,
+            MAX_TXS,
+            MAX_CALLDATA,
+            MAX_INNER_BLOCKS,
+            MAX_RWS,
+            MAX_COPY_ROWS,
+        >::build(block)
+        .unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {
@@ -808,7 +820,10 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
 
     #[ignore]
@@ -819,7 +834,10 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
 
     #[ignore]
@@ -830,7 +848,10 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
     #[ignore]
     #[test]
@@ -840,7 +861,10 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 320;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
     #[ignore]
     #[test]
@@ -850,6 +874,9 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
 }

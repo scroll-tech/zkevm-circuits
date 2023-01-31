@@ -20,8 +20,10 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    circuit::{AssignedCell, Cell, Layouter, Region, SimpleFloorPlanner, Value},
+    plonk::{
+        Advice, Assigned, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells,
+    },
     poly::Rotation,
 };
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
@@ -83,6 +85,15 @@ pub struct StateCircuitConfigArgs<F: Field> {
     pub challenges: Challenges<Expression<F>>,
 }
 
+/// Circuit exported cells after synthesis, used for subcircuit
+#[derive(Clone, Debug)]
+pub struct StateCircuitExports<V> {
+    /// start state root
+    pub start_state_root: (Cell, Value<V>),
+    /// final state root
+    pub end_state_root: (Cell, Value<V>),
+}
+
 impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
     type ConfigArgs = StateCircuitConfigArgs<F>;
 
@@ -127,6 +138,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         );
         let mpt_proof_type = meta.advice_column_in(SecondPhase);
         let state_root = meta.advice_column_in(SecondPhase);
+        meta.enable_equality(state_root);
 
         let sort_keys = SortKeysConfig {
             tag,
@@ -184,16 +196,17 @@ impl<F: Field> StateCircuitConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         rows: &[Rw],
+        updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let updates = MptUpdates::mock_from(rows);
         layouter.assign_region(
             || "state circuit",
             |mut region| {
-                self.assign_with_region(&mut region, rows, &updates, n_rows, challenges.evm_word())
+                self.assign_with_region(&mut region, rows, updates, n_rows, challenges.evm_word())
             },
-        )
+        )?;
+        Ok(())
     }
 
     fn assign_with_region(
@@ -203,7 +216,7 @@ impl<F: Field> StateCircuitConfig<F> {
         updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
         randomness: Value<F>,
-    ) -> Result<(), Error> {
+    ) -> Result<StateCircuitExports<Assigned<F>>, Error> {
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
 
         let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
@@ -219,6 +232,9 @@ impl<F: Field> StateCircuitConfig<F> {
 
         let mut state_root =
             randomness.map(|randomness| rlc::value(&updates.old_root().to_le_bytes(), randomness));
+
+        let mut start_state_root: Option<AssignedCell<_, F>> = None;
+        let mut end_state_root: Option<AssignedCell<_, F>> = None;
 
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
             if offset >= padding_length {
@@ -351,12 +367,15 @@ impl<F: Field> StateCircuitConfig<F> {
             // State root assignment is at previous row (offset - 1) because the state root
             // changes on the last access row.
             if offset != 0 {
-                region.assign_advice(
+                let assigned = region.assign_advice(
                     || "state_root",
                     self.state_root,
                     offset - 1,
                     || state_root,
                 )?;
+                if start_state_root.is_none() {
+                    start_state_root.replace(assigned);
+                }
             }
 
             if offset + 1 == rows_len {
@@ -371,16 +390,22 @@ impl<F: Field> StateCircuitConfig<F> {
                         new_root
                     });
                 }
-                region.assign_advice(
+                let assigned = region.assign_advice(
                     || "last row state_root",
                     self.state_root,
                     offset,
                     || state_root,
                 )?;
+                end_state_root.replace(assigned);
             }
         }
 
-        Ok(())
+        let start_state_root = start_state_root.expect("should be assigned");
+        let end_state_root = end_state_root.expect("should be assigned");
+        Ok(StateCircuitExports {
+            start_state_root: (start_state_root.cell(), start_state_root.value_field()),
+            end_state_root: (end_state_root.cell(), end_state_root.value_field()),
+        })
     }
 }
 
@@ -404,6 +429,7 @@ pub struct StateCircuit<F> {
     pub rows: Vec<Rw>,
     pub(crate) updates: MptUpdates,
     pub(crate) n_rows: usize,
+    pub(crate) exports: std::cell::RefCell<Option<StateCircuitExports<Assigned<F>>>>,
     #[cfg(test)]
     overrides: HashMap<(test::AdviceColumn, isize), F>,
     _marker: PhantomData<F>,
@@ -413,10 +439,16 @@ impl<F: Field> StateCircuit<F> {
     /// make a new state circuit from an RwMap
     pub fn new(rw_map: RwMap, n_rows: usize) -> Self {
         let rows = rw_map.table_assignments();
-        let updates = MptUpdates::mock_from(&rows);
+        log::warn!("build StateCircuit from mock MptUpdates");
+        let updates = MptUpdates::from_rws_with_mock_state_roots(
+            &rows,
+            0xcafeu64.into(),
+            0xdeadbeefu64.into(),
+        );
         Self {
             rows,
             updates,
+            exports: std::cell::RefCell::new(None),
             n_rows,
             #[cfg(test)]
             overrides: HashMap::new(),
@@ -431,16 +463,11 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         let rows = block.rws.table_assignments();
-        let updates = match &block.mpt_state {
-            None => MptUpdates::mock_from(&rows),
-            Some(mpt_state) => {
-                let (updates, _, _) = MptUpdates::construct(rows.as_slice(), mpt_state);
-                updates
-            }
-        };
+        let updates = block.mpt_updates.clone();
         Self {
             rows,
             updates,
+            exports: std::cell::RefCell::new(None),
             n_rows: block.circuits_params.max_rws,
             #[cfg(test)]
             overrides: HashMap::new(),
@@ -492,13 +519,17 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     randomness,
                 )?;
 
-                config.assign_with_region(
+                let exports = config.assign_with_region(
                     &mut region,
                     &self.rows,
                     &self.updates,
                     self.n_rows,
                     randomness,
                 )?;
+                if self.exports.borrow().is_none() {
+                    self.exports.borrow_mut().replace(exports);
+                }
+
                 #[cfg(test)]
                 {
                     let padding_length = RwMap::padding_len(self.rows.len(), self.n_rows);
@@ -646,11 +677,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
 #[cfg(test)]
 mod state_circuit_stats {
     use crate::evm_circuit::step::ExecutionState;
-    use crate::evm_circuit::EvmCircuit;
     use bus_mapping::{circuit_input_builder::ExecState, mock::BlockData};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Address};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::{Circuit, ConstraintSystem};
     use mock::{eth, test_ctx::TestContext, MOCK_ACCOUNTS};
     use strum::IntoEnumIterator;
 
@@ -670,12 +698,10 @@ mod state_circuit_stats {
         // Get the list of implemented execution states by configuring the EVM Circuit
         // and querying the step height for each possible execution state (only those
         // implemented will return a Some value).
-        let mut meta = ConstraintSystem::<Fr>::default();
-        let circuit = EvmCircuit::configure(&mut meta);
 
         let mut implemented_states = Vec::new();
         for state in ExecutionState::iter() {
-            let height = circuit.0.execution.get_step_height_option(state);
+            let height = state.get_step_height_option();
             if height.is_some() {
                 implemented_states.push(state);
             }

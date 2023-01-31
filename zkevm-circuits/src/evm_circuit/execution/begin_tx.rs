@@ -19,6 +19,7 @@ use crate::{
 };
 use eth_types::{Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::get_contract_address;
+use gadgets::util::or;
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 
@@ -35,6 +36,7 @@ pub(crate) struct BeginTxGadget<F> {
     call_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
+    tx_value_is_zero: IsZeroGadget<F>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -43,6 +45,7 @@ pub(crate) struct BeginTxGadget<F> {
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
+    is_zero_code_hash: IsZeroGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -102,6 +105,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         );
         let [tx_gas_price, tx_value] = [TxContextFieldTag::GasPrice, TxContextFieldTag::Value]
             .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
+        let tx_value_is_zero = IsZeroGadget::construct(cb, tx_value.expr());
 
         // Add first BeginTx step constraint to have tx_id == 1
         cb.step_first(|cb| {
@@ -154,6 +158,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         );
 
+        // Read code_hash of callee
+        let phase2_code_hash = cb.query_cell_phase2();
+        cb.account_read(
+            call_callee_address.expr(),
+            AccountFieldTag::CodeHash,
+            phase2_code_hash.expr(),
+        );
+
+        // TODO: If value is 0, skip transfer, just like callop.
         // Transfer value from caller to callee
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
@@ -167,18 +180,26 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO: Handle creation transaction
         // TODO: Handle precompiled
 
-        // Read code_hash of callee
-        let phase2_code_hash = cb.query_cell_phase2();
-        cb.account_read(
-            call_callee_address.expr(),
-            AccountFieldTag::CodeHash,
-            phase2_code_hash.expr(),
-        );
-
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
+        let is_zero_code_hash = IsZeroGadget::construct(cb, phase2_code_hash.expr());
+        let is_empty_code = or::expr([is_empty_code_hash.expr(), is_zero_code_hash.expr()]);
 
-        let native_transfer = not::expr(tx_is_create.expr()) * is_empty_code_hash.expr();
+        // TODO: we should use "!tx_is_create && is_empty_code && !(1 <= addr <= 9)".
+        // check callop.rs
+        let native_transfer = not::expr(tx_is_create.expr()) * is_empty_code.expr();
+        cb.condition(
+            native_transfer.expr() * not::expr(tx_value_is_zero.expr()),
+            |cb| {
+                cb.account_write(
+                    call_callee_address.expr(),
+                    AccountFieldTag::CodeHash,
+                    cb.empty_hash_rlc(),
+                    cb.empty_hash_rlc(),
+                    None, // native transfer cannot fail
+                );
+            },
+        );
         cb.condition(native_transfer, |cb| {
             cb.require_equal(
                 "Tx to account with empty code should be persistent",
@@ -203,14 +224,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account Balance
                 //   - Write Account Balance
                 //   - Read Account CodeHash
-                rw_counter: Delta(10.expr()),
+                rw_counter: Delta(10.expr() + not::expr(tx_value_is_zero.expr())),
                 call_id: To(call_id.expr()),
                 ..StepStateTransition::any()
             });
         });
 
-        let normal_contract_call =
-            not::expr(tx_is_create.expr()) * not::expr(is_empty_code_hash.expr());
+        let normal_contract_call = not::expr(tx_is_create.expr()) * not::expr(is_empty_code.expr());
 
         cb.condition(normal_contract_call, |cb| {
             // Setup first call's context.
@@ -239,7 +259,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             }
 
             cb.require_step_state_transition(StepStateTransition {
-                // 23 reads and writes:
+                // 22-23 reads and writes:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
@@ -287,6 +307,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call_callee_address,
             tx_is_create,
             tx_value,
+            tx_value_is_zero,
             tx_call_data_length,
             tx_call_data_gas_cost,
             reversion_info,
@@ -295,6 +316,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             phase2_code_hash,
             intrinsic_gas_cost,
             is_empty_code_hash,
+            is_zero_code_hash,
         }
     }
 
@@ -308,10 +330,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
-
-        let [caller_balance_pair, callee_balance_pair, (callee_code_hash, _)] =
-            [step.rw_indices[7], step.rw_indices[8], step.rw_indices[9]]
-                .map(|idx| block.rws[idx].account_value_pair());
+        let [caller_balance_pair, callee_balance_pair] =
+            [step.rw_indices[8], step.rw_indices[9]].map(|idx| block.rws[idx].account_value_pair());
+        #[allow(clippy::if_same_then_else)]
+        let callee_code_hash = if tx.is_create {
+            //call.code_hash
+            block.rws[step.rw_indices[7]].account_value_pair().0
+        } else {
+            block.rws[step.rw_indices[7]].account_value_pair().0
+        };
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -323,6 +350,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Some(tx.gas_price.to_le_bytes()))?;
         self.tx_value
             .assign(region, offset, Some(tx.value.to_le_bytes()))?;
+        self.tx_value_is_zero
+            .assign_value(region, offset, region.word_rlc(tx.value))?;
         self.mul_gas_fee_by_gas
             .assign(region, offset, tx.gas_price, tx.gas, gas_fee)?;
         let caller_address = tx
@@ -393,6 +422,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region.word_rlc(callee_code_hash),
             region.empty_hash_rlc(),
         )?;
+        self.is_zero_code_hash
+            .assign_value(region, offset, region.word_rlc(callee_code_hash))?;
         Ok(())
     }
 }
