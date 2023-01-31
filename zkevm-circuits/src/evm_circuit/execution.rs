@@ -73,6 +73,7 @@ mod end_tx;
 mod error_invalid_jump;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_stack;
 mod exp;
@@ -139,6 +140,7 @@ use end_tx::EndTxGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
@@ -279,14 +281,13 @@ pub(crate) struct ExecutionConfig<F> {
     // error gadgets
     error_oog_call: ErrorOOGCallGadget<F>,
     error_oog_constant: ErrorOOGConstantGadget<F>,
+    error_oog_sload_sstore: ErrorOOGSloadSstoreGadget<F>,
     error_oog_static_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
     error_stack: ErrorStackGadget<F>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
     error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
-    error_oog_sload: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSLOAD }>,
-    error_oog_sstore: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSSTORE }>,
     error_oog_memory_copy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>,
     error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
     error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
@@ -538,8 +539,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_stack: configure_gadget!(),
             error_oog_dynamic_memory_gadget: configure_gadget!(),
             error_oog_log: configure_gadget!(),
-            error_oog_sload: configure_gadget!(),
-            error_oog_sstore: configure_gadget!(),
+            error_oog_sload_sstore: configure_gadget!(),
             error_oog_call: configure_gadget!(),
             error_oog_memory_copy: configure_gadget!(),
             error_oog_account_access: configure_gadget!(),
@@ -1259,11 +1259,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasLOG => {
                 assign_exec_step!(self.error_oog_log)
             }
-            ExecutionState::ErrorOutOfGasSLOAD => {
-                assign_exec_step!(self.error_oog_sload)
-            }
-            ExecutionState::ErrorOutOfGasSSTORE => {
-                assign_exec_step!(self.error_oog_sstore)
+            ExecutionState::ErrorOutOfGasSloadSstore => {
+                assign_exec_step!(self.error_oog_sload_sstore)
             }
             ExecutionState::ErrorOutOfGasMemoryCopy => {
                 assign_exec_step!(self.error_oog_memory_copy)

@@ -641,7 +641,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .iter()
                 .map(|op| Rw::TxAccessListAccountStorage {
                     rw_counter: op.rwc().into(),
-                    is_write: true,
+                    is_write: op.rw().is_write(),
                     tx_id: op.op().tx_id,
                     account_address: op.op().address,
                     storage_key: op.op().key,

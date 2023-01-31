@@ -90,10 +90,8 @@ pub enum OogError {
     Sha3,
     /// Out of Gas for EXTCODECOPY
     ExtCodeCopy,
-    /// Out of Gas for SLOAD
-    Sload,
-    /// Out of Gas for SSTORE
-    Sstore,
+    /// Out of Gas for SLOAD and SSTORE
+    SloadSstore,
     /// Out of Gas for CALL
     Call,
     /// Out of Gas for CALLCODE
@@ -164,8 +162,7 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             OpcodeId::EXP => OogError::Exp,
             OpcodeId::SHA3 => OogError::Sha3,
             OpcodeId::EXTCODECOPY => OogError::ExtCodeCopy,
-            OpcodeId::SLOAD => OogError::Sload,
-            OpcodeId::SSTORE => OogError::Sstore,
+            OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
             OpcodeId::CALL => OogError::Call,
             OpcodeId::CALLCODE => OogError::CallCode,
             OpcodeId::DELEGATECALL => OogError::DelegateCall,
