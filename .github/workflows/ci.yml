@@ -11,6 +11,9 @@ on:
     branches:
       - scroll-stable
 
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
+
 ## `actions-rs/toolchain@v1` overwrite set to false so that
 ## `rust-toolchain` is always used and the only source of truth.
 
@@ -89,6 +92,9 @@ jobs:
         # https://github.com/actions/cache/issues/810
         env:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
+      - uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.SECRET_REPO_DEPLOY_KEY }}
       - name: Run light tests # light tests are run in parallel
         uses: actions-rs/cargo@v1
         with:
@@ -153,6 +159,9 @@ jobs:
         # https://github.com/actions/cache/issues/810
         env:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
+      - uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.SECRET_REPO_DEPLOY_KEY }}
       - name: cargo build
         uses: actions-rs/cargo@v1
         with:
@@ -210,6 +219,9 @@ jobs:
         # https://github.com/actions/cache/issues/810
         env:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
+      - uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.SECRET_REPO_DEPLOY_KEY }}
       # Build benchmarks to prevent bitrot
       - name: Build benchmarks
         uses: actions-rs/cargo@v1
@@ -262,6 +274,9 @@ jobs:
         # https://github.com/actions/cache/issues/810
         env:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
+      - uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.SECRET_REPO_DEPLOY_KEY }}
       - name: cargo fetch
         uses: actions-rs/cargo@v1
         with:
@@ -320,6 +335,9 @@ jobs:
         # https://github.com/actions/cache/issues/810
         env:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
+      - uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.SECRET_REPO_DEPLOY_KEY }}
       - name: cargo check
         uses: actions-rs/cargo@v1
         with:
