@@ -20,8 +20,8 @@ pub struct MptUpdate {
 }
 
 impl MptUpdate {
-    fn proof_type<F: Field>(&self) -> F {
-        let proof_type = match self.key {
+    fn proof_type(&self) -> ProofType {
+        match self.key {
             Key::AccountStorage { .. } => {
                 if self.old_value.is_zero() && self.new_value.is_zero() {
                     ProofType::StorageDoesNotExist
@@ -30,8 +30,7 @@ impl MptUpdate {
                 }
             }
             Key::Account { field_tag, .. } => field_tag.into(),
-        };
-        F::from(proof_type as u64)
+        }
     }
 }
 
@@ -63,23 +62,17 @@ impl MptUpdates {
     }
 
     pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) {
+        let root_pair = (self.old_root, self.new_root);
         self.old_root = U256::from_big_endian(init_trie.root());
+        log::trace!("fill_state_roots init {:?}", init_trie.root());
 
         let mut wit_gen = WitnessGenerator::from(init_trie);
         self.smt_traces = Vec::new();
         self.proof_types = Vec::new();
 
         for (key, update) in &mut self.updates {
-            let proof_tip = state::as_proof_type(match key {
-                Key::AccountStorage { .. } => {
-                    if update.old_value.is_zero() && update.new_value.is_zero() {
-                        ProofType::StorageDoesNotExist as i32
-                    } else {
-                        ProofType::StorageChanged as i32
-                    }
-                }
-                Key::Account { field_tag, .. } => *field_tag as i32,
-            });
+            log::trace!("apply update {:?} {:?}", key, update);
+            let proof_tip = state::as_proof_type(update.proof_type() as i32);
             let smt_trace = wit_gen.handle_new_state(
                 proof_tip,
                 match key {
@@ -92,6 +85,11 @@ impl MptUpdates {
                     Key::AccountStorage { storage_key, .. } => Some(*storage_key),
                 },
             );
+            log::trace!(
+                "fill_state_roots {:?}->{:?}",
+                smt_trace.account_path[0].root,
+                smt_trace.account_path[1].root
+            );
             update.old_root = U256::from_little_endian(smt_trace.account_path[0].root.as_ref());
             update.new_root = U256::from_little_endian(smt_trace.account_path[1].root.as_ref());
             self.new_root = update.new_root;
@@ -103,6 +101,10 @@ impl MptUpdates {
             self.old_root,
             self.new_root
         );
+        let root_pair2 = (self.old_root, self.new_root);
+        if root_pair2 != root_pair {
+            log::error!("roots non consistent {:?} vs {:?}", root_pair, root_pair2);
+        }
     }
 
     pub(crate) fn from_rws_with_mock_state_roots(
@@ -163,7 +165,7 @@ impl MptUpdates {
                 MptUpdateRow([
                     Value::known(update.key.address()),
                     randomness.map(|randomness| update.key.storage_key(randomness)),
-                    Value::known(update.proof_type()),
+                    Value::known(F::from(update.proof_type() as u64)),
                     new_root,
                     old_root,
                     new_value,

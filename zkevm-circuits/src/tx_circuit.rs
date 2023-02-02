@@ -1275,9 +1275,7 @@ impl<F: Field> TxCircuit<F> {
         let min_rows = std::cmp::max(tx_table_len, SignVerifyChip::<F>::min_num_rows(txs_len));
         #[cfg(not(feature = "enable-sign-verify"))]
         let min_rows = tx_table_len;
-
-        // FIXME: remove this hardcoded constant
-        std::cmp::max(min_rows, 1 << 18)
+        min_rows
     }
 
     fn assign(

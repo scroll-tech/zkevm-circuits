@@ -187,6 +187,18 @@ impl<F: Field> EvmCircuit<F> {
         (gates_row_ids, lookup_row_ids)
     }
 
+    pub fn get_num_rows_required_no_padding(block: &Block<F>) -> usize {
+        // Start at 1 so we can be sure there is an unused `next` row available
+        let mut num_rows = 1;
+        for transaction in &block.txs {
+            for step in &transaction.steps {
+                num_rows += step.execution_state.get_step_height();
+            }
+        }
+        num_rows += 1; // EndBlock
+        num_rows
+    }
+
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
         // Start at 1 so we can be sure there is an unused `next` row available
         let mut num_rows = 1;
@@ -214,16 +226,14 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let num_rows_required_for_execution_steps: usize = Self::get_num_rows_required(block);
-        let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(block)
+        let num_rows_required_for_execution_steps: usize =
+            Self::get_num_rows_required_no_padding(block);
+        let _num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(block)
             .iter()
             .map(|tag| tag.build::<F>().count())
             .sum();
         (
-            std::cmp::max(
-                num_rows_required_for_execution_steps,
-                num_rows_required_for_fixed_table,
-            ),
+            num_rows_required_for_execution_steps,
             block.evm_circuit_pad_to,
         )
     }

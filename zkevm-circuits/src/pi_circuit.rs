@@ -605,7 +605,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 state_roots.end_state_root.0,
             )?;
         } else {
-            log::warn!("state roots are not set, skip");
+            log::warn!("state roots are not set, skip connection with state circuit");
         }
 
         // assign tx hashes

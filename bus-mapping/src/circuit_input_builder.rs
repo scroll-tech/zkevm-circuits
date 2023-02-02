@@ -232,11 +232,13 @@ impl<'a> CircuitInputBuilder {
             }
             let geth_trace = &geth_traces[tx_index];
             log::info!(
-                "handling {}th(inner idx: {}) tx(rwc: {:?}): {:?}",
+                "handling {}th(inner idx: {}) tx: {:?} rwc {:?}, to: {:?}, input_len {:?}",
                 tx.transaction_index.unwrap_or_default(),
                 self.block.txs.len(),
+                tx.hash,
                 self.block_ctx.rwc,
-                tx.hash
+                tx.to,
+                tx.input.len(),
             );
             let mut tx = tx.clone();
             // needed for multi block feature
@@ -402,6 +404,13 @@ impl<'a> CircuitInputBuilder {
                     "".to_string()
                 }
             );
+            debug_assert_eq!(
+                geth_step.depth as usize,
+                state_ref.call().unwrap().depth,
+                "call {:?} calls {:?}",
+                state_ref.call(),
+                state_ref.tx.calls()
+            );
             let exec_steps = gen_associated_ops(
                 &geth_step.op,
                 &mut state_ref,
@@ -457,6 +466,14 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
         "keccak total len after opcodes: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
+
+    let inputs_len: usize = keccak_inputs.iter().map(|k| k.len()).sum();
+    let inputs_num = keccak_inputs.len();
+    let keccak_inputs: Vec<_> = keccak_inputs.into_iter().unique().collect();
+    let inputs_len2: usize = keccak_inputs.iter().map(|k| k.len()).sum();
+    let inputs_num2 = keccak_inputs.len();
+    log::debug!("keccak inputs after dedup: input num {inputs_num}->{inputs_num2}, input total len {inputs_len}->{inputs_len2}");
+
     // MPT Circuit
     // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
     Ok(keccak_inputs)

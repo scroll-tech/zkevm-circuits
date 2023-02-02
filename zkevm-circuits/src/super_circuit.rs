@@ -401,7 +401,7 @@ max_rotation {}",
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let (mut config, challenges) = config;
+        let (config, challenges) = config;
         let challenges = challenges.values(&mut layouter);
 
         let block = self.evm_circuit.block.as_ref().unwrap();
@@ -472,7 +472,9 @@ max_rotation {}",
         self.tx_circuit
             .synthesize_sub(&config.tx_circuit, &challenges, &mut layouter)?;
 
-        config.pi_circuit.state_roots = self.state_circuit.exports.borrow().clone();
+        // TODO: enable this after zktrie deletion deployed inside l2geth and test data
+        // regenerated.
+        //config.pi_circuit.state_roots = self.state_circuit.exports.borrow().clone();
         self.pi_circuit
             .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
         Ok(())
@@ -587,7 +589,7 @@ impl<
     }
 
     /// Return the minimum number of rows required to prove the block
-    pub fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
+    pub fn min_num_rows_block_subcircuits(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
         let evm = EvmCircuit::min_num_rows_block(block);
         let state = StateCircuit::min_num_rows_block(block);
         let bytecode = BytecodeCircuit::min_num_rows_block(block);
@@ -620,6 +622,12 @@ impl<
             rows_without_padding
         );
         log::debug!("subcircuit rows(with    padding): {:?}", rows_with_padding);
+        (rows_without_padding, rows_with_padding)
+    }
+
+    /// Return the minimum number of rows required to prove the block
+    pub fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
+        let (rows_without_padding, rows_with_padding) = Self::min_num_rows_block_subcircuits(block);
         (
             itertools::max(rows_without_padding).unwrap(),
             itertools::max(rows_with_padding).unwrap(),

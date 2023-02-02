@@ -951,6 +951,8 @@ impl<F: Field> ExecutionConfig<F> {
                         tx.call_data.clear();
                         tx.calls.clear();
                         tx.steps.clear();
+                        tx.rlp_signed.clear();
+                        tx.rlp_unsigned.clear();
                         let total_gas = {
                             let gas_used = tx.gas - step.gas_left;
                             let current_cumulative_gas_used: u64 = if tx.id == 1 {
