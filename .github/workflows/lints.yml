@@ -12,6 +12,9 @@ on:
     branches:
       - scroll-stable
 
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
+
 jobs:
   skip_check:
     runs-on: ubuntu-latest
@@ -72,6 +75,9 @@ jobs:
         # https://github.com/actions/cache/issues/810
         env:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
+      - uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.SECRET_REPO_DEPLOY_KEY }}
       - name: Run clippy
         uses: actions-rs/clippy-check@v1
         with:
