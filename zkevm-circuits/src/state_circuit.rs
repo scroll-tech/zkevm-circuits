@@ -592,7 +592,7 @@ where
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
+        let challenges = challenges.values(&layouter);
         config
             .mpt_table
             .load(&mut layouter, &self.updates, challenges.evm_word())?;

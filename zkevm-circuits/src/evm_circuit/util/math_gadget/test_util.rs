@@ -190,7 +190,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let (config, challenges) = config;
-        let challenge_values = challenges.values(&mut layouter);
+        let challenge_values = challenges.values(&layouter);
         layouter.assign_region(
             || "assign test container",
             |mut region| {

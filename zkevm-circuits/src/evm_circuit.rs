@@ -382,7 +382,7 @@ pub mod test {
             let block = self.block.as_ref().unwrap();
 
             let (config, challenges) = config;
-            let challenges = challenges.values(&mut layouter);
+            let challenges = challenges.values(&layouter);
 
             config.tx_table.load(
                 &mut layouter,

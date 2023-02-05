@@ -1785,7 +1785,7 @@ impl<F: Field> Circuit<F> for RlpCircuit<F, SignedTransaction> {
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
+        let challenges = challenges.values(&layouter);
         config.assign(
             &mut layouter,
             self.inputs.as_slice(),

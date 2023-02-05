@@ -540,7 +540,7 @@ impl<F: Field> Circuit<F> for ExpCircuit<F> {
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), halo2_proofs::plonk::Error> {
-        let challenges = challenges.values(&mut layouter);
+        let challenges = challenges.values(&layouter);
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

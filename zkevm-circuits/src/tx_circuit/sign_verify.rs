@@ -908,7 +908,7 @@ mod sign_verify_tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let challenges = config.challenges.values(&mut layouter);
+            let challenges = config.challenges.values(&layouter);
             self.sign_verify.assign(
                 &config.sign_verify,
                 &mut layouter,

@@ -1744,7 +1744,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
+        let challenges = challenges.values(&layouter);
 
         let padding_txs = (self.txs.len()..self.max_txs)
             .into_iter()

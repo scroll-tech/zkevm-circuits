@@ -556,7 +556,7 @@ impl<
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
+        let challenges = challenges.values(&layouter);
 
         let block = self.evm_circuit.block.as_ref().unwrap();
 
