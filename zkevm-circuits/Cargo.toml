@@ -31,8 +31,8 @@ env_logger = "0.9"
 
 # halo2_base = { path = "../../halo2-ecc/halo2_base" }
 # halo2_ecc = { path = "../../halo2-ecc/halo2_ecc" }
-halo2_base = { git = "ssh://git@github.com/scroll-tech/halo2-ecc.git", branch = "halo2-ecc-ecdsa-0129" }
-halo2_ecc = { git = "ssh://git@github.com/scroll-tech/halo2-ecc.git", branch = "halo2-ecc-ecdsa-0129" }
+halo2_base = { git = "ssh://git@github.com/scroll-tech/halo2-ecc.git", branch = "halo2-ecc-ecdsa-0129", default-features = false }
+halo2_ecc = { git = "ssh://git@github.com/scroll-tech/halo2-ecc.git", branch = "halo2-ecc-ecdsa-0129",default-features = false  }
 
 ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
 ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }

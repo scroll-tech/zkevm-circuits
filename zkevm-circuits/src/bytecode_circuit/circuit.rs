@@ -12,7 +12,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use keccak256::EMPTY_HASH_LE;
-use log::trace;
 use std::vec;
 
 use super::{
@@ -425,7 +424,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         assert!(size > self.minimum_rows);
         let last_row_offset = size - self.minimum_rows + 1;
 
-        trace!(
+        log::debug!(
             "size: {}, minimum_rows: {}, last_row_offset:{}",
             size,
             self.minimum_rows,
@@ -553,6 +552,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     F::from(push_data_size as u64),
                 )?;
 
+                /*
                 trace!(
                     "bytecode.set_row({}): last:{} h:{:?} t:{:?} i:{:?} c:{:?} v:{:?} pdl:{} rlc:{:?} l:{:?} pds:{:?}",
                     offset,
@@ -567,6 +567,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     length.get_lower_32(),
                     push_data_size
                 );
+                */
 
                 *offset += 1;
                 push_data_left = next_push_data_left
@@ -935,6 +936,7 @@ mod tests {
     }
 
     /// Test invalid code_hash data
+    #[cfg(feature = "codehash")]
     #[test]
     fn bytecode_invalid_hash_data() {
         let k = 9;
@@ -978,6 +980,8 @@ mod tests {
     }
 
     /// Test invalid byte data
+
+    #[cfg(feature = "codehash")]
     #[test]
     fn bytecode_invalid_byte_data() {
         let k = 9;
