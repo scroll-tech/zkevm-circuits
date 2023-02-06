@@ -13,6 +13,7 @@ use crate::{
     table::{LookupTable, RwTableTag, TxReceiptFieldTag},
     util::{query_expression, Challenges, Expr},
 };
+use bus_mapping::util::read_env_var;
 use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
 use halo2_proofs::{
@@ -39,6 +40,10 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::ThirdPhase;
 
 use strum::{EnumCount, IntoEnumIterator};
+
+use once_cell::sync::Lazy;
+pub(crate) static CHECK_RW_LOOKUP: Lazy<bool> =
+    Lazy::new(|| read_env_var("CHECK_RW_LOOKUP", false));
 
 mod add_sub;
 mod addmod;
@@ -1330,8 +1335,8 @@ impl<F: Field> ExecutionConfig<F> {
         // Fill in the witness values for stored expressions
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
-        // enable with `RUST_LOG=debug`
-        if log::log_enabled!(log::Level::Debug) {
+        // enable with `CHECK_RW_LOOKUP=true`
+        if *CHECK_RW_LOOKUP {
             let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
                 && step.rw_indices.is_empty();
             if !is_padding_step {

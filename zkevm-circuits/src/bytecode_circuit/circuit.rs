@@ -947,7 +947,7 @@ mod tests {
         {
             let mut invalid = unrolled;
             invalid.rows[0].code_hash += Word::one();
-            trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
+            log::trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
             test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
         }
         // TODO: other rows code_hash are ignored by the witness generation, to

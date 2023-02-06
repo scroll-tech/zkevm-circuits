@@ -6530,6 +6530,7 @@ dependencies = [
  "mpt-zktrie",
  "num",
  "num-bigint",
+ "once_cell",
  "pretty_assertions",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
