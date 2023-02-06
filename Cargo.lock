@@ -2423,12 +2423,11 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0129#80f0a2b8504166836b49ecaf826f5c23a98fbd92"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0129#e5f59c1438fddcafcf13debc0c817eceee23b013"
 dependencies = [
  "halo2_proofs",
  "hex",
  "lazy_static",
- "log",
  "num-bigint",
  "poseidon-circuit",
  "rand 0.8.5",
@@ -3891,7 +3890,7 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0201#feb307b67092adf9658cc21798a6bf73a9ccaa00"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0201#ac41f782e28b13f9980b18f05a4ce4c4c6361dd8"
 dependencies = [
  "bitvec 1.0.1",
  "halo2_proofs",

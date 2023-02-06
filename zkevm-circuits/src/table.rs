@@ -12,7 +12,6 @@ use crate::witness::{
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
-use std::iter::repeat;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use gadgets::util::{split_u256, split_u256_limb64};
@@ -23,6 +22,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
 use halo2_proofs::{circuit::Layouter, poly::Rotation};
+use std::iter::repeat;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -613,7 +613,8 @@ impl MptTable {
 
 /// The Poseidon hash table shared between Hash Circuit, Mpt Circuit and
 /// Bytecode Circuit
-/// the 5 cols represent [index(final hash of inputs), input0, input1, control, heading mark]
+/// the 5 cols represent [index(final hash of inputs), input0, input1, control,
+/// heading mark]
 #[derive(Clone, Copy, Debug)]
 pub struct PoseidonTable(pub [Column<Advice>; 5]);
 
@@ -625,10 +626,10 @@ impl DynamicTableColumns for PoseidonTable {
 
 impl PoseidonTable {
     /// the permutation width of current poseidon table
-    pub(crate) const WIDTH : usize = 3;
+    pub(crate) const WIDTH: usize = 3;
 
     /// the input width of current poseidon table
-    pub(crate) const INPUT_WIDTH : usize = Self::WIDTH - 1;
+    pub(crate) const INPUT_WIDTH: usize = Self::WIDTH - 1;
 
     /// Construct a new PoseidonTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
@@ -678,8 +679,9 @@ impl PoseidonTable {
         inputs: impl IntoIterator<Item = &'a Vec<u8>> + Clone,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-
-        use crate::bytecode_circuit::bytecode_unroller::{unroll_to_hash_input_default, HASHBLOCK_BYTES_IN_FIELD};
+        use crate::bytecode_circuit::bytecode_unroller::{
+            unroll_to_hash_input_default, HASHBLOCK_BYTES_IN_FIELD,
+        };
 
         layouter.assign_region(
             || "poseidon table",
@@ -695,9 +697,12 @@ impl PoseidonTable {
                     )?;
                 }
                 offset += 1;
-                let nil_hash = KeccakTable::assignments(&[], challenges)[0][3];            
-                for (column, value) in poseidon_table_columns.iter().copied()
-                    .zip(once(nil_hash).chain(repeat(Value::known(F::zero())))) {
+                let nil_hash = KeccakTable::assignments(&[], challenges)[0][3];
+                for (column, value) in poseidon_table_columns
+                    .iter()
+                    .copied()
+                    .zip(once(nil_hash).chain(repeat(Value::known(F::zero()))))
+                {
                     region.assign_advice(
                         || "poseidon table nil input row",
                         column,
@@ -706,21 +711,29 @@ impl PoseidonTable {
                     )?;
                 }
                 offset += 1;
-                
+
                 for input in inputs.clone() {
                     let mut control_len = input.len();
                     let mut first_row = true;
                     let ref_hash = KeccakTable::assignments(&input, challenges)[0][3];
                     for row in unroll_to_hash_input_default::<F>(input.iter().copied()) {
-                        assert_ne!(control_len, 0, "must have enough len left (original size {})", input.len());
+                        assert_ne!(
+                            control_len,
+                            0,
+                            "must have enough len left (original size {})",
+                            input.len()
+                        );
                         let block_size = HASHBLOCK_BYTES_IN_FIELD * row.len();
 
-                        for (column, value) in poseidon_table_columns
-                            .iter().zip_eq(
-                                once(ref_hash)
-                                .chain(row.map(Value::known))                                
+                        for (column, value) in poseidon_table_columns.iter().zip_eq(
+                            once(ref_hash)
+                                .chain(row.map(Value::known))
                                 .chain(once(Value::known(F::from(control_len as u64))))
-                                .chain(once(Value::known(if first_row {F::one()} else {F::zero()})))
+                                .chain(once(Value::known(if first_row {
+                                    F::one()
+                                } else {
+                                    F::zero()
+                                }))),
                         ) {
                             region.assign_advice(
                                 || format!("poseidon table row {}", offset),
@@ -731,15 +744,23 @@ impl PoseidonTable {
                         }
                         first_row = false;
                         offset += 1;
-                        control_len = if control_len > block_size {control_len - block_size} else {0};
+                        control_len = if control_len > block_size {
+                            control_len - block_size
+                        } else {
+                            0
+                        };
                     }
-                    assert_eq!(control_len, 0, "should have exhaust all bytes (original size {})", input.len());
+                    assert_eq!(
+                        control_len,
+                        0,
+                        "should have exhaust all bytes (original size {})",
+                        input.len()
+                    );
                 }
                 Ok(())
             },
-        )        
+        )
     }
-
 }
 
 /// Tag to identify the field in a Bytecode Table row

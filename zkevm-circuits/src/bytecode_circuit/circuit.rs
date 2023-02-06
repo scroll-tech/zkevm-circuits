@@ -759,7 +759,10 @@ impl<F: Field> BytecodeCircuit<F> {
 
 impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     #[cfg(feature = "poseidon-codehash")]
-    type Config = to_poseidon_hash::ToHashBlockCircuitConfig<F, {to_poseidon_hash::HASHBLOCK_BYTES_IN_FIELD}>;
+    type Config = to_poseidon_hash::ToHashBlockCircuitConfig<
+        F,
+        { to_poseidon_hash::HASHBLOCK_BYTES_IN_FIELD },
+    >;
     #[cfg(not(feature = "poseidon-codehash"))]
     type Config = BytecodeCircuitConfig<F>;
 

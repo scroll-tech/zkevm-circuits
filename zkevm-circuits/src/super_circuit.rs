@@ -51,27 +51,23 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
-use crate::bytecode_circuit::circuit::{
-    BytecodeCircuit, BytecodeCircuitConfigArgs,
+#[cfg(feature = "poseidon-codehash")]
+use crate::bytecode_circuit::circuit::to_poseidon_hash::{
+    ToHashBlockBytecodeCircuitConfigArgs, ToHashBlockCircuitConfig, HASHBLOCK_BYTES_IN_FIELD,
 };
+#[cfg(not(feature = "poseidon-codehash"))]
+use crate::bytecode_circuit::circuit::BytecodeCircuitConfig;
+use crate::bytecode_circuit::circuit::{BytecodeCircuit, BytecodeCircuitConfigArgs};
 use crate::copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs};
 use crate::evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs};
 use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
 use crate::keccak_circuit::keccak_packed_multi::{
     KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs,
 };
-use std::collections::BTreeSet;
-#[cfg(not(feature = "poseidon-codehash"))]
-use crate::bytecode_circuit::circuit::BytecodeCircuitConfig;
-#[cfg(feature = "poseidon-codehash")]
-use crate::bytecode_circuit::circuit::to_poseidon_hash::{
-    ToHashBlockBytecodeCircuitConfigArgs, ToHashBlockCircuitConfig, HASHBLOCK_BYTES_IN_FIELD,
-};
+use crate::poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs};
 
 #[cfg(feature = "zktrie")]
 use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
-#[cfg(any(feature = "zktrie", feature = "poseidon-codehash"))]
-use crate::table::PoseidonTable;
 
 #[cfg(not(feature = "onephase"))]
 use crate::util::Challenges;
@@ -80,8 +76,8 @@ use crate::util::MockChallenges as Challenges;
 
 use crate::state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs};
 use crate::table::{
-    BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RlpTable, RwTable,
-    TxTable,
+    BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, PoseidonTable, RlpTable,
+    RwTable, TxTable,
 };
 
 use crate::util::{circuit_stats, log2_ceil, SubCircuit, SubCircuitConfig};
@@ -108,6 +104,7 @@ pub struct SuperCircuitConfig<F: Field> {
     mpt_table: MptTable,
     rlp_table: RlpTable,
     tx_table: TxTable,
+    poseidon_table: PoseidonTable,
     evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
@@ -117,6 +114,7 @@ pub struct SuperCircuitConfig<F: Field> {
     bytecode_circuit: ToHashBlockCircuitConfig<F, HASHBLOCK_BYTES_IN_FIELD>,
     copy_circuit: CopyCircuitConfig<F>,
     keccak_circuit: KeccakCircuitConfig<F>,
+    poseidon_circuit: PoseidonCircuitConfig<F>,
     pi_circuit: PiCircuitConfig<F>,
     exp_circuit: ExpCircuitConfig<F>,
     rlp_circuit: RlpCircuitConfig<F>,
@@ -163,12 +161,8 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
 
         let mpt_table = MptTable::construct(meta);
         log_circuit_info(meta, "mpt table");
-
-        #[cfg(any(feature = "zktrie", feature = "poseidon-codehash"))]
-        let poseidon_table = {
-            log_circuit_info(meta, "poseidon table");
-            PoseidonTable::construct(meta)
-        };
+        let poseidon_table = PoseidonTable::construct(meta);
+        log_circuit_info(meta, "poseidon table");
 
         let bytecode_table = BytecodeTable::construct(meta);
         log_circuit_info(meta, "bytecode table");
@@ -193,6 +187,9 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             },
         );
         log_circuit_info(meta, "keccak circuit");
+
+        let poseidon_circuit =
+            PoseidonCircuitConfig::new(meta, PoseidonCircuitConfigArgs { poseidon_table });
 
         let rlp_circuit = RlpCircuitConfig::configure(meta, &rlp_table, &challenges);
         log_circuit_info(meta, "rlp circuit");
@@ -241,7 +238,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                     challenges: challenges.clone(),
                 },
                 poseidon_table,
-            }
+            },
         );
 
         log_circuit_info(meta, "bytecode circuit");
@@ -307,11 +304,13 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             mpt_table,
             tx_table,
             rlp_table,
+            poseidon_table,
             evm_circuit,
             state_circuit,
             copy_circuit,
             bytecode_circuit,
             keccak_circuit,
+            poseidon_circuit,
             pi_circuit,
             rlp_circuit,
             tx_circuit,
@@ -347,6 +346,8 @@ pub struct SuperCircuit<
     pub exp_circuit: ExpCircuit<F>,
     /// Keccak Circuit
     pub keccak_circuit: KeccakCircuit<F>,
+    /// Poseidon hash Circuit
+    pub poseidon_circuit: PoseidonCircuit<F>,
     /// Rlp Circuit
     pub rlp_circuit: RlpCircuit<F, SignedTransaction>,
     /// Mpt Circuit
@@ -430,6 +431,7 @@ impl<
         let copy_circuit = CopyCircuit::new_from_block_no_external(block);
         let exp_circuit = ExpCircuit::new_from_block(block);
         let keccak_circuit = KeccakCircuit::new_from_block(block);
+        let poseidon_circuit = PoseidonCircuit::new_from_block(block);
         let rlp_circuit = RlpCircuit::new_from_block(block);
         #[cfg(feature = "zktrie")]
         let mpt_circuit = MptCircuit::new_from_block(block);
@@ -442,6 +444,7 @@ impl<
             copy_circuit,
             exp_circuit,
             keccak_circuit,
+            poseidon_circuit,
             rlp_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
@@ -481,6 +484,8 @@ impl<
     ) -> Result<(), Error> {
         self.keccak_circuit
             .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
+        self.poseidon_circuit
+            .synthesize_sub(&config.poseidon_circuit, challenges, layouter)?;
         self.bytecode_circuit
             .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
         self.tx_circuit
@@ -505,20 +510,9 @@ impl<
             .synthesize_sub(&config.rlp_circuit, challenges, layouter)?;
         // load both poseidon table and zktrie table
         #[cfg(feature = "zktrie")]
-        {
-            // TODO: wrap this as `poseidon_table.load`
-            config.mpt_circuit.0.load_hash_table(
-                layouter,
-                self.mpt_circuit
-                    .0
-                    .ops
-                    .iter()
-                    .flat_map(|op| op.hash_traces()),
-                self.mpt_circuit.0.calcs,
-            )?;
-            self.mpt_circuit
-                .synthesize_sub(&config.mpt_circuit, challenges, layouter)?;
-        }
+        self.mpt_circuit
+            .synthesize_sub(&config.mpt_circuit, challenges, layouter)?;
+
         Ok(())
     }
 }
