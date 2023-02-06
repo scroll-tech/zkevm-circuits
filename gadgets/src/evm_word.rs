@@ -272,7 +272,7 @@ mod tests {
             // Calculate word commitment and use it as public input.
             let encoded: Fp = encode(word.to_repr().iter().rev().cloned(), r());
             let prover = MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]]).unwrap();
-            prover.assert_satisfied()
+            prover.assert_satisfied_par()
         }
     }
 }

@@ -1,4 +1,6 @@
 //! Common utility traits and functions.
+use std::collections::BTreeSet;
+
 use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -258,3 +260,50 @@ pub(crate) fn get_push_size(byte: u8) -> u64 {
 
 /// Using values like this will make it easier to debug...
 pub const DEFAULT_RAND: u128 = 0x10000;
+
+#[derive(Debug)]
+pub(crate) struct CircuitStats {
+    num_constraints: usize,
+    num_fixed_columns: usize,
+    num_lookups: usize,
+    num_advice_columns: usize,
+    num_instance_columns: usize,
+    num_selectors: usize,
+    num_permutation_columns: usize,
+    degree: usize,
+    num_challenges: usize,
+    max_phase: u8,
+    num_rotation: usize,
+    min_rotation: i32,
+    max_rotation: i32,
+    num_verification_ecmul: usize,
+}
+
+pub(crate) fn circuit_stats<F: Field>(meta: &ConstraintSystem<F>) -> CircuitStats {
+    let rotations = meta
+        .advice_queries
+        .iter()
+        .map(|(_, q)| q.0)
+        .collect::<BTreeSet<i32>>();
+    CircuitStats {
+        num_constraints: meta
+            .gates()
+            .iter()
+            .map(|g| g.polynomials().len())
+            .sum::<usize>(),
+        num_fixed_columns: meta.num_fixed_columns,
+        num_lookups: meta.lookups.len(),
+        num_advice_columns: meta.num_advice_columns,
+        num_instance_columns: meta.num_instance_columns,
+        num_selectors: meta.num_selectors,
+        num_permutation_columns: meta.permutation.columns.len(),
+        degree: meta.degree(),
+        num_challenges: meta.num_challenges(),
+        max_phase: meta.max_phase(),
+        num_rotation: rotations.len(),
+        min_rotation: rotations.first().cloned().unwrap_or_default(),
+        max_rotation: rotations.last().cloned().unwrap_or_default(),
+        // TODO: add permutation related ecmuls
+        num_verification_ecmul: meta.num_advice_columns + 3 * meta.lookups.len() + rotations.len(),
+    }
+}
