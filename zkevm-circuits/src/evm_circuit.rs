@@ -228,13 +228,19 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let num_rows_required_for_execution_steps: usize =
             Self::get_num_rows_required_no_padding(block);
-        let _num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(block)
+        let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(block)
             .iter()
             .map(|tag| tag.build::<F>().count())
             .sum();
         (
             num_rows_required_for_execution_steps,
-            block.evm_circuit_pad_to,
+            std::cmp::max(
+                block.evm_circuit_pad_to,
+                std::cmp::max(
+                    num_rows_required_for_fixed_table,
+                    num_rows_required_for_execution_steps,
+                ),
+            ),
         )
     }
 
