@@ -4,7 +4,7 @@ use crate::evm_circuit::table::{FixedTableTag, Lookup};
 use crate::evm_circuit::util::common_gadget::RestoreContextGadget;
 use crate::evm_circuit::util::constraint_builder::Transition::{Delta, Same};
 use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
-use crate::evm_circuit::util::{CachedRegion, Cell};
+use crate::evm_circuit::util::{not, CachedRegion, Cell};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::CallContextFieldTag;
 use eth_types::Field;
@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
 
         // When it is an internal call, need to restore caller's state as finishing this
         // call. Restore caller state to next StepState.
-        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
+        let restore_context = cb.condition(not::expr(cb.curr.state.is_root.expr()), |cb| {
             RestoreContextGadget::construct(
                 cb,
                 0.expr(),
