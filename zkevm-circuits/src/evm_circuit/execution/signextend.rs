@@ -8,7 +8,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            select, sum, CachedRegion, Cell, Word,
+            rlc, select, sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -17,10 +17,7 @@ use crate::{
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SignextendGadget<F> {
@@ -111,10 +108,8 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         // enabled need to be changed to the sign byte.
         // When a byte was selected all the **following** bytes need to be
         // replaced (hence the `selectors[idx - 1]`).
-        let powers_of_randomness: [Expression<F>; 31] =
-            cb.challenges().evm_word_powers_of_randomness();
-        let result = Word::random_linear_combine_expr(
-            array_init(|idx| {
+        let result = rlc::expr(
+            &array_init::<_, _, 32>(|idx| {
                 if idx == 0 {
                     value.cells[idx].expr()
                 } else {
@@ -125,7 +120,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
                     )
                 }
             }),
-            &powers_of_randomness,
+            cb.challenges().evm_word(),
         );
 
         // Pop the byte index and the value from the stack, push the result on
@@ -210,7 +205,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, ToLittleEndian, Word};
     use mock::TestContext;
 
@@ -222,13 +217,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

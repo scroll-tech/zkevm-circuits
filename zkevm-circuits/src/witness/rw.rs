@@ -6,11 +6,11 @@ use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256}
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
-use crate::util::build_tx_log_address;
-use crate::{
-    evm_circuit::util::RandomLinearCombination,
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+use crate::evm_circuit::util::rlc;
+use crate::table::{
+    AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag,
 };
+use crate::util::build_tx_log_address;
 
 /// Rw constainer for a witness block
 #[derive(Debug, Default, Clone)]
@@ -343,8 +343,8 @@ impl Rw {
             id: F::from(self.id().unwrap_or_default() as u64),
             address: self.address().unwrap_or_default().to_scalar().unwrap(),
             field_tag: F::from(self.field_tag().unwrap_or_default() as u64),
-            storage_key: RandomLinearCombination::random_linear_combine(
-                self.storage_key().unwrap_or_default().to_le_bytes(),
+            storage_key: rlc::value(
+                &self.storage_key().unwrap_or_default().to_le_bytes(),
                 randomness,
             ),
             value: self.value_assignment(randomness),
@@ -365,8 +365,8 @@ impl Rw {
             address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
             field_tag: Value::known(F::from(self.field_tag().unwrap_or_default() as u64)),
             storage_key: randomness.map(|randomness| {
-                RandomLinearCombination::random_linear_combine(
-                    self.storage_key().unwrap_or_default().to_le_bytes(),
+                rlc::value(
+                    &self.storage_key().unwrap_or_default().to_le_bytes(),
                     randomness,
                 )
             }),
@@ -529,10 +529,7 @@ impl Rw {
                     // Only these two tags have values that may not fit into a scalar, so we need to
                     // RLC.
                     CallContextFieldTag::CodeHash | CallContextFieldTag::Value => {
-                        RandomLinearCombination::random_linear_combine(
-                            value.to_le_bytes(),
-                            randomness,
-                        )
+                        rlc::value(&value.to_le_bytes(), randomness)
                     }
                     _ => value.to_scalar().unwrap(),
                 }
@@ -541,20 +538,18 @@ impl Rw {
                 value, field_tag, ..
             } => match field_tag {
                 AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
-                    RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
+                    rlc::value(&value.to_le_bytes(), randomness)
                 }
                 AccountFieldTag::Nonce | AccountFieldTag::NonExisting => value.to_scalar().unwrap(),
             },
             Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
-                RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
+                rlc::value(&value.to_le_bytes(), randomness)
             }
 
             Self::TxLog {
                 field_tag, value, ..
             } => match field_tag {
-                TxLogFieldTag::Topic => {
-                    RandomLinearCombination::random_linear_combine(value.to_le_bytes(), randomness)
-                }
+                TxLogFieldTag::Topic => rlc::value(&value.to_le_bytes(), randomness),
                 _ => value.to_scalar().unwrap(),
             },
 
@@ -574,20 +569,14 @@ impl Rw {
                 ..
             } => Some(match field_tag {
                 AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
-                    RandomLinearCombination::random_linear_combine(
-                        value_prev.to_le_bytes(),
-                        randomness,
-                    )
+                    rlc::value(&value_prev.to_le_bytes(), randomness)
                 }
                 AccountFieldTag::Nonce | AccountFieldTag::NonExisting => {
                     value_prev.to_scalar().unwrap()
                 }
             }),
             Self::AccountStorage { value_prev, .. } => {
-                Some(RandomLinearCombination::random_linear_combine(
-                    value_prev.to_le_bytes(),
-                    randomness,
-                ))
+                Some(rlc::value(&value_prev.to_le_bytes(), randomness))
             }
             Self::TxAccessListAccount { is_warm_prev, .. }
             | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
@@ -610,10 +599,7 @@ impl Rw {
         match self {
             Self::AccountStorage {
                 committed_value, ..
-            } => Some(RandomLinearCombination::random_linear_combine(
-                committed_value.to_le_bytes(),
-                randomness,
-            )),
+            } => Some(rlc::value(&committed_value.to_le_bytes(), randomness)),
             _ => None,
         }
     }

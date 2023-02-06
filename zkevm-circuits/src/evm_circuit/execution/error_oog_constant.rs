@@ -152,15 +152,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::run_test_circuit, test::run_test_circuit_geth_data_default, witness::block_convert,
-    };
+
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
-        geth_types::GethData, Address, ToWord, Word,
+        Address, ToWord, Word,
     };
-    use halo2_proofs::halo2curves::bn256::Fr;
 
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
@@ -192,7 +190,7 @@ mod test {
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(code),
             |mut txs, _accs| {
@@ -206,12 +204,12 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
+    // TODO: Use `mock` crate
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
         let from = MOCK_ACCOUNTS[1];
         let to = MOCK_ACCOUNTS[0];
@@ -284,7 +282,7 @@ mod test {
     }
 
     fn oog_constant_internal_call(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -309,15 +307,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(run_test_circuit(block), Ok(()));
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     fn callee(code: Bytecode) -> Account {

@@ -121,7 +121,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             selector,
             rw_table.storage_key,
             lookups,
-            power_of_randomness.clone(),
+            challenges.evm_word(),
         );
 
         let initial_value = meta.advice_column_in(SecondPhase);

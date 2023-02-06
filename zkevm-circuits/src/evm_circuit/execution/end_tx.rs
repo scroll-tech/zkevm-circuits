@@ -309,23 +309,19 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::run_test_circuit_geth_data;
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{self, bytecode, geth_types::GethData};
-    use halo2_proofs::halo2curves::bn256::Fr;
+    use eth_types::{self, bytecode};
+
     use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
-    fn test_ok(block: GethData) {
-        assert_eq!(
-            run_test_circuit_geth_data::<Fr>(
-                block,
-                CircuitsParams {
-                    max_txs: 4,
-                    ..Default::default()
-                }
-            ),
-            Ok(())
-        );
+    fn test_ok<const NACC: usize, const NTX: usize>(ctx: TestContext<NACC, NTX>) {
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_txs: 5,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]
@@ -366,8 +362,7 @@ mod test {
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into(),
+            .unwrap(),
         );
     }
 }

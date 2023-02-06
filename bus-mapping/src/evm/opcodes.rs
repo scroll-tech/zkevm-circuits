@@ -420,6 +420,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             "call.address {:?} callee_account {:?}",
             call.address, callee_account
         );
+
         (
             callee_code_hash.to_word(),
             callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,

@@ -19,7 +19,7 @@ url = "2.2.2"
 pretty_assertions = "1.0.0"
 log = "0.4.14"
 env_logger = "0.9"
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_01_20" }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
 hex = "0.4.3"
 strum = "0.24.1"
 rand_chacha = "0.3"

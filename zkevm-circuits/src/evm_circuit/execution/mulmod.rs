@@ -163,12 +163,12 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::evm_types::Stack;
     use eth_types::{bytecode, Word, U256};
     use mock::TestContext;
 
-    fn test(a: Word, b: Word, n: Word, r: Option<Word>) -> bool {
+    fn test(a: Word, b: Word, n: Word, r: Option<Word>, ok: bool) {
         let bytecode = bytecode! {
             PUSH32(n)
             PUSH32(b)
@@ -188,68 +188,85 @@ mod test {
                 .unwrap();
             last.stack = Stack::from_vec(vec![r]);
         }
-        run_test_circuits(ctx, None).is_ok()
+
+        let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
+        if !ok {
+            ctb = ctb.evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
+                assert!(prover
+                    .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
+                    .is_err())
+            }));
+        };
+        ctb.run()
     }
 
-    fn test_u32(a: u32, b: u32, n: u32, r: Option<u32>) -> bool {
-        test(a.into(), b.into(), n.into(), r.map(Word::from))
+    fn test_ok_u32(a: u32, b: u32, n: u32, r: Option<u32>) {
+        test(a.into(), b.into(), n.into(), r.map(Word::from), true)
+    }
+
+    fn test_ko_u32(a: u32, b: u32, n: u32, r: Option<u32>) {
+        test(a.into(), b.into(), n.into(), r.map(Word::from), false)
     }
 
     #[test]
     fn mulmod_simple() {
-        assert!(test_u32(7, 12, 10, None));
-        assert!(test_u32(7, 1, 10, None));
+        test_ok_u32(7, 12, 10, None);
+        test_ok_u32(7, 1, 10, None);
     }
 
     #[test]
     fn mulmod_edge() {
-        assert!(test(
+        test(
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
-            None
-        ));
-        assert!(test(
+            None,
+            true,
+        );
+        test(
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0x00000000000000000000000000000000000000000001", 16).unwrap(),
-            None
-        ));
-        assert!(test(
+            None,
+            true,
+        );
+        test(
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0x00000000000000000000000000000000000000000000", 16).unwrap(),
-            None
-        ));
-        assert!(test(
+            None,
+            true,
+        );
+        test(
             U256::from_str_radix("0xfffffffffffffffffffffffffffffffffffffffffffe", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
-            None
-        ));
+            None,
+            true,
+        );
     }
 
     #[test]
     fn mulmod_division_by_zero() {
-        assert!(test_u32(7, 1, 0, None));
+        test_ok_u32(7, 1, 0, None);
     }
 
     #[test]
     fn mulmod_bad_r_on_nonzero_n() {
-        assert!(test_u32(7, 18, 10, Some(6)));
-        assert!(!test_u32(7, 18, 10, Some(7)));
-        assert!(!test_u32(7, 18, 10, Some(5)));
+        test_ok_u32(7, 18, 10, Some(6));
+        test_ko_u32(7, 18, 10, Some(7));
+        test_ko_u32(7, 18, 10, Some(5));
     }
 
     #[test]
     fn mulmod_bad_r_on_zero_n() {
-        assert!(test_u32(2, 3, 0, Some(0)));
-        assert!(!test_u32(2, 3, 0, Some(1)));
+        test_ok_u32(2, 3, 0, Some(0));
+        test_ko_u32(2, 3, 0, Some(1));
     }
 
     #[test]
     fn mulmod_bad_r_bigger_n() {
-        assert!(test_u32(2, 3, 5, Some(1)));
-        assert!(!test_u32(2, 3, 5, Some(5)));
+        test_ok_u32(2, 3, 5, Some(1));
+        test_ko_u32(2, 3, 5, Some(5));
     }
 }

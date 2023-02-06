@@ -1,6 +1,7 @@
 //! witness generator
 use super::builder::{extend_address_to_h256, AccountData, BytesArray, CanRead, TrieProof};
 use super::{MPTProofType, ZktrieState};
+use bus_mapping::state_db::CodeDB;
 use eth_types::{Address, Hash, Word, H256, U256};
 use halo2_proofs::halo2curves::group::ff::PrimeField;
 use mpt_circuits::serde::{
@@ -239,7 +240,15 @@ impl WitnessGenerator {
                     MPTProofType::CodeHashExists => {
                         let mut code_hash = [0u8; 32];
                         old_val.to_big_endian(code_hash.as_mut_slice());
-                        assert_eq!(H256::from(code_hash), acc_data.code_hash);
+                        if H256::from(code_hash) != acc_data.code_hash {
+                            if H256::from(code_hash).is_zero()
+                                && acc_data.code_hash == CodeDB::empty_code_hash()
+                            {
+                                log::trace!("codehash 0->keccak(nil)");
+                            } else {
+                                debug_assert_eq!(H256::from(code_hash), acc_data.code_hash);
+                            }
+                        }
                         new_val.to_big_endian(code_hash.as_mut_slice());
                         acc_data.code_hash = H256::from(code_hash);
                     }

@@ -254,14 +254,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::run_test_circuit;
-    use crate::evm_circuit::witness::block_convert;
-    use crate::test_util::run_test_circuits;
+
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode::Bytecode;
     use eth_types::evm_types::OpcodeId;
     use eth_types::geth_types::Account;
     use eth_types::{address, bytecode, Address, ToWord, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+
     use mock::TestContext;
 
     fn test_invalid_jump(destination: usize, out_of_range: bool) {
@@ -279,13 +278,10 @@ mod test {
             STOP
         });
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]
@@ -440,7 +436,7 @@ mod test {
     }
 
     fn test_ok(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -465,15 +461,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(run_test_circuit(block), Ok(()));
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     fn test_invalid_jumpi(destination: usize) {
@@ -492,13 +482,10 @@ mod test {
             STOP
         });
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

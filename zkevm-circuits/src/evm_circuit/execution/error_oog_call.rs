@@ -220,14 +220,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
+
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{address, bytecode};
     use eth_types::{bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account};
     use eth_types::{Address, ToWord, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+
     use itertools::Itertools;
     use mock::TestContext;
-    use pretty_assertions::assert_eq;
+
     use std::default::Default;
 
     #[derive(Clone, Copy, Debug, Default)]
@@ -284,7 +285,7 @@ mod test {
 
     fn test_oog(caller: Account, callee: Account, is_root: bool) {
         let tx_gas = if is_root { 21100 } else { 25000 };
-        let block = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -309,15 +310,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(run_test_circuit(block), Ok(()));
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]

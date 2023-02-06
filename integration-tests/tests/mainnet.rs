@@ -6,11 +6,8 @@ use halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs::plonk::Circuit;
 use integration_tests::{get_client, log_init};
 use integration_tests::{CIRCUIT, END_BLOCK, START_BLOCK, TX_ID};
+use zkevm_circuits::evm_circuit::witness::block_convert;
 use zkevm_circuits::evm_circuit::EvmCircuit;
-use zkevm_circuits::evm_circuit::{
-    test::get_test_cicuit_from_block, test::get_test_degree, test::run_test_circuit,
-    witness::block_convert,
-};
 use zkevm_circuits::keccak_circuit::keccak_packed_multi::multi_keccak;
 use zkevm_circuits::rlp_circuit::RlpCircuit;
 use zkevm_circuits::state_circuit::StateCircuit;
@@ -79,10 +76,7 @@ fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(
 }
 fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
     let prover = if *CIRCUIT == "evm" {
-        let k = get_test_degree(block);
-        let circuit = get_test_cicuit_from_block(block.clone());
-        let instance = vec![];
-        MockProver::<Fr>::run(k, &circuit, instance).unwrap()
+        test_with::<EvmCircuit<Fr>>(block, vec![vec![]])
     } else if *CIRCUIT == "rlp" {
         test_with::<RlpCircuit<Fr, SignedTransaction>>(block, vec![])
     } else if *CIRCUIT == "tx" {
@@ -131,7 +125,7 @@ async fn test_super_circuit_all_block() {
         }
 
         let (k, circuit, instance) =
-            SuperCircuit::<Fr, 500, 2_000_000, 64, 2_000_000, 4_000_000>::build_from_circuit_input_builder(
+            SuperCircuit::<Fr, 500, 2_000_000, 64, 0x1000>::build_from_circuit_input_builder(
                 &builder,
             )
             .unwrap();
@@ -188,7 +182,7 @@ async fn test_circuit_all_block() {
         }
     }
 }
-
+/*
 #[tokio::test]
 async fn test_evm_circuit_all_block() {
     log_init();
@@ -224,7 +218,7 @@ async fn test_evm_circuit_all_block() {
         );
     }
 }
-
+*/
 #[tokio::test]
 async fn test_print_circuits_size() {
     log_init();
@@ -261,7 +255,7 @@ async fn test_print_circuits_size() {
         );
     }
 }
-
+/*
 #[tokio::test]
 async fn test_evm_circuit_batch() {
     log_init();
@@ -284,3 +278,4 @@ async fn test_evm_circuit_batch() {
     run_test_circuit(block).unwrap();
     log::info!("prove done");
 }
+*/

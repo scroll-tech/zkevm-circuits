@@ -10,7 +10,7 @@ ethers-core = "0.17.0"
 ethers-signers = "0.17.0"
 hex = "0.4"
 lazy_static = "1.4"
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_01_20" }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
 regex = "1.5.4"
 serde = {version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.66"
