@@ -353,6 +353,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 is_byte_to_header(meta),
             ]))
         });
+        #[cfg(feature = "codehash")]
         meta.lookup_any(
             "keccak256_table_lookup(cur.value_rlc, cur.length, cur.hash)",
             |meta| {
@@ -435,9 +436,21 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             .evm_word()
             .map(|challenge| rlc::value(EMPTY_HASH_LE.as_ref(), challenge));
 
+        let mut is_first_time = true;
         layouter.assign_region(
             || "assign bytecode",
             |mut region| {
+                if is_first_time {
+                    is_first_time = false;
+                    self.set_padding_row(
+                        &mut region,
+                        &push_data_left_is_zero_chip,
+                        empty_hash,
+                        last_row_offset,
+                        last_row_offset,
+                    )?;
+                    return Ok(());
+                }
                 let mut offset = 0;
                 for bytecode in witness.iter() {
                     self.assign_bytecode(
@@ -775,7 +788,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load_aux_tables(layouter)?;
-        config.assign_internal(layouter, self.size, &self.bytecodes, challenges, false)
+        config.assign_internal(layouter, self.size, &self.bytecodes, challenges, true)
     }
 }
 

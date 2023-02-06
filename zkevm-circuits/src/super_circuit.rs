@@ -513,8 +513,6 @@ impl<
 
         self.rlp_circuit
             .synthesize_sub(&config.rlp_circuit, challenges, layouter)?;
-        self.tx_circuit
-            .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
         // load both poseidon table and zktrie table
         #[cfg(feature = "zktrie")]
         {

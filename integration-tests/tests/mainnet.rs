@@ -1,4 +1,5 @@
 use bus_mapping::circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams};
+use bus_mapping::Error::JSONRpcError;
 use halo2_proofs::circuit::Value;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::dev::VerifyFailure;
@@ -114,7 +115,12 @@ async fn test_super_circuit_all_block() {
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let builder = cli.gen_inputs(block_num).await;
         if builder.is_err() {
-            log::error!("invalid builder {} {:?}, err num NA", block_num, builder);
+            let err = builder.err().unwrap();
+            let err_msg = match err {
+                JSONRpcError(_json_rpc_err) => "JSONRpcError".to_string(), // too long...
+                _ => format!("{err:?}"),
+            };
+            log::error!("invalid builder {} {:?}, err num NA", block_num, err_msg);
             continue;
         }
         let builder = builder.unwrap().0;

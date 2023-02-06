@@ -2,6 +2,7 @@
 
 use std::marker::PhantomData;
 
+use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::Field;
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use gadgets::is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction};
@@ -1311,12 +1312,14 @@ impl<F: Field> RlpCircuitConfig<F> {
                 ];
 
                 for (signed_tx_idx, signed_tx) in signed_txs.iter().enumerate() {
-                    log::debug!(
-                        "rlp circuit assign {}th tx at offset:{}, tx hash {:?}",
-                        signed_tx_idx,
-                        offset,
-                        signed_tx.tx.hash
-                    );
+                    if signed_tx.tx.hash != get_dummy_tx_hash(signed_tx.tx.chain_id) {
+                        log::debug!(
+                            "rlp circuit assign {}th tx at offset:{}, tx hash {:?}",
+                            signed_tx_idx,
+                            offset,
+                            signed_tx.tx.hash
+                        );
+                    }
                     // tx hash (signed tx)
                     let mut all_bytes_rlc_acc = Value::known(F::zero());
                     let tx_hash_rows = signed_tx.gen_witness(challenges);
