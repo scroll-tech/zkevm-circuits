@@ -237,11 +237,8 @@ impl<F: Field> StateCircuitConfig<F> {
         let mut end_state_root: Option<AssignedCell<_, F>> = None;
 
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
-            if offset >= padding_length {
+            if offset == 0 || offset + 1 >= padding_length {
                 log::trace!("state circuit assign offset:{} row:{:?}", offset, row);
-            }
-            if offset + 1 >= n_rows || offset == padding_length {
-                log::debug!("state circuit assign offset:{} row:{:?}", offset, row);
             }
 
             region.assign_fixed(
