@@ -114,7 +114,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         let insufficient_gas_sentry = LtGadget::construct(
             cb,
             cb.curr.state.gas_left.expr(),
-            GasCost::SSTORE_SENTRY.expr(),
+            GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap().expr(),
         );
         cb.require_equal(
             "Gas left is less than gas cost or gas sentry (only for SSTORE)",
@@ -289,7 +289,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             region,
             offset,
             Value::known(F::from(step.gas_left)),
-            Value::known(F::from(GasCost::SSTORE_SENTRY.0)),
+            Value::known(F::from(GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap())),
         )?;
         self.restore_context.assign(
             region,
@@ -484,7 +484,10 @@ mod test {
                 false,
             );
             let mut gas_cost = 2 * OpcodeId::PUSH32.constant_gas_cost().0
-                + max(sstore_gas_cost, GasCost::SSTORE_SENTRY.0);
+                + max(
+                    sstore_gas_cost,
+                    GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap(),
+                );
             if is_warm {
                 bytecode.append(&bytecode! {
                     PUSH32(value)
@@ -498,7 +501,10 @@ mod test {
                     true,
                 );
                 gas_cost += 2 * OpcodeId::PUSH32.constant_gas_cost().0
-                    + max(sstore_gas_cost, GasCost::SSTORE_SENTRY.0);
+                    + max(
+                        sstore_gas_cost,
+                        GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap(),
+                    );
             }
 
             Self {
