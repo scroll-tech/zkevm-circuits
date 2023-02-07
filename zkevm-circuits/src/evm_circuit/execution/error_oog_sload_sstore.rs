@@ -8,11 +8,11 @@ use crate::evm_circuit::util::common_gadget::{
 use crate::evm_circuit::util::constraint_builder::Transition::{Delta, Same};
 use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
 use crate::evm_circuit::util::math_gadget::{IsZeroGadget, LtGadget};
-use crate::evm_circuit::util::{select, CachedRegion, Cell};
+use crate::evm_circuit::util::{and, or, select, CachedRegion, Cell};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::CallContextFieldTag;
 use crate::util::Expr;
-use eth_types::evm_types::OpcodeId;
+use eth_types::evm_types::{GasCost, OpcodeId};
 use eth_types::{Field, ToScalar, U256};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
@@ -33,7 +33,9 @@ pub(crate) struct ErrorOOGSloadSstoreGadget<F> {
     rw_counter_end_of_reversion: Cell<F>,
     is_sstore: IsZeroGadget<F>,
     sstore_gas_cost: SstoreGasGadget<F>,
-    insufficient_gas: LtGadget<F, N_BYTES_GAS>,
+    insufficient_gas_cost: LtGadget<F, N_BYTES_GAS>,
+    // Constrain for SSTORE reentrancy sentry.
+    insufficient_gas_sentry: LtGadget<F, N_BYTES_GAS>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -99,8 +101,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             )
         });
 
-        // Verify the amount of gas available is less than the amount of gas cost.
-        let insufficient_gas = LtGadget::construct(
+        let insufficient_gas_cost = LtGadget::construct(
             cb,
             cb.curr.state.gas_left.expr(),
             select::expr(
@@ -109,9 +110,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
                 sload_gas_cost.expr(),
             ),
         );
+        // Constrain for SSTORE reentrancy sentry.
+        let insufficient_gas_sentry = LtGadget::construct(
+            cb,
+            cb.curr.state.gas_left.expr(),
+            GasCost::SSTORE_SENTRY.expr(),
+        );
         cb.require_equal(
-            "Gas left is less than gas cost",
-            insufficient_gas.expr(),
+            "Gas left is less than gas cost or gas sentry (only for SSTORE)",
+            or::expr([
+                insufficient_gas_cost.expr(),
+                and::expr([is_sstore.expr(), insufficient_gas_sentry.expr()]),
+            ]),
             1.expr(),
         );
 
@@ -185,7 +195,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             rw_counter_end_of_reversion,
             is_sstore,
             sstore_gas_cost,
-            insufficient_gas,
+            insufficient_gas_cost,
+            insufficient_gas_sentry,
             restore_context,
         }
     }
@@ -217,10 +228,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         };
 
         log::debug!(
-            "ErrorOutOfGasSloadSstore: is_sstore = {}, gas_left = {}, gas_cost = {}",
+            "ErrorOutOfGasSloadSstore: is_sstore = {}, gas_left = {}, gas_cost = {}, gas_sentry = {}",
             is_sstore,
             step.gas_left,
-            gas_cost
+            gas_cost,
+            if is_sstore { GasCost::SSTORE_SENTRY.0 } else { 0 },
         );
 
         self.opcode
@@ -267,11 +279,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             original_value,
             is_warm,
         )?;
-        self.insufficient_gas.assign_value(
+        self.insufficient_gas_cost.assign_value(
             region,
             offset,
             Value::known(F::from(step.gas_left)),
             Value::known(F::from(gas_cost)),
+        )?;
+        self.insufficient_gas_sentry.assign_value(
+            region,
+            offset,
+            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(GasCost::SSTORE_SENTRY.0)),
         )?;
         self.restore_context.assign(
             region,
@@ -294,6 +312,7 @@ mod test {
     use eth_types::evm_types::{GasCost, OpcodeId};
     use eth_types::{bytecode, Bytecode, ToWord, U256};
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
+    use std::cmp::max;
 
     const TESTING_STORAGE_KEY: U256 = U256([0, 0, 0, 0x030201]);
 
@@ -458,21 +477,28 @@ mod test {
                 PUSH32(key)
                 SSTORE
             };
+            let sstore_gas_cost = cal_sstore_gas_cost_for_assignment(
+                value_prev,
+                original_value,
+                original_value,
+                false,
+            );
             let mut gas_cost = 2 * OpcodeId::PUSH32.constant_gas_cost().0
-                + cal_sstore_gas_cost_for_assignment(
-                    value_prev,
-                    original_value,
-                    original_value,
-                    false,
-                );
+                + max(sstore_gas_cost, GasCost::SSTORE_SENTRY.0);
             if is_warm {
                 bytecode.append(&bytecode! {
                     PUSH32(value)
                     PUSH32(key)
                     SSTORE
                 });
+                let sstore_gas_cost = cal_sstore_gas_cost_for_assignment(
+                    value_prev,
+                    original_value,
+                    original_value,
+                    true,
+                );
                 gas_cost += 2 * OpcodeId::PUSH32.constant_gas_cost().0
-                    + cal_sstore_gas_cost_for_assignment(value, value_prev, original_value, true);
+                    + max(sstore_gas_cost, GasCost::SSTORE_SENTRY.0);
             }
 
             Self {
