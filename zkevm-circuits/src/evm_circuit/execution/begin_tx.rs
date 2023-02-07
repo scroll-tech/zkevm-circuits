@@ -1,15 +1,19 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_GAS,
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
         util::{
+            and,
             common_gadget::TransferWithGasFeeGadget,
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
+            math_gadget::{
+                BinaryNumberGadget, ByteSizeGadget, IsEqualGadget, IsZeroGadget, LtGadget,
+                MulWordByU64Gadget, RangeCheckGadget,
+            },
             not, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -17,11 +21,19 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
     util::Expr,
 };
-use eth_types::{Field, ToLittleEndian, ToScalar};
-use ethers_core::utils::get_contract_address;
-use gadgets::util::or;
-use halo2_proofs::circuit::Value;
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use ethers_core::utils::{get_contract_address, keccak256};
+use gadgets::util::{expr_from_bytes, or, select};
 use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Expression};
+use num::Zero;
+
+/// When calculating the contract address we take:
+///
+/// RLP([tx_caller_address, tx_nonce])
+///
+/// Defines the minimum length of the RLP-encoding.
+const MIN_RLP_LEN_CONTRACT_CREATION_INPUT: usize = 23;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -46,6 +58,14 @@ pub(crate) struct BeginTxGadget<F> {
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
     is_zero_code_hash: IsZeroGadget<F>,
+    // fields to support keccak lookup.
+    tx_caller_address_bytes: [Cell<F>; N_BYTES_ACCOUNT_ADDRESS],
+    caller_nonce_hash_bytes: [Cell<F>; N_BYTES_WORD],
+    tx_nonce_bytes: [Cell<F>; N_BYTES_U64],
+    tx_nonce_is_zero: IsZeroGadget<F>,
+    tx_nonce_lt_128: LtGadget<F, 8>,
+    tx_nonce_byte_size: ByteSizeGadget<F>,
+    tx_nonce_byte_size_cmp: BinaryNumberGadget<F, 4>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -85,10 +105,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
         let call_callee_address = cb.query_cell();
-        cb.condition(tx_is_create.expr(), |_cb| {
-            // TODO: require call_callee_address to be
-            // address(keccak(rlp([tx_caller_address, tx_nonce])))
-        });
         cb.condition(not::expr(tx_is_create.expr()), |cb| {
             cb.require_equal(
                 "Tx to non-zero address",
@@ -113,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
 
         // Increase caller's nonce.
-        // (tx caller's nonce always increases even tx ends with error)
+        // (tx caller's nonce always increases even when tx ends with error)
         cb.account_write(
             tx_caller_address.expr(),
             AccountFieldTag::Nonce,
@@ -121,26 +137,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_nonce.expr(),
             None,
         );
-
-        // TODO: Implement EIP 1559 (currently it only supports legacy
-        // transaction format)
-        // Calculate transaction gas fee
-        let mul_gas_fee_by_gas =
-            MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.expr());
-
-        // TODO: Take gas cost of access list (EIP 2930) into consideration.
-        // Use intrinsic gas
-        /*
-        let intrinsic_gas_cost = select::expr(
-            tx_is_create.expr(),
-            GasCost::CREATION_TX.expr(),
-            GasCost::TX.expr(),
-        ) + tx_call_data_gas_cost.expr();
-        */
-        // Check gas_left is sufficient
-        let intrinsic_gas_cost = cb.query_cell();
-        let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
-        let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
         // Prepare access list of caller and callee
         cb.account_access_list_write(
@@ -158,13 +154,27 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         );
 
-        // Read code_hash of callee
-        let phase2_code_hash = cb.query_cell_phase2();
-        cb.account_read(
-            call_callee_address.expr(),
-            AccountFieldTag::CodeHash,
-            phase2_code_hash.expr(),
+        // TODO: Implement EIP 1559 (currently it only supports legacy
+        // transaction format)
+        // Calculate transaction gas fee
+        let mul_gas_fee_by_gas =
+            MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.expr());
+
+        // TODO: Take gas cost of access list (EIP 2930) into consideration.
+        // Use intrinsic gas
+        // Check gas_left is sufficient
+        let intrinsic_gas_cost = cb.query_cell();
+        cb.require_equal(
+            "calculate intrinsic gas cost",
+            intrinsic_gas_cost.expr(),
+            select::expr(
+                tx_is_create.expr(),
+                GasCost::CREATION_TX.expr(),
+                GasCost::TX.expr(),
+            ) + tx_call_data_gas_cost.expr(),
         );
+        let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
+        let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
         // TODO: If value is 0, skip transfer, just like callop.
         // Transfer value from caller to callee
@@ -177,17 +187,260 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             &mut reversion_info,
         );
 
-        // TODO: Handle creation transaction
-        // TODO: Handle precompiled
+        // Initialise cells/gadgets required for contract deployment case.
+        let phase2_code_hash = cb.query_cell_phase2();
+        // TODO: guard against call to precompiled contracts.
+        cb.condition(not::expr(tx_is_create.expr()), |cb| {
+            cb.account_read(
+                call_callee_address.expr(),
+                AccountFieldTag::CodeHash,
+                phase2_code_hash.expr(),
+            );
+        });
+        let (tx_caller_address_bytes, caller_nonce_hash_bytes, tx_nonce_bytes) = (
+            array_init::array_init(|_| cb.query_byte()),
+            array_init::array_init(|_| cb.query_byte()),
+            array_init::array_init(|_| cb.query_byte()),
+        );
+        let tx_nonce_is_zero = IsZeroGadget::construct(cb, tx_nonce.expr());
+        let tx_nonce_lt_128 = LtGadget::construct(cb, tx_nonce.expr(), 128.expr());
+        let tx_nonce_byte_size = ByteSizeGadget::construct(
+            cb,
+            tx_nonce_bytes
+                .iter()
+                .map(Expr::expr)
+                .chain(std::iter::repeat(0.expr()).take(N_BYTES_WORD - N_BYTES_U64))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        );
+        let tx_nonce_byte_size_cmp =
+            BinaryNumberGadget::construct(cb, tx_nonce_byte_size.byte_size());
+
+        cb.require_equal(
+            "tx caller address equivalence",
+            tx_caller_address.expr(),
+            expr_from_bytes(&tx_caller_address_bytes),
+        );
+        cb.condition(tx_is_create.expr(), |cb| {
+            cb.require_equal(
+                "call callee address equivalence",
+                call_callee_address.expr(),
+                expr_from_bytes(&caller_nonce_hash_bytes[0..N_BYTES_ACCOUNT_ADDRESS]),
+            );
+        });
+        cb.require_equal(
+            "tx nonce equivalence",
+            tx_nonce.expr(),
+            expr_from_bytes(&tx_nonce_bytes),
+        );
+
+        // 1. calculate output_rlc
+        // this is simply RLC(tx_callee_address_bytes, powers_of_randomness)
+        let caller_nonce_hash_exprs: [Expression<F>; N_BYTES_WORD] = caller_nonce_hash_bytes
+            .iter()
+            .map(Expr::expr)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let output_rlc = cb.word_rlc(caller_nonce_hash_exprs);
+        // 2. calculate input_len:
+        // if nonce in [0, 127]: input_len == 23
+        // else: input_len == 23 + byte_size(nonce)
+        let input_len = select::expr(
+            tx_nonce_lt_128.expr(),
+            MIN_RLP_LEN_CONTRACT_CREATION_INPUT.expr(),
+            MIN_RLP_LEN_CONTRACT_CREATION_INPUT.expr() + tx_nonce_byte_size.byte_size(),
+        );
+        // 3. calculate input_rlc:
+        // RLC(RLP([tx_caller_address, tx_nonce]), powers_of_randomness)
+        //
+        // RLP-encoding:
+        //
+        // | prefix | addr-prefix | address  | nonce-prefix | nonce          |
+        // |--------|-------------|----------|--------------|----------------|
+        // | 1-byte | 1-byte      | 20-bytes | 1 byte       | n_bytes(nonce) |
+        //
+        // where:
+        // prefix == 192 + 21 + (1 if nonce < 128 else (1 + byte_size(nonce)))
+        // address-prefix == 148
+        // address == tx_caller_address_bytes
+        // nonce-prefix == if nonce >= 128: 128 + byte_size(nonce)
+        // nonce == tx_nonce_bytes (without trailing zeros)
+        macro_rules! keccak_lookup {
+            // n: minimum number of bytes used to represent tx nonce.
+            // cond: repetitive conditions to guard the lookup.
+            ( $n:expr, $( $cond:expr ),* ) => {
+                cb.condition(
+                    gadgets::util::and::expr([
+                        tx_is_create.expr(),
+                        $(
+                            $cond,
+                        )*
+                    ]),
+                    |cb| {
+                    // populate the RLP([tx_caller_address, tx_nonce]) in little-endian order.
+                    // max length of RLP encoding is 31.
+                    let mut input_exprs =
+                        Vec::with_capacity(MIN_RLP_LEN_CONTRACT_CREATION_INPUT + $n);
+                    // nonce
+                    input_exprs.extend_from_slice(
+                        // tx nonce bytes will be zeros if nonce < 128. So prepending zeros will
+                        // not affect the random linear combination.
+                        tx_nonce_bytes
+                            .iter()
+                            .take($n)
+                            .map(Expr::expr)
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    );
+                    // nonce / nonce-prefix
+                    input_exprs.push(select::expr(
+                        tx_nonce_is_zero.expr(),
+                        128.expr(),
+                        select::expr(
+                            tx_nonce_lt_128.expr(),
+                            tx_nonce.expr(),
+                            128.expr() + tx_nonce_byte_size.byte_size(),
+                        ),
+                    ));
+                    // address
+                    input_exprs.extend_from_slice(
+                        tx_caller_address_bytes
+                            .iter()
+                            .map(Expr::expr)
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    );
+                    // addr-prefix
+                    input_exprs.push(148.expr());
+                    // prefix
+                    input_exprs.push(select::expr(
+                        tx_nonce_lt_128.expr(),
+                        214.expr(),
+                        214.expr() + tx_nonce_byte_size.byte_size(),
+                    ));
+                    let input_exprs: [Expression<F>; MIN_RLP_LEN_CONTRACT_CREATION_INPUT + $n] =
+                        input_exprs.try_into().unwrap();
+                    let input_rlc = cb.keccak_rlc(input_exprs);
+
+                    // 4. keccak table lookup
+                    cb.keccak_table_lookup(input_rlc, input_len.expr(), output_rlc.expr());
+                });
+            };
+        }
+
+        // Cover various cases of keccak lookup guarded by the number of bytes used to
+        // represent transaction's nonce.
+        //
+        // The tx nonce in the RLP-encoding could be n ∈ [0, 8] bytes. Depending on the
+        // byte size of tx nonce, we take `n` byte from the 8-bytes nonce array.
+        keccak_lookup!(0, tx_nonce_lt_128.expr());
+        keccak_lookup!(
+            1,
+            not::expr(tx_nonce_lt_128.expr()),
+            tx_nonce_byte_size_cmp.value_equals(1usize)
+        );
+        keccak_lookup!(2, tx_nonce_byte_size_cmp.value_equals(2usize));
+        keccak_lookup!(3, tx_nonce_byte_size_cmp.value_equals(3usize));
+        keccak_lookup!(4, tx_nonce_byte_size_cmp.value_equals(4usize));
+        keccak_lookup!(5, tx_nonce_byte_size_cmp.value_equals(5usize));
+        keccak_lookup!(6, tx_nonce_byte_size_cmp.value_equals(6usize));
+        keccak_lookup!(7, tx_nonce_byte_size_cmp.value_equals(7usize));
+        keccak_lookup!(8, tx_nonce_byte_size_cmp.value_equals(8usize));
 
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
         let is_zero_code_hash = IsZeroGadget::construct(cb, phase2_code_hash.expr());
         let is_empty_code = or::expr([is_empty_code_hash.expr(), is_zero_code_hash.expr()]);
 
+        cb.condition(not::expr(is_empty_code.expr()), |cb| {
+            cb.require_equal(
+                "code hash equivalence",
+                cb.curr.state.code_hash.expr(),
+                phase2_code_hash.expr(),
+            );
+        });
+
+        // 1. Handle contract creation transaction
+        cb.condition(tx_is_create.expr(), |cb| {
+            cb.account_write(
+                call_callee_address.expr(),
+                AccountFieldTag::Nonce,
+                1.expr(),
+                0.expr(),
+                Some(&mut reversion_info),
+            );
+            for (field_tag, value) in [
+                (CallContextFieldTag::Depth, 1.expr()),
+                (CallContextFieldTag::CallerAddress, tx_caller_address.expr()),
+                (
+                    CallContextFieldTag::CalleeAddress,
+                    call_callee_address.expr(),
+                ),
+                (CallContextFieldTag::CallDataOffset, 0.expr()),
+                (
+                    CallContextFieldTag::CallDataLength,
+                    tx_call_data_length.expr(),
+                ),
+                (CallContextFieldTag::Value, tx_value.expr()),
+                (CallContextFieldTag::IsStatic, 0.expr()),
+                (CallContextFieldTag::LastCalleeId, 0.expr()),
+                (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
+                (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
+                (CallContextFieldTag::IsRoot, 1.expr()),
+                (CallContextFieldTag::IsCreate, 1.expr()),
+                (
+                    CallContextFieldTag::CodeHash,
+                    cb.curr.state.code_hash.expr(),
+                ),
+            ] {
+                cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
+            }
+
+            cb.require_step_state_transition(StepStateTransition {
+                // 23 reads and writes:
+                //   - Write CallContext TxId
+                //   - Write CallContext RwCounterEndOfReversion
+                //   - Write CallContext IsPersistent
+                //   - Write CallContext IsSuccess
+                //   - Write caller Account Nonce
+                //   - Write TxAccessListAccount
+                //   - Write TxAccessListAccount
+                //   - Write Account Balance (Reversible)
+                //   - Write Account Balance (Reversible)
+                //   - Write callee Account Nonce (Reversible)
+                //   - Write CallContext Depth
+                //   - Write CallContext CallerAddress
+                //   - Write CallContext CalleeAddress
+                //   - Write CallContext CallDataOffset
+                //   - Write CallContext CallDataLength
+                //   - Write CallContext Value
+                //   - Write CallContext IsStatic
+                //   - Write CallContext LastCalleeId
+                //   - Write CallContext LastCalleeReturnDataOffset
+                //   - Write CallContext LastCalleeReturnDataLength
+                //   - Write CallContext IsRoot
+                //   - Write CallContext IsCreate
+                //   - Write CallContext CodeHash
+                rw_counter: Delta(23.expr()),
+                call_id: To(call_id.expr()),
+                is_root: To(true.expr()),
+                is_create: To(tx_is_create.expr()),
+                code_hash: To(cb.curr.state.code_hash.expr()),
+                gas_left: To(gas_left.clone()),
+                reversible_write_counter: To(3.expr()),
+                log_id: To(0.expr()),
+                ..StepStateTransition::new_context()
+            });
+        });
+
+        // TODO: 2. Handle call to precompiled contracts.
+
         // TODO: we should use "!tx_is_create && is_empty_code && !(1 <= addr <= 9)".
         // check callop.rs
-        let native_transfer = not::expr(tx_is_create.expr()) * is_empty_code.expr();
+        // 3. Handle call to account with empty code.
+        let native_transfer = and::expr([not::expr(tx_is_create.expr()), is_empty_code.expr()]);
         cb.condition(
             native_transfer.expr() * not::expr(tx_value_is_zero.expr()),
             |cb| {
@@ -230,8 +483,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             });
         });
 
-        let normal_contract_call = not::expr(tx_is_create.expr()) * not::expr(is_empty_code.expr());
-
+        // 4. Handle call to account with non-empty code.
+        let normal_contract_call = and::expr([
+            not::expr(tx_is_create.expr()),
+            not::expr(is_empty_code.expr()),
+        ]);
         cb.condition(normal_contract_call, |cb| {
             // Setup first call's context.
             for (field_tag, value) in [
@@ -259,7 +515,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             }
 
             cb.require_step_state_transition(StepStateTransition {
-                // 22-23 reads and writes:
+                // 23 reads and writes:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
@@ -267,8 +523,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account Nonce
                 //   - Write TxAccessListAccount
                 //   - Write TxAccessListAccount
-                //   - Write Account Balance
-                //   - Write Account Balance
+                //   - Write Account Balance (Reversible)
+                //   - Write Account Balance (Reversible)
                 //   - Read Account CodeHash
                 //   - Write CallContext Depth
                 //   - Write CallContext CallerAddress
@@ -317,6 +573,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             intrinsic_gas_cost,
             is_empty_code_hash,
             is_zero_code_hash,
+            // fields to support keccak lookup.
+            tx_caller_address_bytes,
+            caller_nonce_hash_bytes,
+            tx_nonce_bytes,
+            tx_nonce_is_zero,
+            tx_nonce_lt_128,
+            tx_nonce_byte_size,
+            tx_nonce_byte_size_cmp,
         }
     }
 
@@ -330,14 +594,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
-        let [caller_balance_pair, callee_balance_pair] =
-            [step.rw_indices[8], step.rw_indices[9]].map(|idx| block.rws[idx].account_value_pair());
-        #[allow(clippy::if_same_then_else)]
-        let callee_code_hash = if tx.is_create {
-            //call.code_hash
-            block.rws[step.rw_indices[7]].account_value_pair().0
+
+        let (caller_balance_pair, callee_balance_pair, callee_code_hash) = if tx.is_create {
+            (
+                block.rws[step.rw_indices[7]].account_value_pair(),
+                block.rws[step.rw_indices[8]].account_value_pair(),
+                call.code_hash,
+            )
         } else {
-            block.rws[step.rw_indices[7]].account_value_pair().0
+            (
+                block.rws[step.rw_indices[7]].account_value_pair(),
+                block.rws[step.rw_indices[8]].account_value_pair(),
+                // TODO: handle call to precompiled contracts where we may not have a account read
+                // for code hash.
+                block.rws[step.rw_indices[9]].account_value_pair().0,
+            )
         };
 
         self.tx_id
@@ -416,6 +687,54 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.phase2_code_hash
             .assign(region, offset, region.word_rlc(callee_code_hash))?;
+        for (c, v) in self
+            .tx_caller_address_bytes
+            .iter()
+            .rev()
+            .zip(tx.caller_address.as_bytes().iter())
+        {
+            c.assign(region, offset, Value::known(F::from(*v as u64)))?;
+        }
+        let untrimmed_contract_addr = {
+            let mut stream = rlp::RlpStream::new();
+            stream.begin_list(2);
+            stream.append(&tx.caller_address);
+            stream.append(&eth_types::U256::from(tx.nonce));
+            let rlp_encoding = stream.out().to_vec();
+            keccak256(&rlp_encoding)
+        };
+        for (c, v) in self
+            .caller_nonce_hash_bytes
+            .iter()
+            .rev()
+            .zip(untrimmed_contract_addr.iter())
+        {
+            c.assign(region, offset, Value::known(F::from(*v as u64)))?;
+        }
+        for (c, v) in self
+            .tx_nonce_bytes
+            .iter()
+            .rev()
+            .zip(tx.nonce.to_be_bytes().iter())
+        {
+            c.assign(region, offset, Value::known(F::from(*v as u64)))?;
+        }
+        self.tx_nonce_is_zero
+            .assign(region, offset, F::from(tx.nonce))?;
+        self.tx_nonce_lt_128
+            .assign(region, offset, F::from(tx.nonce), F::from(128u64))?;
+        self.tx_nonce_byte_size
+            .assign(region, offset, tx.nonce.into())?;
+        self.tx_nonce_byte_size_cmp.assign(
+            region,
+            offset,
+            8usize
+                - tx.nonce
+                    .to_be_bytes()
+                    .iter()
+                    .take_while(|b| b.is_zero())
+                    .count(),
+        )?;
         self.is_empty_code_hash.assign_value(
             region,
             offset,
@@ -623,11 +942,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    // TODO: Enable this test once we have support for contract deployment from
-    // BeginTx.
-    #[ignore]
-    #[test]
-    fn begin_tx_deploy() {
+    fn begin_tx_deploy(nonce: u64) {
         let code = bytecode! {
             // [ADDRESS, STOP]
             PUSH32(word!("3000000000000000000000000000000000000000000000000000000000000000"))
@@ -641,11 +956,15 @@ mod test {
         let ctx = TestContext::<1, 1>::new(
             None,
             |accs| {
-                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+                accs[0]
+                    .address(MOCK_ACCOUNTS[0])
+                    .balance(eth(20))
+                    .nonce(nonce.into());
             },
             |mut txs, _accs| {
                 txs[0]
                     .from(MOCK_ACCOUNTS[0])
+                    .nonce(nonce.into())
                     .gas_price(gwei(2))
                     .gas(Word::from(0x10000))
                     .value(eth(2))
@@ -656,5 +975,62 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    #[test]
+    fn begin_tx_deploy_nonce_zero() {
+        begin_tx_deploy(0);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_small_1byte() {
+        begin_tx_deploy(1);
+        begin_tx_deploy(127);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_big_1byte() {
+        begin_tx_deploy(128);
+        begin_tx_deploy(255);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_2bytes() {
+        begin_tx_deploy(0x0100u64);
+        begin_tx_deploy(0x1020u64);
+        begin_tx_deploy(0xffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_3bytes() {
+        begin_tx_deploy(0x010000u64);
+        begin_tx_deploy(0x102030u64);
+        begin_tx_deploy(0xffffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_4bytes() {
+        begin_tx_deploy(0x01000000u64);
+        begin_tx_deploy(0x10203040u64);
+        begin_tx_deploy(0xffffffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_5bytes() {
+        begin_tx_deploy(0x0100000000u64);
+        begin_tx_deploy(0x1020304050u64);
+        begin_tx_deploy(0xffffffffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_6bytes() {
+        begin_tx_deploy(0x010000000000u64);
+        begin_tx_deploy(0x102030405060u64);
+        begin_tx_deploy(0xffffffffffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_7bytes() {
+        begin_tx_deploy(0x01000000000000u64);
+        begin_tx_deploy(0x10203040506070u64);
+        begin_tx_deploy(0xffffffffffffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_8bytes() {
+        begin_tx_deploy(0x0100000000000000u64);
+        begin_tx_deploy(0x1020304050607080u64);
+        begin_tx_deploy(0xfffffffffffffffeu64);
     }
 }

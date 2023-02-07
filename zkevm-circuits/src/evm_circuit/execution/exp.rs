@@ -172,7 +172,16 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         // In order to calculate the dynamic gas cost of the exponentiation operation,
         // we need the byte-size of the exponent, i.e. the minimum number of
         // bytes that can represent the exponent value.
-        let exponent_byte_size = ByteSizeGadget::construct(cb, &exponent_rlc);
+        let exponent_byte_size = ByteSizeGadget::construct(
+            cb,
+            exponent_rlc
+                .cells
+                .iter()
+                .map(Expr::expr)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        );
 
         // Finally we build an expression for the dynamic gas cost.
         let dynamic_gas_cost = 50.expr() * exponent_byte_size.byte_size();

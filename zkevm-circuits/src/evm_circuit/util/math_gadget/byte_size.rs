@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
-        util::{self, constraint_builder::ConstraintBuilder, sum, CachedRegion, Cell},
+        util::{constraint_builder::ConstraintBuilder, sum, CachedRegion, Cell},
     },
     util::Expr,
 };
@@ -24,7 +24,10 @@ pub(crate) struct ByteSizeGadget<F> {
 }
 
 impl<F: Field> ByteSizeGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value_rlc: &util::Word<F>) -> Self {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        values: [Expression<F>; N_BYTES_WORD],
+    ) -> Self {
         let most_significant_nonzero_byte_index = [(); N_BYTES_WORD + 1].map(|()| cb.query_bool());
         cb.require_equal(
             "exactly one cell in indices is 1",
@@ -37,13 +40,12 @@ impl<F: Field> ByteSizeGadget<F> {
             cb.condition(index.expr(), |cb| {
                 cb.require_zero(
                     "more significant bytes are 0",
-                    sum::expr(&value_rlc.cells[i..32]),
+                    sum::expr(&values[i..N_BYTES_WORD]),
                 );
                 if i > 0 {
                     cb.require_equal(
                         "most significant nonzero byte's inverse exists",
-                        value_rlc.cells[i - 1].expr()
-                            * most_significant_nonzero_byte_inverse.expr(),
+                        values[i - 1].expr() * most_significant_nonzero_byte_inverse.expr(),
                         1.expr(),
                     )
                 } else {
@@ -110,6 +112,7 @@ impl<F: Field> ByteSizeGadget<F> {
 mod tests {
     use super::super::test_util::*;
     use super::*;
+    use crate::evm_circuit::util;
     use eth_types::Word;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
@@ -124,7 +127,16 @@ mod tests {
     impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let value_rlc = cb.query_word_rlc();
-            let bytesize_gadget = ByteSizeGadget::<F>::construct(cb, &value_rlc);
+            let bytesize_gadget = ByteSizeGadget::<F>::construct(
+                cb,
+                value_rlc
+                    .cells
+                    .iter()
+                    .map(Expr::expr)
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+            );
             cb.require_equal(
                 "byte size gadget must equal N",
                 bytesize_gadget.byte_size(),
