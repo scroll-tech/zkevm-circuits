@@ -254,6 +254,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         ) {
             // 1. Call to precompiled.
             (false, true, _) => {
+                log::trace!("gupeng - precompiled - {}", geth_steps[0].gas.0);
                 assert!(call.is_success, "call to precompile should not fail");
                 let caller_ctx = state.caller_ctx_mut()?;
                 let code_address = code_address.unwrap();

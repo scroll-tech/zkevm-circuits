@@ -135,6 +135,7 @@ pub enum ExecError {
 
 // TODO: Move to impl block.
 pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
+    log::trace!("gupeng - {error}");
     if error == GETH_ERR_OUT_OF_GAS || error == GETH_ERR_GAS_UINT_OVERFLOW {
         // NOTE: We report a GasUintOverflow error as an OutOfGas error
         let oog_err = match op {

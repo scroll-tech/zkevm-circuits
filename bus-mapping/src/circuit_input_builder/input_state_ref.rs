@@ -1114,6 +1114,7 @@ impl<'a> CircuitInputStateRef<'a> {
         next_step: Option<&GethExecStep>,
     ) -> Result<Option<ExecError>, Error> {
         if let Some(error) = &step.error {
+            log::trace!("gupeng - 11 - geth_current_step = {step:?}");
             return Ok(Some(get_step_reported_error(&step.op, error)));
         }
 
@@ -1144,6 +1145,14 @@ impl<'a> CircuitInputStateRef<'a> {
             OpcodeId::CREATE | OpcodeId::CREATE2 => step.stack.nth_last(0)?,
             _ => Word::zero(),
         };
+
+        log::trace!(
+            "gupeng - 44 - step.op = {}, step.depth = {}, next_depth = {}, next_result = {}",
+            step.op,
+            step.depth,
+            next_depth,
+            next_result
+        );
 
         // Return from a call with a failure
         if step.depth == next_depth + 1 && next_result.is_zero() {
