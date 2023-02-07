@@ -360,7 +360,7 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0940dc441f31689269e10ac70eb1002a3a1d3ad1390e030043662eb7fe4688b"
 dependencies = [
- "block-padding",
+ "block-padding 0.1.5",
  "byte-tools 0.3.1",
  "byteorder",
  "generic-array 0.12.4",
@@ -372,6 +372,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4152116fd6e9dadb291ae18fc1ec3575ed6d84c29642d97890f4b4a3417297e4"
 dependencies = [
+ "block-padding 0.2.1",
  "generic-array 0.14.6",
 ]
 
@@ -392,6 +393,12 @@ checksum = "fa79dedbb091f449f1f39e53edf88d5dbe95f895dae6135a8d7b881fb5af73f5"
 dependencies = [
  "byte-tools 0.3.1",
 ]
+
+[[package]]
+name = "block-padding"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d696c370c750c948ada61c69a0ee2cbbb9c50b1019ddb86d9317157a99c2cae"
 
 [[package]]
 name = "borsh"
@@ -1350,7 +1357,7 @@ checksum = "c9b0705efd4599c15a38151f4721f7bc388306f61084d3bfd50bd07fbca5cb60"
 [[package]]
 name = "ecc"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
 dependencies = [
  "group",
  "integer",
@@ -1364,7 +1371,7 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
 dependencies = [
  "ecc",
  "group",
@@ -2461,11 +2468,12 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0111#9c3cace5fe0ce4fc05a2691a1a5213aebdb8ed89"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0111-halo2-upgrade#1aa8aa43289d9f29c2c8dbd5b2384f56bfd90fff"
 dependencies = [
  "halo2_proofs",
  "hex",
  "lazy_static",
+ "log",
  "num-bigint",
  "poseidon-circuit",
  "rand 0.8.5",
@@ -2496,7 +2504,7 @@ dependencies = [
  "group",
  "halo2_base",
  "halo2_proofs",
- "halo2curves 0.3.1",
+ "halo2curves 0.3.1 (git+https://github.com/jonathanpwang/halo2curves.git)",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2509,14 +2517,14 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-1220#b050cd9085a6ecfe57af19eab45ca2ec9c534f2c"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-0220#ffd33d77b0a5ae42cd14bf46853cc60c0a091621"
 dependencies = [
  "ark-std",
  "blake2b_simd",
  "cfg-if 0.1.10",
  "ff",
  "group",
- "halo2curves 0.2.1 (git+https://github.com/privacy-scaling-explorations/halo2curves?tag=0.2.1)",
+ "halo2curves 0.3.1 (git+https://github.com/privacy-scaling-explorations/halo2curves.git?tag=0.3.1)",
  "log",
  "num-bigint",
  "num-integer",
@@ -2524,6 +2532,7 @@ dependencies = [
  "poseidon",
  "rand_core 0.6.4",
  "rayon",
+ "sha3 0.9.1",
  "subtle",
  "tabbycat",
  "tracing",
@@ -2532,7 +2541,7 @@ dependencies = [
 [[package]]
 name = "halo2curves"
 version = "0.2.1"
-source = "git+https://github.com/privacy-scaling-explorations/halo2curves?tag=0.2.1#f75ed26c961179186e9cec02cc3f841ca9e3fec1"
+source = "git+https://github.com/privacy-scaling-explorations/halo2curves?tag=0.3.0#83c72d49762343ffc9576ca11a2aa615efe1029b"
 dependencies = [
  "ff",
  "group",
@@ -2548,8 +2557,8 @@ dependencies = [
 
 [[package]]
 name = "halo2curves"
-version = "0.2.1"
-source = "git+https://github.com/privacy-scaling-explorations/halo2curves?tag=0.3.0#83c72d49762343ffc9576ca11a2aa615efe1029b"
+version = "0.3.1"
+source = "git+https://github.com/privacy-scaling-explorations/halo2curves.git?tag=0.3.1#9b67e19bca30a35208b0c1b41c1723771e2c9f49"
 dependencies = [
  "ff",
  "group",
@@ -2583,7 +2592,7 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
 dependencies = [
  "group",
  "halo2_proofs",
@@ -2909,7 +2918,7 @@ dependencies = [
 [[package]]
 name = "integer"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
 dependencies = [
  "group",
  "maingate",
@@ -3208,7 +3217,7 @@ dependencies = [
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
 dependencies = [
  "group",
  "halo2wrong",
@@ -3934,14 +3943,14 @@ version = "0.2.0"
 source = "git+https://github.com/appliedzkp/poseidon.git#0b9965fbcd9e03559088b8f68489592286bc55e0"
 dependencies = [
  "group",
- "halo2curves 0.2.1 (git+https://github.com/privacy-scaling-explorations/halo2curves?tag=0.3.0)",
+ "halo2curves 0.2.1",
  "subtle",
 ]
 
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0111#a9ec2633504ac48460b5a72d6d889ae18d55c393"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0111-halo2-upgrade#b6761f8fc778c9851d874aa21fb3c4271071b717"
 dependencies = [
  "bitvec 0.22.3",
  "halo2_proofs",
@@ -4833,6 +4842,18 @@ dependencies = [
  "byte-tools 0.2.0",
  "digest 0.7.6",
  "keccak",
+]
+
+[[package]]
+name = "sha3"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f81199417d4e5de3f04b1e871023acea7389672c4135918f05aa9cbf2f2fa809"
+dependencies = [
+ "block-buffer 0.9.0",
+ "digest 0.9.0",
+ "keccak",
+ "opaque-debug 0.3.0",
 ]
 
 [[package]]

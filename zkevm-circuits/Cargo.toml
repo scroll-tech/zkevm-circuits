@@ -34,10 +34,10 @@ env_logger = "0.9"
 halo2_base = { git = "ssh://git@github.com/scroll-tech/halo2-ecc.git", branch = "halo2-ecc-ecdsa-0129", default-features = false }
 halo2_ecc = { git = "ssh://git@github.com/scroll-tech/halo2-ecc.git", branch = "halo2-ecc-ecdsa-0129",default-features = false  }
 
-ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
-ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
-maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
-integer = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
+ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_02_02" }
+ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_02_02" }
+maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_02_02" }
+integer = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_02_02" }
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 rlp = "0.5.1"

@@ -60,7 +60,6 @@ use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
 use crate::keccak_circuit::keccak_packed_multi::{
     KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs,
 };
-use std::collections::BTreeSet;
 
 #[cfg(feature = "zktrie")]
 use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
@@ -78,7 +77,7 @@ use crate::table::{
     TxTable,
 };
 
-use crate::util::{log2_ceil, SubCircuit, SubCircuitConfig};
+use crate::util::{circuit_stats, log2_ceil, SubCircuit, SubCircuitConfig};
 use crate::witness::{block_convert, Block, SignedTransaction};
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
@@ -144,43 +143,9 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let log_circuit_info = |meta: &mut ConstraintSystem<F>, tag: &'static str| {
-            let rotations = meta
-                .advice_queries
-                .iter()
-                .map(|(_, q)| q.0)
-                .collect::<BTreeSet<i32>>();
-            log::debug!(
-                "circuit info after {} (~total ecmul:{}):
-num_fixed_columns {}
-num_lookups {}
-num_advice_columns {}
-num_instance_columns {}
-num_selectors {}
-num_permutation_columns {}
-degree {}
-num_challenges {}
-max_phase {}
-num_rotation {}
-min_rotation {}
-max_rotation {}",
-                tag,
-                meta.num_advice_columns + 3 * meta.lookups.len() + rotations.len(),
-                meta.num_fixed_columns,
-                meta.lookups.len(),
-                meta.num_advice_columns,
-                meta.num_instance_columns,
-                meta.num_selectors,
-                meta.permutation.columns.len(),
-                meta.degree(),
-                meta.num_challenges(),
-                meta.max_phase(),
-                rotations.len(),
-                rotations.first().cloned().unwrap_or_default(),
-                rotations.last().cloned().unwrap_or_default(),
-            );
+        let log_circuit_info = |meta: &ConstraintSystem<F>, tag: &str| {
+            log::debug!("circuit info after {}: {:#?}", tag, circuit_stats(meta));
         };
-
         let tx_table = TxTable::construct(meta);
         log_circuit_info(meta, "tx table");
         let rw_table = RwTable::construct(meta);

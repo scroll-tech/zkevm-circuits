@@ -18,7 +18,7 @@ members = [
 funty = { git = "https://github.com/ferrilab/funty/", rev = "7ef0d890fbcd8b3def1635ac1a877fc298488446" }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-1220" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0220" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]
