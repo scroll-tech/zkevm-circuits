@@ -10,6 +10,7 @@ use eth_types::{Field, ToBigEndian, Word};
 use eth_types::{Hash, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
+use mock::MOCK_CHAIN_ID;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -42,7 +43,7 @@ const ZERO_BYTE_GAS_COST: u64 = 4;
 const NONZERO_BYTE_GAS_COST: u64 = 16;
 
 /// PublicData contains all the values that the PiCircuit recieves as input
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PublicData {
     /// chain id
     pub chain_id: Word,
@@ -52,6 +53,17 @@ pub struct PublicData {
     pub block_ctxs: BlockContexts,
     /// Previous State Root
     pub prev_state_root: Hash,
+}
+
+impl Default for PublicData {
+    fn default() -> Self {
+        PublicData {
+            chain_id: *MOCK_CHAIN_ID,
+            transactions: vec![],
+            prev_state_root: H256::zero(),
+            block_ctxs: Default::default(),
+        }
+    }
 }
 
 impl PublicData {
@@ -605,7 +617,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 state_roots.end_state_root.0,
             )?;
         } else {
-            log::warn!("state roots are not set, skip");
+            log::warn!("state roots are not set, skip connection with state circuit");
         }
 
         // assign tx hashes
@@ -1080,7 +1092,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
 #[cfg(test)]
 mod pi_circuit_test {
     use super::*;
-
     use crate::witness::block_convert;
     use bus_mapping::mock::BlockData;
     use eth_types::bytecode;

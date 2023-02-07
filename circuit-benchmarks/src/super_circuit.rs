@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::geth_types::GethData;
     use eth_types::{address, bytecode, Word};
     use ethers_signers::LocalWallet;
@@ -71,8 +72,24 @@ mod tests {
 
         block.sign(&wallets);
 
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+        const MAX_INNER_BLOCKS: usize = 64;
+        let circuits_params = CircuitsParams {
+            max_txs: MAX_TXS,
+            max_calldata: MAX_CALLDATA,
+            max_rws: 256,
+            max_copy_rows: 256,
+            max_bytecode: 512,
+            max_inner_blocks: MAX_INNER_BLOCKS,
+            keccak_padding: None,
+        };
         let (_, circuit, instance, _) =
-            SuperCircuit::<_, 1, 32, 64, 512, 512>::build(block).unwrap();
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>::build(
+                block,
+                circuits_params,
+            )
+            .unwrap();
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation
@@ -97,7 +114,7 @@ mod tests {
             Challenge255<G1Affine>,
             ChaChaRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            SuperCircuit<Fr, 1, 32, 64, 512, 512>,
+            SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>,
         >(
             &general_params,
             &pk,

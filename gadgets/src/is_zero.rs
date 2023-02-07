@@ -155,7 +155,7 @@ mod test {
     use std::marker::PhantomData;
 
     macro_rules! try_test_circuit {
-        ($values:expr, $checks:expr, $result:expr) => {{
+        ($values:expr, $checks:expr) => {{
             // let k = usize::BITS - $values.len().leading_zeros();
 
             // TODO: remove zk blinding factors in halo2 to restore the
@@ -167,7 +167,7 @@ mod test {
                 _marker: PhantomData,
             };
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
-            assert_eq!(prover.verify(), $result);
+            prover.assert_satisfied()
         }};
     }
 
@@ -184,7 +184,7 @@ mod test {
                 _marker: PhantomData,
             };
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
-            assert!(prover.verify().is_err());
+            assert!(prover.verify_par().is_err());
         }};
     }
 
@@ -304,15 +304,10 @@ mod test {
         }
 
         // ok
-        try_test_circuit!(
-            vec![1, 2, 3, 4, 5],
-            vec![false, false, false, false],
-            Ok(())
-        );
+        try_test_circuit!(vec![1, 2, 3, 4, 5], vec![false, false, false, false]);
         try_test_circuit!(
             vec![1, 2, 2, 3, 3], //
-            vec![false, true, false, true],
-            Ok(())
+            vec![false, true, false, true]
         );
         // error
         try_test_circuit_error!(vec![1, 2, 3, 4, 5], vec![true, true, true, true]);
@@ -438,16 +433,8 @@ mod test {
         }
 
         // ok
-        try_test_circuit!(
-            vec![(1, 2), (3, 4), (5, 6)],
-            vec![false, false, false],
-            Ok(())
-        );
-        try_test_circuit!(
-            vec![(1, 1), (3, 4), (6, 6)],
-            vec![true, false, true],
-            Ok(())
-        );
+        try_test_circuit!(vec![(1, 2), (3, 4), (5, 6)], vec![false, false, false]);
+        try_test_circuit!(vec![(1, 1), (3, 4), (6, 6)], vec![true, false, true]);
         // error
         try_test_circuit_error!(vec![(1, 2), (3, 4), (5, 6)], vec![true, true, true]);
         try_test_circuit_error!(vec![(1, 1), (3, 4), (6, 6)], vec![false, true, false]);

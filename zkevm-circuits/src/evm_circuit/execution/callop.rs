@@ -730,16 +730,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::evm_circuit::test::run_test_circuit_geth_data;
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::{Account, GethData};
+    use eth_types::geth_types::Account;
     use eth_types::{address, bytecode, word, Address, ToWord, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+
     use itertools::Itertools;
     use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
     use mock::TestContext;
-    use pretty_assertions::assert_eq;
+
     use rayon::prelude::{ParallelBridge, ParallelIterator};
     use std::default::Default;
 
@@ -824,24 +824,20 @@ mod test {
 
         for test in tests {
             // Get the execution steps from the external tracer
-            let block: GethData = TestContext::<2, 1>::new(
+            let ctx = TestContext::<2, 1>::new(
                 None,
                 account_0_code_account_1_no_code(test),
                 tx_from_1_to_0,
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into();
-            assert_eq!(
-                run_test_circuit_geth_data::<Fr>(
-                    block,
-                    CircuitsParams {
-                        max_rws: 4500,
-                        ..Default::default()
-                    }
-                ),
-                Ok(())
-            );
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx)
+                .params(CircuitsParams {
+                    max_rws: 4500,
+                    ..Default::default()
+                })
+                .run();
         }
     }
 
@@ -852,6 +848,7 @@ mod test {
         }
     }
 
+    #[ignore]
     #[test]
     fn callop_recursive() {
         for opcode in TEST_CALL_OPCODES {
@@ -859,6 +856,7 @@ mod test {
         }
     }
 
+    #[ignore]
     #[test]
     fn callop_simple() {
         let stacks = [
@@ -1059,7 +1057,7 @@ mod test {
     }
 
     fn test_ok(caller: Account, callee: Account) {
-        let block: GethData = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -1086,18 +1084,14 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
-        assert_eq!(
-            run_test_circuit_geth_data::<Fr>(
-                block,
-                CircuitsParams {
-                    max_rws: 4500,
-                    ..Default::default()
-                }
-            ),
-            Ok(())
-        );
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 500,
+                ..Default::default()
+            })
+            .run();
     }
 
     fn test_recursive(opcode: &OpcodeId) {

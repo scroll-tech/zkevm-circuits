@@ -23,30 +23,52 @@ use rand_core::RngCore;
 use rand_xorshift::XorShiftRng;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use zkevm_circuits::bytecode_circuit::bytecode_unroller::BytecodeCircuit;
+use zkevm_circuits::bytecode_circuit::circuit::BytecodeCircuit;
 use zkevm_circuits::copy_circuit::CopyCircuit;
-use zkevm_circuits::evm_circuit::test::get_test_degree;
-use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
+use zkevm_circuits::evm_circuit::witness::block_convert;
 use zkevm_circuits::state_circuit::StateCircuit;
-use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::TxCircuit;
 use zkevm_circuits::util::SubCircuit;
 use zkevm_circuits::witness::Block;
 
+/// TEST_MOCK_RANDOMNESS
+pub const TEST_MOCK_RANDOMNESS: u64 = 0x100;
+
+/// MAX_TXS
+pub const MAX_TXS: usize = 4;
+/// MAX_CALLDATA
+pub const MAX_CALLDATA: usize = 512;
+/// MAX_RWS
+pub const MAX_RWS: usize = 5888;
+/// MAX_BYTECODE
+pub const MAX_BYTECODE: usize = 5000;
+/// MAX_COPY_ROWS
+pub const MAX_COPY_ROWS: usize = 5888;
+/// MAX_INNER_BLOCKS
+pub const MAX_INNER_BLOCKS: usize = 64;
+
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
-    max_rws: 16384,
-    max_txs: 4,
-    max_calldata: 4000,
+    max_rws: MAX_RWS,
+    max_txs: MAX_TXS,
+    max_calldata: MAX_CALLDATA,
     max_inner_blocks: 64,
-    max_bytecode: 4000,
-    max_copy_rows: 16384,
+    max_bytecode: MAX_BYTECODE,
+    max_copy_rows: MAX_COPY_ROWS,
     keccak_padding: None,
 };
 
-const STATE_CIRCUIT_DEGREE: u32 = 17;
-const TX_CIRCUIT_DEGREE: u32 = 20;
-const BYTECODE_CIRCUIT_DEGREE: u32 = 16;
-const COPY_CIRCUIT_DEGREE: u32 = 16;
+/// EVM Circuit degree
+pub const EVM_CIRCUIT_DEGREE: u32 = 18;
+/// State Circuit degree
+pub const STATE_CIRCUIT_DEGREE: u32 = 17;
+/// Tx Circuit degree
+pub const TX_CIRCUIT_DEGREE: u32 = 20;
+/// Bytecode Circuit degree
+pub const BYTECODE_CIRCUIT_DEGREE: u32 = 16;
+/// Copy Circuit degree
+pub const COPY_CIRCUIT_DEGREE: u32 = 16;
+/// Super Circuit degree
+pub const SUPER_CIRCUIT_DEGREE: u32 = 20;
 
 lazy_static! {
     /// Data generation.
@@ -62,7 +84,8 @@ lazy_static! {
 }
 
 lazy_static! {
-    static ref STATE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
+    /// State Circuit proving key
+    pub static ref STATE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
         let circuit = StateCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(STATE_CIRCUIT_DEGREE);
@@ -71,7 +94,8 @@ lazy_static! {
             keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
-    static ref TX_CIRCUIT_KEY: ProvingKey<G1Affine> = {
+    /// Tx Circuit proving key
+    pub static ref TX_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
         let circuit = TxCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(TX_CIRCUIT_DEGREE);
@@ -80,7 +104,8 @@ lazy_static! {
             keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
-    static ref BYTECODE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
+    /// Bytecode Circuit proving key
+    pub static ref BYTECODE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
         let circuit = BytecodeCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(BYTECODE_CIRCUIT_DEGREE);
@@ -89,7 +114,8 @@ lazy_static! {
             keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
     };
-    static ref COPY_CIRCUIT_KEY: ProvingKey<G1Affine> = {
+    /// Copy Circuit proving key
+    pub static ref COPY_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
         let circuit = CopyCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(COPY_CIRCUIT_DEGREE);
@@ -239,148 +265,24 @@ fn test_mock<C: Circuit<Fr>>(degree: u32, circuit: &C, instance: Vec<Vec<Fr>>) {
         .expect("mock prover verification failed");
 }
 
-/// Integration test for evm circuit.
-pub async fn test_evm_circuit_block(block_num: u64, actual: bool) {
-    log::info!("test evm circuit, block number: {}", block_num);
+/// Integration test generic function
+pub async fn test_circuit_at_block<C: SubCircuit<Fr> + Circuit<Fr>>(
+    circuit_name: &str,
+    degree: u32,
+    block_num: u64,
+    actual: bool,
+    proving_key: Option<ProvingKey<G1Affine>>,
+) {
+    log::info!("test {} circuit, block number: {}", circuit_name, block_num);
     let (builder, _) = gen_inputs(block_num).await;
-
-    let block = block_convert(&builder.block, &builder.code_db).unwrap();
-
-    let degree = get_test_degree(&block);
-    let circuit = get_test_cicuit_from_block(block);
-
-    if actual {
-        test_actual(degree, circuit, vec![], None);
-    } else {
-        test_mock(degree, &circuit, vec![]);
-    }
-}
-
-/// Integration test for state circuit.
-pub async fn test_state_circuit_block(block_num: u64, actual: bool) {
-    log::info!("test state circuit, block number: {}", block_num);
-
-    let (builder, _) = gen_inputs(block_num).await;
-    let block = block_convert(&builder.block, &builder.code_db).unwrap();
-
-    let circuit = StateCircuit::<Fr>::new_from_block(&block);
+    let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
+    block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
+    let circuit = C::new_from_block(&block);
     let instance = circuit.instance();
 
     if actual {
-        test_actual(
-            STATE_CIRCUIT_DEGREE,
-            circuit,
-            instance,
-            Some((*STATE_CIRCUIT_KEY).clone()),
-        );
+        test_actual(degree, circuit, instance, proving_key);
     } else {
-        test_mock(STATE_CIRCUIT_DEGREE, &circuit, instance);
-    }
-}
-
-/// Integration test for tx circuit.
-pub async fn test_tx_circuit_block(block_num: u64, actual: bool) {
-    log::info!("test tx circuit, block number: {}", block_num);
-
-    let (builder, _) = gen_inputs(block_num).await;
-
-    let block = block_convert(&builder.block, &builder.code_db).unwrap();
-    let circuit = TxCircuit::<Fr>::new_from_block(&block);
-
-    if actual {
-        test_actual(
-            TX_CIRCUIT_DEGREE,
-            circuit,
-            vec![vec![]],
-            Some((*TX_CIRCUIT_KEY).clone()),
-        );
-    } else {
-        test_mock(TX_CIRCUIT_DEGREE, &circuit, vec![vec![]]);
-    }
-}
-
-/// Integration test for bytecode circuit.
-pub async fn test_bytecode_circuit_block(block_num: u64, actual: bool) {
-    log::info!("test bytecode circuit, block number: {}", block_num);
-    let (builder, _) = gen_inputs(block_num).await;
-
-    let block = block_convert(&builder.block, &builder.code_db).unwrap();
-    let circuit =
-        BytecodeCircuit::<Fr>::new_from_block_sized(&block, 2usize.pow(BYTECODE_CIRCUIT_DEGREE));
-
-    if actual {
-        test_actual(
-            BYTECODE_CIRCUIT_DEGREE,
-            circuit,
-            Vec::new(),
-            Some((*BYTECODE_CIRCUIT_KEY).clone()),
-        );
-    } else {
-        test_mock(BYTECODE_CIRCUIT_DEGREE, &circuit, Vec::new());
-    }
-}
-
-/// Integration test for copy circuit.
-pub async fn test_copy_circuit_block(block_num: u64, actual: bool) {
-    log::info!("test copy circuit, block number: {}", block_num);
-    let (builder, _) = gen_inputs(block_num).await;
-    let block = block_convert(&builder.block, &builder.code_db).unwrap();
-
-    let circuit = CopyCircuit::<Fr>::new_from_block(&block);
-
-    if actual {
-        test_actual(
-            COPY_CIRCUIT_DEGREE,
-            circuit,
-            vec![],
-            Some((*COPY_CIRCUIT_KEY).clone()),
-        );
-    } else {
-        test_mock(COPY_CIRCUIT_DEGREE, &circuit, vec![]);
-    }
-}
-
-/// Integration test for super circuit.
-pub async fn test_super_circuit_block(block_num: u64) {
-    const MAX_TXS: usize = 4;
-    const MAX_CALLDATA: usize = 512;
-    const MAX_RWS: usize = 5888;
-    const MAX_BYTECODE: usize = 5000;
-    const MAX_INNER_BLOCKS: usize = 64;
-    const MAX_COPY_ROWS: usize = 5888;
-
-    log::info!("test super circuit, block number: {}", block_num);
-    let cli = get_client();
-    let cli = BuilderClient::new(
-        cli,
-        CircuitsParams {
-            max_rws: MAX_RWS,
-            max_txs: MAX_TXS,
-            max_inner_blocks: MAX_INNER_BLOCKS,
-            max_calldata: MAX_CALLDATA,
-            max_bytecode: MAX_BYTECODE,
-            max_copy_rows: MAX_COPY_ROWS,
-            keccak_padding: None,
-        },
-    )
-    .await
-    .unwrap();
-    let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
-    let (k, circuit, instance) = SuperCircuit::<
-        Fr,
-        MAX_TXS,
-        MAX_CALLDATA,
-        MAX_INNER_BLOCKS,
-        MAX_RWS,
-        MAX_COPY_ROWS,
-    >::build_from_circuit_input_builder(&builder)
-    .unwrap();
-    // TODO: add actual prover
-    let prover = MockProver::run(k, &circuit, instance).unwrap();
-    let res = prover.verify_par();
-    if let Err(err) = res {
-        eprintln!("Verification failures:");
-        eprintln!("{:#?}", err);
-        panic!("Failed verification");
+        test_mock(degree, &circuit, instance);
     }
 }

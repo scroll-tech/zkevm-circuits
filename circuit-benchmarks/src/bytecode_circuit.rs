@@ -19,9 +19,9 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::bytecode_circuit::bytecode_unroller::{
-        unroll, BytecodeCircuit, UnrolledBytecode,
-    };
+    use zkevm_circuits::bytecode_circuit::bytecode_unroller::{unroll, UnrolledBytecode};
+
+    use zkevm_circuits::bytecode_circuit::circuit::BytecodeCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]

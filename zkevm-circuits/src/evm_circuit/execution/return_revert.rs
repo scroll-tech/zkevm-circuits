@@ -340,7 +340,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
         Word,
@@ -391,15 +391,10 @@ mod test {
             test_parameters.iter().cartesian_product(&[true, false])
         {
             let code = callee_bytecode(*is_return, *offset, *length);
-            assert_eq!(
-                run_test_circuits(
-                    TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
-                    None
-                ),
-                Ok(()),
-                "(offset, length, is_return) = {:?}",
-                (*offset, *length, *is_return)
-            );
+            CircuitTestBuilder::new_from_test_ctx(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+            )
+            .run();
         }
     }
 
@@ -431,7 +426,7 @@ mod test {
                 ..Default::default()
             };
 
-            let test_context = TestContext::<3, 1>::new(
+            let ctx = TestContext::<3, 1>::new(
                 None,
                 |accs| {
                     accs[0]
@@ -450,18 +445,7 @@ mod test {
             )
             .unwrap();
 
-            assert_eq!(
-                run_test_circuits(test_context, None),
-                Ok(()),
-                "(callee_offset, callee_length, caller_offset, caller_length, is_return) = {:?}",
-                (
-                    *callee_offset,
-                    *callee_length,
-                    *caller_offset,
-                    *caller_length,
-                    *is_return
-                )
-            );
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         }
     }
 
@@ -472,25 +456,19 @@ mod test {
             test_parameters.iter().cartesian_product(&[true, false])
         {
             let tx_input = callee_bytecode(*is_return, *offset, *length).code();
-            assert_eq!(
-                run_test_circuits(
-                    TestContext::<1, 1>::new(
-                        None,
-                        |accs| {
-                            accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
-                        },
-                        |mut txs, accs| {
-                            txs[0].from(accs[0].address).input(tx_input.into());
-                        },
-                        |block, _| block,
-                    )
-                    .unwrap(),
-                    None
-                ),
-                Ok(()),
-                "(offset, length, is_return) = {:?}",
-                (*offset, *length, *is_return),
-            );
+            let ctx = TestContext::<1, 1>::new(
+                None,
+                |accs| {
+                    accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
+                },
+                |mut txs, accs| {
+                    txs[0].from(accs[0].address).input(tx_input.into());
+                },
+                |block, _| block,
+            )
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         }
     }
 
@@ -522,7 +500,7 @@ mod test {
                 ..Default::default()
             };
 
-            let test_context = TestContext::<2, 1>::new(
+            let ctx = TestContext::<2, 1>::new(
                 None,
                 |accs| {
                     accs[0]
@@ -540,12 +518,7 @@ mod test {
             )
             .unwrap();
 
-            assert_eq!(
-                run_test_circuits(test_context, None),
-                Ok(()),
-                "(offset, length, is_return) = {:?}",
-                (*offset, *length, *is_return),
-            );
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         }
     }
 
@@ -578,7 +551,7 @@ mod test {
             ..Default::default()
         };
 
-        let test_context = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -596,6 +569,6 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(test_context, None), Ok(()),);
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

@@ -232,13 +232,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::test::rand_bytes_array;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{
         address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word,
     };
     use lazy_static::lazy_static;
     use mock::TestContext;
-
-    use crate::test_util::run_test_circuits;
 
     lazy_static! {
         static ref EXTERNAL_ADDRESS: Address =
@@ -276,7 +275,7 @@ mod test {
             STOP
         });
 
-        let test_ctx = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -303,7 +302,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(test_ctx, None), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]

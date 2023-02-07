@@ -388,7 +388,7 @@ mod test {
                 _marker: PhantomData,
             };
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
-            assert!(prover.verify().is_ok());
+            prover.assert_satisfied_par()
         }};
     }
 

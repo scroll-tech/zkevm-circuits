@@ -4,7 +4,8 @@ use crate::{
     error::{ExecError, OogError},
     evm::OpcodeId,
     operation::{
-        AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
+        AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
+        TxRefundOp, RW,
     },
     state_db::CodeDB,
     Error,
@@ -57,7 +58,9 @@ mod stop;
 mod swap;
 
 mod error_invalid_jump;
+mod error_invalid_opcode;
 mod error_oog_call;
+mod error_oog_sload_sstore;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -76,8 +79,10 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::Create;
 use dup::Dup;
-use error_invalid_jump::ErrorInvalidJump;
+use error_invalid_jump::InvalidJump;
+use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
+use error_oog_sload_sstore::OOGSloadSstore;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -255,8 +260,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
 
 fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociatedOps> {
     match error {
-        ExecError::InvalidJump => Some(ErrorInvalidJump::gen_associated_ops),
+        ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
+        ExecError::InvalidOpcode => Some(InvalidOpcode::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
+        ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         // more future errors place here
@@ -409,32 +416,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     } + call_data_gas_cost;
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
-    // Get code_hash of callee
-    let (_, callee_account) = state.sdb.get_account(&call.address);
-    let callee_exists = !callee_account.is_empty();
-    let code_hash = callee_account.code_hash;
-    let callee_code_hash = call.code_hash;
-    let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
-        debug_assert_eq!(
-            callee_code_hash, code_hash,
-            "call.address {:?} callee_account {:?}",
-            call.address, callee_account
-        );
-        (
-            callee_code_hash.to_word(),
-            callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
-        )
-    } else {
-        (Word::zero(), true)
-    };
-
-    state.account_read(
-        &mut exec_step,
-        call.address,
-        AccountField::CodeHash,
-        callee_code_hash_word,
-        callee_code_hash_word,
-    )?;
     // Transfer with fee
     state.transfer_with_fee(
         &mut exec_step,
@@ -444,6 +425,35 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         state.tx.gas_price * state.tx.gas,
     )?;
 
+    // Get code_hash of callee
+    let (_, callee_account) = state.sdb.get_account(&call.address);
+    let callee_exists = !callee_account.is_empty();
+    let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
+        (true, _) => (call.code_hash.to_word(), false),
+        (_, true) => {
+            debug_assert_eq!(
+                callee_account.code_hash, call.code_hash,
+                "callee account's code hash: {:?}, call's code hash: {:?}",
+                callee_account.code_hash, call.code_hash
+            );
+            (
+                call.code_hash.to_word(),
+                call.code_hash.to_fixed_bytes() == *EMPTY_HASH,
+            )
+        }
+        (_, false) => (Word::zero(), true),
+    };
+
+    if state.tx.is_create() {
+        state.block.sha3_inputs.push({
+            let mut stream = ethers_core::utils::rlp::RlpStream::new();
+            stream.begin_list(2);
+            stream.append(&caller_address);
+            stream.append(&nonce_prev);
+            stream.out().to_vec()
+        });
+    }
+
     // There are 4 branches from here.
     match (
         call.is_create(),
@@ -452,12 +462,15 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            state.account_write(
+            state.push_op_reversible(
                 &mut exec_step,
-                call.address,
-                AccountField::Nonce,
-                1.into(),
-                0.into(),
+                RW::WRITE,
+                AccountOp {
+                    address: call.address,
+                    field: AccountField::Nonce,
+                    value: 1.into(),
+                    value_prev: 0.into(),
+                },
             )?;
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),
@@ -467,7 +480,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 ),
                 (
                     CallContextField::CalleeAddress,
-                    get_contract_address(call.caller_address, nonce_prev).to_word(),
+                    get_contract_address(caller_address, nonce_prev).to_word(),
                 ),
                 (
                     CallContextField::CallDataOffset,
@@ -484,7 +497,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 1.into()),
-                (CallContextField::CodeHash, call.code_hash.to_word()),
+                (CallContextField::CodeHash, callee_code_hash),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
@@ -496,6 +509,14 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::CodeHash,
+                callee_code_hash,
+                callee_code_hash,
+            )?;
+
             // 3. Call to account with empty code.
             if is_empty_code_hash {
                 // if the transfer values make an account from non-exist to exist
@@ -535,7 +556,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, call.is_create().to_word()),
-                (CallContextField::CodeHash, callee_code_hash_word),
+                (CallContextField::CodeHash, callee_code_hash),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }

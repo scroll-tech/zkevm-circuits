@@ -86,13 +86,8 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        evm_circuit::{test::run_test_circuit, witness::block_convert},
-        test_util::{run_test_circuits, BytecodeTestConfig},
-    };
-    use bus_mapping::mock::BlockData;
-    use eth_types::{address, bytecode, geth_types::GethData, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+    use crate::test_util::CircuitTestBuilder;
+    use eth_types::{address, bytecode, Word};
     use mock::TestContext;
 
     fn test_ok() {
@@ -101,13 +96,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]
@@ -122,10 +114,8 @@ mod test {
             STOP
         };
 
-        let config = BytecodeTestConfig::default();
-
         // Create a custom tx setting Gas to
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -140,26 +130,27 @@ mod test {
                 txs[0]
                     .to(accs[0].address)
                     .from(accs[1].address)
-                    .gas(Word::from(config.gas_limit));
+                    .gas(Word::from(1_000_000u64));
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .expect("could not handle block tx");
-        let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-
-        // The above block has 2 steps (GAS and STOP). We forcefully assign a
-        // wrong `gas_left` value for the second step, to assert that
-        // the circuit verification fails for this scenario.
-        assert_eq!(block.txs.len(), 1);
-        // BeginTx, Gas, Stop, EndTx, EndInnerBlock, EndBlock
-        assert_eq!(block.txs[0].steps.len(), 5);
-        block.txs[0].steps[2].gas_left -= 1;
-        assert!(run_test_circuit(block).is_err());
+        CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
+            .block_modifier(Box::new(|block| {
+                // The above block has 2 steps (GAS and STOP). We forcefully assign a
+                // wrong `gas_left` value for the second step, to assert that
+                // the circuit verification fails for this scenario.
+                assert_eq!(block.txs.len(), 1);
+                // BeginTx, Gas, Stop, EndTx, EndInnerBlock, EndBlock
+                assert_eq!(block.txs[0].steps.len(), 5);
+                block.txs[0].steps[2].gas_left -= 1;
+            }))
+            .evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
+                assert!(prover
+                    .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
+                    .is_err())
+            }))
+            .run();
     }
 }

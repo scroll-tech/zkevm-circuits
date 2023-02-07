@@ -3,22 +3,19 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::SameContextGadget,
+            common_gadget::{SameContextGadget, SloadGasGadget},
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            select, CachedRegion, Cell,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToScalar};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use eth_types::{Field, ToScalar};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SloadGadget<F> {
@@ -140,37 +137,10 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct SloadGasGadget<F> {
-    is_warm: Expression<F>,
-    gas_cost: Expression<F>,
-}
-
-impl<F: Field> SloadGasGadget<F> {
-    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
-        let gas_cost = select::expr(
-            is_warm.expr(),
-            GasCost::WARM_ACCESS.expr(),
-            GasCost::COLD_SLOAD.expr(),
-        );
-
-        Self { is_warm, gas_cost }
-    }
-
-    pub(crate) fn expr(&self) -> Expression<F> {
-        // Return the gas cost
-        self.gas_cost.clone()
-    }
-}
-
 #[cfg(test)]
 mod test {
 
-    use crate::{
-        evm_circuit::test::rand_word,
-        test_util::{run_test_circuits, BytecodeTestConfig},
-    };
-
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
     use mock::{test_ctx::helpers::tx_from_1_to_0, TestContext, MOCK_ACCOUNTS};
 
@@ -211,11 +181,8 @@ mod test {
                 |block, _txs| block,
             )
             .unwrap();
-            let test_config = BytecodeTestConfig {
-                enable_state_circuit_test: true,
-                ..Default::default()
-            };
-            assert_eq!(run_test_circuits(ctx, Some(test_config),), Ok(()));
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         }
     }
 

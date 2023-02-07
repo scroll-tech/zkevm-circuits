@@ -705,7 +705,7 @@ impl<F: Field> RlpU64Gadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, Word,
     };
@@ -714,9 +714,20 @@ mod test {
     use lazy_static::lazy_static;
     use mock::{eth, TestContext};
 
+    use crate::test_util::CircuitTestBuilder;
+
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     lazy_static! {
         static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
+    }
+
+    fn run_test_circuits(ctx: TestContext<2, 1>) {
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 4500,
+                ..Default::default()
+            })
+            .run();
     }
 
     // RETURN or REVERT with data of [0x60; 5]
@@ -809,12 +820,7 @@ mod test {
                 balance: eth(10),
                 ..Default::default()
             };
-            assert_eq!(
-                run_test_circuits(test_context(caller), None),
-                Ok(()),
-                "(is_success, is_create2, is_persistent) = {:?}",
-                (*is_success, *is_create2, *is_persistent),
-            );
+            run_test_circuits(test_context(caller));
         }
     }
 
@@ -828,12 +834,7 @@ mod test {
                 balance: eth(10),
                 ..Default::default()
             };
-            assert_eq!(
-                run_test_circuits(test_context(caller), None),
-                Ok(()),
-                "nonce = {:?}",
-                nonce,
-            );
+            run_test_circuits(test_context(caller))
         }
     }
 
@@ -847,12 +848,7 @@ mod test {
                 balance: eth(10),
                 ..Default::default()
             };
-            assert_eq!(
-                run_test_circuits(test_context(caller), None),
-                Ok(()),
-                "is_create2 = {:?}",
-                is_create2
-            );
+            run_test_circuits(test_context(caller));
         }
     }
 }

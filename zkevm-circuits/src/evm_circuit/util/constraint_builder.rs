@@ -289,8 +289,6 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
     challenges: &'a Challenges<Expression<F>>,
-    word_powers_of_randomness: &'a [Expression<F>; 31],
-    lookup_powers_of_randomness: &'a [Expression<F>; 12],
     execution_state: ExecutionState,
     constraints: Constraints<F>,
     rw_counter_offset: Expression<F>,
@@ -309,8 +307,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         curr: Step<F>,
         next: Step<F>,
         challenges: &'a Challenges<Expression<F>>,
-        word_powers_of_randomness: &'a [Expression<F>; 31],
-        lookup_powers_of_randomness: &'a [Expression<F>; 12],
         execution_state: ExecutionState,
     ) -> Self {
         Self {
@@ -333,8 +329,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             condition: None,
             constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
-            word_powers_of_randomness,
-            lookup_powers_of_randomness,
             max_inner_degree: ("", 0),
         }
     }
@@ -404,7 +398,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_word_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
-        RandomLinearCombination::<F, N>::new(self.query_bytes(), self.word_powers_of_randomness)
+        RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.evm_word())
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
@@ -448,7 +442,11 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn word_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
-        RandomLinearCombination::random_linear_combine_expr(bytes, self.word_powers_of_randomness)
+        rlc::expr(&bytes, self.challenges.evm_word())
+    }
+
+    pub(crate) fn keccak_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
+        rlc::expr(&bytes, self.challenges.keccak_input())
     }
 
     pub(crate) fn empty_hash_rlc(&self) -> Expression<F> {
@@ -647,7 +645,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "Bytecode (length)",
             Lookup::Bytecode {
                 hash: code_hash,
-                tag: BytecodeFieldTag::Length.expr(),
+                tag: BytecodeFieldTag::Header.expr(),
                 index: 0.expr(),
                 is_code: 0.expr(),
                 value,
@@ -886,6 +884,30 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 0.expr(),
             ),
             reversion_info,
+        );
+    }
+
+    pub(crate) fn account_storage_access_list_read(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        storage_key: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "TxAccessListAccountStorage read",
+            false.expr(),
+            RwTableTag::TxAccessListAccountStorage,
+            RwValues::new(
+                tx_id,
+                account_address,
+                0.expr(),
+                storage_key,
+                value.clone(),
+                value,
+                0.expr(),
+                0.expr(),
+            ),
         );
     }
 
@@ -1461,7 +1483,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         };
         let compressed_expr = self.split_expression(
             "Lookup compression",
-            rlc::expr(&lookup.input_exprs(), self.lookup_powers_of_randomness),
+            rlc::expr(&lookup.input_exprs(), self.challenges.lookup_input()),
             MAX_DEGREE - IMPLICIT_DEGREE,
         );
         self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));

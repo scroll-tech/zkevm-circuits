@@ -88,9 +88,10 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::{rand_bytes, run_test_circuit_geth_data_default};
+    use crate::evm_circuit::test::rand_bytes;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{address, bytecode, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+
     use itertools::Itertools;
     use mock::TestContext;
 
@@ -100,8 +101,8 @@ mod test {
             STOP
         };
 
-        let block = if is_root {
-            TestContext::<2, 1>::new(
+        if is_root {
+            let ctx = TestContext::<2, 1>::new(
                 None,
                 |accs| {
                     accs[0]
@@ -121,10 +122,11 @@ mod test {
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into()
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         } else {
-            TestContext::<3, 1>::new(
+            let ctx = TestContext::<3, 1>::new(
                 None,
                 |accs| {
                     accs[0]
@@ -157,10 +159,10 @@ mod test {
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into()
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         };
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
     #[test]

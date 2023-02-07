@@ -26,7 +26,7 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 use halo2_proofs::plonk::SecondPhase;
 
 use crate::{
-    evm_circuit::util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
+    evm_circuit::util::{constraint_builder::BaseConstraintBuilder, rlc},
     table::{
         BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag, TxContextFieldTag, TxTable,
     },
@@ -47,9 +47,7 @@ pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) 
                 b.reverse();
                 b
             };
-            challenge.map(|challenge| {
-                RandomLinearCombination::random_linear_combine(le_bytes, challenge)
-            })
+            challenge.map(|challenge| rlc::value(&le_bytes, challenge))
         }
     }
 }

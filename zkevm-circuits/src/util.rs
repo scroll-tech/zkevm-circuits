@@ -1,18 +1,22 @@
 //! Common utility traits and functions.
+use std::collections::BTreeSet;
+
+use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Value},
     plonk::{Challenge, ConstraintSystem, Error, Expression, FirstPhase, VirtualCells},
 };
+use keccak256::plain::Keccak;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
-use crate::table::TxLogFieldTag;
 use crate::witness;
-use eth_types::{Field, ToAddress};
+use crate::{evm_circuit::util::rlc, table::TxLogFieldTag};
+use eth_types::{Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 
@@ -29,7 +33,7 @@ pub(crate) fn query_expression<F: FieldExt, T>(
 }
 
 pub(crate) fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomness: F) -> F {
-    crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
+    rlc::value(&bytes, randomness)
 }
 
 pub(crate) fn rlc_be_bytes<F: Field>(bytes: &[u8], rand: Value<F>) -> Value<F> {
@@ -236,5 +240,70 @@ pub fn log2_ceil(n: usize) -> u32 {
     u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32
 }
 
+pub(crate) fn keccak(msg: &[u8]) -> Word {
+    let mut keccak = Keccak::default();
+    keccak.update(msg);
+    Word::from_big_endian(keccak.digest().as_slice())
+}
+
+pub(crate) fn is_push(byte: u8) -> bool {
+    OpcodeId::from(byte).is_push()
+}
+
+pub(crate) fn get_push_size(byte: u8) -> u64 {
+    if is_push(byte) {
+        byte as u64 - OpcodeId::PUSH1.as_u64() + 1
+    } else {
+        0u64
+    }
+}
+
 /// Using values like this will make it easier to debug...
 pub const DEFAULT_RAND: u128 = 0x10000;
+
+#[derive(Debug)]
+pub(crate) struct CircuitStats {
+    num_constraints: usize,
+    num_fixed_columns: usize,
+    num_lookups: usize,
+    num_advice_columns: usize,
+    num_instance_columns: usize,
+    num_selectors: usize,
+    num_permutation_columns: usize,
+    degree: usize,
+    num_challenges: usize,
+    max_phase: u8,
+    num_rotation: usize,
+    min_rotation: i32,
+    max_rotation: i32,
+    num_verification_ecmul: usize,
+}
+
+pub(crate) fn circuit_stats<F: Field>(meta: &ConstraintSystem<F>) -> CircuitStats {
+    let rotations = meta
+        .advice_queries
+        .iter()
+        .map(|(_, q)| q.0)
+        .collect::<BTreeSet<i32>>();
+    CircuitStats {
+        num_constraints: meta
+            .gates()
+            .iter()
+            .map(|g| g.polynomials().len())
+            .sum::<usize>(),
+        num_fixed_columns: meta.num_fixed_columns,
+        num_lookups: meta.lookups.len(),
+        num_advice_columns: meta.num_advice_columns,
+        num_instance_columns: meta.num_instance_columns,
+        num_selectors: meta.num_selectors,
+        num_permutation_columns: meta.permutation.columns.len(),
+        degree: meta.degree(),
+        num_challenges: meta.num_challenges(),
+        max_phase: meta.max_phase(),
+        num_rotation: rotations.len(),
+        min_rotation: rotations.first().cloned().unwrap_or_default(),
+        max_rotation: rotations.last().cloned().unwrap_or_default(),
+        // TODO: add permutation related ecmuls
+        num_verification_ecmul: meta.num_advice_columns + 3 * meta.lookups.len() + rotations.len(),
+    }
+}

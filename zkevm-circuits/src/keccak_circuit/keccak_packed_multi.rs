@@ -21,7 +21,6 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
     poly::Rotation,
 };
-use itertools::Itertools;
 use log::{debug, trace};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::prelude::ParallelIterator;
@@ -381,12 +380,25 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let rows_per_chunk = (NUM_ROUNDS + 1) * get_num_rows_per_round();
+        let bytes_len_sum = block
+            .keccak_inputs
+            .iter()
+            .map(|bytes| bytes.len())
+            .sum::<usize>();
+        let chunk_num = block
+            .keccak_inputs
+            .iter()
+            .map(|bytes| (bytes.len() as f64 / 136.0).ceil() as usize)
+            .sum::<usize>();
+        log::debug!(
+            "keccak rows needed: {}x{}({}/136)={}",
+            rows_per_chunk,
+            chunk_num,
+            bytes_len_sum,
+            rows_per_chunk * chunk_num
+        );
         (
-            block
-                .keccak_inputs
-                .iter()
-                .map(|bytes| (bytes.len() as f64 / 136.0).ceil() as usize * rows_per_chunk)
-                .sum(),
+            rows_per_chunk * chunk_num,
             block.circuits_params.keccak_padding.unwrap_or_default(),
         )
     }
@@ -2142,7 +2154,8 @@ pub fn multi_keccak<F: Field>(
         });
     }
 
-    // Actual keccaks
+    // Dedup actual keccaks
+    /*
     let inputs_len: usize = bytes.iter().map(|k| k.len()).sum();
     let inputs_num = bytes.len();
     for (idx, bytes) in bytes.iter().enumerate() {
@@ -2152,6 +2165,7 @@ pub fn multi_keccak<F: Field>(
     let inputs_len2: usize = bytes.iter().map(|k| k.len()).sum();
     let inputs_num2 = bytes.len();
     debug!("after dedup inputs, input num {inputs_num}->{inputs_num2}, input total len {inputs_len}->{inputs_len2}");
+    */
 
     // TODO: optimize the `extend` using Iter?
     let real_rows: Vec<_> = bytes

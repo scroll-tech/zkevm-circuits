@@ -261,11 +261,10 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{evm_types::OpcodeId, Bytecode, Word};
     use mock::TestContext;
     use rand::Rng;
-
-    use crate::test_util::run_test_circuits;
 
     #[test]
     fn log_gadget_simple() {
@@ -365,13 +364,10 @@ mod test {
 
         code_prepare.append(&code);
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
-                None
-            ),
-            Ok(()),
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .run();
     }
 
     // test multi log op codes and multi copy log steps
@@ -420,13 +416,10 @@ mod test {
         code.write_op(OpcodeId::STOP);
         code_prepare.append(&code);
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
-                None,
-            ),
-            Ok(()),
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .run();
     }
 
     /// prepare memory reading data

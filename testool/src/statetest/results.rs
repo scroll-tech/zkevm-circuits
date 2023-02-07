@@ -14,6 +14,8 @@ use std::str::FromStr;
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, EnumString}; // 0.17.1
 
+const MAX_DETAILS_LEN: usize = 128;
+
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, EnumIter, EnumString, Serialize, Deserialize)]
 pub enum ResultLevel {
     Success,
@@ -51,6 +53,14 @@ pub struct Diffs {
     tests: Vec<DiffEntry>,
 }
 
+fn trim(s: &str, max_len: usize) -> &str {
+    if s.len() > max_len {
+        &s[0..max_len]
+    } else {
+        s
+    }
+}
+
 impl Diffs {
     pub fn gen_info(&self) -> (String, Table) {
         let mut stat: HashMap<ResultLevel, isize> = HashMap::new();
@@ -86,7 +96,10 @@ impl Diffs {
                     t.id,
                     format!(
                         "{:?}({}) => {:?}({})",
-                        prev.level, prev.details, curr.level, curr.details
+                        prev.level,
+                        trim(&prev.details, MAX_DETAILS_LEN),
+                        curr.level,
+                        trim(&curr.details, MAX_DETAILS_LEN)
                     ),
                 ]);
             }
@@ -165,7 +178,9 @@ impl Results {
             let level = split.next().unwrap();
             let level = ResultLevel::from_str(level).unwrap();
             let id = split.next().unwrap().to_string();
-            let details = split.next().unwrap().to_string();
+            let details = urlencoding::decode(split.next().unwrap())
+                .expect("should be urldecodeable")
+                .to_string();
             tests.insert(id, ResultInfo { level, details });
         }
         Ok(Self { cache: None, tests })
@@ -333,12 +348,12 @@ impl Results {
                     result.details
                 );
             }
-            let details = result
-                .details
-                .replace('\n', "")
-                .replace(' ', "")
-                .replace('\t', "");
-            let entry = format!("{:?};{};{}\n", result.level, test_id, details);
+            let entry = format!(
+                "{:?};{};{}\n",
+                result.level,
+                test_id,
+                urlencoding::encode(&result.details)
+            );
             if let Some(path) = &self.cache {
                 std::fs::OpenOptions::new()
                     .read(true)

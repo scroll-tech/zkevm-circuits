@@ -189,7 +189,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     pub fn word_rlc(&self, n: U256) -> Value<F> {
         self.challenges
             .evm_word()
-            .map(|r| Word::random_linear_combine(n.to_le_bytes(), r))
+            .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
     pub fn empty_hash_rlc(&self) -> Value<F> {
         self.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE))
@@ -243,11 +243,11 @@ impl<F: FieldExt> StoredExpression<F> {
                     fixed_query.rotation(),
                 ))
             },
-            &|advide_query| {
+            &|advice_query| {
                 Value::known(region.get_advice(
                     offset,
-                    advide_query.column_index(),
-                    advide_query.rotation(),
+                    advice_query.column_index(),
+                    advice_query.rotation(),
                 ))
             },
             &|_| unimplemented!("instance column"),
@@ -462,23 +462,9 @@ pub(crate) struct RandomLinearCombination<F, const N: usize> {
 impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
     const N_BYTES: usize = N;
 
-    pub(crate) fn random_linear_combine(bytes: [u8; N], randomness: F) -> F {
-        rlc::value(&bytes, randomness)
-    }
-
-    pub(crate) fn random_linear_combine_expr(
-        bytes: [Expression<F>; N],
-        power_of_randomness: &[Expression<F>],
-    ) -> Expression<F> {
-        rlc::expr(&bytes, power_of_randomness)
-    }
-
-    pub(crate) fn new(cells: [Cell<F>; N], power_of_randomness: &[Expression<F>]) -> Self {
+    pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
         Self {
-            expression: Self::random_linear_combine_expr(
-                cells.clone().map(|cell| cell.expr()),
-                power_of_randomness,
-            ),
+            expression: rlc::expr(&cells.clone().map(|cell| cell.expr()), randomness),
             cells,
         }
     }
@@ -547,20 +533,17 @@ pub(crate) mod from_bytes {
 /// Returns the random linear combination of the inputs.
 /// Encoding is done as follows: v_0 * R^0 + v_1 * R^1 + ...
 pub(crate) mod rlc {
+    use std::ops::{Add, Mul};
+
     use crate::util::Expr;
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(
-        expressions: &[E],
-        power_of_randomness: &[E],
-    ) -> Expression<F> {
-        debug_assert!(expressions.len() <= power_of_randomness.len() + 1);
-
-        let mut rlc = expressions[0].expr();
-        for (expression, randomness) in expressions[1..].iter().zip(power_of_randomness.iter()) {
-            rlc = rlc + expression.expr() * randomness.expr();
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
+        if !expressions.is_empty() {
+            generic(expressions.iter().map(|e| e.expr()), randomness.expr())
+        } else {
+            0.expr()
         }
-        rlc
     }
 
     pub(crate) fn value<'a, F: FieldExt, I>(values: I, randomness: F) -> F
@@ -568,9 +551,27 @@ pub(crate) mod rlc {
         I: IntoIterator<Item = &'a u8>,
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
     {
-        values.into_iter().rev().fold(F::zero(), |acc, value| {
-            acc * randomness + F::from(*value as u64)
-        })
+        let values = values
+            .into_iter()
+            .map(|v| F::from(*v as u64))
+            .collect::<Vec<F>>();
+        if !values.is_empty() {
+            generic(values, randomness)
+        } else {
+            F::zero()
+        }
+    }
+
+    fn generic<V, I>(values: I, randomness: V) -> V
+    where
+        I: IntoIterator<Item = V>,
+        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+        V: Clone + Add<Output = V> + Mul<Output = V>,
+    {
+        let mut values = values.into_iter().rev();
+        let init = values.next().expect("values should not be empty");
+
+        values.fold(init, |acc, value| acc * randomness.clone() + value)
     }
 }
 

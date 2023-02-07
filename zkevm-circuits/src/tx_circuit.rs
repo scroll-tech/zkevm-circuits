@@ -129,7 +129,7 @@ pub struct TxCircuitConfig<F: Field> {
 
     /// Address recovered by SignVerifyChip
     sv_address: Column<Advice>,
-    sign_verify: SignVerifyConfig,
+    sign_verify: SignVerifyConfig<F>,
 
     // External tables
     tx_table: TxTable,
@@ -161,7 +161,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             tx_table,
             keccak_table,
             rlp_table,
-            challenges,
+            challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = meta.fixed_column();
@@ -401,7 +401,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             rlp_table,
         );
 
-        let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);
+        let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone());
 
         meta.create_gate("is_calldata", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1215,8 +1215,7 @@ impl<F: Field> TxCircuit<F> {
             max_calldata,
             sign_verify: SignVerifyChip::new(max_txs),
             txs,
-            // FIXME: remove this hardcoded constant
-            size: 1 << 18,
+            size: Self::min_num_rows(max_txs, max_calldata),
             chain_id,
         }
     }
@@ -1275,9 +1274,7 @@ impl<F: Field> TxCircuit<F> {
         let min_rows = std::cmp::max(tx_table_len, SignVerifyChip::<F>::min_num_rows(txs_len));
         #[cfg(not(feature = "enable-sign-verify"))]
         let min_rows = tx_table_len;
-
-        // FIXME: remove this hardcoded constant
-        std::cmp::max(min_rows, 1 << 18)
+        min_rows
     }
 
     fn assign(
@@ -1530,11 +1527,14 @@ impl<F: Field> TxCircuit<F> {
                     }
                 }
 
+                log::debug!("assigning calldata, offset {}", offset);
+
                 // Assign call data
                 let mut calldata_count = 0;
                 for (i, tx) in self.txs.iter().enumerate() {
                     let mut calldata_gas_cost = 0;
                     let calldata_length = tx.call_data.len();
+                    calldata_count += calldata_length;
                     for (index, byte) in tx.call_data.iter().enumerate() {
                         assert!(calldata_count < self.max_calldata);
                         let (tx_id_next, is_final) = if index == calldata_length - 1 {
@@ -1568,7 +1568,6 @@ impl<F: Field> TxCircuit<F> {
                             Some(calldata_length as u64),
                             Some(calldata_gas_cost),
                         )?;
-                        calldata_count += 1;
                     }
                 }
 
@@ -1577,6 +1576,14 @@ impl<F: Field> TxCircuit<F> {
                 Ok(offset)
             },
         )?;
+        if last_off + config.minimum_rows > self.size {
+            log::error!(
+                "circuit size not enough, last offset {}, minimum_rows {}, self.size {}",
+                last_off,
+                config.minimum_rows,
+                self.size
+            );
+        }
         layouter.assign_region(
             || "tx table (calldata zeros and paddings)",
             |mut region| {
@@ -1661,6 +1668,11 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             let assigned_sig_verifs =
                 self.sign_verify
                     .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
+            self.sign_verify.assert_sig_is_valid(
+                &config.sign_verify,
+                layouter,
+                assigned_sig_verifs.as_slice(),
+            )?;
             self.assign(
                 config,
                 challenges,
@@ -1682,6 +1694,12 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             )?;
         }
         Ok(())
+    }
+
+    fn instance(&self) -> Vec<Vec<F>> {
+        // The maingate expects an instance column, but we don't use it, so we return an
+        // "empty" instance column
+        vec![vec![]]
     }
 }
 

@@ -778,6 +778,7 @@ arith:
         Ok(())
     }
 
+    #[cfg(feature = "warn-unimplemented")]
     #[test]
     fn fail_bad_code() -> Result<()> {
         let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(

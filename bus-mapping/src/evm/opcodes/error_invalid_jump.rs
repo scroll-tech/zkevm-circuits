@@ -4,9 +4,9 @@ use crate::Error;
 use eth_types::{GethExecStep, ToAddress, ToWord, Word};
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct ErrorInvalidJump;
+pub(crate) struct InvalidJump;
 
-impl Opcode for ErrorInvalidJump {
+impl Opcode for InvalidJump {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],

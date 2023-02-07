@@ -67,7 +67,7 @@ impl<F: Field, const N: usize> Chip<F, N> {
         selector: Column<Fixed>,
         encoded: Column<Advice>,
         lookup: lookups::Config,
-        power_of_randomness: [Expression<F>; 31],
+        randomness: Expression<F>,
     ) -> Config<N> {
         let bytes = [0; N].map(|_| meta.advice_column());
 
@@ -81,7 +81,7 @@ impl<F: Field, const N: usize> Chip<F, N> {
             let selector = meta.query_fixed(selector, Rotation::cur());
             let encoded = meta.query_advice(encoded, Rotation::cur());
             let bytes = bytes.map(|c| meta.query_advice(c, Rotation::cur()));
-            vec![selector * (encoded - rlc::expr(&bytes, &power_of_randomness))]
+            vec![selector * (encoded - rlc::expr(&bytes, randomness))]
         });
 
         Config { bytes }

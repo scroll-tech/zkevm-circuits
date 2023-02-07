@@ -106,13 +106,9 @@ pub enum ExecutionState {
     ErrorOutOfGasEXP,
     ErrorOutOfGasSHA3,
     ErrorOutOfGasEXTCODECOPY,
-    ErrorOutOfGasSLOAD,
-    ErrorOutOfGasSSTORE,
-    ErrorOutOfGasCALL,
-    ErrorOutOfGasCALLCODE,
-    ErrorOutOfGasDELEGATECALL,
+    ErrorOutOfGasSloadSstore,
+    ErrorOutOfGasCall,
     ErrorOutOfGasCREATE2,
-    ErrorOutOfGasSTATICCALL,
     ErrorOutOfGasSELFDESTRUCT,
 }
 
@@ -154,13 +150,9 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasEXP
                 | Self::ErrorOutOfGasSHA3
                 | Self::ErrorOutOfGasEXTCODECOPY
-                | Self::ErrorOutOfGasSLOAD
-                | Self::ErrorOutOfGasSSTORE
-                | Self::ErrorOutOfGasCALL
-                | Self::ErrorOutOfGasCALLCODE
-                | Self::ErrorOutOfGasDELEGATECALL
+                | Self::ErrorOutOfGasSloadSstore
+                | Self::ErrorOutOfGasCall
                 | Self::ErrorOutOfGasCREATE2
-                | Self::ErrorOutOfGasSTATICCALL
                 | Self::ErrorOutOfGasSELFDESTRUCT
         )
     }
@@ -309,6 +301,7 @@ impl ExecutionState {
             ],
             Self::RETURN_REVERT => vec![OpcodeId::RETURN, OpcodeId::REVERT],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
+            Self::ErrorInvalidOpcode => OpcodeId::invalid_opcodes(),
             _ => vec![],
         }
     }

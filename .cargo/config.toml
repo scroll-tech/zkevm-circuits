@@ -1,2 +1,4 @@
 [target.'cfg(target_os="macos")']
 rustflags = ["-C", "link-args=-framework CoreFoundation -framework Security"]
+[net]
+git-fetch-with-cli = true

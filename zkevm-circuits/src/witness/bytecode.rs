@@ -2,9 +2,7 @@ use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::circuit::Value;
 
-use crate::{
-    evm_circuit::util::RandomLinearCombination, table::BytecodeFieldTag, util::Challenges,
-};
+use crate::{evm_circuit::util::rlc, table::BytecodeFieldTag, util::Challenges};
 
 /// Bytecode
 #[derive(Clone, Debug)]
@@ -23,13 +21,13 @@ impl Bytecode {
     ) -> Vec<[Value<F>; 5]> {
         let n = 1 + self.bytes.len();
         let mut rows = Vec::with_capacity(n);
-        let hash = challenges.evm_word().map(|challenge| {
-            RandomLinearCombination::random_linear_combine(self.hash.to_le_bytes(), challenge)
-        });
+        let hash = challenges
+            .evm_word()
+            .map(|challenge| rlc::value(&self.hash.to_le_bytes(), challenge));
 
         rows.push([
             hash,
-            Value::known(F::from(BytecodeFieldTag::Length as u64)),
+            Value::known(F::from(BytecodeFieldTag::Header as u64)),
             Value::known(F::zero()),
             Value::known(F::zero()),
             Value::known(F::from(self.bytes.len() as u64)),
