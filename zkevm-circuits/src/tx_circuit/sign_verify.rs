@@ -17,7 +17,6 @@ use crate::{
     table::KeccakTable,
     util::{Challenges, Expr},
 };
-use ecc::maingate;
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
 use eth_types::{self, Field};
 use halo2_base::{
