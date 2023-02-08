@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
+use halo2_proofs::halo2curves::bn256::Fr;
 use itertools::Itertools;
 
 use crate::evm_circuit::util::rlc;
@@ -11,6 +12,8 @@ use crate::table::{
     AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag,
 };
 use crate::util::build_tx_log_address;
+
+use super::MptUpdates;
 
 /// Rw constainer for a witness block
 #[derive(Debug, Default, Clone)]
@@ -36,6 +39,59 @@ impl RwMap {
             .enumerate()
         {
             debug_assert_eq!(idx, rw_counter - 1);
+        }
+    }
+    /// ..
+    pub fn check_value(&self) {
+        let mock_rand = Fr::from(0x1000u64);
+        let err_msg_first = "first access reads don't change value";
+        let err_msg_non_first = "non-first access reads don't change value";
+        let rows = self.table_assignments();
+        let updates = MptUpdates::from_rws_with_mock_state_roots(
+            &rows,
+            0xcafeu64.into(),
+            0xdeadbeefu64.into(),
+        );
+        let mut errs = Vec::new();
+        for idx in 1..rows.len() {
+            let row = &rows[idx];
+            let prev_row = &rows[idx - 1];
+            let is_first = {
+                let key = |row: &Rw| {
+                    (
+                        row.tag() as u64,
+                        row.id().unwrap_or_default(),
+                        row.address().unwrap_or_default(),
+                        row.field_tag().unwrap_or_default(),
+                        row.storage_key().unwrap_or_default(),
+                    )
+                };
+                key(prev_row) != key(row)
+            };
+            if !row.is_write() {
+                let value = row.value_assignment::<Fr>(mock_rand);
+                if is_first {
+                    // value == init_value
+                    let init_value = updates
+                        .get(row)
+                        .map(|u| u.value_assignments(mock_rand).1)
+                        .unwrap_or_default();
+                    if value != init_value {
+                        errs.push((idx, err_msg_first, *row, *prev_row));
+                    }
+                } else {
+                    // value == prev_value
+                    let prev_value = prev_row.value_assignment::<Fr>(mock_rand);
+
+                    if value != prev_value {
+                        errs.push((idx, err_msg_non_first, *row, *prev_row));
+                    }
+                }
+            }
+        }
+        log::debug!("rw value check err num: {}", errs.len());
+        for e in errs {
+            log::debug!("err is {:?}", e);
         }
     }
     /// Calculates the number of Rw::Start rows needed.

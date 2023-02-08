@@ -169,7 +169,7 @@ impl<F: Field> Block<F> {
             num_rows_required_for_tx_table,
             num_rows_required_for_exp_table
         );
-        log::debug!("evm circuit uses k = {}, rows = {}", k, rows_needed);
+        log::debug!("circuit uses k = {}, rows = {}", k, rows_needed);
         k
     }
 }
@@ -327,6 +327,8 @@ pub fn block_convert<F: Field>(
         .unwrap_or(1);
 
     let rws = RwMap::from(&block.container);
+    rws.check_rw_counter_sanity();
+    rws.check_value();
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
