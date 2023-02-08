@@ -164,6 +164,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Use intrinsic gas
         // Check gas_left is sufficient
         let intrinsic_gas_cost = cb.query_cell();
+        #[cfg(feature = "reject-eip2718")]
         cb.require_equal(
             "calculate intrinsic gas cost",
             intrinsic_gas_cost.expr(),

@@ -14,7 +14,7 @@ use zkevm_circuits::rlp_circuit::RlpCircuit;
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::TxCircuit;
-use zkevm_circuits::util::{log2_ceil, Challenges, SubCircuit};
+use zkevm_circuits::util::{Challenges, SubCircuit};
 use zkevm_circuits::witness;
 use zkevm_circuits::witness::SignedTransaction;
 
@@ -65,48 +65,45 @@ async fn test_mock_prove_tx() {
     log::info!("prove done");
 }
 
-fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(
-    block: &witness::Block<Fr>,
-    instance: Vec<Vec<Fr>>,
-) -> MockProver<Fr> {
-    let (_, rows_needed) = C::min_num_rows_block(block);
-    let k = log2_ceil(128 + rows_needed);
+fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(block: &witness::Block<Fr>) -> MockProver<Fr> {
+    let k = block.get_test_degree();
     log::debug!("{} circuit needs k = {}", *CIRCUIT, k);
+    debug_assert!(k <= 22);
     let circuit = C::new_from_block(block);
-    MockProver::<Fr>::run(k, &circuit, instance).unwrap()
+    MockProver::<Fr>::run(k, &circuit, circuit.instance()).unwrap()
 }
 fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
     let prover = if *CIRCUIT == "evm" {
-        test_with::<EvmCircuit<Fr>>(block, vec![vec![]])
+        test_with::<EvmCircuit<Fr>>(block)
     } else if *CIRCUIT == "rlp" {
-        test_with::<RlpCircuit<Fr, SignedTransaction>>(block, vec![])
+        test_with::<RlpCircuit<Fr, SignedTransaction>>(block)
     } else if *CIRCUIT == "tx" {
-        test_with::<TxCircuit<Fr>>(block, vec![vec![]])
+        test_with::<TxCircuit<Fr>>(block)
     } else if *CIRCUIT == "state" {
-        test_with::<StateCircuit<Fr>>(block, vec![])
+        test_with::<StateCircuit<Fr>>(block)
+    } else if *CIRCUIT == "super" {
+        test_with::<SuperCircuit<Fr, 350, 2_000_000, 64, 0x1000>>(block)
     } else {
         unimplemented!()
     };
 
     let result = prover.verify_par();
-
     result.err().unwrap_or_default()
 }
 
 #[tokio::test]
-async fn test_super_circuit_all_block() {
+async fn test_circuit_all_block() {
     log_init();
     let start: usize = *START_BLOCK;
     let end: usize = *END_BLOCK;
     for blk in start..=end {
         let block_num = blk as u64;
-        log::info!("test super circuit, block number: {}", block_num);
+        log::info!("test {} circuit, block number: {}", *CIRCUIT, block_num);
         let cli = get_client();
-        // target k = 22
         let params = CircuitsParams {
             max_rws: 4_000_000,
             max_copy_rows: 4_000_000,
-            max_txs: 235, // 2**22 / ROWS_PER_SIG
+            max_txs: 350,
             max_calldata: 2_000_000,
             max_inner_blocks: 64,
             max_bytecode: 3_000_000,
@@ -124,53 +121,6 @@ async fn test_super_circuit_all_block() {
             continue;
         }
         let builder = builder.unwrap().0;
-
-        if builder.block.txs.is_empty() {
-            log::info!("skip empty block");
-            return;
-        }
-
-        let (k, circuit, instance) =
-            SuperCircuit::<Fr, 235, 2_000_000, 64, 0x1000>::build_from_circuit_input_builder(
-                &builder,
-            )
-            .unwrap();
-        debug_assert!(k <= 22);
-        let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
-        let result = prover.verify_par();
-        let errs = result.err().unwrap_or_default();
-        log::info!(
-            "test super circuit, block number: {} err num {:?}",
-            block_num,
-            errs.len(),
-        );
-        for err in errs {
-            log::error!("circuit err: {}", err);
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_circuit_all_block() {
-    log_init();
-    let start: usize = *START_BLOCK;
-    let end: usize = *END_BLOCK;
-    for blk in start..=end {
-        let block_num = blk as u64;
-        log::info!("test {} circuit, block number: {}", *CIRCUIT, block_num);
-        let cli = get_client();
-        let params = CircuitsParams {
-            max_rws: 4_000_000,
-            max_copy_rows: 4_000_000,
-            max_txs: 235,
-            max_calldata: 2_000_000,
-            max_inner_blocks: 64,
-            max_bytecode: 3_000_000,
-            keccak_padding: None,
-        };
-        let cli = BuilderClient::new(cli, params).await.unwrap();
-        let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
-
         if builder.block.txs.is_empty() {
             log::info!("skip empty block");
             return;
@@ -189,43 +139,6 @@ async fn test_circuit_all_block() {
         }
     }
 }
-/*
-#[tokio::test]
-async fn test_evm_circuit_all_block() {
-    log_init();
-    let start: usize = *START_BLOCK;
-    let end: usize = *END_BLOCK;
-    for blk in start..=end {
-        let block_num = blk as u64;
-        log::info!("test evm circuit, block number: {}", block_num);
-        let cli = get_client();
-        let params = CircuitsParams {
-            max_rws: 5_000_000,
-            max_copy_rows: 5_000_000,
-            max_txs: 500,
-            max_calldata: 400000,
-            max_inner_blocks: 64,
-            max_bytecode: 400000,
-            keccak_padding: None,
-        };
-        let cli = BuilderClient::new(cli, params).await.unwrap();
-        let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
-
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        if builder.block.txs.is_empty() {
-            log::info!("skip empty block");
-            return;
-        }
-
-        let result = run_test_circuit(block);
-        log::info!(
-            "test evm circuit, block number: {} result {:?}",
-            block_num,
-            result
-        );
-    }
-}
-*/
 #[tokio::test]
 async fn test_print_circuits_size() {
     log_init();
@@ -262,9 +175,9 @@ async fn test_print_circuits_size() {
         );
     }
 }
-/*
+
 #[tokio::test]
-async fn test_evm_circuit_batch() {
+async fn test_circuit_batch() {
     log_init();
     let start: usize = 1;
     let end: usize = 8;
@@ -282,7 +195,15 @@ async fn test_evm_circuit_batch() {
 
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
     log::info!("tx num: {}", builder.block.txs.len());
-    run_test_circuit(block).unwrap();
-    log::info!("prove done");
+    let errs = test_witness_block(&block);
+    log::info!(
+        "test {} circuit, block number: [{},{}], err num {:?}",
+        *CIRCUIT,
+        start,
+        end,
+        errs.len()
+    );
+    for err in errs {
+        log::error!("circuit err: {}", err);
+    }
 }
-*/
