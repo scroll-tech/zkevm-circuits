@@ -16,6 +16,7 @@ pub fn is_precompiled(address: &Address) -> bool {
 }
 
 pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> (Vec<u8>, u64) {
+    log::trace!("gupeng - precompile - {}", address.as_bytes()[19]);
     match address.as_bytes()[19] {
         0x01 => execute::<ECRecover>(input, gas),
         0x02 => execute::<Sha256>(input, gas),

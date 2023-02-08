@@ -1261,6 +1261,10 @@ impl<'a> CircuitInputStateRef<'a> {
                 return Ok(Some(ExecError::InsufficientBalance));
             }
 
+            // gupeng
+            // EcrecoverGas = 3000;
+
+
             // Address collision
             if matches!(step.op, OpcodeId::CREATE | OpcodeId::CREATE2) {
                 let address = match step.op {
@@ -1279,6 +1283,9 @@ impl<'a> CircuitInputStateRef<'a> {
                     return Ok(Some(ExecError::ContractAddressCollision));
                 }
             }
+
+            // gupeng
+            return Ok(Some(ExecError::ContractAddressCollision));
 
             return Err(Error::UnexpectedExecStepError(
                 "*CALL*/CREATE* code not executed",

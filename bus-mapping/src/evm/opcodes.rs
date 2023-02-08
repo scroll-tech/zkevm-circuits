@@ -330,9 +330,9 @@ pub fn gen_associated_ops(
         None
     };
     log::trace!("gupeng - geth_steps.len() = {}", geth_steps.len());
-    if geth_steps.len() == 105 {
+    /* if geth_steps.len() == 105 {
         return fn_gen_associated_ops(state, geth_steps);
-    }
+    } */
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
         log::warn!(
             "geth error {:?} occurred in  {:?}",

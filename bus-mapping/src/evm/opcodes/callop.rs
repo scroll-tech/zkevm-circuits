@@ -255,7 +255,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 1. Call to precompiled.
             (false, true, _) => {
                 log::trace!("gupeng - precompiled - {}", geth_steps[0].gas.0);
-                // assert!(call.is_success, "call to precompile should not fail");
+
                 let caller_ctx = state.caller_ctx_mut()?;
                 let code_address = code_address.unwrap();
                 let (result, contract_gas_cost) = execute_precompiled(
@@ -264,10 +264,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     callee_gas_left,
                 );
                 log::trace!(
-                    "precompile return data len {} gas {}",
+                    "precompile return data len {} gas_left {} gas_cost {}",
                     result.len(),
+                    callee_gas_left,
                     contract_gas_cost
                 );
+                /*
+                 *
+                // assert!(call.is_success, "call to precompile should not fail");
                 caller_ctx.return_data = result.clone();
                 let length = min(result.len(), ret_length);
                 if length != 0 {
@@ -313,6 +317,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     );
                 }
                 exec_step.gas_cost = GasCost(real_cost);
+
+                */
+
                 Ok(vec![exec_step])
             }
             // 2. Call to account with empty code.
