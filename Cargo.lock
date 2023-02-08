@@ -1355,34 +1355,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c9b0705efd4599c15a38151f4721f7bc388306f61084d3bfd50bd07fbca5cb60"
 
 [[package]]
-name = "ecc"
-version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
-dependencies = [
- "group",
- "integer",
- "num-bigint",
- "num-integer",
- "num-traits",
- "rand 0.8.5",
- "subtle",
-]
-
-[[package]]
-name = "ecdsa"
-version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
-dependencies = [
- "ecc",
- "group",
- "num-bigint",
- "num-integer",
- "num-traits",
- "rand 0.8.5",
- "subtle",
-]
-
-[[package]]
 name = "ecdsa"
 version = "0.14.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2485,7 +2457,7 @@ dependencies = [
 [[package]]
 name = "halo2_base"
 version = "0.1.0"
-source = "git+ssh://git@github.com/scroll-tech/halo2-ecc.git?branch=halo2-ecc-ecdsa-0129#83826a6a5fbec9cd02b97c2f202da3e05da2a306"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-ecdsa-0129#fb2ecb2635c7d22104ee7493376e7f0aa78662c5"
 dependencies = [
  "ff",
  "halo2_proofs",
@@ -2497,7 +2469,7 @@ dependencies = [
 [[package]]
 name = "halo2_ecc"
 version = "0.1.0"
-source = "git+ssh://git@github.com/scroll-tech/halo2-ecc.git?branch=halo2-ecc-ecdsa-0129#83826a6a5fbec9cd02b97c2f202da3e05da2a306"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-ecdsa-0129#fb2ecb2635c7d22104ee7493376e7f0aa78662c5"
 dependencies = [
  "ark-std",
  "ff",
@@ -2916,20 +2888,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "integer"
-version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
-dependencies = [
- "group",
- "maingate",
- "num-bigint",
- "num-integer",
- "num-traits",
- "rand 0.8.5",
- "subtle",
-]
-
-[[package]]
 name = "integer-sqrt"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3019,7 +2977,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72c1e0b51e7ec0a97369623508396067a486bd0cbed95a2659a4b863d28cfc8b"
 dependencies = [
  "cfg-if 1.0.0",
- "ecdsa 0.14.8",
+ "ecdsa",
  "elliptic-curve",
  "sha2 0.10.6",
  "sha3 0.10.6",
@@ -6529,8 +6487,6 @@ dependencies = [
  "bus-mapping",
  "criterion",
  "ctor",
- "ecc",
- "ecdsa 0.1.0",
  "env_logger",
  "eth-types",
  "ethers-core",
@@ -6540,7 +6496,6 @@ dependencies = [
  "halo2_ecc",
  "halo2_proofs",
  "hex",
- "integer",
  "itertools",
  "keccak256",
  "lazy_static",
