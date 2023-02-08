@@ -57,7 +57,7 @@ use std::{iter, marker::PhantomData};
 /// Hard coded parameters.
 // FIXME: allow for a configurable param.
 const NUM_ADVICE: usize = 36;
-const ROWS_PER_SIG: usize = 17550;
+const ROWS_PER_SIG: usize = 11850;
 
 /// Chip to handle overflow integers of ECDSA::Fq, the scalar field
 type FqOverflowChip<'a, F> = FpOverflowChip<'a, F, Fq>;

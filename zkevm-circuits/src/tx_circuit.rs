@@ -531,7 +531,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         });
          */
 
-        #[cfg(feature = "non-legacy-tx")]
+        #[cfg(feature = "reject-eip2718")]
         meta.create_gate("caller address == sv_address if it's not zero", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1773,13 +1773,13 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
 mod tx_circuit_tests {
     use super::*;
     use crate::util::log2_ceil;
-    #[cfg(feature = "non-legacy-tx")]
+    #[cfg(feature = "reject-eip2718")]
     use eth_types::address;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
-    #[cfg(feature = "non-legacy-tx")]
+    #[cfg(feature = "reject-eip2718")]
     use mock::AddrOrWallet;
     use pretty_assertions::assert_eq;
     use std::cmp::max;
@@ -1858,7 +1858,7 @@ mod tx_circuit_tests {
         assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
     }
 
-    #[cfg(feature = "non-legacy-tx")]
+    #[cfg(feature = "reject-eip2718")]
     #[test]
     fn tx_circuit_bad_address() {
         const MAX_TXS: usize = 1;
