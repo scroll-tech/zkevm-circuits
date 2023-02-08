@@ -2457,7 +2457,7 @@ dependencies = [
 [[package]]
 name = "halo2_base"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-ecdsa-0129#fb2ecb2635c7d22104ee7493376e7f0aa78662c5"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-ecdsa-0129#89cf51f0ac452e4814e028b9a331ec613aafa726"
 dependencies = [
  "ff",
  "halo2_proofs",
@@ -2469,7 +2469,7 @@ dependencies = [
 [[package]]
 name = "halo2_ecc"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-ecdsa-0129#fb2ecb2635c7d22104ee7493376e7f0aa78662c5"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-ecdsa-0129#89cf51f0ac452e4814e028b9a331ec613aafa726"
 dependencies = [
  "ark-std",
  "ff",
