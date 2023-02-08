@@ -73,7 +73,9 @@ fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(
     let k = log2_ceil(128 + rows_needed);
     log::debug!("{} circuit needs k = {}", *CIRCUIT, k);
     let circuit = C::new_from_block(block);
-    MockProver::<Fr>::run(k, &circuit, instance).unwrap()
+    let err = MockProver::<Fr>::run(k, &circuit, instance);
+    log::trace!("gupeng - mainnet - err = {err:?}");
+    err.unwrap()
 }
 fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
     let prover = if *CIRCUIT == "evm" {
