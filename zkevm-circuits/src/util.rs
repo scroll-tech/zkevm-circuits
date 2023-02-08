@@ -90,7 +90,7 @@ impl MockChallenges {
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
     pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        #[cfg(all(not(feature = "onephase"), test))]
+        #[cfg(any(not(feature = "onephase"), feature = "test", test))]
         let _dummy_cols = [
             meta.advice_column(),
             meta.advice_column_in(halo2_proofs::plonk::SecondPhase),
