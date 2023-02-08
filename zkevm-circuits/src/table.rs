@@ -633,6 +633,19 @@ impl PoseidonTable {
 
     /// Construct a new PoseidonTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+        // mitigate a wired issue caused by `assert_phase_exists`
+        let ph0_col = meta.advice_column();
+        Self([
+            meta.advice_column_in(SecondPhase),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            ph0_col,
+        ])
+    }
+
+    /// Construct a new PoseidonTable for dev (no secondphase, mpt only)
+    pub(crate) fn dev_construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         Self([0; 5].map(|_| meta.advice_column()))
     }
 

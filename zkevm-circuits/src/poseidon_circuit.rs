@@ -26,6 +26,8 @@ pub struct PoseidonCircuitConfigArgs {
 #[derive(Debug, Clone)]
 pub struct PoseidonCircuitConfig<F: Field>(pub(crate) PoseidonHashConfig<F>);
 
+const HASH_BLOCK_STEP_SIZE: usize = HASHBLOCK_BYTES_IN_FIELD * PoseidonTable::INPUT_WIDTH;
+
 impl<F: Field> SubCircuitConfig<F> for PoseidonCircuitConfig<F> {
     type ConfigArgs = PoseidonCircuitConfigArgs;
 
@@ -33,8 +35,7 @@ impl<F: Field> SubCircuitConfig<F> for PoseidonCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs { poseidon_table }: Self::ConfigArgs,
     ) -> Self {
-        let conf =
-            PoseidonHashConfig::configure_sub(meta, poseidon_table.0, HASHBLOCK_BYTES_IN_FIELD);
+        let conf = PoseidonHashConfig::configure_sub(meta, poseidon_table.0, HASH_BLOCK_STEP_SIZE);
         Self(conf)
     }
 }
@@ -65,11 +66,14 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         {
             use bytecode_unroller::unroll_to_hash_input_default;
             for (_, bytecode) in &block.bytecodes {
-                poseidon_table_data.stream_inputs(
-                    &unroll_to_hash_input_default::<F>(bytecode.bytes.iter().copied()),
-                    bytecode.bytes.len() as u64,
-                    HASHBLOCK_BYTES_IN_FIELD,
-                );
+                // must skip empty bytecode
+                if !bytecode.bytes.is_empty() {
+                    poseidon_table_data.stream_inputs(
+                        &unroll_to_hash_input_default::<F>(bytecode.bytes.iter().copied()),
+                        bytecode.bytes.len() as u64,
+                        HASH_BLOCK_STEP_SIZE,
+                    );
+                }
             }
         }
 
@@ -77,7 +81,6 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
     }
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let max_hashes = block.evm_circuit_pad_to / F::hash_block_size();
         let acc = 0;
         #[cfg(feature = "zktrie")]
         let acc = {
@@ -103,7 +106,8 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
             }
             cnt
         };
-        (acc, max_hashes.max(acc))
+        let acc = acc * F::hash_block_size();
+        (acc, block.evm_circuit_pad_to.max(acc))
     }
 
     /// Make the assignments to the MptCircuit, notice it fill mpt table

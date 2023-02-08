@@ -66,8 +66,9 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
         );
         let (circuit, _) = eth_trie.to_circuits(
             (
-                block.circuits_params.max_rws,
-                Some(block.circuits_params.max_rws),
+                // notice we do not use the accompanied hash circuit so just assign any size
+                100usize,
+                Some(block.evm_circuit_pad_to),
             ),
             &block.mpt_updates.proof_types,
         );
@@ -126,7 +127,7 @@ impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let poseidon_table = PoseidonTable::construct(meta);
+        let poseidon_table = PoseidonTable::dev_construct(meta);
         let mpt_table = MptTable::construct(meta);
         let challenges = Challenges::construct(meta);
 
