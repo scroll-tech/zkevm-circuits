@@ -68,7 +68,7 @@ lazy_static! {
     /// ..
     pub static ref CIRCUIT: String =  match env::var("CIRCUIT") {
         Ok(val) => val,
-        Err(VarError::NotPresent) => "evm".to_string(),
+        Err(VarError::NotPresent) => "super".to_string(),
         Err(e) => panic!("Error in CIRCUIT env var: {:?}", e),
     };
 
