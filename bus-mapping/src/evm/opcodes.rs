@@ -60,6 +60,7 @@ mod swap;
 mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
+mod error_oog_log;
 mod error_oog_sload_sstore;
 
 #[cfg(test)]
@@ -82,6 +83,7 @@ use dup::Dup;
 use error_invalid_jump::InvalidJump;
 use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
+use error_oog_log::ErrorOOGLog;
 use error_oog_sload_sstore::OOGSloadSstore;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
@@ -264,6 +266,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::InvalidOpcode => Some(InvalidOpcode::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         // more future errors place here

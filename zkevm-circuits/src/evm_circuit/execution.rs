@@ -74,6 +74,7 @@ mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_stack;
@@ -142,6 +143,7 @@ use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_log::ErrorOOGLogGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
@@ -289,7 +291,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_stack: ErrorStackGadget<F>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
-    error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
+    error_oog_log: ErrorOOGLogGadget<F>,
     error_oog_memory_copy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>,
     error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
     error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
