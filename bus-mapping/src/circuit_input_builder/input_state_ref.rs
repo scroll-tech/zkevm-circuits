@@ -7,7 +7,7 @@ use super::{
 };
 use crate::precompile::is_precompiled;
 use crate::{
-    error::{get_step_reported_error, ExecError},
+    error::{get_step_reported_error, ExecError, OogError},
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
@@ -1268,6 +1268,34 @@ impl<'a> CircuitInputStateRef<'a> {
                         next_step
                     );
                     return Ok(Some(ExecError::ContractAddressCollision));
+                }
+            }
+
+            if matches!(
+                step.op,
+                OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL
+            ) {
+                let caller = self.call()?;
+                let callee_address = match CallKind::try_from(step.op)? {
+                    CallKind::Call | CallKind::StaticCall => step.stack.nth_last(1)?.to_address(),
+                    CallKind::CallCode | CallKind::DelegateCall => caller.address,
+                    _ => unreachable!(),
+                };
+
+                if is_precompiled(&callee_address) {
+                    let gas_cost = match callee_address.as_bytes()[19] {
+                        0x01 => GasCost::PRECOMPILE_ECRECOVER,
+                        _ => todo!("Precompile gas cost calculation"),
+                    };
+
+                    if step.gas.0 < gas_cost.0 {
+                        log::trace!(
+                            "Out of gas for Precompile: step_gas = {}, gas_cost = {}",
+                            step.gas.0,
+                            gas_cost.0
+                        );
+                        return Ok(Some(ExecError::OutOfGas(OogError::Precompile)));
+                    }
                 }
             }
 

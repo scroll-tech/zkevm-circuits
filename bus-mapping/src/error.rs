@@ -98,6 +98,8 @@ pub enum OogError {
     Create2,
     /// Out of Gas for SELFDESTRUCT
     SelfDestruct,
+    /// Out of Gas for Precompile
+    Precompile,
 }
 
 /// EVM Execution Error

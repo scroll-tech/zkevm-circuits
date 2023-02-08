@@ -88,6 +88,7 @@ impl From<&ExecError> for ExecutionState {
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
+                OogError::Precompile => ExecutionState::ErrorOutOfGasPrecompile,
             },
         }
     }

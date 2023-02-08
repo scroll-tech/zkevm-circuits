@@ -343,7 +343,10 @@ pub fn gen_associated_ops(
         } else {
             // For exceptions that already enter next call context, but fail immediately
             // (e.g. Depth, InsufficientBalance), we still need to parse the call.
-            if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
+            if geth_step.op.is_call_or_create()
+                && (!exec_step.oog_or_stack_error()
+                    || exec_step.error == Some(ExecError::OutOfGas(OogError::Precompile)))
+            {
                 let call = state.parse_call(geth_step)?;
                 state.push_call(call);
             // For exceptions that fail to enter next call context, we need

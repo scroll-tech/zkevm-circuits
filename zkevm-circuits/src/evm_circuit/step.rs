@@ -110,6 +110,7 @@ pub enum ExecutionState {
     ErrorOutOfGasCall,
     ErrorOutOfGasCREATE2,
     ErrorOutOfGasSELFDESTRUCT,
+    ErrorOutOfGasPrecompile,
 }
 
 impl Default for ExecutionState {
@@ -154,6 +155,7 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasCall
                 | Self::ErrorOutOfGasCREATE2
                 | Self::ErrorOutOfGasSELFDESTRUCT
+                | Self::ErrorOutOfGasPrecompile
         )
     }
 

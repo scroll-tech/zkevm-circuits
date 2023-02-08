@@ -299,6 +299,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_exp: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXP }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
+    error_oog_precompile: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasPrecompile }>,
     error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
@@ -549,6 +550,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_exp: configure_gadget!(),
             error_oog_create2: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
+            error_oog_precompile: configure_gadget!(),
             error_oog_code_store: configure_gadget!(),
             error_insufficient_balance: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
@@ -1280,6 +1282,9 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorOutOfGasSELFDESTRUCT => {
                 assign_exec_step!(self.error_oog_self_destruct)
+            }
+            ExecutionState::ErrorOutOfGasPrecompile => {
+                assign_exec_step!(self.error_oog_precompile)
             }
 
             ExecutionState::ErrorOutOfGasCodeStore => {
