@@ -45,6 +45,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_caller_address: Cell<F>,
     tx_caller_address_is_zero: IsZeroGadget<F>,
     tx_callee_address: Cell<F>,
+    tx_callee_address_is_zero: IsZeroGadget<F>,
     call_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
@@ -58,6 +59,7 @@ pub(crate) struct BeginTxGadget<F> {
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
     is_zero_code_hash: IsZeroGadget<F>,
+    is_precompile_lt: LtGadget<F, N_BYTES_ACCOUNT_ADDRESS>,
     // fields to support keccak lookup.
     tx_caller_address_bytes: [Cell<F>; N_BYTES_ACCOUNT_ADDRESS],
     caller_nonce_hash_bytes: [Cell<F>; N_BYTES_WORD],
@@ -119,6 +121,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_caller_address_is_zero.expr(),
             false.expr(),
         );
+        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, tx_callee_address.expr());
+        cb.condition(tx_is_create.expr(), |cb| {
+            cb.require_equal(
+                "Crate tx to zero address",
+                tx_callee_address_is_zero.expr(),
+                true.expr(),
+            )
+        });
         let [tx_gas_price, tx_value] = [TxContextFieldTag::GasPrice, TxContextFieldTag::Value]
             .map(|field_tag| cb.tx_context_as_word(tx_id.expr(), field_tag, None));
         let tx_value_is_zero = IsZeroGadget::construct(cb, tx_value.expr());
@@ -355,6 +365,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let is_zero_code_hash = IsZeroGadget::construct(cb, phase2_code_hash.expr());
         let is_empty_code = or::expr([is_empty_code_hash.expr(), is_zero_code_hash.expr()]);
 
+        // a valid precompile address is: 1 <= addr <= 9 (addr != 0 && addr < 0xA)
+        let is_precompile_lt = LtGadget::construct(cb, tx_callee_address.expr(), 0xA.expr());
+        let is_precompile = and::expr([
+            not::expr(tx_callee_address_is_zero.expr()),
+            is_precompile_lt.expr(),
+        ]);
+
         cb.condition(not::expr(is_empty_code.expr()), |cb| {
             cb.require_equal(
                 "code hash equivalence",
@@ -436,12 +453,45 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             });
         });
 
-        // TODO: 2. Handle call to precompiled contracts.
+        // 2. Handle call to precompiled contracts.
+        cb.condition(is_precompile.expr(), |cb| {
+            cb.require_equal(
+                "precompile should be zero code hash",
+                // FIXME: see in opcodes.rs gen_begin_tx_ops
+                is_empty_code.expr(),
+                true.expr(),
+            );
+            cb.require_equal(
+                "Go to EndTx when Tx to precompile",
+                cb.next.execution_state_selector([ExecutionState::EndTx]),
+                1.expr(),
+            );
 
-        // TODO: we should use "!tx_is_create && is_empty_code && !(1 <= addr <= 9)".
+            cb.require_step_state_transition(StepStateTransition {
+                // 10 reads and writes:
+                //   - Write CallContext TxId
+                //   - Write CallContext RwCounterEndOfReversion
+                //   - Write CallContext IsPersistent
+                //   - Write CallContext IsSuccess
+                //   - Write Account Nonce
+                //   - Write TxAccessListAccount
+                //   - Write TxAccessListAccount
+                //   - Write Account Balance
+                //   - Write Account Balance
+                //   - Read Account CodeHash
+                rw_counter: Delta(10.expr()),
+                call_id: To(call_id.expr()),
+                ..StepStateTransition::any()
+            });
+        });
+
         // check callop.rs
         // 3. Handle call to account with empty code.
-        let native_transfer = and::expr([not::expr(tx_is_create.expr()), is_empty_code.expr()]);
+        let native_transfer = and::expr([
+            not::expr(tx_is_create.expr()),
+            is_empty_code.expr(),
+            not::expr(is_precompile.expr()),
+        ]);
         cb.condition(
             native_transfer.expr() * not::expr(tx_value_is_zero.expr()),
             |cb| {
@@ -561,6 +611,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_caller_address,
             tx_caller_address_is_zero,
             tx_callee_address,
+            tx_callee_address_is_zero,
             call_callee_address,
             tx_is_create,
             tx_value,
@@ -574,6 +625,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             intrinsic_gas_cost,
             is_empty_code_hash,
             is_zero_code_hash,
+            is_precompile_lt,
             // fields to support keccak lookup.
             tx_caller_address_bytes,
             caller_nonce_hash_bytes,
@@ -634,15 +686,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(caller_address))?;
         self.tx_caller_address_is_zero
             .assign(region, offset, caller_address)?;
-        self.tx_callee_address.assign(
-            region,
-            offset,
-            Value::known(
-                tx.callee_address
-                    .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
-            ),
-        )?;
+        let callee_address = tx
+            .callee_address
+            .to_scalar()
+            .expect("unexpected Address -> Scalar conversion failure");
+        self.tx_callee_address
+            .assign(region, offset, Value::known(callee_address))?;
+        self.tx_callee_address_is_zero
+            .assign(region, offset, callee_address)?;
+        self.is_precompile_lt
+            .assign(region, offset, callee_address, F::from(0xA))?;
         self.call_callee_address.assign(
             region,
             offset,
@@ -752,7 +805,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
+    use eth_types::{self, address, bytecode, evm_types::GasCost, word, Bytecode, Word};
+    use ethers_core::types::Bytes;
 
     use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS};
 
@@ -1033,5 +1087,46 @@ mod test {
         begin_tx_deploy(0x0100000000000000u64);
         begin_tx_deploy(0x1020304050607080u64);
         begin_tx_deploy(0xfffffffffffffffeu64);
+    }
+
+    #[test]
+    fn begin_tx_precompile() {
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(address!("0x0000000000000000000000000000000000000004"))
+                    .input(Bytes::from(vec![0x01, 0x02, 0x03]));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    #[test]
+    fn begin_tx_precompile_with_value() {
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(address!("0x0000000000000000000000000000000000000004"))
+                    .value(eth(1))
+                    .input(Bytes::from(vec![0x01, 0x02, 0x03]));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

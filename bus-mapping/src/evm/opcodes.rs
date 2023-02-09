@@ -429,6 +429,9 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     )?;
 
     // Get code_hash of callee
+    // FIXME: call with value to precompile will cause the codehash of precompile
+    // address to `CodeDB::empty_code_hash()`. FIXME: we should have a
+    // consistent codehash for precompile contract.
     let (_, callee_account) = state.sdb.get_account(&call.address);
     let callee_exists = !callee_account.is_empty();
     let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
@@ -508,7 +511,14 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         }
         // 2. Call to precompiled.
         (_, true, _) => {
-            evm_unimplemented!("Call to precompiled is left unimplemented");
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::CodeHash,
+                callee_code_hash,
+                callee_code_hash,
+            )?;
+
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
