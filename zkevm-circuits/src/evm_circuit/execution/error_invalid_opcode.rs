@@ -4,7 +4,6 @@ use crate::evm_circuit::table::{FixedTableTag, Lookup};
 use crate::evm_circuit::util::common_gadget::RestoreContextGadget;
 use crate::evm_circuit::util::constraint_builder::Transition::{Delta, Same};
 use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
-use crate::evm_circuit::util::math_gadget::LtGadget;
 use crate::evm_circuit::util::{not, CachedRegion, Cell};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::CallContextFieldTag;
@@ -18,8 +17,6 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorInvalidOpcodeGadget<F> {
     opcode: Cell<F>,
-    // Constrain opcode is assigned to a value which must be less than 256.
-    op_lt256: LtGadget<F, 1>,
     rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -32,10 +29,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
-
-        let op_lt256 = LtGadget::construct(cb, opcode.expr(), 256.expr());
-        cb.require_zero("opcode < 256", 1.expr() - op_lt256.expr());
-
         cb.add_lookup(
             "Responsible opcode lookup",
             Lookup::Fixed {
@@ -101,7 +94,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
 
         Self {
             opcode,
-            op_lt256,
             rw_counter_end_of_reversion,
             restore_context,
         }
@@ -118,7 +110,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
     ) -> Result<(), Error> {
         let opcode = F::from(step.opcode.unwrap().as_u64());
         self.opcode.assign(region, offset, Value::known(opcode))?;
-        self.op_lt256.assign(region, offset, opcode, 256.into())?;
 
         self.rw_counter_end_of_reversion.assign(
             region,
