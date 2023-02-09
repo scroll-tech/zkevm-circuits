@@ -1271,6 +1271,29 @@ impl<'a> CircuitInputStateRef<'a> {
                 }
             }
 
+            if matches!(
+                step.op,
+                OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL
+            ) {
+                let caller = self.call()?;
+                let callee_address = match CallKind::try_from(step.op)? {
+                    CallKind::Call | CallKind::StaticCall => step.stack.nth_last(1)?.to_address(),
+                    CallKind::CallCode | CallKind::DelegateCall => caller.address,
+                    _ => unreachable!(),
+                };
+
+                if is_precompiled(&callee_address) {
+                    // Log the precompile address and gas left. Since this failure is mainly caused
+                    // by out of gas.
+                    log::trace!(
+                        "Precompile failed: callee_address = {}, step.gas = {}",
+                        callee_address,
+                        step.gas.0,
+                    );
+                    return Ok(Some(ExecError::PrecompileFailed));
+                }
+            }
+
             return Err(Error::UnexpectedExecStepError(
                 "*CALL*/CREATE* code not executed",
                 step.clone(),

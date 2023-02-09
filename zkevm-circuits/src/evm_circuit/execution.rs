@@ -310,6 +310,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
     error_return_data_out_of_bound:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
+    error_precompile_failed: DummyGadget<F, 0, 0, { ExecutionState::ErrorPrecompileFailed }>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -558,6 +559,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
+            error_precompile_failed: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -1312,6 +1314,9 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorReturnDataOutOfBound => {
                 assign_exec_step!(self.error_return_data_out_of_bound)
+            }
+            ExecutionState::ErrorPrecompileFailed => {
+                assign_exec_step!(self.error_precompile_failed)
             }
 
             _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),

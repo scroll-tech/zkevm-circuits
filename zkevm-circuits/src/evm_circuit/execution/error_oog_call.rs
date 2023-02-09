@@ -55,15 +55,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let is_staticcall =
             IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
 
-        // We do the responsible opcode check explicitly here because we're not
-        // using the SameContextGadget for CALL, CALLCODE, DELEGATECALL or
-        // STATICCALL.
-        cb.require_equal(
-            "ErrorOutOfGasCall opcode should be CALL, CALLCODE, DELEGATECALL or STATICCALL",
-            is_call.expr() + is_callcode.expr() + is_delegatecall.expr() + is_staticcall.expr(),
-            1.expr(),
-        );
-
         let rw_counter_end_of_reversion = cb.query_cell();
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
@@ -73,6 +64,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_call.expr(),
             is_callcode.expr(),
             is_delegatecall.expr(),
+            is_staticcall.expr(),
         );
 
         // Add callee to access list
@@ -83,8 +75,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_warm.expr(),
         );
 
+        cb.condition(call_gadget.has_value.expr(), |cb| {
+            cb.require_zero(
+                "CALL with value must not be in static call stack",
+                is_static.expr(),
+            );
+        });
+
         // Verify gas cost
-        let gas_cost = call_gadget.gas_cost_expr(is_warm.expr(), 1.expr());
+        let gas_cost = call_gadget.gas_cost_expr(is_warm.expr(), is_call.expr());
 
         // Check if the amount of gas available is less than the amount of gas required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);

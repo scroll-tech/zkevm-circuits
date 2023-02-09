@@ -472,7 +472,15 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         is_call: Expression<F>,
         is_callcode: Expression<F>,
         is_delegatecall: Expression<F>,
+        is_staticcall: Expression<F>,
     ) -> Self {
+        // Constrain opcode must be one of CALL, CALLCODE, DELEGATECALL or STATICCALL.
+        cb.require_equal(
+            "Opcode should be CALL, CALLCODE, DELEGATECALL or STATICCALL",
+            is_call.expr() + is_callcode.expr() + is_delegatecall.expr() + is_staticcall.expr(),
+            1.expr(),
+        );
+
         let gas_word = cb.query_word_rlc();
         let callee_address_word = cb.query_word_rlc();
         let value = cb.query_word_rlc();
@@ -515,7 +523,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         // construct common gadget
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
         let has_value = select::expr(
-            is_delegatecall.expr(),
+            is_delegatecall.expr() + is_staticcall.expr(),
             0.expr(),
             1.expr() - value_is_zero.expr(),
         );
