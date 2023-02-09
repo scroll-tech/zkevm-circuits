@@ -124,7 +124,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_callee_address_is_zero = IsZeroGadget::construct(cb, tx_callee_address.expr());
         cb.condition(tx_is_create.expr(), |cb| {
             cb.require_equal(
-                "Crate tx to zero address",
+                "Contract creation tx expects callee address to be zero",
                 tx_callee_address_is_zero.expr(),
                 true.expr(),
             )
