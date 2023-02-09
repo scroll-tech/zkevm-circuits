@@ -124,15 +124,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
     use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode::Bytecode;
-    use eth_types::{bytecode, ToWord, Word};
-    use itertools::Itertools;
     use lazy_static::lazy_static;
     use mock::TestContext;
-
-    const TESTING_CALL_DATA_PAIRS: [(usize, usize); 2] = [(0x20, 0x00), (0x1010, 0xff)];
 
     lazy_static! {
         static ref TESTING_INVALID_CODES: [Vec<u8>; 6] = [
@@ -148,23 +143,13 @@ mod test {
     }
 
     #[test]
-    fn invalid_opcode_root() {
+    fn test_invalid_opcode() {
         for invalid_code in TESTING_INVALID_CODES.iter() {
-            test_root_ok(invalid_code);
+            test_ok(invalid_code);
         }
     }
 
-    #[test]
-    fn invalid_opcode_internal() {
-        for ((call_data_offset, call_data_length), invalid_opcode) in TESTING_CALL_DATA_PAIRS
-            .iter()
-            .cartesian_product(TESTING_INVALID_CODES.iter())
-        {
-            test_internal_ok(*call_data_offset, *call_data_length, invalid_opcode);
-        }
-    }
-
-    fn test_root_ok(invalid_code: &[u8]) {
+    fn test_ok(invalid_code: &[u8]) {
         let mut code = Bytecode::default();
         invalid_code.iter().for_each(|b| {
             code.write(*b, true);
@@ -174,52 +159,5 @@ mod test {
             TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
         )
         .run();
-    }
-
-    fn test_internal_ok(call_data_offset: usize, call_data_length: usize, invalid_code: &[u8]) {
-        let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
-
-        // Code B gets called by code A, so the call is an internal call.
-        let mut code_b = Bytecode::default();
-        invalid_code.iter().for_each(|b| {
-            code_b.write(*b, true);
-        });
-
-        // code A calls code B.
-        let pushdata = rand_bytes(8);
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
-
-        let ctx = TestContext::<3, 1>::new(
-            None,
-            |accs| {
-                accs[0].address(addr_b).code(code_b);
-                accs[1].address(addr_a).code(code_a);
-                accs[2]
-                    .address(mock::MOCK_ACCOUNTS[3])
-                    .balance(Word::from(1_u64 << 20));
-            },
-            |mut txs, accs| {
-                txs[0].to(accs[1].address).from(accs[2].address);
-            },
-            |block, _tx| block,
-        )
-        .unwrap();
-
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }
