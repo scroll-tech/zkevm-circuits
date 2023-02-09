@@ -98,8 +98,6 @@ pub enum OogError {
     Create2,
     /// Out of Gas for SELFDESTRUCT
     SelfDestruct,
-    /// Out of Gas for Precompile
-    Precompile,
 }
 
 /// EVM Execution Error
@@ -133,6 +131,8 @@ pub enum ExecError {
     CodeStoreOutOfGas,
     /// For RETURN in a CREATE, CREATE2
     MaxCodeSizeExceeded,
+    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
+    PrecompileFailed,
 }
 
 // TODO: Move to impl block.

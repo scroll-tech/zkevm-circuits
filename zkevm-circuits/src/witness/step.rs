@@ -69,6 +69,7 @@ impl From<&ExecError> for ExecutionState {
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
             ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
             ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::PrecompileFailed => ExecutionState::ErrorPrecompileFailed,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {
@@ -88,7 +89,6 @@ impl From<&ExecError> for ExecutionState {
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
-                OogError::Precompile => ExecutionState::ErrorOutOfGasPrecompile,
             },
         }
     }

@@ -7,7 +7,7 @@ use super::{
 };
 use crate::precompile::is_precompiled;
 use crate::{
-    error::{get_step_reported_error, ExecError, OogError},
+    error::{get_step_reported_error, ExecError},
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
@@ -1283,19 +1283,14 @@ impl<'a> CircuitInputStateRef<'a> {
                 };
 
                 if is_precompiled(&callee_address) {
-                    let gas_cost = match callee_address.as_bytes()[19] {
-                        0x01 => GasCost::PRECOMPILE_ECRECOVER,
-                        _ => todo!("Precompile gas cost calculation"),
-                    };
-
-                    if step.gas.0 < gas_cost.0 {
-                        log::trace!(
-                            "Out of gas for Precompile: step_gas = {}, gas_cost = {}",
-                            step.gas.0,
-                            gas_cost.0
-                        );
-                        return Ok(Some(ExecError::OutOfGas(OogError::Precompile)));
-                    }
+                    // Log the precompile address and gas left. Since this failure is mainly caused
+                    // by out of gas.
+                    log::trace!(
+                        "Precompile failed: callee_address = {}, step.gas = {}",
+                        callee_address,
+                        step.gas.0,
+                    );
+                    return Ok(Some(ExecError::PrecompileFailed));
                 }
             }
 
