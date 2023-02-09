@@ -15,7 +15,7 @@ use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     evm_unimplemented, GethExecStep, ToAddress, ToWord, Word,
 };
-use ethers_core::utils::get_contract_address;
+use ethers_core::{utils::get_contract_address, k256::elliptic_curve::consts::False};
 use keccak256::EMPTY_HASH;
 
 use crate::util::CHECK_MEM_STRICT;
@@ -62,6 +62,7 @@ mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_log;
 mod error_oog_sload_sstore;
+mod error_create;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -85,6 +86,7 @@ use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
 use error_oog_log::ErrorOOGLog;
 use error_oog_sload_sstore::OOGSloadSstore;
+use error_create::ErrorCreate;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -267,6 +269,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
+        ExecError::OutOfGas(OogError::CodeStore) => Some(ErrorCreate::<false>::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         // more future errors place here
@@ -328,10 +331,11 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        log::warn!(
-            "geth error {:?} occurred in  {:?}",
+        println!(
+            "geth error {:?} occurred in  {:?} at pc {:?}",
             exec_error,
-            geth_step.op
+            geth_step.op,
+            geth_step.pc
         );
 
         exec_step.error = Some(exec_error.clone());

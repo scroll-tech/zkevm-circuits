@@ -77,6 +77,7 @@ mod error_oog_constant;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
+mod error_oog_codestore;
 mod error_stack;
 mod exp;
 mod extcodecopy;
@@ -145,6 +146,7 @@ use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
+use error_oog_codestore::ErrorOOGCodeStoreGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
@@ -299,7 +301,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_exp: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXP }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
-    error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
+    error_oog_code_store: ErrorOOGCodeStoreGadget<F>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
