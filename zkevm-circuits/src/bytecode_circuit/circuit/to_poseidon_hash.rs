@@ -491,7 +491,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
             (
                 "padding shift header",
                 self.padding_shift,
-                F::from(256 as u64).pow_vartime(&[BYTES_IN_FIELD as u64]),
+                F::from(256 as u64).pow_vartime([BYTES_IN_FIELD as u64]),
             ),
             ("field index header", self.field_index, F::one()),
         ] {
@@ -536,7 +536,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                         .invert()
                         .unwrap_or(F::zero());
                 let padding_shift_f = F::from(256 as u64)
-                    .pow_vartime(&[(BYTES_IN_FIELD - bytes_in_field_index) as u64]);
+                    .pow_vartime([(BYTES_IN_FIELD - bytes_in_field_index) as u64]);
                 let input_f = row.value * padding_shift_f + input_prev;
                 // relax field_border for code end
                 let field_border = field_border || code_index + 1 == code_length;

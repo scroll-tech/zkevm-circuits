@@ -65,7 +65,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         #[cfg(feature = "poseidon-codehash")]
         {
             use bytecode_unroller::unroll_to_hash_input_default;
-            for (_, bytecode) in &block.bytecodes {
+            for bytecode in block.bytecodes.values() {
                 // must skip empty bytecode
                 if !bytecode.bytes.is_empty() {
                     poseidon_table_data.stream_inputs(
@@ -101,7 +101,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         let acc = {
             let mut cnt = acc;
             use bytecode_unroller::unroll_to_hash_input_default;
-            for (_, bytecode) in &block.bytecodes {
+            for bytecode in block.bytecodes.values() {
                 cnt += unroll_to_hash_input_default::<F>(bytecode.bytes.iter().copied()).len();
             }
             cnt
@@ -149,9 +149,7 @@ impl<F: Field + Hashable> Circuit<F> for PoseidonCircuit<F> {
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        let mut out = Self::default();
-        out.1 = self.1;
-        out
+        Self(Default::default(), self.1)
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {

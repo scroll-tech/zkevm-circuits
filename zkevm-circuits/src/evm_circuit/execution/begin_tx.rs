@@ -21,7 +21,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::{get_contract_address, keccak256};
 use gadgets::util::{expr_from_bytes, or, select};
 use halo2_proofs::plonk::Error;
@@ -170,8 +170,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             intrinsic_gas_cost.expr(),
             select::expr(
                 tx_is_create.expr(),
-                GasCost::CREATION_TX.expr(),
-                GasCost::TX.expr(),
+                eth_types::evm_types::GasCost::CREATION_TX.expr(),
+                eth_types::evm_types::GasCost::TX.expr(),
             ) + tx_call_data_gas_cost.expr(),
         );
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();

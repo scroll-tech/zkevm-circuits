@@ -633,14 +633,12 @@ impl PoseidonTable {
 
     /// Construct a new PoseidonTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        // mitigate a wired issue caused by `assert_phase_exists`
-        let ph0_col = meta.advice_column();
         Self([
             meta.advice_column_in(SecondPhase),
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
-            ph0_col,
+            meta.advice_column(),
         ])
     }
 
@@ -684,8 +682,8 @@ impl PoseidonTable {
         Ok(())
     }
 
-    /// Provide this function for the case that we want to consume a keccak
-    /// table but without running the full keccak circuit
+    /// Provide this function for the case that we want to consume a poseidon
+    /// table but without running the full poseidon circuit
     pub fn dev_load<'a, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -728,7 +726,7 @@ impl PoseidonTable {
                 for input in inputs.clone() {
                     let mut control_len = input.len();
                     let mut first_row = true;
-                    let ref_hash = KeccakTable::assignments(&input, challenges)[0][3];
+                    let ref_hash = KeccakTable::assignments(input, challenges)[0][3];
                     for row in unroll_to_hash_input_default::<F>(input.iter().copied()) {
                         assert_ne!(
                             control_len,
