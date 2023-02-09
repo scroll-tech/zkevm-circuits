@@ -462,6 +462,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 true.expr(),
             );
             cb.require_equal(
+                "Tx to precompile should be persistent",
+                reversion_info.is_persistent(),
+                1.expr(),
+            );
+            cb.require_equal(
                 "Go to EndTx when Tx to precompile",
                 cb.next.execution_state_selector([ExecutionState::EndTx]),
                 1.expr(),
