@@ -58,3 +58,15 @@ pub fn unroll_with_codehash<F: Field>(code_hash: U256, bytes: Vec<u8>) -> Unroll
     }
     UnrolledBytecode { bytes, rows }
 }
+
+/// re-export bytes wrapped in hash field
+pub use super::circuit::to_poseidon_hash::HASHBLOCK_BYTES_IN_FIELD;
+use crate::table::PoseidonTable;
+
+/// Apply default constants in mod
+pub fn unroll_to_hash_input_default<F: Field>(
+    code: impl ExactSizeIterator<Item = u8>,
+) -> Vec<[F; PoseidonTable::INPUT_WIDTH]> {
+    use super::circuit::to_poseidon_hash::unroll_to_hash_input;
+    unroll_to_hash_input::<F, HASHBLOCK_BYTES_IN_FIELD, { PoseidonTable::INPUT_WIDTH }>(code)
+}

@@ -19,6 +19,9 @@ use super::{
     param::PUSH_TABLE_WIDTH,
 };
 
+/// An extended circuit for binding with poseidon
+pub mod to_poseidon_hash;
+
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
@@ -755,6 +758,12 @@ impl<F: Field> BytecodeCircuit<F> {
 }
 
 impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
+    #[cfg(feature = "poseidon-codehash")]
+    type Config = to_poseidon_hash::ToHashBlockCircuitConfig<
+        F,
+        { to_poseidon_hash::HASHBLOCK_BYTES_IN_FIELD },
+    >;
+    #[cfg(not(feature = "poseidon-codehash"))]
     type Config = BytecodeCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {

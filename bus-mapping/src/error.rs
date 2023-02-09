@@ -131,6 +131,8 @@ pub enum ExecError {
     CodeStoreOutOfGas,
     /// For RETURN in a CREATE, CREATE2
     MaxCodeSizeExceeded,
+    /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
+    PrecompileFailed,
 }
 
 // TODO: Move to impl block.

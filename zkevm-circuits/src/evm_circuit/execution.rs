@@ -74,6 +74,7 @@ mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_stack;
@@ -142,6 +143,7 @@ use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_log::ErrorOOGLogGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
@@ -289,7 +291,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_stack: ErrorStackGadget<F>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
-    error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
+    error_oog_log: ErrorOOGLogGadget<F>,
     error_oog_memory_copy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>,
     error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
     error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
@@ -308,6 +310,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
     error_return_data_out_of_bound:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
+    error_precompile_failed: DummyGadget<F, 0, 0, { ExecutionState::ErrorPrecompileFailed }>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -556,6 +559,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
+            error_precompile_failed: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -1310,6 +1314,9 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorReturnDataOutOfBound => {
                 assign_exec_step!(self.error_return_data_out_of_bound)
+            }
+            ExecutionState::ErrorPrecompileFailed => {
+                assign_exec_step!(self.error_precompile_failed)
             }
 
             _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),

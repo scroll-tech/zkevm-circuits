@@ -19,7 +19,7 @@ use halo2_proofs::plonk::SecondPhase;
 
 use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
 use crate::state_circuit::StateCircuitExports;
-#[cfg(feature = "non-legacy-tx")]
+#[cfg(feature = "reject-eip2718")]
 use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness::{self, Block, BlockContext, BlockContexts, Transaction};
@@ -671,7 +671,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 )?;
             }
         }
-        #[cfg(feature = "non-legacy-tx")]
+        #[cfg(feature = "reject-eip2718")]
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
             region.constrain_equal(
                 tx_hash_cell.cell(),

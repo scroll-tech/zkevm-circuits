@@ -17,7 +17,6 @@ use crate::{
     table::KeccakTable,
     util::{Challenges, Expr},
 };
-use ecc::maingate;
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
 use eth_types::{self, Field};
 use halo2_base::{
@@ -54,10 +53,12 @@ use log::error;
 use maingate::{MainGate, MainGateConfig, RegionCtx};
 use std::{iter, marker::PhantomData};
 
-/// Hard coded parameters.
+// Hard coded parameters.
 // FIXME: allow for a configurable param.
 const NUM_ADVICE: usize = 36;
-const ROWS_PER_SIG: usize = 17550;
+// Each ecdsa signature requires 11688  (signature) + 119 (rlc) = 11807 rows
+// We set ROWS_PER_SIG = 11850 to allows for a few buffer
+const ROWS_PER_SIG: usize = 11850;
 
 /// Chip to handle overflow integers of ECDSA::Fq, the scalar field
 type FqOverflowChip<'a, F> = FpOverflowChip<'a, F, Fq>;
@@ -291,12 +292,6 @@ impl<F: Field> SignVerifyChip<F> {
             4,
         )?;
         // println!("ECDSA res {:?}", ecdsa_is_valid);
-
-        // IMPORTANT: this assigns all constants to the fixed columns
-        // IMPORTANT: this copies cells to the lookup advice column to perform range
-        // check lookups
-        // This is not optional.
-        let (_const_rows, _total_fixed, _lookup_rows) = ecc_chip.field_chip.finalize(ctx)?;
 
         Ok(AssignedECDSA {
             pk: pk_assigned,
@@ -591,6 +586,14 @@ impl<F: Field> SignVerifyChip<F> {
                     let assigned_ecdsa = self.assign_ecdsa(&mut ctx, &chips, &signature)?;
                     assigned_ecdsas.push(assigned_ecdsa);
                 }
+
+                // IMPORTANT: this assigns all constants to the fixed columns
+                // IMPORTANT: this copies cells to the lookup advice column to perform range
+                // check lookups
+                // This is not optional.
+                let (_const_rows, _total_fixed, _lookup_rows) =
+                    chips.ecdsa_chip.finalize(&mut ctx)?;
+
                 Ok(assigned_ecdsas)
             },
         )?;

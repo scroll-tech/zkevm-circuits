@@ -73,15 +73,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_staticcall =
             IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
 
-        // We do the responsible opcode check explicitly here because we're not
-        // using the SameContextGadget for CALL, CALLCODE, DELEGATECALL or
-        // STATICCALL.
-        cb.require_equal(
-            "Opcode should be CALL, CALLCODE, DELEGATECALL or STATICCALL",
-            is_call.expr() + is_callcode.expr() + is_delegatecall.expr() + is_staticcall.expr(),
-            1.expr(),
-        );
-
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
 
@@ -108,6 +99,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_call.expr(),
             is_callcode.expr(),
             is_delegatecall.expr(),
+            is_staticcall.expr(),
         );
         let call_value_is_zero = IsZeroGadget::construct(cb, call_gadget.value.expr());
         cb.condition(not::expr(is_call.expr() + is_callcode.expr()), |cb| {

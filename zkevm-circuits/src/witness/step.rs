@@ -69,6 +69,7 @@ impl From<&ExecError> for ExecutionState {
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
             ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
             ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::PrecompileFailed => ExecutionState::ErrorPrecompileFailed,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {
@@ -96,7 +97,7 @@ impl From<&ExecError> for ExecutionState {
 impl From<&circuit_input_builder::ExecStep> for ExecutionState {
     fn from(step: &circuit_input_builder::ExecStep) -> Self {
         if let Some(error) = step.error.as_ref() {
-            //log::info!("EXECERR {:?}", error);
+            log::debug!("step err {:?}", error);
             return error.into();
         }
         match step.exec_state {
