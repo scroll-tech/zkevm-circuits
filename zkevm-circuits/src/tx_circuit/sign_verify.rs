@@ -22,6 +22,7 @@ use eth_types::{self, Field};
 use halo2_base::{
     gates::{
         flex_gate::{FlexGateConfig, GateStrategy},
+        range::{RangeConfig, RangeStrategy},
         GateInstructions, RangeInstructions as Halo2Range,
     },
     AssignedValue, Context, QuantumCell,
@@ -110,7 +111,7 @@ pub(crate) struct SignVerifyConfig<F: Field> {
     ecdsa_config: FpChip<F>,
     main_gate_config: MainGateConfig,
     // RLC
-    rlc_config: FlexGateConfig<F>,
+    rlc_config: RangeConfig<F>,
     // Keccak
     q_keccak: Selector,
     keccak_table: KeccakTable,
@@ -148,17 +149,20 @@ impl<F: Field> SignVerifyConfig<F> {
         // halo2wrong's main gate config
         let main_gate_config = MainGate::<F>::configure(meta);
 
-        // RLC
-        let rlc_config = FlexGateConfig::configure(
+        // RLC chip which also requires a range gate
+        // we waste a column in phase 0 unfortunately
+        let rlc_config = RangeConfig::<F>::configure(
             meta,
-            GateStrategy::PlonkPlus,
-            &[0, 1],
+            RangeStrategy::PlonkPlus,
+            &[1, 1],
+            &[0],
             0,
-            "rlc chip".to_string(),
+            0,
+            "ecdsa chip".to_string(),
         );
 
         // ensure that the RLC column is a second phase column
-        let rlc_column = rlc_config.basic_gates.last().unwrap().value;
+        let rlc_column = rlc_config.gate.basic_gates.last().unwrap().value;
         assert_eq!(rlc_column.column_type().phase(), 1);
 
         // let rlc = meta.advice_column_in(SecondPhase);
@@ -210,7 +214,8 @@ impl<F: Field> SignVerifyConfig<F> {
 
 impl<F: Field> SignVerifyConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        self.ecdsa_config.range.load_lookup_table(layouter)
+        self.ecdsa_config.range.load_lookup_table(layouter)?;
+        self.rlc_config.load_lookup_table(layouter)
     }
 }
 
@@ -234,6 +239,7 @@ pub(crate) struct AssignedSignatureVerify<F: Field> {
 struct ChipsRef<'a, F: Field> {
     main_gate: &'a MainGate<F>,
     ecdsa_chip: FpChip<F>,
+    rlc_chip: RangeConfig<F>,
 }
 
 impl<F: Field> SignVerifyChip<F> {
@@ -265,6 +271,7 @@ impl<F: Field> SignVerifyChip<F> {
         let ChipsRef {
             main_gate: _,
             ecdsa_chip,
+            rlc_chip: _,
         } = chips;
 
         // build ecc chip from Fp chip
@@ -332,7 +339,7 @@ impl<F: Field> SignVerifyChip<F> {
         let a = config.main_gate_config.advices()[0];
         ctx.enable(config.q_keccak)?;
 
-        let rlc_column = config.rlc_config.basic_gates.last().unwrap().value;
+        let rlc_column = config.rlc_config.gate.basic_gates.last().unwrap().value;
 
         copy(ctx, "is_address_zero", a, is_address_zero)?;
         copy(ctx, "pk_rlc", rlc_column, pk_rlc)?;
@@ -355,10 +362,10 @@ impl<F: Field> SignVerifyChip<F> {
         let ChipsRef {
             main_gate: _,
             ecdsa_chip,
+            rlc_chip,
         } = chips;
-        let flex_gate_chip = ecdsa_chip.range.gate.clone();
-        let range_chip = ecdsa_chip.range.clone();
-        let zero = flex_gate_chip.load_zero(ctx)?;
+
+        let zero = rlc_chip.gate.load_zero(ctx)?;
         let zero_cell = QuantumCell::Existing(&zero);
 
         let (padding, sign_data) = match sign_data {
@@ -417,13 +424,15 @@ impl<F: Field> SignVerifyChip<F> {
             .collect_vec();
 
         // address is the random linear combination of the public key
-        let (_pk, _, address) = flex_gate_chip.inner_product(
+        // using phase 2 gate for this; enforce the use of phase 2 columns
+        let (_pk, _, address) = rlc_chip.gate.inner_product_with_phase(
             ctx,
             &powers_of_256_cells[0..20].to_vec(),
             &pk_hash_cells[12..].to_vec(),
+            1
         )?;
 
-        let is_address_zero = range_chip.is_equal(
+        let is_address_zero = rlc_chip.is_equal(
             ctx,
             &QuantumCell::Existing(&address),
             &QuantumCell::Existing(&zero),
@@ -463,10 +472,14 @@ impl<F: Field> SignVerifyChip<F> {
             // compute the msg_hash rlc
             let assigned_msg_hash_le_selected = assigned_msg_hash_le
                 .iter()
-                .map(|byte| flex_gate_chip.select(ctx, &zero_cell, byte, &is_address_zero_cell))
+                .map(|byte| {
+                    rlc_chip
+                        .gate
+                        .select(ctx, &zero_cell, byte, &is_address_zero_cell)
+                })
                 .collect::<Result<Vec<_>, _>>()?;
 
-            let (_, _, msg_hash_rlc) = flex_gate_chip.inner_product(
+            let (_, _, msg_hash_rlc) = rlc_chip.gate.inner_product_with_phase(
                 ctx,
                 &assigned_msg_hash_le_selected
                     .iter()
@@ -474,6 +487,7 @@ impl<F: Field> SignVerifyChip<F> {
                     .take(32)
                     .collect_vec(),
                 &evm_challenge_powers,
+                1
             )?;
             msg_hash_rlc
         };
@@ -527,10 +541,11 @@ impl<F: Field> SignVerifyChip<F> {
             // compute the pk rlc
             let assigned_pk_le_selected = [pk_y_le, pk_x_le].concat();
 
-            let (_, _, pk_rlc) = flex_gate_chip.inner_product(
+            let (_, _, pk_rlc) = rlc_chip.gate.inner_product_with_phase(
                 ctx,
                 &assigned_pk_le_selected,
                 &keccak_challenge_powers,
+                1
             )?;
             // println!("pk rlc halo2ecc: {:?}", pk_rlc.value());
             pk_rlc
@@ -541,7 +556,9 @@ impl<F: Field> SignVerifyChip<F> {
         // ================================================
         let pk_hash_rlc = {
             let (_, _, pk_hash_rlc) =
-                flex_gate_chip.inner_product(ctx, &pk_hash_cells, &evm_challenge_powers)?;
+                rlc_chip
+                    .gate
+                    .inner_product(ctx, &pk_hash_cells, &evm_challenge_powers)?;
             pk_hash_rlc
         };
         // println!("pk hash rlc halo2ecc: {:?}", pk_hash_rlc.value());
@@ -577,10 +594,12 @@ impl<F: Field> SignVerifyChip<F> {
         }
         let main_gate = MainGate::new(config.main_gate_config.clone());
         let ecdsa_chip = config.ecdsa_config.clone();
+        let rlc_chip = config.rlc_config.clone();
 
         let chips = ChipsRef {
             main_gate: &main_gate,
             ecdsa_chip,
+            rlc_chip,
         };
 
         let assigned_ecdsas = layouter.assign_region(
@@ -643,6 +662,8 @@ impl<F: Field> SignVerifyChip<F> {
                 //     "maximum rows used by an advice column: {}",
                 //         advice_rows.clone().max().or(Some(&0)).unwrap(),
                 // );
+                let (_const_rows, _total_fixed, _lookup_rows) =
+                    chips.ecdsa_chip.finalize(&mut ctx)?;
                 Ok((deferred_keccak_check, assigned_sig_verifs))
             },
         )?;
