@@ -20,7 +20,10 @@ use crate::{
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
 use eth_types::{self, Field};
 use halo2_base::{
-    gates::{GateInstructions, RangeInstructions as Halo2Range},
+    gates::{
+        flex_gate::{FlexGateConfig, GateStrategy},
+        GateInstructions, RangeInstructions as Halo2Range,
+    },
     AssignedValue, Context, QuantumCell,
 };
 use halo2_base::{utils::modulus, ContextParams};
@@ -107,7 +110,7 @@ pub(crate) struct SignVerifyConfig<F: Field> {
     ecdsa_config: FpChip<F>,
     main_gate_config: MainGateConfig,
     // RLC
-    rlc: Column<Advice>,
+    rlc_config: FlexGateConfig<F>,
     // Keccak
     q_keccak: Selector,
     keccak_table: KeccakTable,
@@ -146,8 +149,20 @@ impl<F: Field> SignVerifyConfig<F> {
         let main_gate_config = MainGate::<F>::configure(meta);
 
         // RLC
-        let rlc = meta.advice_column_in(SecondPhase);
-        meta.enable_equality(rlc);
+        let rlc_config = FlexGateConfig::configure(
+            meta,
+            GateStrategy::PlonkPlus,
+            &[0, 1],
+            0,
+            "rlc chip".to_string(),
+        );
+
+        // ensure that the RLC column is a second phase column
+        let rlc_column = rlc_config.basic_gates.last().unwrap().value;
+        assert_eq!(rlc_column.column_type().phase(), 1);
+
+        // let rlc = meta.advice_column_in(SecondPhase);
+        // meta.enable_equality(rlc);
 
         // Ref. spec SignVerifyChip 1. Verify that keccak(pub_key_bytes) = pub_key_hash
         // by keccak table lookup, where pub_key_bytes is built from the pub_key
@@ -168,9 +183,9 @@ impl<F: Field> SignVerifyConfig<F> {
 
             let input = [
                 is_enable.clone(),
-                is_enable.clone() * meta.query_advice(rlc, Rotation::cur()),
+                is_enable.clone() * meta.query_advice(rlc_column, Rotation::cur()),
                 is_enable.clone() * 64usize.expr(),
-                is_enable * meta.query_advice(rlc, Rotation::next()),
+                is_enable * meta.query_advice(rlc_column, Rotation::next()),
             ];
             let table = [
                 keccak_table.is_enabled,
@@ -187,7 +202,7 @@ impl<F: Field> SignVerifyConfig<F> {
             ecdsa_config,
             main_gate_config,
             keccak_table,
-            rlc,
+            rlc_config,
             q_keccak,
         }
     }
@@ -317,10 +332,12 @@ impl<F: Field> SignVerifyChip<F> {
         let a = config.main_gate_config.advices()[0];
         ctx.enable(config.q_keccak)?;
 
+        let rlc_column = config.rlc_config.basic_gates.last().unwrap().value;
+
         copy(ctx, "is_address_zero", a, is_address_zero)?;
-        copy(ctx, "pk_rlc", config.rlc, pk_rlc)?;
+        copy(ctx, "pk_rlc", rlc_column, pk_rlc)?;
         ctx.next();
-        copy(ctx, "pk_hash_rlc", config.rlc, pk_hash_rlc)?;
+        copy(ctx, "pk_hash_rlc", rlc_column, pk_hash_rlc)?;
         ctx.next();
 
         Ok(())
