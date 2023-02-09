@@ -75,6 +75,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_warm.expr(),
         );
 
+        cb.condition(call_gadget.has_value.expr(), |cb| {
+            cb.require_zero(
+                "CALL with value must not be in static call stack",
+                is_static.expr(),
+            );
+        });
+
         // Verify gas cost
         let gas_cost = call_gadget.gas_cost_expr(is_warm.expr(), is_call.expr());
 
