@@ -487,24 +487,19 @@ impl<F: Field> SignVerifyChip<F> {
         // ================================================
         // step 0. powers of aux parameters
         // ================================================
-        let evm_challenge_powers = iter::successors(Some(F::one()), |coeff| {
-            Some(challenges.evm_word().inner.unwrap() * *coeff)
+        let evm_challenge_powers = iter::successors(Some(Value::known(F::one())), |coeff| {
+            Some(challenges.evm_word() * coeff)
         })
-        .take(32);
+        .take(32)
+        .map(|x| QuantumCell::Witness(x))
+        .collect_vec();
 
-        let evm_challenge_powers = evm_challenge_powers
-            .map(|x| QuantumCell::Witness(Value::known(x)))
-            .collect_vec();
-
-        let keccak_challenge_powers = iter::successors(Some(F::one()), |coeff| {
-            Some(challenges.keccak_input().inner.unwrap() * *coeff)
+        let keccak_challenge_powers = iter::successors(Some(Value::known(F::one())), |coeff| {
+            Some(challenges.keccak_input() * coeff)
         })
-        .take(64);
-
-        let keccak_challenge_powers = keccak_challenge_powers
-            .map(|x| QuantumCell::Witness(Value::known(x)))
-            .collect_vec();
-
+        .take(64)
+        .map(|x| QuantumCell::Witness(x))
+        .collect_vec();
         // ================================================
         // step 1 random linear combination of message hash
         // ================================================
@@ -648,6 +643,8 @@ impl<F: Field> SignVerifyChip<F> {
                 );
 
                 // IMPORTANT: Move to Phase2 before RLC
+
+    #[cfg(not(feature = "onephase"))]
                 ctx.next_phase();
 
                 // ================================================
@@ -847,7 +844,13 @@ pub(crate) fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
 #[cfg(test)]
 mod sign_verify_tests {
     use super::*;
+
+
+    #[cfg(not(feature = "onephase"))]
     use crate::util::Challenges;
+    #[cfg(feature = "onephase")]
+    use crate::util::MockChallenges as Challenges;
+
     use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
     use eth_types::sign_types::sign;
     use halo2_proofs::arithmetic::Field as HaloField;
