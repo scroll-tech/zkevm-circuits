@@ -44,12 +44,12 @@ mod tests {
             .expect("DEGREE Not Set")
             .parse::<usize>()
             .expect("DEGREE should be int");
-        // const ROWS_PER_TX: usize = 175_000;
-        // const MAX_TXS: usize = 2_usize.pow(degree as u32) / ROWS_PER_TX;
-        // const MAX_CALLDATA: usize = 1024;
+        const ROWS_PER_TX: usize = 175_000;
+        let MAX_TXS: usize = 2_usize.pow(degree as u32) / ROWS_PER_TX;
+        const MAX_CALLDATA: usize = 1024;
 
         let mut rng = ChaCha20Rng::seed_from_u64(42);
-
+/* 
         let block_num = 16140307_u64;
         log::info!("test super circuit, block number: {}", block_num);
         let cli = get_client();
@@ -71,10 +71,11 @@ mod tests {
             return;
         }
         let block = block_convert(&builder.block, &builder.code_db).unwrap();
-        // let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
-        // let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
-        // let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, txs);
         let circuit = TxCircuit::new_from_block(&block);
+        */
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
+        let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
+        let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, txs);
 
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", degree);
