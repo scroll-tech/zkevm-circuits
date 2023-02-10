@@ -7,13 +7,13 @@ use crate::{
         },
         step::ExecutionState,
         util::{
-            common_gadget::TransferGadget,
+            common_gadget::RestoreContextGadget,
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
-            math_gadget::{ConstantDivisionGadget, IsZeroGadget},
+            math_gadget::{ConstantDivisionGadget, IsZeroGadget, LtGadget},
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             not, rlc, select, sum, CachedRegion, Cell, RandomLinearCombination, Word,
         },
@@ -39,7 +39,8 @@ pub(crate) struct ErrorOOGCodeStoreGadget<F> {
     //return_data_offset: Cell<F>,
     //return_data_length: Cell<F>,
     range: MemoryAddressGadget<F>,
-   //restore_context: RestoreContextGadget<F>,
+    code_store_gas_insufficient: LtGadget<F, N_BYTES_GAS>,
+    restore_context: RestoreContextGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
@@ -55,15 +56,34 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
         cb.stack_pop(offset.expr());
-        cb.stack_pop(length.expr());
-        let range = MemoryAddressGadget::construct(cb, offset, length);
+        cb.stack_pop(length.clone().expr());
+        let range = MemoryAddressGadget::construct(cb, offset, length.clone());
 
-        //TODO: constrain code store gas > gas left
-        //TODO: restore context
+        //constrain code store gas > gas left, that is 200 * length > gas left
+        let code_store_gas_insufficient = LtGadget::construct(cb, cb.curr.state.gas_left.expr(),
+        // use frombytes    
+        200.expr() * length.clone().expr());
+        cb.require_equal("200 * length > step gas left", code_store_gas_insufficient.expr(), 1.expr());
+        // restore context as in internal call
+        cb.require_zero("in internal call", cb.curr.state.is_root.expr());
+
+        // TODO:: constrain in create context, look up is_create
+        // Case C in the specs.
+          let restore_context = RestoreContextGadget::construct(
+                cb,
+                0.expr(),
+                0.expr(),
+                range.offset(),
+                range.length(),
+                0.expr(),
+                0.expr(),
+            );
 
         Self {
             opcode,
             range,
+            code_store_gas_insufficient,
+            restore_context,
         }
     }
 
@@ -83,7 +103,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
         
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
         let range = self.range.assign(region, offset, memory_offset, length)?;
-
+        
+        self.code_store_gas_insufficient.assign(region, offset, F::from(step.gas_left), 
+            F::from(200 * length.as_u64()))?;
+        self.restore_context.assign(
+            region,
+            offset,
+            block,
+            call,
+            step,
+            2,
+        )?;
         Ok(())
     }
 }
