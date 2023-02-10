@@ -20,10 +20,7 @@ use crate::{
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
 use eth_types::{self, Field};
 use halo2_base::{
-    gates::{
-        range::{RangeConfig},
-        GateInstructions, RangeInstructions as Halo2Range,
-    },
+    gates::{range::RangeConfig, GateInstructions, RangeInstructions as Halo2Range},
     AssignedValue, Context, QuantumCell,
 };
 use halo2_base::{utils::modulus, ContextParams};
@@ -44,11 +41,6 @@ use halo2_proofs::{
     plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
-
-#[cfg(feature = "onephase")]
-use halo2_proofs::plonk::FirstPhase as SecondPhase;
-#[cfg(not(feature = "onephase"))]
-use halo2_proofs::plonk::SecondPhase;
 
 use itertools::Itertools;
 use keccak256::plain::Keccak;
@@ -130,10 +122,16 @@ impl<F: Field> SignVerifyConfig<F> {
         // - num_limbs: 3
         //
         // TODO: make those parameters tunable from a config file
+
+        #[cfg(feature = "onephase")]
+        let num_advice = &[NUM_ADVICE];
+        #[cfg(not(feature = "onephase"))]
+        let num_advice = &[NUM_ADVICE, 1];
+
         let ecdsa_config = FpConfig::configure(
             meta,
             FpStrategy::SimplePlus,
-            &[NUM_ADVICE, 1],
+            num_advice,
             &[13],
             1,
             13,
@@ -148,6 +146,7 @@ impl<F: Field> SignVerifyConfig<F> {
 
         // ensure that the RLC column is a second phase column
         let rlc_column = ecdsa_config.range.gate.basic_gates.last().unwrap().value;
+        #[cfg(not(feature = "onephase"))]
         assert_eq!(rlc_column.column_type().phase(), 1);
 
         // let rlc = meta.advice_column_in(SecondPhase);
@@ -317,7 +316,14 @@ impl<F: Field> SignVerifyChip<F> {
         ctx.enable(config.q_keccak)?;
 
         // this is a phase 2 column
-        let rlc_column = config.ecdsa_config.range.gate.basic_gates.last().unwrap().value;
+        let rlc_column = config
+            .ecdsa_config
+            .range
+            .gate
+            .basic_gates
+            .last()
+            .unwrap()
+            .value;
 
         copy(ctx, "is_address_zero", a, is_address_zero)?;
         copy(ctx, "pk_rlc", rlc_column, pk_rlc)?;
@@ -623,10 +629,7 @@ impl<F: Field> SignVerifyChip<F> {
                     "maximum rows used by an advice column: {}",
                     advice_rows.clone().max().or(Some(&0)).unwrap(),
                 );
-                println!(
-                    "row counts: {:?}",
-                    advice_rows,
-                );
+                println!("row counts: {:?}", advice_rows,);
 
                 Ok((assigned_ecdsas, sign_data_decomposed_vec))
             },
@@ -638,13 +641,13 @@ impl<F: Field> SignVerifyChip<F> {
                 let mut ctx = Context::new(
                     region,
                     ContextParams {
-                        num_advice: vec![("ecdsa chip".to_string(),  NUM_ADVICE + 1)],
+                        num_advice: vec![("ecdsa chip".to_string(), NUM_ADVICE + 1)],
                     },
                 );
 
                 // IMPORTANT: Move to Phase2 before RLC
 
-    #[cfg(not(feature = "onephase"))]
+                #[cfg(not(feature = "onephase"))]
                 ctx.next_phase();
 
                 // ================================================
@@ -671,10 +674,7 @@ impl<F: Field> SignVerifyChip<F> {
                     "maximum rows used by an advice column: {}",
                     advice_rows.clone().max().or(Some(&0)).unwrap(),
                 );
-                println!(
-                    "row counts: {:?}",
-                    advice_rows,
-                );
+                println!("row counts: {:?}", advice_rows,);
                 Ok((deferred_keccak_check, assigned_sig_verifs))
             },
         )?;
@@ -844,7 +844,6 @@ pub(crate) fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
 #[cfg(test)]
 mod sign_verify_tests {
     use super::*;
-
 
     #[cfg(not(feature = "onephase"))]
     use crate::util::Challenges;

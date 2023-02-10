@@ -190,6 +190,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
 
         let poseidon_circuit =
             PoseidonCircuitConfig::new(meta, PoseidonCircuitConfigArgs { poseidon_table });
+        log_circuit_info(meta, "poseidon circuit");
 
         let rlp_circuit = RlpCircuitConfig::configure(meta, &rlp_table, &challenges);
         log_circuit_info(meta, "rlp circuit");

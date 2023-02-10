@@ -10,7 +10,7 @@ use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
 use crate::table::{KeccakTable, LookupTable, RlpTable, TxFieldTag, TxTable};
 #[cfg(not(feature = "enable-sign-verify"))]
 use crate::tx_circuit::sign_verify::pub_key_hash_to_address;
-use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
+use crate::util::{random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig};
 use crate::witness;
 use crate::witness::{RlpDataType, RlpTxTag, Transaction};
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
@@ -148,7 +148,7 @@ pub struct TxCircuitConfigArgs<F: Field> {
     /// RlpTable
     pub rlp_table: RlpTable,
     /// Challenges
-    pub challenges: Challenges<Expression<F>>,
+    pub challenges: crate::util::Challenges<Expression<F>>,
 }
 
 impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
@@ -1280,7 +1280,7 @@ impl<F: Field> TxCircuit<F> {
     fn assign(
         &self,
         config: &TxCircuitConfig<F>,
-        challenges: &Challenges<Value<F>>,
+        challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
         assigned_sig_verifs: Vec<AssignedSignatureVerify<F>>,
         sign_datas: Vec<SignData>,
@@ -1637,7 +1637,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        challenges: &Challenges<Value<F>>,
+        challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= self.max_txs);
@@ -1702,6 +1702,11 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         vec![vec![]]
     }
 }
+
+#[cfg(not(feature = "onephase"))]
+use crate::util::Challenges;
+#[cfg(feature = "onephase")]
+use crate::util::MockChallenges as Challenges;
 
 #[cfg(any(feature = "test", test))]
 impl<F: Field> Circuit<F> for TxCircuit<F> {
