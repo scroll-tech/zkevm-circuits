@@ -127,9 +127,9 @@ impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let challenges = Challenges::construct(meta);
         let poseidon_table = PoseidonTable::dev_construct(meta);
         let mpt_table = MptTable::construct(meta);
-        let challenges = Challenges::construct(meta);
 
         let config = {
             let challenges = challenges.exprs(meta);

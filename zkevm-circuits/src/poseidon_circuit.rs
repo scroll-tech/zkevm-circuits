@@ -153,8 +153,8 @@ impl<F: Field + Hashable> Circuit<F> for PoseidonCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let poseidon_table = PoseidonTable::construct(meta);
         let challenges = Challenges::construct(meta);
+        let poseidon_table = PoseidonTable::construct(meta);
 
         let config =
             { PoseidonCircuitConfig::new(meta, PoseidonCircuitConfigArgs { poseidon_table }) };

@@ -285,9 +285,6 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
-
-    // if no errors, continue as normal
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
     if memory_enabled {
         let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
@@ -356,6 +353,7 @@ pub fn gen_associated_ops(
         }
     }
     // if no errors, continue as normal
+    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
     fn_gen_associated_ops(state, geth_steps)
 }
 
