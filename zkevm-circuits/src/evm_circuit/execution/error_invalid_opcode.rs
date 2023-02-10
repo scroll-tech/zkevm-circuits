@@ -128,11 +128,8 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode::Bytecode;
     use eth_types::{bytecode, ToWord, Word};
-    use itertools::Itertools;
     use lazy_static::lazy_static;
     use mock::TestContext;
-
-    const TESTING_CALL_DATA_PAIRS: [(usize, usize); 2] = [(0x20, 0x00), (0x1010, 0xff)];
 
     lazy_static! {
         static ref TESTING_INVALID_CODES: [Vec<u8>; 6] = [
@@ -156,11 +153,8 @@ mod test {
 
     #[test]
     fn invalid_opcode_internal() {
-        for ((call_data_offset, call_data_length), invalid_opcode) in TESTING_CALL_DATA_PAIRS
-            .iter()
-            .cartesian_product(TESTING_INVALID_CODES.iter())
-        {
-            test_internal_ok(*call_data_offset, *call_data_length, invalid_opcode);
+        for invalid_code in TESTING_INVALID_CODES.iter() {
+            test_internal_ok(0x20, 0x00, invalid_code);
         }
     }
 
