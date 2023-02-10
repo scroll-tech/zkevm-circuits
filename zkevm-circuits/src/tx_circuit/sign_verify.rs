@@ -21,7 +21,7 @@ use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
 use eth_types::{self, Field};
 use halo2_base::{
     gates::{
-        range::{RangeConfig, RangeStrategy},
+        range::{RangeConfig},
         GateInstructions, RangeInstructions as Halo2Range,
     },
     AssignedValue, Context, QuantumCell,
@@ -109,8 +109,6 @@ pub(crate) struct SignVerifyConfig<F: Field> {
     // ECDSA
     ecdsa_config: FpChip<F>,
     main_gate_config: MainGateConfig,
-    // RLC
-    rlc_config: RangeConfig<F>,
     // Keccak
     q_keccak: Selector,
     keccak_table: KeccakTable,
@@ -135,7 +133,7 @@ impl<F: Field> SignVerifyConfig<F> {
         let ecdsa_config = FpConfig::configure(
             meta,
             FpStrategy::SimplePlus,
-            &[NUM_ADVICE],
+            &[NUM_ADVICE, 1],
             &[13],
             1,
             13,
@@ -148,21 +146,8 @@ impl<F: Field> SignVerifyConfig<F> {
         // halo2wrong's main gate config
         let main_gate_config = MainGate::<F>::configure(meta);
 
-        // RLC chip which is a range gate
-        // we waste a column in phase 0 unfortunately
-        let rlc_config = RangeConfig::<F>::configure(
-            meta,
-            RangeStrategy::PlonkPlus,
-            // one advice for phase 1 and another for phase 2
-            &[1, 1],
-            &[0],
-            0,
-            0,
-            "rlc chip".to_string(),
-        );
-
         // ensure that the RLC column is a second phase column
-        let rlc_column = rlc_config.gate.basic_gates.last().unwrap().value;
+        let rlc_column = ecdsa_config.range.gate.basic_gates.last().unwrap().value;
         assert_eq!(rlc_column.column_type().phase(), 1);
 
         // let rlc = meta.advice_column_in(SecondPhase);
@@ -206,7 +191,6 @@ impl<F: Field> SignVerifyConfig<F> {
             ecdsa_config,
             main_gate_config,
             keccak_table,
-            rlc_config,
             q_keccak,
         }
     }
@@ -214,8 +198,7 @@ impl<F: Field> SignVerifyConfig<F> {
 
 impl<F: Field> SignVerifyConfig<F> {
     pub(crate) fn load_range(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        self.ecdsa_config.range.load_lookup_table(layouter)?;
-        self.rlc_config.load_lookup_table(layouter)
+        self.ecdsa_config.range.load_lookup_table(layouter)
     }
 }
 
@@ -240,13 +223,6 @@ struct SignDataDecomposed<'a, F: Field> {
     pk_cells: Vec<QuantumCell<'a, F>>,
     address: AssignedValue<F>,
     is_address_zero: AssignedValue<F>,
-}
-
-/// Helper structure pass around references to all the chips required for an
-/// ECDSA verification.
-struct ChipsRef<F: Field> {
-    ecdsa_chip: FpChip<F>,
-    rlc_chip: RangeConfig<F>,
 }
 
 impl<F: Field> SignVerifyChip<F> {
@@ -340,7 +316,8 @@ impl<F: Field> SignVerifyChip<F> {
         let a = config.main_gate_config.advices()[0];
         ctx.enable(config.q_keccak)?;
 
-        let rlc_column = config.rlc_config.gate.basic_gates.last().unwrap().value;
+        // this is a phase 2 column
+        let rlc_column = config.ecdsa_config.range.gate.basic_gates.last().unwrap().value;
 
         copy(ctx, "is_address_zero", a, is_address_zero)?;
         copy(ctx, "pk_rlc", rlc_column, pk_rlc)?;
@@ -600,11 +577,8 @@ impl<F: Field> SignVerifyChip<F> {
             );
             return Err(Error::Synthesis);
         }
-        // phase 1 chips
-        // let main_gate = MainGate::<F>::new(config.main_gate_config.clone());
-        let ecdsa_chip = config.ecdsa_config.clone();
-        // phase 2 chip
-        let rlc_chip = config.rlc_config.clone();
+
+        let ecdsa_chip = &config.ecdsa_config;
 
         let (assigned_ecdsas, sign_data_decomposed_vec) = layouter.assign_region(
             || "ecdsa chip verification",
@@ -612,7 +586,7 @@ impl<F: Field> SignVerifyChip<F> {
                 let mut ctx = Context::new(
                     region,
                     ContextParams {
-                        num_advice: vec![("ecdsa chip".to_string(), NUM_ADVICE)],
+                        num_advice: vec![("ecdsa chip".to_string(), NUM_ADVICE + 1)],
                     },
                 );
 
@@ -654,6 +628,10 @@ impl<F: Field> SignVerifyChip<F> {
                     "maximum rows used by an advice column: {}",
                     advice_rows.clone().max().or(Some(&0)).unwrap(),
                 );
+                println!(
+                    "row counts: {:?}",
+                    advice_rows,
+                );
 
                 Ok((assigned_ecdsas, sign_data_decomposed_vec))
             },
@@ -665,7 +643,7 @@ impl<F: Field> SignVerifyChip<F> {
                 let mut ctx = Context::new(
                     region,
                     ContextParams {
-                        num_advice: vec![("rlc chip".to_string(), 2)],
+                        num_advice: vec![("ecdsa chip".to_string(),  NUM_ADVICE + 1)],
                     },
                 );
 
@@ -682,7 +660,7 @@ impl<F: Field> SignVerifyChip<F> {
                     let sign_data_decomposed = &sign_data_decomposed_vec[i];
                     let (to_be_keccak_checked, assigned_sig_verif) = self.halo2_assign_sig_verify(
                         &mut ctx,
-                        &rlc_chip,
+                        &ecdsa_chip.range,
                         sign_data,
                         sign_data_decomposed,
                         challenges,
@@ -691,10 +669,14 @@ impl<F: Field> SignVerifyChip<F> {
                     assigned_sig_verifs.push(assigned_sig_verif);
                     deferred_keccak_check.push(to_be_keccak_checked);
                 }
-                let advice_rows = ctx.advice_rows["rlc chip"].iter();
+                let advice_rows = ctx.advice_rows["ecdsa chip"].iter();
                 println!(
                     "maximum rows used by an advice column: {}",
                     advice_rows.clone().max().or(Some(&0)).unwrap(),
+                );
+                println!(
+                    "row counts: {:?}",
+                    advice_rows,
                 );
                 Ok((deferred_keccak_check, assigned_sig_verifs))
             },
