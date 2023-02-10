@@ -135,7 +135,7 @@ impl<F: Field> SignVerifyConfig<F> {
         let ecdsa_config = FpConfig::configure(
             meta,
             FpStrategy::SimplePlus,
-            &[NUM_ADVICE, 1],
+            &[NUM_ADVICE],
             &[13],
             1,
             13,
@@ -153,6 +153,7 @@ impl<F: Field> SignVerifyConfig<F> {
         let rlc_config = RangeConfig::<F>::configure(
             meta,
             RangeStrategy::PlonkPlus,
+            // one advice for phase 1 and another for phase 2
             &[1, 1],
             &[0],
             0,
