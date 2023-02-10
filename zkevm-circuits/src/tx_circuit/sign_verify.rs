@@ -256,9 +256,9 @@ impl<F: Field> SignVerifyChip<F> {
         // TODO: pass the parameters
         let fq_chip = FqOverflowChip::construct(ecdsa_chip.range(), 88, 3, modulus::<Fq>());
 
-        // println!("r: {:?}", sig_r);
-        // println!("s: {:?}", sig_s);
-        // println!("msg: {:?}", msg_hash);
+        // log::trace!("r: {:?}", sig_r);
+        // log::trace!("s: {:?}", sig_s);
+        // log::trace!("msg: {:?}", msg_hash);
 
         let integer_r = fq_chip.load_private(
             ctx,
@@ -289,7 +289,7 @@ impl<F: Field> SignVerifyChip<F> {
             4,
             4,
         )?;
-        // println!("ECDSA res {:?}", ecdsa_is_valid);
+        // log::trace!("ECDSA res {:?}", ecdsa_is_valid);
 
         Ok(AssignedECDSA {
             pk: pk_assigned,
@@ -522,7 +522,7 @@ impl<F: Field> SignVerifyChip<F> {
             &evm_challenge_powers,
         )?;
 
-        // println!("halo2ecc assigned msg hash rlc: {:?}", msg_hash_rlc.value());
+        // log::trace!("halo2ecc assigned msg hash rlc: {:?}", msg_hash_rlc.value());
 
         // ================================================
         // step 2 random linear combination of pk
@@ -532,7 +532,7 @@ impl<F: Field> SignVerifyChip<F> {
             &sign_data_decomposed.pk_cells,
             &keccak_challenge_powers,
         )?;
-        // println!("pk rlc halo2ecc: {:?}", pk_rlc.value());
+        // log::trace!("pk rlc halo2ecc: {:?}", pk_rlc.value());
 
         // ================================================
         // step 3 random linear combination of pk_hash
@@ -543,7 +543,7 @@ impl<F: Field> SignVerifyChip<F> {
             &evm_challenge_powers,
         )?;
 
-        // println!("pk hash rlc halo2ecc: {:?}", pk_hash_rlc.value());
+        // log::trace!("pk hash rlc halo2ecc: {:?}", pk_hash_rlc.value());
 
         Ok((
             [
@@ -603,7 +603,7 @@ impl<F: Field> SignVerifyChip<F> {
                         // padding (enabled when address == 0)
                         SignData::default()
                     };
-                    let assigned_ecdsa = self.assign_ecdsa(&mut ctx, &ecdsa_chip, &signature)?;
+                    let assigned_ecdsa = self.assign_ecdsa(&mut ctx, ecdsa_chip, &signature)?;
                     assigned_ecdsas.push(assigned_ecdsa);
                 }
 
@@ -614,7 +614,7 @@ impl<F: Field> SignVerifyChip<F> {
                 for i in 0..assigned_ecdsas.len() {
                     let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
                     let sign_data_decomposed =
-                        self.sign_data_decomposition(&mut ctx, &ecdsa_chip, sign_data)?;
+                        self.sign_data_decomposition(&mut ctx, ecdsa_chip, sign_data)?;
                     sign_data_decomposed_vec.push(sign_data_decomposed);
                 }
 
@@ -625,11 +625,11 @@ impl<F: Field> SignVerifyChip<F> {
                 let (_const_rows, _total_fixed, _lookup_rows) = ecdsa_chip.finalize(&mut ctx)?;
 
                 let advice_rows = ctx.advice_rows["ecdsa chip"].iter();
-                println!(
+                log::trace!(
                     "maximum rows used by an advice column: {}",
-                    advice_rows.clone().max().or(Some(&0)).unwrap(),
+                    advice_rows.clone().max().unwrap_or(&0),
                 );
-                println!("row counts: {:?}", advice_rows,);
+                log::trace!("row counts: {:?}", advice_rows,);
 
                 Ok((assigned_ecdsas, sign_data_decomposed_vec))
             },
@@ -670,11 +670,11 @@ impl<F: Field> SignVerifyChip<F> {
                     deferred_keccak_check.push(to_be_keccak_checked);
                 }
                 let advice_rows = ctx.advice_rows["ecdsa chip"].iter();
-                println!(
+                log::trace!(
                     "maximum rows used by an advice column: {}",
-                    advice_rows.clone().max().or(Some(&0)).unwrap(),
+                    advice_rows.clone().max().unwrap_or(&0),
                 );
-                println!("row counts: {:?}", advice_rows,);
+                log::trace!("row counts: {:?}", advice_rows,);
                 Ok((deferred_keccak_check, assigned_sig_verifs))
             },
         )?;
@@ -788,17 +788,17 @@ impl<F: Field> SignVerifyChip<F> {
             &QuantumCell::Existing(&limb3_value),
             &QuantumCell::Existing(&limb3_recover),
         )?;
-        // println!(
+        // log::trace!(
         //     "limb 1 \ninput {:?}\nreconstructed {:?}",
         //     limb1_value.value(),
         //     limb1_recover.value()
         // );
-        // println!(
+        // log::trace!(
         //     "limb 2 \ninput {:?}\nreconstructed {:?}",
         //     limb2_value.value(),
         //     limb2_recover.value()
         // );
-        // println!(
+        // log::trace!(
         //     "limb 3 \ninput {:?}\nreconstructed {:?}",
         //     limb3_value.value(),
         //     limb3_recover.value()
