@@ -235,6 +235,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                                         | FixedTableTag::Range16
                                         | FixedTableTag::Range32
                                         | FixedTableTag::Range64
+                                        | FixedTableTag::Range128
                                         | FixedTableTag::Range256
                                         | FixedTableTag::Range512
                                         | FixedTableTag::Range1024
