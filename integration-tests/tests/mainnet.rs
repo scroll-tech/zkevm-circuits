@@ -26,6 +26,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_inner_blocks: 64,
     max_bytecode: 30000,
     keccak_padding: None,
+    max_exp_steps: 1000,
 };
 
 #[tokio::test]
@@ -45,6 +46,7 @@ async fn test_mock_prove_tx() {
         max_inner_blocks: 64,
         max_bytecode: 40000,
         keccak_padding: None,
+        max_exp_steps: 5000,
     };
 
     let cli = BuilderClient::new(cli, params).await.unwrap();
@@ -108,6 +110,7 @@ async fn test_circuit_all_block() {
             max_inner_blocks: 64,
             max_bytecode: 3_000_000,
             keccak_padding: None,
+            max_exp_steps: 100_000,
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let builder = cli.gen_inputs(block_num).await;

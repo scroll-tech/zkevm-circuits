@@ -76,8 +76,7 @@ mod test {
 
     #[test]
     fn test_abi_encoding() -> Result<()> {
-        // [TODO] does not match with
-        // https://github.com/ethereum/tests/blob/0e8d25bb613cab7f9e99430f970e1e6cbffdbf1a/GeneralStateTests/VMTests/vmArithmeticTest/add.json#L244
+        // matches with https://raw.githubusercontent.com/ethereum-lists/4bytes/master/with_parameter_names/b3de648b
         assert_eq!(
             hex::encode(encode_funccall("f(uint) 4")?),
             "b3de648b0000000000000000000000000000000000000000000000000000000000000004"

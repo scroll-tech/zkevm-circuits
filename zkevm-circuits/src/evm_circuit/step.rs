@@ -96,6 +96,7 @@ pub enum ExecutionState {
     ErrorMaxCodeSizeExceeded,
     ErrorInvalidJump,
     ErrorReturnDataOutOfBound,
+    ErrorPrecompileFailed,
     ErrorOutOfGasConstant,
     ErrorOutOfGasStaticMemoryExpansion,
     ErrorOutOfGasDynamicMemoryExpansion,

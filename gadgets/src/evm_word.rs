@@ -77,9 +77,6 @@ impl<F: Field> WordConfig<F> {
 
         // Lookup each byte in the witnessed word representation to
         // range-constrain it to 8 bits.
-        //
-        // TODO: Understand why the `for` loop cannot be moved into
-        // the meta.lookup_any() call.
         for byte in bytes.iter().rev() {
             meta.lookup_any("Word byte for range", |meta| {
                 let q_encode = meta.query_selector(q_encode);

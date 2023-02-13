@@ -335,6 +335,7 @@ impl Results {
         if !self.tests.contains_key(&test_id) {
             if result.level == ResultLevel::Ignored {
                 log::debug!(
+                    target : "testool",
                     "{} {} {}",
                     result.level.display_string(),
                     test_id,

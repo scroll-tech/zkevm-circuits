@@ -9,22 +9,20 @@ use ethers_core::types::TransactionRequest;
 use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
-use halo2_proofs::dev::VerifyFailure;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::evm_circuit::EvmCircuit;
-use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::util::SubCircuit;
-use zkevm_circuits::witness::{Block, Rw};
+use zkevm_circuits::test_util::CircuitTestBuilder;
+use zkevm_circuits::witness::Block;
+
+const MAX_TXS: usize = 1;
+const MAX_CALLDATA: usize = 32;
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
     #[error("CannotGenerateCircuitInput({0})")]
     CircuitInput(String),
-    #[error("VerifierError({0})")]
-    VerifierError(String),
     #[error("BalanceMismatch(expected:{expected:?}, found:{found:?})")]
     BalanceMismatch { expected: U256, found: U256 },
     #[error("NonceMismatch(expected:{expected:?}, found:{found:?})")]
@@ -42,7 +40,7 @@ pub enum StateTestError {
     #[error("SkipTestMaxSteps({0})")]
     SkipTestMaxSteps(usize),
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
-    Exception { expected: bool, found: bool },
+    Exception { expected: bool, found: String },
 }
 
 impl StateTestError {
@@ -184,18 +182,23 @@ pub fn run_test(
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
     let geth_traces = external_tracer::trace(&trace_config);
-    if st.exception {
-        if geth_traces.is_ok() {
-            return Err(StateTestError::Exception {
-                expected: st.exception,
-                found: geth_traces.is_err(),
-            });
-        } else {
-            return Ok(());
-        }
-    }
 
-    let geth_traces = geth_traces.map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
+    let geth_traces = match (geth_traces, st.exception) {
+        (Ok(res), false) => res,
+        (Ok(_), true) => {
+            return Err(StateTestError::Exception {
+                expected: true,
+                found: "no error".into(),
+            })
+        }
+        (Err(_), true) => return Ok(()),
+        (Err(err), false) => {
+            return Err(StateTestError::Exception {
+                expected: false,
+                found: err.to_string(),
+            })
+        }
+    };
 
     if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
         return Err(StateTestError::SkipTestMaxSteps(
@@ -255,17 +258,16 @@ pub fn run_test(
     let mut builder;
 
     if !circuits_config.super_circuit {
-        let block_data = BlockData::new_from_geth_data_with_params(
-            geth_data,
-            CircuitsParams {
-                max_txs: 1,
-                max_rws: 55000,
-                max_calldata: 5000,
-                max_bytecode: 5000,
-                max_copy_rows: 55000,
-                keccak_padding: None,
-            },
-        );
+        let circuits_params = CircuitsParams {
+            max_txs: 1,
+            max_rws: 55000,
+            max_calldata: 5000,
+            max_bytecode: 5000,
+            max_copy_rows: 55000,
+            max_exp_steps: 5000,
+            keccak_padding: None,
+        };
+        let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
         builder = block_data.new_circuit_input_builder();
         builder
@@ -276,18 +278,16 @@ pub fn run_test(
             zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
                 .unwrap();
 
-        test_circuits_witness_block(block)
-            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
+        CircuitTestBuilder::<1, 1>::new_from_block(block).run();
     } else {
         geth_data.sign(&wallets);
 
-        const MAX_TXS: usize = 1;
-        const MAX_CALLDATA: usize = 32;
         let circuits_params = CircuitsParams {
             max_txs: MAX_TXS,
             max_calldata: MAX_CALLDATA,
             max_rws: 256,
             max_copy_rows: 256,
+            max_exp_steps: 256,
             max_bytecode: 512,
             keccak_padding: None,
         };
@@ -297,42 +297,10 @@ pub fn run_test(
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
-        prover
-            .verify_par()
-            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
+        prover.assert_satisfied_par();
     };
 
     check_post(&builder, &post)?;
-
-    Ok(())
-}
-
-pub(self) fn test_circuits_witness_block(block: Block<Fr>) -> Result<(), Vec<VerifyFailure>> {
-    // run evm circuit test
-    let degree = block.get_test_degree();
-    let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
-    let evm_circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
-
-    let prover = MockProver::<Fr>::run(degree, &evm_circuit, vec![]).unwrap();
-    prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())?;
-
-    // run state circuit test
-    // TODO: use randomness as one of the circuit public input, since randomness in
-    // state circuit and evm circuit must be same
-    const N_ROWS: usize = 1 << 16;
-    let state_circuit = StateCircuit::<Fr>::new(block.rws, N_ROWS);
-    let power_of_randomness = state_circuit.instance();
-    let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
-    // Skip verification of Start rows to accelerate testing
-    let non_start_rows_len = state_circuit
-        .rows
-        .iter()
-        .filter(|rw| !matches!(rw, Rw::Start { .. }))
-        .count();
-    prover.verify_at_rows(
-        N_ROWS - non_start_rows_len..N_ROWS,
-        N_ROWS - non_start_rows_len..N_ROWS,
-    )?;
 
     Ok(())
 }

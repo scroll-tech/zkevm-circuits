@@ -46,6 +46,8 @@ pub const MAX_BYTECODE: usize = 5000;
 pub const MAX_COPY_ROWS: usize = 5888;
 /// MAX_INNER_BLOCKS
 pub const MAX_INNER_BLOCKS: usize = 64;
+/// MAX_EXP_STEPS
+pub const MAX_EXP_STEPS: usize = 1000;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: MAX_RWS,
@@ -54,6 +56,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_inner_blocks: 64,
     max_bytecode: MAX_BYTECODE,
     max_copy_rows: MAX_COPY_ROWS,
+    max_exp_steps: MAX_EXP_STEPS,
     keccak_padding: None,
 };
 

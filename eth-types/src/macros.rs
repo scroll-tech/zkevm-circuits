@@ -210,7 +210,7 @@ macro_rules! define_range_index_variants {
 #[macro_export]
 macro_rules! evm_unimplemented {
     ($($arg:tt)+) => {
-        log::warn!("not implemented: {}", format_args!($($arg)+))
+        log::warn!("evm_unimplemented: {}", format_args!($($arg)+))
     };
 }
 
@@ -220,6 +220,6 @@ macro_rules! evm_unimplemented {
 #[macro_export]
 macro_rules! evm_unimplemented {
     ($($arg:tt)+) => {
-        (|| panic!("not implemented: {}",format_args!($($arg)+)))()
+        (|| panic!("evm_unimplemented: {}",format_args!($($arg)+)))()
     };
 }

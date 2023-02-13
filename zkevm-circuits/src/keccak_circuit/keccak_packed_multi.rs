@@ -5,8 +5,8 @@ use super::util::{
 use crate::evm_circuit::util::{not, rlc};
 use crate::keccak_circuit::util::{
     compose_rlc, field_xor, get_absorb_positions, into_bits, pack, pack_u64, pack_with_base,
-    rotate, scatter, target_part_sizes, to_bytes, unpack, BIT_SIZE, NUM_WORDS_TO_ABSORB,
-    NUM_WORDS_TO_SQUEEZE, RATE, RATE_IN_BITS, RHO_MATRIX, ROUND_CST,
+    rotate, scatter, target_part_sizes, to_bytes, unpack, BIT_SIZE, NUM_BYTES_PER_WORD,
+    NUM_WORDS_TO_ABSORB, NUM_WORDS_TO_SQUEEZE, RATE, RATE_IN_BITS, RHO_MATRIX, ROUND_CST,
 };
 use crate::table::KeccakTable;
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
@@ -882,6 +882,11 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
+        assert!(
+            get_num_rows_per_round() > NUM_BYTES_PER_WORD,
+            "KeccakCircuit requires KECCAK_ROWS>=9"
+        );
+
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_round = meta.fixed_column();
@@ -985,10 +990,10 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         debug!("Columns: {}", cell_manager.get_width());
         total_lookup_counter += lookup_counter;
 
-        // Squeeze
-        // The squeezing happening at the end of the 24 rounds is done spread out
-        // over those 24 rounds. In a single round (in 4 of the 24 rounds) a
-        // single word is converted to bytes.
+        // Process inputs.
+        // "Absorb" happens at the first round. However, the input is witnessed and
+        // processed over the first 17 rounds. Each round converts a word into 8
+        // bytes.
         cell_manager.start_region();
         let mut lookup_counter = 0;
         // Potential optimization: could do multiple bytes per lookup
@@ -998,13 +1003,13 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             &mut cb,
             absorb_data.expr(),
             0,
-            8,
+            NUM_BYTES_PER_WORD,
             false,
             None,
         );
         cell_manager.start_region();
         let input_bytes = transform::expr(
-            "squeeze unpack",
+            "input unpack",
             meta,
             &mut cell_manager,
             &mut lookup_counter,
@@ -1021,10 +1026,8 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         // Padding data
         cell_manager.start_region();
         let mut is_paddings = Vec::new();
-        let mut data_rlcs = Vec::new();
         for _ in input_bytes.iter() {
             is_paddings.push(cell_manager.query_cell(meta));
-            data_rlcs.push(cell_manager.query_cell(meta));
         }
         debug!("- Post padding:");
         debug!("Lookups: {}", lookup_counter);
@@ -1559,7 +1562,10 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             let length = meta.query_advice(length, Rotation::cur());
             let data_rlc_prev =
                 meta.query_advice(data_rlc, Rotation(-(get_num_rows_per_round() as i32)));
-            let data_rlc = meta.query_advice(data_rlc, Rotation::cur());
+            let data_rlcs: Vec<_> = (0..NUM_BYTES_PER_WORD + 1)
+                .map(|i| meta.query_advice(data_rlc, Rotation(i as i32)))
+                .collect();
+            assert_eq!(data_rlcs.len(), input_bytes.len() + 1);
 
             // Update the length/data_rlc on rows where we absorb data
             cb.condition(q_padding.expr(), |cb| {
@@ -1574,11 +1580,22 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                                 .map(|is_padding| not::expr(is_padding.expr())),
                         ),
                 );
-                // Use intermediate cells to keep the degree low
-                let mut new_data_rlc =
+
+                let mut new_data_rlc = data_rlcs[NUM_BYTES_PER_WORD].expr();
+
+                // At the start of a hash, start at 0. Otherwise, continue from the previous
+                // value.
+                let data_rlc_zero_or_prev =
                     data_rlc_prev.clone() * not::expr(start_new_hash_prev.expr());
-                cb.require_equal("initial data rlc", data_rlcs[0].expr(), new_data_rlc);
-                new_data_rlc = data_rlcs[0].expr();
+                cb.require_equal(
+                    "initial data rlc",
+                    data_rlc_zero_or_prev,
+                    new_data_rlc.clone(),
+                );
+
+                // Add the word `input_bytes` to `data_rlc`. It has a variable length
+                // represented by `is_paddings`, which requires intermediate
+                // cells to keep the degree low.
                 for (idx, (byte, is_padding)) in
                     input_bytes.iter().zip(is_paddings.iter()).enumerate()
                 {
@@ -1587,16 +1604,17 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                         new_data_rlc.clone(),
                         new_data_rlc.clone() * challenges.keccak_input() + byte.expr.clone(),
                     );
-                    if idx < data_rlcs.len() - 1 {
-                        cb.require_equal(
-                            "intermediate data rlc",
-                            data_rlcs[idx + 1].expr(),
-                            new_data_rlc,
-                        );
-                        new_data_rlc = data_rlcs[idx + 1].expr();
-                    }
+                    let data_rlc_after_this_byte = data_rlcs[NUM_BYTES_PER_WORD - (idx + 1)].expr();
+                    cb.require_equal(
+                        "intermediate data rlc",
+                        data_rlc_after_this_byte.clone(),
+                        new_data_rlc,
+                    );
+                    new_data_rlc = data_rlc_after_this_byte;
                 }
-                cb.require_equal("update data rlc", data_rlc.clone(), new_data_rlc);
+                // At this point, `data_rlcs[0]` includes the new input word. It
+                // will be copied into the next round, or it is
+                // the final `input_rlc` in the lookup table.
             });
             // Keep length/data_rlc the same on rows where we don't absorb data
             cb.condition(
@@ -1609,7 +1627,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                     cb.require_equal("length equality check", length.clone(), length_prev.clone());
                     cb.require_equal(
                         "data_rlc equality check",
-                        data_rlc.clone(),
+                        data_rlcs[0].clone(),
                         data_rlc_prev.clone(),
                     );
                 },
@@ -1875,10 +1893,9 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], challenges: Chal
                 transform::value(&mut cell_manager, &mut region, packed, false, |v| *v, true);
             cell_manager.start_region();
             let mut is_paddings = Vec::new();
-            let mut data_rlcs = Vec::new();
+            let mut data_rlcs = vec![Value::known(F::zero()); get_num_rows_per_round()];
             for _ in input_bytes.iter() {
                 is_paddings.push(cell_manager.query_cell_value());
-                data_rlcs.push(cell_manager.query_cell_value());
             }
             if round < NUM_WORDS_TO_ABSORB {
                 let mut paddings = Vec::new();
@@ -1894,17 +1911,20 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], challenges: Chal
                     is_padding.assign(&mut region, 0, if padding { F::one() } else { F::zero() });
                 }
 
-                data_rlcs[0].assign_value(&mut region, 0, data_rlc);
+                data_rlcs[NUM_BYTES_PER_WORD] = data_rlc; // Start at 0 or forward the previous value.
                 for (idx, (byte, padding)) in input_bytes.iter().zip(paddings.iter()).enumerate() {
                     if !*padding {
                         let byte_value = Value::known(byte.value);
                         data_rlc = data_rlc * challenges.keccak_input() + byte_value;
                     }
-                    if idx < data_rlcs.len() - 1 {
-                        data_rlcs[idx + 1].assign_value(&mut region, 0, data_rlc);
-                    }
+                    data_rlcs[NUM_BYTES_PER_WORD - (idx + 1)] = data_rlc; // data_rlc_after_this_byte
                 }
+            } else {
+                // In rounds without inputs, forward the previous value.
+                data_rlcs[0] = data_rlc;
             }
+            // Other positions of data_rlcs are not constrained and we leave them at 0.
+
             cell_manager.start_region();
 
             if round != NUM_ROUNDS {
@@ -2065,7 +2085,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], challenges: Chal
             // The words to squeeze out
             hash_words = s.into_iter().take(4).map(|a| a[0]).take(4).collect();
             round_lengths.push(length);
-            round_data_rlcs.push(data_rlc);
+            round_data_rlcs.push(data_rlcs);
 
             cell_managers.push(cell_manager);
             regions.push(region);
@@ -2100,7 +2120,7 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], challenges: Chal
                     round_cst,
                     is_final: is_final_block && round == NUM_ROUNDS && row_idx == 0,
                     length: round_lengths[round],
-                    data_rlc: round_data_rlcs[round],
+                    data_rlc: round_data_rlcs[round][row_idx],
                     hash_rlc,
                     cell_values: regions[round].rows[row_idx].clone(),
                 });

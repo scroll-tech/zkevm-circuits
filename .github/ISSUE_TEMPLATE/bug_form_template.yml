@@ -1,0 +1,23 @@
+name: Bug report
+description: File a bug report
+labels: ["T-bug"]
+body:
+    - type: markdown
+      attributes:
+          value: |
+              Please ensure that the bug has not already been filed in the issue tracker.
+    - type: input
+      attributes:
+          label: What command(s) is the bug in?
+          description: Leave empty if not relevant
+          placeholder: "For example: make test"
+    - type: textarea
+      attributes:
+          label: Describe the bug
+          description: Please include relevant code snippets as well if relevant.
+      validations:
+          required: true
+    - type: textarea
+      attributes:
+        label: Concrete steps to reproduce the bug
+        description: Leave empty if not relevant

@@ -20,6 +20,7 @@ async fn test_circuit_input_builder_block(block_num: u64) {
             max_inner_blocks: 64,
             max_bytecode: 4000,
             max_copy_rows: 16384,
+            max_exp_steps: 1000,
             keccak_padding: None,
         },
     )

@@ -682,7 +682,6 @@ impl<'a> CircuitInputStateRef<'a> {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
 
-    // TODO: Remove unwrap() and add err handling.
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let is_success = *self
@@ -921,7 +920,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
                         let offset = step.stack.nth_last(0)?.as_usize();
                         let length = step.stack.nth_last(1)?.as_usize();
-                        // TODO: Try to get rid of clone.
+
                         // At the moment it conflicts with `call_ctx` and `caller_ctx`.
                         let callee_memory = self.call_ctx()?.memory.clone();
                         let caller_ctx = self.caller_ctx_mut()?;
@@ -1272,6 +1271,29 @@ impl<'a> CircuitInputStateRef<'a> {
                         next_step
                     );
                     return Ok(Some(ExecError::ContractAddressCollision));
+                }
+            }
+
+            if matches!(
+                step.op,
+                OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL
+            ) {
+                let caller = self.call()?;
+                let callee_address = match CallKind::try_from(step.op)? {
+                    CallKind::Call | CallKind::StaticCall => step.stack.nth_last(1)?.to_address(),
+                    CallKind::CallCode | CallKind::DelegateCall => caller.address,
+                    _ => unreachable!(),
+                };
+
+                if is_precompiled(&callee_address) {
+                    // Log the precompile address and gas left. Since this failure is mainly caused
+                    // by out of gas.
+                    log::trace!(
+                        "Precompile failed: callee_address = {}, step.gas = {}",
+                        callee_address,
+                        step.gas.0,
+                    );
+                    return Ok(Some(ExecError::PrecompileFailed));
                 }
             }
 

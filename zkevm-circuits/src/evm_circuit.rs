@@ -13,7 +13,9 @@ pub(crate) mod util;
 
 pub mod table;
 
-use crate::table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable};
+use crate::table::{
+    BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
+};
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 pub use crate::witness;
 use bus_mapping::evm::OpcodeId;
@@ -93,6 +95,18 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
             &keccak_table,
             &exp_table,
         ));
+
+        meta.annotate_lookup_any_column(byte_table[0], || "byte_range");
+        fixed_table.iter().enumerate().for_each(|(idx, &col)| {
+            meta.annotate_lookup_any_column(col, || format!("fix_table_{}", idx))
+        });
+        tx_table.annotate_columns(meta);
+        rw_table.annotate_columns(meta);
+        bytecode_table.annotate_columns(meta);
+        block_table.annotate_columns(meta);
+        copy_table.annotate_columns(meta);
+        keccak_table.annotate_columns(meta);
+        exp_table.annotate_columns(meta);
 
         Self {
             fixed_table,

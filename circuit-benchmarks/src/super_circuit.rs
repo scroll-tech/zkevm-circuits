@@ -80,6 +80,7 @@ mod tests {
             max_calldata: MAX_CALLDATA,
             max_rws: 256,
             max_copy_rows: 256,
+            max_exp_steps: 256,
             max_bytecode: 512,
             max_inner_blocks: MAX_INNER_BLOCKS,
             keccak_padding: None,

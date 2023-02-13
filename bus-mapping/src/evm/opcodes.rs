@@ -63,6 +63,7 @@ mod error_oog_call;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_create;
+mod error_stack_oog_constant;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -87,6 +88,7 @@ use error_oog_call::OOGCall;
 use error_oog_log::ErrorOOGLog;
 use error_oog_sload_sstore::OOGSloadSstore;
 use error_create::ErrorCreate;
+use error_stack_oog_constant::ErrorStackOogConstant;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -269,9 +271,13 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Constant) => Some(ErrorStackOogConstant::gen_associated_ops),
+        ExecError::StackOverflow => Some(ErrorStackOogConstant::gen_associated_ops),
+        ExecError::StackUnderflow => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::CodeStoreOutOfGas => Some(ErrorCreate::<false>::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
+
         // more future errors place here
         _ => {
             evm_unimplemented!("TODO: error state {:?} not implemented", error);
@@ -288,9 +294,6 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
-
-    // if no errors, continue as normal
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
     if memory_enabled {
         let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
@@ -360,6 +363,7 @@ pub fn gen_associated_ops(
         }
     }
     // if no errors, continue as normal
+    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
     fn_gen_associated_ops(state, geth_steps)
 }
 
@@ -433,6 +437,9 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     )?;
 
     // Get code_hash of callee
+    // FIXME: call with value to precompile will cause the codehash of precompile
+    // address to `CodeDB::empty_code_hash()`. FIXME: we should have a
+    // consistent codehash for precompile contract.
     let (_, callee_account) = state.sdb.get_account(&call.address);
     let callee_exists = !callee_account.is_empty();
     let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
@@ -512,7 +519,14 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         }
         // 2. Call to precompiled.
         (_, true, _) => {
-            evm_unimplemented!("Call to precompiled is left unimplemented");
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::CodeHash,
+                callee_code_hash,
+                callee_code_hash,
+            )?;
+
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {

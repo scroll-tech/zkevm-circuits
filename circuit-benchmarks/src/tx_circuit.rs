@@ -34,22 +34,11 @@ mod tests {
         GethClient::new(transport)
     }
 
-    #[cfg_attr(not(feature = "benches"), ignore)]
-    #[tokio::test]
-    async fn bench_tx_circuit_prover() {
-        env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
-
-        // Approximate value, adjust with changes on the TxCircuit.
+    async fn build_circuit_from_mainnet_block() -> (usize, TxCircuit<Fr>) {
         let degree = std::env::var("DEGREE")
             .expect("DEGREE Not Set")
             .parse::<usize>()
             .expect("DEGREE should be int");
-        // const ROWS_PER_TX: usize = 175_000;
-        // const MAX_TXS: usize = 2_usize.pow(degree as u32) / ROWS_PER_TX;
-        // const MAX_CALLDATA: usize = 1024;
-
-        let mut rng = ChaCha20Rng::seed_from_u64(42);
-
         let block_num = 16140307_u64;
         log::info!("test super circuit, block number: {}", block_num);
         let cli = get_client();
@@ -62,19 +51,45 @@ mod tests {
             max_inner_blocks: 64,
             max_bytecode: 3_000_000,
             keccak_padding: None,
+            max_exp_steps: 100_000,
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
 
         if builder.block.txs.is_empty() {
             log::info!("skip empty block");
-            return;
+            std::process::exit(0);
         }
         let block = block_convert(&builder.block, &builder.code_db).unwrap();
-        // let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
-        // let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
-        // let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, txs);
         let circuit = TxCircuit::new_from_block(&block);
+        (degree, circuit)
+    }
+
+    fn build_circuit_from_mock_txs() -> (usize, TxCircuit<Fr>) {
+        use crate::bench_params::DEGREE;
+        // Approximate value, adjust with changes on the TxCircuit.
+        const ROWS_PER_TX: usize = 175_000;
+        const MAX_TXS: usize = 2_usize.pow(DEGREE as u32) / ROWS_PER_TX;
+        const MAX_CALLDATA: usize = 1024;
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
+        let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
+        let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, txs);
+        (DEGREE, circuit)
+    }
+
+    #[cfg_attr(not(feature = "benches"), ignore)]
+    #[tokio::test]
+    async fn bench_tx_circuit_prover() {
+        env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+
+        let mut rng = ChaCha20Rng::seed_from_u64(42);
+
+        let mock_mode = true;
+        let (degree, circuit) = if mock_mode {
+            build_circuit_from_mock_txs()
+        } else {
+            build_circuit_from_mainnet_block().await
+        };
 
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", degree);

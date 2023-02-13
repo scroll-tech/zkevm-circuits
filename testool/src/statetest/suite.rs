@@ -21,7 +21,7 @@ pub fn load_statetests_suite(
     let skip_tests: Vec<&String> = config.skip_tests.iter().flat_map(|t| &t.tests).collect();
 
     let files = glob::glob(path)
-        .context("failted to read glob")?
+        .context("failed to read glob")?
         .filter_map(|v| v.ok())
         .filter(|f| {
             !skip_paths
@@ -38,7 +38,7 @@ pub fn load_statetests_suite(
             }
             let path = file.as_path().to_string_lossy();
             let src = std::fs::read_to_string(&file)?;
-            log::debug!("Reading file {:?}", file);
+            log::debug!(target: "testool", "Reading file {:?}", file);
             let mut tcs = match ext {
                 "yml" => YamlStateTestBuilder::new(&mut compiler).load_yaml(&path, &src)?,
                 "json" => JsonStateTestBuilder::new(&mut compiler).load_json(&path, &src)?,
@@ -96,6 +96,7 @@ pub fn run_statetests_suite(
         std::panic::set_hook(Box::new(|_info| {}));
 
         log::debug!(
+            target : "testool",
             "🐕 running test (done {}/{}) {}...",
             1 + results.read().unwrap().tests.len(),
             test_count,
@@ -116,7 +117,10 @@ pub fn run_statetests_suite(
                 } else {
                     "unable to get panic info".into()
                 };
-                let level = if panic_err.contains("evm_unimplemented") {
+
+                let level = if panic_err.contains("circuit was not satisfied") {
+                    ResultLevel::Fail
+                } else if panic_err.contains("evm_unimplemented") {
                     ResultLevel::Ignored
                 } else {
                     ResultLevel::Panic

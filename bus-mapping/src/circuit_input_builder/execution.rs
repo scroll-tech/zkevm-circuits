@@ -301,3 +301,19 @@ pub struct ExpEvent {
     /// Intermediate multiplication results.
     pub steps: Vec<ExpStep>,
 }
+
+impl Default for ExpEvent {
+    fn default() -> Self {
+        Self {
+            identifier: 0,
+            base: 2.into(),
+            exponent: 2.into(),
+            exponentiation: 4.into(),
+            steps: vec![ExpStep {
+                a: 2.into(),
+                b: 2.into(),
+                d: 4.into(),
+            }],
+        }
+    }
+}

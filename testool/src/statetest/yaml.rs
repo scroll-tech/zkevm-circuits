@@ -73,11 +73,10 @@ impl<'a> YamlStateTestBuilder<'a> {
             let env = Self::parse_env(&yaml_test["env"])?;
 
             // parse pre (account states before executing the transaction)
-            // [TODO] remove ugly unwrap here
             let pre: HashMap<Address, Account> = self
                 .parse_accounts(&yaml_test["pre"])?
                 .into_iter()
-                .map(|(addr, account)| (addr, account.try_into().unwrap()))
+                .map(|(addr, account)| (addr, account.try_into().expect("unable to parse account")))
                 .collect();
 
             // parse transaction
@@ -103,13 +102,10 @@ impl<'a> YamlStateTestBuilder<'a> {
                 .map(Self::parse_u256)
                 .collect::<Result<_>>()?;
 
-            // TODO: check handling this
             let gas_price =
                 Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| U256::one());
 
-            // TODO handle maxPriorityFeePerGas
-            // TODO maxFeePerGas
-
+            // TODO handle maxPriorityFeePerGas & maxFeePerGas
             let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;
             let to = Self::parse_to_address(&yaml_transaction["to"])?;
             let secret_key = Self::parse_bytes(&yaml_transaction["secretKey"])?;
@@ -132,7 +128,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                 let mut exception: bool = false;
 
                 if let Some(exceptions) = expect["expectException"].as_hash() {
-                    for (network, _) in exceptions {
+                    for (network, _error_type) in exceptions {
                         let network = network.as_str().unwrap().to_string();
                         if MainnetFork::in_network_range(&[network])? {
                             exception = true;
@@ -443,7 +439,7 @@ arith:
   env:
     currentCoinbase: 2adc25665018aa1fe0e6bc666dac8fc2697ff9ba
     currentDifficulty: 0x20000
-    currentGasLimit: 100000000
+    currentGasLimit: {{ gas_limit }}
     currentNumber: 1
     currentTimestamp: 1000
     previousHash: 5e20a0453cecd065ea59c37ac63e079ee08998b6045136a8ce6635c7912ec0b6
@@ -510,6 +506,8 @@ arith:
         value: !!int -1
       network:
         - '>=Istanbul'
+      expectException:
+        '{{ expect_exception_network }}' : TR_TypeNotSupported
       result:
         cccccccccccccccccccccccccccccccccccccccc:
           balance: {{ res_balance }}
@@ -521,32 +519,45 @@ arith:
 
 "#;
     struct Template {
+        gas_limit: String,
         pre_code: String,
         res_storage: String,
         res_balance: String,
         res_code: String,
         res_nonce: String,
+        res_exception: bool,
     }
 
     impl Default for Template {
         fn default() -> Self {
             Self {
+                gas_limit: "100000000".into(),
                 pre_code: ":raw 0x600100".into(),
                 res_storage: "0x01".into(),
                 res_balance: "1000000000001".into(),
                 res_code: ":raw 0x600100".into(),
                 res_nonce: "0".into(),
+                res_exception: false,
             }
         }
     }
     impl ToString for Template {
         fn to_string(&self) -> String {
             TEMPLATE
+                .replace("{{ gas_limit }}", &self.gas_limit)
                 .replace("{{ pre_code }}", &self.pre_code)
                 .replace("{{ res_storage }}", &self.res_storage)
                 .replace("{{ res_balance }}", &self.res_balance)
                 .replace("{{ res_code }}", &self.res_code)
                 .replace("{{ res_nonce }}", &self.res_nonce)
+                .replace(
+                    "{{ expect_exception_network }}",
+                    if self.res_exception {
+                        ">=Istanbul"
+                    } else {
+                        "Istanbul"
+                    },
+                )
         }
     }
 
@@ -775,6 +786,37 @@ arith:
         )?;
         let config = CircuitsConfig::default();
         run_test(tc.remove(0), TestSuite::default(), config)?;
+        Ok(())
+    }
+
+    #[test]
+    fn marked_as_exception_and_fails() -> Result<()> {
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+            "",
+            &Template {
+                gas_limit: "2300".into(),
+                res_exception: true,
+                ..Default::default()
+            }
+            .to_string(),
+        )?;
+        let config = CircuitsConfig::default();
+        run_test(tc.remove(0), TestSuite::default(), config).expect("Should pass");
+        Ok(())
+    }
+    #[test]
+    fn marked_as_exception_but_does_not_fail() -> Result<()> {
+        let mut tc = YamlStateTestBuilder::new(&mut Compiler::default()).load_yaml(
+            "",
+            &Template {
+                res_exception: true,
+                ..Default::default()
+            }
+            .to_string(),
+        )?;
+        let config = CircuitsConfig::default();
+        let res = run_test(tc.remove(0), TestSuite::default(), config);
+        assert!(res.is_err());
         Ok(())
     }
 
