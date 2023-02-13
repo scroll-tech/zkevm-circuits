@@ -1,6 +1,6 @@
 //! wrapping of mpt-circuit
 use crate::{
-    bytecode_circuit::bytecode_unroller::{self, HASHBLOCK_BYTES_IN_FIELD},
+    bytecode_circuit::bytecode_unroller::HASHBLOCK_BYTES_IN_FIELD,
     table::PoseidonTable,
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
@@ -126,7 +126,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
             .map(|challenge| rlc::value(EMPTY_HASH_LE.as_ref(), challenge));
 
         let chip =
-            PoseidonHashChip::<_, { bytecode_unroller::HASHBLOCK_BYTES_IN_FIELD }>::construct(
+            PoseidonHashChip::<_, HASH_BLOCK_STEP_SIZE>::construct(
                 config.0.clone(),
                 &self.0,
                 self.1,
