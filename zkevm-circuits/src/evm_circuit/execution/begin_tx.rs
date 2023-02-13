@@ -13,18 +13,20 @@ use crate::{
                 IsEqualGadget, IsZeroGadget, LtGadget, MulWordByU64Gadget, RangeCheckGadget,
                 RlpContractCreateGadget,
             },
-            not, CachedRegion, Cell, Word,
+            CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
-    util::Expr,
 };
 use eth_types::{Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
-use gadgets::util::{and, expr_from_bytes, or};
+use gadgets::util::{and, expr_from_bytes, not, or, Expr};
 use halo2_proofs::plonk::Error;
 use halo2_proofs::{circuit::Value, plonk::Expression};
+
+#[cfg(feature = "reject-eip2718")]
+use gadgets::util::select;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
