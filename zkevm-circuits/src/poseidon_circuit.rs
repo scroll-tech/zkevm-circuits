@@ -64,7 +64,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         }
         #[cfg(feature = "poseidon-codehash")]
         {
-            use bytecode_unroller::unroll_to_hash_input_default;
+            use crate::bytecode_circuit::bytecode_unroller::unroll_to_hash_input_default;
             for bytecode in block.bytecodes.values() {
                 // must skip empty bytecode
                 if !bytecode.bytes.is_empty() {
@@ -100,7 +100,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         #[cfg(feature = "poseidon-codehash")]
         let acc = {
             let mut cnt = acc;
-            use bytecode_unroller::unroll_to_hash_input_default;
+            use crate::bytecode_circuit::bytecode_unroller::unroll_to_hash_input_default;
             for bytecode in block.bytecodes.values() {
                 cnt += unroll_to_hash_input_default::<F>(bytecode.bytes.iter().copied()).len();
             }
