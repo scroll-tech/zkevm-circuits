@@ -288,7 +288,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
             let challenge_power_16 = challenges[15].clone();
             let challenge_power_32 = challenge_power_16.square();
             let challenge_power_64 = challenge_power_32.clone().square();
-            let challenge_power_84 = challenge_power_64.clone() * challenge_power_20.clone();
+            let challenge_power_84 = challenge_power_64.clone() * challenge_power_20;
             (0xff.expr() * challenge_power_84)
                 + (self.caller_address_rlc() * challenge_power_64)
                 + (self.salt_rlc() * challenge_power_32)
