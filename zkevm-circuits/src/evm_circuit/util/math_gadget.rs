@@ -47,7 +47,7 @@ pub(crate) use mul_word_u64::MulWordByU64Gadget;
 pub(crate) use pair_select::PairSelectGadget;
 pub(crate) use range_check::RangeCheckGadget;
 #[allow(unused_imports)]
-pub(crate) use rlp::RlpContractCreateGadget;
+pub(crate) use rlp::ContractCreateGadget;
 
 // This function generates a Lagrange polynomial in the range [start, end) which
 // will be evaluated to 1 when `exp == value`, otherwise 0

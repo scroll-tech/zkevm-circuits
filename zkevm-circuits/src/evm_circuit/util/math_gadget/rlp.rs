@@ -1,4 +1,4 @@
-use eth_types::{Address, Field, ToScalar};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use gadgets::util::{and, expr_from_bytes, not, select, sum, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -6,7 +6,7 @@ use halo2_proofs::{
 };
 
 use crate::evm_circuit::{
-    param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64},
+    param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
     util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell, RandomLinearCombination},
 };
 
@@ -179,31 +179,42 @@ impl<F: Field> RlpU64Gadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub struct RlpContractCreateGadget<F> {
+pub struct ContractCreateGadget<F, const IS_CREATE2: bool> {
     /// Sender address of the contract creation tx.
     caller_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
     /// Sender nonce of the contract creation tx.
     nonce: RlpU64Gadget<F>,
+    /// Keccak256 hash of init code, used for CREATE2.
+    code_hash: RandomLinearCombination<F, N_BYTES_WORD>,
+    /// Random salt for CREATE2.
+    salt: RandomLinearCombination<F, N_BYTES_WORD>,
 }
 
-impl<F: Field> RlpContractCreateGadget<F> {
-    /// Configure and construct a gadget for RLP([caller_addr, caller_nonce]).
+impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
+    /// Configure and construct the gadget.
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
         let caller_address = cb.query_keccak_rlc();
         let nonce = RlpU64Gadget::construct(cb);
+        let code_hash = cb.query_word_rlc();
+        let salt = cb.query_word_rlc();
+
         Self {
             caller_address,
             nonce,
+            code_hash,
+            salt,
         }
     }
 
-    /// Assign witness data to the RlpContractCreate gadget.
+    /// Assign witness data to the ContractCreate gadget.
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         caller_address: Address,
         caller_nonce: u64,
+        code_hash: Option<Word>,
+        salt: Option<Word>,
     ) -> Result<(), Error> {
         let mut caller_address_bytes = caller_address.to_fixed_bytes();
         caller_address_bytes.reverse();
@@ -211,6 +222,14 @@ impl<F: Field> RlpContractCreateGadget<F> {
             .assign(region, offset, Some(caller_address_bytes))?;
 
         self.nonce.assign(region, offset, caller_nonce)?;
+
+        for (word, value) in [(&self.code_hash, code_hash), (&self.salt, salt)] {
+            word.assign(
+                region,
+                offset,
+                Some(value.map(|v| v.to_le_bytes()).unwrap_or_default()),
+            )?;
+        }
 
         Ok(())
     }
@@ -220,9 +239,19 @@ impl<F: Field> RlpContractCreateGadget<F> {
         expr_from_bytes(&self.caller_address.cells)
     }
 
-    /// Caller nonce' value.
+    /// Caller nonce's value.
     pub(crate) fn caller_nonce(&self) -> Expression<F> {
         self.nonce.value()
+    }
+
+    /// Code hash RLC.
+    pub(crate) fn code_hash_rlc(&self) -> Expression<F> {
+        self.code_hash.expr()
+    }
+
+    /// Salt RLC.
+    pub(crate) fn salt_rlc(&self) -> Expression<F> {
+        self.salt.expr()
     }
 
     /// Caller address' RLC value.
@@ -235,34 +264,51 @@ impl<F: Field> RlpContractCreateGadget<F> {
         self.nonce.value_rlc.expr()
     }
 
-    /// Length of the RLP-encoding.
-    pub(crate) fn rlp_length(&self) -> Expression<F> {
-        // RLP([caller_address, caller_nonce])
-        //
-        // | prefix | addr-prefix | addr | nonce-bytes       |
-        // |--------|-------------|------|-------------------|
-        // | 1      | 1           | 20   | rlp_length(nonce) |
-        22.expr() + self.nonce.rlp_length()
+    /// Length of the input data to the keccak hash function.
+    pub(crate) fn input_length(&self) -> Expression<F> {
+        if IS_CREATE2 {
+            // 0xff | caller_address | salt | code_hash
+            (1 + 20 + 32 + 32).expr()
+        } else {
+            // RLP([caller_address, caller_nonce])
+            //
+            // | prefix | addr-prefix | addr | nonce-bytes       |
+            // |--------|-------------|------|-------------------|
+            // | 1      | 1           | 20   | rlp_length(nonce) |
+            22.expr() + self.nonce.rlp_length()
+        }
     }
 
-    /// RLC for the RLP-encoding of the caller address and nonce, i.e.
-    ///
-    /// RLC(RLP([caller_address, caller_nonce]))
-    pub(crate) fn rlp_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    /// RLC for the input data.
+    pub(crate) fn input_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
         let challenges = cb.challenges().keccak_powers_of_randomness::<21>();
         let challenge_power_20 = challenges[19].clone();
-        let challenge_power_21 = challenges[20].clone();
-        ((self.caller_address_rlc()
-            + (148.expr() * challenge_power_20)
-            + ((213.expr() + self.nonce.rlp_length()) * challenge_power_21))
-            * self.nonce.challenge_power_rlp_length(cb))
-            + self.nonce.rlp_rlc(cb)
+        if IS_CREATE2 {
+            // RLC(0xff | caller_address | salt | code_hash)
+            let challenge_power_16 = challenges[15].clone();
+            let challenge_power_32 = challenge_power_16.square();
+            let challenge_power_64 = challenge_power_32.clone().square();
+            let challenge_power_84 = challenge_power_64.clone() * challenge_power_20.clone();
+            (0xff.expr() * challenge_power_84)
+                + (self.caller_address_rlc() * challenge_power_64)
+                + (self.salt_rlc() * challenge_power_32)
+                + self.code_hash_rlc()
+        } else {
+            // RLC(RLP([caller_address, caller_nonce]))
+            let challenge_power_21 = challenges[20].clone();
+            ((self.caller_address_rlc()
+                + (148.expr() * challenge_power_20)
+                + ((213.expr() + self.nonce.rlp_length()) * challenge_power_21))
+                * self.nonce.challenge_power_rlp_length(cb))
+                + self.nonce.rlp_rlc(cb)
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::super::test_util::*;
+    use super::ContractCreateGadget;
     use eth_types::{Field, ToAddress, ToLittleEndian, ToWord, Word};
     use gadgets::util::Expr;
     use halo2_proofs::halo2curves::bn256::Fr;
@@ -274,34 +320,32 @@ mod test {
         },
     };
 
-    use super::RlpContractCreateGadget;
-
     #[derive(Clone)]
-    struct RlpContractCreateGadgetContainer<F> {
-        rlp_gadget: RlpContractCreateGadget<F>,
-        rlp_len_expected: Cell<F>,
-        rlp_rlc_expected: RandomLinearCombination<F, N_BYTES_WORD>,
+    struct ContractCreateGadgetContainer<F> {
+        create_gadget: ContractCreateGadget<F, false>,
+        input_len_expected: Cell<F>,
+        input_rlc_expected: RandomLinearCombination<F, N_BYTES_WORD>,
     }
 
-    impl<F: Field> MathGadgetContainer<F> for RlpContractCreateGadgetContainer<F> {
+    impl<F: Field> MathGadgetContainer<F> for ContractCreateGadgetContainer<F> {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let rlp_gadget = RlpContractCreateGadget::construct(cb);
-            let rlp_len_expected = cb.query_cell();
-            let rlp_rlc_expected = cb.query_keccak_rlc();
+            let create_gadget = ContractCreateGadget::construct(cb);
+            let input_len_expected = cb.query_cell();
+            let input_rlc_expected = cb.query_keccak_rlc();
             cb.require_equal(
                 "RLP length correct",
-                rlp_len_expected.expr(),
-                rlp_gadget.rlp_length(),
+                input_len_expected.expr(),
+                create_gadget.input_length(),
             );
             cb.require_equal(
                 "RLP-encoding correct",
-                rlp_rlc_expected.expr(),
-                rlp_gadget.rlp_rlc(cb),
+                input_rlc_expected.expr(),
+                create_gadget.input_rlc(cb),
             );
             Self {
-                rlp_gadget,
-                rlp_len_expected,
-                rlp_rlc_expected,
+                create_gadget,
+                input_len_expected,
+                input_rlc_expected,
             }
         }
 
@@ -316,11 +360,11 @@ mod test {
             let rlp_encoding = witnesses[2];
             let rlp_length = witnesses[3].as_u64();
 
-            self.rlp_gadget
-                .assign(region, offset, caller_address, caller_nonce)?;
-            self.rlp_len_expected
+            self.create_gadget
+                .assign(region, offset, caller_address, caller_nonce, None, None)?;
+            self.input_len_expected
                 .assign(region, offset, Value::known(F::from(rlp_length)))?;
-            self.rlp_rlc_expected
+            self.input_rlc_expected
                 .assign(region, offset, Some(rlp_encoding.to_le_bytes()))?;
 
             Ok(())
@@ -355,7 +399,7 @@ mod test {
                 )
             };
             try_test!(
-                RlpContractCreateGadgetContainer<Fr>,
+                ContractCreateGadgetContainer<Fr>,
                 vec![
                     caller_address.to_word(),
                     Word::from(caller_nonce),
@@ -365,5 +409,11 @@ mod test {
                 true
             );
         }
+    }
+
+    #[test]
+    #[ignore]
+    fn create2_address() {
+        todo!()
     }
 }
