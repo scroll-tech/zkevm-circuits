@@ -11,6 +11,7 @@ members = [
     "eth-types",
     "external-tracer",
     "mock",
+    "testool"
 ]
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
