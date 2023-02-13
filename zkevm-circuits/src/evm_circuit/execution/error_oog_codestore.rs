@@ -37,7 +37,7 @@ use std::iter::once;
 pub(crate) struct ErrorOOGCodeStoreGadget<F> {
     opcode: Cell<F>,
     //return_data_offset: Cell<F>,
-    //return_data_length: Cell<F>,
+    is_create: Cell<F>,
     range: MemoryAddressGadget<F>,
     code_store_gas_insufficient: LtGadget<F, N_BYTES_GAS>,
     restore_context: RestoreContextGadget<F>,
@@ -59,6 +59,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
         cb.stack_pop(length.clone().expr());
         let range = MemoryAddressGadget::construct(cb, offset, length.clone());
 
+        let is_create = cb.call_context(None, CallContextFieldTag::IsCreate);
+        cb.require_true("is_create is true", is_create.expr());
         //constrain code store gas > gas left, that is 200 * length > gas left
         let code_store_gas_insufficient = LtGadget::construct(cb, cb.curr.state.gas_left.expr(),
         // use frombytes    
@@ -81,6 +83,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
 
         Self {
             opcode,
+            is_create,
             range,
             code_store_gas_insufficient,
             restore_context,
@@ -104,6 +107,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
         let range = self.range.assign(region, offset, memory_offset, length)?;
         
+        self.is_create.assign(region, offset, Value::known(F::from(call.is_create as u64)));
         self.code_store_gas_insufficient.assign(region, offset, F::from(step.gas_left), 
             F::from(200 * length.as_u64()))?;
         self.restore_context.assign(
@@ -112,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
             block,
             call,
             step,
-            2,
+            3,
         )?;
         Ok(())
     }
