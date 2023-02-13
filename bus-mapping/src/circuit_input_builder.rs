@@ -42,7 +42,7 @@ use std::iter;
 pub use transaction::{Transaction, TransactionContext};
 
 /// Circuit Setup Parameters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CircuitsParams {
     /// Maximum number of rw operations in the state circuit (RwTable length /
     /// nummber of rows). This must be at least the number of rw operations
@@ -53,8 +53,13 @@ pub struct CircuitsParams {
     pub max_txs: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
+    /// Max ammount of rows that the CopyCircuit can have.
+    pub max_copy_rows: usize,
     /// Maximum number of inner blocks in a batch
     pub max_inner_blocks: usize,
+    /// Max number of steps that the ExpCircuit can have. Each step is further
+    /// expressed in 7 rows
+    pub max_exp_steps: usize,
     /// Maximum number of bytes supported in the Bytecode Circuit
     pub max_bytecode: usize,
     // TODO: Rename for consistency
@@ -71,6 +76,10 @@ impl Default for CircuitsParams {
             max_txs: 1,
             max_calldata: 256,
             max_inner_blocks: 64,
+            // TODO: Check whether this value is correct or we should increase/decrease based on
+            // this lib tests
+            max_copy_rows: 1000,
+            max_exp_steps: 1000,
             max_bytecode: 512,
             keccak_padding: None,
         }
@@ -170,13 +179,7 @@ impl<'a> CircuitInputBuilder {
             ),
         );
 
-        Transaction::new(
-            call_id,
-            &mut self.sdb,
-            &mut self.code_db,
-            eth_tx,
-            is_success,
-        )
+        Transaction::new(call_id, &self.sdb, &mut self.code_db, eth_tx, is_success)
     }
 
     /// Iterate over all generated CallContext RwCounterEndOfReversion
@@ -233,11 +236,13 @@ impl<'a> CircuitInputBuilder {
             }
             let geth_trace = &geth_traces[tx_index];
             log::info!(
-                "handling {}th(inner idx: {}) tx(rwc: {:?}): {:?}",
+                "handling {}th(inner idx: {}) tx: {:?} rwc {:?}, to: {:?}, input_len {:?}",
                 tx.transaction_index.unwrap_or_default(),
                 self.block.txs.len(),
+                tx.hash,
                 self.block_ctx.rwc,
-                tx.hash
+                tx.to,
+                tx.input.len(),
             );
             let mut tx = tx.clone();
             // needed for multi block feature
@@ -250,7 +255,7 @@ impl<'a> CircuitInputBuilder {
         }
         if handle_rwc_reversion {
             self.set_value_ops_call_context_rwc_eor();
-            self.set_end_block();
+            self.set_end_block()?;
         }
         log::info!(
             "handling block done, total gas {:?}",
@@ -260,7 +265,7 @@ impl<'a> CircuitInputBuilder {
     }
 
     /// ..
-    pub fn set_end_block(&mut self) {
+    pub fn set_end_block(&mut self) -> Result<(), Error> {
         let max_rws = self.block.circuits_params.max_rws;
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
@@ -289,12 +294,14 @@ impl<'a> CircuitInputBuilder {
         // We need at least 1 extra Start row
         #[allow(clippy::int_plus_one)]
         {
-            assert!(
-                total_rws + 1 <= max_rws,
-                "total_rws + 1 <= max_rws, total_rws={}, max_rws={}",
-                total_rws,
-                max_rws
-            );
+            if total_rws + 1 > max_rws {
+                log::error!(
+                    "total_rws + 1 > max_rws, total_rws={}, max_rws={}",
+                    total_rws,
+                    max_rws
+                );
+                return Err(Error::InternalError("rws not enough"));
+            };
         }
         push_op(&mut end_block_last, RWCounter(1), RW::READ, StartOp {});
         push_op(
@@ -306,6 +313,7 @@ impl<'a> CircuitInputBuilder {
 
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
+        Ok(())
     }
 
     /// Handle a transaction with its corresponding execution trace to generate
@@ -400,6 +408,13 @@ impl<'a> CircuitInputBuilder {
                     "".to_string()
                 }
             );
+            debug_assert_eq!(
+                geth_step.depth as usize,
+                state_ref.call().unwrap().depth,
+                "call {:?} calls {:?}",
+                state_ref.call(),
+                state_ref.tx.calls()
+            );
             let exec_steps = gen_associated_ops(
                 &geth_step.op,
                 &mut state_ref,
@@ -436,6 +451,7 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     // PI circuit
     keccak_inputs.push(keccak_inputs_pi_circuit(
         block.chain_id().as_u64(),
+        block.prev_state_root,
         &block.headers,
         block.txs(),
         block.circuits_params.max_txs,
@@ -454,6 +470,14 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
         "keccak total len after opcodes: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
+
+    let inputs_len: usize = keccak_inputs.iter().map(|k| k.len()).sum();
+    let inputs_num = keccak_inputs.len();
+    let keccak_inputs: Vec<_> = keccak_inputs.into_iter().unique().collect();
+    let inputs_len2: usize = keccak_inputs.iter().map(|k| k.len()).sum();
+    let inputs_num2 = keccak_inputs.len();
+    log::debug!("keccak inputs after dedup: input num {inputs_num}->{inputs_num2}, input total len {inputs_len}->{inputs_len2}");
+
     // MPT Circuit
     // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
     Ok(keccak_inputs)
@@ -506,23 +530,30 @@ pub fn get_dummy_tx_hash(chain_id: u64) -> H256 {
     let (tx, sig) = get_dummy_tx(chain_id);
 
     let tx_hash = keccak256(tx.rlp_signed(&sig));
-    log::debug!(
-        "DUMMY TX HASH for CHAIN_ID({}): {}",
-        chain_id,
-        hex::encode(tx_hash)
-    );
 
     H256(tx_hash)
 }
 
 fn keccak_inputs_pi_circuit(
     chain_id: u64,
+    prev_state_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
     max_txs: usize,
 ) -> Vec<u8> {
     // TODO: add history hashes and state roots
     let dummy_tx_hash = get_dummy_tx_hash(chain_id);
+
+    log::debug!(
+        "DUMMY TX HASH for CHAIN_ID({}): {}",
+        chain_id,
+        hex::encode(dummy_tx_hash.to_fixed_bytes())
+    );
+
+    let end_state_root = block_headers
+        .last_key_value()
+        .map(|(_, blk)| blk.eth_block.state_root.to_word())
+        .unwrap_or(prev_state_root);
 
     let result = block_headers
         .iter()
@@ -551,12 +582,8 @@ fn keccak_inputs_pi_circuit(
         //         .flat_map(|tx_hash| tx_hash.to_fixed_bytes()),
         // )
         // state roots
-        // .chain(
-        //     extra.state_root.to_fixed_bytes()
-        // )
-        // .chain(
-        //     extra.prev_state_root.to_fixed_bytes()
-        // )
+        .chain(prev_state_root.to_be_bytes())
+        .chain(end_state_root.to_be_bytes())
         // Tx Hashes
         .chain(transactions.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
         .chain(
@@ -639,9 +666,9 @@ pub fn keccak_inputs_tx_circuit(
 }
 
 /// Retrieve the init_code from memory for {CREATE, CREATE2}
-pub fn get_create_init_code<'a, 'b>(
+pub fn get_create_init_code<'a>(
     call_ctx: &'a CallContext,
-    step: &'b GethExecStep,
+    step: &GethExecStep,
 ) -> Result<&'a [u8], Error> {
     let offset = step.stack.nth_last(1)?;
     let length = step.stack.nth_last(2)?;
@@ -800,7 +827,9 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         for proof in proofs {
             let mut storage = HashMap::new();
             for storage_proof in proof.storage_proof {
-                storage.insert(storage_proof.key, storage_proof.value);
+                if !storage_proof.value.is_zero() {
+                    storage.insert(storage_proof.key, storage_proof.value);
+                }
             }
             log::trace!(
                 "statedb set_account {:?} balance {:?}",
@@ -837,12 +866,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         _prev_state_root: Word,
     ) -> Result<CircuitInputBuilder, Error> {
         let block = BlockHead::new(self.chain_id, history_hashes, eth_block)?;
-        let mut builder = CircuitInputBuilder::new_from_headers(
-            self.circuits_params.clone(),
-            sdb,
-            code_db,
-            &[block],
-        );
+        let mut builder =
+            CircuitInputBuilder::new_from_headers(self.circuits_params, sdb, code_db, &[block]);
 
         builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
@@ -857,7 +882,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         blocks_and_traces: &[(EthBlock, Vec<eth_types::GethExecTrace>)],
     ) -> Result<CircuitInputBuilder, Error> {
         let mut builder = CircuitInputBuilder::new_from_headers(
-            self.circuits_params.clone(),
+            self.circuits_params,
             sdb,
             code_db,
             Default::default(),

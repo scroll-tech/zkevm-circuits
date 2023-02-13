@@ -77,9 +77,6 @@ impl<F: Field> WordConfig<F> {
 
         // Lookup each byte in the witnessed word representation to
         // range-constrain it to 8 bits.
-        //
-        // TODO: Understand why the `for` loop cannot be moved into
-        // the meta.lookup_any() call.
         for byte in bytes.iter().rev() {
             meta.lookup_any("Word byte for range", |meta| {
                 let q_encode = meta.query_selector(q_encode);
@@ -272,7 +269,7 @@ mod tests {
             // Calculate word commitment and use it as public input.
             let encoded: Fp = encode(word.to_repr().iter().rev().cloned(), r());
             let prover = MockProver::<Fp>::run(9, &circuit, vec![vec![encoded]]).unwrap();
-            assert_eq!(prover.verify(), Ok(()))
+            prover.assert_satisfied_par()
         }
     }
 }

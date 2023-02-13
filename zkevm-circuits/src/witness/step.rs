@@ -69,6 +69,7 @@ impl From<&ExecError> for ExecutionState {
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
             ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
             ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::PrecompileFailed => ExecutionState::ErrorPrecompileFailed,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {
@@ -84,13 +85,9 @@ impl From<&ExecError> for ExecutionState {
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
                 OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
-                OogError::Sload => ExecutionState::ErrorOutOfGasSLOAD,
-                OogError::Sstore => ExecutionState::ErrorOutOfGasSSTORE,
-                OogError::Call => ExecutionState::ErrorOutOfGasCALL,
-                OogError::CallCode => ExecutionState::ErrorOutOfGasCALLCODE,
-                OogError::DelegateCall => ExecutionState::ErrorOutOfGasDELEGATECALL,
+                OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
+                OogError::Call => ExecutionState::ErrorOutOfGasCall,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
-                OogError::StaticCall => ExecutionState::ErrorOutOfGasSTATICCALL,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
             },
         }
@@ -100,6 +97,7 @@ impl From<&ExecError> for ExecutionState {
 impl From<&circuit_input_builder::ExecStep> for ExecutionState {
     fn from(step: &circuit_input_builder::ExecStep) -> Self {
         if let Some(error) = step.error.as_ref() {
+            log::debug!("step err {:?}", error);
             return error.into();
         }
         match step.exec_state {
@@ -119,7 +117,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
 
                 macro_rules! dummy {
                     ($name:expr) => {{
-                        log::trace!("{:?} is implemented with DummyGadget", $name);
+                        log::warn!("{:?} is implemented with DummyGadget", $name);
                         $name
                     }};
                 }

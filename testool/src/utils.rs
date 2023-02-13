@@ -130,7 +130,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             format!("{}", step.gas.0),
             format!("{}", step.gas_cost.0),
             format!("{}", step.depth),
-            step.error.unwrap_or_else(|| "".to_string()),
+            step.error.unwrap_or_default(),
             split(step.stack.0.iter().map(u256_to_str).collect(), 30),
             split(step.memory.0.iter().map(ToString::to_string).collect(), 30),
             split(kv(step.storage.0), 30)
@@ -146,7 +146,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
 
 pub fn current_git_commit() -> Result<String> {
     let output = Command::new("git")
-        .args(&["rev-parse", "HEAD"])
+        .args(["rev-parse", "HEAD"])
         .output()
         .unwrap();
     let git_hash = String::from_utf8(output.stdout).unwrap();

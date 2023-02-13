@@ -268,7 +268,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::run_test_circuits_with_params;
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, ToWord, Word};
     use mock::test_ctx::TestContext;
@@ -330,17 +330,12 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(
-            run_test_circuits_with_params(
-                ctx,
-                None,
-                CircuitsParams {
-                    max_rws: 2048,
-                    ..Default::default()
-                }
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 2048,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]

@@ -1,4 +1,4 @@
-FROM alpine AS build
+FROM alpine:3.15.6 AS build
 
 WORKDIR /solidity
 

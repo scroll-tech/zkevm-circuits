@@ -222,17 +222,12 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::evm_types::Stack;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
-    fn test(
-        a: Word,
-        b: Word,
-        n: Word,
-        r: Option<Word>,
-    ) -> Result<(), Vec<halo2_proofs::dev::VerifyFailure>> {
+    fn test(a: Word, b: Word, n: Word, r: Option<Word>, ok: bool) {
         let bytecode = bytecode! {
             PUSH32(n)
             PUSH32(b)
@@ -252,55 +247,63 @@ mod test {
                 .unwrap();
             last.stack = Stack::from_vec(vec![r]);
         }
-        run_test_circuits(ctx, None)
+        let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
+        if !ok {
+            ctb = ctb.evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
+                assert!(prover
+                    .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
+                    .is_err())
+            }));
+        };
+        ctb.run()
     }
-    fn test_u32(
-        a: u32,
-        b: u32,
-        c: u32,
-        r: Option<u32>,
-    ) -> Result<(), Vec<halo2_proofs::dev::VerifyFailure>> {
-        test(a.into(), b.into(), c.into(), r.map(Word::from))
+
+    fn test_ok_u32(a: u32, b: u32, c: u32, r: Option<u32>) {
+        test(a.into(), b.into(), c.into(), r.map(Word::from), true)
+    }
+
+    fn test_ko_u32(a: u32, b: u32, c: u32, r: Option<u32>) {
+        test(a.into(), b.into(), c.into(), r.map(Word::from), false)
     }
 
     #[test]
     fn addmod_simple() {
-        assert_eq!(test_u32(1, 1, 10, None), Ok(()));
-        assert_eq!(test_u32(1, 1, 11, None), Ok(()));
+        test_ok_u32(1, 1, 10, None);
+        test_ok_u32(1, 1, 11, None);
     }
 
     #[test]
     fn addmod_limits() {
-        assert_eq!(test(Word::MAX, Word::MAX, 0.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX, Word::MAX, 1.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX - 1, Word::MAX, Word::MAX, None), Ok(()));
-        assert_eq!(test(Word::MAX, Word::MAX, Word::MAX, None), Ok(()));
-        assert_eq!(test(Word::MAX, 1.into(), 0.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX, 1.into(), 1.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX, 1.into(), Word::MAX, None), Ok(()));
-        assert_eq!(test(Word::MAX, 0.into(), 0.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX, 0.into(), 1.into(), None), Ok(()));
-        assert_eq!(test(Word::MAX, 0.into(), Word::MAX, None), Ok(()));
-        assert_eq!(test(0.into(), 0.into(), 0.into(), None), Ok(()));
-        assert_eq!(test(0.into(), 0.into(), 1.into(), None), Ok(()));
-        assert_eq!(test(0.into(), 0.into(), Word::MAX, None), Ok(()));
+        test(Word::MAX, Word::MAX, 0.into(), None, true);
+        test(Word::MAX, Word::MAX, 1.into(), None, true);
+        test(Word::MAX - 1, Word::MAX, Word::MAX, None, true);
+        test(Word::MAX, Word::MAX, Word::MAX, None, true);
+        test(Word::MAX, 1.into(), 0.into(), None, true);
+        test(Word::MAX, 1.into(), 1.into(), None, true);
+        test(Word::MAX, 1.into(), Word::MAX, None, true);
+        test(Word::MAX, 0.into(), 0.into(), None, true);
+        test(Word::MAX, 0.into(), 1.into(), None, true);
+        test(Word::MAX, 0.into(), Word::MAX, None, true);
+        test(0.into(), 0.into(), 0.into(), None, true);
+        test(0.into(), 0.into(), 1.into(), None, true);
+        test(0.into(), 0.into(), Word::MAX, None, true);
     }
 
     #[test]
     fn addmod_bad_r_on_nonzero_n() {
-        assert_eq!(test_u32(7, 18, 10, Some(5)), Ok(()));
-        assert_ne!(test_u32(7, 18, 10, Some(6)), Ok(()));
+        test_ok_u32(7, 18, 10, Some(5));
+        test_ko_u32(7, 18, 10, Some(6))
     }
 
     #[test]
     fn addmod_bad_r_on_zero_n() {
-        assert_eq!(test_u32(2, 3, 0, Some(0)), Ok(()));
-        //assert_ne!(test_u32(2, 3, 0, Some(1)), Ok(()));
+        test_ok_u32(2, 3, 0, Some(0));
+        test_ko_u32(2, 3, 0, Some(1))
     }
 
     #[test]
     fn addmod_bad_r_bigger_n() {
-        assert_eq!(test_u32(2, 3, 4, Some(1)), Ok(()));
-        assert_ne!(test_u32(2, 3, 4, Some(5)), Ok(()));
+        test_ok_u32(2, 3, 4, Some(1));
+        test_ko_u32(2, 3, 4, Some(5))
     }
 }

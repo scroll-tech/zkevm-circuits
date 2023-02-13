@@ -111,6 +111,8 @@ impl GasCost {
     pub const COLD_SLOAD: Self = Self(2100);
     /// Constant cost for a cold account access
     pub const COLD_ACCOUNT_ACCESS: Self = Self(2600);
+    /// SSTORE reentrancy sentry
+    pub const SSTORE_SENTRY: Self = Self(2300);
     /// Constant cost for a storage set
     pub const SSTORE_SET: Self = Self(20000);
     /// Constant cost for a storage reset

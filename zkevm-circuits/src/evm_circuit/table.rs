@@ -134,7 +134,6 @@ pub(crate) enum Table {
     Rw,
     Bytecode,
     Block,
-    Byte,
     Copy,
     Keccak,
     Exp,
@@ -239,11 +238,6 @@ pub(crate) enum Lookup<F> {
         /// Value of the field.
         value: Expression<F>,
     },
-    /// Lookup to byte value.
-    Byte {
-        /// Value of the field.
-        value: Expression<F>,
-    },
     /// Lookup to copy table.
     CopyTable {
         /// Whether the row is the first row of the copy event.
@@ -308,7 +302,6 @@ impl<F: Field> Lookup<F> {
             Self::Rw { .. } => Table::Rw,
             Self::Bytecode { .. } => Table::Bytecode,
             Self::Block { .. } => Table::Block,
-            Self::Byte { .. } => Table::Byte,
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
             Self::ExpTable { .. } => Table::Exp,
@@ -366,9 +359,6 @@ impl<F: Field> Lookup<F> {
                 value,
             } => {
                 vec![field_tag.clone(), number.clone(), value.clone()]
-            }
-            Self::Byte { value } => {
-                vec![value.clone()]
             }
             Self::CopyTable {
                 is_first,

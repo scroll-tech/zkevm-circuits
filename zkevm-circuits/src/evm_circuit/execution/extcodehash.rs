@@ -120,11 +120,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::test_circuits_block_geth_data_default;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode,
-        geth_types::{Account, GethData},
-        Address, Bytecode, Bytes, ToWord, Word, U256,
+        address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word, U256,
     };
     use lazy_static::lazy_static;
     use mock::TestContext;
@@ -158,7 +156,7 @@ mod test {
         });
 
         // Execute the bytecode and get trace
-        let block: GethData = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -182,10 +180,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        test_circuits_block_geth_data_default(block).unwrap();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
@@ -241,7 +238,7 @@ mod test {
             ..Default::default()
         };
         // This account state should no longer be possible because contract nonces start
-        // at 1, per EIP-161. However, the requirement that the code be emtpy is still
+        // at 1, per EIP-161. However, the requirement that the code be empty is still
         // in the yellow paper and our constraints, so we test this case
         // anyways.
         let contract_only_account = Account {

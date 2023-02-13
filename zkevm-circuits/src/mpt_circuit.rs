@@ -2,7 +2,7 @@
 use crate::{
     table::{MptTable, PoseidonTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::{self, MptUpdates},
+    witness,
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -56,32 +56,34 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
     type Config = MptCircuitConfig;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        let rows = block.rws.table_assignments();
-        let (_, traces, tips) = MptUpdates::construct(
-            rows.as_slice(),
-            block
-                .mpt_state
-                .as_ref()
-                .expect("need block with trie state"),
-        );
         let mut eth_trie: EthTrie<F> = Default::default();
-        eth_trie.add_ops(traces.iter().map(|tr| AccountOp::try_from(tr).unwrap()));
-        let (circuit, _) =
-            eth_trie.to_circuits((block.circuits_params.max_rws / 3, None), tips.as_slice());
+        eth_trie.add_ops(
+            block
+                .mpt_updates
+                .smt_traces
+                .iter()
+                .map(|tr| AccountOp::try_from(tr).unwrap()),
+        );
+        let (circuit, _) = eth_trie.to_circuits(
+            (
+                // notice we do not use the accompanied hash circuit so just assign any size
+                100usize,
+                Some(block.evm_circuit_pad_to),
+            ),
+            &block.mpt_updates.proof_types,
+        );
         MptCircuit(circuit)
     }
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let rows = block.rws.table_assignments();
-        let (_, traces, _) = MptUpdates::construct(
-            rows.as_slice(),
-            block
-                .mpt_state
-                .as_ref()
-                .expect("need block with trie state"),
-        );
         let mut eth_trie: EthTrie<F> = Default::default();
-        eth_trie.add_ops(traces.iter().map(|tr| AccountOp::try_from(tr).unwrap()));
+        eth_trie.add_ops(
+            block
+                .mpt_updates
+                .smt_traces
+                .iter()
+                .map(|tr| AccountOp::try_from(tr).unwrap()),
+        );
         let (mpt_rows, _) = eth_trie.use_rows();
         (mpt_rows, block.circuits_params.max_rws.max(mpt_rows))
     }
@@ -125,9 +127,9 @@ impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let poseidon_table = PoseidonTable::construct(meta);
-        let mpt_table = MptTable::construct(meta);
         let challenges = Challenges::construct(meta);
+        let poseidon_table = PoseidonTable::dev_construct(meta);
+        let mpt_table = MptTable::construct(meta);
 
         let config = {
             let challenges = challenges.exprs(meta);
@@ -151,7 +153,7 @@ impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
-        config.0.load_hash_table(
+        config.0.dev_load_hash_table(
             &mut layouter,
             self.0.ops.iter().flat_map(|op| op.hash_traces()),
             self.0.calcs,

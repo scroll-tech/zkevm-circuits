@@ -11,6 +11,9 @@ on:
     branches:
       - scroll-stable
 
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
+
 jobs:
   consecutiveness:
     if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'trigger-integration-tests')
@@ -67,6 +70,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -77,14 +83,20 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
+      - uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.SECRET_REPO_DEPLOY_KEY }}
       # Run an initial build in a separate step to split the build time from execution time
       - name: Build bins
         run: cargo build --bin gen_blockchain_data
       - name: Build tests
-        run: for testname in rpc circuit_input_builder circuits_mock; do cargo test --profile release --test $testname --features $testname --no-run; done
+        run: for testname in rpc circuit_input_builder circuits; do cargo test --profile release --test $testname --features $testname --no-run; done
       - run: ./run.sh --steps "setup"
       - run: ./run.sh --steps "gendata"
       - run: ./run.sh --steps "tests" --tests "rpc"
       - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
-      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits_mock"
+      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits::mock_prover"
       - run: ./run.sh --steps "cleanup"

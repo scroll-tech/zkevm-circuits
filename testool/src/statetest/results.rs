@@ -1,6 +1,5 @@
 use anyhow::Result;
 use handlebars::Handlebars;
-use log::error;
 use prettytable::Row;
 use prettytable::Table;
 use serde::Deserialize;
@@ -14,6 +13,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, EnumString}; // 0.17.1
+
+const MAX_DETAILS_LEN: usize = 128;
 
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, EnumIter, EnumString, Serialize, Deserialize)]
 pub enum ResultLevel {
@@ -52,6 +53,14 @@ pub struct Diffs {
     tests: Vec<DiffEntry>,
 }
 
+fn trim(s: &str, max_len: usize) -> &str {
+    if s.len() > max_len {
+        &s[0..max_len]
+    } else {
+        s
+    }
+}
+
 impl Diffs {
     pub fn gen_info(&self) -> (String, Table) {
         let mut stat: HashMap<ResultLevel, isize> = HashMap::new();
@@ -87,7 +96,10 @@ impl Diffs {
                     t.id,
                     format!(
                         "{:?}({}) => {:?}({})",
-                        prev.level, prev.details, curr.level, curr.details
+                        prev.level,
+                        trim(&prev.details, MAX_DETAILS_LEN),
+                        curr.level,
+                        trim(&curr.details, MAX_DETAILS_LEN)
                     ),
                 ]);
             }
@@ -107,12 +119,21 @@ pub struct Report {
 impl Report {
     pub fn print_tty(&self) -> Result<()> {
         self.by_folder.print_tty(false)?;
-        self.by_result.print_tty(false)?;
+        let mut by_result_short = self.by_result.clone();
+        for row_no in 0..by_result_short.len() {
+            let row = by_result_short.get_mut_row(row_no).unwrap();
+            let cell_content = row.get_cell(1).unwrap().get_content().replace('\n', "");
+            if cell_content.len() > 100 {
+                let cell = prettytable::Cell::new(&cell_content[..100]);
+                *row.get_mut_cell(1).unwrap() = cell;
+            }
+        }
+        by_result_short.print_tty(false)?;
         let (_, files_diff) = self.diffs.gen_info();
         files_diff.print_tty(false)?;
         for (test_id, info) in &self.tests {
             if info.level == ResultLevel::Fail || info.level == ResultLevel::Panic {
-                error!("- {:?} {}", info.level, test_id);
+                println!("- {:?} {}", info.level, test_id);
             }
         }
         Ok(())
@@ -142,8 +163,8 @@ impl Report {
 
 #[derive(Default)]
 pub struct Results {
-    tests: HashMap<String, ResultInfo>,
-    cache: Option<PathBuf>,
+    pub tests: HashMap<String, ResultInfo>,
+    pub cache: Option<PathBuf>,
 }
 
 impl Results {
@@ -154,9 +175,12 @@ impl Results {
         let mut tests = HashMap::new();
         for line in buf.lines().filter(|l| l.len() > 1) {
             let mut split = line.splitn(3, ';');
-            let level = ResultLevel::from_str(split.next().unwrap()).unwrap();
+            let level = split.next().unwrap();
+            let level = ResultLevel::from_str(level).unwrap();
             let id = split.next().unwrap().to_string();
-            let details = split.next().unwrap().to_string();
+            let details = urlencoding::decode(split.next().unwrap())
+                .expect("should be urldecodeable")
+                .to_string();
             tests.insert(id, ResultInfo { level, details });
         }
         Ok(Self { cache: None, tests })
@@ -172,6 +196,10 @@ impl Results {
             tests,
             cache: Some(path),
         })
+    }
+
+    pub fn set_cache(&mut self, path: PathBuf) {
+        self.cache = Some(path);
     }
 
     pub fn report(self, previous: Option<(String, Results)>) -> Report {
@@ -307,6 +335,7 @@ impl Results {
         if !self.tests.contains_key(&test_id) {
             if result.level == ResultLevel::Ignored {
                 log::debug!(
+                    target : "testool",
                     "{} {} {}",
                     result.level.display_string(),
                     test_id,
@@ -320,7 +349,12 @@ impl Results {
                     result.details
                 );
             }
-            let entry = format!("{:?};{};{}\n", result.level, test_id, result.details);
+            let entry = format!(
+                "{:?};{};{}\n",
+                result.level,
+                test_id,
+                urlencoding::encode(&result.details)
+            );
             if let Some(path) = &self.cache {
                 std::fs::OpenOptions::new()
                     .read(true)

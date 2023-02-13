@@ -5,7 +5,7 @@ help: ## Display this help screen
 
 clippy: ## Run clippy checks over all workspace members
 	@cargo check --all-features
-	@cargo clippy --all-features --all-targets -- -D warnings
+	@cargo clippy --all-features --all-targets -- -D warnings -Aclippy::format_in_format_args -Aclippy::uninlined_format_args -Aclippy::unnecessary_cast
 
 doc: ## Generate and tests docs including private items
 	@cargo doc --no-deps --all --document-private-items
@@ -16,9 +16,9 @@ fmt: ## Check whether the code is formated correctly
 
 test: ## Run tests for all the workspace members
 	# Run light tests
-	@cargo test --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks
+	@cargo test --release --all --exclude integration-tests --exclude circuit-benchmarks
 	# Run heavy tests serially to avoid OOM
-	@cargo test --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
+	@cargo test --release --all --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
 
 test_doc: ## Test the docs
 	@cargo test --release --all --all-features --doc

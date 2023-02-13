@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
 num = "0.4"
 sha3 = "0.10"
 array-init = "2.0.0"
@@ -28,17 +28,21 @@ mpt-zktrie = { path = "../zktrie" }
 keccak256 = { path = "../keccak256"}
 log = "0.4"
 env_logger = "0.9"
-ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
-ecc =       { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
-maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
-integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
+
+halo2_base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "halo2-ecc-ecdsa-0129", default-features = false }
+halo2_ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "halo2-ecc-ecdsa-0129", default-features = false }
+
+maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_02_02" }
+
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 rlp = "0.5.1"
 subtle = "2.4"
 rand_chacha = "0.3"
+snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2023_02_02", default-features = false, features = ["loader_halo2", "system_halo2"] }
 hex = "0.4.3"
 rayon = "1.5"
+once_cell = "1.17.0"
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
@@ -51,10 +55,11 @@ mock = { path = "../mock" }
 pretty_assertions = "1.0.0"
 
 [features]
-default = ["test","onephase"]
+default = ["test", "onephase", "enable-sign-verify"]
 test = ["ethers-signers", "mock"]
 onephase = []
 zktrie = []
 enable-sign-verify = []
 codehash = []
-non-legacy-tx = []
+reject-eip2718 = []
+poseidon-codehash = []

@@ -472,7 +472,15 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         is_call: Expression<F>,
         is_callcode: Expression<F>,
         is_delegatecall: Expression<F>,
+        is_staticcall: Expression<F>,
     ) -> Self {
+        // Constrain opcode must be one of CALL, CALLCODE, DELEGATECALL or STATICCALL.
+        cb.require_equal(
+            "Opcode should be CALL, CALLCODE, DELEGATECALL or STATICCALL",
+            is_call.expr() + is_callcode.expr() + is_delegatecall.expr() + is_staticcall.expr(),
+            1.expr(),
+        );
+
         let gas_word = cb.query_word_rlc();
         let callee_address_word = cb.query_word_rlc();
         let value = cb.query_word_rlc();
@@ -515,12 +523,17 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         // construct common gadget
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
         let has_value = select::expr(
-            is_delegatecall.expr(),
+            is_delegatecall.expr() + is_staticcall.expr(),
             0.expr(),
             1.expr() - value_is_zero.expr(),
         );
 
         let phase2_callee_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
+        cb.account_read(
+            from_bytes::expr(&callee_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]),
+            AccountFieldTag::CodeHash,
+            phase2_callee_code_hash.expr(),
+        );
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_hash_rlc());
         let callee_not_exists = IsZeroGadget::construct(cb, phase2_callee_code_hash.expr());
@@ -552,16 +565,9 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
     pub fn gas_cost_expr(
         &self,
-        cb: &mut ConstraintBuilder<F>,
         is_warm_prev: Expression<F>,
         is_call: Expression<F>,
     ) -> Expression<F> {
-        cb.account_read(
-            self.callee_address_expr(),
-            AccountFieldTag::CodeHash,
-            self.phase2_callee_code_hash.expr(),
-        );
-
         select::expr(
             is_warm_prev,
             GasCost::WARM_ACCESS.expr(),
@@ -656,5 +662,158 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         } + memory_expansion_gas_cost;
 
         Ok(gas_cost)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SloadGasGadget<F> {
+    is_warm: Expression<F>,
+    gas_cost: Expression<F>,
+}
+
+impl<F: Field> SloadGasGadget<F> {
+    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
+        let gas_cost = select::expr(
+            is_warm.expr(),
+            GasCost::WARM_ACCESS.expr(),
+            GasCost::COLD_SLOAD.expr(),
+        );
+
+        Self { is_warm, gas_cost }
+    }
+
+    pub(crate) fn expr(&self) -> Expression<F> {
+        // Return the gas cost
+        self.gas_cost.clone()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SstoreGasGadget<F> {
+    value: Cell<F>,
+    value_prev: Cell<F>,
+    original_value: Cell<F>,
+    is_warm: Cell<F>,
+    gas_cost: Expression<F>,
+    value_eq_prev: IsEqualGadget<F>,
+    original_eq_prev: IsEqualGadget<F>,
+    original_is_zero: IsZeroGadget<F>,
+}
+
+impl<F: Field> SstoreGasGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        value: Cell<F>,
+        value_prev: Cell<F>,
+        original_value: Cell<F>,
+        is_warm: Cell<F>,
+    ) -> Self {
+        let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
+        let original_eq_prev =
+            IsEqualGadget::construct(cb, original_value.expr(), value_prev.expr());
+        let original_is_zero = IsZeroGadget::construct(cb, original_value.expr());
+        let warm_case_gas = select::expr(
+            value_eq_prev.expr(),
+            GasCost::WARM_ACCESS.expr(),
+            select::expr(
+                original_eq_prev.expr(),
+                select::expr(
+                    original_is_zero.expr(),
+                    GasCost::SSTORE_SET.expr(),
+                    GasCost::SSTORE_RESET.expr(),
+                ),
+                GasCost::WARM_ACCESS.expr(),
+            ),
+        );
+        let gas_cost = select::expr(
+            is_warm.expr(),
+            warm_case_gas.expr(),
+            warm_case_gas + GasCost::COLD_SLOAD.expr(),
+        );
+
+        Self {
+            value,
+            value_prev,
+            original_value,
+            is_warm,
+            gas_cost,
+            value_eq_prev,
+            original_eq_prev,
+            original_is_zero,
+        }
+    }
+
+    pub(crate) fn expr(&self) -> Expression<F> {
+        // Return the gas cost
+        self.gas_cost.clone()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        _gas_cost: u64,
+        value: eth_types::Word,
+        value_prev: eth_types::Word,
+        original_value: eth_types::Word,
+        is_warm: bool,
+    ) -> Result<(), Error> {
+        self.value.assign(region, offset, region.word_rlc(value))?;
+        self.value_prev
+            .assign(region, offset, region.word_rlc(value_prev))?;
+        self.original_value
+            .assign(region, offset, region.word_rlc(original_value))?;
+        self.is_warm
+            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
+        self.value_eq_prev.assign_value(
+            region,
+            offset,
+            region.word_rlc(value),
+            region.word_rlc(value_prev),
+        )?;
+        self.original_eq_prev.assign_value(
+            region,
+            offset,
+            region.word_rlc(original_value),
+            region.word_rlc(value_prev),
+        )?;
+        self.original_is_zero
+            .assign_value(region, offset, region.word_rlc(original_value))?;
+        Ok(())
+    }
+}
+
+pub(crate) fn cal_sload_gas_cost_for_assignment(is_warm: bool) -> u64 {
+    let gas_cost = if is_warm {
+        GasCost::WARM_ACCESS
+    } else {
+        GasCost::COLD_SLOAD
+    };
+
+    gas_cost.0
+}
+
+pub(crate) fn cal_sstore_gas_cost_for_assignment(
+    value: U256,
+    value_prev: U256,
+    original_value: U256,
+    is_warm: bool,
+) -> u64 {
+    let warm_case_gas = if value_prev == value {
+        GasCost::WARM_ACCESS
+    } else if original_value == value_prev {
+        if original_value.is_zero() {
+            GasCost::SSTORE_SET
+        } else {
+            GasCost::SSTORE_RESET
+        }
+    } else {
+        GasCost::WARM_ACCESS
+    };
+    if is_warm {
+        warm_case_gas.0
+    } else {
+        warm_case_gas.0 + GasCost::COLD_SLOAD.0
     }
 }

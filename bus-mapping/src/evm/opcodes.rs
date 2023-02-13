@@ -4,18 +4,19 @@ use crate::{
     error::{ExecError, OogError},
     evm::OpcodeId,
     operation::{
-        AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
+        AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
+        TxRefundOp, RW,
     },
+    state_db::CodeDB,
     Error,
 };
 use core::fmt::Debug;
 use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
-    GethExecStep, ToAddress, ToWord, Word,
+    evm_unimplemented, GethExecStep, ToAddress, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
 use keccak256::EMPTY_HASH;
-use log::warn;
 
 use crate::util::CHECK_MEM_STRICT;
 
@@ -57,7 +58,11 @@ mod stop;
 mod swap;
 
 mod error_invalid_jump;
+mod error_invalid_opcode;
 mod error_oog_call;
+mod error_oog_log;
+mod error_oog_sload_sstore;
+mod error_stack_oog_constant;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -76,8 +81,12 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::Create;
 use dup::Dup;
-use error_invalid_jump::ErrorInvalidJump;
+use error_invalid_jump::InvalidJump;
+use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
+use error_oog_log::ErrorOOGLog;
+use error_oog_sload_sstore::OOGSloadSstore;
+use error_stack_oog_constant::ErrorStackOogConstant;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -255,13 +264,20 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
 
 fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociatedOps> {
     match error {
-        ExecError::InvalidJump => Some(ErrorInvalidJump::gen_associated_ops),
+        ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
+        ExecError::InvalidOpcode => Some(InvalidOpcode::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
+        ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Constant) => Some(ErrorStackOogConstant::gen_associated_ops),
+        ExecError::StackOverflow => Some(ErrorStackOogConstant::gen_associated_ops),
+        ExecError::StackUnderflow => Some(ErrorStackOogConstant::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
+
         // more future errors place here
         _ => {
-            warn!("TODO: error state {:?} not implemented", error);
+            evm_unimplemented!("TODO: error state {:?} not implemented", error);
             None
         }
     }
@@ -275,35 +291,34 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
-
-    // if no errors, continue as normal
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
     if memory_enabled {
         let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
-        match check_level {
-            1 => {
-                if state.call_ctx()?.memory != geth_steps[0].memory {
-                    log::error!("wrong mem: {:?} goes wrong. len in state {}, len in step0 {}. state mem {:?} step mem {:?}",
-                     opcode_id,
-                     &state.call_ctx()?.memory.len(),
-                     &geth_steps[0].memory.len(),
-                     &state.call_ctx()?.memory,
-                     &geth_steps[0].memory);
-                    state.call_ctx_mut()?.memory = geth_steps[0].memory.clone();
-                }
-            }
-            2 => {
-                assert_eq!(
-                    &state.call_ctx()?.memory,
-                    &geth_steps[0].memory,
-                    "last step of {:?} goes wrong. len in state {}, len in step0 {}",
+        if check_level >= 1 {
+            #[allow(clippy::collapsible_else_if)]
+            if state.call_ctx()?.memory != geth_steps[0].memory {
+                log::error!(
+                    "wrong mem before {:?}. len in state {}, len in step {}",
                     opcode_id,
                     &state.call_ctx()?.memory.len(),
                     &geth_steps[0].memory.len(),
                 );
+                log::error!("state mem {:?}", &state.call_ctx()?.memory);
+                log::error!("step  mem {:?}", &geth_steps[0].memory);
+
+                for i in 0..std::cmp::min(
+                    state.call_ctx()?.memory.0.len(),
+                    geth_steps[0].memory.0.len(),
+                ) {
+                    if state.call_ctx()?.memory.0[i] != geth_steps[0].memory.0[i] {
+                        log::error!("diff at {}", i);
+                    }
+                }
+                if check_level >= 2 {
+                    panic!("mem wrong");
+                }
+                state.call_ctx_mut()?.memory = geth_steps[0].memory.clone();
             }
-            _ => {}
         }
     }
 
@@ -344,6 +359,7 @@ pub fn gen_associated_ops(
         }
     }
     // if no errors, continue as normal
+    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
     fn_gen_associated_ops(state, geth_steps)
 }
 
@@ -368,18 +384,18 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     // Increase caller's nonce
     let caller_address = call.caller_address;
-    let mut nonce_prev = state.sdb.increase_nonce(&caller_address);
-    debug_assert!(nonce_prev <= state.tx.nonce);
-    while nonce_prev < state.tx.nonce {
-        nonce_prev = state.sdb.increase_nonce(&caller_address);
+    let mut nonce_prev = state.sdb.get_account(&caller_address).1.nonce;
+    debug_assert!(nonce_prev <= state.tx.nonce.into());
+    while nonce_prev < state.tx.nonce.into() {
+        nonce_prev = state.sdb.increase_nonce(&caller_address).into();
         log::warn!("[debug] increase nonce to {}", nonce_prev);
     }
     state.account_write(
         &mut exec_step,
         caller_address,
         AccountField::Nonce,
-        (nonce_prev + 1).into(),
-        nonce_prev.into(),
+        nonce_prev + 1,
+        nonce_prev,
     )?;
 
     // Add caller and callee into access list
@@ -417,30 +433,54 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     )?;
 
     // Get code_hash of callee
-    let (_exists, callee_account) = state.sdb.get_account(&call.address);
-    let code_hash = callee_account.code_hash;
-    state.account_read(
-        &mut exec_step,
-        call.address,
-        AccountField::CodeHash,
-        code_hash.to_word(),
-        code_hash.to_word(),
-    )?;
+    // FIXME: call with value to precompile will cause the codehash of precompile
+    // address to `CodeDB::empty_code_hash()`. FIXME: we should have a
+    // consistent codehash for precompile contract.
+    let (_, callee_account) = state.sdb.get_account(&call.address);
+    let callee_exists = !callee_account.is_empty();
+    let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
+        (true, _) => (call.code_hash.to_word(), false),
+        (_, true) => {
+            debug_assert_eq!(
+                callee_account.code_hash, call.code_hash,
+                "callee account's code hash: {:?}, call's code hash: {:?}",
+                callee_account.code_hash, call.code_hash
+            );
+            (
+                call.code_hash.to_word(),
+                call.code_hash.to_fixed_bytes() == *EMPTY_HASH,
+            )
+        }
+        (_, false) => (Word::zero(), true),
+    };
+
+    if state.tx.is_create() {
+        state.block.sha3_inputs.push({
+            let mut stream = ethers_core::utils::rlp::RlpStream::new();
+            stream.begin_list(2);
+            stream.append(&caller_address);
+            stream.append(&nonce_prev);
+            stream.out().to_vec()
+        });
+    }
 
     // There are 4 branches from here.
     match (
         call.is_create(),
         is_precompiled(&call.address),
-        code_hash.to_fixed_bytes() == *EMPTY_HASH,
+        is_empty_code_hash,
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            state.account_write(
+            state.push_op_reversible(
                 &mut exec_step,
-                call.address,
-                AccountField::Nonce,
-                1.into(),
-                0.into(),
+                RW::WRITE,
+                AccountOp {
+                    address: call.address,
+                    field: AccountField::Nonce,
+                    value: 1.into(),
+                    value_prev: 0.into(),
+                },
             )?;
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),
@@ -450,7 +490,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 ),
                 (
                     CallContextField::CalleeAddress,
-                    get_contract_address(call.caller_address, nonce_prev).to_word(),
+                    get_contract_address(caller_address, nonce_prev).to_word(),
                 ),
                 (
                     CallContextField::CallDataOffset,
@@ -467,7 +507,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 1.into()),
-                (CallContextField::CodeHash, call.code_hash.to_word()),
+                (CallContextField::CodeHash, callee_code_hash),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
@@ -475,12 +515,38 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         }
         // 2. Call to precompiled.
         (_, true, _) => {
-            warn!("Call to precompiled is left unimplemented");
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::CodeHash,
+                callee_code_hash,
+                callee_code_hash,
+            )?;
+
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::CodeHash,
+                callee_code_hash,
+                callee_code_hash,
+            )?;
+
             // 3. Call to account with empty code.
             if is_empty_code_hash {
+                // if the transfer values make an account from non-exist to exist
+                // we need to handle to codehash change
+                if !call.value.is_zero() {
+                    state.account_write(
+                        &mut exec_step,
+                        call.address,
+                        AccountField::CodeHash,
+                        CodeDB::empty_code_hash().to_word(),
+                        CodeDB::empty_code_hash().to_word(), // or Word::zero()?
+                    )?;
+                }
                 return Ok(exec_step);
             }
 
@@ -507,7 +573,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, call.is_create().to_word()),
-                (CallContextField::CodeHash, code_hash.to_word()),
+                (CallContextField::CodeHash, callee_code_hash),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
@@ -547,15 +613,13 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
 
     let effective_refund =
         refund.min((state.tx.gas - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
-    let (found, caller_account) = state.sdb.get_account_mut(&call.caller_address);
+    let (found, caller_account) = state.sdb.get_account(&call.caller_address);
     if !found {
         return Err(Error::AccountNotFound(call.caller_address));
     }
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
         caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
-    caller_account.balance = caller_balance;
-
     state.account_write(
         &mut exec_step,
         call.caller_address,
@@ -578,7 +642,6 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
         coinbase_balance_prev + effective_tip * (state.tx.gas - exec_step.gas_left.0);
-    coinbase_account.balance = coinbase_balance;
     state.account_write(
         &mut exec_step,
         block_info.coinbase,

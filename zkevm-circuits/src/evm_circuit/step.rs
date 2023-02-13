@@ -1,4 +1,5 @@
 use super::util::{CachedRegion, CellManager, CellType};
+use crate::evm_circuit::param::EXECUTION_STATE_HEIGHT_MAP;
 use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
@@ -95,6 +96,7 @@ pub enum ExecutionState {
     ErrorMaxCodeSizeExceeded,
     ErrorInvalidJump,
     ErrorReturnDataOutOfBound,
+    ErrorPrecompileFailed,
     ErrorOutOfGasConstant,
     ErrorOutOfGasStaticMemoryExpansion,
     ErrorOutOfGasDynamicMemoryExpansion,
@@ -105,13 +107,9 @@ pub enum ExecutionState {
     ErrorOutOfGasEXP,
     ErrorOutOfGasSHA3,
     ErrorOutOfGasEXTCODECOPY,
-    ErrorOutOfGasSLOAD,
-    ErrorOutOfGasSSTORE,
-    ErrorOutOfGasCALL,
-    ErrorOutOfGasCALLCODE,
-    ErrorOutOfGasDELEGATECALL,
+    ErrorOutOfGasSloadSstore,
+    ErrorOutOfGasCall,
     ErrorOutOfGasCREATE2,
-    ErrorOutOfGasSTATICCALL,
     ErrorOutOfGasSELFDESTRUCT,
 }
 
@@ -153,13 +151,9 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasEXP
                 | Self::ErrorOutOfGasSHA3
                 | Self::ErrorOutOfGasEXTCODECOPY
-                | Self::ErrorOutOfGasSLOAD
-                | Self::ErrorOutOfGasSSTORE
-                | Self::ErrorOutOfGasCALL
-                | Self::ErrorOutOfGasCALLCODE
-                | Self::ErrorOutOfGasDELEGATECALL
+                | Self::ErrorOutOfGasSloadSstore
+                | Self::ErrorOutOfGasCall
                 | Self::ErrorOutOfGasCREATE2
-                | Self::ErrorOutOfGasSTATICCALL
                 | Self::ErrorOutOfGasSELFDESTRUCT
         )
     }
@@ -308,8 +302,18 @@ impl ExecutionState {
             ],
             Self::RETURN_REVERT => vec![OpcodeId::RETURN, OpcodeId::REVERT],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
+            Self::ErrorInvalidOpcode => OpcodeId::invalid_opcodes(),
             _ => vec![],
         }
+    }
+
+    pub fn get_step_height_option(&self) -> Option<usize> {
+        EXECUTION_STATE_HEIGHT_MAP.get(self).copied()
+    }
+
+    pub fn get_step_height(&self) -> usize {
+        self.get_step_height_option()
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
     }
 }
 

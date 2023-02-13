@@ -2,10 +2,8 @@ use std::collections::HashMap;
 
 use crate::abi;
 use crate::Compiler;
-use anyhow::bail;
-use anyhow::Context;
-use anyhow::Result;
-use eth_types::evm_types::OpcodeId;
+
+use anyhow::{bail, Context, Result};
 use eth_types::{Address, Bytes, H256, U256};
 use log::debug;
 
@@ -44,7 +42,7 @@ fn decompose_tags(expr: &str) -> HashMap<String, String> {
     } else {
         while !it.is_empty() {
             if it.starts_with(':') {
-                let tag = &it[..it.find(&[' ', '\n']).expect("unable to find end tag")];
+                let tag = &it[..it.find([' ', '\n']).expect("unable to find end tag")];
                 it = &it[tag.len() + 1..];
                 let value_len = if tag == ":yul" || tag == ":solidity" || tag == ":asm" {
                     it.len()
@@ -102,7 +100,7 @@ pub fn parse_calldata(compiler: &mut Compiler, as_str: &str) -> Result<(Bytes, O
 pub fn parse_code(compiler: &mut Compiler, as_str: &str) -> Result<Bytes> {
     let tags = decompose_tags(as_str);
 
-    let mut code = if let Some(notag) = tags.get("") {
+    let code = if let Some(notag) = tags.get("") {
         if let Some(hex) = notag.strip_prefix("0x") {
             Bytes::from(hex::decode(hex)?)
         } else if notag.starts_with('{') {
@@ -125,21 +123,13 @@ pub fn parse_code(compiler: &mut Compiler, as_str: &str) -> Result<Bytes> {
     } else if let Some(yul) = tags.get(":yul") {
         compiler.yul(yul)?
     } else if let Some(solidity) = tags.get(":solidity") {
-        debug!("SOLIDITY: >>>{}<<< => {:?}", solidity, as_str);
+        debug!(target: "testool", "SOLIDITY: >>>{}<<< => {:?}", solidity, as_str);
         compiler.solidity(solidity)?
     } else if let Some(asm) = tags.get(":asm") {
         compiler.asm(asm)?
     } else {
         bail!("do not know what to do with code(2) '{:?}'", as_str);
     };
-
-    // TODO: remote the finish with STOP if does not finish with it when fixed
-    if !code.0.is_empty() && code.0[code.0.len() - 1] != OpcodeId::STOP.as_u8() {
-        let mut code_stop = Vec::new();
-        code_stop.extend_from_slice(&code.0);
-        code_stop.push(OpcodeId::STOP.as_u8());
-        code = Bytes::from(code_stop);
-    }
 
     Ok(code)
 }

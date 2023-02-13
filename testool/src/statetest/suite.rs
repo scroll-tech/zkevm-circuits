@@ -8,6 +8,7 @@ use crate::statetest::results::{ResultInfo, ResultLevel};
 use crate::statetest::YamlStateTestBuilder;
 use anyhow::{Context, Result};
 use rayon::prelude::*;
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::sync::RwLock;
 
@@ -20,7 +21,7 @@ pub fn load_statetests_suite(
     let skip_tests: Vec<&String> = config.skip_tests.iter().flat_map(|t| &t.tests).collect();
 
     let files = glob::glob(path)
-        .context("failted to read glob")?
+        .context("failed to read glob")?
         .filter_map(|v| v.ok())
         .filter(|f| {
             !skip_paths
@@ -37,7 +38,7 @@ pub fn load_statetests_suite(
             }
             let path = file.as_path().to_string_lossy();
             let src = std::fs::read_to_string(&file)?;
-            log::debug!("Reading file {:?}", file);
+            log::debug!(target: "testool", "Reading file {:?}", file);
             let mut tcs = match ext {
                 "yml" => YamlStateTestBuilder::new(&mut compiler).load_yaml(&path, &src)?,
                 "json" => JsonStateTestBuilder::new(&mut compiler).load_json(&path, &src)?,
@@ -58,14 +59,22 @@ pub fn run_statetests_suite(
     results: &mut Results,
 ) -> Result<()> {
     // Filter already cached entries
+    let all_test_count = tcs.len();
     let tcs: Vec<StateTest> = tcs
         .into_iter()
-        .filter(|t| !results.contains(&t.id))
+        .filter(|t| !results.contains(&format!("{}#{}", t.id, t.path)))
         .collect();
+
+    log::info!(
+        "{} test results cached, {} remaining",
+        all_test_count - tcs.len(),
+        tcs.len()
+    );
 
     let results = Arc::new(RwLock::from(results));
 
     // for each test
+    let test_count = tcs.len();
     tcs.into_par_iter().for_each(|ref tc| {
         let full_id = format!("{}#{}", tc.id, tc.path);
 
@@ -86,23 +95,44 @@ pub fn run_statetests_suite(
 
         std::panic::set_hook(Box::new(|_info| {}));
 
-        log::debug!("running test {}...", full_id);
-        let result = std::panic::catch_unwind(|| {
+        log::debug!(
+            target : "testool",
+            "🐕 running test (done {}/{}) {}...",
+            1 + results.read().unwrap().tests.len(),
+            test_count,
+            full_id
+        );
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             run_test(tc.clone(), suite.clone(), circuits_config.clone())
-        });
+        }));
 
         // handle panic
         let result = match result {
             Ok(res) => res,
-            Err(_) => {
+            Err(err) => {
+                let panic_err = if let Some(s) = err.downcast_ref::<String>() {
+                    s.to_string()
+                } else if let Some(s) = err.downcast_ref::<&str>() {
+                    s.to_string()
+                } else {
+                    "unable to get panic info".into()
+                };
+
+                let level = if panic_err.contains("circuit was not satisfied") {
+                    ResultLevel::Fail
+                } else if panic_err.contains("evm_unimplemented") {
+                    ResultLevel::Ignored
+                } else {
+                    ResultLevel::Panic
+                };
                 results
                     .write()
                     .unwrap()
                     .insert(
                         full_id,
                         ResultInfo {
-                            level: ResultLevel::Panic,
-                            details: String::default(),
+                            level,
+                            details: panic_err,
                         },
                     )
                     .unwrap();

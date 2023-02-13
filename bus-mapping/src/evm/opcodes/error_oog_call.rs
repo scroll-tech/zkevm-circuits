@@ -1,13 +1,14 @@
 use super::Opcode;
-use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
-    Error,
-};
-use eth_types::{GethExecStep, ToAddress, ToWord};
+use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
+use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
+use crate::Error;
+use eth_types::evm_types::OpcodeId;
+use eth_types::{GethExecStep, ToAddress, ToWord, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the `OpcodeId::CALL` `OpcodeId`.
+/// corresponding to the out of gas errors for [`OpcodeId::CALL`],
+/// [`OpcodeId::CALLCODE`], [`OpcodeId::DELEGATECALL`] and
+/// [`OpcodeId::STATICCALL`].
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct OOGCall;
 
@@ -17,6 +18,12 @@ impl Opcode for OOGCall {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
+        let stack_input_num = match geth_step.op {
+            OpcodeId::CALL | OpcodeId::CALLCODE => 7,
+            OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => 6,
+            op => unreachable!("{op} should not happen in OOGCall"),
+        };
+
         let mut exec_step = state.new_step(geth_step)?;
         let next_step = if geth_steps.len() > 1 {
             Some(&geth_steps[1])
@@ -24,13 +31,6 @@ impl Opcode for OOGCall {
             None
         };
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
-
-        let args_offset = geth_step.stack.nth_last(3)?.as_usize();
-        let args_length = geth_step.stack.nth_last(4)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(5)?.as_usize();
-        let ret_length = geth_step.stack.nth_last(6)?.as_usize();
-
-        state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
         let tx_id = state.tx_ctx.id();
         let call_address = geth_step.stack.nth_last(1)?.to_address();
@@ -46,7 +46,7 @@ impl Opcode for OOGCall {
             state.call_context_read(&mut exec_step, current_call.call_id, field, value);
         }
 
-        for i in 0..7 {
+        for i in 0..stack_input_num {
             state.stack_read(
                 &mut exec_step,
                 geth_step.stack.nth_last_filled(i),
@@ -56,8 +56,26 @@ impl Opcode for OOGCall {
 
         state.stack_write(
             &mut exec_step,
-            geth_step.stack.nth_last_filled(6),
-            (0u64).into(), // must fail
+            geth_step.stack.nth_last_filled(stack_input_num - 1),
+            // Must fail.
+            (0_u64).into(),
+        )?;
+
+        let (_, callee_account) = state.sdb.get_account(&call_address);
+        let callee_exists = !callee_account.is_empty();
+        let callee_code_hash = callee_account.code_hash;
+        let callee_code_hash_word = if callee_exists {
+            callee_code_hash.to_word()
+        } else {
+            Word::zero()
+        };
+
+        state.account_read(
+            &mut exec_step,
+            call_address,
+            AccountField::CodeHash,
+            callee_code_hash_word,
+            callee_code_hash_word,
         )?;
 
         let is_warm = state.sdb.check_account_in_access_list(&call_address);
@@ -71,15 +89,6 @@ impl Opcode for OOGCall {
                 is_warm_prev: is_warm,
             },
         );
-
-        let (_, callee_account) = state.sdb.get_account(&call_address);
-        let callee_code_hash = callee_account.code_hash;
-        for (field, value) in [
-            (AccountField::Balance, callee_account.balance),
-            (AccountField::CodeHash, callee_code_hash.to_word()),
-        ] {
-            state.account_read(&mut exec_step, call_address, field, value, value)?;
-        }
 
         state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         state.handle_return(geth_step)?;

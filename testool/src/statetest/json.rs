@@ -186,7 +186,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                                 gas_limit: *gas_limit,
                                 value: *value,
                                 data: data.0.clone(),
-                                exception: false, // TODO: check
+                                exception: false,
                             });
                         }
                     }

@@ -21,7 +21,7 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
+    evm_unimplemented, Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use keccak256::EMPTY_HASH;
@@ -102,6 +102,9 @@ impl<'a> CircuitInputStateRef<'a> {
     /// bus-mapping instance of the current [`ExecStep`].  Then increase the
     /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
     pub fn push_op<T: Op>(&mut self, step: &mut ExecStep, rw: RW, op: T) {
+        if let OpEnum::Account(op) = op.clone().into_enum() {
+            self.check_update_sdb_account(rw, &op)
+        }
         let op_ref =
             self.block
                 .container
@@ -264,6 +267,63 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    /// First check the validity and consistency of the rw operation against the
+    /// account in the StateDB, then if the rw operation is a write, apply
+    /// it to the corresponding account in the StateDB.
+    fn check_update_sdb_account(&mut self, rw: RW, op: &AccountOp) {
+        let account = self.sdb.get_account_mut(&op.address).1;
+        // -- sanity check begin --
+        // Verify that a READ doesn't change the field value
+        if matches!(rw, RW::READ) && op.value_prev != op.value {
+            panic!(
+                "RWTable Account field read where value_prev != value rwc: {}, op: {:?}",
+                self.block_ctx.rwc.0, op
+            )
+        }
+        let account_value_prev = match op.field {
+            AccountField::Nonce => account.nonce,
+            AccountField::Balance => account.balance,
+            AccountField::CodeHash => {
+                if account.is_empty() {
+                    Word::zero()
+                } else {
+                    account.code_hash.to_word()
+                }
+            }
+        };
+        // Verify that the previous value matches the account field value in the StateDB
+        if op.value_prev != account_value_prev {
+            panic!("RWTable Account field {:?} lookup doesn't match account value account: {:?}, rwc: {}, op: {:?}",
+                rw,
+                account,
+                self.block_ctx.rwc.0,
+                op
+            );
+        }
+        // Verify that no read is done to a field other than CodeHash to a non-existing
+        // account (only CodeHash reads with value=0 can be done to non-existing
+        // accounts, which the State Circuit translates to MPT
+        // AccountNonExisting proofs lookups).
+        if (!matches!(op.field, AccountField::CodeHash)
+            && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
+            && account.is_empty()
+        {
+            panic!(
+                "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
+                rw, self.block_ctx.rwc.0, op
+            );
+        }
+        // -- sanity check end --
+        // Perform the write to the account in the StateDB
+        if matches!(rw, RW::WRITE) {
+            match op.field {
+                AccountField::Nonce => account.nonce = op.value,
+                AccountField::Balance => account.balance = op.value,
+                AccountField::CodeHash => account.code_hash = H256::from(op.value.to_be_bytes()),
+            }
+        }
+    }
+
     /// Push a read type [`AccountOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter), and then
@@ -278,11 +338,8 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
         value_prev: Word,
     ) -> Result<(), Error> {
-        self.push_op(
-            step,
-            RW::READ,
-            AccountOp::new(address, field, value, value_prev),
-        );
+        let op = AccountOp::new(address, field, value, value_prev);
+        self.push_op(step, RW::READ, op);
         Ok(())
     }
 
@@ -300,11 +357,8 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
         value_prev: Word,
     ) -> Result<(), Error> {
-        self.push_op(
-            step,
-            RW::WRITE,
-            AccountOp::new(address, field, value, value_prev),
-        );
+        let op = AccountOp::new(address, field, value, value_prev);
+        self.push_op(step, RW::WRITE, op);
         Ok(())
     }
 
@@ -628,7 +682,6 @@ impl<'a> CircuitInputStateRef<'a> {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
 
-    // TODO: Remove unwrap() and add err handling.
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let is_success = *self
@@ -815,13 +868,12 @@ impl<'a> CircuitInputStateRef<'a> {
                     AccountField::Nonce => account.nonce = op.value,
                     AccountField::Balance => account.balance = op.value,
                     AccountField::CodeHash => account.code_hash = op.value.to_be_bytes().into(),
-                    AccountField::NonExisting => (),
                 }
             }
             OpEnum::TxRefund(op) => {
                 self.sdb.set_refund(op.value);
             }
-            OpEnum::AccountDestructed(_) => unimplemented!(),
+            OpEnum::AccountDestructed(_) => evm_unimplemented!("AcountDestructed"),
             _ => unreachable!(),
         };
     }
@@ -868,7 +920,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
                         let offset = step.stack.nth_last(0)?.as_usize();
                         let length = step.stack.nth_last(1)?.as_usize();
-                        // TODO: Try to get rid of clone.
+
                         // At the moment it conflicts with `call_ctx` and `caller_ctx`.
                         let callee_memory = self.call_ctx()?.memory.clone();
                         let caller_ctx = self.caller_ctx_mut()?;
@@ -1218,6 +1270,29 @@ impl<'a> CircuitInputStateRef<'a> {
                 }
             }
 
+            if matches!(
+                step.op,
+                OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL
+            ) {
+                let caller = self.call()?;
+                let callee_address = match CallKind::try_from(step.op)? {
+                    CallKind::Call | CallKind::StaticCall => step.stack.nth_last(1)?.to_address(),
+                    CallKind::CallCode | CallKind::DelegateCall => caller.address,
+                    _ => unreachable!(),
+                };
+
+                if is_precompiled(&callee_address) {
+                    // Log the precompile address and gas left. Since this failure is mainly caused
+                    // by out of gas.
+                    log::trace!(
+                        "Precompile failed: callee_address = {}, step.gas = {}",
+                        callee_address,
+                        step.gas.0,
+                    );
+                    return Ok(Some(ExecError::PrecompileFailed));
+                }
+            }
+
             return Err(Error::UnexpectedExecStepError(
                 "*CALL*/CREATE* code not executed",
                 step.clone(),
@@ -1271,6 +1346,18 @@ impl<'a> CircuitInputStateRef<'a> {
                 CallContextField::IsSuccess,
                 0u64.into(),
             );
+
+            //Even call.rw_counter_end_of_reversion is zero for now, it will set in
+            //set_value_ops_call_context_rwc_eor later
+            // if call fails, no matter root or internal, read RwCounterEndOfReversion for
+            // circuit constraint.
+            self.call_context_read(
+                exec_step,
+                call.call_id,
+                CallContextField::RwCounterEndOfReversion,
+                call.rw_counter_end_of_reversion.into(),
+            );
+
             if call.is_root {
                 return Ok(());
             }

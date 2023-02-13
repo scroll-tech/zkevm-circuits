@@ -1,7 +1,14 @@
-use super::util::{CachedRegion, CellManager, StoredExpression};
+use super::{
+    param::{
+        BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
+        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
+        N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+    },
+    util::{CachedRegion, CellManager, StoredExpression},
+};
 use crate::{
     evm_circuit::{
-        param::{LOOKUP_CONFIG, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
+        param::{EVM_LOOKUP_COLS, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::Table,
         util::{
@@ -13,7 +20,8 @@ use crate::{
     table::{LookupTable, RwTableTag, TxReceiptFieldTag},
     util::{query_expression, Challenges, Expr},
 };
-use eth_types::Field;
+use bus_mapping::util::read_env_var;
+use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -39,6 +47,10 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::ThirdPhase;
 
 use strum::{EnumCount, IntoEnumIterator};
+
+use once_cell::sync::Lazy;
+pub(crate) static CHECK_RW_LOOKUP: Lazy<bool> =
+    Lazy::new(|| read_env_var("CHECK_RW_LOOKUP", false));
 
 mod add_sub;
 mod addmod;
@@ -66,8 +78,11 @@ mod end_block;
 mod end_inner_block;
 mod end_tx;
 mod error_invalid_jump;
+mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_log;
+mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_stack;
 mod exp;
@@ -132,8 +147,11 @@ use end_block::EndBlockGadget;
 use end_inner_block::EndInnerBlockGadget;
 use end_tx::EndTxGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
+use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_log::ErrorOOGLogGadget;
+use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
@@ -206,7 +224,7 @@ pub(crate) struct ExecutionConfig<F> {
     q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
-    height_map: HashMap<ExecutionState, usize>,
+    pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
@@ -274,27 +292,24 @@ pub(crate) struct ExecutionConfig<F> {
     // error gadgets
     error_oog_call: ErrorOOGCallGadget<F>,
     error_oog_constant: ErrorOOGConstantGadget<F>,
+    error_oog_sload_sstore: ErrorOOGSloadSstoreGadget<F>,
     error_oog_static_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
     error_stack: ErrorStackGadget<F>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
-    error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
-    error_oog_sload: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSLOAD }>,
-    error_oog_sstore: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSSTORE }>,
+    error_oog_log: ErrorOOGLogGadget<F>,
     error_oog_memory_copy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>,
     error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
     error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
     error_oog_ext_codecopy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>,
-    error_oog_call_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCALLCODE }>,
-    error_oog_delegate_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDELEGATECALL }>,
     error_oog_exp: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXP }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
-    error_oog_static_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSTATICCALL }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
     error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
+    error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
     error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
     error_contract_address_collision:
@@ -302,7 +317,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
     error_return_data_out_of_bound:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
-    invalid_opcode_gadget: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidOpcode }>,
+    error_precompile_failed: DummyGadget<F, 0, 0, { ExecutionState::ErrorPrecompileFailed }>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -329,15 +344,13 @@ impl<F: Field> ExecutionConfig<F> {
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
 
-        let lookup_column_count: usize = LOOKUP_CONFIG.iter().map(|(_, count)| *count).sum();
-
         let advices = [(); STEP_WIDTH]
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < N_PHASE3_COLUMNS + lookup_column_count {
+                if n < EVM_LOOKUP_COLS {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < N_PHASE3_COLUMNS + lookup_column_count + N_PHASE2_COLUMNS {
+                } else if n < EVM_LOOKUP_COLS + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)
@@ -434,8 +447,6 @@ impl<F: Field> ExecutionConfig<F> {
         let mut stored_expressions_map = HashMap::new();
 
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-        let word_powers_of_randomness = challenges.evm_word_powers_of_randomness();
-        let lookup_powers_of_randomness = challenges.lookup_input_powers_of_randomness();
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -447,8 +458,6 @@ impl<F: Field> ExecutionConfig<F> {
                     q_step_first,
                     q_step_last,
                     &challenges,
-                    &word_powers_of_randomness,
-                    &lookup_powers_of_randomness,
                     &step_curr,
                     &step_next,
                     &mut height_map,
@@ -537,28 +546,25 @@ impl<F: Field> ExecutionConfig<F> {
             error_stack: configure_gadget!(),
             error_oog_dynamic_memory_gadget: configure_gadget!(),
             error_oog_log: configure_gadget!(),
-            error_oog_sload: configure_gadget!(),
-            error_oog_sstore: configure_gadget!(),
+            error_oog_sload_sstore: configure_gadget!(),
             error_oog_call: configure_gadget!(),
             error_oog_memory_copy: configure_gadget!(),
             error_oog_account_access: configure_gadget!(),
             error_oog_sha3: configure_gadget!(),
             error_oog_ext_codecopy: configure_gadget!(),
-            error_oog_call_code: configure_gadget!(),
-            error_oog_delegate_call: configure_gadget!(),
             error_oog_exp: configure_gadget!(),
             error_oog_create2: configure_gadget!(),
-            error_oog_static_call: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
             error_oog_code_store: configure_gadget!(),
             error_insufficient_balance: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
+            error_invalid_opcode: configure_gadget!(),
             error_write_protection: configure_gadget!(),
             error_depth: configure_gadget!(),
             error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
-            invalid_opcode_gadget: configure_gadget!(),
+            error_precompile_failed: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -582,15 +588,6 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
-    pub fn get_step_height_option(&self, execution_state: ExecutionState) -> Option<usize> {
-        self.height_map.get(&execution_state).copied()
-    }
-
-    pub fn get_step_height(&self, execution_state: ExecutionState) -> usize {
-        self.get_step_height_option(execution_state)
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", execution_state))
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
@@ -601,8 +598,6 @@ impl<F: Field> ExecutionConfig<F> {
         q_step_first: Selector,
         q_step_last: Selector,
         challenges: &Challenges<Expression<F>>,
-        word_powers_of_randomness: &[Expression<F>; 31],
-        lookup_powers_of_randomness: &[Expression<F>; 12],
         step_curr: &Step<F>,
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
@@ -615,8 +610,6 @@ impl<F: Field> ExecutionConfig<F> {
                 step_curr.clone(),
                 step_next.clone(),
                 challenges,
-                word_powers_of_randomness,
-                lookup_powers_of_randomness,
                 G::EXECUTION_STATE,
             );
             G::configure(&mut cb);
@@ -630,8 +623,6 @@ impl<F: Field> ExecutionConfig<F> {
             step_curr.clone(),
             step_next.clone(),
             challenges,
-            word_powers_of_randomness,
-            lookup_powers_of_randomness,
             G::EXECUTION_STATE,
         );
 
@@ -805,8 +796,6 @@ impl<F: Field> ExecutionConfig<F> {
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
-        let lookup_powers_of_randomness: [Expression<F>; 31] =
-            challenges.lookup_input_powers_of_randomness();
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 let name = format!("{:?}", table);
@@ -817,7 +806,6 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Rw => rw_table,
                         Table::Bytecode => bytecode_table,
                         Table::Block => block_table,
-                        Table::Byte => byte_table,
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
@@ -825,8 +813,16 @@ impl<F: Field> ExecutionConfig<F> {
                     .table_exprs(meta);
                     vec![(
                         column.expr(),
-                        rlc::expr(&table_expressions, &lookup_powers_of_randomness),
+                        rlc::expr(&table_expressions, challenges.lookup_input()),
                     )]
+                });
+            }
+        }
+        for column in cell_manager.columns().iter() {
+            if let CellType::LookupByte = column.cell_type {
+                meta.lookup_any("Byte lookup", |meta| {
+                    let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
+                    vec![(column.expr(), byte_table_expression)]
                 });
             }
         }
@@ -839,7 +835,7 @@ impl<F: Field> ExecutionConfig<F> {
         if evm_rows == 0 {
             for transaction in &block.txs {
                 for step in &transaction.steps {
-                    num_rows += self.get_step_height(step.execution_state);
+                    num_rows += step.execution_state.get_step_height();
                 }
             }
             num_rows += 1; // EndBlock
@@ -856,6 +852,7 @@ impl<F: Field> ExecutionConfig<F> {
         offset: usize,
         height: usize,
     ) -> Result<(), Error> {
+        // Name Advice columns
         for idx in 0..height {
             let offset = offset + idx;
             self.q_usable.enable(region, offset)?;
@@ -900,7 +897,6 @@ impl<F: Field> ExecutionConfig<F> {
         layouter.assign_region(
             || "Execution step",
             |mut region| {
-                log::info!("start execution step assignment");
                 if is_first_time {
                     is_first_time = false;
                     region.assign_advice(
@@ -912,6 +908,9 @@ impl<F: Field> ExecutionConfig<F> {
                     return Ok(());
                 }
                 let mut offset = 0;
+
+                // Annotate the EVMCircuit columns within it's single region.
+                self.annotate_circuit(&mut region);
 
                 self.q_step_first.enable(&mut region, offset)?;
 
@@ -945,7 +944,7 @@ impl<F: Field> ExecutionConfig<F> {
                     if next.is_none() {
                         break;
                     }
-                    let height = self.get_step_height(step.execution_state);
+                    let height = step.execution_state.get_step_height();
 
                     // Assign the step witness
                     if step.execution_state == ExecutionState::EndTx {
@@ -953,6 +952,8 @@ impl<F: Field> ExecutionConfig<F> {
                         tx.call_data.clear();
                         tx.calls.clear();
                         tx.steps.clear();
+                        tx.rlp_signed.clear();
+                        tx.rlp_unsigned.clear();
                         let total_gas = {
                             let gas_used = tx.gas - step.gas_left;
                             let current_cumulative_gas_used: u64 = if tx.id == 1 {
@@ -1007,7 +1008,7 @@ impl<F: Field> ExecutionConfig<F> {
                         );
                         return Err(Error::Synthesis);
                     }
-                    let height = self.get_step_height(ExecutionState::EndBlock);
+                    let height = ExecutionState::EndBlock.get_step_height();
                     debug_assert_eq!(height, 1);
                     let last_row = evm_rows - 1;
                     log::trace!(
@@ -1034,7 +1035,7 @@ impl<F: Field> ExecutionConfig<F> {
                 }
 
                 // part3: assign the last EndBlock at offset `evm_rows - 1`
-                let height = self.get_step_height(ExecutionState::EndBlock);
+                let height = ExecutionState::EndBlock.get_step_height();
                 debug_assert_eq!(height, 1);
                 log::trace!("assign last EndBlock at offset {}", offset);
                 self.assign_exec_step(
@@ -1068,13 +1069,44 @@ impl<F: Field> ExecutionConfig<F> {
                     || Value::known(F::zero()),
                 )?;
 
-                log::info!("finish execution step assignment");
                 log::debug!("assign for region done at offset {}", offset);
                 Ok(())
             },
         )?;
         log::debug!("assign_block done");
         Ok(())
+    }
+
+    fn annotate_circuit(&self, region: &mut Region<F>) {
+        let groups = [
+            ("EVM_lookup_fixed", FIXED_TABLE_LOOKUPS),
+            ("EVM_lookup_tx", TX_TABLE_LOOKUPS),
+            ("EVM_lookup_rw", RW_TABLE_LOOKUPS),
+            ("EVM_lookup_bytecode", BYTECODE_TABLE_LOOKUPS),
+            ("EVM_lookup_block", BLOCK_TABLE_LOOKUPS),
+            ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
+            ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
+            ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
+            ("EVM_adv_phase2", N_PHASE2_COLUMNS),
+            ("EVM_copy", N_COPY_COLUMNS),
+            ("EVM_lookup_byte", N_BYTE_LOOKUPS),
+            ("EVM_adv_phase1", N_PHASE1_COLUMNS),
+        ];
+        let mut group_index = 0;
+        let mut index = 0;
+        for col in self.advices {
+            let (name, length) = groups[group_index];
+            region.name_column(|| format!("{}_{}", name, index), col);
+            index += 1;
+            if index >= length {
+                index = 0;
+                group_index += 1;
+            }
+        }
+
+        region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
+        region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
+        region.name_column(|| "Copy_Constr_const", self.constants);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1259,7 +1291,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasConstant => {
                 assign_exec_step!(self.error_oog_constant)
             }
-            ExecutionState::ErrorOutOfGasCALL => {
+            ExecutionState::ErrorOutOfGasCall => {
                 assign_exec_step!(self.error_oog_call)
             }
             ExecutionState::ErrorOutOfGasDynamicMemoryExpansion => {
@@ -1268,11 +1300,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasLOG => {
                 assign_exec_step!(self.error_oog_log)
             }
-            ExecutionState::ErrorOutOfGasSLOAD => {
-                assign_exec_step!(self.error_oog_sload)
-            }
-            ExecutionState::ErrorOutOfGasSSTORE => {
-                assign_exec_step!(self.error_oog_sstore)
+            ExecutionState::ErrorOutOfGasSloadSstore => {
+                assign_exec_step!(self.error_oog_sload_sstore)
             }
             ExecutionState::ErrorOutOfGasMemoryCopy => {
                 assign_exec_step!(self.error_oog_memory_copy)
@@ -1286,20 +1315,11 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasEXTCODECOPY => {
                 assign_exec_step!(self.error_oog_ext_codecopy)
             }
-            ExecutionState::ErrorOutOfGasCALLCODE => {
-                assign_exec_step!(self.error_oog_call_code)
-            }
-            ExecutionState::ErrorOutOfGasDELEGATECALL => {
-                assign_exec_step!(self.error_oog_delegate_call)
-            }
             ExecutionState::ErrorOutOfGasEXP => {
                 assign_exec_step!(self.error_oog_exp)
             }
             ExecutionState::ErrorOutOfGasCREATE2 => {
                 assign_exec_step!(self.error_oog_create2)
-            }
-            ExecutionState::ErrorOutOfGasSTATICCALL => {
-                assign_exec_step!(self.error_oog_static_call)
             }
             ExecutionState::ErrorOutOfGasSELFDESTRUCT => {
                 assign_exec_step!(self.error_oog_self_destruct)
@@ -1318,6 +1338,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorInvalidJump => {
                 assign_exec_step!(self.error_invalid_jump)
             }
+            ExecutionState::ErrorInvalidOpcode => {
+                assign_exec_step!(self.error_invalid_opcode)
+            }
             ExecutionState::ErrorWriteProtection => {
                 assign_exec_step!(self.error_write_protection)
             }
@@ -1333,19 +1356,18 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorReturnDataOutOfBound => {
                 assign_exec_step!(self.error_return_data_out_of_bound)
             }
-
-            ExecutionState::ErrorInvalidOpcode => {
-                assign_exec_step!(self.invalid_opcode_gadget)
+            ExecutionState::ErrorPrecompileFailed => {
+                assign_exec_step!(self.error_precompile_failed)
             }
 
-            _ => unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
+            _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         }
 
         // Fill in the witness values for stored expressions
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
-        // enable with `RUST_LOG=debug`
-        if log::log_enabled!(log::Level::Debug) {
+        // enable with `CHECK_RW_LOOKUP=true`
+        if *CHECK_RW_LOOKUP {
             let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
                 && step.rw_indices.is_empty();
             if !is_padding_step {
@@ -1377,9 +1399,9 @@ impl<F: Field> ExecutionConfig<F> {
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
             let assigned = stored_expression.assign(region, offset)?;
-            assigned.value().map(|v| {
+            assigned.map(|v| {
                 let name = stored_expression.name.clone();
-                assigned_stored_expressions.push((name, *v));
+                assigned_stored_expressions.push((name, v));
             });
         }
         Ok(assigned_stored_expressions)

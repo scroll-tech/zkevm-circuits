@@ -141,10 +141,10 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::{test_circuits_witness_block, BytecodeTestConfig};
-    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use crate::test_util::CircuitTestBuilder;
+
     use eth_types::bytecode;
-    use eth_types::geth_types::GethData;
+
     use mock::TestContext;
 
     fn test_circuit(evm_circuit_pad_to: usize) {
@@ -153,24 +153,14 @@ mod test {
             STOP
         };
 
-        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
-        let block: GethData = test_ctx.into();
-        let mut builder =
-            BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
-                .new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-
-        // build a witness block from trace result
-        let mut block = crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
-        block.evm_circuit_pad_to = evm_circuit_pad_to;
+        let ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
 
         // finish required tests using this witness block
-        assert_eq!(
-            test_circuits_witness_block(block, BytecodeTestConfig::default()),
-            Ok(())
-        );
+        CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
+            .block_modifier(Box::new(move |block| {
+                block.evm_circuit_pad_to = evm_circuit_pad_to
+            }))
+            .run();
     }
 
     // Test where the EVM circuit contains an exact number of rows corresponding to

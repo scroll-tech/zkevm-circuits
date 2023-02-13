@@ -10,7 +10,7 @@ use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
 use crate::table::{KeccakTable, LookupTable, RlpTable, TxFieldTag, TxTable};
 #[cfg(not(feature = "enable-sign-verify"))]
 use crate::tx_circuit::sign_verify::pub_key_hash_to_address;
-use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
+use crate::util::{random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig};
 use crate::witness;
 use crate::witness::{RlpDataType, RlpTxTag, Transaction};
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
@@ -129,7 +129,7 @@ pub struct TxCircuitConfig<F: Field> {
 
     /// Address recovered by SignVerifyChip
     sv_address: Column<Advice>,
-    sign_verify: SignVerifyConfig,
+    sign_verify: SignVerifyConfig<F>,
 
     // External tables
     tx_table: TxTable,
@@ -148,7 +148,7 @@ pub struct TxCircuitConfigArgs<F: Field> {
     /// RlpTable
     pub rlp_table: RlpTable,
     /// Challenges
-    pub challenges: Challenges<Expression<F>>,
+    pub challenges: crate::util::Challenges<Expression<F>>,
 }
 
 impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
@@ -161,7 +161,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             tx_table,
             keccak_table,
             rlp_table,
-            challenges,
+            challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = meta.fixed_column();
@@ -401,7 +401,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             rlp_table,
         );
 
-        let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);
+        let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone());
 
         meta.create_gate("is_calldata", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -531,7 +531,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         });
          */
 
-        #[cfg(feature = "non-legacy-tx")]
+        #[cfg(feature = "reject-eip2718")]
         meta.create_gate("caller address == sv_address if it's not zero", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1215,8 +1215,7 @@ impl<F: Field> TxCircuit<F> {
             max_calldata,
             sign_verify: SignVerifyChip::new(max_txs),
             txs,
-            // FIXME: remove this hardcoded constant
-            size: 1 << 18,
+            size: Self::min_num_rows(max_txs, max_calldata),
             chain_id,
         }
     }
@@ -1275,15 +1274,13 @@ impl<F: Field> TxCircuit<F> {
         let min_rows = std::cmp::max(tx_table_len, SignVerifyChip::<F>::min_num_rows(txs_len));
         #[cfg(not(feature = "enable-sign-verify"))]
         let min_rows = tx_table_len;
-
-        // FIXME: remove this hardcoded constant
-        std::cmp::max(min_rows, 1 << 18)
+        min_rows
     }
 
     fn assign(
         &self,
         config: &TxCircuitConfig<F>,
-        challenges: &Challenges<Value<F>>,
+        challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
         assigned_sig_verifs: Vec<AssignedSignatureVerify<F>>,
         sign_datas: Vec<SignData>,
@@ -1530,11 +1527,14 @@ impl<F: Field> TxCircuit<F> {
                     }
                 }
 
+                log::debug!("assigning calldata, offset {}", offset);
+
                 // Assign call data
                 let mut calldata_count = 0;
                 for (i, tx) in self.txs.iter().enumerate() {
                     let mut calldata_gas_cost = 0;
                     let calldata_length = tx.call_data.len();
+                    calldata_count += calldata_length;
                     for (index, byte) in tx.call_data.iter().enumerate() {
                         assert!(calldata_count < self.max_calldata);
                         let (tx_id_next, is_final) = if index == calldata_length - 1 {
@@ -1568,7 +1568,6 @@ impl<F: Field> TxCircuit<F> {
                             Some(calldata_length as u64),
                             Some(calldata_gas_cost),
                         )?;
-                        calldata_count += 1;
                     }
                 }
 
@@ -1577,6 +1576,14 @@ impl<F: Field> TxCircuit<F> {
                 Ok(offset)
             },
         )?;
+        if last_off + config.minimum_rows > self.size {
+            log::error!(
+                "circuit size not enough, last offset {}, minimum_rows {}, self.size {}",
+                last_off,
+                config.minimum_rows,
+                self.size
+            );
+        }
         layouter.assign_region(
             || "tx table (calldata zeros and paddings)",
             |mut region| {
@@ -1630,7 +1637,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        challenges: &Challenges<Value<F>>,
+        challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         assert!(self.txs.len() <= self.max_txs);
@@ -1661,6 +1668,11 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             let assigned_sig_verifs =
                 self.sign_verify
                     .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
+            self.sign_verify.assert_sig_is_valid(
+                &config.sign_verify,
+                layouter,
+                assigned_sig_verifs.as_slice(),
+            )?;
             self.assign(
                 config,
                 challenges,
@@ -1683,7 +1695,18 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         }
         Ok(())
     }
+
+    fn instance(&self) -> Vec<Vec<F>> {
+        // The maingate expects an instance column, but we don't use it, so we return an
+        // "empty" instance column
+        vec![vec![]]
+    }
 }
+
+#[cfg(not(feature = "onephase"))]
+use crate::util::Challenges;
+#[cfg(feature = "onephase")]
+use crate::util::MockChallenges as Challenges;
 
 #[cfg(any(feature = "test", test))]
 impl<F: Field> Circuit<F> for TxCircuit<F> {
@@ -1755,13 +1778,13 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
 mod tx_circuit_tests {
     use super::*;
     use crate::util::log2_ceil;
-    #[cfg(feature = "non-legacy-tx")]
+    #[cfg(feature = "reject-eip2718")]
     use eth_types::address;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
-    #[cfg(feature = "non-legacy-tx")]
+    #[cfg(feature = "reject-eip2718")]
     use mock::AddrOrWallet;
     use pretty_assertions::assert_eq;
     use std::cmp::max;
@@ -1840,7 +1863,7 @@ mod tx_circuit_tests {
         assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
     }
 
-    #[cfg(feature = "non-legacy-tx")]
+    #[cfg(feature = "reject-eip2718")]
     #[test]
     fn tx_circuit_bad_address() {
         const MAX_TXS: usize = 1;

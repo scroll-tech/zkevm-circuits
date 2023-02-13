@@ -155,8 +155,11 @@ impl ExecState {
 /// Defines the various source/destination types for a copy event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 pub enum CopyDataType {
+    /// When we need to pad the Copy rows of the circuit up to a certain maximum
+    /// with rows that are not "useful".
+    Padding = 0,
     /// When the source for the copy event is the bytecode table.
-    Bytecode = 1,
+    Bytecode,
     /// When the source/destination for the copy event is memory.
     Memory,
     /// When the source for the copy event is tx's calldata.
@@ -252,12 +255,12 @@ impl CopyEvent {
                     .checked_sub(self.src_addr)
                     .unwrap_or_default(),
             ),
-            CopyDataType::RlcAcc | CopyDataType::TxLog => unreachable!(),
+            CopyDataType::RlcAcc | CopyDataType::TxLog | CopyDataType::Padding => unreachable!(),
         };
         let destination_rw_increase = match self.dst_type {
             CopyDataType::RlcAcc | CopyDataType::Bytecode => 0,
             CopyDataType::TxLog | CopyDataType::Memory => u64::try_from(step_index).unwrap() / 2,
-            CopyDataType::TxCalldata => unreachable!(),
+            CopyDataType::TxCalldata | CopyDataType::Padding => unreachable!(),
         };
         source_rw_increase + destination_rw_increase
     }
@@ -297,4 +300,20 @@ pub struct ExpEvent {
     pub exponentiation: Word,
     /// Intermediate multiplication results.
     pub steps: Vec<ExpStep>,
+}
+
+impl Default for ExpEvent {
+    fn default() -> Self {
+        Self {
+            identifier: 0,
+            base: 2.into(),
+            exponent: 2.into(),
+            exponentiation: 4.into(),
+            steps: vec![ExpStep {
+                a: 2.into(),
+                b: 2.into(),
+                d: 4.into(),
+            }],
+        }
+    }
 }

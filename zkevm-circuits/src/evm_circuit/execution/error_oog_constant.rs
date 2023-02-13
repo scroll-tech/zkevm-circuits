@@ -24,6 +24,7 @@ pub(crate) struct ErrorOOGConstantGadget<F> {
     // constrain gas left is less than required
     gas_required: Cell<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
+    rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -37,6 +38,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
         let gas_required = cb.query_cell();
+        let rw_counter_end_of_reversion = cb.query_cell();
 
         cb.constant_gas_lookup(opcode.expr(), gas_required.expr());
         // Check if the amount of gas available is less than the amount of gas
@@ -52,6 +54,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         // current call must be failed.
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            rw_counter_end_of_reversion.expr(),
+        );
+
         // Go to EndTx only when is_root
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(
@@ -65,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(1.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(2.expr() + cb.curr.state.reversible_write_counter.expr()),
                 ..StepStateTransition::any()
             });
         });
@@ -85,10 +94,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             )
         });
 
+        // constrain RwCounterEndOfReversion
+        let rw_counter_end_of_step =
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+        cb.require_equal(
+            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        );
+
         Self {
             opcode,
             gas_required,
             insufficient_gas,
+            rw_counter_end_of_reversion,
             restore_context,
         }
     }
@@ -118,8 +137,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             F::from(step.gas_cost),
         )?;
 
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
+
         self.restore_context
-            .assign(region, offset, block, call, step, 1)?;
+            .assign(region, offset, block, call, step, 2)?;
 
         Ok(())
     }
@@ -127,15 +152,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::run_test_circuit, test::run_test_circuit_geth_data_default, witness::block_convert,
-    };
+
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
-        geth_types::GethData, Address, ToWord, Word,
+        Address, ToWord, Word,
     };
-    use halo2_proofs::halo2curves::bn256::Fr;
 
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
@@ -167,7 +190,7 @@ mod test {
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(code),
             |mut txs, _accs| {
@@ -181,12 +204,12 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
+    // TODO: Use `mock` crate
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
         let from = MOCK_ACCOUNTS[1];
         let to = MOCK_ACCOUNTS[0];
@@ -259,7 +282,7 @@ mod test {
     }
 
     fn oog_constant_internal_call(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -284,15 +307,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(run_test_circuit(block), Ok(()));
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     fn callee(code: Bytecode) -> Account {

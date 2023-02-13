@@ -531,7 +531,7 @@ impl Op for TxRefundOp {
 
 /// Represents a field parameter of the Account that can be accessed via EVM
 /// execution.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccountField {
     /// Account Nonce
     Nonce,
@@ -539,8 +539,6 @@ pub enum AccountField {
     Balance,
     /// Account Code Hash
     CodeHash,
-    /// Account non existing
-    NonExisting,
 }
 
 /// Represents a change in the Account field implied by a `BeginTx`,

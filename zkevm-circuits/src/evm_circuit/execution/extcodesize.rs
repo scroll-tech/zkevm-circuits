@@ -143,7 +143,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::geth_types::Account;
     use eth_types::{bytecode, Bytecode, ToWord, Word};
     use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
@@ -237,6 +237,6 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

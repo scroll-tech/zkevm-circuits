@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
 use crate::evm_circuit::{
-    param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
+    param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
     step::{ExecutionState, Step},
     table::{FixedTableTag, Table},
     util::{
@@ -121,9 +121,9 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < N_PHASE3_COLUMNS + lookup_column_count {
+                if n < lookup_column_count {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < N_PHASE3_COLUMNS + lookup_column_count + N_PHASE2_COLUMNS {
+                } else if n < lookup_column_count + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)
@@ -135,15 +135,10 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
 
         let step_curr = Step::new(meta, advices, 0, false);
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-        let evm_word_powers_of_randomness = challenges_exprs.evm_word_powers_of_randomness();
-        let lookup_input_powers_of_randomness =
-            challenges_exprs.lookup_input_powers_of_randomness();
         let mut cb = ConstraintBuilder::new(
             step_curr.clone(),
             step_next,
             &challenges_exprs,
-            &evm_word_powers_of_randomness,
-            &lookup_input_powers_of_randomness,
             ExecutionState::STOP,
         );
         let math_gadget_container = G::configure_gadget_container(&mut cb);
@@ -168,7 +163,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                         let table_expressions = fixed_table.table_exprs(meta);
                         vec![(
                             column.expr(),
-                            rlc::expr(&table_expressions, &lookup_input_powers_of_randomness),
+                            rlc::expr(&table_expressions, challenges_exprs.lookup_input()),
                         )]
                     });
                 }

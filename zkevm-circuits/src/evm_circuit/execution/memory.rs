@@ -175,10 +175,8 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        evm_circuit::test::rand_word,
-        test_util::{run_test_circuits, BytecodeTestConfig},
-    };
+    use crate::evm_circuit::test::rand_word;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode;
     use eth_types::evm_types::{GasCost, OpcodeId};
     use eth_types::Word;
@@ -193,13 +191,8 @@ mod test {
             STOP
         };
 
-        let test_config = BytecodeTestConfig {
-            gas_limit: GasCost::TX.as_u64()
-                + OpcodeId::PUSH32.as_u64()
-                + OpcodeId::PUSH32.as_u64()
-                + gas_cost,
-            ..Default::default()
-        };
+        let gas_limit =
+            GasCost::TX.as_u64() + OpcodeId::PUSH32.as_u64() + OpcodeId::PUSH32.as_u64() + gas_cost;
 
         let ctx = TestContext::<2, 1>::new(
             None,
@@ -208,13 +201,13 @@ mod test {
                 txs[0]
                     .to(accs[0].address)
                     .from(accs[1].address)
-                    .gas(Word::from(test_config.gas_limit));
+                    .gas(Word::from(gas_limit));
             },
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, Some(test_config)), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]

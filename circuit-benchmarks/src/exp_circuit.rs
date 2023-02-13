@@ -38,7 +38,10 @@ mod tests {
         let base = Word::from(132);
         let exponent = Word::from(27);
         let block = generate_full_events_block(DEGREE, base, exponent);
-        let circuit = ExpCircuit::<Fr>::new(block);
+        let circuit = ExpCircuit::<Fr>::new(
+            block.exp_events.clone(),
+            block.circuits_params.max_exp_steps,
+        );
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([

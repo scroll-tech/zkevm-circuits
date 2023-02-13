@@ -1,0 +1,18 @@
+name: Feature request
+description: Suggest a feature
+labels: ["T-feature"]
+body:
+    - type: markdown
+      attributes:
+          value: |
+              Please ensure that the feature has not already been requested in the issue tracker.
+    - type: textarea
+      attributes:
+          label: Describe the feature you would like
+          description: Please also describe what the feature is aiming to solve, if relevant.
+      validations:
+          required: true
+    - type: textarea
+      attributes:
+          label: Additional context
+          description: Add any other context to the feature (like screenshots, resources)

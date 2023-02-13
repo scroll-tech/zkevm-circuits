@@ -210,7 +210,11 @@ mod test {
                     vec![],
                 )
                 .unwrap();
-                assert_eq!(prover.verify(), result);
+                if result.is_err() {
+                    assert_eq!(prover.verify_par(), result)
+                } else {
+                    prover.assert_satisfied_par()
+                }
             }
         };
     }

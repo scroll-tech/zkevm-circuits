@@ -229,8 +229,6 @@
 extern crate alloc;
 extern crate core;
 
-mod util;
-
 pub mod circuit_input_builder;
 pub mod error;
 pub mod evm;
@@ -241,5 +239,6 @@ pub mod operation;
 pub mod precompile;
 pub mod rpc;
 pub mod state_db;
+pub mod util;
 
 pub use error::Error;

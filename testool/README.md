@@ -44,7 +44,7 @@ or
 ```
 
 The "official EVM" ethereum tests are cloned as a gitmodule in `testool/tests`.
-We are using the tests located in `testtool/tests/src/GeneralStateTestsFiller`, but other locations can be specified, also.
+We are using the tests located in `testool/tests/src/GeneralStateTestsFiller`, but other locations can be specified, also.
 
 
 ### The ethereum tests files
@@ -58,7 +58,7 @@ These tests are written in `json` or `yml`, and, in general it specifies 4 secti
 
 You can find (here)[https://ethereum-tests.readthedocs.io/en/latest/test_filler/blockchain_filler.html] the specification for these files in detail.
 
-Official ethereum tests are mantained by the foundation but you can write your own.
+Official ethereum tests are maintained by the foundation but you can write your own.
 
 ### Configuration file
 
@@ -70,11 +70,10 @@ In the config file you define `[[suite]]`s that defines how tests will be execut
 
 - `id` is the identifier of the suite. The default suite is called `default`.
 - `max_steps` the maximum number of executed opcodes. If this is reached, the test is marked to be ignored.
-- `max_gas` the maximum gas of a test. If the is reached, the test is marked to be ignored.
-- `unimplemented_opcodes`, if any of these opcodes are found in the execution trace, the test is marked to be ignored.
-- you should define also only one of these paramers:
-   - `allow_tests` with the list of tests or testsets to execute. All others will be excluded. Test sets should be prefixed with `&`
-   - `ignore_tests` with the list of test or testsets to ignore. All others will be included. Test sets should be prefixed with `&`
+- `max_gas` the maximum gas of a test. If the specified maximum gas is reached, the test is marked to be ignored. Put a `0` if you do not want to limit it.
+- you should define also only one of these parameters:
+   - `allow_tests` with the list of tests or test sets to execute. All others will be excluded. Test sets should be prefixed with `&`
+   - `ignore_tests` with the list of test or test sets to ignore. All others will be included. Test sets should be prefixed with `&`
 
 #### Test sets
 
@@ -99,12 +98,15 @@ When the command line parameter `--report` is defined, it automatically:
    - `<timestamp>-<git_commit>.csv` with the raw results of the execution
 - The HTML file also contains the diff with the previous result. The previous result file is the more recent csv file with different commit from the current one
 
+Sometimes do you want to only re-execute tests that are marked as `Ignored` (because you are implementing something new). In this case, you can specify `--cache <>.csv` to use the previous results.
+
 NOTE: if you do not execute with `--report` the tool will exit the process with `1` if there is any test that is not working.
+
 
 ### Manually executing the tests
 
 Usually we have to debug and run the tests manually to check if everything works ok. We provide a set of command line parameters to help with this.
 
-- `testool [--suite xxx] --cache` to execute all tests, and keeping the results (cache) CSV file. If you delete entries from the cache file, and re-run the tool again, only the deleted tests will be executed again
+- `testool [--suite xxx] --cache <cache_file>` to execute all tests, and keeping the results (cache) CSV file. If you delete entries from the cache file, and re-run the tool again, only the deleted tests will be executed again
 
-- `testool [--suite xxx] --inspect <test_id>` only executed the selected test (even if cached, or ignored). Use `RUST_BACKTRACE=1` here to check if anything fails. Also gives a dumop of the test as also to the geth steps executed.
+- `testool [--suite xxx] --inspect <test_id>` only executed the selected test (even if cached, or ignored). Use `RUST_BACKTRACE=1` here to check if anything fails. Also gives a dump of the test as also to the geth steps executed.

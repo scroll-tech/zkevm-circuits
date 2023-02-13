@@ -1,8 +1,10 @@
-use crate::evm_circuit::{util::RandomLinearCombination, witness::Rw};
+use crate::evm_circuit::util::rlc;
+use crate::evm_circuit::witness::Rw;
 use crate::table::{AccountFieldTag, ProofType};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
+use mpt_zktrie::state::witness::WitnessGenerator;
 use mpt_zktrie::{serde::SMTTrace, state, MPTProofType};
 use std::collections::BTreeMap;
 
@@ -19,8 +21,8 @@ pub struct MptUpdate {
 }
 
 impl MptUpdate {
-    fn proof_type<F: Field>(&self) -> F {
-        let proof_type = match self.key {
+    fn proof_type(&self) -> ProofType {
+        match self.key {
             Key::AccountStorage { .. } => {
                 if self.old_value.is_zero() && self.new_value.is_zero() {
                     ProofType::StorageDoesNotExist
@@ -29,8 +31,7 @@ impl MptUpdate {
                 }
             }
             Key::Account { field_tag, .. } => field_tag.into(),
-        };
-        F::from(proof_type as u64)
+        }
     }
 }
 
@@ -38,7 +39,10 @@ impl MptUpdate {
 #[derive(Default, Clone, Debug)]
 pub struct MptUpdates {
     old_root: Word,
+    new_root: Word,
     updates: BTreeMap<Key, MptUpdate>,
+    pub(crate) smt_traces: Vec<SMTTrace>,
+    pub(crate) proof_types: Vec<MPTProofType>,
 }
 
 /// The field element encoding of an MPT update, which is used by the MptTable
@@ -50,34 +54,26 @@ impl MptUpdates {
         self.old_root
     }
 
+    pub(crate) fn new_root(&self) -> Word {
+        self.new_root
+    }
+
     pub(crate) fn get(&self, row: &Rw) -> Option<MptUpdate> {
         key(row).map(|key| *self.updates.get(&key).expect("missing key in mpt updates"))
     }
 
-    pub(crate) fn construct(
-        rows: &[Rw],
-        init_trie: &ZktrieState,
-    ) -> (Self, Vec<SMTTrace>, Vec<MPTProofType>) {
-        use state::witness::WitnessGenerator;
-
-        let mut update_without_root = Self::mock_from(rows);
-        update_without_root.old_root = U256::from_big_endian(init_trie.root());
+    pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) {
+        let root_pair = (self.old_root, self.new_root);
+        self.old_root = U256::from_big_endian(init_trie.root());
+        log::trace!("fill_state_roots init {:?}", init_trie.root());
 
         let mut wit_gen = WitnessGenerator::from(init_trie);
-        let mut smt_traces = Vec::new();
-        let mut tips = Vec::new();
+        self.smt_traces = Vec::new();
+        self.proof_types = Vec::new();
 
-        for (key, update) in &mut update_without_root.updates {
-            let proof_tip = state::as_proof_type(match key {
-                Key::AccountStorage { .. } => {
-                    if update.old_value.is_zero() && update.new_value.is_zero() {
-                        ProofType::StorageDoesNotExist as i32
-                    } else {
-                        ProofType::StorageChanged as i32
-                    }
-                }
-                Key::Account { field_tag, .. } => *field_tag as i32,
-            });
+        for (key, update) in &mut self.updates {
+            log::trace!("apply update {:?} {:?}", key, update);
+            let proof_tip = state::as_proof_type(update.proof_type() as i32);
             let smt_trace = wit_gen.handle_new_state(
                 proof_tip,
                 match key {
@@ -90,19 +86,36 @@ impl MptUpdates {
                     Key::AccountStorage { storage_key, .. } => Some(*storage_key),
                 },
             );
+            log::trace!(
+                "fill_state_roots {:?}->{:?}",
+                smt_trace.account_path[0].root,
+                smt_trace.account_path[1].root
+            );
             update.old_root = U256::from_little_endian(smt_trace.account_path[0].root.as_ref());
             update.new_root = U256::from_little_endian(smt_trace.account_path[1].root.as_ref());
-            smt_traces.push(smt_trace);
-            tips.push(proof_tip);
+            self.new_root = update.new_root;
+            self.smt_traces.push(smt_trace);
+            self.proof_types.push(proof_tip);
         }
-
-        let updates = update_without_root;
-        (updates, smt_traces, tips)
+        log::debug!(
+            "mpt update roots (after zktrie) {:?} {:?}",
+            self.old_root,
+            self.new_root
+        );
+        let root_pair2 = (self.old_root, self.new_root);
+        if root_pair2 != root_pair {
+            log::error!("roots non consistent {:?} vs {:?}", root_pair, root_pair2);
+        }
     }
 
-    pub(crate) fn mock_from(rows: &[Rw]) -> Self {
-        let mock_old_root = Word::from(0xcafeu64);
-        let map: BTreeMap<_, _> = rows
+    pub(crate) fn from_rws_with_mock_state_roots(
+        rows: &[Rw],
+        old_root: U256,
+        new_root: U256,
+    ) -> Self {
+        log::debug!("mpt update roots (mocking) {:?} {:?}", old_root, new_root);
+        let rows_len = rows.len();
+        let updates: BTreeMap<_, _> = rows
             .iter()
             .group_by(|row| key(row))
             .into_iter()
@@ -117,8 +130,12 @@ impl MptUpdates {
                     key_exists,
                     MptUpdate {
                         key,
-                        old_root: Word::from(i as u64) + mock_old_root,
-                        new_root: Word::from(i as u64 + 1) + mock_old_root,
+                        old_root: Word::from(i as u64) + old_root,
+                        new_root: if i + 1 == rows_len {
+                            new_root
+                        } else {
+                            Word::from(i as u64 + 1) + old_root
+                        },
                         old_value: value_prev(first),
                         new_value: value(last),
                     },
@@ -126,8 +143,10 @@ impl MptUpdates {
             })
             .collect();
         MptUpdates {
-            updates: map,
-            old_root: mock_old_root,
+            updates,
+            old_root,
+            new_root,
+            ..Default::default()
         }
     }
 
@@ -147,7 +166,7 @@ impl MptUpdates {
                 MptUpdateRow([
                     Value::known(update.key.address()),
                     randomness.map(|randomness| update.key.storage_key(randomness)),
-                    Value::known(update.proof_type()),
+                    Value::known(F::from(update.proof_type() as u64)),
                     new_root,
                     old_root,
                     new_value,
@@ -165,7 +184,7 @@ impl MptUpdate {
                 field_tag: AccountFieldTag::Nonce | AccountFieldTag::NonExisting,
                 ..
             } => x.to_scalar().unwrap(),
-            _ => RandomLinearCombination::random_linear_combine(x.to_le_bytes(), word_randomness),
+            _ => rlc::value(&x.to_le_bytes(), word_randomness),
         };
 
         (assign(self.new_value), assign(self.old_value))
@@ -173,14 +192,8 @@ impl MptUpdate {
 
     pub(crate) fn root_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
         (
-            RandomLinearCombination::random_linear_combine(
-                self.new_root.to_le_bytes(),
-                word_randomness,
-            ),
-            RandomLinearCombination::random_linear_combine(
-                self.old_root.to_le_bytes(),
-                word_randomness,
-            ),
+            rlc::value(&self.new_root.to_le_bytes(), word_randomness),
+            rlc::value(&self.old_root.to_le_bytes(), word_randomness),
         )
     }
 }
@@ -243,10 +256,7 @@ impl Key {
         match self {
             Self::Account { .. } => F::zero(),
             Self::AccountStorage { storage_key, .. } => {
-                RandomLinearCombination::random_linear_combine(
-                    storage_key.to_le_bytes(),
-                    randomness,
-                )
+                rlc::value(&storage_key.to_le_bytes(), randomness)
             }
         }
     }

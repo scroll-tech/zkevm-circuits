@@ -203,3 +203,23 @@ macro_rules! define_range_index_variants {
         }
     };
 }
+
+/// Triggers a signal that a feature is unimplemented, warns if
+/// `warn-unimplemented` feature is set
+#[cfg(feature = "warn-unimplemented")]
+#[macro_export]
+macro_rules! evm_unimplemented {
+    ($($arg:tt)+) => {
+        log::warn!("evm_unimplemented: {}", format_args!($($arg)+))
+    };
+}
+
+/// Triggers a signal that a feature is unimplemented, panics if
+/// `warn-unimplemented` feature is not set
+#[cfg(not(feature = "warn-unimplemented"))]
+#[macro_export]
+macro_rules! evm_unimplemented {
+    ($($arg:tt)+) => {
+        (|| panic!("evm_unimplemented: {}",format_args!($($arg)+)))()
+    };
+}
