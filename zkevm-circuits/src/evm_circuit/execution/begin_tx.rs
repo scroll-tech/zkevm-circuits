@@ -10,8 +10,8 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                IsEqualGadget, IsZeroGadget, LtGadget, MulWordByU64Gadget, RangeCheckGadget,
-                RlpContractCreateGadget,
+                ContractCreateGadget, IsEqualGadget, IsZeroGadget, LtGadget, MulWordByU64Gadget,
+                RangeCheckGadget,
             },
             CachedRegion, Cell, Word,
         },
@@ -56,7 +56,7 @@ pub(crate) struct BeginTxGadget<F> {
     /// Keccak256(RLP([tx_caller_address, tx_nonce]))
     caller_nonce_hash_bytes: [Cell<F>; N_BYTES_WORD],
     /// RLP gadget for CREATE address.
-    rlp_create: RlpContractCreateGadget<F>,
+    rlp_create: ContractCreateGadget<F, false>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -198,7 +198,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
         });
         let caller_nonce_hash_bytes = array_init::array_init(|_| cb.query_byte());
-        let rlp_create = RlpContractCreateGadget::construct(cb);
+        let rlp_create = ContractCreateGadget::construct(cb);
 
         cb.require_equal(
             "tx caller address equivalence",
@@ -228,12 +228,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 .try_into()
                 .unwrap();
             let output_rlc = cb.word_rlc(caller_nonce_hash_exprs);
-            // 2. calculate input_len:
-            let input_len = rlp_create.rlp_length();
-            // 3. calculate input_rlc:
-            let input_rlc = rlp_create.rlp_rlc(cb);
-            // 4. keccak table lookup
-            cb.keccak_table_lookup(input_rlc, input_len.expr(), output_rlc.expr());
+            // keccak table lookup
+            cb.keccak_table_lookup(
+                rlp_create.input_rlc(cb),
+                rlp_create.input_length(),
+                output_rlc,
+            );
         });
 
         let is_empty_code_hash =
@@ -633,7 +633,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             c.assign(region, offset, Value::known(F::from(*v as u64)))?;
         }
         self.rlp_create
-            .assign(region, offset, call.caller_address, tx.nonce)?;
+            .assign(region, offset, call.caller_address, tx.nonce, None, None)?;
         self.is_empty_code_hash.assign_value(
             region,
             offset,
