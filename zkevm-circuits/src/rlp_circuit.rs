@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::Field;
+use ethers_core::utils::rlp;
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use gadgets::is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction};
 use gadgets::util::{select, sum};

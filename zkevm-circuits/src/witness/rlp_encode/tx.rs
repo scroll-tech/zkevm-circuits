@@ -1,3 +1,4 @@
+use ethers_core::utils::rlp;
 use halo2_proofs::circuit::Value;
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 use strum_macros::EnumIter;
@@ -358,6 +359,7 @@ impl<F: FieldExt> RlpWitnessGen<F> for SignedTransaction {
 
 #[cfg(test)]
 mod tests {
+    use ethers_core::utils::rlp;
     use halo2_proofs::circuit::Value;
     use halo2_proofs::{arithmetic::Field, halo2curves::bn256::Fr};
     use num::Zero;

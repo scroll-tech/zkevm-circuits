@@ -1,6 +1,6 @@
+use ethers_core::utils::rlp::Encodable;
 use halo2_proofs::circuit::Value;
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
-use rlp::Encodable;
 
 use crate::impl_expr;
 use crate::util::Challenges;
