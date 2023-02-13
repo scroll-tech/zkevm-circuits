@@ -42,7 +42,7 @@ fn decompose_tags(expr: &str) -> HashMap<String, String> {
     } else {
         while !it.is_empty() {
             if it.starts_with(':') {
-                let tag = &it[..it.find(&[' ', '\n']).expect("unable to find end tag")];
+                let tag = &it[..it.find([' ', '\n']).expect("unable to find end tag")];
                 it = &it[tag.len() + 1..];
                 let value_len = if tag == ":yul" || tag == ":solidity" || tag == ":asm" {
                     it.len()
