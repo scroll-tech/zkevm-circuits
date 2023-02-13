@@ -401,6 +401,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.evm_word())
     }
 
+    pub(crate) fn query_keccak_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
+        RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.keccak_input())
+    }
+
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
         self.query_bytes_dyn(N).try_into().unwrap()
     }
