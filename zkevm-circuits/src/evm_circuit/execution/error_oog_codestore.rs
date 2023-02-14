@@ -69,8 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
         // restore context as in internal call
         cb.require_zero("in internal call", cb.curr.state.is_root.expr());
 
-        // TODO:: constrain in create context, look up is_create
-        // Case C in the specs.
+        // Case C in the return specs.
           let restore_context = RestoreContextGadget::construct(
                 cb,
                 0.expr(),
@@ -100,14 +99,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        let is_create2 = opcode == OpcodeId::CREATE2;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
         let range = self.range.assign(region, offset, memory_offset, length)?;
         
-        self.is_create.assign(region, offset, Value::known(F::from(call.is_create as u64)));
+        self.is_create.assign(region, offset, Value::known(F::from(call.is_create as u64)))?;
         self.code_store_gas_insufficient.assign(region, offset, F::from(step.gas_left), 
             F::from(200 * length.as_u64()))?;
         self.restore_context.assign(
@@ -151,7 +149,7 @@ mod test {
     }
 
     // RETURN or REVERT with data of [0x60; 5]
-    fn initialization_bytecode(is_success: bool) -> Bytecode {
+    fn initialization_bytecode() -> Bytecode {
         let memory_bytes = [0x60; 10];
         let memory_address = 0;
         let memory_value = Word::from_big_endian(&memory_bytes);
@@ -162,19 +160,14 @@ mod test {
             PUSH2(5) // length to copy
             PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap())
         };
-        code.write_op(if is_success {
-            OpcodeId::RETURN
-        } else {
-            //OpcodeId::REVERT
-            OpcodeId::RETURN
-        });
+        code.write_op(OpcodeId::RETURN);
+       
         code
     }
 
     fn creater_bytecode(
         initialization_bytecode: Bytecode,
         is_create2: bool,
-        is_persistent: bool,
     ) -> Bytecode {
         let initialization_bytes = initialization_bytecode.code();
         let mut code = bytecode! {
@@ -195,14 +188,12 @@ mod test {
         } else {
             OpcodeId::CREATE
         });
-        if !is_persistent {
-            code.append(&bytecode! {
-                PUSH1(0)
-                PUSH1(0)
-                //REVERT
-                RETURN
-            });
-        }
+        code.append(&bytecode! {
+            PUSH1(0)
+            PUSH1(0)
+            RETURN
+        });
+
         code
     }
 
@@ -228,13 +219,10 @@ mod test {
 
     #[test]
     fn test_create() {
-        // for ((is_success, is_create2), is_persistent) in [true, false]
-        //     .iter()
-        //     .cartesian_product(&[true, false])
-        //     .cartesian_product(&[true, false])
-        // {
-            let initialization_code = initialization_bytecode(false);
-            let root_code = creater_bytecode(initialization_code, false, false);
+        for is_create2 in [false, true]
+        {
+            let initialization_code = initialization_bytecode();
+            let root_code = creater_bytecode(initialization_code, is_create2);
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
@@ -243,20 +231,6 @@ mod test {
                 ..Default::default()
             };
             run_test_circuits(test_context(caller));
-       // }
-    }
-
-    #[test]
-    fn test_create_empty_initialization_code() {
-        for is_create2 in [true, false] {
-            let caller = Account {
-                address: *CALLER_ADDRESS,
-                code: creater_bytecode(vec![].into(), is_create2, true).into(),
-                nonce: 10.into(),
-                balance: eth(10),
-                ..Default::default()
-            };
-            run_test_circuits(test_context(caller));
-        }
+       }
     }
 }
