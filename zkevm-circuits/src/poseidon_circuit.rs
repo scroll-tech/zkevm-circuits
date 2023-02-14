@@ -125,14 +125,13 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
             .evm_word()
             .map(|challenge| rlc::value(EMPTY_HASH_LE.as_ref(), challenge));
 
-        let chip =
-            PoseidonHashChip::<_, HASH_BLOCK_STEP_SIZE>::construct(
-                config.0.clone(),
-                &self.0,
-                self.1,
-                false,
-                empty_hash.inner,
-            );
+        let chip = PoseidonHashChip::<_, HASH_BLOCK_STEP_SIZE>::construct(
+            config.0.clone(),
+            &self.0,
+            self.1,
+            false,
+            empty_hash.inner,
+        );
 
         chip.load(layouter)
     }
