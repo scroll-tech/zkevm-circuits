@@ -84,6 +84,7 @@ mod error_oog_constant;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
+mod error_precompile_failed;
 mod error_stack;
 mod exp;
 mod extcodecopy;
@@ -152,6 +153,7 @@ use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
+use error_precompile_failed::ErrorPrecompileFailedGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
@@ -317,7 +319,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
     error_return_data_out_of_bound:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
-    error_precompile_failed: DummyGadget<F, 0, 0, { ExecutionState::ErrorPrecompileFailed }>,
+    error_precompile_failed: ErrorPrecompileFailedGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
