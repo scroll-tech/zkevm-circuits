@@ -732,9 +732,10 @@ impl<'a> CircuitInputStateRef<'a> {
                 } else {
                     let (found, account) = self.sdb.get_account(&code_address);
                     if !found {
-                        return Err(Error::AccountNotFound(code_address));
+                        (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
+                    } else {
+                        (CodeSource::Address(code_address), account.code_hash)
                     }
-                    (CodeSource::Address(code_address), account.code_hash)
                 }
             }
         };
