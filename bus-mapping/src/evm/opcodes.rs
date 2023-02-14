@@ -637,6 +637,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     let effective_tip = state.tx.gas_price - block_info.base_fee;
     let (found, coinbase_account) = state.sdb.get_account_mut(&block_info.coinbase);
     if !found {
+        log::error!("coinbase account not found: {}", block_info.coinbase);
         return Err(Error::AccountNotFound(block_info.coinbase));
     }
     let coinbase_balance_prev = coinbase_account.balance;

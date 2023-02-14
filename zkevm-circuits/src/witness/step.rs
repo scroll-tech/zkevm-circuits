@@ -184,8 +184,8 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
                     OpcodeId::CREATE | OpcodeId::CREATE2 => ExecutionState::CREATE,
+                    OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
                     // dummy ops
-                    OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     OpcodeId::INVALID(_) => ExecutionState::ErrorInvalidOpcode,
                     _ => unimplemented!("unimplemented opcode {:?}", op),

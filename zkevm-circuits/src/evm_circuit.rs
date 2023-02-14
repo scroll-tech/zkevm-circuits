@@ -303,8 +303,12 @@ pub mod test {
     use crate::{
         evm_circuit::{witness::Block, EvmCircuitConfig},
         table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
-        util::Challenges,
     };
+
+    #[cfg(not(feature = "onephase"))]
+    use crate::util::Challenges;
+    #[cfg(feature = "onephase")]
+    use crate::util::MockChallenges as Challenges;
 
     use eth_types::{Field, Word};
 
@@ -346,6 +350,8 @@ pub mod test {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let challenges = Challenges::construct(meta);
+            let challenges_expr = challenges.exprs(meta);
             let rw_table = RwTable::construct(meta);
             let tx_table = TxTable::construct(meta);
             let bytecode_table = BytecodeTable::construct(meta);
@@ -354,8 +360,6 @@ pub mod test {
             let copy_table = CopyTable::construct(meta, q_copy_table);
             let keccak_table = KeccakTable::construct(meta);
             let exp_table = ExpTable::construct(meta);
-            let challenges = Challenges::construct(meta);
-            let challenges_expr = challenges.exprs(meta);
             (
                 EvmCircuitConfig::new(
                     meta,
