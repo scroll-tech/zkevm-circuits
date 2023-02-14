@@ -10,7 +10,7 @@ id="nightly"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 0
 max_steps = 100000
-ignore_tests=["&sigkill"]
+ignore_tests=[]
 
 [[suite]]
 id = "light"
@@ -160,20 +160,10 @@ allow_tests=[
 
 ]
 
-# must fix  ------------------------------------------------------------------------------
-
 [[set]]
 id = "sigkill"
 desc = "tests that sigkill"
-tests = [
-	"CallToNameRegistratorMemOOGAndInsufficientBalance_d0_g0_v0",
-	"randomStatetest101_d0_g0_v0"
-]
-
-[[set]]
-id = "sigkill"
-desc = "Integer overflow when casting to u64"
-tests = ["envInfo_d3(codecopy_neg_offset)_g0_v0", "codecopy_dejavu2_d0_g0_v0","randomStatetest222_d0_g0_v0"]
+tests = []
 
 # skipped tests, do not need to be fixed  --------------------------------------------------
 

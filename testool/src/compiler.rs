@@ -158,7 +158,7 @@ impl Compiler {
         let len = from_pos.and_then(|pos| stdout[pos + placeholder.len()..].find('\n'));
         let bytecode = if let (Some(from_pos), Some(len)) = (from_pos, len) {
             let hex = &stdout[from_pos + placeholder.len()..from_pos + placeholder.len() + len];
-            Bytes::from(hex::decode(&hex)?)
+            Bytes::from(hex::decode(hex)?)
         } else {
             bail!("Unable to compile: {}", src);
         };
@@ -196,7 +196,7 @@ impl Compiler {
         let len = from_pos.and_then(|pos| stdout[pos + placeholder.len()..].find('\n'));
         let bytecode = if let (Some(from_pos), Some(len)) = (from_pos, len) {
             let hex = &stdout[from_pos + placeholder.len()..from_pos + placeholder.len() + len];
-            Bytes::from(hex::decode(&hex)?)
+            Bytes::from(hex::decode(hex)?)
         } else {
             bail!("Unable to compile: {}", src);
         };
