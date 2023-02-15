@@ -1,6 +1,5 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
-use crate::operation::CallContextField;
 use crate::Error;
 use eth_types::evm_types::OpcodeId;
 use eth_types::GethExecStep;
