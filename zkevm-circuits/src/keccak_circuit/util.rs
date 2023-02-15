@@ -496,7 +496,8 @@ mod tests {
 
     #[test]
     fn pack_table() {
-        for (idx, expected) in [(0, 0), (128, 1 << 7 * 3), (129, (1 << 7 * 3) | 1)] {
+        let msb = 1 << (7 * 3);
+        for (idx, expected) in [(0, 0), (1, 1), (128, msb), (129, msb | 1)] {
             let packed: F = pack(&into_bits(&[idx as u8]));
             assert_eq!(packed, F::from(expected));
         }
@@ -507,6 +508,7 @@ mod tests {
         // Typical values.
         assert_eq!(get_num_bits_per_lookup_impl(3, 19), 11);
         assert_eq!(get_num_bits_per_lookup_impl(4, 19), 9);
+        assert_eq!(get_num_bits_per_lookup_impl(5, 19), 8);
         assert_eq!(get_num_bits_per_lookup_impl(6, 19), 7);
         // The largest imaginable value does not overflow u64.
         assert_eq!(get_num_bits_per_lookup_impl(3, 32) * BIT_COUNT, 60);
@@ -521,20 +523,11 @@ mod tests {
     }
 
     fn normalize_table_impl(range: usize, log_height: usize) {
-        let circuit = NormalizeTestCircuit { range, log_height };
-        let prover = MockProver::<F>::run(log_height as u32, &circuit, vec![]).unwrap();
-        let unused_rows = 6;
-        let used_rows = (1 << log_height) - unused_rows;
-
-        // Get the generated lookup table with the form: table[row] = (input, output).
-        let table = {
-            let t = prover.fixed();
-            assert_eq!(t.len(), 2);
-            zip(&t[0], &t[1])
-                .take(used_rows)
-                .map(|(inp, out)| (unwrap_u64(inp), unwrap_u64(out)))
-                .collect::<Vec<_>>()
-        };
+        let table = build_table(&TableTestCircuit {
+            range,
+            log_height,
+            normalize_else_chi: true,
+        });
 
         // On all rows, all inputs/outputs are correct, i.e. they have the same low bit.
         assert_eq!(BIT_COUNT, 3);
@@ -543,30 +536,89 @@ mod tests {
                 assert_eq!((inp >> pos) & 1, (out >> pos) & (4 + 2 + 1));
             }
         }
+    }
 
-        // All possible combinations of inputs are there.
-        let unique_rows = table.iter().unique().count();
-        let num_bits = get_num_bits_per_lookup_impl(range, log_height);
-        let num_entries = range.pow(num_bits as u32);
-        assert_eq!(unique_rows, num_entries);
+    #[test]
+    fn chi_table() {
+        // Check the base pattern for all combinations of bits.
+        for i in 0..16_usize {
+            let (a, b, c, d) = (i & 1, (i >> 1) & 1, (i >> 2) & 1, (i >> 3) & 1);
+            assert_eq!(
+                CHI_BASE_LOOKUP_TABLE[3 - 2 * a + b - c],
+                (a ^ ((!b) & c)) as u8
+            );
+            assert_eq!(
+                CHI_EXT_LOOKUP_TABLE[5 - 2 * a - b + c - 2 * d],
+                (a ^ ((!b) & c) ^ d) as u8
+            );
+        }
 
-        // Check the unused rows.
-        for column in 0..2 {
-            for row in used_rows..prover.fixed()[0].len() {
-                assert_eq!(prover.fixed()[column][row], CellValue::Unassigned);
+        // Check the table with multiple parts per row.
+        chi_table_impl(10);
+        chi_table_impl(19);
+    }
+
+    fn chi_table_impl(log_height: usize) {
+        let range = 5; // CHI_BASE_LOOKUP_RANGE
+        let table = build_table(&TableTestCircuit {
+            range,
+            log_height,
+            normalize_else_chi: false,
+        });
+
+        // On all rows, all input/output pairs match the base table.
+        for (inp, out) in table.iter() {
+            for pos in (0..64).step_by(BIT_COUNT) {
+                let inp = ((inp >> pos) & 7) as usize;
+                let out = ((out >> pos) & 7) as u8;
+                assert_eq!(out, CHI_BASE_LOOKUP_TABLE[inp]);
             }
         }
     }
 
     // ---- Helpers ----
 
-    #[derive(Clone)]
-    struct NormalizeTestCircuit {
-        range: usize,
-        log_height: usize,
+    fn build_table(circuit: &TableTestCircuit) -> Vec<(u64, u64)> {
+        let prover = MockProver::<F>::run(circuit.log_height as u32, circuit, vec![]).unwrap();
+
+        let columns = prover.fixed();
+        assert_eq!(columns.len(), 2);
+        let unused_rows = 6;
+        let used_rows = (1 << circuit.log_height) - unused_rows;
+
+        // Check the unused rows.
+        for io in zip(&columns[0], &columns[1]).skip(used_rows) {
+            assert_eq!(io, (&CellValue::Unassigned, &CellValue::Unassigned));
+        }
+
+        // Get the generated lookup table with the form: table[row] = (input, output).
+        let table = zip(&columns[0], &columns[1])
+            .take(used_rows)
+            .map(|(inp, out)| (unwrap_u64(inp), unwrap_u64(out)))
+            .collect::<Vec<_>>();
+
+        // All possible combinations of inputs are there.
+        let unique_rows = table.iter().unique().count();
+        assert_eq!(unique_rows, circuit.expected_num_entries());
+
+        table
     }
 
-    impl Circuit<F> for NormalizeTestCircuit {
+    #[derive(Clone)]
+    struct TableTestCircuit {
+        range: usize,
+        log_height: usize,
+        normalize_else_chi: bool,
+    }
+
+    impl TableTestCircuit {
+        fn expected_num_entries(&self) -> usize {
+            let num_bits = get_num_bits_per_lookup_impl(self.range, self.log_height);
+            self.range.pow(num_bits as u32)
+        }
+    }
+
+    impl Circuit<F> for TableTestCircuit {
         type Config = [TableColumn; 2];
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -575,8 +627,7 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let normalize_table = array_init::array_init(|_| meta.lookup_table_column());
-            normalize_table
+            array_init::array_init(|_| meta.lookup_table_column())
         }
 
         fn synthesize(
@@ -584,13 +635,24 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            load_normalize_table_impl(
-                &mut layouter,
-                "normalize",
-                &config,
-                self.range as u64,
-                self.log_height,
-            )?;
+            if self.normalize_else_chi {
+                load_normalize_table_impl(
+                    &mut layouter,
+                    "normalize",
+                    &config,
+                    self.range as u64,
+                    self.log_height,
+                )?;
+            } else {
+                let num_bits = get_num_bits_per_lookup_impl(self.range, self.log_height);
+                load_lookup_table(
+                    &mut layouter,
+                    "chi base",
+                    &config,
+                    num_bits,
+                    &CHI_BASE_LOOKUP_TABLE,
+                )?;
+            }
             Ok(())
         }
     }
