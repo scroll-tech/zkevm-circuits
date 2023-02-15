@@ -578,6 +578,7 @@ impl<
             &mut layouter,
             &block.txs,
             block.circuits_params.max_txs,
+            block.context.chain_id().as_u64(),
             &challenges,
         )?;
 

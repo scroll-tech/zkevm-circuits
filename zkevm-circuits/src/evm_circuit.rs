@@ -388,6 +388,7 @@ pub mod test {
                 &mut layouter,
                 &block.txs,
                 block.circuits_params.max_txs,
+                0,
                 &challenges,
             )?;
             block.rws.check_rw_counter_sanity();
