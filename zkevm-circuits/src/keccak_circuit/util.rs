@@ -336,29 +336,50 @@ pub fn get_degree() -> usize {
 }
 
 /// Returns how many bits we can process in a single lookup given the range of
-/// values the bit can have and the height of the circuit.
+/// values the bit can have and the height of the circuit (via KECCAK_DEGREE).
 pub fn get_num_bits_per_lookup(range: usize) -> usize {
+    let log_height = get_degree();
+    get_num_bits_per_lookup_impl(range, log_height)
+}
+
+// Implementation of the above without environment dependency.
+fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> usize {
     let num_unusable_rows = 31;
-    let degree = get_degree() as u32;
+    let height = 2usize.pow(log_height as u32);
     let mut num_bits = 1;
-    while range.pow(num_bits + 1) + num_unusable_rows <= 2usize.pow(degree) {
+    while range.pow(num_bits + 1) + num_unusable_rows <= height {
         num_bits += 1;
     }
     num_bits as usize
 }
 
-/// Loads a normalization table with the given parameters
+/// Loads a normalization table with the given parameters and KECCAK_DEGREE.
 pub fn load_normalize_table<F: Field>(
     layouter: &mut impl Layouter<F>,
     name: &str,
     tables: &[TableColumn; 2],
     range: u64,
 ) -> Result<(), Error> {
-    let part_size = get_num_bits_per_lookup(range as usize);
+    let log_height = get_degree();
+    load_normalize_table_impl(layouter, name, tables, range, log_height)
+}
+
+// Implementation of the above without environment dependency.
+fn load_normalize_table_impl<F: Field>(
+    layouter: &mut impl Layouter<F>,
+    name: &str,
+    tables: &[TableColumn; 2],
+    range: u64,
+    log_height: usize,
+) -> Result<(), Error> {
+    assert!(range <= BIT_SIZE as u64);
+    let num_bits = get_num_bits_per_lookup_impl(range as usize, log_height);
+
     layouter.assign_table(
         || format!("{} table", name),
         |mut table| {
-            for (offset, perm) in (0..part_size)
+            // Iterate over all combinations of "bits", each taking values in the range.
+            for (offset, perm) in (0..num_bits)
                 .map(|_| 0u64..range)
                 .multi_cartesian_product()
                 .enumerate()
@@ -461,4 +482,127 @@ pub(crate) fn extract_field<F: FieldExt>(value: Value<F>) -> F {
         f
     });
     field
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use halo2_proofs::circuit::SimpleFloorPlanner;
+    use halo2_proofs::dev::{CellValue, MockProver};
+    use halo2_proofs::halo2curves::bn256::Fr as F;
+    use halo2_proofs::plonk::{Circuit, ConstraintSystem};
+    use itertools::Itertools;
+    use std::iter::zip;
+
+    #[test]
+    fn pack_table() {
+        for (idx, expected) in [(0, 0), (128, 1 << 7 * 3), (129, (1 << 7 * 3) | 1)] {
+            let packed: F = pack(&into_bits(&[idx as u8]));
+            assert_eq!(packed, F::from(expected));
+        }
+    }
+
+    #[test]
+    fn num_bits_per_lookup() {
+        // Typical values.
+        assert_eq!(get_num_bits_per_lookup_impl(3, 19), 11);
+        assert_eq!(get_num_bits_per_lookup_impl(4, 19), 9);
+        assert_eq!(get_num_bits_per_lookup_impl(6, 19), 7);
+        // The largest imaginable value does not overflow u64.
+        assert_eq!(get_num_bits_per_lookup_impl(3, 32) * BIT_COUNT, 60);
+    }
+
+    #[test]
+    fn normalize_table() {
+        normalize_table_impl(3, 10);
+        normalize_table_impl(4, 10);
+        normalize_table_impl(6, 10);
+        normalize_table_impl(6, 19);
+    }
+
+    fn normalize_table_impl(range: usize, log_height: usize) {
+        let circuit = NormalizeTestCircuit { range, log_height };
+        let prover = MockProver::<F>::run(log_height as u32, &circuit, vec![]).unwrap();
+        let unused_rows = 6;
+        let used_rows = (1 << log_height) - unused_rows;
+
+        // Get the generated lookup table with the form: table[row] = (input, output).
+        let table = {
+            let t = prover.fixed();
+            assert_eq!(t.len(), 2);
+            zip(&t[0], &t[1])
+                .take(used_rows)
+                .map(|(inp, out)| (unwrap_u64(inp), unwrap_u64(out)))
+                .collect::<Vec<_>>()
+        };
+
+        // On all rows, all inputs/outputs are correct, i.e. they have the same low bit.
+        assert_eq!(BIT_COUNT, 3);
+        for (inp, out) in table.iter() {
+            for pos in (0..64).step_by(BIT_COUNT) {
+                assert_eq!((inp >> pos) & 1, (out >> pos) & (4 + 2 + 1));
+            }
+        }
+
+        // All possible combinations of inputs are there.
+        let unique_rows = table.iter().unique().count();
+        let num_bits = get_num_bits_per_lookup_impl(range, log_height);
+        let num_entries = range.pow(num_bits as u32);
+        assert_eq!(unique_rows, num_entries);
+
+        // Check the unused rows.
+        for column in 0..2 {
+            for row in used_rows..prover.fixed()[0].len() {
+                assert_eq!(prover.fixed()[column][row], CellValue::Unassigned);
+            }
+        }
+    }
+
+    // ---- Helpers ----
+
+    #[derive(Clone)]
+    struct NormalizeTestCircuit {
+        range: usize,
+        log_height: usize,
+    }
+
+    impl Circuit<F> for NormalizeTestCircuit {
+        type Config = [TableColumn; 2];
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            self.clone()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let normalize_table = array_init::array_init(|_| meta.lookup_table_column());
+            normalize_table
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            load_normalize_table_impl(
+                &mut layouter,
+                "normalize",
+                &config,
+                self.range as u64,
+                self.log_height,
+            )?;
+            Ok(())
+        }
+    }
+
+    fn unwrap_u64<F: Field>(cv: &CellValue<F>) -> u64 {
+        match *cv {
+            CellValue::Assigned(f) => {
+                let f = f.get_lower_128();
+                assert_eq!(f >> 64, 0);
+                f as u64
+            }
+            _ => panic!("the cell should be assigned"),
+        }
+    }
 }
