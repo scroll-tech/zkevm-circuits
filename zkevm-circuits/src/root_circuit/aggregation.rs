@@ -676,6 +676,7 @@ pub mod test {
         .collect()
     }
 
+    #[ignore = "not supported with QUERY_INSTANCE enabled in halo2_proofs"]
     #[test]
     fn test_standard_plonk_aggregation() {
         let params = ParamsKZG::<Bn256>::setup(8, OsRng);
@@ -694,6 +695,7 @@ pub mod test {
         );
     }
 
+    #[ignore = "not supported with QUERY_INSTANCE enabled in halo2_proofs"]
     #[test]
     fn test_standard_plonk_aggregation_unmatched_instance() {
         let params = ParamsKZG::<Bn256>::setup(8, OsRng);
