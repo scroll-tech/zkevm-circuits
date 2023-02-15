@@ -259,16 +259,27 @@ impl BlockContext {
                 ],
             ],
             {
-                let len_history = self.history_hashes.len();
-                self.history_hashes
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, hash)| {
+                let len_history = 256;
+                let parent_hash_rlc = randomness.map(|rand| {
+                    self.eth_block
+                        .parent_hash
+                        .to_fixed_bytes()
+                        .into_iter()
+                        .fold(F::zero(), |acc, byte| acc * rand + F::from(byte as u64))
+                });
+
+                (0..len_history)
+                    .into_iter()
+                    .map(|idx| {
+                        let history_block_num = if self.number.as_u64() + idx < len_history {
+                            0
+                        } else {
+                            self.number.as_u64() + idx - len_history
+                        };
                         [
                             Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
-                            Value::known((self.number - len_history + idx).to_scalar().unwrap()),
-                            randomness
-                                .map(|randomness| rlc::value(&hash.to_le_bytes(), randomness)),
+                            Value::known(history_block_num.to_scalar().unwrap()),
+                            parent_hash_rlc,
                         ]
                     })
                     .collect()

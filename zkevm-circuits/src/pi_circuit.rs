@@ -32,17 +32,23 @@ use halo2_proofs::{
 };
 
 /// Fixed by the spec
-const BLOCK_LEN: usize = 7 + 256;
-const EXTRA_LEN: usize = 2;
-const BYTE_POW_BASE: u64 = 1 << 8;
-const BLOCK_HEADER_BYTES_NUM: usize = 148;
+const BLOCK_LEN: usize = 9 + 256;
+const NUM_HISTORY_HASHES: usize = 256;
+const BYTE_POW_BASE: u64 = 256;
+const BLOCK_HEADER_BYTES_NUM: usize = 124;
 const KECCAK_DIGEST_SIZE: usize = 32;
 const RPI_CELL_IDX: usize = 0;
 const RPI_RLC_ACC_CELL_IDX: usize = 1;
 const ZERO_BYTE_GAS_COST: u64 = 4;
 const NONZERO_BYTE_GAS_COST: u64 = 16;
 
-/// PublicData contains all the values that the PiCircuit recieves as input
+const PARENT_HASH_OFFSET: usize = 9;
+const BLOCK_NUM_OFFSET: usize = 2;
+const TIMESTAMP_OFFSET: usize = 1;
+const BASE_FEE_OFFSET: usize = 5;
+const GAS_LIMIT_OFFSET: usize = 4;
+const NUM_TXS_OFFSET: usize = 7;
+/// PublicData contains all the values that the PiCircuit receives as input
 #[derive(Debug, Clone)]
 pub struct PublicData {
     /// chain id
@@ -69,38 +75,11 @@ impl Default for PublicData {
 impl PublicData {
     /// Compute the raw_public_inputs bytes from the verifier's perspective.
     fn raw_public_input_bytes(&self, max_txs: usize) -> Vec<u8> {
-        // TODO: add history hashes and state roots
         let dummy_tx_hash = get_dummy_tx_hash(self.chain_id.as_u64());
+        // TODO: use real-world withdraw trie root
+        let withdraw_trie_root = Word::zero(); // zero for now
 
-        let result = self
-            .block_ctxs
-            .ctxs
-            .iter()
-            .flat_map(|(block_num, block)| {
-                let num_txs = self
-                    .transactions
-                    .iter()
-                    .filter(|tx| tx.block_number == *block_num)
-                    .count() as u64;
-
-                iter::empty()
-                    // Block Values
-                    .chain(block.coinbase.to_fixed_bytes())
-                    .chain(block.timestamp.as_u64().to_be_bytes())
-                    .chain(block.number.as_u64().to_be_bytes())
-                    .chain(block.difficulty.to_be_bytes())
-                    .chain(block.gas_limit.to_be_bytes())
-                    .chain(block.base_fee.to_be_bytes())
-                    .chain(block.chain_id.to_be_bytes())
-                    .chain(num_txs.to_be_bytes())
-            })
-            // history_hashes
-            // .chain(
-            //     block
-            //         .history_hashes
-            //         .iter()
-            //         .flat_map(|tx_hash| tx_hash.to_fixed_bytes()),
-            // )
+        let result = iter::empty()
             // state roots
             .chain(self.prev_state_root.to_fixed_bytes())
             .chain(
@@ -111,6 +90,39 @@ impl PublicData {
                     .unwrap_or(self.prev_state_root)
                     .to_fixed_bytes(),
             )
+            // withdraw trie root
+            .chain(withdraw_trie_root.to_be_bytes())
+            .chain(self.block_ctxs.ctxs.iter().flat_map(|(block_num, block)| {
+                let num_txs = self
+                    .transactions
+                    .iter()
+                    .filter(|tx| tx.block_number == *block_num)
+                    .count() as u16;
+                let parent_hash = block.eth_block.parent_hash;
+                log::debug!(
+                    "block.history_hashes.len() = {}, parent_hash = {}",
+                    block.history_hashes.len(),
+                    parent_hash
+                );
+                let num_l1_msgs = 0_u16; // 0 for now
+
+                iter::empty()
+                    // Block Values
+                    .chain(
+                        block
+                            .eth_block
+                            .hash
+                            .expect("block.eth_block.hash should be some")
+                            .to_fixed_bytes(),
+                    )
+                    .chain(parent_hash.to_fixed_bytes()) // parent hash
+                    .chain(block.number.as_u64().to_be_bytes())
+                    .chain(block.timestamp.as_u64().to_be_bytes())
+                    .chain(block.base_fee.to_be_bytes())
+                    .chain(block.gas_limit.to_be_bytes())
+                    .chain(num_txs.to_be_bytes())
+                    .chain(num_l1_msgs.to_be_bytes())
+            }))
             // Tx Hashes
             .chain(
                 self.transactions
@@ -127,7 +139,7 @@ impl PublicData {
         assert_eq!(
             result.len(),
             BLOCK_HEADER_BYTES_NUM * self.block_ctxs.ctxs.len()
-                + KECCAK_DIGEST_SIZE * 2
+                + KECCAK_DIGEST_SIZE * 3
                 + KECCAK_DIGEST_SIZE * max_txs
         );
         result
@@ -423,149 +435,12 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut offset = 0;
         let mut rpi_length_acc = 0u64;
         let mut block_copy_cells = vec![];
-        let mut block_copy_offsets = vec![];
         let mut tx_copy_cells = vec![];
         let mut block_table_offset = 1; // first row of block is all-zeros.
         let mut rpi_rlc_acc = Value::known(F::zero());
         let dummy_tx_hash = get_dummy_tx_hash(public_data.chain_id.as_u64());
 
         self.q_start.enable(region, offset)?;
-
-        for (i, block) in block_values
-            .ctxs
-            .values()
-            .cloned()
-            .chain(
-                (block_values.ctxs.len()..self.max_inner_blocks)
-                    .into_iter()
-                    .map(|_| BlockContext::default()),
-            )
-            .enumerate()
-        {
-            let is_rpi_padding = i >= block_values.ctxs.len();
-            block_copy_offsets.push(block_table_offset);
-            let num_txs = public_data
-                .transactions
-                .iter()
-                .filter(|tx| tx.block_number == block.number.as_u64())
-                .count() as u64;
-            // Assign fields in block table
-            // coinbase
-            let mut cells = self.assign_field_in_pi(
-                region,
-                &mut offset,
-                &block.coinbase.to_fixed_bytes(),
-                &mut rpi_rlc_acc,
-                &mut rpi_length_acc,
-                true,
-                is_rpi_padding,
-                challenges,
-                false,
-            )?;
-            debug_assert_eq!(cells.len(), 2);
-            block_copy_cells.push(cells[RPI_CELL_IDX].clone());
-
-            // timestamp
-            cells = self.assign_field_in_pi(
-                region,
-                &mut offset,
-                &block.timestamp.as_u64().to_be_bytes(),
-                &mut rpi_rlc_acc,
-                &mut rpi_length_acc,
-                true,
-                is_rpi_padding,
-                challenges,
-                false,
-            )?;
-            block_copy_cells.push(cells[RPI_CELL_IDX].clone());
-
-            // number
-            cells = self.assign_field_in_pi(
-                region,
-                &mut offset,
-                &block.number.as_u64().to_be_bytes(),
-                &mut rpi_rlc_acc,
-                &mut rpi_length_acc,
-                true,
-                is_rpi_padding,
-                challenges,
-                false,
-            )?;
-            block_copy_cells.push(cells[RPI_CELL_IDX].clone());
-
-            // difficulty
-            cells = self.assign_field_in_pi(
-                region,
-                &mut offset,
-                &block.difficulty.to_be_bytes(),
-                &mut rpi_rlc_acc,
-                &mut rpi_length_acc,
-                true,
-                is_rpi_padding,
-                challenges,
-                false,
-            )?;
-            block_copy_cells.push(cells[RPI_CELL_IDX].clone());
-
-            // gas_limit
-            cells = self.assign_field_in_pi(
-                region,
-                &mut offset,
-                &block.gas_limit.to_be_bytes(),
-                &mut rpi_rlc_acc,
-                &mut rpi_length_acc,
-                true,
-                is_rpi_padding,
-                challenges,
-                false,
-            )?;
-            block_copy_cells.push(cells[RPI_CELL_IDX].clone());
-
-            // base_fee
-            cells = self.assign_field_in_pi(
-                region,
-                &mut offset,
-                &block.base_fee.to_be_bytes(),
-                &mut rpi_rlc_acc,
-                &mut rpi_length_acc,
-                true,
-                is_rpi_padding,
-                challenges,
-                false,
-            )?;
-            block_copy_cells.push(cells[RPI_CELL_IDX].clone());
-
-            // chain_id
-            cells = self.assign_field_in_pi(
-                region,
-                &mut offset,
-                &block.chain_id.to_be_bytes(),
-                &mut rpi_rlc_acc,
-                &mut rpi_length_acc,
-                true,
-                is_rpi_padding,
-                challenges,
-                false,
-            )?;
-            block_copy_cells.push(cells[RPI_CELL_IDX].clone());
-
-            // num_txs
-            cells = self.assign_field_in_pi(
-                region,
-                &mut offset,
-                &num_txs.to_be_bytes(),
-                &mut rpi_rlc_acc,
-                &mut rpi_length_acc,
-                true,
-                is_rpi_padding,
-                challenges,
-                false,
-            )?;
-            block_copy_cells.push(cells[RPI_CELL_IDX].clone());
-
-            block_table_offset += 9 + block.history_hashes.len();
-        }
-        debug_assert_eq!(offset, BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks);
 
         // assign state roots
         // previous_state_root before applying this batch
@@ -604,6 +479,19 @@ impl<F: Field> PiCircuitConfig<F> {
             false,
         )?;
 
+        let withdraw_trie_root = Word::zero();
+        self.assign_field_in_pi(
+            region,
+            &mut offset,
+            &withdraw_trie_root.to_be_bytes(),
+            &mut rpi_rlc_acc,
+            &mut rpi_length_acc,
+            false,
+            false,
+            challenges,
+            false,
+        )?;
+
         // copy state roots to pi circuit when we are in super circuit.
         if self.state_roots.is_some() {
             log::debug!("connect state roots {:?}", self.state_roots);
@@ -619,6 +507,174 @@ impl<F: Field> PiCircuitConfig<F> {
         } else {
             log::warn!("state roots are not set, skip connection with state circuit");
         }
+
+        for (i, block) in block_values
+            .ctxs
+            .values()
+            .cloned()
+            .chain(
+                (block_values.ctxs.len()..self.max_inner_blocks)
+                    .into_iter()
+                    .map(|_| BlockContext::default()),
+            )
+            .enumerate()
+        {
+            let block_hash = if i < block_values.ctxs.len() {
+                block.eth_block.hash.expect("eth_block.hash should be some")
+            } else {
+                H256::zero()
+            };
+            let parent_hash = block.eth_block.parent_hash;
+            log::debug!(
+                "block.history_hashes.len() = {}, parent hash = {}",
+                block.history_hashes.len(),
+                parent_hash
+            );
+
+            let is_rpi_padding = i >= block_values.ctxs.len();
+            let num_txs = public_data
+                .transactions
+                .iter()
+                .filter(|tx| tx.block_number == block.number.as_u64())
+                .count() as u16;
+            // FIXME: this should be assigned in the future
+            let num_l1_msgs = 0_u16;
+
+            // Assign fields in block table
+            // block hash
+            self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &block_hash.to_fixed_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                true,
+                is_rpi_padding,
+                challenges,
+                false,
+            )?;
+
+            // parent hash
+            let mut cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &parent_hash.to_fixed_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                true,
+                is_rpi_padding,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                cells[RPI_CELL_IDX].clone(),
+                block_table_offset + PARENT_HASH_OFFSET,
+            ));
+
+            // number
+            cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &block.number.as_u64().to_be_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                true,
+                is_rpi_padding,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                cells[RPI_CELL_IDX].clone(),
+                block_table_offset + BLOCK_NUM_OFFSET,
+            ));
+
+            // timestamp
+            cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &block.timestamp.as_u64().to_be_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                true,
+                is_rpi_padding,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                cells[RPI_CELL_IDX].clone(),
+                block_table_offset + TIMESTAMP_OFFSET,
+            ));
+
+            // base_fee
+            cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &block.base_fee.to_be_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                true,
+                is_rpi_padding,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                cells[RPI_CELL_IDX].clone(),
+                block_table_offset + BASE_FEE_OFFSET,
+            ));
+
+            // gas_limit
+            cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &block.gas_limit.to_be_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                true,
+                is_rpi_padding,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                cells[RPI_CELL_IDX].clone(),
+                block_table_offset + GAS_LIMIT_OFFSET,
+            ));
+
+            // num_txs
+            cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &num_txs.to_be_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                true,
+                is_rpi_padding,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                cells[RPI_CELL_IDX].clone(),
+                block_table_offset + NUM_TXS_OFFSET,
+            ));
+
+            // num_l1_msgs
+            self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &num_l1_msgs.to_be_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                true,
+                is_rpi_padding,
+                challenges,
+                false,
+            )?;
+
+            block_table_offset += BLOCK_LEN;
+        }
+        debug_assert_eq!(
+            offset,
+            32 * 3 + BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks
+        );
 
         // assign tx hashes
         let num_txs = tx_hashes.len();
@@ -646,7 +702,7 @@ impl<F: Field> PiCircuitConfig<F> {
         debug_assert_eq!(
             offset,
             BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks
-                + KECCAK_DIGEST_SIZE * 2
+                + KECCAK_DIGEST_SIZE * 3
                 + KECCAK_DIGEST_SIZE * self.max_txs
         );
 
@@ -654,22 +710,15 @@ impl<F: Field> PiCircuitConfig<F> {
             self.q_not_end.enable(region, i)?;
         }
 
-        for (block_cells, offset) in block_copy_cells
-            .chunks(8)
-            .into_iter()
-            .zip(block_copy_offsets.into_iter())
-        {
-            for (i, block_cell) in block_cells.iter().enumerate() {
-                let row_offset = offset + i;
-                region.constrain_equal(
-                    block_cell.cell(),
-                    Cell {
-                        region_index: RegionIndex(0), // FIXME: this is not safe
-                        row_offset,
-                        column: self.block_table.value.into(),
-                    },
-                )?;
-            }
+        for (block_cell, row_offset) in block_copy_cells.into_iter() {
+            region.constrain_equal(
+                block_cell.cell(),
+                Cell {
+                    region_index: RegionIndex(0), // FIXME: this is not safe
+                    row_offset,
+                    column: self.block_table.value.into(),
+                },
+            )?;
         }
         #[cfg(feature = "reject-eip2718")]
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
@@ -906,7 +955,6 @@ impl<F: Field> PiCircuit<F> {
             .unwrap_or_default();
         let public_data = PublicData {
             chain_id: context.chain_id,
-            // history_hashes: context.history_hashes.clone(),
             transactions: block.txs.clone(),
             block_ctxs: block.context.clone(),
             prev_state_root: H256(block.mpt_updates.old_root().to_be_bytes()),
@@ -1142,7 +1190,7 @@ mod pi_circuit_test {
     fn test_simple_pi() {
         const MAX_TXS: usize = 4;
         const MAX_CALLDATA: usize = 20;
-        const MAX_INNER_BLOCKS: usize = 64;
+        const MAX_INNER_BLOCKS: usize = 4;
 
         let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode! {
             STOP
