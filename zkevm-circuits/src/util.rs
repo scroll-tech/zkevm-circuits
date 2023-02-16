@@ -78,7 +78,7 @@ impl MockChallenges {
         }
     }
     /// ..
-    pub fn values<F: FieldExt>(&self, _layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
+    pub fn values<F: FieldExt>(&self, _layouter: &impl Layouter<F>) -> Challenges<Value<F>> {
         Challenges {
             evm_word: Value::known(F::from(self.evm_word)),
             keccak_input: Value::known(F::from(self.keccak_input)),
@@ -118,7 +118,7 @@ impl Challenges {
     }
 
     /// Returns `Value` of challenges from `Layouter`.
-    pub fn values<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
+    pub fn values<F: FieldExt>(&self, layouter: &impl Layouter<F>) -> Challenges<Value<F>> {
         Challenges {
             evm_word: layouter.get_challenge(self.evm_word),
             keccak_input: layouter.get_challenge(self.keccak_input),
@@ -173,6 +173,11 @@ impl<F: Field> Challenges<Expression<F>> {
     /// Returns powers of randomness for word RLC encoding
     pub fn evm_word_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
         Self::powers_of(self.evm_word.clone())
+    }
+
+    /// Returns powers of randomness for keccak circuit's input
+    pub fn keccak_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
+        Self::powers_of(self.keccak_input.clone())
     }
 
     /// Returns powers of randomness for lookups

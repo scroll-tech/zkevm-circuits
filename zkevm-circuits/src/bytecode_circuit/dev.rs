@@ -64,7 +64,7 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
+        let challenges = challenges.values(&layouter);
 
         config.keccak_table.dev_load(
             &mut layouter,

@@ -21,6 +21,7 @@ mod mul_add_words512;
 mod mul_word_u64;
 mod pair_select;
 mod range_check;
+mod rlp;
 #[cfg(test)]
 mod test_util;
 
@@ -28,6 +29,7 @@ pub(crate) use abs_word::AbsWordGadget;
 pub(crate) use add_words::AddWordsGadget;
 #[allow(unused_imports)]
 pub(crate) use batched_is_zero::BatchedIsZeroGadget;
+#[allow(unused_imports)]
 pub(crate) use binary_number::BinaryNumberGadget;
 pub(crate) use byte_size::ByteSizeGadget;
 pub(crate) use cmp_words::CmpWordsGadget;
@@ -44,6 +46,8 @@ pub(crate) use mul_add_words512::MulAddWords512Gadget;
 pub(crate) use mul_word_u64::MulWordByU64Gadget;
 pub(crate) use pair_select::PairSelectGadget;
 pub(crate) use range_check::RangeCheckGadget;
+#[allow(unused_imports)]
+pub(crate) use rlp::ContractCreateGadget;
 
 // This function generates a Lagrange polynomial in the range [start, end) which
 // will be evaluated to 1 when `exp == value`, otherwise 0

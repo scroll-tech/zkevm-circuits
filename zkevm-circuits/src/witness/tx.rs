@@ -11,14 +11,16 @@ use eth_types::{
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
 };
 use ethers_core::types::TransactionRequest;
-use ethers_core::utils::keccak256;
+use ethers_core::utils::{
+    keccak256,
+    rlp::{Encodable, RlpStream},
+};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::halo2curves::group::ff::PrimeField;
 use halo2_proofs::halo2curves::secp256k1;
 use mock::MockTransaction;
 use num::Integer;
 use num_bigint::BigUint;
-use rlp::Encodable;
 
 use super::{step::step_convert, Call, ExecStep};
 
@@ -286,7 +288,7 @@ impl Transaction {
 }
 
 impl Encodable for Transaction {
-    fn rlp_append(&self, s: &mut rlp::RlpStream) {
+    fn rlp_append(&self, s: &mut RlpStream) {
         s.begin_list(9);
         s.append(&Word::from(self.nonce));
         s.append(&self.gas_price);
@@ -314,7 +316,7 @@ pub struct SignedTransaction {
 }
 
 impl Encodable for SignedTransaction {
-    fn rlp_append(&self, s: &mut rlp::RlpStream) {
+    fn rlp_append(&self, s: &mut RlpStream) {
         s.begin_list(9);
         s.append(&Word::from(self.tx.nonce));
         s.append(&self.tx.gas_price);
