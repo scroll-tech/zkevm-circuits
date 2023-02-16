@@ -6,7 +6,9 @@ use crate::{
         util::{
             and,
             common_gadget::RestoreContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition},
+            constraint_builder::{
+                ConstraintBuilder, StepStateTransition, Transition::Delta, Transition::Same,
+            },
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
             not, select, CachedRegion, Cell, Word,
@@ -127,6 +129,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
             cb.require_step_state_transition(StepStateTransition {
+                call_id: Same,
+                rw_counter: Delta(3.expr() + cb.curr.state.reversible_write_counter.expr()),
                 ..StepStateTransition::any()
             });
         });
@@ -167,6 +171,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
+
+        println!("{}", step.rw_indices.len());
 
         // Inputs/Outputs
         let address = block.rws[step.rw_indices[0]].stack_value();
