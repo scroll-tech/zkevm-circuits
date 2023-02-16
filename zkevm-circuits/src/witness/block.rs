@@ -325,6 +325,13 @@ pub fn block_convert<F: Field>(
     let rws = RwMap::from(&block.container);
     rws.check_rw_counter_sanity();
     rws.check_value();
+    let end_block_not_last = step_convert(&block.block_steps.end_block_not_last, last_block_num);
+    let end_block_last = step_convert(&block.block_steps.end_block_last, last_block_num);
+    log::trace!(
+        "witness block: end_block_not_last {:?}, end_block_last {:?}",
+        end_block_not_last,
+        end_block_last
+    );
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
@@ -335,17 +342,17 @@ pub fn block_convert<F: Field>(
             .iter()
             .enumerate()
             .map(|(idx, tx)| {
-                let next_tx = if idx + 1 < num_txs {
-                    Some(&block.txs()[idx + 1])
+                let next_block_num = if idx + 1 < num_txs {
+                    block.txs()[idx + 1].block_num
                 } else {
-                    None
+                    last_block_num + 1
                 };
-                tx_convert(tx, idx + 1, chain_id.as_u64(), next_tx)
+                tx_convert(tx, idx + 1, chain_id.as_u64(), next_block_num)
             })
             .collect(),
         sigs: block.txs().iter().map(|tx| tx.signature).collect(),
-        end_block_not_last: step_convert(&block.block_steps.end_block_not_last, last_block_num),
-        end_block_last: step_convert(&block.block_steps.end_block_last, last_block_num),
+        end_block_not_last,
+        end_block_last,
         bytecodes: code_db
             .0
             .iter()

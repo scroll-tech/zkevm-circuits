@@ -401,13 +401,13 @@ pub(super) fn tx_convert(
     tx: &circuit_input_builder::Transaction,
     id: usize,
     chain_id: u64,
-    next_tx: Option<&circuit_input_builder::Transaction>,
+    next_block_num: u64,
 ) -> Transaction {
-    //debug_assert_eq!(
-    //    chain_id, tx.chain_id,
-    //    "block.chain_id = {}, tx.chain_id = {}",
-    //    chain_id, tx.chain_id
-    //);
+    debug_assert_eq!(
+        chain_id, tx.chain_id,
+        "block.chain_id = {}, tx.chain_id = {}",
+        chain_id, tx.chain_id
+    );
     let (rlp_unsigned, rlp_signed) = {
         let mut legacy_tx = TransactionRequest::new()
             .from(tx.from)
@@ -478,36 +478,19 @@ pub(super) fn tx_convert(
             .steps()
             .iter()
             .map(|step| step_convert(step, tx.block_num))
-            .chain(if let Some(next_tx) = next_tx {
-                debug_assert!(next_tx.block_num >= tx.block_num);
-                let block_gap = next_tx.block_num - tx.block_num;
-                (0..block_gap)
-                    .map(|i| {
-                        let rwc = tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize;
-                        ExecStep {
-                            rw_counter: rwc,
-                            execution_state: ExecutionState::EndInnerBlock,
-                            block_num: tx.block_num + i,
-                            ..Default::default()
-                        }
-                    })
-                    .collect::<Vec<ExecStep>>()
-            } else {
-                let rwc = tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize;
-                vec![
-                    ExecStep {
-                        rw_counter: rwc,
+            .chain({
+                let rw_counter = tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize;
+                debug_assert!(next_block_num >= tx.block_num);
+                let end_inner_block_steps = (tx.block_num..next_block_num)
+                    .map(|block_num| ExecStep {
+                        rw_counter,
                         execution_state: ExecutionState::EndInnerBlock,
-                        block_num: tx.block_num,
+                        block_num,
                         ..Default::default()
-                    },
-                    //ExecStep {
-                    //    rw_counter: rwc,
-                    //    execution_state: ExecutionState::EndBlock,
-                    //    block_num: tx.block_num,
-                    //    ..Default::default()
-                    //},
-                ]
+                    })
+                    .collect::<Vec<ExecStep>>();
+                log::trace!("end_inner_block_steps {:?}", end_inner_block_steps);
+                end_inner_block_steps
             })
             .collect(),
     }

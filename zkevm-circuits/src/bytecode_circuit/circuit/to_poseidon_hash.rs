@@ -287,7 +287,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
          */
 
         let lookup_columns = [/* code_hash, */ field_input, control_length];
-        let pick_hash_tbl_cols = |inp_i| {
+        let pick_hash_tbl_cols = |inp_i: usize| {
             let cols = <PoseidonTable as LookupTable<F>>::advice_columns(&poseidon_table);
             [/* cols[0], */ cols[inp_i + 1], cols[cols.len() - 2]]
         };
@@ -303,6 +303,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         //  * PoseidonTable::INPUT_WIDTH -1 lookups for the padded zero input
         //  so we have 2*PoseidonTable::INPUT_WIDTH -1 lookups
         for i in 0..PoseidonTable::INPUT_WIDTH {
+            #[cfg(feature = "codehash")]
             meta.lookup_any("poseidon input", |meta| {
                 // Conditions:
                 // - On the row at **field border** (`is_field_border == 1`)
@@ -326,6 +327,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         }
 
         //the canonical form should be `for i in 1..PoseidonTable::INPUT_WIDTH{...}`
+        #[cfg(feature = "codehash")]
         meta.lookup_any("poseidon input padding zero for final", |meta| {
             // Conditions:
             // - On the row with the last byte (`is_byte_to_header == 1`)
