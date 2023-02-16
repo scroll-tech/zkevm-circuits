@@ -65,6 +65,8 @@ pub struct Block<F> {
     pub keccak_inputs: Vec<Vec<u8>>,
     /// Mpt updates
     pub mpt_updates: MptUpdates,
+    /// Chain ID
+    pub chain_id: Word,
 }
 
 /// ...
@@ -318,13 +320,7 @@ pub fn block_convert<F: Field>(
         .next()
         .map(|(k, _)| *k)
         .unwrap_or_default();
-    let chain_id = block
-        .headers
-        .values()
-        .into_iter()
-        .next()
-        .map(|header| header.chain_id.as_u64())
-        .unwrap_or(1);
+    let chain_id = block.chain_id();
 
     let rws = RwMap::from(&block.container);
     rws.check_rw_counter_sanity();
@@ -344,7 +340,7 @@ pub fn block_convert<F: Field>(
                 } else {
                     None
                 };
-                tx_convert(tx, idx + 1, chain_id, next_tx)
+                tx_convert(tx, idx + 1, chain_id.as_u64(), next_tx)
             })
             .collect(),
         sigs: block.txs().iter().map(|tx| tx.signature).collect(),
@@ -377,6 +373,7 @@ pub fn block_convert<F: Field>(
             block.prev_state_root,
             block.end_state_root(),
         ),
+        chain_id,
     })
 }
 
