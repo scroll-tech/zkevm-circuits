@@ -20,6 +20,11 @@ use eth_types::{Field, ToLittleEndian, ToScalar};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
+#[cfg(feature = "scroll")]
+const NUM_PREV_BLOCK_ALLOWED: u64 = 2;
+#[cfg(not(feature = "scroll"))]
+const NUM_PREV_BLOCK_ALLOWED: u64 = 257;
+
 #[derive(Clone, Debug)]
 pub(crate) struct BlockHashGadget<F> {
     same_context: SameContextGadget<F>,
@@ -56,7 +61,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let diff_lt = LtGadget::construct(
             cb,
             current_block_number.expr(),
-            257.expr() + from_bytes::expr(&block_number.cells),
+            NUM_PREV_BLOCK_ALLOWED.expr() + from_bytes::expr(&block_number.cells),
         );
 
         let block_hash = cb.query_word_rlc();

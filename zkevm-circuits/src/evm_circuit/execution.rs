@@ -84,6 +84,7 @@ mod error_oog_constant;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
+mod error_precompile_failed;
 mod error_stack;
 mod exp;
 mod extcodecopy;
@@ -152,6 +153,7 @@ use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
+use error_precompile_failed::ErrorPrecompileFailedGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
@@ -317,7 +319,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
     error_return_data_out_of_bound:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
-    error_precompile_failed: DummyGadget<F, 0, 0, { ExecutionState::ErrorPrecompileFailed }>,
+    error_precompile_failed: ErrorPrecompileFailedGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -1137,7 +1139,7 @@ impl<F: Field> ExecutionConfig<F> {
             1,
             offset_begin,
         );
-        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
+        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step, false)?;
 
         region.replicate_assignment_for_range(
             || format!("repeat {:?} rows", step.execution_state),
@@ -1194,12 +1196,14 @@ impl<F: Field> ExecutionConfig<F> {
                 transaction_next,
                 call_next,
                 step_next,
+                false,
             )?;
         }
 
-        self.assign_exec_step_int(region, offset, block, transaction, call, step)
+        self.assign_exec_step_int(region, offset, block, transaction, call, step, true)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn assign_exec_step_int(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -1208,6 +1212,7 @@ impl<F: Field> ExecutionConfig<F> {
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
+        check_rw: bool,
     ) -> Result<(), Error> {
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
@@ -1367,7 +1372,7 @@ impl<F: Field> ExecutionConfig<F> {
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
         // enable with `CHECK_RW_LOOKUP=true`
-        if *CHECK_RW_LOOKUP {
+        if *CHECK_RW_LOOKUP && check_rw {
             let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
                 && step.rw_indices.is_empty();
             if !is_padding_step {
