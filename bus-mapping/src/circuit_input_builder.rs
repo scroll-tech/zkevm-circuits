@@ -562,9 +562,7 @@ fn keccak_inputs_pi_circuit(
                 .iter()
                 .filter(|tx| tx.block_num == *block_num)
                 .count() as u16;
-            let parent_hash = block
-                .eth_block
-                .parent_hash;
+            let parent_hash = block.eth_block.parent_hash;
             let block_hash = block.eth_block.hash.unwrap_or(H256::zero());
             let num_l1_msgs = 0_u16; // 0 for now
 
