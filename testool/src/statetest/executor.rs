@@ -161,7 +161,6 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 enable_memory: *bus_mapping::util::CHECK_MEM_STRICT,
                 ..Default::default()
             },
-            ..Default::default()
         },
         st.result,
     )
