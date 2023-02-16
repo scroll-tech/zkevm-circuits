@@ -37,6 +37,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
 
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
+
         cb.stack_pop(offset.expr());
         cb.stack_pop(length.expr());
         let memory_address = MemoryAddressGadget::construct(cb, offset, length);
@@ -103,7 +104,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
             region,
             offset,
             F::from(step.gas_left),
-            F::from(200 * length.as_u64()),
+            F::from(GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * length.as_u64()),
         )?;
         self.restore_context
             .assign(region, offset, block, call, step, 3)?;
@@ -154,7 +155,7 @@ mod test {
         code
     }
 
-    fn creater_bytecode(initialization_bytecode: Bytecode, is_create2: bool) -> Bytecode {
+    fn creator_bytecode(initialization_bytecode: Bytecode, is_create2: bool) -> Bytecode {
         let initialization_bytes = initialization_bytecode.code();
         let mut code = bytecode! {
             PUSH32(Word::from_big_endian(&initialization_bytes))
@@ -207,7 +208,7 @@ mod test {
     fn test_create_codestore_oog() {
         for is_create2 in [false, true] {
             let initialization_code = initialization_bytecode();
-            let root_code = creater_bytecode(initialization_code, is_create2);
+            let root_code = creator_bytecode(initialization_code, is_create2);
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
