@@ -1758,9 +1758,13 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
         config
             .keccak_table
             .dev_load(&mut layouter, &self.keccak_inputs()?, &challenges)?;
-        config
-            .tx_table
-            .load(&mut layouter, &self.txs, self.max_txs, &challenges)?;
+        config.tx_table.load(
+            &mut layouter,
+            &self.txs,
+            self.max_txs,
+            self.chain_id,
+            &challenges,
+        )?;
         config.rlp_table.dev_load(
             &mut layouter,
             self.txs
@@ -1837,6 +1841,16 @@ mod tx_circuit_tests {
             ),
             Ok(())
         );
+    }
+
+    #[test]
+    fn tx_circuit_0tx_1max_tx() {
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
+
+        assert_eq!(run::<Fr>(vec![], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
     }
 
     #[test]

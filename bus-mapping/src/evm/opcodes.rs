@@ -63,6 +63,7 @@ mod error_oog_call;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
+mod error_precompile_failed;
 mod error_stack_oog_constant;
 
 #[cfg(test)]
@@ -88,6 +89,7 @@ use error_oog_call::OOGCall;
 use error_oog_log::ErrorOOGLog;
 use error_oog_sload_sstore::OOGSloadSstore;
 use error_oog_static_memory::OOGStaticMemory;
+use error_precompile_failed::PrecompileFailed;
 use error_stack_oog_constant::ErrorStackOogConstant;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
@@ -279,6 +281,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::StackUnderflow => Some(ErrorStackOogConstant::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
+        ExecError::PrecompileFailed => Some(PrecompileFailed::gen_associated_ops),
 
         // more future errors place here
         _ => {
@@ -642,6 +645,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     let effective_tip = state.tx.gas_price - block_info.base_fee;
     let (found, coinbase_account) = state.sdb.get_account_mut(&block_info.coinbase);
     if !found {
+        log::error!("coinbase account not found: {}", block_info.coinbase);
         return Err(Error::AccountNotFound(block_info.coinbase));
     }
     let coinbase_balance_prev = coinbase_account.balance;

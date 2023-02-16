@@ -67,6 +67,11 @@ impl BlockData {
 
         for account in geth_data.accounts {
             let code_hash = code_db.insert(account.code.to_vec());
+            log::trace!(
+                "trace code {:?} {:?}",
+                code_hash,
+                hex::encode(account.code.to_vec())
+            );
             sdb.set_account(
                 &account.address,
                 state_db::Account {

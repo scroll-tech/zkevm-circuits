@@ -851,6 +851,7 @@ pub mod dev {
                 &mut layouter,
                 &self.external_data.txs,
                 self.external_data.max_txs,
+                0,
                 &challenge_values,
             )?;
 

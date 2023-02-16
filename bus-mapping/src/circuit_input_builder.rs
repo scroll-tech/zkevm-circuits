@@ -368,10 +368,7 @@ impl<'a> CircuitInputBuilder {
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
                 if geth_step.op.is_push() {
-                    match geth_step.stack.last() {
-                        Ok(w) => format!("{:?}", w),
-                        Err(_) => "".to_string(),
-                    }
+                    format!("{:?}", geth_trace.struct_logs[index + 1].stack.last())
                 } else if geth_step.op.is_call_without_value() {
                     format!(
                         "{:?} {:40x} {:?} {:?} {:?} {:?}",
@@ -427,11 +424,13 @@ impl<'a> CircuitInputBuilder {
         // - execution_state: EndTx
         // - op: None
         // Generate EndTx step
+        log::trace!("gen_end_tx_ops");
         let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
         tx.steps_mut().push(end_tx_step);
 
         self.sdb.commit_tx();
         self.block.txs.push(tx);
+        log::trace!("handle_tx finished");
 
         Ok(())
     }

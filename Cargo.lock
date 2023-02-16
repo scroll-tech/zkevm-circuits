@@ -2530,7 +2530,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-0220#ffd33d77b0a5ae42cd14bf46853cc60c0a091621"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-0220#49f4c58908095b46b4f0983404c12106b725df4e"
 dependencies = [
  "ark-std",
  "blake2b_simd",
@@ -2542,7 +2542,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "plotters",
- "poseidon 0.2.0 (git+https://github.com/appliedzkp/poseidon.git)",
+ "poseidon 0.2.0 (git+https://github.com/privacy-scaling-explorations/poseidon.git)",
  "rand_core 0.6.4",
  "rayon",
  "sha3 0.9.1",
@@ -4057,7 +4057,7 @@ dependencies = [
 [[package]]
 name = "poseidon"
 version = "0.2.0"
-source = "git+https://github.com/appliedzkp/poseidon.git#0b9965fbcd9e03559088b8f68489592286bc55e0"
+source = "git+https://github.com/privacy-scaling-explorations/poseidon.git#0b9965fbcd9e03559088b8f68489592286bc55e0"
 dependencies = [
  "group",
  "halo2curves 0.2.1",
