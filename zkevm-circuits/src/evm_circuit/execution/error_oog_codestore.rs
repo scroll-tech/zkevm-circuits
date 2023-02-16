@@ -204,7 +204,7 @@ mod test {
     }
 
     #[test]
-    fn test_create() {
+    fn test_create_codestore_oog() {
         for is_create2 in [false, true] {
             let initialization_code = initialization_bytecode();
             let root_code = creater_bytecode(initialization_code, is_create2);
