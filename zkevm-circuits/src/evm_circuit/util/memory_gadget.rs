@@ -115,6 +115,19 @@ impl<F: Field> MemoryAddressGadget<F> {
         let memory_offset_bytes = memory_offset.to_le_bytes();
         let memory_length_bytes = memory_length.to_le_bytes();
         let memory_length_is_zero = memory_length.is_zero();
+
+        // Both Memory offset (when memory_length != 0) and length must be less than
+        // 2^40.
+        let max_mem_addr = U256::from(1_u64 << (8 * N_BYTES_MEMORY_ADDRESS));
+        if (!memory_length_is_zero && memory_offset >= max_mem_addr)
+            || memory_length >= max_mem_addr
+        {
+            panic!(
+                "memory offset {} or length {} overflow {} bytes",
+                memory_offset, memory_length, N_BYTES_MEMORY_ADDRESS
+            );
+        }
+
         self.memory_offset.assign(
             region,
             offset,
