@@ -1,21 +1,15 @@
 use crate::{
-    circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
-    },
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
     evm::Opcode,
-    operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
+    operation::CallContextField,
     Error,
 };
-use eth_types::{
-    evm_types::gas_utils::memory_expansion_gas_cost, Bytecode, GethExecStep, ToBigEndian, ToWord,
-    Word, H160, H256,
-};
-use ethers_core::utils::{get_create2_address, keccak256, rlp};
+use eth_types::GethExecStep;
 
 #[derive(Debug, Copy, Clone)]
-pub struct ErrorCreate<const IS_CREATE2: bool>;
+pub struct ErrorOOGCodeStore;
 
-impl<const IS_CREATE2: bool> Opcode for ErrorCreate<IS_CREATE2> {
+impl Opcode for ErrorOOGCodeStore {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
@@ -34,18 +28,20 @@ impl<const IS_CREATE2: bool> Opcode for ErrorCreate<IS_CREATE2> {
         state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
         state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), length)?;
 
-        // must be in internal call context
+        // in internal call  context
         let call = state.call()?;
-        assert!(call.is_create()&& !call.is_root);
-        println!("call success is {}, is root {}, is_create {}", call.is_success,
-            call.is_root, call.is_create());
+        assert!(call.is_create() && !call.is_root);
 
         // must be in create context
-        state.call_context_read(&mut exec_step, call.call_id, CallContextField::IsCreate, (call.is_create() as u64).into());
+        state.call_context_read(
+            &mut exec_step,
+            call.call_id,
+            CallContextField::IsCreate,
+            (call.is_create() as u64).into(),
+        );
         // refer to return_revert Case C
         state.handle_restore_context(geth_steps, &mut exec_step)?;
 
-        // not sure, if can do it. 
         //state.gen_restore_context_ops(&mut exec_step, geth_steps);
         state.handle_return(geth_step)?;
         Ok(vec![exec_step])

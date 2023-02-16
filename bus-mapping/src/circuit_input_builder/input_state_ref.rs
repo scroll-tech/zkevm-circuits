@@ -1055,7 +1055,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let caller_gas_left = if call.is_success {
             geth_step_next.gas.0 - gas_refund
-        }else{
+        } else {
             geth_step_next.gas.0
         };
 

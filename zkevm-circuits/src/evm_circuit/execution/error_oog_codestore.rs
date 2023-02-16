@@ -1,44 +1,27 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{
-            N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE,
-            N_BYTES_U64,
-        },
+        param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
-                Transition::{Delta, To},
-            },
-            from_bytes,
-            math_gadget::{ConstantDivisionGadget, IsZeroGadget, LtGadget},
-            memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, rlc, select, sum, CachedRegion, Cell, RandomLinearCombination, Word,
+            common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder,
+            math_gadget::LtGadget, memory_gadget::MemoryAddressGadget, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{AccountFieldTag, CallContextFieldTag},
+    table::CallContextFieldTag,
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
-use ethers_core::utils::{keccak256, rlp};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
 
-use std::iter::once;
+use eth_types::{evm_types::GasCost, Field};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
-/// Gadget for CREATE and CREATE2 opcodes
+/// Gadget for code store oog
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGCodeStoreGadget<F> {
     opcode: Cell<F>,
-    //return_data_offset: Cell<F>,
     is_create: Cell<F>,
-    range: MemoryAddressGadget<F>,
+    memory_address: MemoryAddressGadget<F>,
     code_store_gas_insufficient: LtGadget<F, N_BYTES_GAS>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -49,41 +32,49 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasCodeStore;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        // Use rw_counter of the step which triggers next call as its call_id.
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
         cb.stack_pop(offset.expr());
-        cb.stack_pop(length.clone().expr());
-        let range = MemoryAddressGadget::construct(cb, offset, length.clone());
+        cb.stack_pop(length.expr());
+        let memory_address = MemoryAddressGadget::construct(cb, offset, length);
 
         let is_create = cb.call_context(None, CallContextFieldTag::IsCreate);
         cb.require_true("is_create is true", is_create.expr());
-        //constrain code store gas > gas left, that is 200 * length > gas left
-        let code_store_gas_insufficient = LtGadget::construct(cb, cb.curr.state.gas_left.expr(),
-        // use frombytes    
-        200.expr() * length.clone().expr());
-        cb.require_equal("200 * length > step gas left", code_store_gas_insufficient.expr(), 1.expr());
+
+        // constrain code store gas > gas left, that is GasCost::CODE_DEPOSIT_BYTE_COST
+        // * length > gas left
+        let code_store_gas_insufficient = LtGadget::construct(
+            cb,
+            cb.curr.state.gas_left.expr(),
+            GasCost::CODE_DEPOSIT_BYTE_COST.expr() * memory_address.length(),
+        );
+        cb.require_equal(
+            "CODE_DEPOSIT_BYTE_COST * length > step gas left",
+            code_store_gas_insufficient.expr(),
+            1.expr(),
+        );
+
         // restore context as in internal call
         cb.require_zero("in internal call", cb.curr.state.is_root.expr());
 
         // Case C in the return specs.
-          let restore_context = RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                range.offset(),
-                range.length(),
-                0.expr(),
-                0.expr(),
-            );
+        let restore_context = RestoreContextGadget::construct(
+            cb,
+            0.expr(),
+            0.expr(),
+            memory_address.offset(),
+            memory_address.length(),
+            0.expr(),
+            0.expr(),
+        );
 
         Self {
             opcode,
             is_create,
-            range,
+            memory_address,
             code_store_gas_insufficient,
             restore_context,
         }
@@ -94,32 +85,31 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction,
+        _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        
+
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
-        let range = self.range.assign(region, offset, memory_offset, length)?;
-        
-        self.is_create.assign(region, offset, Value::known(F::from(call.is_create as u64)))?;
-        self.code_store_gas_insufficient.assign(region, offset, F::from(step.gas_left), 
-            F::from(200 * length.as_u64()))?;
-        self.restore_context.assign(
+        self.memory_address
+            .assign(region, offset, memory_offset, length)?;
+
+        self.is_create
+            .assign(region, offset, Value::known(F::from(call.is_create as u64)))?;
+        self.code_store_gas_insufficient.assign(
             region,
             offset,
-            block,
-            call,
-            step,
-            3,
+            F::from(step.gas_left),
+            F::from(200 * length.as_u64()),
         )?;
+        self.restore_context
+            .assign(region, offset, block, call, step, 3)?;
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -128,7 +118,6 @@ mod test {
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, Word,
     };
 
-    use itertools::Itertools;
     use lazy_static::lazy_static;
     use mock::{eth, TestContext};
 
@@ -161,14 +150,11 @@ mod test {
             PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap())
         };
         code.write_op(OpcodeId::RETURN);
-       
+
         code
     }
 
-    fn creater_bytecode(
-        initialization_bytecode: Bytecode,
-        is_create2: bool,
-    ) -> Bytecode {
+    fn creater_bytecode(initialization_bytecode: Bytecode, is_create2: bool) -> Bytecode {
         let initialization_bytes = initialization_bytecode.code();
         let mut code = bytecode! {
             PUSH32(Word::from_big_endian(&initialization_bytes))
@@ -219,8 +205,7 @@ mod test {
 
     #[test]
     fn test_create() {
-        for is_create2 in [false, true]
-        {
+        for is_create2 in [false, true] {
             let initialization_code = initialization_bytecode();
             let root_code = creater_bytecode(initialization_code, is_create2);
             let caller = Account {
@@ -231,6 +216,6 @@ mod test {
                 ..Default::default()
             };
             run_test_circuits(test_context(caller));
-       }
+        }
     }
 }
