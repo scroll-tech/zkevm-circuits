@@ -8,7 +8,7 @@ use ethers_core::types::transaction::eip2718::TypedTransaction;
 use ethers_core::types::TransactionRequest;
 use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
-use external_tracer::TraceConfig;
+use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
@@ -157,7 +157,10 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 hash: tx_hash.into(),
             }],
             accounts: st.pre,
-            ..Default::default()
+            logger_config: LoggerConfig {
+                enable_memory: *bus_mapping::util::CHECK_MEM_STRICT,
+                ..Default::default()
+            },
         },
         st.result,
     )

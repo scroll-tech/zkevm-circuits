@@ -21,6 +21,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
+        let mut exec_step = state.new_step(geth_step)?;
 
         let offset = geth_step.stack.nth_last(1)?.as_usize();
         let length = geth_step.stack.nth_last(2)?.as_usize();
@@ -33,8 +34,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 .extend_at_least(offset + length);
         }
         let next_memory_word_size = state.call_ctx()?.memory_word_size();
-
-        let mut exec_step = state.new_step(geth_step)?;
 
         let callee = state.parse_call(geth_step)?;
 

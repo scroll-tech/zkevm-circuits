@@ -732,9 +732,10 @@ impl<'a> CircuitInputStateRef<'a> {
                 } else {
                     let (found, account) = self.sdb.get_account(&code_address);
                     if !found {
-                        return Err(Error::AccountNotFound(code_address));
+                        (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
+                    } else {
+                        (CodeSource::Address(code_address), account.code_hash)
                     }
-                    (CodeSource::Address(code_address), account.code_hash)
                 }
             }
         };
@@ -1274,19 +1275,13 @@ impl<'a> CircuitInputStateRef<'a> {
                 step.op,
                 OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL
             ) {
-                let caller = self.call()?;
-                let callee_address = match CallKind::try_from(step.op)? {
-                    CallKind::Call | CallKind::StaticCall => step.stack.nth_last(1)?.to_address(),
-                    CallKind::CallCode | CallKind::DelegateCall => caller.address,
-                    _ => unreachable!(),
-                };
-
-                if is_precompiled(&callee_address) {
+                let code_address = step.stack.nth_last(1)?.to_address();
+                if is_precompiled(&code_address) {
                     // Log the precompile address and gas left. Since this failure is mainly caused
                     // by out of gas.
                     log::trace!(
-                        "Precompile failed: callee_address = {}, step.gas = {}",
-                        callee_address,
+                        "Precompile failed: code_address = {}, step.gas = {}",
+                        code_address,
                         step.gas.0,
                     );
                     return Ok(Some(ExecError::PrecompileFailed));
