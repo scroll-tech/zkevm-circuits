@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use crate::table::TxTable;
 use crate::table::{BlockTable, KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
-use eth_types::{Field, ToBigEndian, Word};
+use eth_types::{Address, Field, ToBigEndian, Word};
 use eth_types::{Hash, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
@@ -23,6 +23,7 @@ use crate::state_circuit::StateCircuitExports;
 use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness::{self, Block, BlockContext, BlockContexts, Transaction};
+use bus_mapping::util::read_env_var;
 use gadgets::util::{not, select, Expr};
 use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{
@@ -30,10 +31,11 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
+use once_cell::sync::Lazy;
 
 /// Fixed by the spec
-const BLOCK_LEN: usize = 9 + 256;
-const NUM_HISTORY_HASHES: usize = 256;
+const BLOCK_LEN: usize = 10;
+const NUM_HISTORY_HASHES: usize = 1;
 const BYTE_POW_BASE: u64 = 256;
 const BLOCK_HEADER_BYTES_NUM: usize = 124;
 const KECCAK_DIGEST_SIZE: usize = 32;
@@ -48,6 +50,10 @@ const TIMESTAMP_OFFSET: usize = 1;
 const BASE_FEE_OFFSET: usize = 5;
 const GAS_LIMIT_OFFSET: usize = 4;
 const NUM_TXS_OFFSET: usize = 7;
+
+pub(crate) static CHAIN_ID: Lazy<u64> = Lazy::new(|| read_env_var("CHAIN_ID", 0));
+pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| read_env_var("COINBASE", Address::zero()));
+
 /// PublicData contains all the values that the PiCircuit receives as input
 #[derive(Debug, Clone)]
 pub struct PublicData {
@@ -59,6 +65,8 @@ pub struct PublicData {
     pub block_ctxs: BlockContexts,
     /// Previous State Root
     pub prev_state_root: Hash,
+    /// Withdraw Trie Root
+    pub withdraw_trie_root: Hash,
 }
 
 impl Default for PublicData {
@@ -67,6 +75,7 @@ impl Default for PublicData {
             chain_id: *MOCK_CHAIN_ID,
             transactions: vec![],
             prev_state_root: H256::zero(),
+            withdraw_trie_root: H256::zero(),
             block_ctxs: Default::default(),
         }
     }
@@ -76,8 +85,7 @@ impl PublicData {
     /// Compute the raw_public_inputs bytes from the verifier's perspective.
     fn raw_public_input_bytes(&self, max_txs: usize) -> Vec<u8> {
         let dummy_tx_hash = get_dummy_tx_hash(self.chain_id.as_u64());
-        // TODO: use real-world withdraw trie root
-        let withdraw_trie_root = Word::zero(); // zero for now
+        let withdraw_trie_root = self.withdraw_trie_root;
 
         let result = iter::empty()
             // state roots
@@ -91,7 +99,7 @@ impl PublicData {
                     .to_fixed_bytes(),
             )
             // withdraw trie root
-            .chain(withdraw_trie_root.to_be_bytes())
+            .chain(withdraw_trie_root.to_fixed_bytes())
             .chain(self.block_ctxs.ctxs.iter().flat_map(|(block_num, block)| {
                 let num_txs = self
                     .transactions
@@ -104,6 +112,7 @@ impl PublicData {
                     block.history_hashes.len(),
                     parent_hash
                 );
+                // TODO: use reasonable method to get this data
                 let num_l1_msgs = 0_u16; // 0 for now
 
                 iter::empty()
@@ -958,6 +967,7 @@ impl<F: Field> PiCircuit<F> {
             transactions: block.txs.clone(),
             block_ctxs: block.context.clone(),
             prev_state_root: H256(block.mpt_updates.old_root().to_be_bytes()),
+            withdraw_trie_root: H256::zero(),
         };
         Self {
             public_data,

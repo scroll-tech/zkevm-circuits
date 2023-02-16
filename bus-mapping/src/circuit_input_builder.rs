@@ -565,17 +565,12 @@ fn keccak_inputs_pi_circuit(
             let parent_hash = block
                 .eth_block
                 .parent_hash;
+            let block_hash = block.eth_block.hash.unwrap_or(H256::zero());
             let num_l1_msgs = 0_u16; // 0 for now
 
             iter::empty()
                 // Block Values
-                .chain(
-                    block
-                        .eth_block
-                        .hash
-                        .expect("block.eth_block.hash should be some")
-                        .to_fixed_bytes(),
-                )
+                .chain(block_hash.to_fixed_bytes())
                 .chain(parent_hash.to_fixed_bytes()) // parent hash
                 .chain(block.number.as_u64().to_be_bytes())
                 .chain(block.timestamp.as_u64().to_be_bytes())
