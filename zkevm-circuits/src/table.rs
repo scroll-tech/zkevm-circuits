@@ -181,13 +181,14 @@ impl TxTable {
         }
     }
 
-    /// Assign the `TxTable` from a list of block `Transaction`s, followig the
+    /// Assign the `TxTable` from a list of block `Transaction`s, following the
     /// same layout that the Tx Circuit uses.
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         txs: &[Transaction],
         max_txs: usize,
+        chain_id: u64,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         assert!(
@@ -217,7 +218,6 @@ impl TxTable {
                 )?;
                 offset += 1;
 
-                let chain_id = if !txs.is_empty() { txs[0].chain_id } else { 1 };
                 let padding_txs = (txs.len()..max_txs)
                     .into_iter()
                     .map(|tx_id| {

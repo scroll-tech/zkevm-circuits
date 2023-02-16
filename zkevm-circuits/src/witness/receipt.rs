@@ -1,5 +1,5 @@
 use ethers_core::types::{Bloom, Log};
-use rlp::Encodable;
+use ethers_core::utils::rlp::{Encodable, RlpStream};
 
 /// EVM log's receipt.
 #[derive(Clone, Debug, Default)]
@@ -17,7 +17,7 @@ pub struct Receipt {
 }
 
 impl Encodable for Receipt {
-    fn rlp_append(&self, s: &mut rlp::RlpStream) {
+    fn rlp_append(&self, s: &mut RlpStream) {
         s.begin_list(4);
         s.append(&self.status);
         s.append(&self.cumulative_gas_used);

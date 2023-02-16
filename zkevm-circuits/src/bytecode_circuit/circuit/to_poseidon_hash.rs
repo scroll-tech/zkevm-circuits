@@ -50,8 +50,8 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
     ) -> Self {
         let base_conf_cl = base_conf.clone();
         let bytecode_table = base_conf.bytecode_table;
-        //TODO: does this col still used for storing poseidon hash?
-        let code_hash = bytecode_table.code_hash;
+        // TODO: does this col still used for storing poseidon hash?
+        // let code_hash = bytecode_table.code_hash;
 
         let q_enable = base_conf.q_enable; //from 0 to last avaliable row
 
@@ -286,10 +286,10 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         });
          */
 
-        let lookup_columns = [code_hash, field_input, control_length];
+        let lookup_columns = [/* code_hash, */ field_input, control_length];
         let pick_hash_tbl_cols = |inp_i| {
             let cols = <PoseidonTable as LookupTable<F>>::advice_columns(&poseidon_table);
-            [cols[0], cols[inp_i + 1], cols[cols.len() - 2]]
+            [/* cols[0], */ cols[inp_i + 1], cols[cols.len() - 2]]
         };
 
         // we use a special selection exp for only 2 indexs
@@ -337,7 +337,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
             ]);
             let mut constraints = Vec::new();
             for (l_exp, tbl_col) in [
-                meta.query_advice(code_hash, Rotation::cur()),
+                //                meta.query_advice(code_hash, Rotation::cur()),
                 0.expr(),
                 meta.query_advice(control_length, Rotation::cur()),
             ]

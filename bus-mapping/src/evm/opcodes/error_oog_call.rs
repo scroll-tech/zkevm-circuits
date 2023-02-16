@@ -32,13 +32,6 @@ impl Opcode for OOGCall {
         };
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
 
-        let args_offset = geth_step.stack.nth_last(stack_input_num - 4)?.as_usize();
-        let args_length = geth_step.stack.nth_last(stack_input_num - 3)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(stack_input_num - 2)?.as_usize();
-        let ret_length = geth_step.stack.nth_last(stack_input_num - 1)?.as_usize();
-
-        state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
-
         let tx_id = state.tx_ctx.id();
         let call_address = geth_step.stack.nth_last(1)?.to_address();
 

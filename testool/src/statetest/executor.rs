@@ -130,7 +130,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
         st.id,
         TraceConfig {
             chain_id: U256::one(),
-            history_hashes: Vec::new(),
+            history_hashes: vec![U256::from_big_endian(st.env.previous_hash.as_bytes())],
             block_constants: geth_types::BlockConstants {
                 coinbase: st.env.current_coinbase,
                 timestamp: U256::from(st.env.current_timestamp),
@@ -227,6 +227,7 @@ pub fn run_test(
             r: tx.r,
             s: tx.s,
             v: U64::from(tx.v),
+            block_number: Some(U64::from(trace_config.block_constants.number.as_u64())),
             ..eth_types::Transaction::default()
         })
         .collect();
@@ -266,6 +267,7 @@ pub fn run_test(
             max_copy_rows: 55000,
             max_exp_steps: 5000,
             keccak_padding: None,
+            max_inner_blocks: 64,
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
@@ -290,9 +292,10 @@ pub fn run_test(
             max_exp_steps: 256,
             max_bytecode: 512,
             keccak_padding: None,
+            max_inner_blocks: 64,
         };
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 0x100>::build(geth_data, circuits_params)
+            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 64, 0x100>::build(geth_data, circuits_params)
                 .unwrap();
         builder = _builder;
 
