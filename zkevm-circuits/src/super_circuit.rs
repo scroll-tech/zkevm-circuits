@@ -383,6 +383,7 @@ impl<
         let rlp = RlpCircuit::min_num_rows_block(block);
         let exp = ExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
+        let poseidon = PoseidonCircuit::min_num_rows_block(block);
         #[cfg(feature = "zktrie")]
         let mpt = MptCircuit::min_num_rows_block(block);
 
@@ -396,6 +397,7 @@ impl<
             rlp,
             exp,
             pi,
+            poseidon,
             #[cfg(feature = "zktrie")]
             mpt,
         ];
