@@ -190,21 +190,14 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.tx_refund_prev
             .assign(region, offset, Value::known(F::from(tx_refund_prev)))?;
 
+        self.gas_cost
+            .assign(region, offset, value, value_prev, original_value, is_warm)?;
         debug_assert_eq!(
             cal_sstore_gas_cost_for_assignment(value, value_prev, original_value, is_warm),
             step.gas_cost,
             "invalid gas cost in sstore value {:?} value_prev {:?} original_value {:?} is_warm {:?} contract addr {:?} storage key {:?}",
             value, value_prev, original_value, is_warm, call.callee_address, key
         );
-        self.gas_cost.assign(
-            region,
-            offset,
-            step.gas_cost,
-            value,
-            value_prev,
-            original_value,
-            is_warm,
-        )?;
 
         self.tx_refund.assign(
             region,

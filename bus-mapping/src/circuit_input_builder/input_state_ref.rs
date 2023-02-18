@@ -21,7 +21,7 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    evm_unimplemented, Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
+    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use keccak256::EMPTY_HASH;
@@ -827,14 +827,6 @@ impl<'a> CircuitInputStateRef<'a> {
                     None
                 }
             }
-            OperationRef(Target::AccountDestructed, idx) => {
-                let operation = &self.block.container.account_destructed[*idx];
-                if operation.rw().is_write() && operation.reversible() {
-                    Some(OpEnum::AccountDestructed(operation.op().reverse()))
-                } else {
-                    None
-                }
-            }
             _ => None,
         }
     }
@@ -874,7 +866,6 @@ impl<'a> CircuitInputStateRef<'a> {
             OpEnum::TxRefund(op) => {
                 self.sdb.set_refund(op.value);
             }
-            OpEnum::AccountDestructed(_) => evm_unimplemented!("AcountDestructed"),
             _ => unreachable!(),
         };
     }

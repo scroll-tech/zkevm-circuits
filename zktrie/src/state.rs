@@ -37,6 +37,8 @@ pub struct ZktrieState {
     accounts: HashMap<Address, ZkTrieHash>,
 }
 
+unsafe impl Send for ZktrieState {}
+
 impl fmt::Debug for ZktrieState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(

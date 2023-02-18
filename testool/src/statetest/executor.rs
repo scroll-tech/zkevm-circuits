@@ -231,6 +231,7 @@ pub fn run_test(
             s: tx.s,
             v: U64::from(tx.v),
             block_number: Some(U64::from(trace_config.block_constants.number.as_u64())),
+            chain_id: Some(trace_config.chain_id),
             ..eth_types::Transaction::default()
         })
         .collect();
@@ -248,7 +249,10 @@ pub fn run_test(
 
     let wallet: LocalWallet = SigningKey::from_bytes(&st.secret_key).unwrap().into();
     let mut wallets = HashMap::new();
-    wallets.insert(wallet.address(), wallet.with_chain_id(1u64));
+    wallets.insert(
+        wallet.address(),
+        wallet.with_chain_id(trace_config.chain_id.as_u64()),
+    );
 
     // process the transaction
     let mut geth_data = eth_types::geth_types::GethData {
@@ -268,6 +272,7 @@ pub fn run_test(
             max_calldata: 5000,
             max_bytecode: 5000,
             max_copy_rows: 55000,
+            max_evm_rows: 0,
             max_exp_steps: 5000,
             keccak_padding: None,
             max_inner_blocks: 64,
@@ -294,6 +299,7 @@ pub fn run_test(
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
             max_inner_blocks: 64,
         };

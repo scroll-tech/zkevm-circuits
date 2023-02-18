@@ -1,17 +1,33 @@
-_PR description_
+### Description
+
+[_PR description_]
+
+### Issue Link
+
+[_link issue here_]
+
+### Type of change
+
+- [ ] Bug fix (non-breaking change which fixes an issue)
+- [ ] New feature (non-breaking change which adds functionality)
+- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
+- [ ] This change requires a documentation update
 
 ### Contents
 
-- _item_
+- [_item_]
 
 ### Rationale
 
-_design decisions and extended information_
+[_design decisions and extended information_]
 
+### How Has This Been Tested?
+
+[_explanation_]
 
 <hr>
 
-## How to fill a PR description (remove this)
+## How to fill a PR description 
 
 Please give a concise description of your PR.
 
@@ -27,7 +43,6 @@ Anyway, you MUST enumerate the changes in a unitary way, e.g.
 
 ```
 This PR contains:
-
 - Cleanup of xxxx, yyyy
 - Changed xxxx to yyyy in order to bla bla
 - Added xxxx function to ...

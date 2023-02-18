@@ -34,6 +34,12 @@ use crate::{
     witness,
 };
 
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{
+    circuit::SimpleFloorPlanner,
+    plonk::{Challenge, Circuit},
+};
+
 /// Encode the type `NumberOrHash` into a field element
 pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) -> Value<F> {
     match v {
@@ -131,6 +137,12 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let rw_counter = copy_table.rw_counter;
         let rwc_inc_left = copy_table.rwc_inc_left;
         let tag = copy_table.tag;
+
+        // annotate table columns
+        tx_table.annotate_columns(meta);
+        rw_table.annotate_columns(meta);
+        bytecode_table.annotate_columns(meta);
+        copy_table.annotate_columns(meta);
 
         let addr_lt_addr_end = LtChip::configure(
             meta,
@@ -529,6 +541,11 @@ impl<F: Field> CopyCircuitConfig<F> {
         layouter.assign_region(
             || "assign copy table",
             |mut region| {
+                region.name_column(|| "is_last", self.is_last);
+                region.name_column(|| "value", self.value);
+                region.name_column(|| "is_code", self.is_code);
+                region.name_column(|| "is_pad", self.is_pad);
+
                 let mut offset = 0;
                 for (ev_idx, copy_event) in copy_events.iter().enumerate() {
                     log::debug!(
@@ -687,6 +704,8 @@ impl<F: Field> CopyCircuitConfig<F> {
 pub struct ExternalData {
     /// TxCircuit -> max_txs
     pub max_txs: usize,
+    /// TxCircuit -> max_calldata
+    pub max_calldata: usize,
     /// TxCircuit -> txs
     pub txs: Vec<Transaction>,
     /// StateCircuit -> max_rws
@@ -755,6 +774,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
             block.circuits_params.max_copy_rows,
             ExternalData {
                 max_txs: block.circuits_params.max_txs,
+                max_calldata: block.circuits_params.max_calldata,
                 txs: block.txs.clone(),
                 max_rws: block.circuits_params.max_rws,
                 rws: block.rws.clone(),
@@ -787,92 +807,80 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 }
 
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+impl<F: Field> Circuit<F> for CopyCircuit<F> {
+    type Config = (CopyCircuitConfig<F>, Challenges<Challenge>);
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let tx_table = TxTable::construct(meta);
+        let rw_table = RwTable::construct(meta);
+        let bytecode_table = BytecodeTable::construct(meta);
+        let q_enable = meta.fixed_column();
+        let copy_table = CopyTable::construct(meta, q_enable);
+        let challenges = Challenges::construct(meta);
+        let challenge_exprs = challenges.exprs(meta);
+
+        (
+            CopyCircuitConfig::new(
+                meta,
+                CopyCircuitConfigArgs {
+                    tx_table,
+                    rw_table,
+                    bytecode_table,
+                    copy_table,
+                    q_enable,
+                    challenges: challenge_exprs,
+                },
+            ),
+            challenges,
+        )
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), halo2_proofs::plonk::Error> {
+        let challenge_values = config.1.values(&layouter);
+
+        config.0.tx_table.load(
+            &mut layouter,
+            &self.external_data.txs,
+            self.external_data.max_txs,
+            self.external_data.max_calldata,
+            0,
+            &challenge_values,
+        )?;
+
+        config.0.rw_table.load(
+            &mut layouter,
+            &self.external_data.rws.table_assignments(),
+            self.external_data.max_rws,
+            challenge_values.evm_word(),
+        )?;
+
+        config.0.bytecode_table.load(
+            &mut layouter,
+            self.external_data.bytecodes.values(),
+            &challenge_values,
+        )?;
+        self.synthesize_sub(&config.0, &challenge_values, &mut layouter)
+    }
+}
+
 /// Dev helpers
 #[cfg(any(feature = "test", test))]
 pub mod dev {
-    use super::*;
-    use eth_types::Field;
-    #[cfg(test)]
-    use halo2_proofs::dev::{MockProver, VerifyFailure};
-    use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner},
-        plonk::{Circuit, ConstraintSystem},
-    };
-
-    #[cfg(test)]
+    use crate::copy_circuit::*;
     use crate::witness::Block;
-
-    use crate::{
-        table::{BytecodeTable, RwTable, TxTable},
-        util::Challenges,
-    };
-
-    impl<F: Field> Circuit<F> for CopyCircuit<F> {
-        type Config = (CopyCircuitConfig<F>, Challenges);
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = TxTable::construct(meta);
-            let rw_table = RwTable::construct(meta);
-            let bytecode_table = BytecodeTable::construct(meta);
-            let q_enable = meta.fixed_column();
-            let copy_table = CopyTable::construct(meta, q_enable);
-            let challenges = Challenges::construct(meta);
-            let challenge_exprs = challenges.exprs(meta);
-
-            (
-                CopyCircuitConfig::new(
-                    meta,
-                    CopyCircuitConfigArgs {
-                        tx_table,
-                        rw_table,
-                        bytecode_table,
-                        copy_table,
-                        q_enable,
-                        challenges: challenge_exprs,
-                    },
-                ),
-                challenges,
-            )
-        }
-
-        fn synthesize(
-            &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<F>,
-        ) -> Result<(), halo2_proofs::plonk::Error> {
-            let challenge_values = config.1.values(&layouter);
-
-            config.0.tx_table.load(
-                &mut layouter,
-                &self.external_data.txs,
-                self.external_data.max_txs,
-                0,
-                &challenge_values,
-            )?;
-
-            config.0.rw_table.load(
-                &mut layouter,
-                &self.external_data.rws.table_assignments(),
-                self.external_data.max_rws,
-                challenge_values.evm_word(),
-            )?;
-
-            config.0.bytecode_table.load(
-                &mut layouter,
-                self.external_data.bytecodes.values(),
-                &challenge_values,
-            )?;
-            self.synthesize_sub(&config.0, &challenge_values, &mut layouter)
-        }
-    }
+    use halo2_proofs::dev::{MockProver, VerifyFailure};
 
     /// Test copy circuit from copy events and test data
-    #[cfg(test)]
     pub fn test_copy_circuit<F: Field>(
         k: u32,
         copy_events: Vec<CopyEvent>,
@@ -887,7 +895,6 @@ pub mod dev {
     }
 
     /// Test copy circuit with the provided block witness
-    #[cfg(test)]
     pub fn test_copy_circuit_from_block<F: Field>(
         k: u32,
         block: Block<F>,
@@ -898,6 +905,7 @@ pub mod dev {
             block.circuits_params.max_copy_rows,
             ExternalData {
                 max_txs: block.circuits_params.max_txs,
+                max_calldata: block.circuits_params.max_calldata,
                 txs: block.txs,
                 max_rws: block.circuits_params.max_rws,
                 rws: block.rws,
@@ -952,6 +960,7 @@ mod tests {
             CircuitsParams {
                 max_rws: 8192,
                 max_copy_rows: 8192 + 2,
+                max_calldata: 5000,
                 ..Default::default()
             },
         )

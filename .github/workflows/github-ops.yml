@@ -1,0 +1,28 @@
+name: github-ops
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["*"]
+    types:
+      - requested
+      - completed
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    if: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Ping runner workflow
+        env:
+          # only needs github actions (write) `workflow_dispatch`
+          GH_OPS_PAT: ${{ secrets.PAT_OPS_TRIGGER }}
+          # change `zkevm-chain.yml` to the desired workflow
+        run: |
+          curl -H "authorization: token $GH_OPS_PAT" 'https://api.github.com/repos/privacy-scaling-explorations/github-ops/actions/workflows/zkevm-circuits.yml/dispatches' -d '{"ref": "master"}'
+

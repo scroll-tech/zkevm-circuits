@@ -36,6 +36,7 @@ pub enum AdviceColumn {
     StorageKeyByte0,
     StorageKeyByte1,
     Value,
+    ValuePrev,
     RwCounter,
     RwCounterLimb0,
     RwCounterLimb1,
@@ -67,6 +68,7 @@ impl AdviceColumn {
             Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
             Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
             Self::Value => config.rw_table.value,
+            Self::ValuePrev => config.rw_table.value_prev,
             Self::RwCounter => config.rw_table.rw_counter,
             Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
             Self::RwCounterLimb1 => config.sort_keys.rw_counter.limbs[1],
@@ -778,7 +780,7 @@ fn invalid_memory_address() {
 fn bad_initial_memory_value() {
     let rows = vec![Rw::Memory {
         rw_counter: 1,
-        is_write: false,
+        is_write: true,
         call_id: 1,
         memory_address: 10,
         byte: 0,
@@ -786,8 +788,8 @@ fn bad_initial_memory_value() {
 
     let v = Fr::from(200);
     let overrides = HashMap::from([
-        ((AdviceColumn::IsWrite, 0), Fr::from(1)),
         ((AdviceColumn::Value, 0), v),
+        ((AdviceColumn::ValuePrev, 0), v),
         ((AdviceColumn::IsZero, 0), Fr::zero()),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
         ((AdviceColumn::InitialValue, 0), v),
@@ -904,7 +906,10 @@ fn bad_initial_stack_value() {
         value: Word::from(10),
     }];
 
-    let overrides = HashMap::from([((AdviceColumn::InitialValue, 0), Fr::from(10))]);
+    let overrides = HashMap::from([
+        ((AdviceColumn::InitialValue, 0), Fr::from(10)),
+        ((AdviceColumn::ValuePrev, 0), Fr::from(10)),
+    ]);
 
     assert_error_matches(
         verify_with_overrides(rows, overrides),
@@ -923,7 +928,10 @@ fn bad_initial_tx_access_list_account_value() {
         is_warm_prev: false,
     }];
 
-    let overrides = HashMap::from([((AdviceColumn::InitialValue, 0), Fr::from(1))]);
+    let overrides = HashMap::from([
+        ((AdviceColumn::InitialValue, 0), Fr::from(1)),
+        ((AdviceColumn::ValuePrev, 0), Fr::from(1)),
+    ]);
 
     assert_error_matches(
         verify_with_overrides(rows, overrides),
@@ -944,6 +952,7 @@ fn bad_initial_tx_refund_value() {
     let overrides = HashMap::from([
         ((AdviceColumn::IsWrite, 0), Fr::from(1)),
         ((AdviceColumn::Value, 0), v),
+        ((AdviceColumn::ValuePrev, 0), v),
         ((AdviceColumn::IsZero, 0), Fr::zero()),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
         ((AdviceColumn::InitialValue, 0), v),
@@ -967,7 +976,10 @@ fn bad_initial_tx_log_value() {
         value: U256::from(300),
     }];
 
-    let overrides = HashMap::from([((AdviceColumn::InitialValue, 0), Fr::from(10))]);
+    let overrides = HashMap::from([
+        ((AdviceColumn::InitialValue, 0), Fr::from(10)),
+        ((AdviceColumn::ValuePrev, 0), Fr::from(10)),
+    ]);
 
     assert_error_matches(
         verify_with_overrides(rows, overrides),

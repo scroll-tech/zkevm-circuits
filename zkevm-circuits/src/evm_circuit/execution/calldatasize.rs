@@ -90,6 +90,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 mod test {
     use crate::evm_circuit::test::rand_bytes;
     use crate::test_util::CircuitTestBuilder;
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{address, bytecode, Word};
 
     use itertools::Itertools;
@@ -124,7 +125,12 @@ mod test {
             )
             .unwrap();
 
-            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+            CircuitTestBuilder::new_from_test_ctx(ctx)
+                .params(CircuitsParams {
+                    max_calldata: 1200,
+                    ..CircuitsParams::default()
+                })
+                .run();
         } else {
             let ctx = TestContext::<3, 1>::new(
                 None,
@@ -161,7 +167,12 @@ mod test {
             )
             .unwrap();
 
-            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+            CircuitTestBuilder::new_from_test_ctx(ctx)
+                .params(CircuitsParams {
+                    max_calldata: 600,
+                    ..CircuitsParams::default()
+                })
+                .run();
         };
     }
 

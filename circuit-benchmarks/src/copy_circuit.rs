@@ -35,6 +35,9 @@ mod tests {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
+        //Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "Copy Circuit";
+
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
@@ -59,7 +62,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("Copy_circuit Proof generation with {} rows", degree);
+        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -74,7 +77,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "Copy_circuit Proof verification");
+        let start3 = start_timer!(|| format!("{} Proof verification", BENCHMARK_ID));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

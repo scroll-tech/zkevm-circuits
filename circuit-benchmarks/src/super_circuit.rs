@@ -29,6 +29,9 @@ mod tests {
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_super_circuit_prover() {
+        //Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "Super Circuit";
+
         let degree: u32 = var("DEGREE")
             .expect("No DEGREE env var was provided")
             .parse()
@@ -82,6 +85,7 @@ mod tests {
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             max_inner_blocks: MAX_INNER_BLOCKS,
             keccak_padding: None,
         };
@@ -107,7 +111,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("SuperCircuit Proof generation with degree = {}", degree);
+        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -129,7 +133,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "SuperCircuit Proof verification");
+        let start3 = start_timer!(|| format!("{} Proof verification", BENCHMARK_ID));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

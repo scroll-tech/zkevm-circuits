@@ -104,8 +104,6 @@ pub enum Target {
     TxRefund,
     /// Means the target of the operation is the Account.
     Account,
-    /// Means the target of the operation is the AccountDestructed.
-    AccountDestructed,
     /// Means the target of the operation is the CallContext.
     CallContext,
     /// Means the target of the operation is the TxReceipt.
@@ -608,55 +606,6 @@ impl Op for AccountOp {
     }
 }
 
-/// Represents an Account destruction implied by a `SELFDESTRUCT` step of the
-/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
-#[derive(Clone, PartialEq, Eq)]
-pub struct AccountDestructedOp {
-    /// Transaction ID: Transaction index in the block starting at 1.
-    pub tx_id: usize,
-    /// Account Address
-    pub address: Address,
-    /// Whether the account is destructed.
-    pub is_destructed: bool,
-    /// Whether the account was previously destructed.
-    pub is_destructed_prev: bool,
-}
-
-impl fmt::Debug for AccountDestructedOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AccountDestructedOp { ")?;
-        f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, is_destructed_prev: {:?}, is_destructed: {:?}",
-            self.tx_id, self.address, self.is_destructed_prev, self.is_destructed
-        ))?;
-        f.write_str(" }")
-    }
-}
-
-impl PartialOrd for AccountDestructedOp {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for AccountDestructedOp {
-    fn cmp(&self, other: &Self) -> Ordering {
-        (&self.tx_id, &self.address).cmp(&(&other.tx_id, &other.address))
-    }
-}
-
-impl Op for AccountDestructedOp {
-    fn into_enum(self) -> OpEnum {
-        OpEnum::AccountDestructed(self)
-    }
-
-    fn reverse(&self) -> Self {
-        let mut rev = self.clone();
-        swap(&mut rev.is_destructed, &mut rev.is_destructed_prev);
-        rev
-    }
-}
-
 /// Represents a field parameter of the CallContext that can be accessed via EVM
 /// execution.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -971,8 +920,6 @@ pub enum OpEnum {
     TxRefund(TxRefundOp),
     /// Account
     Account(AccountOp),
-    /// AccountDestructed
-    AccountDestructed(AccountDestructedOp),
     /// CallContext
     CallContext(CallContextOp),
     /// TxReceipt

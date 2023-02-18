@@ -673,4 +673,16 @@ mod eth_types_test {
         assert_eq!(word_from_u128, word_from_str);
         Ok(())
     }
+
+    #[test]
+    fn creation_tx_into_tx_req() -> Result<(), Error> {
+        let tx = &geth_types::Transaction {
+            to: None,
+            ..Default::default()
+        };
+
+        let req: ethers_core::types::TransactionRequest = tx.into();
+        assert_eq!(req.to, None);
+        Ok(())
+    }
 }

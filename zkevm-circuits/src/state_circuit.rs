@@ -20,10 +20,8 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Cell, Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{
-        Advice, Assigned, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells,
-    },
+    circuit::{AssignedCell, Cell, Layouter, Region, Value},
+    plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
@@ -43,6 +41,9 @@ use self::{
     constraint_builder::{MptUpdateTableQueries, RwTableQueries},
     lexicographic_ordering::LimbIndex,
 };
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
@@ -454,7 +455,6 @@ impl<F: Field> StateCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
 impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     type Config = StateCircuitConfig<F>;
 
@@ -555,7 +555,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 impl<F: Field> Circuit<F> for StateCircuit<F>
 where
     F: Field,
@@ -621,9 +621,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             field_tag: meta.query_advice(c.rw_table.field_tag, Rotation::cur()),
             storage_key: meta.query_advice(c.rw_table.storage_key, Rotation::cur()),
             value: meta.query_advice(c.rw_table.value, Rotation::cur()),
-            // TODO: we should constain value.prev() <-> value_prev.cur() later
-            // see https://github.com/privacy-scaling-explorations/zkevm-specs/issues/202 for more details
             value_prev: meta.query_advice(c.rw_table.value, Rotation::prev()),
+            value_prev_column: meta.query_advice(c.rw_table.value_prev, Rotation::cur()),
         },
         // TODO: clean this up
         mpt_update_table: MptUpdateTableQueries {

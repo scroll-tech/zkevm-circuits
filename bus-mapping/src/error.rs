@@ -158,10 +158,10 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             OpcodeId::EXP => OogError::Exp,
             OpcodeId::SHA3 => OogError::Sha3,
             OpcodeId::EXTCODECOPY => OogError::ExtCodeCopy,
-            OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
             OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
                 OogError::Call
             }
+            OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
             OpcodeId::CREATE2 => OogError::Create2,
             OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
             _ => OogError::Constant,

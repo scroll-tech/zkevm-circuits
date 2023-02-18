@@ -72,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
         cb.condition(is_mstore8.expr(), |cb| {
             cb.memory_lookup(
-                is_store.clone(),
+                1.expr(),
                 from_bytes::expr(&address.cells),
                 value.cells[0].expr(),
                 None,

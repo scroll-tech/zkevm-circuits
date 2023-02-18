@@ -24,6 +24,9 @@ mod tests {
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_state_circuit_prover() {
+        //Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "State Circuit";
+
         let degree: u32 = var("DEGREE")
             .expect("No DEGREE env var was provided")
             .parse()
@@ -54,7 +57,7 @@ mod tests {
         let instances: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
         // Bench proof generation time
-        let proof_message = format!("State Circuit Proof generation with degree = {}", degree);
+        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -76,7 +79,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "State Circuit Proof verification");
+        let start3 = start_timer!(|| format!("{} Proof verification", BENCHMARK_ID));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

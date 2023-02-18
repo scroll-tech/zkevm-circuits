@@ -62,6 +62,12 @@ pub struct CircuitsParams {
     pub max_exp_steps: usize,
     /// Maximum number of bytes supported in the Bytecode Circuit
     pub max_bytecode: usize,
+    /// Pad evm circuit number of rows.
+    /// When 0, the EVM circuit number of row will be dynamically calculated, so
+    /// the same circuit will not be able to proof different witnesses. In this
+    /// case it will contain as many rows for all steps + 1 row
+    /// for EndBlock.
+    pub max_evm_rows: usize,
     // TODO: Rename for consistency
     /// Pad the keccak circuit with this number of invocations to a static
     /// capacity.  Number of keccak_f that the Keccak circuit will support.
@@ -81,6 +87,7 @@ impl Default for CircuitsParams {
             max_copy_rows: 1000,
             max_exp_steps: 1000,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
         }
     }
@@ -540,49 +547,42 @@ fn keccak_inputs_pi_circuit(
     transactions: &[Transaction],
     max_txs: usize,
 ) -> Vec<u8> {
-    // TODO: add history hashes and state roots
     let dummy_tx_hash = get_dummy_tx_hash(chain_id);
+    // TODO: use real-world withdraw trie root
+    let withdraw_trie_root = Word::zero(); // zero for now
 
-    log::debug!(
-        "DUMMY TX HASH for CHAIN_ID({}): {}",
-        chain_id,
-        hex::encode(dummy_tx_hash.to_fixed_bytes())
-    );
-
-    let end_state_root = block_headers
-        .last_key_value()
-        .map(|(_, blk)| blk.eth_block.state_root.to_word())
-        .unwrap_or(prev_state_root);
-
-    let result = block_headers
-        .iter()
-        .flat_map(|(block_num, block)| {
+    let result = iter::empty()
+        // state roots
+        .chain(prev_state_root.to_be_bytes())
+        .chain(
+            block_headers
+                .last_key_value()
+                .map(|(_, blk)| blk.eth_block.state_root)
+                .unwrap_or(H256(prev_state_root.to_be_bytes()))
+                .to_fixed_bytes(),
+        )
+        // withdraw trie root
+        .chain(withdraw_trie_root.to_be_bytes())
+        .chain(block_headers.iter().flat_map(|(block_num, block)| {
             let num_txs = transactions
                 .iter()
                 .filter(|tx| tx.block_num == *block_num)
-                .count() as u64;
+                .count() as u16;
+            let parent_hash = block.eth_block.parent_hash;
+            let block_hash = block.eth_block.hash.unwrap_or(H256::zero());
+            let num_l1_msgs = 0_u16; // 0 for now
 
             iter::empty()
                 // Block Values
-                .chain(block.coinbase.to_fixed_bytes())
-                .chain(block.timestamp.as_u64().to_be_bytes())
+                .chain(block_hash.to_fixed_bytes())
+                .chain(parent_hash.to_fixed_bytes()) // parent hash
                 .chain(block.number.as_u64().to_be_bytes())
-                .chain(block.difficulty.to_be_bytes())
-                .chain(block.gas_limit.to_be_bytes())
+                .chain(block.timestamp.as_u64().to_be_bytes())
                 .chain(block.base_fee.to_be_bytes())
-                .chain(block.chain_id.to_be_bytes())
+                .chain(block.gas_limit.to_be_bytes())
                 .chain(num_txs.to_be_bytes())
-        })
-        // history_hashes
-        // .chain(
-        //     block
-        //         .history_hashes
-        //         .iter()
-        //         .flat_map(|tx_hash| tx_hash.to_fixed_bytes()),
-        // )
-        // state roots
-        .chain(prev_state_root.to_be_bytes())
-        .chain(end_state_root.to_be_bytes())
+                .chain(num_l1_msgs.to_be_bytes())
+        }))
         // Tx Hashes
         .chain(transactions.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
         .chain(

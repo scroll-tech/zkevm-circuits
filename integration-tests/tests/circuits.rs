@@ -1,58 +1,43 @@
+macro_rules! run_test {
+    ($test_instance:expr, $block_tag:expr, $real_prover:expr) => {
+        log_init();
+
+        let mut test = $test_instance.lock().await;
+        test.test_at_block_tag($block_tag, $real_prover).await;
+    };
+}
+
 macro_rules! declare_tests {
     (($name:ident, $block_tag:expr),$real_prover:expr) => {
         paste! {
             #[tokio::test]
             async fn [<serial_test_evm_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = None;
-                test_circuit_at_block::<EvmCircuit::<Fr>>(
-                    "evm", EVM_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
+                run_test! (EVM_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_state_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = if $real_prover { Some((*STATE_CIRCUIT_KEY).clone()) } else { None };
-                test_circuit_at_block::<StateCircuit::<Fr>>
-                    ("state", STATE_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
+                run_test! (STATE_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_tx_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = if $real_prover { Some((*TX_CIRCUIT_KEY).clone()) } else { None };
-                test_circuit_at_block::<TxCircuit::<Fr>>
-                    ("tx", TX_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
+                run_test! (TX_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_bytecode_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = if $real_prover { Some((*BYTECODE_CIRCUIT_KEY).clone()) } else { None };
-                test_circuit_at_block::<BytecodeCircuit::<Fr>>
-                    ("bytecode", BYTECODE_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
+                run_test! (BYTECODE_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_copy_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = if $real_prover { Some((*COPY_CIRCUIT_KEY).clone()) } else { None };
-                test_circuit_at_block::<CopyCircuit::<Fr>>
-                    ("copy", COPY_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
+                run_test! (COPY_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_super_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = None;
-                test_circuit_at_block::<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>>
-                    ("super", SUPER_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
+                run_test! (SUPER_CIRCUIT_TEST, $block_tag, $real_prover);
             }
         }
     };
@@ -61,16 +46,14 @@ macro_rules! declare_tests {
 macro_rules! unroll_tests {
     ($($arg:tt),*) => {
         use paste::paste;
-        use zkevm_circuits::{
-            state_circuit::StateCircuit,
-            super_circuit::SuperCircuit,
-            tx_circuit::TxCircuit,
-            evm_circuit::EvmCircuit,
-            bytecode_circuit::circuit::BytecodeCircuit,
-            copy_circuit::CopyCircuit
+        use integration_tests::integration_test_circuits::{
+            EVM_CIRCUIT_TEST,
+            STATE_CIRCUIT_TEST,
+            TX_CIRCUIT_TEST,
+            BYTECODE_CIRCUIT_TEST,
+            COPY_CIRCUIT_TEST,
+            SUPER_CIRCUIT_TEST
         };
-        use halo2_proofs::halo2curves::bn256::Fr;
-        use integration_tests::integration_test_circuits::*;
         use integration_tests::log_init;
         mod real_prover {
             use super::*;

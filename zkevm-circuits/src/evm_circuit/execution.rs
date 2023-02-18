@@ -85,6 +85,7 @@ mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_precompile_failed;
+mod error_return_data_oo_bound;
 mod error_stack;
 mod exp;
 mod extcodecopy;
@@ -154,6 +155,7 @@ use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_precompile_failed::ErrorPrecompileFailedGadget;
+use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
@@ -317,8 +319,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_contract_address_collision:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
-    error_return_data_out_of_bound:
-        DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
+    error_return_data_out_of_bound: ErrorReturnDataOutOfBoundGadget<F>,
     error_precompile_failed: ErrorPrecompileFailedGadget<F>,
 }
 
@@ -833,7 +834,7 @@ impl<F: Field> ExecutionConfig<F> {
     pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
         // Start at 1 so we can be sure there is an unused `next` row available
         let mut num_rows = 1;
-        let evm_rows = block.evm_circuit_pad_to;
+        let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
             for transaction in &block.txs {
                 for step in &transaction.steps {
@@ -842,7 +843,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
             num_rows += 1; // EndBlock
         } else {
-            num_rows = block.evm_circuit_pad_to;
+            num_rows = block.circuits_params.max_evm_rows;
         }
         num_rows
     }
@@ -936,7 +937,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
                     .peekable();
 
-                let evm_rows = block.evm_circuit_pad_to;
+                let evm_rows = block.circuits_params.max_evm_rows;
                 let no_padding = evm_rows == 0;
 
                 // part1: assign real steps
@@ -1106,6 +1107,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
+        region.name_column(|| "EVM_q_step", self.q_step);
         region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
         region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
         region.name_column(|| "Copy_Constr_const", self.constants);

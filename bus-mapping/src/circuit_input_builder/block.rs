@@ -155,6 +155,8 @@ pub struct Block {
     pub exp_events: Vec<ExpEvent>,
     /// Circuits Setup Paramteres
     pub circuits_params: CircuitsParams,
+    /// chain id
+    pub chain_id: Word,
 }
 
 impl Block {
@@ -198,6 +200,7 @@ impl Block {
                 },
             },
             exp_events: Vec::new(),
+            chain_id,
             circuits_params,
             ..Default::default()
         };
@@ -217,7 +220,7 @@ impl Block {
             .iter()
             .next()
             .map(|(_, h)| h.chain_id)
-            .unwrap_or_default()
+            .unwrap_or(self.chain_id)
     }
 
     /// ..

@@ -363,6 +363,36 @@ impl<F: Field> MulAddChip<F> {
 
         Ok(())
     }
+
+    /// Returns the list of ALL the gadget advice columns.
+    fn advice_columns(&self) -> Vec<Column<Advice>> {
+        vec![
+            self.config.col0,
+            self.config.col1,
+            self.config.col2,
+            self.config.col3,
+            self.config.col4,
+        ]
+    }
+
+    /// Returns the String annotations associated to each column of the gadget.
+    pub fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("col0"),
+            String::from("col1"),
+            String::from("col2"),
+            String::from("col3"),
+            String::from("col4"),
+        ]
+    }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
+        self.advice_columns()
+            .iter()
+            .zip(self.annotations().iter())
+            .for_each(|(&col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), col))
+    }
 }
 
 #[cfg(test)]
