@@ -77,10 +77,10 @@ mod dup;
 mod end_block;
 mod end_inner_block;
 mod end_tx;
+mod error_code_store;
 mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
-mod error_oog_codestore;
 mod error_oog_constant;
 mod error_oog_log;
 mod error_oog_sload_sstore;
@@ -147,10 +147,10 @@ use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_inner_block::EndInnerBlockGadget;
 use end_tx::EndTxGadget;
+use error_code_store::ErrorCodeStoreGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
-use error_oog_codestore::ErrorOOGCodeStoreGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
@@ -308,7 +308,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_exp: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXP }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
-    error_oog_code_store: ErrorOOGCodeStoreGadget<F>,
+    error_code_store: ErrorCodeStoreGadget<F>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
@@ -557,7 +557,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_exp: configure_gadget!(),
             error_oog_create2: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
-            error_oog_code_store: configure_gadget!(),
+            error_code_store: configure_gadget!(),
             error_insufficient_balance: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
             error_invalid_opcode: configure_gadget!(),
@@ -1327,8 +1327,8 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_oog_self_destruct)
             }
 
-            ExecutionState::ErrorOutOfGasCodeStore => {
-                assign_exec_step!(self.error_oog_code_store)
+            ExecutionState::ErrorCodeStore => {
+                assign_exec_step!(self.error_code_store)
             }
             ExecutionState::ErrorStack => {
                 assign_exec_step!(self.error_stack)
@@ -1369,22 +1369,22 @@ impl<F: Field> ExecutionConfig<F> {
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
         // enable with `CHECK_RW_LOOKUP=true`
-        if *CHECK_RW_LOOKUP {
-            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
-                && step.rw_indices.is_empty();
-            if !is_padding_step {
-                // expensive function call
-                Self::check_rw_lookup(
-                    &assigned_stored_expressions,
-                    offset,
-                    step,
-                    call,
-                    transaction,
-                    block,
-                    region.challenges(),
-                );
-            }
+        //if *CHECK_RW_LOOKUP {
+        let is_padding_step =
+            matches!(step.execution_state, ExecutionState::EndBlock) && step.rw_indices.is_empty();
+        if !is_padding_step {
+            // expensive function call
+            Self::check_rw_lookup(
+                &assigned_stored_expressions,
+                offset,
+                step,
+                call,
+                transaction,
+                block,
+                region.challenges(),
+            );
         }
+        //}
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_GAS,
+        param::{N_BYTES_GAS, N_BYTES_U64},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder,
@@ -16,20 +16,25 @@ use crate::{
 use eth_types::{evm_types::GasCost, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-/// Gadget for code store oog
+const MAXCODESIZE: u64 = 0x6000u64;
+
+/// Gadget for code store oog and max code size exceed
 #[derive(Clone, Debug)]
-pub(crate) struct ErrorOOGCodeStoreGadget<F> {
+pub(crate) struct ErrorCodeStoreGadget<F> {
     opcode: Cell<F>,
     is_create: Cell<F>,
     memory_address: MemoryAddressGadget<F>,
+    // check for CodeStoreOutOfGas error
     code_store_gas_insufficient: LtGadget<F, N_BYTES_GAS>,
+    // check for MaxCodeSizeExceeded error
+    max_code_size_exceed: LtGadget<F, N_BYTES_U64>,
     restore_context: RestoreContextGadget<F>,
 }
 
-impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
-    const NAME: &'static str = "ErrorOutOfGasCodeStore";
+impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
+    const NAME: &'static str = "ErrorCodeStore";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasCodeStore;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorCodeStore;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
@@ -52,10 +57,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
             cb.curr.state.gas_left.expr(),
             GasCost::CODE_DEPOSIT_BYTE_COST.expr() * memory_address.length(),
         );
-        cb.require_equal(
-            "CODE_DEPOSIT_BYTE_COST * length > step gas left",
-            code_store_gas_insufficient.expr(),
-            1.expr(),
+
+        let max_code_size_exceed =
+            LtGadget::construct(cb, MAXCODESIZE.expr(), memory_address.length());
+
+        // check must be one of CodeStoreOutOfGas or MaxCodeSizeExceeded
+        // cb.require_equal(
+        //     " CodeStoreOutOfGas or MaxCodeSizeExceeded",
+        //     code_store_gas_insufficient.expr() + max_code_size_exceed.expr(),
+        //     1.expr(),
+        // );
+        cb.require_in_set(
+            "CodeStoreOutOfGas or MaxCodeSizeExceeded",
+            code_store_gas_insufficient.expr() + max_code_size_exceed.expr(),
+            vec![1.expr(), 2.expr()],
         );
 
         // restore context as in internal call
@@ -77,6 +92,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
             is_create,
             memory_address,
             code_store_gas_insufficient,
+            max_code_size_exceed,
             restore_context,
         }
     }
@@ -94,6 +110,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
+        println!("op code is {:?}", opcode);
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
         self.memory_address
             .assign(region, offset, memory_offset, length)?;
@@ -105,6 +122,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCodeStoreGadget<F> {
             offset,
             F::from(step.gas_left),
             F::from(GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * length.as_u64()),
+        )?;
+
+        self.max_code_size_exceed.assign(
+            region,
+            offset,
+            F::from(MAXCODESIZE),
+            F::from(length.as_u64()),
         )?;
         self.restore_context
             .assign(region, offset, block, call, step, 3)?;
@@ -148,7 +172,28 @@ mod test {
             PUSH1(memory_address)
             MSTORE
             PUSH2(5) // length to copy
-            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap())
+            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap()) // offset
+
+        };
+        code.write_op(OpcodeId::RETURN);
+
+        code
+    }
+
+    fn initialization_bytecode_maxcodesize() -> Bytecode {
+        let memory_bytes = [0x60; 10];
+        let memory_address = 0;
+        let memory_value = Word::from_big_endian(&memory_bytes);
+        //TODO: use const for maxcodesize in test
+        let code_len = 0x6000 + 1;
+        let mut code = bytecode! {
+            PUSH10(0x00)
+            PUSH32(code_len)
+            MSTORE
+            PUSH2(code_len) // length to copy
+            //PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap()) // offset
+            PUSH2(0x00) // offset
+
         };
         code.write_op(OpcodeId::RETURN);
 
@@ -184,6 +229,55 @@ mod test {
         code
     }
 
+    fn creator_bytecode_maxcodesize(
+        initialization_bytecode: Bytecode,
+        is_create2: bool,
+    ) -> Bytecode {
+        let initialization_bytes = initialization_bytecode.code();
+        let mut code = Bytecode::default();
+        // let mut code = bytecode! {
+        //     PUSH32(Word::from_big_endian(&initialization_bytes))
+        //     PUSH1(0)
+        //     MSTORE
+        // };
+
+        /////construct maxcodesize + 1 memory bytes
+        let code_creator: Vec<u8> = initialization_bytes
+            .to_vec()
+            .iter()
+            .cloned()
+            .chain(0u8..((32 - initialization_bytes.len() % 32) as u8))
+            .collect();
+        for (index, word) in code_creator.chunks(32).enumerate() {
+            code.push(32, Word::from_big_endian(word));
+            code.push(32, Word::from(index * 32));
+            code.write_op(OpcodeId::MSTORE);
+        }
+
+        //////
+
+        if is_create2 {
+            code.append(&bytecode! {PUSH1(45)}); // salt;
+        }
+        code.append(&bytecode! {
+            PUSH32(initialization_bytes.len()) // size
+            PUSH2(0x00) // offset
+            PUSH2(23414) // value
+        });
+        code.write_op(if is_create2 {
+            OpcodeId::CREATE2
+        } else {
+            OpcodeId::CREATE
+        });
+        code.append(&bytecode! {
+            PUSH1(0)
+            PUSH1(0)
+            RETURN
+        });
+
+        code
+    }
+
     fn test_context(caller: Account) -> TestContext<2, 1> {
         TestContext::new(
             None,
@@ -197,7 +291,7 @@ mod test {
                 txs[0]
                     .from(accs[0].address)
                     .to(accs[1].address)
-                    .gas(53800u64.into());
+                    .gas(103800u64.into());
             },
             |block, _| block,
         )
@@ -209,6 +303,23 @@ mod test {
         for is_create2 in [false, true] {
             let initialization_code = initialization_bytecode();
             let root_code = creator_bytecode(initialization_code, is_create2);
+            let caller = Account {
+                address: *CALLER_ADDRESS,
+                code: root_code.into(),
+                nonce: Word::one(),
+                balance: eth(10),
+                ..Default::default()
+            };
+            run_test_circuits(test_context(caller));
+        }
+    }
+
+    #[test]
+    fn test_create_max_code_size_exceed() {
+        //for is_create2 in [false, true] {
+        for is_create2 in [false] {
+            let initialization_code = initialization_bytecode_maxcodesize();
+            let root_code = creator_bytecode_maxcodesize(initialization_code, is_create2);
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),

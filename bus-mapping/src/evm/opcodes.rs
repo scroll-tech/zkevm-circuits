@@ -275,6 +275,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::StackOverflow => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::CodeStoreOutOfGas => Some(ErrorOOGCodeStore::gen_associated_ops),
+        ExecError::MaxCodeSizeExceeded => Some(ErrorOOGCodeStore::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
 
@@ -334,11 +335,9 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        log::warn!(
+        println!(
             "geth error {:?} occurred in  {:?} at pc {:?}",
-            exec_error,
-            geth_step.op,
-            geth_step.pc
+            exec_error, geth_step.op, geth_step.pc
         );
 
         exec_step.error = Some(exec_error.clone());

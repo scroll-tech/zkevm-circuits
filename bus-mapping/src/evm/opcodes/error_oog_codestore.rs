@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    error::ExecError,
+    error::{get_step_reported_error, ExecError},
     evm::Opcode,
     operation::CallContextField,
     Error,
@@ -17,8 +17,14 @@ impl Opcode for ErrorOOGCodeStore {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
+        let next_step = geth_steps.get(1);
 
-        exec_step.error = Some(ExecError::CodeStoreOutOfGas);
+        exec_step.error = state.get_step_err(geth_step, next_step)?;
+
+        assert!(
+            exec_step.error == Some(ExecError::CodeStoreOutOfGas)
+                || exec_step.error == Some(ExecError::MaxCodeSizeExceeded)
+        );
 
         let offset = geth_step.stack.nth_last(0)?;
         let length = geth_step.stack.nth_last(1)?;
