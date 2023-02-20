@@ -63,7 +63,7 @@ jobs:
           go-version: ~1.18
       # https://github.com/actions/cache/issues/133#issuecomment-599102035
       - name: Change cached dir owner
-        run: [ -d ~/go/pkg/mod/ ] && sudo rm -rf ~/go/pkg/mod/*
+        run: sudo rm -rf ~/go/pkg/mod/* &>/dev/null
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -118,7 +118,7 @@ jobs:
         run: rustup target add ${{ matrix.target }}
       # https://github.com/actions/cache/issues/133#issuecomment-599102035
       - name: Change cached dir owner
-        run: [ -d ~/go/pkg/mod/ ] && sudo rm -rf ~/go/pkg/mod/*
+        run: sudo rm -rf ~/go/pkg/mod/* &>/dev/null
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -165,7 +165,7 @@ jobs:
           override: false
       # https://github.com/actions/cache/issues/133#issuecomment-599102035
       - name: Change cached dir owner
-        run: [ -d ~/go/pkg/mod/ ] && sudo rm -rf ~/go/pkg/mod/*
+        run: sudo rm -rf ~/go/pkg/mod/* &>/dev/null
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -207,7 +207,7 @@ jobs:
           override: false
       # https://github.com/actions/cache/issues/133#issuecomment-599102035
       - name: Change cached dir owner
-        run: [ -d ~/go/pkg/mod/ ] && sudo rm -rf ~/go/pkg/mod/*
+        run: sudo rm -rf ~/go/pkg/mod/* &>/dev/null
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -255,7 +255,7 @@ jobs:
           override: false
       # https://github.com/actions/cache/issues/133#issuecomment-599102035
       - name: Change cached dir owner
-        run: [ -d ~/go/pkg/mod/ ] && sudo rm -rf ~/go/pkg/mod/*
+        run: sudo rm -rf ~/go/pkg/mod/* &>/dev/null
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
