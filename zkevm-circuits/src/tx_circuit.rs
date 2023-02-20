@@ -16,7 +16,10 @@ use crate::witness::{RlpDataType, RlpTxTag, Transaction};
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 #[cfg(not(feature = "enable-sign-verify"))]
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness};
-use eth_types::{sign_types::SignData, {Field, ToLittleEndian, ToScalar}, ToAddress};
+use eth_types::{
+    sign_types::SignData,
+    ToAddress, {Field, ToLittleEndian, ToScalar},
+};
 #[cfg(not(feature = "enable-sign-verify"))]
 use ethers_core::utils::keccak256;
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
@@ -1675,7 +1678,8 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
 
         // assert tx.caller_address == recovered_pk
         for (sign_data, tx) in keccak_inputs_sign_verify(&sign_datas)
-            .into_iter().zip(self.txs.iter())
+            .into_iter()
+            .zip(self.txs.iter())
         {
             let pk_hash = keccak(&sign_data);
             let address = pk_hash.to_address();
