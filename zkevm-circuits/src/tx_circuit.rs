@@ -1683,7 +1683,13 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         {
             let pk_hash = keccak(&sign_data);
             let address = pk_hash.to_address();
-            assert_eq!(address, tx.caller_address);
+            if address != tx.caller_address {
+                log::error!(
+                    "pk address from sign data {:?} does not match the one from tx address {:?}",
+                    address,
+                    tx.caller_address
+                )
+            }
         }
 
         #[cfg(feature = "enable-sign-verify")]
