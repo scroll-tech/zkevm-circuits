@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    error::{get_step_reported_error, ExecError},
+    error::ExecError,
     evm::Opcode,
     operation::CallContextField,
     Error,
@@ -8,9 +8,9 @@ use crate::{
 use eth_types::GethExecStep;
 
 #[derive(Debug, Copy, Clone)]
-pub struct ErrorOOGCodeStore;
+pub struct ErrorCodeStore;
 
-impl Opcode for ErrorOOGCodeStore {
+impl Opcode for ErrorCodeStore {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],

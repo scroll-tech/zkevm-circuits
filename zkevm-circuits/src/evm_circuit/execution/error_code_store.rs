@@ -58,15 +58,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             GasCost::CODE_DEPOSIT_BYTE_COST.expr() * memory_address.length(),
         );
 
+        // constrain code size > MAXCODESIZE
         let max_code_size_exceed =
             LtGadget::construct(cb, MAXCODESIZE.expr(), memory_address.length());
 
         // check must be one of CodeStoreOutOfGas or MaxCodeSizeExceeded
-        // cb.require_equal(
-        //     " CodeStoreOutOfGas or MaxCodeSizeExceeded",
-        //     code_store_gas_insufficient.expr() + max_code_size_exceed.expr(),
-        //     1.expr(),
-        // );
         cb.require_in_set(
             "CodeStoreOutOfGas or MaxCodeSizeExceeded",
             code_store_gas_insufficient.expr() + max_code_size_exceed.expr(),
@@ -110,7 +106,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        println!("op code is {:?}", opcode);
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
         self.memory_address
             .assign(region, offset, memory_offset, length)?;
@@ -153,6 +148,8 @@ mod test {
         static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
     }
 
+    const MAXCODESIZE: u64 = 0x6000u64;
+
     fn run_test_circuits(ctx: TestContext<2, 1>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
@@ -162,37 +159,18 @@ mod test {
             .run();
     }
 
-    // RETURN or REVERT with data of [0x60; 5]
-    fn initialization_bytecode() -> Bytecode {
+    fn initialization_bytecode(is_oog: bool) -> Bytecode {
         let memory_bytes = [0x60; 10];
-        let memory_address = 0;
         let memory_value = Word::from_big_endian(&memory_bytes);
+        let code_len = if is_oog { 0 } else { MAXCODESIZE + 1 };
+
         let mut code = bytecode! {
             PUSH10(memory_value)
-            PUSH1(memory_address)
-            MSTORE
-            PUSH2(5) // length to copy
-            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap()) // offset
-
-        };
-        code.write_op(OpcodeId::RETURN);
-
-        code
-    }
-
-    fn initialization_bytecode_maxcodesize() -> Bytecode {
-        let memory_bytes = [0x60; 10];
-        let memory_address = 0;
-        let memory_value = Word::from_big_endian(&memory_bytes);
-        //TODO: use const for maxcodesize in test
-        let code_len = 0x6000 + 1;
-        let mut code = bytecode! {
-            PUSH10(0x00)
             PUSH32(code_len)
             MSTORE
-            PUSH2(code_len) // length to copy
-            //PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap()) // offset
-            PUSH2(0x00) // offset
+            PUSH2(if is_oog { 5 } else { code_len}) // length to copy
+            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap()) // offset
+            //PUSH2(0x00) // offset
 
         };
         code.write_op(OpcodeId::RETURN);
@@ -202,46 +180,9 @@ mod test {
 
     fn creator_bytecode(initialization_bytecode: Bytecode, is_create2: bool) -> Bytecode {
         let initialization_bytes = initialization_bytecode.code();
-        let mut code = bytecode! {
-            PUSH32(Word::from_big_endian(&initialization_bytes))
-            PUSH1(0)
-            MSTORE
-        };
-        if is_create2 {
-            code.append(&bytecode! {PUSH1(45)}); // salt;
-        }
-        code.append(&bytecode! {
-            PUSH1(initialization_bytes.len()) // size
-            PUSH1(32 - initialization_bytes.len()) // length
-            PUSH2(23414) // value
-        });
-        code.write_op(if is_create2 {
-            OpcodeId::CREATE2
-        } else {
-            OpcodeId::CREATE
-        });
-        code.append(&bytecode! {
-            PUSH1(0)
-            PUSH1(0)
-            RETURN
-        });
-
-        code
-    }
-
-    fn creator_bytecode_maxcodesize(
-        initialization_bytecode: Bytecode,
-        is_create2: bool,
-    ) -> Bytecode {
-        let initialization_bytes = initialization_bytecode.code();
         let mut code = Bytecode::default();
-        // let mut code = bytecode! {
-        //     PUSH32(Word::from_big_endian(&initialization_bytes))
-        //     PUSH1(0)
-        //     MSTORE
-        // };
 
-        /////construct maxcodesize + 1 memory bytes
+        //construct maxcodesize + 1 memory bytes
         let code_creator: Vec<u8> = initialization_bytes
             .to_vec()
             .iter()
@@ -253,8 +194,6 @@ mod test {
             code.push(32, Word::from(index * 32));
             code.write_op(OpcodeId::MSTORE);
         }
-
-        //////
 
         if is_create2 {
             code.append(&bytecode! {PUSH1(45)}); // salt;
@@ -278,7 +217,7 @@ mod test {
         code
     }
 
-    fn test_context(caller: Account) -> TestContext<2, 1> {
+    fn test_context(caller: Account, is_oog: bool) -> TestContext<2, 1> {
         TestContext::new(
             None,
             |accs| {
@@ -291,7 +230,11 @@ mod test {
                 txs[0]
                     .from(accs[0].address)
                     .to(accs[1].address)
-                    .gas(103800u64.into());
+                    .gas(if is_oog {
+                        53800u64.into()
+                    } else {
+                        103800u64.into()
+                    });
             },
             |block, _| block,
         )
@@ -301,7 +244,7 @@ mod test {
     #[test]
     fn test_create_codestore_oog() {
         for is_create2 in [false, true] {
-            let initialization_code = initialization_bytecode();
+            let initialization_code = initialization_bytecode(true);
             let root_code = creator_bytecode(initialization_code, is_create2);
             let caller = Account {
                 address: *CALLER_ADDRESS,
@@ -310,16 +253,15 @@ mod test {
                 balance: eth(10),
                 ..Default::default()
             };
-            run_test_circuits(test_context(caller));
+            run_test_circuits(test_context(caller, true));
         }
     }
 
     #[test]
     fn test_create_max_code_size_exceed() {
-        //for is_create2 in [false, true] {
-        for is_create2 in [false] {
-            let initialization_code = initialization_bytecode_maxcodesize();
-            let root_code = creator_bytecode_maxcodesize(initialization_code, is_create2);
+        for is_create2 in [false, true] {
+            let initialization_code = initialization_bytecode(false);
+            let root_code = creator_bytecode(initialization_code, is_create2);
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
@@ -327,7 +269,7 @@ mod test {
                 balance: eth(10),
                 ..Default::default()
             };
-            run_test_circuits(test_context(caller));
+            run_test_circuits(test_context(caller, false));
         }
     }
 }

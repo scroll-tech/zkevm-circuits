@@ -57,10 +57,10 @@ mod stackonlyop;
 mod stop;
 mod swap;
 
+mod error_codestore;
 mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
-mod error_oog_codestore;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_stack_oog_constant;
@@ -82,10 +82,10 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::Create;
 use dup::Dup;
+use error_codestore::ErrorCodeStore;
 use error_invalid_jump::InvalidJump;
 use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
-use error_oog_codestore::ErrorOOGCodeStore;
 use error_oog_log::ErrorOOGLog;
 use error_oog_sload_sstore::OOGSloadSstore;
 use error_stack_oog_constant::ErrorStackOogConstant;
@@ -274,8 +274,8 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::OutOfGas(OogError::Constant) => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::StackOverflow => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorStackOogConstant::gen_associated_ops),
-        ExecError::CodeStoreOutOfGas => Some(ErrorOOGCodeStore::gen_associated_ops),
-        ExecError::MaxCodeSizeExceeded => Some(ErrorOOGCodeStore::gen_associated_ops),
+        ExecError::CodeStoreOutOfGas => Some(ErrorCodeStore::gen_associated_ops),
+        ExecError::MaxCodeSizeExceeded => Some(ErrorCodeStore::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
 

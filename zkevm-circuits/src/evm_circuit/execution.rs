@@ -21,7 +21,7 @@ use crate::{
     util::{query_expression, Challenges, Expr},
 };
 use bus_mapping::util::read_env_var;
-use eth_types::{evm_unimplemented, Field};
+use eth_types::Field;
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -1361,8 +1361,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
             }
-
-            _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         }
 
         // Fill in the witness values for stored expressions
