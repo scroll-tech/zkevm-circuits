@@ -1676,12 +1676,20 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
 
         config.load_aux_tables(layouter)?;
 
-        // assert tx.caller_address == recovered_pk
-        for (sign_data, tx) in keccak_inputs_sign_verify(&sign_datas)
+        // check if tx.caller_address == recovered_pk
+        let recovered_pks = keccak_inputs_sign_verify(&sign_datas)
             .into_iter()
-            .zip(self.txs.iter())
-        {
-            let pk_hash = keccak(&sign_data);
+            .enumerate()
+            .filter(|(idx, _)| {
+                // each sign_data produce two inputs for hashing
+                // pk -> pk_hash, msg -> msg_hash
+                idx % 2 == 0
+            })
+            .map(|(_, input)| input)
+            .collect::<Vec<_>>();
+
+        for (pk, tx) in recovered_pks.into_iter().zip(self.txs.iter()) {
+            let pk_hash = keccak(&pk);
             let address = pk_hash.to_address();
             if address != tx.caller_address {
                 log::error!(
