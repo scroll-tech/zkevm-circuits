@@ -9,7 +9,8 @@ use crate::{
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use eth_types::geth_types::GethData;
 
-use halo2_proofs::dev::MockProver;
+use halo2_proofs::circuit::Value;
+use halo2_proofs::dev::{unwrap_value, MockProver};
 use halo2_proofs::halo2curves::bn256::Fr;
 use mock::TestContext;
 
@@ -236,5 +237,14 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
             self.state_checks.as_ref()(prover, &rows, &rows);
         }
+    }
+}
+
+/// Escape the type safety of Value in tests.
+pub fn escape_value<T>(v: Value<T>) -> Option<T> {
+    if v.is_none() {
+        None
+    } else {
+        Some(unwrap_value(v))
     }
 }

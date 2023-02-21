@@ -210,12 +210,18 @@ pub(crate) fn get_degree() -> usize {
 }
 
 /// Returns how many bits we can process in a single lookup given the range of
-/// values the bit can have and the height of the circuit.
-pub(crate) fn get_num_bits_per_lookup(range: usize) -> usize {
+/// values the bit can have and the height of the circuit (via KECCAK_DEGREE).
+pub fn get_num_bits_per_lookup(range: usize) -> usize {
+    let log_height = get_degree();
+    get_num_bits_per_lookup_impl(range, log_height)
+}
+
+// Implementation of the above without environment dependency.
+pub fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> usize {
     let num_unusable_rows = 31;
-    let degree = get_degree() as u32;
+    let height = 2usize.pow(log_height as u32);
     let mut num_bits = 1;
-    while range.pow(num_bits + 1) + num_unusable_rows <= 2usize.pow(degree) {
+    while range.pow(num_bits + 1) + num_unusable_rows <= height {
         num_bits += 1;
     }
     num_bits as usize
@@ -289,5 +295,31 @@ pub(crate) mod to_bytes {
             bytes.push(value);
         }
         bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use halo2_proofs::halo2curves::bn256::Fr as F;
+
+    #[test]
+    fn pack_into_bits() {
+        let msb = 1 << (7 * 3);
+        for (idx, expected) in [(0, 0), (1, 1), (128, msb), (129, msb | 1)] {
+            let packed: F = pack(&into_bits(&[idx as u8]));
+            assert_eq!(packed, F::from(expected));
+        }
+    }
+
+    #[test]
+    fn num_bits_per_lookup() {
+        // Typical values.
+        assert_eq!(get_num_bits_per_lookup_impl(3, 19), 11);
+        assert_eq!(get_num_bits_per_lookup_impl(4, 19), 9);
+        assert_eq!(get_num_bits_per_lookup_impl(5, 19), 8);
+        assert_eq!(get_num_bits_per_lookup_impl(6, 19), 7);
+        // The largest imaginable value does not overflow u64.
+        assert_eq!(get_num_bits_per_lookup_impl(3, 32) * BIT_COUNT, 60);
     }
 }

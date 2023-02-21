@@ -130,7 +130,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
             &self.0,
             self.1,
             false,
-            empty_hash.inner,
+            crate::test_util::escape_value(empty_hash),
         );
 
         chip.load(layouter)
