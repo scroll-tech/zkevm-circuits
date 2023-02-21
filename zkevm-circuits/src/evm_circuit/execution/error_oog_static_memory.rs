@@ -50,9 +50,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasStaticMemoryExpansion;
 
-    // Support other OOG due to pure memory including CREATE, RETURN and REVERT
+    // Support other OOG due to pure memory including MSTORE, MSTORE8 and MLOAD
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        cb.opcode_lookup(opcode.expr(), 1.expr());
 
         // Query address by a full word
         let address = cb.query_word_rlc();
@@ -172,8 +173,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
 
-        println!("{}", step.rw_indices.len());
-
         // Inputs/Outputs
         let address = block.rws[step.rw_indices[0]].stack_value();
         self.address
@@ -217,7 +216,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             panic!("address overflow {} bytes", N_BYTES_MEMORY_ADDRESS);
         }
 
-        let (_, memory_cost) = self.memory_expansion.assign(
+        self.memory_expansion.assign(
             region,
             offset,
             step.memory_word_size(),
@@ -230,7 +229,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             region,
             offset,
             F::from(step.gas_left),
-            F::from(OpcodeId::MLOAD.constant_gas_cost().as_u64() + memory_cost),
+            F::from(step.gas_cost),
         )?;
 
         self.rw_counter_end_of_reversion.assign(
