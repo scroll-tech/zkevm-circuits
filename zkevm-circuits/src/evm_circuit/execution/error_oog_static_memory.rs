@@ -247,19 +247,39 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 #[cfg(test)]
 mod tests {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::{bytecode, word, ToWord};
+    use eth_types::{bytecode, word, Bytecode, ToWord};
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
 
     #[test]
     fn test() {
-        let code = bytecode! {
-            PUSH32(0xFF)
-            PUSH32(word!("0xffffffff")) // offset
-            MSTORE
-            STOP
-        };
+        let codes = [
+            bytecode! {
+                PUSH8(0xFF)
+                PUSH32(word!("0xffffffff")) // offset
+                MSTORE
+                STOP
+            },
+            bytecode! {
+                PUSH8(0xFF)
+                PUSH32(word!("0xffffffff")) // offset
+                MSTORE8
+                STOP
+            },
+            bytecode! {
+                PUSH32(word!("0xffffffff")) // offset
+                MLOAD
+                STOP
+            },
+        ];
 
+        for code in codes.iter() {
+            test_root(code.clone());
+            test_internal(code.clone());
+        }
+    }
+
+    fn test_root(code: Bytecode) {
         let ctx = TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(code),
@@ -276,8 +296,7 @@ mod tests {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    #[test]
-    fn test_internal() {
+    fn test_internal(code: Bytecode) {
         let code_a = bytecode! {
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
@@ -291,18 +310,11 @@ mod tests {
             STOP
         };
 
-        let code_b = bytecode! {
-            PUSH32(0xFF)
-            PUSH32(word!("0xffffffff")) // offset
-            MSTORE
-            STOP
-        };
-
         let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).code(code_a);
-                accs[1].address(MOCK_ACCOUNTS[1]).code(code_b);
+                accs[1].address(MOCK_ACCOUNTS[1]).code(code);
                 accs[2].address(MOCK_ACCOUNTS[2]).balance(eth(1));
             },
             |mut txs, accs| {
