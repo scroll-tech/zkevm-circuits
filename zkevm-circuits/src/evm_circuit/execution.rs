@@ -420,6 +420,12 @@ impl<F: Field> ExecutionConfig<F> {
                     1.expr(),
                 )
             });
+            // For every step, is_create and is_root are boolean.
+            cb.require_boolean(
+                "step.is_create is boolean",
+                step_curr.state.is_create.expr(),
+            );
+            cb.require_boolean("step.is_root is boolean", step_curr.state.is_root.expr());
             // q_step needs to be enabled on the last row
             cb.condition(q_step_last, |cb| {
                 cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
