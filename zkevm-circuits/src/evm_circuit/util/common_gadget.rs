@@ -334,7 +334,8 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 
 #[derive(Clone, Debug)]
 pub(crate) struct TransferWithGasFeeGadget<F> {
-    sender: UpdateBalanceGadget<F, 3, false>,
+    sender_fee: UpdateBalanceGadget<F, 2, false>,
+    sender_value: UpdateBalanceGadget<F, 2, false>,
     receiver: UpdateBalanceGadget<F, 2, true>,
 }
 
@@ -347,38 +348,52 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let sender = UpdateBalanceGadget::construct(
+        let sender_fee =
+            UpdateBalanceGadget::construct(cb, sender_address.expr(), vec![gas_fee], None);
+        let sender_value = UpdateBalanceGadget::construct(
             cb,
             sender_address,
-            vec![value.clone(), gas_fee],
+            vec![value.clone()],
             Some(reversion_info),
         );
         let receiver =
             UpdateBalanceGadget::construct(cb, receiver_address, vec![value], Some(reversion_info));
 
-        Self { sender, receiver }
+        Self {
+            sender_fee,
+            sender_value,
+            receiver,
+        }
     }
 
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        (sender_balance, sender_balance_prev): (U256, U256),
-        (receiver_balance, receiver_balance_prev): (U256, U256),
+        (sender_balance_sub_fee, prev_sender_balance_sub_fee): (U256, U256),
+        (sender_balance_sub_value, prev_sender_balance_sub_value): (U256, U256),
+        (receiver_balance, prev_receiver_balance): (U256, U256),
         value: U256,
         gas_fee: U256,
     ) -> Result<(), Error> {
-        self.sender.assign(
+        self.sender_fee.assign(
             region,
             offset,
-            sender_balance_prev,
-            vec![value, gas_fee],
-            sender_balance,
+            prev_sender_balance_sub_fee,
+            vec![gas_fee],
+            sender_balance_sub_fee,
+        )?;
+        self.sender_value.assign(
+            region,
+            offset,
+            prev_sender_balance_sub_value,
+            vec![value],
+            sender_balance_sub_value,
         )?;
         self.receiver.assign(
             region,
             offset,
-            receiver_balance_prev,
+            prev_receiver_balance,
             vec![value],
             receiver_balance,
         )?;
