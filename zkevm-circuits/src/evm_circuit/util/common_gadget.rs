@@ -334,8 +334,8 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
 
 #[derive(Clone, Debug)]
 pub(crate) struct TransferWithGasFeeGadget<F> {
-    sender_fee: UpdateBalanceGadget<F, 2, false>,
-    sender_value: UpdateBalanceGadget<F, 2, false>,
+    sender_sub_fee: UpdateBalanceGadget<F, 2, false>,
+    sender_sub_value: UpdateBalanceGadget<F, 2, false>,
     receiver: UpdateBalanceGadget<F, 2, true>,
 }
 
@@ -348,9 +348,9 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
-        let sender_fee =
+        let sender_sub_fee =
             UpdateBalanceGadget::construct(cb, sender_address.expr(), vec![gas_fee], None);
-        let sender_value = UpdateBalanceGadget::construct(
+        let sender_sub_value = UpdateBalanceGadget::construct(
             cb,
             sender_address,
             vec![value.clone()],
@@ -360,12 +360,13 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             UpdateBalanceGadget::construct(cb, receiver_address, vec![value], Some(reversion_info));
 
         Self {
-            sender_fee,
-            sender_value,
+            sender_sub_fee,
+            sender_sub_value,
             receiver,
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -376,14 +377,14 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         value: U256,
         gas_fee: U256,
     ) -> Result<(), Error> {
-        self.sender_fee.assign(
+        self.sender_sub_fee.assign(
             region,
             offset,
             prev_sender_balance_sub_fee,
             vec![gas_fee],
             sender_balance_sub_fee,
         )?;
-        self.sender_value.assign(
+        self.sender_sub_value.assign(
             region,
             offset,
             prev_sender_balance_sub_value,

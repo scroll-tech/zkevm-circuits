@@ -527,27 +527,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
 
-        let (
-            caller_balance_sub_fee_pair,
-            caller_balance_sub_value_pair,
-            callee_balance_pair,
-            callee_code_hash,
-        ) = if tx.is_create {
-            (
-                block.rws[step.rw_indices[7]].account_value_pair(),
-                block.rws[step.rw_indices[8]].account_value_pair(),
-                block.rws[step.rw_indices[9]].account_value_pair(),
-                call.code_hash,
-            )
+        let [caller_balance_sub_fee_pair, caller_balance_sub_value_pair, callee_balance_pair] =
+            [7, 8, 9].map(|idx| block.rws[step.rw_indices[idx]].account_value_pair());
+        let callee_code_hash = if tx.is_create {
+            call.code_hash
         } else {
-            (
-                block.rws[step.rw_indices[7]].account_value_pair(),
-                block.rws[step.rw_indices[8]].account_value_pair(),
-                block.rws[step.rw_indices[9]].account_value_pair(),
-                // TODO: handle call to precompiled contracts where we may not have a account read
-                // for code hash.
-                block.rws[step.rw_indices[10]].account_value_pair().0,
-            )
+            // TODO: handle call to precompiled contracts where we may not have a account
+            // read for code hash.
+            block.rws[step.rw_indices[10]].account_value_pair().0
         };
 
         self.tx_id
