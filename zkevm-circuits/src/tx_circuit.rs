@@ -1932,4 +1932,21 @@ mod tx_circuit_tests {
         )
         .is_err(),);
     }
+
+    #[test]
+    fn tx_circuit_to_is_zero() {
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
+        let mut tx = mock::CORRECT_MOCK_TXS[0].clone();
+        tx.to = Some(AddrOrWallet::from(address!(
+            "0x0000000000000000000000000000000000000000"
+        )));
+
+        assert_eq!(
+            run::<Fr>(vec![tx.into()], chain_id, MAX_TXS, MAX_CALLDATA),
+            Ok(())
+        );
+    }
 }
