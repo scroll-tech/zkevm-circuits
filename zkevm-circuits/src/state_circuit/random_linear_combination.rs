@@ -47,6 +47,18 @@ impl<const N: usize> Config<N> {
         }
         Ok(())
     }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        let mut annotations = Vec::new();
+        for (i, _) in self.bytes.iter().enumerate() {
+            annotations.push(format!("RLC_byte{}", i));
+        }
+        self.bytes
+            .iter()
+            .zip(annotations.iter())
+            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+    }
 }
 
 pub struct Chip<F: Field, const N: usize> {

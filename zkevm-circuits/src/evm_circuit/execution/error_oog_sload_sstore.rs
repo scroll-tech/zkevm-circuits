@@ -2,11 +2,10 @@ use crate::evm_circuit::execution::ExecutionGadget;
 use crate::evm_circuit::param::N_BYTES_GAS;
 use crate::evm_circuit::step::ExecutionState;
 use crate::evm_circuit::util::common_gadget::{
-    cal_sload_gas_cost_for_assignment, cal_sstore_gas_cost_for_assignment, RestoreContextGadget,
+    cal_sload_gas_cost_for_assignment, cal_sstore_gas_cost_for_assignment, CommonErrorGadget,
     SloadGasGadget, SstoreGasGadget,
 };
-use crate::evm_circuit::util::constraint_builder::Transition::{Delta, Same};
-use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
+use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
 use crate::evm_circuit::util::math_gadget::{LtGadget, PairSelectGadget};
 use crate::evm_circuit::util::{and, or, select, CachedRegion, Cell};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
@@ -30,13 +29,12 @@ pub(crate) struct ErrorOOGSloadSstoreGadget<F> {
     phase2_value_prev: Cell<F>,
     phase2_original_value: Cell<F>,
     is_warm: Cell<F>,
-    rw_counter_end_of_reversion: Cell<F>,
     is_sstore: PairSelectGadget<F>,
     sstore_gas_cost: SstoreGasGadget<F>,
     insufficient_gas_cost: LtGadget<F, N_BYTES_GAS>,
     // Constrain for SSTORE reentrancy sentry.
     insufficient_gas_sentry: LtGadget<F, N_BYTES_GAS>,
-    restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
@@ -46,7 +44,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
 
         let is_sstore = PairSelectGadget::construct(
             cb,
@@ -121,61 +118,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             1.expr(),
         );
 
-        // Current call must fail.
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
-        let rw_counter_end_of_reversion = cb.query_cell();
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-
-        // Go to EndTx only when is_root.
-        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
-        cb.require_equal(
-            "Go to EndTx only when is_root",
-            cb.curr.state.is_root.expr(),
-            is_to_end_tx,
-        );
-
-        // When it's a root call.
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            // Do step state transition.
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                // Additional one stack pop and one account storage read for SSTORE.
-                rw_counter: Delta(
-                    7.expr()
-                        + 2.expr() * is_sstore.expr().0
-                        + cb.curr.state.reversible_write_counter.expr(),
-                ),
-                ..StepStateTransition::any()
-            });
-        });
-
-        // When it's an internal call, need to restore caller's state as finishing this
-        // call. Restore caller state to next StepState.
-        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
-
-        // Constrain RwCounterEndOfReversion.
-        let rw_counter_end_of_step =
-            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
-        cb.require_equal(
-            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
-            rw_counter_end_of_reversion.expr(),
-            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        let common_error_gadget = CommonErrorGadget::construct(
+            cb,
+            opcode.expr(),
+            7.expr() + 2.expr() * is_sstore.expr().0,
         );
 
         Self {
@@ -188,12 +134,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             phase2_value_prev,
             phase2_original_value,
             is_warm,
-            rw_counter_end_of_reversion,
             is_sstore,
             sstore_gas_cost,
             insufficient_gas_cost,
             insufficient_gas_sentry,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -256,11 +201,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             .assign(region, offset, region.word_rlc(original_value))?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
-        self.rw_counter_end_of_reversion.assign(
-            region,
-            offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
-        )?;
+
         self.is_sstore.assign(
             region,
             offset,
@@ -282,15 +223,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             Value::known(F::from(step.gas_left)),
             Value::known(F::from(GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap())),
         )?;
-        self.restore_context.assign(
+
+        // Additional one stack pop and one account storage read for SSTORE.
+        self.common_error_gadget.assign(
             region,
             offset,
             block,
             call,
             step,
-            // Additional one stack pop and one account storage read for SSTORE.
             7 + usize::from(is_sstore) * 2,
-        )
+        )?;
+
+        Ok(())
     }
 }
 

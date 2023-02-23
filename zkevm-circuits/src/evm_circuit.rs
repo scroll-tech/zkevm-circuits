@@ -301,6 +301,57 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
         .collect()
 }
 
+#[cfg(all(feature = "disabled", test))]
+pub(crate) mod cached {
+    use super::*;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use lazy_static::lazy_static;
+
+    /// Cache
+    struct Cache {
+        cs: ConstraintSystem<Fr>,
+        config: (EvmCircuitConfig<Fr>, Challenges),
+    }
+
+    lazy_static! {
+        static ref CACHE: Cache = {
+            let mut meta = ConstraintSystem::<Fr>::default();
+            let config = EvmCircuit::<Fr>::configure(&mut meta);
+            Cache { cs: meta, config }
+        };
+    }
+
+    pub struct EvmCircuitCached(EvmCircuit<Fr>);
+
+    impl Circuit<Fr> for EvmCircuitCached {
+        type Config = (EvmCircuitConfig<Fr>, Challenges);
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self(self.0.without_witnesses())
+        }
+
+        fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+            *meta = CACHE.cs.clone();
+            CACHE.config.clone()
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            layouter: impl Layouter<Fr>,
+        ) -> Result<(), Error> {
+            self.0.synthesize(config, layouter)
+        }
+    }
+
+    impl EvmCircuitCached {
+        pub fn get_test_cicuit_from_block(block: Block<Fr>) -> Self {
+            Self(EvmCircuit::<Fr>::get_test_cicuit_from_block(block))
+        }
+    }
+}
+
 // Always exported because of `EXECUTION_STATE_HEIGHT_MAP`
 
 #[cfg(not(feature = "onephase"))]
@@ -428,12 +479,11 @@ pub mod test {
 #[cfg(test)]
 mod evm_circuit_stats {
     use crate::evm_circuit::step::ExecutionState;
+    use crate::stats::print_circuit_stats_by_states;
     use crate::test_util::CircuitTestBuilder;
-
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
-
-    use mock::test_ctx::{helpers::*, TestContext};
-    use strum::IntoEnumIterator;
+    use eth_types::{bytecode, evm_types::OpcodeId, ToWord};
+    use mock::test_ctx::TestContext;
+    use mock::MOCK_ACCOUNTS;
 
     #[test]
     pub fn empty_evm_circuit_no_padding() {
@@ -454,67 +504,44 @@ mod evm_circuit_stats {
         .run();
     }
 
-    /// This function prints to stdout a table with all the implemented states
-    /// and their responsible opcodes with the following stats:
-    /// - height: number of rows in the EVM circuit used by the execution state
-    /// - gas: gas value used for the opcode execution
-    /// - height/gas: ratio between circuit cost and gas cost
+    /// Prints the stats of EVM circuit per execution state.  See
+    /// `print_circuit_stats_by_states` for more details.
     ///
     /// Run with:
-    /// `cargo test -p zkevm-circuits --release get_evm_states_stats --
-    /// --nocapture --ignored`
+    /// `cargo test -p zkevm-circuits --release --all-features
+    /// get_evm_states_stats -- --nocapture --ignored`
     #[ignore]
     #[test]
-    pub fn get_evm_states_stats() {
-        let mut implemented_states = Vec::new();
-        for state in ExecutionState::iter() {
-            let height = state.get_step_height_option();
-            if let Some(h) = height {
-                implemented_states.push((state, h));
-            }
-        }
-
-        let mut stats = Vec::new();
-        for (state, h) in implemented_states {
-            for opcode in state.responsible_opcodes() {
-                let mut code = bytecode! {
-                    PUSH2(0x8000)
-                    PUSH2(0x00)
-                    PUSH2(0x10)
-                    PUSH2(0x20)
-                    PUSH2(0x30)
+    fn get_evm_states_stats() {
+        print_circuit_stats_by_states(
+            |state| {
+                !matches!(
+                    state,
+                    ExecutionState::ErrorInvalidOpcode | ExecutionState::SELFDESTRUCT
+                )
+            },
+            |opcode| match opcode {
+                OpcodeId::RETURNDATACOPY => {
+                    bytecode! {
+                    PUSH1(0x00) // retLength
+                    PUSH1(0x00) // retOffset
+                    PUSH1(0x00) // argsLength
+                    PUSH1(0x00) // argsOffset
+                    PUSH1(0x00) // value
+                    PUSH32(MOCK_ACCOUNTS[3].to_word())
+                    PUSH32(0x1_0000) // gas
+                    CALL
+                    PUSH2(0x01) // size
+                    PUSH2(0x00) // offset
+                    PUSH2(0x00) // destOffset
+                    }
+                }
+                _ => bytecode! {
                     PUSH2(0x40)
                     PUSH2(0x50)
-                };
-                code.write_op(opcode);
-                code.write_op(OpcodeId::STOP);
-                let block: GethData = TestContext::<2, 1>::new(
-                    None,
-                    account_0_code_account_1_no_code(code),
-                    tx_from_1_to_0,
-                    |block, _tx| block.number(0xcafeu64),
-                )
-                .unwrap()
-                .into();
-                let gas_cost = block.geth_traces[0].struct_logs[7].gas_cost.0;
-                stats.push((state, opcode, h, gas_cost));
-            }
-        }
-
-        println!(
-            "| {: <14} | {: <14} | {: <2} | {: >6} | {: <5} |",
-            "state", "opcode", "h", "g", "h/g"
+                },
+            },
+            |_, state, _| state.get_step_height_option().unwrap(),
         );
-        println!("| ---            | ---            | ---|    --- | ---   |");
-        for (state, opcode, height, gas_cost) in stats {
-            println!(
-                "| {: <14?} | {: <14?} | {: >2} | {: >6} | {: >1.3} |",
-                state,
-                opcode,
-                height,
-                gas_cost,
-                height as f64 / gas_cost as f64
-            );
-        }
     }
 }

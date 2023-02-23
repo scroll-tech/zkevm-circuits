@@ -110,7 +110,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             AccountField::CodeHash,
             callee_code_hash_word,
             callee_code_hash_word,
-        )?;
+        );
 
         let is_warm = state.sdb.check_account_in_access_list(&callee_address);
         state.push_op_reversible(
@@ -161,7 +161,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             AccountField::Balance,
             caller_balance,
             caller_balance,
-        )?;
+        );
 
         // Transfer value only for CALL opcode, insufficient_balance = false
         // and value > 0.

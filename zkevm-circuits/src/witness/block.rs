@@ -156,7 +156,7 @@ impl<F: Field> Block<F> {
 
         let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
         log::debug!(
-            "num_rows_requred_for rw_table={}, fixed_table={}, bytecode_table={}, \
+            "num_rows_required_for rw_table={}, fixed_table={}, bytecode_table={}, \
             copy_table={}, keccak_table={}, tx_table={}, exp_table={}",
             num_rows_required_for_rw_table,
             num_rows_required_for_fixed_table,

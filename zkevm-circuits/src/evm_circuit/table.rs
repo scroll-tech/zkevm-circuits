@@ -1,4 +1,4 @@
-use crate::evm_circuit::step::ExecutionState;
+use crate::evm_circuit::step::{ExecutionState, ResponsibleOp};
 use crate::impl_expr;
 pub use crate::table::TxContextFieldTag;
 use bus_mapping::evm::OpcodeId;
@@ -26,7 +26,6 @@ pub enum FixedTableTag {
     ResponsibleOpcode,
     Pow2,
     ConstantGasCost,
-    OpcodeStack,
 }
 impl_expr!(FixedTableTag);
 
@@ -78,17 +77,22 @@ impl FixedTableTag {
             })),
             Self::ResponsibleOpcode => {
                 Box::new(ExecutionState::iter().flat_map(move |execution_state| {
-                    execution_state
-                        .responsible_opcodes()
-                        .into_iter()
-                        .map(move |opcode| {
+                    execution_state.responsible_opcodes().into_iter().map(
+                        move |responsible_opcode| {
+                            let (op, aux) = match responsible_opcode {
+                                ResponsibleOp::Op(op) => (op, F::zero()),
+                                ResponsibleOp::InvalidStackPtr(op, stack_ptr) => {
+                                    (op, F::from(u64::from(stack_ptr)))
+                                }
+                            };
                             [
                                 tag,
                                 F::from(execution_state.as_u64()),
-                                F::from(opcode.as_u64()),
-                                F::zero(),
+                                F::from(op.as_u64()),
+                                aux,
                             ]
-                        })
+                        },
+                    )
                 }))
             }
             Self::Pow2 => Box::new((0..256).map(move |value| {
@@ -108,18 +112,6 @@ impl FixedTableTag {
                             F::from(opcode.as_u64()),
                             F::from(opcode.constant_gas_cost().0),
                             F::zero(),
-                        ]
-                    }),
-            ),
-            Self::OpcodeStack => Box::new(
-                OpcodeId::iter()
-                    .filter(move |opcode| opcode.constant_gas_cost().0 > 0)
-                    .map(move |opcode| {
-                        [
-                            tag,
-                            F::from(opcode.as_u64()),
-                            F::from(opcode.valid_stack_ptr_range().0 as u64),
-                            F::from(opcode.valid_stack_ptr_range().1 as u64),
                         ]
                     }),
             ),

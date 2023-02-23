@@ -638,13 +638,13 @@ impl<F: Field> LookupTable<F> for MptTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
-            String::from("Address"),
-            String::from("Storage key"),
-            String::from("Proof type"),
-            String::from("New root"),
-            String::from("Old root"),
-            String::from("New value"),
-            String::from("Old value"),
+            String::from("address"),
+            String::from("storage_key"),
+            String::from("proof_type"),
+            String::from("new_root"),
+            String::from("old_root"),
+            String::from("new_value"),
+            String::from("old_value"),
         ]
     }
 }

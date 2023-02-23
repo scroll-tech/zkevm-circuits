@@ -63,5 +63,14 @@ exp_bench: ## Run Exp Circuit benchmarks
 
 circuit_benches: evm_bench state_bench ## Run All Circuit benchmarks
 
+stats_state_circuit: # Print a table with State Circuit stats by ExecState/opcode
+	@cargo test -p zkevm-circuits --features=test,warn-unimplemented get_state_states_stats -- --nocapture --ignored
+
+stats_evm_circuit: # Print a table with EVM Circuit stats by ExecState/opcode
+	@cargo test -p zkevm-circuits --features=test,warn-unimplemented get_evm_states_stats -- --nocapture --ignored
+
+stats_copy_circuit: # Print a table with Copy Circuit stats by ExecState/opcode
+	@cargo test -p zkevm-circuits --features=test,warn-unimplemented get_copy_states_stats -- --nocapture --ignored
+
 
 .PHONY: clippy doc fmt test test_benches test-all evm_bench state_bench circuit_benches help

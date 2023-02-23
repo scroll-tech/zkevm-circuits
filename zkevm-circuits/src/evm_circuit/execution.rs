@@ -81,12 +81,14 @@ mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_precompile_failed;
 mod error_return_data_oo_bound;
 mod error_stack;
+mod error_write_protection;
 mod exp;
 mod extcodecopy;
 mod extcodehash;
@@ -152,11 +154,14 @@ use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
+use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
 use error_precompile_failed::ErrorPrecompileFailedGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
+use error_write_protection::ErrorWriteProtectionGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
 use extcodehash::ExtcodehashGadget;
@@ -296,10 +301,11 @@ pub(crate) struct ExecutionConfig<F> {
     // error gadgets
     error_oog_call: ErrorOOGCallGadget<F>,
     error_oog_constant: ErrorOOGConstantGadget<F>,
+    error_oog_exp: ErrorOOGExpGadget<F>,
     error_oog_sload_sstore: ErrorOOGSloadSstoreGadget<F>,
-    error_oog_static_memory_gadget:
-        DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
+    error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
     error_stack: ErrorStackGadget<F>,
+    error_write_protection: ErrorWriteProtectionGadget<F>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
     error_oog_log: ErrorOOGLogGadget<F>,
@@ -307,7 +313,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
     error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
     error_oog_ext_codecopy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>,
-    error_oog_exp: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXP }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
     error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
@@ -315,7 +320,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
-    error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
     error_contract_address_collision:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
@@ -419,6 +423,14 @@ impl<F: Field> ExecutionConfig<F> {
                     step_curr.state.rw_counter.expr(),
                     1.expr(),
                 )
+            });
+            // For every step, is_create and is_root are boolean.
+            cb.condition(q_step.clone(), |cb| {
+                cb.require_boolean(
+                    "step.is_create is boolean",
+                    step_curr.state.is_create.expr(),
+                );
+                cb.require_boolean("step.is_root is boolean", step_curr.state.is_root.expr());
             });
             // q_step needs to be enabled on the last row
             cb.condition(q_step_last, |cb| {

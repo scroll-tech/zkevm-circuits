@@ -163,7 +163,18 @@ impl ExecutionState {
             || self.halts_in_exception()
     }
 
-    pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {
+    pub(crate) fn responsible_opcodes(&self) -> Vec<ResponsibleOp> {
+        if matches!(self, Self::ErrorStack) {
+            return OpcodeId::valid_opcodes()
+                .into_iter()
+                .flat_map(|op| {
+                    op.invalid_stack_ptrs()
+                        .into_iter()
+                        .map(move |stack_ptr| ResponsibleOp::InvalidStackPtr(op, stack_ptr))
+                })
+                .collect();
+        }
+
         match self {
             Self::STOP => vec![OpcodeId::STOP],
             Self::ADD_SUB => vec![OpcodeId::ADD, OpcodeId::SUB],
@@ -305,6 +316,9 @@ impl ExecutionState {
             Self::ErrorInvalidOpcode => OpcodeId::invalid_opcodes(),
             _ => vec![],
         }
+        .into_iter()
+        .map(Into::into)
+        .collect()
     }
 
     pub fn get_step_height_option(&self) -> Option<usize> {
@@ -314,6 +328,31 @@ impl ExecutionState {
     pub fn get_step_height(&self) -> usize {
         self.get_step_height_option()
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
+    }
+}
+
+/// Enum of Responsible opcode mapping to execution state.
+#[derive(Debug)]
+pub(crate) enum ResponsibleOp {
+    /// Raw opcode
+    Op(OpcodeId),
+    /// Corresponding to ExecutionState::ErrorStack
+    InvalidStackPtr(OpcodeId, u32),
+}
+
+/// Helper for easy transform from a raw OpcodeId to ResponsibleOp.
+impl From<OpcodeId> for ResponsibleOp {
+    fn from(opcode: OpcodeId) -> Self {
+        Self::Op(opcode)
+    }
+}
+
+impl ResponsibleOp {
+    pub(crate) fn opcode(&self) -> OpcodeId {
+        *match self {
+            ResponsibleOp::Op(opcode) => opcode,
+            ResponsibleOp::InvalidStackPtr(opcode, _) => opcode,
+        }
     }
 }
 

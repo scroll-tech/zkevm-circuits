@@ -5684,6 +5684,7 @@ dependencies = [
  "anyhow",
  "bus-mapping",
  "clap 3.2.23",
+ "ctor",
  "env_logger",
  "eth-types",
  "ethers-core",

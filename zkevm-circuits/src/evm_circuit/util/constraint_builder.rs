@@ -576,22 +576,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
-    // look up opcode's min and max stack pointer
-    pub(crate) fn opcode_stack_lookup(
-        &mut self,
-        opcode: Expression<F>,
-        min_stack: Expression<F>,
-        max_stack: Expression<F>,
-    ) {
-        self.add_lookup(
-            "op code stack info",
-            Lookup::Fixed {
-                tag: FixedTableTag::OpcodeStack.expr(),
-                values: [opcode, min_stack, max_stack],
-            },
-        );
-    }
-
     // Opcode
 
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {

@@ -35,7 +35,7 @@ rand_chacha = "0.3"
 rand = "0.8"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
 urlencoding = "2.1.2"
-
+ctor = "0.1.22"
 
 [features]
 default = ["ignore-test-docker"]
