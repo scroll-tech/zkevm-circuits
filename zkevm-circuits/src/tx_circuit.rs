@@ -116,6 +116,7 @@ pub struct TxCircuitConfig<F: Field> {
     /// subsequent rows or not.
     tx_id_unchanged: IsEqualConfig<F>,
     is_calldata: Column<Advice>,
+    is_create: Column<Advice>,
 
     lookup_conditions: HashMap<LookupCondition, Column<Advice>>,
     /// A boolean advice column, which is turned on only for the last byte in
@@ -172,6 +173,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let rlp_tag = meta.advice_column();
         let value_inv = meta.advice_column_in(SecondPhase);
         let is_calldata = meta.advice_column(); // to reduce degree
+        let is_create = meta.advice_column();
         let lookup_conditions = [
             LookupCondition::TxCalldata,
             LookupCondition::Tag,
@@ -418,6 +420,18 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
+        meta.create_gate("tag == is_create", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_create",
+                tag.value_equals(IsCreate, Rotation::cur())(meta),
+                meta.query_advice(is_create, Rotation::cur()),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
         meta.create_gate("tx call data bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -511,6 +525,37 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         });
          */
 
+        meta.lookup_any(
+            "is_create == 1 iff rlp_tag == To && tag_length == 1",
+            |meta| {
+                let enable = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(is_create, Rotation::cur()),
+                ]);
+
+                vec![
+                    meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                    RlpTxTag::To.expr(),
+                    1.expr(), // tag_rindex == 1
+                    RlpDataType::TxHash.expr(),
+                    meta.query_advice(tx_table.value, Rotation::cur()), // tag_length == 1
+                ]
+                .into_iter()
+                .zip(
+                    vec![
+                        rlp_table.tx_id,
+                        rlp_table.tag,
+                        rlp_table.tag_rindex,
+                        rlp_table.data_type,
+                        rlp_table.tag_length_eq_one,
+                    ]
+                    .into_iter()
+                    .map(|column| meta.query_advice(column, Rotation::cur())),
+                )
+                .map(|(arg, table)| (enable.clone() * arg, table))
+                .collect()
+            },
+        );
         #[cfg(feature = "reject-eip2718")]
         meta.create_gate("caller address == sv_address if it's not zero", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -551,6 +596,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             value_is_zero,
             tx_id_unchanged,
             is_calldata,
+            is_create,
             lookup_conditions,
             is_final,
             calldata_length,
@@ -800,6 +846,12 @@ impl<F: Field> TxCircuitConfig<F> {
             *offset,
             || Value::known(F::from((tag == CallData) as u64)),
         )?;
+        region.assign_advice(
+            || "is_create",
+            self.is_create,
+            *offset,
+            || Value::known(F::from((tag == IsCreate) as u64)),
+        )?;
 
         *offset += 1;
 
@@ -851,6 +903,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 (self.rlp_tag, rlp_data),
                 (self.is_final, F::one()),
                 (self.is_calldata, F::one()),
+                (self.is_create, F::zero()),
                 (self.calldata_length, F::zero()),
                 (self.calldata_gas_cost_acc, F::zero()),
                 (self.chain_id, F::zero()),
@@ -1036,7 +1089,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 RlpDataType::TxSign.expr(),
             ]
             .into_iter()
-            .zip(rlp_table.table_exprs(meta).into_iter())
+            .zip(rlp_table.table_exprs(meta).into_iter()) // tag_length_eq_one is the 6th column in rlp table
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });

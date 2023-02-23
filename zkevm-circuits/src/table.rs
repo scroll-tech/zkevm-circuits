@@ -1747,6 +1747,8 @@ pub struct RlpTable {
     /// `TxSign` (transaction data that needs to be signed) or `TxHash`
     /// (signed transaction's data).
     pub data_type: Column<Advice>,
+    /// Denotes if the tag_length is equal to 1
+    pub tag_length_eq_one: Column<Advice>,
 }
 
 impl<F: Field> LookupTable<F> for RlpTable {
@@ -1757,6 +1759,7 @@ impl<F: Field> LookupTable<F> for RlpTable {
             self.tag_rindex.into(),
             self.value_acc.into(),
             self.data_type.into(),
+            self.tag_length_eq_one.into(),
         ]
     }
 
@@ -1767,6 +1770,7 @@ impl<F: Field> LookupTable<F> for RlpTable {
             String::from("tag_rindex"),
             String::from("value_acc"),
             String::from("data_type"),
+            String::from("tag_length_eq_one"),
         ]
     }
 }
@@ -1780,6 +1784,7 @@ impl RlpTable {
             tag_rindex: meta.advice_column(),
             value_acc: meta.advice_column_in(SecondPhase),
             data_type: meta.advice_column(),
+            tag_length_eq_one: meta.advice_column(),
         }
     }
 
@@ -1787,7 +1792,7 @@ impl RlpTable {
     pub fn dev_assignments<F: Field>(
         txs: Vec<SignedTransaction>,
         challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 5]> {
+    ) -> Vec<[Value<F>; 6]> {
         let mut assignments = vec![];
         for signed_tx in txs {
             for row in signed_tx
@@ -1803,6 +1808,7 @@ impl RlpTable {
                     Value::known(F::from(row.tag_rindex as u64)),
                     row.value_acc,
                     Value::known(F::from(row.data_type as u64)),
+                    Value::known(F::from((row.tag_length == 1) as u64)),
                 ]);
             }
         }
