@@ -379,7 +379,7 @@ mod tests {
             Value::known(r + Fr::one() + Fr::one()),
         );
 
-        let callee_address = mock::MOCK_ACCOUNTS[0];
+        let callee_address = Some(mock::MOCK_ACCOUNTS[0]);
         let call_data = rand_bytes(55);
         let tx = Transaction {
             nonce: 1,
@@ -475,7 +475,7 @@ mod tests {
         let nonce = 0x123456u64;
         let gas_price = 0x234567u64.into();
         let gas = 0x345678u64;
-        let callee_address = mock::MOCK_ACCOUNTS[1];
+        let callee_address = Some(mock::MOCK_ACCOUNTS[1]);
         let value = 0x456789u64.into();
         let call_data = rand_bytes(2048);
         let tx = Transaction {

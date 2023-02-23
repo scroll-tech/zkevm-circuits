@@ -18,7 +18,7 @@ use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness};
 use eth_types::{
     sign_types::SignData,
-    ToAddress, {Field, ToLittleEndian, ToScalar},
+    Address, ToAddress, {Field, ToLittleEndian, ToScalar},
 };
 #[cfg(not(feature = "enable-sign-verify"))]
 use ethers_core::utils::keccak256;
@@ -492,29 +492,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
         */
-
-        meta.create_gate("tx is_create", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.condition(value_is_zero.is_zero_expression.clone(), |cb| {
-                cb.require_equal(
-                    "if callee_address == 0 then is_create == 1",
-                    meta.query_advice(tx_table.value, Rotation::next()),
-                    1.expr(),
-                );
-            });
-            cb.condition(not::expr(value_is_zero.is_zero_expression.clone()), |cb| {
-                cb.require_zero(
-                    "if callee_address != 0 then is_create == 0",
-                    meta.query_advice(tx_table.value, Rotation::next()),
-                );
-            });
-
-            cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                tag.value_equals(CalleeAddress, Rotation::cur())(meta),
-            ]))
-        });
 
         /*
         meta.create_gate("tx signature v", |meta| {
@@ -1356,7 +1333,12 @@ impl<F: Field> TxCircuit<F> {
                         (
                             CalleeAddress,
                             RlpTxTag::To,
-                            Value::known(tx.callee_address.to_scalar().expect("tx.to too big")),
+                            Value::known(
+                                tx.callee_address
+                                    .unwrap_or(Address::zero())
+                                    .to_scalar()
+                                    .expect("tx.to too big"),
+                            ),
                         ),
                         (
                             IsCreate,
@@ -1821,6 +1803,7 @@ mod tx_circuit_tests {
     use crate::util::log2_ceil;
     #[cfg(feature = "reject-eip2718")]
     use eth_types::address;
+    use eth_types::U64;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
@@ -1939,10 +1922,8 @@ mod tx_circuit_tests {
         const MAX_CALLDATA: usize = 32;
 
         let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
-        let mut tx = mock::CORRECT_MOCK_TXS[0].clone();
-        tx.to = Some(AddrOrWallet::from(address!(
-            "0x0000000000000000000000000000000000000000"
-        )));
+        let mut tx = mock::CORRECT_MOCK_TXS[5].clone();
+        tx.transaction_index = U64::from(1);
 
         assert_eq!(
             run::<Fr>(vec![tx.into()], chain_id, MAX_TXS, MAX_CALLDATA),
