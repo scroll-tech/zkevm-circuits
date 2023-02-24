@@ -301,10 +301,10 @@ impl Encodable for Transaction {
         s.append(&Word::from(self.nonce));
         s.append(&self.gas_price);
         s.append(&Word::from(self.gas));
-        if self.callee_address.is_none() {
-            s.append(&"");
+        if let Some(addr) = self.callee_address {
+            s.append(&addr);
         } else {
-            s.append(&self.callee_address.unwrap());
+            s.append(&"");
         }
         s.append(&self.value);
         s.append(&self.call_data);
@@ -329,10 +329,10 @@ impl Encodable for SignedTransaction {
         s.append(&Word::from(self.tx.nonce));
         s.append(&self.tx.gas_price);
         s.append(&Word::from(self.tx.gas));
-        if self.tx.callee_address.is_none() {
-            s.append(&"");
+        if let Some(addr) = self.tx.callee_address {
+            s.append(&addr);
         } else {
-            s.append(&self.tx.callee_address.unwrap());
+            s.append(&"");
         }
         s.append(&self.tx.value);
         s.append(&self.tx.call_data);
@@ -360,7 +360,7 @@ impl From<MockTransaction> for Transaction {
                 .data(mock_tx.input.clone())
                 .chain_id(mock_tx.chain_id.as_u64());
             if !is_create {
-                legacy_tx = legacy_tx.to(mock_tx.to.clone().map(|to| to.address()).unwrap());
+                legacy_tx = legacy_tx.to(mock_tx.to.as_ref().map(|to| to.address()).unwrap());
             }
 
             let unsigned = legacy_tx.rlp().to_vec();
@@ -377,7 +377,7 @@ impl From<MockTransaction> for Transaction {
             gas: mock_tx.gas.as_u64(),
             gas_price: mock_tx.gas_price,
             caller_address: mock_tx.from.address(),
-            callee_address: mock_tx.to.clone().map(|to| to.address()),
+            callee_address: mock_tx.to.as_ref().map(|to| to.address()),
             is_create,
             value: mock_tx.value,
             call_data: mock_tx.input.to_vec(),
