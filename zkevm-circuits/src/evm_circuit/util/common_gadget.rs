@@ -840,6 +840,7 @@ pub(crate) struct CommonErrorGadget<F> {
 }
 
 impl<F: Field> CommonErrorGadget<F> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         opcode: Expression<F>,
