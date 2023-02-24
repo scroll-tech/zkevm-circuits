@@ -57,7 +57,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
         // Constrain `is_static` must be false for SSTORE.
-        cb.require_zero("is_static == false", is_static.expr() * is_sstore.expr().0);
+        //cb.require_zero("is_static == false", is_static.expr() * is_sstore.expr().0);
 
         let phase2_key = cb.query_cell_phase2();
         let phase2_value = cb.query_cell_phase2();

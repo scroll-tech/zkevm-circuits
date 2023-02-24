@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_warm.expr(),
         );
 
-        cb.condition(call_gadget.has_value.expr(), |cb| {
+        cb.condition(is_call.expr() * call_gadget.has_value.expr(), |cb| {
             cb.require_zero(
                 "CALL with value must not be in static call stack",
                 is_static.expr(),

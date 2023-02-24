@@ -327,8 +327,15 @@ pub fn gen_associated_ops(
                     state.call_ctx()?.memory.0.len(),
                     geth_steps[0].memory.0.len(),
                 ) {
-                    if state.call_ctx()?.memory.0[i] != geth_steps[0].memory.0[i] {
-                        log::error!("diff at {}", i);
+                    let state_mem = state.call_ctx()?.memory.0[i];
+                    let step_mem = geth_steps[0].memory.0[i];
+                    if state_mem != step_mem {
+                        log::error!(
+                            "diff at {}: state {:?} != step {:?}",
+                            i,
+                            state_mem,
+                            step_mem
+                        );
                     }
                 }
                 if check_level >= 2 {

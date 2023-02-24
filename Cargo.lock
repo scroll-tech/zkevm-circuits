@@ -2095,7 +2095,7 @@ dependencies = [
 [[package]]
 name = "fp-evm"
 version = "3.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "evm",
  "frame-support",
@@ -3596,7 +3596,7 @@ dependencies = [
 [[package]]
 name = "pallet-evm-precompile-blake2"
 version = "2.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "fp-evm",
 ]
@@ -3604,7 +3604,7 @@ dependencies = [
 [[package]]
 name = "pallet-evm-precompile-bn128"
 version = "2.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "fp-evm",
  "sp-core",
@@ -3614,7 +3614,7 @@ dependencies = [
 [[package]]
 name = "pallet-evm-precompile-curve25519"
 version = "1.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "curve25519-dalek 4.0.0-pre.1",
  "fp-evm",
@@ -3623,7 +3623,7 @@ dependencies = [
 [[package]]
 name = "pallet-evm-precompile-modexp"
 version = "2.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "fp-evm",
  "num",
@@ -3632,7 +3632,7 @@ dependencies = [
 [[package]]
 name = "pallet-evm-precompile-simple"
 version = "2.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "fp-evm",
  "ripemd",

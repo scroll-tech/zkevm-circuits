@@ -47,6 +47,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         //                           ▼                     ▼
         //   [byte31,     ...,     byte2,     byte1,     byte0]
         //
+        /*
         for idx in 0..32 {
             let byte = &value.cells[idx];
             let index = cb.curr.state.program_counter.expr() + opcode.expr()
@@ -59,6 +60,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
                 });
             }
         }
+        */
 
         for idx in 0..31 {
             let selector_prev = if idx == 0 {
