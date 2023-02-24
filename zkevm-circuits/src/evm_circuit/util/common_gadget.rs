@@ -106,6 +106,7 @@ pub(crate) struct RestoreContextGadget<F> {
 impl<F: Field> RestoreContextGadget<F> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
+        is_create: Expression<F>,
         is_success: Expression<F>,
         // Expression for the number of rw lookups that occur after this gadget is constructed.
         subsequent_rw_lookups: Expression<F>,
@@ -137,11 +138,11 @@ impl<F: Field> RestoreContextGadget<F> {
             ),
             (
                 CallContextFieldTag::LastCalleeReturnDataOffset,
-                return_data_offset,
+                not::expr(is_create.expr() * is_success.expr()) * return_data_offset,
             ),
             (
                 CallContextFieldTag::LastCalleeReturnDataLength,
-                return_data_length.clone(),
+                not::expr(is_create.expr() * is_success.expr()) * return_data_length.clone(),
             ),
         ] {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
@@ -881,6 +882,7 @@ impl<F: Field> CommonErrorGadget<F> {
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
             RestoreContextGadget::construct(
                 cb,
+                0.expr(),
                 0.expr(),
                 0.expr(),
                 0.expr(),

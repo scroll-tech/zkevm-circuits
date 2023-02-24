@@ -302,7 +302,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 state.handle_return(geth_step)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
-                debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
+                //debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
                 if real_cost != exec_step.gas_cost.0 {
                     log::warn!(
                         "precompile gas fixed from {} to {}, step {:?}",

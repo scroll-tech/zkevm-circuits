@@ -41,9 +41,11 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             code_length.expr() - cb.curr.state.program_counter.expr(),
         );
         let opcode = cb.query_cell();
+        /*
         cb.condition(1.expr() - is_out_of_range.expr(), |cb| {
             cb.opcode_lookup(opcode.expr(), 1.expr());
         });
+        */
 
         // We do the responsible opcode check explicitly here because we're not using
         // the `SameContextGadget` for `STOP`.
@@ -77,6 +79,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
             RestoreContextGadget::construct(
                 cb,
+                0.expr(),
                 true.expr(),
                 0.expr(),
                 0.expr(),

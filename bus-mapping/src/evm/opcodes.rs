@@ -461,7 +461,12 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // address to `CodeDB::empty_code_hash()`. FIXME: we should have a
     // consistent codehash for precompile contract.
     let (_, callee_account) = state.sdb.get_account(&call.address);
+    let callee_account = callee_account.clone();
+    let callee_account = &callee_account;
     let callee_exists = !callee_account.is_empty();
+    if !callee_exists {
+        state.sdb.get_account_mut(&call.address).1.storage.clear();
+    }
     let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
         (true, _) => (call.code_hash.to_word(), false),
         (_, true) => {

@@ -114,6 +114,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
                 0.expr(),
                 0.expr(),
                 0.expr(),
+                0.expr(),
             )
         });
 

@@ -96,6 +96,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             0.expr(),
             0.expr(),
             0.expr(),
+            0.expr(),
         );
         // constrain RwCounterEndOfReversion
         let rw_counter_end_of_step =

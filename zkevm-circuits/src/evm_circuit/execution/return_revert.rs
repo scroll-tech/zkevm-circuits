@@ -159,6 +159,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let restore_context = cb.condition(not::expr(is_root.expr()), |cb| {
             RestoreContextGadget::construct(
                 cb,
+                is_create.expr(),
                 is_success.expr(),
                 not::expr(is_create.clone()) * (5.expr() + copy_rw_increase.expr()),
                 range.offset(),
