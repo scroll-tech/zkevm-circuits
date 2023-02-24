@@ -326,6 +326,29 @@ impl Memory {
             self.0.resize(memory_size, 0);
         }
     }
+
+    /// Copy source data to memory. Used in (ext)codecopy/calldatacopy.
+    pub fn copy_from(&mut self, dst_offset: u64, data: &[u8], data_offset: u64, length: usize) {
+        // https://github.com/ethereum/go-ethereum/blob/df52967ff6080a27243569020ff64cd956fb8362/core/vm/instructions.go#L312
+        if length != 0 {
+            let minimal_length = dst_offset as usize + length;
+            self.extend_at_least(minimal_length);
+
+            let mem_starts = dst_offset as usize;
+            let mem_ends = mem_starts + length as usize;
+            let dst_slice = &mut self.0[mem_starts..mem_ends];
+            dst_slice.fill(0);
+            let data_starts = data_offset as usize;
+            let actual_length = std::cmp::min(
+                length,
+                data.len().checked_sub(data_starts).unwrap_or_default(),
+            );
+            if actual_length != 0 {
+                let src_slice = &data[data_starts..data_starts + actual_length];
+                dst_slice[..actual_length].copy_from_slice(src_slice);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

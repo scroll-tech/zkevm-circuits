@@ -29,27 +29,7 @@ impl Opcode for Returndatacopy {
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
         let length = size.as_usize();
-        if length != 0 {
-            let mem_starts = dest_offset.as_usize();
-            let mem_ends = mem_starts + length;
-            let data_starts = offset.as_usize();
-            let data_ends = data_starts + length;
-            let minimal_length = dest_offset.as_usize() + length;
-            if data_ends <= return_data.len() {
-                memory.extend_at_least(minimal_length);
-                memory[mem_starts..mem_ends].copy_from_slice(&return_data[data_starts..data_ends]);
-            } else {
-                // if overflows this opcode would fails current context, so
-                // there is no more steps.
-                if !(geth_steps.len() == 1 || geth_steps[1].depth != geth_steps[0].depth) {
-                    log::warn!("read return data overflow, step {:?}", geth_steps[0]);
-                    memory.extend_at_least(minimal_length);
-                    let mut return_data = return_data[data_starts..].to_vec();
-                    return_data.resize(data_ends - data_starts, 0);
-                    memory[mem_starts..mem_ends].copy_from_slice(&return_data);
-                }
-            }
-        }
+        memory.copy_from(dest_offset.as_u64(), &return_data, offset.as_u64(), length);
 
         let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(copy_event);
