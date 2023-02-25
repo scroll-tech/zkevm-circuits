@@ -153,9 +153,11 @@ impl Report {
             .tests
             .clone()
             .into_iter()
-            .filter(|(_k, v)| match v.level {
-                crate::ResultLevel::Ignored | crate::ResultLevel::Success => false,
-                _ => true,
+            .filter(|(_k, v)| {
+                !matches!(
+                    v.level,
+                    crate::ResultLevel::Ignored | crate::ResultLevel::Success
+                )
             })
             .collect();
         let data = &json!({

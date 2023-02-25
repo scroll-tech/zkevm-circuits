@@ -104,6 +104,7 @@ pub(crate) struct RestoreContextGadget<F> {
 }
 
 impl<F: Field> RestoreContextGadget<F> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         is_create: Expression<F>,
