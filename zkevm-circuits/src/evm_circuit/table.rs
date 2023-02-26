@@ -170,7 +170,7 @@ impl<F: Field> RwValues<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Lookup<F> {
-    /// Lookup to fixed table, which contains serveral pre-built tables such as
+    /// Lookup to fixed table, which contains several pre-built tables such as
     /// range tables or bitwise tables.
     Fixed {
         /// Tag to specify which table to lookup.

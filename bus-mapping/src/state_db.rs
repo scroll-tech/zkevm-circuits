@@ -21,7 +21,7 @@ pub trait CodeHash: std::fmt::Debug {
 
 /// Helper trait for clone object in a object-safe way
 pub trait CodeHashCopy: CodeHash {
-    /// clone to a boxed obect
+    /// clone to a boxed object
     fn clone_box(&self) -> Box<dyn CodeHashCopy>;
 }
 

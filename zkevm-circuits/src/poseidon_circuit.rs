@@ -16,7 +16,7 @@ use mpt_zktrie::hash::{Hashable, PoseidonHashChip, PoseidonHashConfig, PoseidonH
 #[derive(Default, Clone, Debug)]
 pub struct PoseidonCircuit<F: Field>(pub(crate) PoseidonHashTable<F>, usize);
 
-/// Circuit configuration argumen ts
+/// Circuit configuration argument ts
 pub struct PoseidonCircuitConfigArgs {
     /// PoseidonTable
     pub poseidon_table: PoseidonTable,

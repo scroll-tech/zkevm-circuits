@@ -52,7 +52,7 @@ impl ProgramCounter {
     }
 }
 
-/// Defines the gas left to perate.
+/// Defines the gas left to operate.
 #[derive(Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Gas(pub u64);
 

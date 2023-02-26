@@ -45,7 +45,7 @@ pub use transaction::{Transaction, TransactionContext};
 #[derive(Debug, Clone, Copy)]
 pub struct CircuitsParams {
     /// Maximum number of rw operations in the state circuit (RwTable length /
-    /// nummber of rows). This must be at least the number of rw operations
+    /// number of rows). This must be at least the number of rw operations
     /// + 1, in order to allocate at least a Start row.
     pub max_rws: usize,
     // TODO: evm_rows: Maximum number of rows in the EVM Circuit
@@ -53,7 +53,7 @@ pub struct CircuitsParams {
     pub max_txs: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
-    /// Max ammount of rows that the CopyCircuit can have.
+    /// Max amount of rows that the CopyCircuit can have.
     pub max_copy_rows: usize,
     /// Maximum number of inner blocks in a batch
     pub max_inner_blocks: usize,

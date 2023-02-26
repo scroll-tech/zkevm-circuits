@@ -913,7 +913,7 @@ impl BytecodeTable {
         }
     }
 
-    /// Assign the `BytecodeTable` from a list of bytecodes, followig the same
+    /// Assign the `BytecodeTable` from a list of bytecodes, following the same
     /// table layout that the Bytecode Circuit uses.
     pub fn load<'a, F: Field>(
         &self,
@@ -1227,7 +1227,7 @@ impl KeccakTable {
     }
 
     /// returns matchings between the circuit columns passed as parameters and
-    /// the table collumns
+    /// the table columns
     pub fn match_columns(
         &self,
         value_rlc: Column<Advice>,

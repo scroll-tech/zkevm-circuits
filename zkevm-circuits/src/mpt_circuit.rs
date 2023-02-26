@@ -16,7 +16,7 @@ use mpt_zktrie::{operation::AccountOp, EthTrie, EthTrieCircuit, EthTrieConfig};
 #[derive(Default, Clone, Debug)]
 pub struct MptCircuit<F: Field>(pub(crate) EthTrieCircuit<F, false>);
 
-/// Circuit configuration argumen ts
+/// Circuit configuration argument ts
 pub struct MptCircuitConfigArgs<F: Field> {
     /// PoseidonTable
     pub poseidon_table: PoseidonTable,

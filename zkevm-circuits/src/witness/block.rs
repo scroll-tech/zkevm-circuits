@@ -182,7 +182,7 @@ pub struct BlockContext {
     pub number: Word,
     /// The timestamp of the block
     pub timestamp: Word,
-    /// The difficulty of the blcok
+    /// The difficulty of the block
     pub difficulty: Word,
     /// The base fee, the minimum amount of gas fee for a transaction
     pub base_fee: Word,
