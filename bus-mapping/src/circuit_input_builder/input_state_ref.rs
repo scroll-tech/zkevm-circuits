@@ -929,15 +929,16 @@ impl<'a> CircuitInputStateRef<'a> {
             if !self.call()?.is_root {
                 let (offset, length) = match step.op {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
-                        let (offset, length) =
-                            if self.call()?.is_create() && self.call()?.is_success() {
-                                (0, 0)
-                            } else {
-                                (
-                                    step.stack.nth_last(0)?.as_usize(),
-                                    step.stack.nth_last(1)?.as_usize(),
-                                )
-                            };
+                        let (offset, length) = if step.error.is_some()
+                            || (self.call()?.is_create() && self.call()?.is_success())
+                        {
+                            (0, 0)
+                        } else {
+                            (
+                                step.stack.nth_last(0)?.as_usize(),
+                                step.stack.nth_last(1)?.as_usize(),
+                            )
+                        };
 
                         // At the moment it conflicts with `call_ctx` and `caller_ctx`.
                         let callee_memory = self.call_ctx()?.memory.clone();

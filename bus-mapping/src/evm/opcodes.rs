@@ -288,7 +288,6 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         }
         ExecError::OutOfGas(OogError::Constant) => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
-        ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::StackOverflow => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorStackOogConstant::gen_associated_ops),
