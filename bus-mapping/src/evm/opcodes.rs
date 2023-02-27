@@ -664,14 +664,24 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         .unwrap()
         .clone();
     let effective_tip = state.tx.gas_price - block_info.base_fee;
+    let gas_cost = state.tx.gas - exec_step.gas_left.0 - effective_refund;
+    let coinbase_reward = effective_tip * gas_cost;
+    log::trace!(
+        "coinbase reward = ({} - {}) * ({} - {} - {}) = {}",
+        state.tx.gas_price,
+        block_info.base_fee,
+        state.tx.gas,
+        exec_step.gas_left.0,
+        effective_refund,
+        coinbase_reward
+    );
     let (found, coinbase_account) = state.sdb.get_account_mut(&block_info.coinbase);
     if !found {
         log::error!("coinbase account not found: {}", block_info.coinbase);
         return Err(Error::AccountNotFound(block_info.coinbase));
     }
     let coinbase_balance_prev = coinbase_account.balance;
-    let coinbase_balance =
-        coinbase_balance_prev + effective_tip * (state.tx.gas - exec_step.gas_left.0);
+    let coinbase_balance = coinbase_balance_prev + coinbase_reward;
     state.account_write(
         &mut exec_step,
         block_info.coinbase,
