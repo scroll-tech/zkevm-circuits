@@ -33,15 +33,32 @@ impl Opcode for ErrorCodeStore {
 
         // in internal call context
         let call = state.call()?;
+        let call_id = call.call_id;
+        let is_success = call.is_success;
         assert!(call.is_create() && !call.is_root);
 
         // must be in create context
         state.call_context_read(
             &mut exec_step,
-            call.call_id,
+            call_id,
             CallContextField::IsCreate,
             (call.is_create() as u64).into(),
         );
+
+        state.call_context_read(
+            &mut exec_step,
+            call_id,
+            CallContextField::IsSuccess,
+            (is_success as u64).into(),
+        );
+
+        state.call_context_read(
+            &mut exec_step,
+            call_id,
+            CallContextField::RwCounterEndOfReversion,
+            0u64.into(),
+        );
+
         // refer to return_revert Case C
         state.handle_restore_context(geth_steps, &mut exec_step)?;
 

@@ -28,6 +28,7 @@ pub(crate) struct ErrorCodeStoreGadget<F> {
     code_store_gas_insufficient: LtGadget<F, N_BYTES_GAS>,
     // check for MaxCodeSizeExceeded error
     max_code_size_exceed: LtGadget<F, N_BYTES_U64>,
+    rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -42,6 +43,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
+        let rw_counter_end_of_reversion = cb.query_cell();
 
         cb.stack_pop(offset.expr());
         cb.stack_pop(length.expr());
@@ -72,6 +74,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         // restore context as in internal call
         cb.require_zero("in internal call", cb.curr.state.is_root.expr());
 
+        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            rw_counter_end_of_reversion.expr(),
+        );
+
         // Case C in the return specs.
         let restore_context = RestoreContextGadget::construct(
             cb,
@@ -83,12 +93,22 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             0.expr(),
         );
 
+        // constrain RwCounterEndOfReversion
+        let rw_counter_end_of_step =
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+        cb.require_equal(
+            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        );
+
         Self {
             opcode,
             is_create,
             memory_address,
             code_store_gas_insufficient,
             max_code_size_exceed,
+            rw_counter_end_of_reversion,
             restore_context,
         }
     }
@@ -125,8 +145,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             F::from(MAXCODESIZE),
             F::from(length.as_u64()),
         )?;
+
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
         self.restore_context
-            .assign(region, offset, block, call, step, 3)?;
+            .assign(region, offset, block, call, step, 5)?;
         Ok(())
     }
 }
