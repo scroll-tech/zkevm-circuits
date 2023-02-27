@@ -20,6 +20,7 @@ pub(crate) struct ErrorOOGDynamicMemoryGadget<F> {
     opcode: Cell<F>,
     is_create: IsEqualGadget<F>,
     is_return: IsEqualGadget<F>,
+    value: Word<F>,
     address: Word<F>,
     size: Word<F>,
     address_in_range_high: IsZeroGadget<F>,
@@ -57,8 +58,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
             ),
         );
 
+        let value = cb.query_word_rlc();
+        cb.condition(is_create.expr(), |cb| {
+            cb.stack_pop(value.expr());
+        });
+
         let address = cb.query_word_rlc();
+        cb.stack_pop(address.expr());
         let size = cb.query_word_rlc();
+        cb.stack_pop(size.expr());
 
         let address_high = address_high::expr(&address);
         let address_in_range_high = IsZeroGadget::construct(cb, address_high);
@@ -121,7 +129,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(4.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(
+                    4.expr() + is_create.expr() + cb.curr.state.reversible_write_counter.expr(),
+                ),
                 ..StepStateTransition::any()
             });
         });
@@ -141,6 +151,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
             opcode,
             is_create,
             is_return,
+            value,
             address,
             size,
             address_in_range_high,
@@ -183,8 +194,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
             F::from(OpcodeId::RETURN.as_u64()),
         )?;
 
-        let address = block.rws[step.rw_indices[0]].stack_value();
-        let size = block.rws[step.rw_indices[1]].stack_value();
+        let mut rw_offset = 0;
+        if opcode == OpcodeId::CREATE {
+            let value = block.rws[step.rw_indices[rw_offset]].stack_value();
+            self.value
+                .assign(region, offset, Some(value.to_le_bytes()))?;
+            rw_offset += 1;
+        }
+        let address = block.rws[step.rw_indices[rw_offset]].stack_value();
+        let size = block.rws[step.rw_indices[rw_offset + 1]].stack_value();
         self.address
             .assign(region, offset, Some(address.to_le_bytes()))?;
         self.size.assign(region, offset, Some(size.to_le_bytes()))?;
@@ -244,8 +262,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
             Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
         )?;
 
-        self.restore_context
-            .assign(region, offset, block, call, step, 4)?;
+        self.restore_context.assign(
+            region,
+            offset,
+            block,
+            call,
+            step,
+            if opcode == OpcodeId::CREATE { 5 } else { 4 },
+        )?;
         Ok(())
     }
 }

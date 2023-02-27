@@ -24,6 +24,11 @@ impl Opcode for OOGDynamicMemory {
         if geth_step.op == OpcodeId::CREATE {
             state.stack_read(
                 &mut exec_step,
+                geth_step.stack.last_filled(),
+                geth_step.stack.last()?,
+            )?;
+            state.stack_read(
+                &mut exec_step,
                 geth_step.stack.nth_last_filled(1),
                 geth_step.stack.nth_last(1)?,
             )?;
