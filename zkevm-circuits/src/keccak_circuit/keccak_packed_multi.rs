@@ -2245,30 +2245,35 @@ mod tests {
 
     #[test]
     fn test_split_uniform_normalize_false() {
-        let mut cell_manager = CellManager::new(get_num_rows_per_round());
+        let number_of_rows = 100;
+        let mut cell_manager = CellManager::new(number_of_rows);
         let mut region = KeccakRegion::new();
         cell_manager.start_region();
         let mut output_cells: Vec<Cell<Fr>> = vec![];
-        for row_idx in 0..12 {
+        for row_idx in 0..number_of_rows {
             output_cells.push(cell_manager.query_cell_value_at_row(row_idx as i32));
         }
+        let part_size = 8;
+        let rot = 2;
+        let normalize = true; // if normalize is false test will fail
+        let input = 256;
         let split_res = split::value(
             &mut cell_manager,
             &mut region,
-            Fr::from(256 as u64),
-            2,
-            7,
-            false,
+            Fr::from(input as u64),
+            rot,
+            part_size,
+            normalize,
             None,
         );
         let split_uniform_res = split_uniform::value(
             &output_cells,
             &mut cell_manager,
             &mut region,
-            Fr::from(256 as u64),
-            2,
-            7,
-            false,
+            Fr::from(input as u64),
+            rot,
+            part_size,
+            normalize,
         );
         println!("split_res = {:?} \n", split_res);
         println!("split_uniform_res = {:?} \n", split_uniform_res);
