@@ -87,9 +87,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             cb,
             0.expr(),
             0.expr(),
+            0.expr(),
             memory_address.offset(),
             memory_address.length(),
-            0.expr(),
             0.expr(),
             0.expr(),
         );
