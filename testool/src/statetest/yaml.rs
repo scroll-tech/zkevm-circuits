@@ -102,8 +102,10 @@ impl<'a> YamlStateTestBuilder<'a> {
                 .map(Self::parse_u256)
                 .collect::<Result<_>>()?;
 
+            let max_fee_per_gas = Self::parse_u256(&yaml_transaction["maxFeePerGas"])
+                .unwrap_or_else(|_| U256::zero());
             let gas_price =
-                Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| U256::one());
+                Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or(max_fee_per_gas);
 
             // TODO handle maxPriorityFeePerGas & maxFeePerGas
             let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;
@@ -205,6 +207,8 @@ impl<'a> YamlStateTestBuilder<'a> {
     /// parse env section
     fn parse_env(yaml: &Yaml) -> Result<Env> {
         Ok(Env {
+            current_base_fee: Self::parse_u256(&yaml["currentBaseFee"])
+                .unwrap_or_else(|_| U256::from(10)),
             current_coinbase: Self::parse_address(&yaml["currentCoinbase"])?,
             current_difficulty: Self::parse_u256(&yaml["currentDifficulty"])?,
             current_gas_limit: Self::parse_u64(&yaml["currentGasLimit"])?,
@@ -601,6 +605,7 @@ arith:
             path: "".into(),
             id: "arith_d0_g0_v0".into(),
             env: Env {
+                current_base_fee: U256::from(10),
                 current_coinbase: address!("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba"),
                 current_difficulty: U256::from(0x20000u64),
                 current_number: 1,

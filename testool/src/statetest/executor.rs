@@ -137,7 +137,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 number: U64::from(st.env.current_number),
                 difficulty: st.env.current_difficulty,
                 gas_limit: U256::from(st.env.current_gas_limit),
-                base_fee: U256::one(),
+                base_fee: st.env.current_base_fee,
             },
 
             transactions: vec![geth_types::Transaction {
