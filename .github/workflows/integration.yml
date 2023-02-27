@@ -73,9 +73,6 @@ jobs:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
-      - uses: webfactory/ssh-agent@v0.5.4
-        with:
-          ssh-private-key: ${{ secrets.SECRET_REPO_DEPLOY_KEY }}
       # Run an initial build in a separate step to split the build time from execution time
       - name: Build bins
         run: cargo build --bin gen_blockchain_data
