@@ -76,7 +76,7 @@ pub trait ToAddress {
     fn to_address(&self) -> Address;
 }
 
-/// Trait uset do convert a scalar value to a 32 byte array in big endian.
+/// Trait used do convert a scalar value to a 32 byte array in big endian.
 pub trait ToBigEndian {
     /// Convert the value to a 32 byte array in big endian.
     fn to_be_bytes(&self) -> [u8; 32];

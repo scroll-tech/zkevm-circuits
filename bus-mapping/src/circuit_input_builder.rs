@@ -45,7 +45,7 @@ pub use transaction::{Transaction, TransactionContext};
 #[derive(Debug, Clone, Copy)]
 pub struct CircuitsParams {
     /// Maximum number of rw operations in the state circuit (RwTable length /
-    /// nummber of rows). This must be at least the number of rw operations
+    /// number of rows). This must be at least the number of rw operations
     /// + 1, in order to allocate at least a Start row.
     pub max_rws: usize,
     // TODO: evm_rows: Maximum number of rows in the EVM Circuit
@@ -53,7 +53,7 @@ pub struct CircuitsParams {
     pub max_txs: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
-    /// Max ammount of rows that the CopyCircuit can have.
+    /// Max amount of rows that the CopyCircuit can have.
     pub max_copy_rows: usize,
     /// Maximum number of inner blocks in a batch
     pub max_inner_blocks: usize,
@@ -520,6 +520,7 @@ pub fn get_dummy_tx(chain_id: u64) -> (TransactionRequest, Signature) {
         .nonce(0)
         .gas(0)
         .gas_price(U256::zero())
+        .to(Address::zero())
         .value(U256::zero())
         .data(Bytes::default())
         .chain_id(chain_id);
@@ -697,6 +698,58 @@ pub struct BuilderClient<P: JsonRpcClient> {
     circuits_params: CircuitsParams,
 }
 
+/// Get State Accesses from TxExecTraces
+pub fn get_state_accesses(
+    eth_block: &EthBlock,
+    geth_traces: &[eth_types::GethExecTrace],
+) -> Result<Vec<Access>, Error> {
+    let mut block_access_trace = vec![Access::new(
+        None,
+        RW::WRITE,
+        AccessValue::Account {
+            address: eth_block
+                .author
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
+        },
+    )];
+    for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
+        let geth_trace = &geth_traces[tx_index];
+        let tx_access_trace = gen_state_access_trace(eth_block, tx, geth_trace)?;
+        block_access_trace.extend(tx_access_trace);
+    }
+
+    Ok(block_access_trace)
+}
+
+/// Build a partial StateDB from step 3
+pub fn build_state_code_db(
+    proofs: Vec<eth_types::EIP1186ProofResponse>,
+    codes: HashMap<Address, Vec<u8>>,
+) -> (StateDB, CodeDB) {
+    let mut sdb = StateDB::new();
+    for proof in proofs {
+        let mut storage = HashMap::new();
+        for storage_proof in proof.storage_proof {
+            storage.insert(storage_proof.key, storage_proof.value);
+        }
+        sdb.set_account(
+            &proof.address,
+            state_db::Account {
+                nonce: proof.nonce,
+                balance: proof.balance,
+                storage,
+                code_hash: proof.code_hash,
+            },
+        )
+    }
+
+    let mut code_db = CodeDB::new();
+    for (_address, code) in codes {
+        code_db.insert(code.clone());
+    }
+    (sdb, code_db)
+}
+
 impl<P: JsonRpcClient> BuilderClient<P> {
     /// Create a new BuilderClient
     pub async fn new(
@@ -758,26 +811,10 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
     /// Step 2. Get State Accesses from TxExecTraces
     pub fn get_state_accesses(
-        &self,
         eth_block: &EthBlock,
         geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<Vec<Access>, Error> {
-        let mut block_access_trace = vec![Access::new(
-            None,
-            RW::WRITE,
-            AccessValue::Account {
-                address: eth_block
-                    .author
-                    .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
-            },
-        )];
-        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
-            let geth_trace = &geth_traces[tx_index];
-            let tx_access_trace = gen_state_access_trace(eth_block, tx, geth_trace)?;
-            block_access_trace.extend(tx_access_trace);
-        }
-
-        Ok(block_access_trace)
+        get_state_accesses(eth_block, geth_traces)
     }
 
     /// Step 3. Query geth for all accounts, storage keys, and codes from
@@ -818,39 +855,10 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
     /// Step 4. Build a partial StateDB from step 3
     pub fn build_state_code_db(
-        &self,
         proofs: Vec<eth_types::EIP1186ProofResponse>,
         codes: HashMap<Address, Vec<u8>>,
     ) -> (StateDB, CodeDB) {
-        let mut sdb = StateDB::new();
-        for proof in proofs {
-            let mut storage = HashMap::new();
-            for storage_proof in proof.storage_proof {
-                if !storage_proof.value.is_zero() {
-                    storage.insert(storage_proof.key, storage_proof.value);
-                }
-            }
-            log::trace!(
-                "statedb set_account {:?} balance {:?}",
-                proof.address,
-                proof.balance
-            );
-            sdb.set_account(
-                &proof.address,
-                state_db::Account {
-                    nonce: proof.nonce,
-                    balance: proof.balance,
-                    storage,
-                    code_hash: proof.code_hash,
-                },
-            )
-        }
-
-        let mut code_db = CodeDB::new();
-        for (_address, code) in codes {
-            code_db.insert(code.clone());
-        }
-        (sdb, code_db)
+        build_state_code_db(proofs, codes)
     }
 
     /// Step 5. For each step in TxExecTraces, gen the associated ops and state
@@ -908,9 +916,9 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     > {
         let (mut eth_block, mut geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
-        let access_set = self.get_state_accesses(&eth_block, &geth_traces)?;
+        let access_set = Self::get_state_accesses(&eth_block, &geth_traces)?;
         let (proofs, codes) = self.get_state(block_num, access_set.into()).await?;
-        let (state_db, code_db) = self.build_state_code_db(proofs, codes);
+        let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         if eth_block.transactions.len() > self.circuits_params.max_txs {
             log::error!(
                 "max_txs too small: {} < {} for block {}",
@@ -944,12 +952,12 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let mut access_set = AccessSet::default();
         for block_num in block_num_begin..block_num_end {
             let (eth_block, geth_traces, _, _) = self.get_block(block_num).await?;
-            let access_list = self.get_state_accesses(&eth_block, &geth_traces)?;
+            let access_list = Self::get_state_accesses(&eth_block, &geth_traces)?;
             access_set.add(access_list);
             blocks_and_traces.push((eth_block, geth_traces));
         }
         let (proofs, codes) = self.get_state(block_num_begin, access_set).await?;
-        let (state_db, code_db) = self.build_state_code_db(proofs, codes);
+        let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         let builder = self.gen_inputs_from_state_multi(state_db, code_db, &blocks_and_traces)?;
         Ok(builder)
     }
@@ -995,7 +1003,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let (proofs, codes) = self
             .get_state(tx.block_number.unwrap().as_u64(), access_set)
             .await?;
-        let (state_db, code_db) = self.build_state_code_db(proofs, codes);
+        let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         let builder = self.gen_inputs_from_state(
             state_db,
             code_db,

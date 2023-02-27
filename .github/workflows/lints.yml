@@ -62,9 +62,6 @@ jobs:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
-      - uses: webfactory/ssh-agent@v0.5.4
-        with:
-          ssh-private-key: ${{ secrets.SECRET_REPO_DEPLOY_KEY }}
       - name: Run clippy
         uses: actions-rs/clippy-check@v1
         with:

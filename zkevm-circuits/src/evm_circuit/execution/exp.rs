@@ -1,4 +1,5 @@
 use bus_mapping::evm::OpcodeId;
+use eth_types::evm_types::GasCost;
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{and, not, split_u256, sum, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -183,13 +184,15 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                 .unwrap(),
         );
 
-        // Finally we build an expression for the dynamic gas cost.
-        let dynamic_gas_cost = 50.expr() * exponent_byte_size.byte_size();
+        // Finally we build an expression for the dynamic gas cost as:
+        // dynamic_gas = 50 * exponent_byte_size
+        let dynamic_gas_cost = GasCost::EXP_BYTE_TIMES.0.expr() * exponent_byte_size.byte_size();
         let step_state_transition = StepStateTransition {
             rw_counter: Transition::Delta(3.expr()), // 2 stack pops, 1 stack push
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(1.expr()),
             gas_left: Transition::Delta(
+                // gas_cost = static_gas (10) + dynamic_gas
                 -OpcodeId::EXP.constant_gas_cost().expr() - dynamic_gas_cost,
             ),
             ..Default::default()

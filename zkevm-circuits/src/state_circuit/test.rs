@@ -133,11 +133,15 @@ fn verifying_key_independent_of_rw_length() {
         N_ROWS,
     );
 
-    // halo2::plonk::VerifyingKey doesn't derive Eq, so we check for equality using
-    // its debug string.
+    let vk_no_rows = keygen_vk(&params, &no_rows).unwrap();
+    let vk_one_rows = keygen_vk(&params, &one_row).unwrap();
     assert_eq!(
-        format!("{:?}", keygen_vk(&params, &no_rows).unwrap()),
-        format!("{:?}", keygen_vk(&params, &one_row).unwrap())
+        vk_no_rows.fixed_commitments(),
+        vk_one_rows.fixed_commitments()
+    );
+    assert_eq!(
+        vk_no_rows.permutation().commitments(),
+        vk_one_rows.permutation().commitments()
     );
 }
 

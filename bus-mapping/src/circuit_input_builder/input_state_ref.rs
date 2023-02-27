@@ -337,10 +337,9 @@ impl<'a> CircuitInputStateRef<'a> {
         field: AccountField,
         value: Word,
         value_prev: Word,
-    ) -> Result<(), Error> {
+    ) {
         let op = AccountOp::new(address, field, value, value_prev);
         self.push_op(step, RW::READ, op);
-        Ok(())
     }
 
     /// Push a write type [`AccountOp`] into the
@@ -495,17 +494,37 @@ impl<'a> CircuitInputStateRef<'a> {
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
-        let sender_balance_prev = sender_account.balance;
+        let mut sender_balance_prev = sender_account.balance;
         debug_assert!(
             sender_account.balance >= value + fee,
             "invalid amount balance {:?} value {:?} fee {:?}",
-            sender_account.balance,
+            sender_balance_prev,
             value,
             fee
         );
-        let sender_balance = sender_account.balance - value - fee;
+        if !fee.is_zero() {
+            let sender_balance = sender_balance_prev - fee;
+            log::trace!(
+                "sender balance update with fee (not reversible): {:?} {:?}->{:?}",
+                sender,
+                sender_balance_prev,
+                sender_balance
+            );
+            self.push_op(
+                step,
+                RW::WRITE,
+                AccountOp {
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
+                },
+            );
+            sender_balance_prev = sender_balance;
+        }
+        let sender_balance = sender_balance_prev - value;
         log::trace!(
-            "sender balance update: {:?} {:?}->{:?}",
+            "sender balance update with value: {:?} {:?}->{:?}",
             sender,
             sender_balance_prev,
             sender_balance
@@ -910,24 +929,25 @@ impl<'a> CircuitInputStateRef<'a> {
             if !self.call()?.is_root {
                 let (offset, length) = match step.op {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
-                        if step.error.is_none() {
-                            let offset = step.stack.nth_last(0)?.as_usize();
-                            let length = step.stack.nth_last(1)?.as_usize();
+                        let (offset, length) =
+                            if self.call()?.is_create() && self.call()?.is_success() {
+                                (0, 0)
+                            } else {
+                                (
+                                    step.stack.nth_last(0)?.as_usize(),
+                                    step.stack.nth_last(1)?.as_usize(),
+                                )
+                            };
 
-                            // At the moment it conflicts with `call_ctx` and `caller_ctx`.
-                            let callee_memory = self.call_ctx()?.memory.clone();
-                            let caller_ctx = self.caller_ctx_mut()?;
-                            caller_ctx.return_data.resize(length, 0);
-                            if length != 0 {
-                                caller_ctx.return_data[0..length]
-                                    .copy_from_slice(&callee_memory.0[offset..offset + length]);
-                            }
-                            (offset, length)
-                        } else {
-                            let caller_ctx = self.caller_ctx_mut()?;
-                            caller_ctx.return_data.truncate(0);
-                            (0, 0)
+                        // At the moment it conflicts with `call_ctx` and `caller_ctx`.
+                        let callee_memory = self.call_ctx()?.memory.clone();
+                        let caller_ctx = self.caller_ctx_mut()?;
+                        caller_ctx.return_data.resize(length, 0);
+                        if length != 0 {
+                            caller_ctx.return_data[0..length]
+                                .copy_from_slice(&callee_memory.0[offset..offset + length]);
                         }
+                        (offset, length)
                     }
                     OpcodeId::CALL
                     | OpcodeId::CALLCODE
@@ -1082,11 +1102,19 @@ impl<'a> CircuitInputStateRef<'a> {
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
                 CallContextField::LastCalleeReturnDataOffset,
-                last_callee_return_data_offset,
+                if call.is_create() && call.is_success {
+                    0.into()
+                } else {
+                    last_callee_return_data_offset
+                },
             ),
             (
                 CallContextField::LastCalleeReturnDataLength,
-                last_callee_return_data_length,
+                if call.is_create() && call.is_success {
+                    0.into()
+                } else {
+                    last_callee_return_data_length
+                },
             ),
         ] {
             self.call_context_write(exec_step, caller.call_id, field, value);

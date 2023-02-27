@@ -1010,7 +1010,7 @@ impl<T: Op> Operation<T> {
         &mut self.op
     }
 
-    // /// Matches over an `Operation` returning the [`Target`] of the iternal
+    // /// Matches over an `Operation` returning the [`Target`] of the internal
     // op /// it stores inside.
     // pub const fn target(&self) -> Target {
     //     self.op.target()

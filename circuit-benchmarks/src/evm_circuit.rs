@@ -25,6 +25,9 @@ mod evm_circ_benches {
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_evm_circuit_prover() {
+        let setup_prfx = crate::constants::SETUP_PREFIX;
+        let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
+        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
         //Unique string used by bench results module for parsing the result
         const BENCHMARK_ID: &str = "EVM Circuit";
 
@@ -56,7 +59,7 @@ mod evm_circ_benches {
         ]);
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", degree);
+        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
         let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
@@ -69,7 +72,10 @@ mod evm_circ_benches {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, degree);
+        let proof_message = format!(
+            "{} {} with degree = {}",
+            BENCHMARK_ID, proof_gen_prfx, degree
+        );
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -91,7 +97,7 @@ mod evm_circ_benches {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| format!("{} Proof verification", BENCHMARK_ID));
+        let start3 = start_timer!(|| format!("{} {}", BENCHMARK_ID, proof_ver_prfx));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

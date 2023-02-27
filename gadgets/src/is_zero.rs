@@ -6,7 +6,6 @@
 
 use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
@@ -16,7 +15,7 @@ use crate::util::Expr;
 
 /// Trait that needs to be implemented for any gadget or circuit that wants to
 /// implement `IsZero`.
-pub trait IsZeroInstruction<F: FieldExt> {
+pub trait IsZeroInstruction<F: Field> {
     /// Given a `value` to be checked if it is zero:
     ///   - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
     ///     `1/x` otherwise
@@ -43,6 +42,13 @@ impl<F: Field> IsZeroConfig<F> {
     /// Returns the is_zero expression
     pub fn expr(&self) -> Expression<F> {
         self.is_zero_expression.clone()
+    }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
+        [(self.value_inv, "GADGETS_IS_ZERO_inverse_witness")]
+            .iter()
+            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
     }
 }
 
@@ -111,7 +117,6 @@ impl<F: Field> IsZeroInstruction<F> for IsZeroChip<F> {
         value: Value<F>,
     ) -> Result<(), Error> {
         let config = self.config();
-
         // postpone the invert to prover which has batch_invert function to
         // amortize among all is_zero_chip assignments.
         let value_invert = value.into_field().invert();
@@ -145,7 +150,6 @@ mod test {
 
     use eth_types::Field;
     use halo2_proofs::{
-        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr as Fp,
@@ -199,7 +203,7 @@ mod test {
         }
 
         #[derive(Default)]
-        struct TestCircuit<F: FieldExt> {
+        struct TestCircuit<F: Field> {
             values: Option<Vec<u64>>,
             // checks[i] = is_zero(values[i + 1] - values[i])
             checks: Option<Vec<bool>>,
@@ -326,7 +330,7 @@ mod test {
         }
 
         #[derive(Default)]
-        struct TestCircuit<F: FieldExt> {
+        struct TestCircuit<F: Field> {
             values: Option<Vec<(u64, u64)>>,
             // checks[i] = is_zero(values[i].0 - values[i].1)
             checks: Option<Vec<bool>>,

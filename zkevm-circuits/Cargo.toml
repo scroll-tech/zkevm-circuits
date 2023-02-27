@@ -57,6 +57,7 @@ pretty_assertions = "1.0.0"
 default = ["test", "test-circuits", "onephase", "enable-sign-verify"]
 test = ["ethers-signers", "mock"]
 test-circuits = []
+warn-unimplemented = ["eth-types/warn-unimplemented"]
 onephase = []
 zktrie = []
 enable-sign-verify = []

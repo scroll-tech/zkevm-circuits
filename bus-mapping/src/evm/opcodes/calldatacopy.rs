@@ -22,26 +22,8 @@ impl Opcode for Calldatacopy {
         let length = geth_step.stack.nth_last(2)?.as_usize();
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
-        // https://github.com/ethereum/go-ethereum/blob/df52967ff6080a27243569020ff64cd956fb8362/core/vm/instructions.go#L312
-        if length != 0 {
-            let minimal_length = memory_offset as usize + length;
-            memory.extend_at_least(minimal_length);
 
-            let mem_starts = memory_offset as usize;
-            let mem_ends = mem_starts + length as usize;
-            let dst_slice = &mut memory.0[mem_starts..mem_ends];
-            dst_slice.fill(0);
-            let data_starts = data_offset as usize;
-            let call_data = &call_ctx.call_data;
-            let actual_length = std::cmp::min(
-                length,
-                call_data.len().checked_sub(data_starts).unwrap_or_default(),
-            );
-            if actual_length != 0 {
-                let src_slice = &call_data[data_starts..data_starts + actual_length];
-                dst_slice[..actual_length].copy_from_slice(src_slice);
-            }
-        }
+        memory.copy_from(memory_offset, &call_ctx.call_data, data_offset, length);
 
         let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(copy_event);

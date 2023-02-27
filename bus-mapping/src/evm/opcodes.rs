@@ -61,12 +61,14 @@ mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_dynamic_memory;
+mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_precompile_failed;
 mod error_return_data_outofbound;
 mod error_stack_oog_constant;
+mod error_write_protection;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -89,12 +91,14 @@ use error_invalid_jump::InvalidJump;
 use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
 use error_oog_dynamic_memory::OOGDynamicMemory;
+use error_oog_exp::OOGExp;
 use error_oog_log::ErrorOOGLog;
 use error_oog_sload_sstore::OOGSloadSstore;
 use error_oog_static_memory::OOGStaticMemory;
 use error_precompile_failed::PrecompileFailed;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_stack_oog_constant::ErrorStackOogConstant;
+use error_write_protection::ErrorWriteProtection;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -283,12 +287,15 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
             Some(OOGStaticMemory::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::Constant) => Some(ErrorStackOogConstant::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::StackOverflow => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorStackOogConstant::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         ExecError::PrecompileFailed => Some(PrecompileFailed::gen_associated_ops),
+        ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
 
         // more future errors place here
@@ -326,8 +333,15 @@ pub fn gen_associated_ops(
                     state.call_ctx()?.memory.0.len(),
                     geth_steps[0].memory.0.len(),
                 ) {
-                    if state.call_ctx()?.memory.0[i] != geth_steps[0].memory.0[i] {
-                        log::error!("diff at {}", i);
+                    let state_mem = state.call_ctx()?.memory.0[i];
+                    let step_mem = geth_steps[0].memory.0[i];
+                    if state_mem != step_mem {
+                        log::error!(
+                            "diff at {}: state {:?} != step {:?}",
+                            i,
+                            state_mem,
+                            step_mem
+                        );
                     }
                 }
                 if check_level >= 2 {
@@ -453,7 +467,12 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // address to `CodeDB::empty_code_hash()`. FIXME: we should have a
     // consistent codehash for precompile contract.
     let (_, callee_account) = state.sdb.get_account(&call.address);
+    let callee_account = callee_account.clone();
+    let callee_account = &callee_account;
     let callee_exists = !callee_account.is_empty();
+    if !callee_exists {
+        state.sdb.get_account_mut(&call.address).1.storage.clear();
+    }
     let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
         (true, _) => (call.code_hash.to_word(), false),
         (_, true) => {
@@ -537,7 +556,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 AccountField::CodeHash,
                 callee_code_hash,
                 callee_code_hash,
-            )?;
+            );
 
             Ok(exec_step)
         }
@@ -548,7 +567,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 AccountField::CodeHash,
                 callee_code_hash,
                 callee_code_hash,
-            )?;
+            );
 
             // 3. Call to account with empty code.
             if is_empty_code_hash {

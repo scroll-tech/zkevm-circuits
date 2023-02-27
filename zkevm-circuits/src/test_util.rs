@@ -29,7 +29,7 @@ fn init_env_logger() {
 /// builder pattern provides functions that allow to pass different functions
 /// that the prover should execute when verifying the CTB correctness.
 ///
-/// The CTB also includes a mechanism to recieve calls that will modify the
+/// The CTB also includes a mechanism to receive calls that will modify the
 /// block produced from the [`TestContext`] and apply them before starting to
 /// compute the proof.
 ///
@@ -212,7 +212,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let k = block.get_test_degree();
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
-            let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
+            let circuit = EvmCircuit::get_test_cicuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
             self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)

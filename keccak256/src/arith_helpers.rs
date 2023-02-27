@@ -187,7 +187,7 @@ pub fn convert_b9_lane_to_b2_normal(x: Lane9) -> u64 {
         .unwrap_or(0)
 }
 
-/// This function allows us to inpect coefficients of big-numbers in different
+/// This function allows us to inspect coefficients of big-numbers in different
 /// bases.
 pub fn inspect(x: BigUint, name: &str, base: u8) {
     let mut chunks = x.to_radix_le(base.into());

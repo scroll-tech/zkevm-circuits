@@ -92,6 +92,18 @@ where
                 }),
         )
     }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        let mut annotations = Vec::new();
+        for (i, _) in self.bits.iter().enumerate() {
+            annotations.push(format!("GADGETS_binary_number_{}", i));
+        }
+        self.bits
+            .iter()
+            .zip(annotations.iter())
+            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+    }
 }
 
 /// This chip helps working with binary encoding of integers of length N bits
