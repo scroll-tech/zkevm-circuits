@@ -21,7 +21,7 @@ pub trait CodeHash: std::fmt::Debug {
 
 /// Helper trait for clone object in a object-safe way
 pub trait CodeHashCopy: CodeHash {
-    /// clone to a boxed obect
+    /// clone to a boxed object
     fn clone_box(&self) -> Box<dyn CodeHashCopy>;
 }
 
@@ -114,10 +114,7 @@ impl Account {
 
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        self.nonce.is_zero()
-            && self.balance.is_zero()
-            && self.storage.is_empty()
-            && self.code_hash.eq(&CODE_HASH_ZERO)
+        self.nonce.is_zero() && self.balance.is_zero() && self.code_hash.eq(&CODE_HASH_ZERO)
     }
 }
 

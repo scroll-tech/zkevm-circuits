@@ -19,21 +19,19 @@ mod tests {
     use log;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
+    use std::env::var;
     use zkevm_circuits::tx_circuit::TxCircuit;
     use zkevm_circuits::util::SubCircuit;
     use zkevm_circuits::witness::block_convert;
 
-    // use crate::bench_params::DEGREE;
     use bus_mapping::rpc::GethClient;
     use ethers::providers::Http;
     use url::Url;
-
     fn get_client() -> GethClient<Http> {
         let geth_url = "http://52.37.45.56:30303";
         let transport = Http::new(Url::parse(geth_url).expect("invalid url"));
         GethClient::new(transport)
     }
-
     async fn build_circuit_from_mainnet_block() -> (usize, TxCircuit<Fr>) {
         let degree = std::env::var("DEGREE")
             .expect("DEGREE Not Set")
@@ -50,8 +48,9 @@ mod tests {
             max_calldata: 2_000_000,
             max_inner_blocks: 64,
             max_bytecode: 3_000_000,
-            keccak_padding: None,
+            keccak_padding: None, // FIXME: can this be none?
             max_exp_steps: 100_000,
+            max_evm_rows: 4_000_000,
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
@@ -66,23 +65,34 @@ mod tests {
     }
 
     fn build_circuit_from_mock_txs() -> (usize, TxCircuit<Fr>) {
-        use crate::bench_params::DEGREE;
         // Approximate value, adjust with changes on the TxCircuit.
         const ROWS_PER_TX: usize = 175_000;
-        const MAX_TXS: usize = 2_usize.pow(DEGREE as u32) / ROWS_PER_TX;
+
         const MAX_CALLDATA: usize = 1024;
+        let degree: u32 = var("DEGREE")
+            .unwrap_or_else(|_| "19".to_string())
+            .parse()
+            .expect("Cannot parse DEGREE env var as u32");
+
+        let max_txs: usize = 2_usize.pow(degree) / ROWS_PER_TX;
+
         let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
         let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
-        let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, txs);
-        (DEGREE, circuit)
+        let circuit = TxCircuit::<Fr>::new(max_txs, MAX_CALLDATA, chain_id, txs);
+        (degree as usize, circuit)
     }
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[tokio::test]
     async fn bench_tx_circuit_prover() {
         env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
-
+        let setup_prfx = crate::constants::SETUP_PREFIX;
+        let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
+        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
         let mut rng = ChaCha20Rng::seed_from_u64(42);
+
+        //Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "Tx Circuit";
 
         let mock_mode = true;
         let (degree, circuit) = if mock_mode {
@@ -92,7 +102,7 @@ mod tests {
         };
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", degree);
+        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
         let general_params = ParamsKZG::<Bn256>::setup(degree as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
@@ -105,7 +115,10 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("Tx Circuit Proof generation with degree = {}", degree);
+        let proof_message = format!(
+            "{} {} with degree = {}",
+            BENCHMARK_ID, proof_gen_prfx, degree
+        );
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -127,7 +140,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "Tx Circuit Proof verification");
+        let start3 = start_timer!(|| format!("{} {}", BENCHMARK_ID, proof_ver_prfx));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

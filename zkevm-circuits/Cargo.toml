@@ -54,11 +54,14 @@ mock = { path = "../mock" }
 pretty_assertions = "1.0.0"
 
 [features]
-default = ["test", "onephase", "enable-sign-verify"]
+default = ["test", "test-circuits", "onephase", "enable-sign-verify"]
 test = ["ethers-signers", "mock"]
+test-circuits = []
+warn-unimplemented = ["eth-types/warn-unimplemented"]
 onephase = []
 zktrie = []
 enable-sign-verify = []
 codehash = []
 reject-eip2718 = []
 poseidon-codehash = []
+scroll = []

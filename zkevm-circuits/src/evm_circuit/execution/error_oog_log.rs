@@ -4,11 +4,8 @@ use crate::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
-            },
+            common_gadget::CommonErrorGadget,
+            constraint_builder::ConstraintBuilder,
             math_gadget::LtGadget,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             CachedRegion, Cell,
@@ -32,8 +29,7 @@ pub(crate) struct ErrorOOGLogGadget<F> {
     // constrain gas left is less than gas cost
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
-    rw_counter_end_of_reversion: Cell<F>,
-    restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
@@ -43,11 +39,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
-
         let mstart = cb.query_cell_phase2();
         let msize = cb.query_word_rlc();
-        let rw_counter_end_of_reversion = cb.query_cell();
 
         // Pop mstart_address, msize from stack
         cb.stack_pop(mstart.expr());
@@ -81,61 +74,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         // required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
         cb.require_equal(
-            "logN gas left is less than gas required ",
+            "gas left is less than gas required ",
             insufficient_gas.expr(),
             1.expr(),
         );
 
-        // current call must be failed.
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-
-        // Go to EndTx only when is_root
-        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
-        cb.require_equal(
-            "Go to EndTx only when is_root",
-            cb.curr.state.is_root.expr(),
-            is_to_end_tx,
-        );
-
-        // When it's a root call
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            // Do step state transition
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                rw_counter: Delta(5.expr() + cb.curr.state.reversible_write_counter.expr()),
-                ..StepStateTransition::any()
-            });
-        });
-
-        // When it's an internal call, need to restore caller's state as finishing this
-        // call. Restore caller state to next StepState
-        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
-
-        // constrain RwCounterEndOfReversion
-        let rw_counter_end_of_step =
-            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
-        cb.require_equal(
-            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
-            rw_counter_end_of_reversion.expr(),
-            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
-        );
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 5.expr());
 
         Self {
             opcode,
@@ -144,8 +88,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             memory_address,
             memory_expansion,
             insufficient_gas,
-            rw_counter_end_of_reversion,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -158,6 +101,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        let opcode = step.opcode.unwrap();
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+
         let [memory_start, msize] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
 
@@ -169,9 +116,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [memory_address])?;
 
-        let opcode = step.opcode.unwrap();
-        self.opcode
-            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         let topic_count = opcode.postfix().expect("opcode with postfix") as u64;
         assert!(topic_count <= 4);
         self.is_static_call
@@ -179,6 +123,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
         self.is_opcode_logn
             .assign(region, offset, F::from(topic_count), F::from(5u64))?;
+
         // Gas insufficient check
         self.insufficient_gas.assign(
             region,
@@ -186,15 +131,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             F::from(step.gas_left),
             F::from(step.gas_cost),
         )?;
-
-        self.rw_counter_end_of_reversion.assign(
-            region,
-            offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
-        )?;
-        self.restore_context
+        self.common_error_gadget
             .assign(region, offset, block, call, step, 5)?;
-
         Ok(())
     }
 }

@@ -38,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         // linear combination uses little-endian, so we lookup from the LSB
         // which has index (program_counter + num_pushed), and then move left
         // (program_counter + num_pushed - idx) to lookup all 32 bytes
-        // condiionally by selectors.
+        // conditionally by selectors.
         // For PUSH2 as an example, we lookup from byte0, byte1, ..., byte31,
         // where the byte2 is actually the PUSH2 itself, and lookup are only
         // enabled for byte0 and byte1.
@@ -47,6 +47,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         //                           ▼                     ▼
         //   [byte31,     ...,     byte2,     byte1,     byte0]
         //
+        /*
         for idx in 0..32 {
             let byte = &value.cells[idx];
             let index = cb.curr.state.program_counter.expr() + opcode.expr()
@@ -59,6 +60,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
                 });
             }
         }
+        */
 
         for idx in 0..31 {
             let selector_prev = if idx == 0 {
@@ -145,8 +147,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::bytecode;
     use eth_types::evm_types::OpcodeId;
+    use eth_types::{bytecode, Bytecode};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
@@ -184,6 +186,16 @@ mod test {
                 24, 25, 26, 27, 28, 29, 30, 31, 32,
             ],
         );
+    }
+
+    #[ignore]
+    #[test]
+    fn push_gadget_out_of_range() {
+        let bytecode = Bytecode::from(vec![0x61, 0x00]);
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

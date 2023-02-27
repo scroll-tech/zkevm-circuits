@@ -9,7 +9,8 @@ use crate::{
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use eth_types::geth_types::GethData;
 
-use halo2_proofs::dev::MockProver;
+use halo2_proofs::circuit::Value;
+use halo2_proofs::dev::{unwrap_value, MockProver};
 use halo2_proofs::halo2curves::bn256::Fr;
 use mock::TestContext;
 
@@ -28,7 +29,7 @@ fn init_env_logger() {
 /// builder pattern provides functions that allow to pass different functions
 /// that the prover should execute when verifying the CTB correctness.
 ///
-/// The CTB also includes a mechanism to recieve calls that will modify the
+/// The CTB also includes a mechanism to receive calls that will modify the
 /// block produced from the [`TestContext`] and apply them before starting to
 /// compute the proof.
 ///
@@ -67,7 +68,7 @@ fn init_env_logger() {
 /// .unwrap();
 ///
 /// CircuitTestBuilder::new_from_test_ctx(ctx)
-///     .block_modifier(Box::new(|block| block.evm_circuit_pad_to = (1 << 18) - 100))
+///     .block_modifier(Box::new(|block| block.circuits_params.max_evm_rows = (1 << 18) - 100))
 ///     .state_checks(Box::new(|prover, evm_rows, lookup_rows| assert!(prover.verify_at_rows_par(evm_rows.iter().cloned(), lookup_rows.iter().cloned()).is_err())))
 ///     .run();
 /// ```
@@ -211,7 +212,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let k = block.get_test_degree();
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
-            let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
+            let circuit = EvmCircuit::get_test_cicuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
             self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
@@ -236,5 +237,14 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
             self.state_checks.as_ref()(prover, &rows, &rows);
         }
+    }
+}
+
+/// Escape the type safety of Value in tests.
+pub fn escape_value<T>(v: Value<T>) -> Option<T> {
+    if v.is_none() {
+        None
+    } else {
+        Some(unwrap_value(v))
     }
 }

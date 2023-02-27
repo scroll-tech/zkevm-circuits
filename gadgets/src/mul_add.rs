@@ -363,6 +363,19 @@ impl<F: Field> MulAddChip<F> {
 
         Ok(())
     }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
+        [
+            (self.config.col0, "GADGET_MUL_ADD_col0"),
+            (self.config.col1, "GADGET_MUL_ADD_col1"),
+            (self.config.col2, "GADGET_MUL_ADD_col2"),
+            (self.config.col3, "GADGET_MUL_ADD_col3"),
+            (self.config.col4, "GADGET_MUL_ADD_col4"),
+        ]
+        .iter()
+        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+    }
 }
 
 #[cfg(test)]

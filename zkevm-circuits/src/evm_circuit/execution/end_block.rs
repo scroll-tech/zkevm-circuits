@@ -158,7 +158,7 @@ mod test {
         // finish required tests using this witness block
         CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
             .block_modifier(Box::new(move |block| {
-                block.evm_circuit_pad_to = evm_circuit_pad_to
+                block.circuits_params.max_evm_rows = evm_circuit_pad_to
             }))
             .run();
     }

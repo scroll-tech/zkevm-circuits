@@ -30,23 +30,8 @@ impl Opcode for Codecopy {
 
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
-        if length != 0 {
-            let minimal_length = (dest_offset + length) as usize;
-            memory.extend_at_least(minimal_length);
 
-            let mem_starts = dest_offset as usize;
-            let mem_ends = mem_starts + length as usize;
-            let code_starts = code_offset as usize;
-            let code_ends = code_starts + length as usize;
-            if code_ends <= code.len() {
-                memory[mem_starts..mem_ends].copy_from_slice(&code[code_starts..code_ends]);
-            } else if let Some(actual_length) = code.len().checked_sub(code_starts) {
-                let mem_code_ends = mem_starts + actual_length;
-                memory[mem_starts..mem_code_ends].copy_from_slice(&code[code_starts..]);
-                // since we already resize the memory, no need to copy 0s for
-                // out of bound bytes
-            }
-        }
+        memory.copy_from(dest_offset, &code, code_offset, length as usize);
 
         let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(copy_event);

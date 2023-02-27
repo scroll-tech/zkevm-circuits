@@ -10,7 +10,7 @@ use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
 use crate::table::{KeccakTable, LookupTable, RlpTable, TxFieldTag, TxTable};
 #[cfg(not(feature = "enable-sign-verify"))]
 use crate::tx_circuit::sign_verify::pub_key_hash_to_address;
-use crate::util::{random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig};
+use crate::util::{keccak, random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig};
 use crate::witness;
 use crate::witness::{RlpDataType, RlpTxTag, Transaction};
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
@@ -18,7 +18,7 @@ use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness};
 use eth_types::{
     sign_types::SignData,
-    {Field, ToLittleEndian, ToScalar},
+    Address, ToAddress, {Field, ToLittleEndian, ToScalar},
 };
 #[cfg(not(feature = "enable-sign-verify"))]
 use ethers_core::utils::keccak256;
@@ -29,8 +29,8 @@ use gadgets::util::{and, not, select, sum, Expr};
 use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::poly::Rotation;
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    circuit::{Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
 };
 use log::error;
 use num::Zero;
@@ -59,6 +59,9 @@ use halo2_proofs::plonk::Fixed;
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 19;
@@ -113,6 +116,7 @@ pub struct TxCircuitConfig<F: Field> {
     /// subsequent rows or not.
     tx_id_unchanged: IsEqualConfig<F>,
     is_calldata: Column<Advice>,
+    is_create: Column<Advice>,
 
     lookup_conditions: HashMap<LookupCondition, Column<Advice>>,
     /// A boolean advice column, which is turned on only for the last byte in
@@ -169,6 +173,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let rlp_tag = meta.advice_column();
         let value_inv = meta.advice_column_in(SecondPhase);
         let is_calldata = meta.advice_column(); // to reduce degree
+        let is_create = meta.advice_column();
         let lookup_conditions = [
             LookupCondition::TxCalldata,
             LookupCondition::Tag,
@@ -415,6 +420,18 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
+        meta.create_gate("tag == is_create", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_create",
+                tag.value_equals(IsCreate, Rotation::cur())(meta),
+                meta.query_advice(is_create, Rotation::cur()),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
         meta.create_gate("tx call data bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -490,29 +507,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         });
         */
 
-        meta.create_gate("tx is_create", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.condition(value_is_zero.is_zero_expression.clone(), |cb| {
-                cb.require_equal(
-                    "if callee_address == 0 then is_create == 1",
-                    meta.query_advice(tx_table.value, Rotation::next()),
-                    1.expr(),
-                );
-            });
-            cb.condition(not::expr(value_is_zero.is_zero_expression.clone()), |cb| {
-                cb.require_zero(
-                    "if callee_address != 0 then is_create == 0",
-                    meta.query_advice(tx_table.value, Rotation::next()),
-                );
-            });
-
-            cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                tag.value_equals(CalleeAddress, Rotation::cur())(meta),
-            ]))
-        });
-
         /*
         meta.create_gate("tx signature v", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -531,6 +525,37 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         });
          */
 
+        meta.lookup_any(
+            "is_create == 1 iff rlp_tag == To && tag_length == 1",
+            |meta| {
+                let enable = and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(is_create, Rotation::cur()),
+                ]);
+
+                vec![
+                    meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                    RlpTxTag::To.expr(),
+                    1.expr(), // tag_rindex == 1
+                    RlpDataType::TxHash.expr(),
+                    meta.query_advice(tx_table.value, Rotation::cur()), // tag_length == 1
+                ]
+                .into_iter()
+                .zip(
+                    vec![
+                        rlp_table.tx_id,
+                        rlp_table.tag,
+                        rlp_table.tag_rindex,
+                        rlp_table.data_type,
+                        rlp_table.tag_length_eq_one,
+                    ]
+                    .into_iter()
+                    .map(|column| meta.query_advice(column, Rotation::cur())),
+                )
+                .map(|(arg, table)| (enable.clone() * arg, table))
+                .collect()
+            },
+        );
         #[cfg(feature = "reject-eip2718")]
         meta.create_gate("caller address == sv_address if it's not zero", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -571,6 +596,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             value_is_zero,
             tx_id_unchanged,
             is_calldata,
+            is_create,
             lookup_conditions,
             is_final,
             calldata_length,
@@ -820,6 +846,12 @@ impl<F: Field> TxCircuitConfig<F> {
             *offset,
             || Value::known(F::from((tag == CallData) as u64)),
         )?;
+        region.assign_advice(
+            || "is_create",
+            self.is_create,
+            *offset,
+            || Value::known(F::from((tag == IsCreate) as u64)),
+        )?;
 
         *offset += 1;
 
@@ -871,6 +903,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 (self.rlp_tag, rlp_data),
                 (self.is_final, F::one()),
                 (self.is_calldata, F::one()),
+                (self.is_create, F::zero()),
                 (self.calldata_length, F::zero()),
                 (self.calldata_gas_cost_acc, F::zero()),
                 (self.chain_id, F::zero()),
@@ -1056,7 +1089,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 RlpDataType::TxSign.expr(),
             ]
             .into_iter()
-            .zip(rlp_table.table_exprs(meta).into_iter())
+            .zip(rlp_table.table_exprs(meta).into_iter()) // tag_length_eq_one is the 6th column in rlp table
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1353,7 +1386,12 @@ impl<F: Field> TxCircuit<F> {
                         (
                             CalleeAddress,
                             RlpTxTag::To,
-                            Value::known(tx.callee_address.to_scalar().expect("tx.to too big")),
+                            Value::known(
+                                tx.callee_address
+                                    .unwrap_or(Address::zero())
+                                    .to_scalar()
+                                    .expect("tx.to too big"),
+                            ),
                         ),
                         (
                             IsCreate,
@@ -1608,6 +1646,15 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     type Config = TxCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
+        debug_assert_eq!(block.chain_id, block.context.chain_id());
+        for tx in &block.txs {
+            if tx.chain_id != block.chain_id.as_u64() {
+                panic!(
+                    "inconsistent chain id, block chain id {}, tx {:?}",
+                    block.chain_id, tx.chain_id
+                );
+            }
+        }
         Self::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
@@ -1663,6 +1710,31 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             .collect::<Result<Vec<SignData>, Error>>()?;
 
         config.load_aux_tables(layouter)?;
+
+        // check if tx.caller_address == recovered_pk
+        let recovered_pks = keccak_inputs_sign_verify(&sign_datas)
+            .into_iter()
+            .enumerate()
+            .filter(|(idx, _)| {
+                // each sign_data produce two inputs for hashing
+                // pk -> pk_hash, msg -> msg_hash
+                idx % 2 == 0
+            })
+            .map(|(_, input)| input)
+            .collect::<Vec<_>>();
+
+        for (pk, tx) in recovered_pks.into_iter().zip(self.txs.iter()) {
+            let pk_hash = keccak(&pk);
+            let address = pk_hash.to_address();
+            if address != tx.caller_address {
+                log::error!(
+                    "pk address from sign data {:?} does not match the one from tx address {:?}",
+                    address,
+                    tx.caller_address
+                )
+            }
+        }
+
         #[cfg(feature = "enable-sign-verify")]
         {
             let assigned_sig_verifs =
@@ -1708,7 +1780,6 @@ use crate::util::Challenges;
 #[cfg(feature = "onephase")]
 use crate::util::MockChallenges as Challenges;
 
-#[cfg(any(feature = "test", test))]
 impl<F: Field> Circuit<F> for TxCircuit<F> {
     type Config = (TxCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
@@ -1762,6 +1833,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
             &mut layouter,
             &self.txs,
             self.max_txs,
+            self.max_calldata,
             self.chain_id,
             &challenges,
         )?;
@@ -1784,6 +1856,7 @@ mod tx_circuit_tests {
     use crate::util::log2_ceil;
     #[cfg(feature = "reject-eip2718")]
     use eth_types::address;
+    use eth_types::U64;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
@@ -1894,5 +1967,20 @@ mod tx_circuit_tests {
             MAX_CALLDATA
         )
         .is_err(),);
+    }
+
+    #[test]
+    fn tx_circuit_to_is_zero() {
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
+        let mut tx = mock::CORRECT_MOCK_TXS[5].clone();
+        tx.transaction_index = U64::from(1);
+
+        assert_eq!(
+            run::<Fr>(vec![tx.into()], chain_id, MAX_TXS, MAX_CALLDATA),
+            Ok(())
+        );
     }
 }

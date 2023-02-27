@@ -82,10 +82,14 @@ mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
+mod error_precompile_failed;
+mod error_return_data_oo_bound;
 mod error_stack;
+mod error_write_protection;
 mod exp;
 mod extcodecopy;
 mod extcodehash;
@@ -152,9 +156,14 @@ use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
+use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
+use error_precompile_failed::ErrorPrecompileFailedGadget;
+use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
+use error_write_protection::ErrorWriteProtectionGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
 use extcodehash::ExtcodehashGadget;
@@ -294,10 +303,11 @@ pub(crate) struct ExecutionConfig<F> {
     // error gadgets
     error_oog_call: ErrorOOGCallGadget<F>,
     error_oog_constant: ErrorOOGConstantGadget<F>,
+    error_oog_exp: ErrorOOGExpGadget<F>,
     error_oog_sload_sstore: ErrorOOGSloadSstoreGadget<F>,
-    error_oog_static_memory_gadget:
-        DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
+    error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
     error_stack: ErrorStackGadget<F>,
+    error_write_protection: ErrorWriteProtectionGadget<F>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
     error_oog_log: ErrorOOGLogGadget<F>,
@@ -305,7 +315,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
     error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
     error_oog_ext_codecopy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>,
-    error_oog_exp: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXP }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
     error_code_store: ErrorCodeStoreGadget<F>,
@@ -313,13 +322,11 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
-    error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
     error_contract_address_collision:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
-    error_return_data_out_of_bound:
-        DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
-    error_precompile_failed: DummyGadget<F, 0, 0, { ExecutionState::ErrorPrecompileFailed }>,
+    error_return_data_out_of_bound: ErrorReturnDataOutOfBoundGadget<F>,
+    error_precompile_failed: ErrorPrecompileFailedGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -418,6 +425,14 @@ impl<F: Field> ExecutionConfig<F> {
                     step_curr.state.rw_counter.expr(),
                     1.expr(),
                 )
+            });
+            // For every step, is_create and is_root are boolean.
+            cb.condition(q_step.clone(), |cb| {
+                cb.require_boolean(
+                    "step.is_create is boolean",
+                    step_curr.state.is_create.expr(),
+                );
+                cb.require_boolean("step.is_root is boolean", step_curr.state.is_root.expr());
             });
             // q_step needs to be enabled on the last row
             cb.condition(q_step_last, |cb| {
@@ -833,7 +848,7 @@ impl<F: Field> ExecutionConfig<F> {
     pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
         // Start at 1 so we can be sure there is an unused `next` row available
         let mut num_rows = 1;
-        let evm_rows = block.evm_circuit_pad_to;
+        let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
             for transaction in &block.txs {
                 for step in &transaction.steps {
@@ -842,7 +857,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
             num_rows += 1; // EndBlock
         } else {
-            num_rows = block.evm_circuit_pad_to;
+            num_rows = block.circuits_params.max_evm_rows;
         }
         num_rows
     }
@@ -936,7 +951,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
                     .peekable();
 
-                let evm_rows = block.evm_circuit_pad_to;
+                let evm_rows = block.circuits_params.max_evm_rows;
                 let no_padding = evm_rows == 0;
 
                 // part1: assign real steps
@@ -1106,6 +1121,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
+        region.name_column(|| "EVM_q_step", self.q_step);
         region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
         region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
         region.name_column(|| "Copy_Constr_const", self.constants);
@@ -1139,7 +1155,7 @@ impl<F: Field> ExecutionConfig<F> {
             1,
             offset_begin,
         );
-        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
+        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step, false)?;
 
         region.replicate_assignment_for_range(
             || format!("repeat {:?} rows", step.execution_state),
@@ -1196,12 +1212,14 @@ impl<F: Field> ExecutionConfig<F> {
                 transaction_next,
                 call_next,
                 step_next,
+                false,
             )?;
         }
 
-        self.assign_exec_step_int(region, offset, block, transaction, call, step)
+        self.assign_exec_step_int(region, offset, block, transaction, call, step, true)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn assign_exec_step_int(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -1210,6 +1228,7 @@ impl<F: Field> ExecutionConfig<F> {
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
+        check_rw: bool,
     ) -> Result<(), Error> {
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
@@ -1367,20 +1386,21 @@ impl<F: Field> ExecutionConfig<F> {
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
         // enable with `CHECK_RW_LOOKUP=true`
-        //if *CHECK_RW_LOOKUP {
-        let is_padding_step =
-            matches!(step.execution_state, ExecutionState::EndBlock) && step.rw_indices.is_empty();
-        if !is_padding_step {
-            // expensive function call
-            Self::check_rw_lookup(
-                &assigned_stored_expressions,
-                offset,
-                step,
-                call,
-                transaction,
-                block,
-                region.challenges(),
-            );
+        if *CHECK_RW_LOOKUP && check_rw {
+            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
+                && step.rw_indices.is_empty();
+            if !is_padding_step {
+                // expensive function call
+                Self::check_rw_lookup(
+                    &assigned_stored_expressions,
+                    offset,
+                    step,
+                    call,
+                    transaction,
+                    block,
+                    region.challenges(),
+                );
+            }
         }
         //}
         Ok(())

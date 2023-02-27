@@ -663,8 +663,6 @@ arith:
 
     #[test]
     fn result_pass() -> Result<()> {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
         let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
             .load_yaml("", &Template::default().to_string())?;
         let t1 = tc.remove(0);

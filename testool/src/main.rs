@@ -53,7 +53,7 @@ struct Args {
     #[clap(long)]
     cache: Option<String>,
 
-    /// Generates log and and html file with info.
+    /// Generates log and html file with info.
     #[clap(long)]
     report: bool,
 

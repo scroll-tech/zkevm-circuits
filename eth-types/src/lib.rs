@@ -76,7 +76,7 @@ pub trait ToAddress {
     fn to_address(&self) -> Address;
 }
 
-/// Trait uset do convert a scalar value to a 32 byte array in big endian.
+/// Trait used do convert a scalar value to a 32 byte array in big endian.
 pub trait ToBigEndian {
     /// Convert the value to a 32 byte array in big endian.
     fn to_be_bytes(&self) -> [u8; 32];
@@ -671,6 +671,18 @@ mod eth_types_test {
         let word_from_str = Word::from_str(word_str).unwrap();
 
         assert_eq!(word_from_u128, word_from_str);
+        Ok(())
+    }
+
+    #[test]
+    fn creation_tx_into_tx_req() -> Result<(), Error> {
+        let tx = &geth_types::Transaction {
+            to: None,
+            ..Default::default()
+        };
+
+        let req: ethers_core::types::TransactionRequest = tx.into();
+        assert_eq!(req.to, None);
         Ok(())
     }
 }

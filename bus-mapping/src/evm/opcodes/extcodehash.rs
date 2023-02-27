@@ -61,14 +61,16 @@ impl Opcode for Extcodehash {
         } else {
             H256::zero()
         };
+        //log::trace!("extcodehash addr {:?} acc {:?} exists {:?} codehash {:?}",
+        // external_address, account, exists, code_hash);
         state.account_read(
             &mut exec_step,
             external_address,
             AccountField::CodeHash,
             code_hash.to_word(),
             code_hash.to_word(),
-        )?;
-
+        );
+        debug_assert_eq!(steps[1].stack.last()?, code_hash.to_word());
         // Stack write of the result of EXTCODEHASH.
         state.stack_write(&mut exec_step, stack_address, steps[1].stack.last()?)?;
 

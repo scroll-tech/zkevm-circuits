@@ -2,7 +2,7 @@
 
 #![allow(missing_docs)]
 use halo2_proofs::{
-    circuit::{Layouter, Value},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,
 };
 
@@ -16,7 +16,7 @@ pub mod table;
 use crate::table::{
     BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
 };
-use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
+use crate::util::{SubCircuit, SubCircuitConfig};
 pub use crate::witness;
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -45,7 +45,7 @@ pub struct EvmCircuitConfig<F> {
 /// Circuit configuration arguments
 pub struct EvmCircuitConfigArgs<F: Field> {
     /// Challenge
-    pub challenges: Challenges<Expression<F>>,
+    pub challenges: crate::util::Challenges<Expression<F>>,
     /// TxTable
     pub tx_table: TxTable,
     /// RwTable
@@ -214,20 +214,25 @@ impl<F: Field> EvmCircuit<F> {
     }
 
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        // Start at 1 so we can be sure there is an unused `next` row available
-        let mut num_rows = 1;
-        let evm_rows = block.evm_circuit_pad_to;
+        let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
-            for transaction in &block.txs {
-                for step in &transaction.steps {
-                    num_rows += step.execution_state.get_step_height();
-                }
-            }
-            num_rows += 1; // EndBlock
+            Self::get_min_num_rows_required(block)
         } else {
-            num_rows += block.evm_circuit_pad_to;
+            // It must have at least one unused row.
+            block.circuits_params.max_evm_rows + 1
         }
-        num_rows
+    }
+
+    pub fn get_min_num_rows_required(block: &Block<F>) -> usize {
+        let mut num_rows = 0;
+        for transaction in &block.txs {
+            for step in &transaction.steps {
+                num_rows += step.execution_state.get_step_height();
+            }
+        }
+
+        // It must have one row for EndBlock and at least one unused one
+        num_rows + 2
     }
 }
 
@@ -249,7 +254,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         (
             num_rows_required_for_execution_steps,
             std::cmp::max(
-                block.evm_circuit_pad_to,
+                block.circuits_params.max_evm_rows,
                 std::cmp::max(
                     num_rows_required_for_fixed_table,
                     num_rows_required_for_execution_steps,
@@ -262,7 +267,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        challenges: &Challenges<Value<F>>,
+        challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         let block = self.block.as_ref().unwrap();
@@ -296,22 +301,148 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
         .collect()
 }
 
+#[cfg(all(feature = "disabled", test))]
+pub(crate) mod cached {
+    use super::*;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use lazy_static::lazy_static;
+
+    /// Cache
+    struct Cache {
+        cs: ConstraintSystem<Fr>,
+        config: (EvmCircuitConfig<Fr>, Challenges),
+    }
+
+    lazy_static! {
+        static ref CACHE: Cache = {
+            let mut meta = ConstraintSystem::<Fr>::default();
+            let config = EvmCircuit::<Fr>::configure(&mut meta);
+            Cache { cs: meta, config }
+        };
+    }
+
+    pub struct EvmCircuitCached(EvmCircuit<Fr>);
+
+    impl Circuit<Fr> for EvmCircuitCached {
+        type Config = (EvmCircuitConfig<Fr>, Challenges);
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self(self.0.without_witnesses())
+        }
+
+        fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+            *meta = CACHE.cs.clone();
+            CACHE.config.clone()
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            layouter: impl Layouter<Fr>,
+        ) -> Result<(), Error> {
+            self.0.synthesize(config, layouter)
+        }
+    }
+
+    impl EvmCircuitCached {
+        pub fn get_test_cicuit_from_block(block: Block<Fr>) -> Self {
+            Self(EvmCircuit::<Fr>::get_test_cicuit_from_block(block))
+        }
+    }
+}
+
+// Always exported because of `EXECUTION_STATE_HEIGHT_MAP`
+
+#[cfg(not(feature = "onephase"))]
+use crate::util::Challenges;
+#[cfg(feature = "onephase")]
+use crate::util::MockChallenges as Challenges;
+
+impl<F: Field> Circuit<F> for EvmCircuit<F> {
+    type Config = (EvmCircuitConfig<F>, Challenges);
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let challenges = Challenges::construct(meta);
+        let challenges_expr = challenges.exprs(meta);
+        let rw_table = RwTable::construct(meta);
+        let tx_table = TxTable::construct(meta);
+        let bytecode_table = BytecodeTable::construct(meta);
+        let block_table = BlockTable::construct(meta);
+        let q_copy_table = meta.fixed_column();
+        let copy_table = CopyTable::construct(meta, q_copy_table);
+        let keccak_table = KeccakTable::construct(meta);
+        let exp_table = ExpTable::construct(meta);
+        (
+            EvmCircuitConfig::new(
+                meta,
+                EvmCircuitConfigArgs {
+                    challenges: challenges_expr,
+                    tx_table,
+                    rw_table,
+                    bytecode_table,
+                    block_table,
+                    copy_table,
+                    keccak_table,
+                    exp_table,
+                },
+            ),
+            challenges,
+        )
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let block = self.block.as_ref().unwrap();
+
+        let (config, challenges) = config;
+        let challenges = challenges.values(&layouter);
+
+        config.tx_table.load(
+            &mut layouter,
+            &block.txs,
+            block.circuits_params.max_txs,
+            block.circuits_params.max_calldata,
+            block.chain_id.as_u64(),
+            &challenges,
+        )?;
+        block.rws.check_rw_counter_sanity();
+        config.rw_table.load(
+            &mut layouter,
+            &block.rws.table_assignments(),
+            block.circuits_params.max_rws,
+            challenges.evm_word(),
+        )?;
+        config
+            .bytecode_table
+            .load(&mut layouter, block.bytecodes.values(), &challenges)?;
+        config
+            .block_table
+            .load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
+        config.copy_table.load(&mut layouter, block, &challenges)?;
+        config
+            .keccak_table
+            .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
+        config.exp_table.load(&mut layouter, block)?;
+
+        self.synthesize_sub(&config, &challenges, &mut layouter)
+    }
+}
+
 #[cfg(any(feature = "test", test))]
 pub mod test {
     use super::*;
-
-    use crate::{
-        evm_circuit::{witness::Block, EvmCircuitConfig},
-        table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
-        util::Challenges,
-    };
+    use crate::evm_circuit::witness::Block;
 
     use eth_types::{Field, Word};
-
-    use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner},
-        plonk::{Circuit, ConstraintSystem, Error},
-    };
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
@@ -337,83 +468,6 @@ pub mod test {
         Word::from_big_endian(&rand_bytes_array::<32>())
     }
 
-    impl<F: Field> Circuit<F> for EvmCircuit<F> {
-        type Config = (EvmCircuitConfig<F>, Challenges);
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let rw_table = RwTable::construct(meta);
-            let tx_table = TxTable::construct(meta);
-            let bytecode_table = BytecodeTable::construct(meta);
-            let block_table = BlockTable::construct(meta);
-            let q_copy_table = meta.fixed_column();
-            let copy_table = CopyTable::construct(meta, q_copy_table);
-            let keccak_table = KeccakTable::construct(meta);
-            let exp_table = ExpTable::construct(meta);
-            let challenges = Challenges::construct(meta);
-            let challenges_expr = challenges.exprs(meta);
-            (
-                EvmCircuitConfig::new(
-                    meta,
-                    EvmCircuitConfigArgs {
-                        challenges: challenges_expr,
-                        tx_table,
-                        rw_table,
-                        bytecode_table,
-                        block_table,
-                        copy_table,
-                        keccak_table,
-                        exp_table,
-                    },
-                ),
-                challenges,
-            )
-        }
-
-        fn synthesize(
-            &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<F>,
-        ) -> Result<(), Error> {
-            let block = self.block.as_ref().unwrap();
-
-            let (config, challenges) = config;
-            let challenges = challenges.values(&layouter);
-
-            config.tx_table.load(
-                &mut layouter,
-                &block.txs,
-                block.circuits_params.max_txs,
-                0,
-                &challenges,
-            )?;
-            block.rws.check_rw_counter_sanity();
-            config.rw_table.load(
-                &mut layouter,
-                &block.rws.table_assignments(),
-                block.circuits_params.max_rws,
-                challenges.evm_word(),
-            )?;
-            config
-                .bytecode_table
-                .load(&mut layouter, block.bytecodes.values(), &challenges)?;
-            config
-                .block_table
-                .load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
-            config.copy_table.load(&mut layouter, block, &challenges)?;
-            config
-                .keccak_table
-                .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
-            config.exp_table.load(&mut layouter, block)?;
-
-            self.synthesize_sub(&config, &challenges, &mut layouter)
-        }
-    }
-
     impl<F: Field> EvmCircuit<F> {
         pub fn get_test_cicuit_from_block(block: Block<F>) -> Self {
             let fixed_table_tags = detect_fixed_table_tags(&block);
@@ -425,12 +479,11 @@ pub mod test {
 #[cfg(test)]
 mod evm_circuit_stats {
     use crate::evm_circuit::step::ExecutionState;
+    use crate::stats::print_circuit_stats_by_states;
     use crate::test_util::CircuitTestBuilder;
-
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
-
-    use mock::test_ctx::{helpers::*, TestContext};
-    use strum::IntoEnumIterator;
+    use eth_types::{bytecode, evm_types::OpcodeId, ToWord};
+    use mock::test_ctx::TestContext;
+    use mock::MOCK_ACCOUNTS;
 
     #[test]
     pub fn empty_evm_circuit_no_padding() {
@@ -445,71 +498,50 @@ mod evm_circuit_stats {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap(),
         )
-        .block_modifier(Box::new(|block| block.evm_circuit_pad_to = (1 << 18) - 100))
+        .block_modifier(Box::new(|block| {
+            block.circuits_params.max_evm_rows = (1 << 18) - 100
+        }))
         .run();
     }
 
-    /// This function prints to stdout a table with all the implemented states
-    /// and their responsible opcodes with the following stats:
-    /// - height: number of rows in the EVM circuit used by the execution state
-    /// - gas: gas value used for the opcode execution
-    /// - height/gas: ratio between circuit cost and gas cost
+    /// Prints the stats of EVM circuit per execution state.  See
+    /// `print_circuit_stats_by_states` for more details.
     ///
     /// Run with:
-    /// `cargo test -p zkevm-circuits --release get_evm_states_stats --
-    /// --nocapture --ignored`
+    /// `cargo test -p zkevm-circuits --release --all-features
+    /// get_evm_states_stats -- --nocapture --ignored`
     #[ignore]
     #[test]
-    pub fn get_evm_states_stats() {
-        let mut implemented_states = Vec::new();
-        for state in ExecutionState::iter() {
-            let height = state.get_step_height_option();
-            if let Some(h) = height {
-                implemented_states.push((state, h));
-            }
-        }
-
-        let mut stats = Vec::new();
-        for (state, h) in implemented_states {
-            for opcode in state.responsible_opcodes() {
-                let mut code = bytecode! {
-                    PUSH2(0x8000)
-                    PUSH2(0x00)
-                    PUSH2(0x10)
-                    PUSH2(0x20)
-                    PUSH2(0x30)
+    fn get_evm_states_stats() {
+        print_circuit_stats_by_states(
+            |state| {
+                !matches!(
+                    state,
+                    ExecutionState::ErrorInvalidOpcode | ExecutionState::SELFDESTRUCT
+                )
+            },
+            |opcode| match opcode {
+                OpcodeId::RETURNDATACOPY => {
+                    bytecode! {
+                    PUSH1(0x00) // retLength
+                    PUSH1(0x00) // retOffset
+                    PUSH1(0x00) // argsLength
+                    PUSH1(0x00) // argsOffset
+                    PUSH1(0x00) // value
+                    PUSH32(MOCK_ACCOUNTS[3].to_word())
+                    PUSH32(0x1_0000) // gas
+                    CALL
+                    PUSH2(0x01) // size
+                    PUSH2(0x00) // offset
+                    PUSH2(0x00) // destOffset
+                    }
+                }
+                _ => bytecode! {
                     PUSH2(0x40)
                     PUSH2(0x50)
-                };
-                code.write_op(opcode);
-                code.write_op(OpcodeId::STOP);
-                let block: GethData = TestContext::<2, 1>::new(
-                    None,
-                    account_0_code_account_1_no_code(code),
-                    tx_from_1_to_0,
-                    |block, _tx| block.number(0xcafeu64),
-                )
-                .unwrap()
-                .into();
-                let gas_cost = block.geth_traces[0].struct_logs[7].gas_cost.0;
-                stats.push((state, opcode, h, gas_cost));
-            }
-        }
-
-        println!(
-            "| {: <14} | {: <14} | {: <2} | {: >6} | {: <5} |",
-            "state", "opcode", "h", "g", "h/g"
+                },
+            },
+            |_, state, _| state.get_step_height_option().unwrap(),
         );
-        println!("| ---            | ---            | ---|    --- | ---   |");
-        for (state, opcode, height, gas_cost) in stats {
-            println!(
-                "| {: <14?} | {: <14?} | {: >2} | {: >6} | {: >1.3} |",
-                state,
-                opcode,
-                height,
-                gas_cost,
-                height as f64 / gas_cost as f64
-            );
-        }
     }
 }

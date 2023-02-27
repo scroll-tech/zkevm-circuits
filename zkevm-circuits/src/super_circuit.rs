@@ -61,9 +61,7 @@ use crate::bytecode_circuit::circuit::{BytecodeCircuit, BytecodeCircuitConfigArg
 use crate::copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs};
 use crate::evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs};
 use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
-use crate::keccak_circuit::keccak_packed_multi::{
-    KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs,
-};
+use crate::keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs};
 use crate::poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs};
 
 #[cfg(feature = "zktrie")]
@@ -383,6 +381,7 @@ impl<
         let rlp = RlpCircuit::min_num_rows_block(block);
         let exp = ExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
+        let poseidon = PoseidonCircuit::min_num_rows_block(block);
         #[cfg(feature = "zktrie")]
         let mpt = MptCircuit::min_num_rows_block(block);
 
@@ -396,6 +395,7 @@ impl<
             rlp,
             exp,
             pi,
+            poseidon,
             #[cfg(feature = "zktrie")]
             mpt,
         ];
@@ -578,7 +578,8 @@ impl<
             &mut layouter,
             &block.txs,
             block.circuits_params.max_txs,
-            block.context.chain_id().as_u64(),
+            block.circuits_params.max_calldata,
+            block.chain_id.as_u64(),
             &challenges,
         )?;
 
@@ -855,6 +856,7 @@ pub(crate) mod super_circuit_tests {
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
         };
@@ -881,6 +883,7 @@ pub(crate) mod super_circuit_tests {
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
             max_exp_steps: 256,
+            max_evm_rows: 0,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
             block,
@@ -902,6 +905,7 @@ pub(crate) mod super_circuit_tests {
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
         };
@@ -928,6 +932,7 @@ pub(crate) mod super_circuit_tests {
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
             max_exp_steps: 256,
+            max_evm_rows: 0,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
             block,
@@ -948,6 +953,7 @@ pub(crate) mod super_circuit_tests {
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
         };

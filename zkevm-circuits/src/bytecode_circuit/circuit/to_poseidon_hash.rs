@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select},
-    table::{BytecodeFieldTag, KeccakTable, LookupTable, PoseidonTable},
+    table::{BytecodeFieldTag, KeccakTable, PoseidonTable},
     util::{Challenges, Expr, SubCircuitConfig},
 };
 use eth_types::Field;
@@ -286,13 +286,17 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         });
          */
 
+        #[cfg(feature = "codehash")]
         let lookup_columns = [/* code_hash, */ field_input, control_length];
-        let pick_hash_tbl_cols = |inp_i| {
-            let cols = <PoseidonTable as LookupTable<F>>::advice_columns(&poseidon_table);
+        #[cfg(feature = "codehash")]
+        let pick_hash_tbl_cols = |inp_i: usize| {
+            let cols =
+                <PoseidonTable as crate::table::LookupTable<F>>::advice_columns(&poseidon_table);
             [/* cols[0], */ cols[inp_i + 1], cols[cols.len() - 2]]
         };
 
         // we use a special selection exp for only 2 indexs
+        #[cfg(feature = "codehash")]
         let field_selector = |meta: &mut VirtualCells<F>| {
             let field_index = meta.query_advice(field_index, Rotation::cur()) - 1.expr();
             [1.expr() - field_index.clone(), field_index]
@@ -302,6 +306,8 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         //  * PoseidonTable::INPUT_WIDTH lookups for each input field
         //  * PoseidonTable::INPUT_WIDTH -1 lookups for the padded zero input
         //  so we have 2*PoseidonTable::INPUT_WIDTH -1 lookups
+
+        #[cfg(feature = "codehash")]
         for i in 0..PoseidonTable::INPUT_WIDTH {
             meta.lookup_any("poseidon input", |meta| {
                 // Conditions:
@@ -326,6 +332,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         }
 
         //the canonical form should be `for i in 1..PoseidonTable::INPUT_WIDTH{...}`
+        #[cfg(feature = "codehash")]
         meta.lookup_any("poseidon input padding zero for final", |meta| {
             // Conditions:
             // - On the row with the last byte (`is_byte_to_header == 1`)

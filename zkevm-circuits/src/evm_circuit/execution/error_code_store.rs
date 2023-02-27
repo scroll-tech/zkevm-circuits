@@ -91,6 +91,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             memory_address.length(),
             0.expr(),
             0.expr(),
+            0.expr(),
         );
 
         // constrain RwCounterEndOfReversion

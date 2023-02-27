@@ -22,7 +22,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 ///   t5 = a2 * b3 + a3 * b2,
 ///   t6 = a3 * b3,
 ///
-/// The addend c as well as the the words that form the result d, e are divided
+/// The addend c as well as the words that form the result d, e are divided
 /// in 2 128-bit limbs each: c_lo, c_hi, d_lo, d_hi, e_lo, e_hi.
 ///
 /// so t0 ~ t1 include all contributions to the low 128-bit of product (e_lo),

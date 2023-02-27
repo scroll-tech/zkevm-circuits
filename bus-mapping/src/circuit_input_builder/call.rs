@@ -102,6 +102,11 @@ impl Call {
         self.kind.is_create()
     }
 
+    /// ..
+    pub fn is_success(&self) -> bool {
+        self.is_success
+    }
+
     /// This call is call with op DELEGATECALL
     pub fn is_delegatecall(&self) -> bool {
         matches!(self.kind, CallKind::DelegateCall)

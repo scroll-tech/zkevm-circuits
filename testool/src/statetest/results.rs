@@ -149,11 +149,22 @@ impl Report {
         self.by_result.print_html(&mut by_result)?;
         self.diffs.gen_info().1.print_html(&mut diffs)?;
 
+        let tests: HashMap<String, ResultInfo> = self
+            .tests
+            .clone()
+            .into_iter()
+            .filter(|(_k, v)| {
+                !matches!(
+                    v.level,
+                    crate::ResultLevel::Ignored | crate::ResultLevel::Success
+                )
+            })
+            .collect();
         let data = &json!({
                 "by_folder": String::from_utf8(by_folder)?,
                 "by_result" : String::from_utf8(by_result)? ,
                 "diffs" : String::from_utf8(diffs)?,
-                "all_results" : self.tests
+                "all_results" : tests
         });
 
         let html = reg.render_template(template, data)?;
