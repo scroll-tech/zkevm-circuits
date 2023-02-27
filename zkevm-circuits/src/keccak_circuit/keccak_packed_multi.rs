@@ -2242,4 +2242,35 @@ mod tests {
         ];
         verify::<Fr>(k, inputs, true);
     }
+
+    #[test]
+    fn test_split_uniform_normalize_false() {
+        let mut cell_manager = CellManager::new(get_num_rows_per_round());
+        let mut region = KeccakRegion::new();
+        cell_manager.start_region();
+        let mut output_cells: Vec<Cell<Fr>> = vec![];
+        for row_idx in 0..12 {
+            output_cells.push(cell_manager.query_cell_value_at_row(row_idx as i32));
+        }
+        let split_res = split::value(
+            &mut cell_manager,
+            &mut region,
+            Fr::from(256 as u64),
+            2,
+            7,
+            false,
+            None,
+        );
+        let split_uniform_res = split_uniform::value(
+            &output_cells,
+            &mut cell_manager,
+            &mut region,
+            Fr::from(256 as u64),
+            2,
+            7,
+            false,
+        );
+        println!("split_res = {:?} \n", split_res);
+        println!("split_uniform_res = {:?} \n", split_uniform_res);
+    }
 }
