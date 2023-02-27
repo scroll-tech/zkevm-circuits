@@ -105,7 +105,7 @@ impl<'a> YamlStateTestBuilder<'a> {
             let max_fee_per_gas = Self::parse_u256(&yaml_transaction["maxFeePerGas"])
                 .unwrap_or_else(|_| U256::zero());
             let gas_price =
-                Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| max_fee_per_gas);
+                Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or(max_fee_per_gas);
 
             // TODO handle maxPriorityFeePerGas & maxFeePerGas
             let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;

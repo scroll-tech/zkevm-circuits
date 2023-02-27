@@ -17,10 +17,14 @@ use std::ops::RangeBounds;
 use std::str::FromStr;
 use yaml_rust::Yaml;
 
+fn default_block_base_fee() -> String {
+    "10".to_string()
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TestEnv {
-    #[serde(default)]
+    #[serde(default = "default_block_base_fee")]
     current_base_fee: String,
     current_coinbase: String,
     current_difficulty: String,
