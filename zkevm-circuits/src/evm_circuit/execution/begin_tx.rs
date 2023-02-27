@@ -19,7 +19,7 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
 };
-use eth_types::{Field, ToLittleEndian, ToScalar};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{and, expr_from_bytes, not, or, Expr};
 use halo2_proofs::plonk::Error;
@@ -561,6 +561,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, caller_address)?;
         let callee_address = tx
             .callee_address
+            .unwrap_or(Address::zero())
             .to_scalar()
             .expect("unexpected Address -> Scalar conversion failure");
         self.tx_callee_address
@@ -576,7 +577,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 if tx.is_create {
                     get_contract_address(tx.caller_address, tx.nonce)
                 } else {
-                    tx.callee_address
+                    tx.callee_address.unwrap_or(Address::zero())
                 }
                 .to_scalar()
                 .expect("unexpected Address -> Scalar conversion failure"),

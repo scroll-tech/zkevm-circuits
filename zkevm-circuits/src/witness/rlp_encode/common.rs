@@ -288,31 +288,11 @@ pub fn handle_address<F: FieldExt>(
     rows: &mut Vec<RlpWitnessRow<Value<F>>>,
     data_type: RlpDataType,
     tag: RlpTxTag,
-    value: Address,
+    value: Option<Address>,
     mut idx: usize,
 ) -> usize {
-    let value_bytes = value.as_fixed_bytes();
-
-    if value == Address::zero() && rlp_data[idx] == 0x80 {
-        assert_eq!(
-            rlp_data[idx], 0x80,
-            "RLP data mismatch({:?}): value = {}",
-            tag, rlp_data[idx]
-        );
-        rows.push(RlpWitnessRow {
-            tx_id,
-            index: idx + 1,
-            data_type,
-            value: rlp_data[idx],
-            value_acc: Value::known(F::zero()),
-            value_rlc_acc: Value::known(F::zero()),
-            tag,
-            tag_length: 1,
-            tag_rindex: 1,
-            length_acc: 0,
-        });
-        idx += 1;
-    } else {
+    if let Some(value) = value {
+        let value_bytes = value.as_fixed_bytes();
         assert_eq!(
             rlp_data[idx], 0x94,
             "RLP data mismatch({:?}): value = {}",
@@ -354,6 +334,25 @@ pub fn handle_address<F: FieldExt>(
             });
             idx += 1;
         }
+    } else {
+        assert_eq!(
+            rlp_data[idx], 0x80,
+            "RLP data mismatch({:?}): value = {}",
+            tag, rlp_data[idx],
+        );
+        rows.push(RlpWitnessRow {
+            tx_id,
+            index: idx + 1,
+            data_type,
+            value: rlp_data[idx],
+            value_acc: Value::known(F::zero()),
+            value_rlc_acc: Value::known(F::zero()),
+            tag,
+            tag_length: 1,
+            tag_rindex: 1,
+            length_acc: 0,
+        });
+        idx += 1;
     }
 
     idx

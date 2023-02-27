@@ -520,6 +520,7 @@ pub fn get_dummy_tx(chain_id: u64) -> (TransactionRequest, Signature) {
         .nonce(0)
         .gas(0)
         .gas_price(U256::zero())
+        .to(Address::zero())
         .value(U256::zero())
         .data(Bytes::default())
         .chain_id(chain_id);

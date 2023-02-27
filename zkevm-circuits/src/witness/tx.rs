@@ -42,7 +42,7 @@ pub struct Transaction {
     /// The caller address
     pub caller_address: Address,
     /// The callee address
-    pub callee_address: Address,
+    pub callee_address: Option<Address>,
     /// Whether it's a create transaction
     pub is_create: bool,
     /// The ether amount of the transaction
@@ -85,8 +85,8 @@ impl Transaction {
             block_number: 0, // FIXME
             id: 0,           // need to be changed to correct value
             caller_address: Address::zero(),
-            callee_address: Address::zero(),
-            is_create: true, // callee = 0
+            callee_address: Some(Address::zero()),
+            is_create: false, // callee_address != None
             chain_id,
             v: dummy_sig.v,
             r: dummy_sig.r,
@@ -177,7 +177,12 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CalleeAddress as u64)),
                 Value::known(F::zero()),
-                Value::known(self.callee_address.to_scalar().unwrap()),
+                Value::known(
+                    self.callee_address
+                        .unwrap_or(Address::zero())
+                        .to_scalar()
+                        .unwrap(),
+                ),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -296,10 +301,10 @@ impl Encodable for Transaction {
         s.append(&Word::from(self.nonce));
         s.append(&self.gas_price);
         s.append(&Word::from(self.gas));
-        if self.callee_address == Address::zero() {
-            s.append(&""); // address == 0, rlp = 0x80
+        if let Some(addr) = self.callee_address {
+            s.append(&addr);
         } else {
-            s.append(&self.callee_address);
+            s.append(&"");
         }
         s.append(&self.value);
         s.append(&self.call_data);
@@ -324,10 +329,10 @@ impl Encodable for SignedTransaction {
         s.append(&Word::from(self.tx.nonce));
         s.append(&self.tx.gas_price);
         s.append(&Word::from(self.tx.gas));
-        if self.tx.callee_address == Address::zero() {
-            s.append(&""); // address == 0, rlp = 0x80
+        if let Some(addr) = self.tx.callee_address {
+            s.append(&addr);
         } else {
-            s.append(&self.tx.callee_address);
+            s.append(&"");
         }
         s.append(&self.tx.value);
         s.append(&self.tx.call_data);
@@ -340,25 +345,23 @@ impl Encodable for SignedTransaction {
 impl From<MockTransaction> for Transaction {
     fn from(mock_tx: MockTransaction) -> Self {
         let is_create = mock_tx.to.is_none();
-        let callee_address = match mock_tx.to {
-            Some(to) => to.address(),
-            None => Address::zero(),
-        };
         let sig = Signature {
             r: mock_tx.r.expect("tx expected to be signed"),
             s: mock_tx.s.expect("tx expected to be signed"),
             v: mock_tx.v.expect("tx expected to be signed").as_u64(),
         };
         let (rlp_unsigned, rlp_signed) = {
-            let legacy_tx = TransactionRequest::new()
+            let mut legacy_tx = TransactionRequest::new()
                 .from(mock_tx.from.address())
                 .nonce(mock_tx.nonce)
                 .gas_price(mock_tx.gas_price)
                 .gas(mock_tx.gas)
-                .to(callee_address)
                 .value(mock_tx.value)
                 .data(mock_tx.input.clone())
                 .chain_id(mock_tx.chain_id.as_u64());
+            if !is_create {
+                legacy_tx = legacy_tx.to(mock_tx.to.as_ref().map(|to| to.address()).unwrap());
+            }
 
             let unsigned = legacy_tx.rlp().to_vec();
 
@@ -374,7 +377,7 @@ impl From<MockTransaction> for Transaction {
             gas: mock_tx.gas.as_u64(),
             gas_price: mock_tx.gas_price,
             caller_address: mock_tx.from.address(),
-            callee_address,
+            callee_address: mock_tx.to.as_ref().map(|to| to.address()),
             is_create,
             value: mock_tx.value,
             call_data: mock_tx.input.to_vec(),
@@ -420,7 +423,7 @@ pub(super) fn tx_convert(
             .value(tx.value)
             .data(tx.input.clone())
             .chain_id(chain_id);
-        if tx.to != Address::zero() {
+        if !tx.is_create() {
             legacy_tx = legacy_tx.to(tx.to);
         }
 
@@ -429,6 +432,8 @@ pub(super) fn tx_convert(
 
         (unsigned, signed)
     };
+
+    let callee_address = if tx.is_create() { None } else { Some(tx.to) };
 
     Transaction {
         block_number: tx.block_num,
@@ -439,7 +444,7 @@ pub(super) fn tx_convert(
         gas: tx.gas,
         gas_price: tx.gas_price,
         caller_address: tx.from,
-        callee_address: tx.to,
+        callee_address,
         is_create: tx.is_create(),
         value: tx.value,
         call_data: tx.input.clone(),
