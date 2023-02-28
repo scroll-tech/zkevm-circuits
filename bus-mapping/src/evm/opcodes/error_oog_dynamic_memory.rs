@@ -1,4 +1,5 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
+use crate::error::{ExecError, OogError};
 use crate::evm::Opcode;
 use crate::Error;
 use eth_types::evm_types::OpcodeId;
@@ -18,8 +19,7 @@ impl Opcode for OOGDynamicMemory {
         );
 
         let mut exec_step = state.new_step(geth_step)?;
-        let next_step = geth_steps.get(1);
-        exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
+        exec_step.error = Some(ExecError::OutOfGas(OogError::DynamicMemoryExpansion));
 
         if geth_step.op == OpcodeId::CREATE {
             state.stack_read(

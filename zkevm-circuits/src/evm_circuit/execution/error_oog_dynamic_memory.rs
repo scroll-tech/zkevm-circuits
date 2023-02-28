@@ -176,10 +176,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
 
-        for (i, idx) in step.rw_indices.iter().enumerate() {
-            println!("{} {:?}", i, block.rws[*idx]);
-        }
-
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_create.assign(
@@ -289,13 +285,11 @@ mod tests {
                 PUSH8(0xFF)
                 PUSH32(word!("0xffffffff")) // offset
                 RETURN
-                STOP
             },
             bytecode! {
                 PUSH8(0xFF)
                 PUSH32(word!("0xffffffff")) // offset
                 REVERT
-                STOP
             },
             bytecode! {
                 PUSH8(0xFF)
@@ -337,7 +331,6 @@ mod tests {
             PUSH32(0x00) // argsOffset
             PUSH1(0x00) // value
             PUSH32(MOCK_ACCOUNTS[1].to_word()) // addr
-            // Decrease expected gas cost (by 1) to trigger out of gas error.
             PUSH32(0xFFFF) // gas
             CALL
             STOP
