@@ -2257,8 +2257,8 @@ mod tests {
         let rot = 2;
         let normalize = true; // if normalize is false test will fail
         let input = 256;
-        let input_bits = unpack(input);
-        println!("input_bits {:?}", input_bits);
+        let input_bits = unpack::<Fr>(input.into());
+        println!("input_bits = {:?}", input_bits);
         let split_res = split::value(
             &mut cell_manager,
             &mut region,
