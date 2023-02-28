@@ -1,6 +1,6 @@
 use bus_mapping::{
     circuit_input_builder,
-    error::{ExecError, InsufficientBalanceError, OogError},
+    error::{ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
     operation,
 };
@@ -72,7 +72,10 @@ impl From<&ExecError> for ExecutionState {
                 InsufficientBalanceError::Create2 => ExecutionState::CREATE2,
             },
             ExecError::ContractAddressCollision => ExecutionState::CREATE,
-            ExecError::NonceUintOverflow => ExecutionState::ErrorNonceUintOverflow,
+            ExecError::NonceUintOverflow(nonce_overflow_err) => match nonce_overflow_err {
+                NonceUintOverflowError::Create => ExecutionState::CREATE,
+                NonceUintOverflowError::Create2 => ExecutionState::CREATE2,
+            },
             ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
             ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,

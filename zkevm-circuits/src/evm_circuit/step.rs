@@ -90,7 +90,6 @@ pub enum ExecutionState {
     ErrorStack,
     ErrorWriteProtection,
     ErrorDepth,
-    ErrorNonceUintOverflow,
     ErrorContractAddressCollision,
     ErrorInvalidCreationCode,
     ErrorInvalidJump,

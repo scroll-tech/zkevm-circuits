@@ -332,8 +332,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_code_store: Box<ErrorCodeStoreGadget<F>>,
     error_oog_self_destruct:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>>,
-    error_nonce_uint_overflow:
-        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorNonceUintOverflow }>>,
     error_invalid_jump: Box<ErrorInvalidJumpGadget<F>>,
     error_invalid_opcode: Box<ErrorInvalidOpcodeGadget<F>>,
     error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
@@ -598,7 +596,6 @@ impl<F: Field> ExecutionConfig<F> {
             error_invalid_opcode: configure_gadget!(),
             error_write_protection: configure_gadget!(),
             error_depth: configure_gadget!(),
-            error_nonce_uint_overflow: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
             error_precompile_failed: configure_gadget!(),
@@ -1430,9 +1427,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorDepth => {
                 assign_exec_step!(self.error_depth)
-            }
-            ExecutionState::ErrorNonceUintOverflow => {
-                assign_exec_step!(self.error_nonce_uint_overflow)
             }
             ExecutionState::ErrorContractAddressCollision => {
                 assign_exec_step!(self.create_gadget)
