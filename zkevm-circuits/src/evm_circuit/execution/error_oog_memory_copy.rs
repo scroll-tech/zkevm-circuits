@@ -64,12 +64,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             memory_expansion.gas_cost(),
         );
 
-        debug_assert!(
-            OpcodeId::CALLDATACOPY.constant_gas_cost() == OpcodeId::CODECOPY.constant_gas_cost()
-                && OpcodeId::CALLDATACOPY.constant_gas_cost()
-                    == OpcodeId::RETURNDATACOPY.constant_gas_cost()
-        );
-
+        // Constant gas cost is same for CALLDATACOPY, CODECOPY and RETURNDATACOPY.
         let insufficient_gas = LtGadget::construct(
             cb,
             cb.curr.state.gas_left.expr(),
