@@ -18,7 +18,8 @@ impl Opcode for Calldatacopy {
 
         // reconstruction
         let memory_offset = geth_step.stack.nth_last(0)?.as_u64();
-        let data_offset = geth_step.stack.nth_last(1)?.as_u64();
+        // Reset data offset to the maximum value of Uint64 if overflow.
+        let data_offset = u64::try_from(geth_step.stack.nth_last(1)?).unwrap_or(u64::MAX);
         let length = geth_step.stack.nth_last(2)?.as_usize();
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
@@ -100,7 +101,7 @@ fn gen_copy_steps(
 ) -> Result<Vec<(u8, bool)>, Error> {
     let mut copy_steps = Vec::with_capacity(bytes_left as usize);
     for idx in 0..bytes_left {
-        let addr = src_addr + idx;
+        let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
         let value = if addr < src_addr_end {
             let byte =
                 state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
@@ -128,13 +129,16 @@ fn gen_copy_event(
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
     let memory_offset = geth_step.stack.nth_last(0)?.as_u64();
-    let data_offset = geth_step.stack.nth_last(1)?.as_u64();
+    // Reset data offset to the maximum value of Uint64 if overflow.
+    let data_offset = u64::try_from(geth_step.stack.nth_last(1)?).unwrap_or(u64::MAX);
     let length = geth_step.stack.nth_last(2)?.as_u64();
 
     let call_data_offset = state.call()?.call_data_offset;
     let call_data_length = state.call()?.call_data_length;
+
     let (src_addr, src_addr_end) = (
-        call_data_offset + data_offset,
+        // Set source start as minimun value of data offset and call data length to avoid overflow.
+        call_data_offset + data_offset.min(call_data_length),
         call_data_offset + call_data_length,
     );
 

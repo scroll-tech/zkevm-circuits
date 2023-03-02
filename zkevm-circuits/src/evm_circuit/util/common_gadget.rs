@@ -931,3 +931,60 @@ impl<F: Field> CommonErrorGadget<F> {
         Ok(1u64)
     }
 }
+
+/// Check if the passed in word is within the specified range.
+#[derive(Clone, Debug)]
+pub(crate) struct WordRangeGadget<F> {
+    original: Word<F>,
+    within_range: IsZeroGadget<F>,
+}
+
+impl<F: Field> WordRangeGadget<F> {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, valid_bytes: usize) -> Self {
+        // Should use a Word directly if valid byte number is 32.
+        debug_assert!(valid_bytes < 32);
+
+        let original = cb.query_word_rlc();
+        let within_range = IsZeroGadget::construct(cb, sum::expr(&original.cells[valid_bytes..]));
+
+        Self {
+            original,
+            within_range,
+        }
+    }
+
+    /// Return true if within the range, false if overflow.
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        valid_bytes: usize,
+        original: U256,
+    ) -> Result<bool, Error> {
+        self.original
+            .assign(region, offset, Some(original.to_le_bytes()))?;
+
+        let overflow_hi = original.to_le_bytes()[valid_bytes..]
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
+        self.within_range
+            .assign(region, offset, F::from(overflow_hi))?;
+
+        Ok(overflow_hi == 0)
+    }
+
+    pub(crate) fn original_word_expr(&self) -> Expression<F> {
+        self.original.expr()
+    }
+
+    pub(crate) fn valid_value_expr(&self, valid_bytes: usize) -> Expression<F> {
+        // Should use a Word directly if valid byte number is 32.
+        debug_assert!(valid_bytes < 32);
+
+        from_bytes::expr(&self.original.cells[..valid_bytes])
+    }
+
+    pub(crate) fn within_range_expr(&self) -> Expression<F> {
+        self.within_range.expr()
+    }
+}
