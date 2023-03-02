@@ -172,7 +172,7 @@ impl<F: Field> Block<F> {
 }
 
 /// Block context for execution
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct BlockContext {
     /// The address of the miner for the block
     pub coinbase: Address,
@@ -235,7 +235,7 @@ impl BlockContext {
             [
                 Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                 Value::known(current_block_number),
-                randomness.map(|randomness| rlc::value(&self.difficulty.to_le_bytes(), randomness)),
+                Value::known(self.difficulty.to_scalar().unwrap()),
             ],
             [
                 Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
@@ -250,7 +250,7 @@ impl BlockContext {
             [
                 Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                 Value::known(current_block_number),
-                randomness.map(|randomness| rlc::value(&self.chain_id.to_le_bytes(), randomness)),
+                Value::known(F::from(self.chain_id.as_u64())),
             ],
             [
                 Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),

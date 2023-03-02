@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use crate::table::TxTable;
 use crate::table::{BlockTable, KeccakTable, LookupTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
-use eth_types::{Address, Field, ToBigEndian, Word};
+use eth_types::{Address, Field, ToBigEndian, ToScalar, Word};
 use eth_types::{Hash, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
@@ -52,9 +52,13 @@ const TIMESTAMP_OFFSET: usize = 1;
 const BASE_FEE_OFFSET: usize = 5;
 const GAS_LIMIT_OFFSET: usize = 4;
 const NUM_TXS_OFFSET: usize = 7;
+const CHAIN_ID_OFFSET: usize = 6;
+const COINBASE_OFFSET: usize = 0;
+const DIFFICULTY_OFFSET: usize = 3;
 
 pub(crate) static CHAIN_ID: Lazy<u64> = Lazy::new(|| read_env_var("CHAIN_ID", 0));
 pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| read_env_var("COINBASE", Address::zero()));
+pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
 
 /// PublicData contains all the values that the PiCircuit receives as input
 #[derive(Debug, Clone)]
@@ -163,6 +167,22 @@ impl PublicData {
     }
 }
 
+impl Default for BlockContext {
+    fn default() -> Self {
+        Self {
+            chain_id: Word::from(*CHAIN_ID),
+            coinbase: *COINBASE,
+            difficulty: *DIFFICULTY,
+            gas_limit: 0,
+            number: Default::default(),
+            timestamp: Default::default(),
+            base_fee: Default::default(),
+            history_hashes: vec![],
+            eth_block: Default::default(),
+        }
+    }
+}
+
 /// Config for PiCircuit
 #[derive(Clone, Debug)]
 pub struct PiCircuitConfig<F: Field> {
@@ -172,6 +192,9 @@ pub struct PiCircuitConfig<F: Field> {
     max_calldata: usize,
     /// Max number of supported inner blocks in a batch
     max_inner_blocks: usize,
+
+    /// dedicated column to store the chain_id, difficulty, coinbase constants
+    constant: Column<Fixed>,
 
     raw_public_inputs: Column<Advice>, // block, history_hashes, states, tx hashes
     rpi_field_bytes: Column<Advice>,   // rpi in bytes
@@ -237,6 +260,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
+        let constant = meta.fixed_column();
         let rpi = meta.advice_column_in(SecondPhase);
         let rpi_bytes = meta.advice_column();
         let rpi_bytes_acc = meta.advice_column_in(SecondPhase);
@@ -260,6 +284,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_not_end = meta.complex_selector();
         let q_keccak = meta.complex_selector();
 
+        meta.enable_equality(constant);
         meta.enable_equality(rpi);
         meta.enable_equality(real_rpi);
         meta.enable_equality(rpi_rlc_acc);
@@ -411,6 +436,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             block_table,
             tx_table,
             keccak_table,
+            constant,
             raw_public_inputs: rpi,
             rpi_field_bytes: rpi_bytes,
             rpi_field_bytes_acc: rpi_bytes_acc,
@@ -456,6 +482,30 @@ impl<F: Field> PiCircuitConfig<F> {
         let dummy_tx_hash = get_dummy_tx_hash(public_data.chain_id.as_u64());
 
         self.q_start.enable(region, offset)?;
+
+        // assign constants
+        let pi_constants = vec![
+            (F::from(*CHAIN_ID), "CHAIN_ID"),
+            ((*COINBASE).to_scalar().unwrap(), "COINBASE"),
+            (
+                (*DIFFICULTY)
+                    .to_scalar()
+                    .expect("DIFFICULTY must fit into scalar field"),
+                "DIFFICULTY",
+            ),
+        ];
+        let pi_constants = pi_constants
+            .into_iter()
+            .enumerate()
+            .map(|(row, (constant, annotation))| {
+                region.assign_fixed(
+                    || format!("PI constant {}", annotation),
+                    self.constant,
+                    row,
+                    || Value::known(constant),
+                )
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
 
         // assign state roots
         // previous_state_root before applying this batch
@@ -684,6 +734,17 @@ impl<F: Field> PiCircuitConfig<F> {
                 false,
             )?;
 
+            let offsets = vec![CHAIN_ID_OFFSET, COINBASE_OFFSET, DIFFICULTY_OFFSET];
+            for (constant, offset) in pi_constants.iter().zip(offsets.into_iter()) {
+                region.constrain_equal(
+                    constant.cell(),
+                    Cell {
+                        region_index: RegionIndex(0),
+                        row_offset: block_table_offset + offset,
+                        column: self.block_table.value.into(),
+                    },
+                )?;
+            }
             block_table_offset += BLOCK_LEN;
         }
         debug_assert_eq!(
@@ -1180,7 +1241,7 @@ mod pi_circuit_test {
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
-    use mock::TestContext;
+    use mock::{TestContext, MOCK_CHAIN_ID, MOCK_DIFFICULTY};
     use pretty_assertions::assert_eq;
 
     fn run<
@@ -1219,9 +1280,16 @@ mod pi_circuit_test {
 
     #[test]
     fn test_simple_pi() {
+        use std::env::set_var;
+
         const MAX_TXS: usize = 4;
         const MAX_CALLDATA: usize = 20;
         const MAX_INNER_BLOCKS: usize = 4;
+
+        let mut difficulty_be_bytes = [0u8; 32];
+        MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
+        set_var("CHAIN_ID", MOCK_CHAIN_ID.to_string());
+        set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
         let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode! {
             STOP
