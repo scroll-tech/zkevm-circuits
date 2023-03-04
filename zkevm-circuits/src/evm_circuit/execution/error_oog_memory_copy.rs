@@ -1,33 +1,41 @@
 use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE};
+use crate::evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE};
 use crate::evm_circuit::step::ExecutionState;
 use crate::evm_circuit::util::common_gadget::CommonErrorGadget;
 use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
-use crate::evm_circuit::util::math_gadget::LtGadget;
+use crate::evm_circuit::util::math_gadget::{IsZeroGadget, LtGadget};
 use crate::evm_circuit::util::memory_gadget::{
     MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget,
 };
+use crate::evm_circuit::util::{from_bytes, select};
 use crate::evm_circuit::util::{CachedRegion, Cell, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
+use crate::table::CallContextFieldTag;
 use crate::util::Expr;
 use eth_types::evm_types::{GasCost, OpcodeId};
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 
 /// Gadget to implement the corresponding out of gas errors for
-/// [`OpcodeId::CALLDATACOPY`], [`OpcodeId::CODECOPY`] and
-/// [`OpcodeId::RETURNDATACOPY`].
+/// [`OpcodeId::CALLDATACOPY`], [`OpcodeId::CODECOPY`],
+/// [`OpcodeId::EXTCODECOPY`] and [`OpcodeId::RETURNDATACOPY`].
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGMemoryCopyGadget<F> {
     opcode: Cell<F>,
-    /// Source offset (second stack pop value)
+    /// Check if `EXTCODECOPY` external address is warm
+    is_warm: Cell<F>,
+    tx_id: Cell<F>,
+    /// Extra stack pop for `EXTCODECOPY`
+    external_address: Word<F>,
+    /// Source offset
     src_offset: Word<F>,
-    /// Destination offset and size to copy (first and third stack pop values)
+    /// Destination offset and size to copy
     dst_memory_addr: MemoryAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
+    is_extcodecopy: IsZeroGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -39,11 +47,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.require_in_set(
-            "ErrorOutOfGasMemoryCopy opcode must be CALLDATACOPY, CODECOPY or RETURNDATACOPY",
+            "ErrorOutOfGasMemoryCopy opcode must be CALLDATACOPY, CODECOPY, EXTCODECOPY or RETURNDATACOPY",
             opcode.expr(),
             vec![
                 OpcodeId::CALLDATACOPY.expr(),
                 OpcodeId::CODECOPY.expr(),
+                OpcodeId::EXTCODECOPY.expr(),
                 OpcodeId::RETURNDATACOPY.expr(),
             ],
         );
@@ -51,6 +60,26 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         let dst_offset = cb.query_cell_phase2();
         let src_offset = cb.query_word_rlc();
         let copy_size = cb.query_word_rlc();
+        let external_address = cb.query_word_rlc();
+        let is_warm = cb.query_bool();
+        let tx_id = cb.query_cell();
+
+        let is_extcodecopy =
+            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::EXTCODECOPY.expr());
+
+        cb.condition(is_extcodecopy.expr(), |cb| {
+            cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, tx_id.expr());
+
+            // Check if EXTCODECOPY external address is warm.
+            cb.account_access_list_read(
+                tx_id.expr(),
+                from_bytes::expr(&external_address.cells[..N_BYTES_ACCOUNT_ADDRESS]),
+                is_warm.expr(),
+            );
+
+            // EXTCODECOPY has an extra stack pop for external address.
+            cb.stack_pop(external_address.expr());
+        });
 
         cb.stack_pop(dst_offset.expr());
         cb.stack_pop(src_offset.expr());
@@ -64,11 +93,23 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             memory_expansion.gas_cost(),
         );
 
-        // Constant gas cost is same for CALLDATACOPY, CODECOPY and RETURNDATACOPY.
+        let constant_gas_cost = select::expr(
+            is_extcodecopy.expr(),
+            // According to EIP-2929, EXTCODECOPY constant gas cost is different for cold and warm
+            // accounts.
+            select::expr(
+                is_warm.expr(),
+                GasCost::WARM_ACCESS.expr(),
+                GasCost::COLD_ACCOUNT_ACCESS.expr(),
+            ),
+            // Constant gas cost is same for CALLDATACOPY, CODECOPY and RETURNDATACOPY.
+            OpcodeId::CALLDATACOPY.constant_gas_cost().expr(),
+        );
+
         let insufficient_gas = LtGadget::construct(
             cb,
             cb.curr.state.gas_left.expr(),
-            OpcodeId::CALLDATACOPY.constant_gas_cost().expr() + memory_copier_gas.gas_cost(),
+            constant_gas_cost + memory_copier_gas.gas_cost(),
         );
 
         cb.require_equal(
@@ -77,15 +118,25 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             1.expr(),
         );
 
-        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 5.expr());
+        let common_error_gadget = CommonErrorGadget::construct(
+            cb,
+            opcode.expr(),
+            // EXTCODECOPY has extra 1 call context lookup (tx_id), 1 account access list
+            // read (is_warm), and 1 stack pop (external_address).
+            5.expr() + 3.expr() * is_extcodecopy.expr(),
+        );
 
         Self {
             opcode,
+            is_warm,
+            tx_id,
+            external_address,
             src_offset,
             dst_memory_addr,
             memory_expansion,
             memory_copier_gas,
             insufficient_gas,
+            is_extcodecopy,
             common_error_gadget,
         }
     }
@@ -95,11 +146,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
+        let is_extcodecopy = usize::from(opcode == OpcodeId::EXTCODECOPY);
 
         log::debug!(
             "ErrorOutOfGasMemoryCopy: opcode = {}, gas_left = {}, gas_cost = {}",
@@ -108,14 +160,29 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             step.gas_cost,
         );
 
-        let [dst_offset, src_offset, copy_size] =
-            [0, 1, 2].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
+        let (is_warm, external_address) = if is_extcodecopy == 1 {
+            (
+                block.rws[step.rw_indices[1]].tx_access_list_value_pair().0,
+                block.rws[step.rw_indices[2]].stack_value(),
+            )
+        } else {
+            (false, U256::zero())
+        };
+
+        let rw_offset = 3 * is_extcodecopy;
+        let [dst_offset, src_offset, copy_size] = [rw_offset, rw_offset + 1, rw_offset + 2]
+            .map(|idx| block.rws[step.rw_indices[idx]].stack_value());
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+        self.is_warm
+            .assign(region, offset, Value::known(F::from(u64::from(is_warm))))?;
+        self.tx_id
+            .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
+        self.external_address
+            .assign(region, offset, Some(external_address.to_le_bytes()))?;
         self.src_offset
             .assign(region, offset, Some(src_offset.to_le_bytes()))?;
-
         let memory_addr = self
             .dst_memory_addr
             .assign(region, offset, dst_offset, copy_size)?;
@@ -130,9 +197,21 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             Value::known(F::from(step.gas_left)),
             Value::known(F::from(step.gas_cost)),
         )?;
-
-        self.common_error_gadget
-            .assign(region, offset, block, call, step, 5)?;
+        self.is_extcodecopy.assign(
+            region,
+            offset,
+            F::from(opcode.as_u64()) - F::from(OpcodeId::EXTCODECOPY.as_u64()),
+        )?;
+        self.common_error_gadget.assign(
+            region,
+            offset,
+            block,
+            call,
+            step,
+            // EXTCODECOPY has extra 1 call context lookup (tx_id), 1 account access list
+            // read (is_warm), and 1 stack pop (external_address).
+            5 + 3 * is_extcodecopy,
+        )?;
 
         Ok(())
     }
@@ -149,22 +228,35 @@ mod tests {
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
 
-    const TESTING_OPCODES: &[OpcodeId] = &[
+    const TESTING_COMMON_OPCODES: &[OpcodeId] = &[
         OpcodeId::CALLDATACOPY,
         OpcodeId::CODECOPY,
         OpcodeId::RETURNDATACOPY,
     ];
 
     const TESTING_DST_OFFSET_COPY_SIZE_PAIRS: &[(u64, u64)] =
-        &[(0x20, 0), (0x40, 20), (0x4000, 0x4000)];
+        &[(0x20, 0), (0x40, 20), (0x2000, 0x200)];
 
     #[test]
-    fn test_oog_memory_copy() {
-        for (opcode, (dst_offset, copy_size)) in TESTING_OPCODES
+    fn test_oog_memory_copy_for_common_opcodes() {
+        for (opcode, (dst_offset, copy_size)) in TESTING_COMMON_OPCODES
             .iter()
             .cartesian_product(TESTING_DST_OFFSET_COPY_SIZE_PAIRS.iter())
         {
-            let testing_data = TestingData::new(*opcode, *dst_offset, *copy_size);
+            let testing_data = TestingData::new_for_common_opcode(*opcode, *dst_offset, *copy_size);
+
+            test_root(&testing_data);
+            test_internal(&testing_data);
+        }
+    }
+
+    #[test]
+    fn test_oog_memory_copy_for_extcodecopy() {
+        for (is_warm, (dst_offset, copy_size)) in [false, true]
+            .iter()
+            .cartesian_product(TESTING_DST_OFFSET_COPY_SIZE_PAIRS.iter())
+        {
+            let testing_data = TestingData::new_for_extcodecopy(*is_warm, *dst_offset, *copy_size);
 
             test_root(&testing_data);
             test_internal(&testing_data);
@@ -177,7 +269,7 @@ mod tests {
     }
 
     impl TestingData {
-        pub fn new(opcode: OpcodeId, dst_offset: u64, copy_size: u64) -> Self {
+        pub fn new_for_common_opcode(opcode: OpcodeId, dst_offset: u64, copy_size: u64) -> Self {
             let bytecode = bytecode! {
                 PUSH32(copy_size)
                 PUSH32(rand_word())
@@ -185,12 +277,45 @@ mod tests {
                 .write_op(opcode)
             };
 
-            // Current memory word size is zero, and next memory word size is calculated as
-            // `(dst_offset + copy_size + 31) / 32`.
-            let next_memory_word_size = (dst_offset + copy_size + 31) / 32;
+            let memory_word_size = (dst_offset + copy_size + 31) / 32;
+
             let gas_cost = OpcodeId::PUSH32.constant_gas_cost().0 * 3
                 + opcode.constant_gas_cost().0
-                + memory_copier_gas_cost(0, next_memory_word_size, copy_size);
+                + memory_copier_gas_cost(0, memory_word_size, copy_size);
+
+            Self { bytecode, gas_cost }
+        }
+
+        pub fn new_for_extcodecopy(is_warm: bool, dst_offset: u64, copy_size: u64) -> Self {
+            let external_address = MOCK_ACCOUNTS[4];
+
+            let mut bytecode = bytecode! {
+                PUSH32(copy_size)
+                PUSH32(U256::zero())
+                PUSH32(dst_offset)
+                PUSH32(external_address.to_word())
+                EXTCODECOPY
+            };
+
+            let memory_word_size = (dst_offset + copy_size + 31) / 32;
+
+            let mut gas_cost = OpcodeId::PUSH32.constant_gas_cost().0 * 4
+                + GasCost::COLD_ACCOUNT_ACCESS.0
+                + memory_copier_gas_cost(0, memory_word_size, copy_size);
+
+            if is_warm {
+                bytecode.append(&bytecode! {
+                    PUSH32(copy_size)
+                    PUSH32(rand_word())
+                    PUSH32(dst_offset)
+                    PUSH32(external_address.to_word())
+                    EXTCODECOPY
+                });
+
+                gas_cost += OpcodeId::PUSH32.constant_gas_cost().0 * 4
+                    + GasCost::WARM_ACCESS.0
+                    + memory_copier_gas_cost(memory_word_size, memory_word_size, copy_size);
+            }
 
             Self { bytecode, gas_cost }
         }

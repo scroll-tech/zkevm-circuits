@@ -84,7 +84,6 @@ impl From<&ExecError> for ExecutionState {
                 OogError::Log => ExecutionState::ErrorOutOfGasLOG,
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
-                OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
                 OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
