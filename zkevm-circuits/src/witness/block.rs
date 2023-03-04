@@ -304,6 +304,8 @@ pub fn block_convert<F: Field>(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
+    let rws = RwMap::from(&block.container);
+    rws.check_value();
     let num_txs = block.txs().len();
     let last_block_num = block
         .headers
@@ -313,10 +315,7 @@ pub fn block_convert<F: Field>(
         .map(|(k, _)| *k)
         .unwrap_or_default();
     let chain_id = block.chain_id();
-
-    let rws = RwMap::from(&block.container);
     rws.check_rw_counter_sanity();
-    rws.check_value();
     let end_block_not_last = step_convert(&block.block_steps.end_block_not_last, last_block_num);
     let end_block_last = step_convert(&block.block_steps.end_block_last, last_block_num);
     log::trace!(

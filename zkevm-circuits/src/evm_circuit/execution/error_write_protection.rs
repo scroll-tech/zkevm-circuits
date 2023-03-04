@@ -3,7 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder,
+            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
             math_gadget::IsZeroGadget, sum, CachedRegion, Cell, Word as RLCWord,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -22,8 +22,7 @@ pub(crate) struct ErrorWriteProtectionGadget<F> {
     code_address: RLCWord<F>,
     value: RLCWord<F>,
     is_value_zero: IsZeroGadget<F>,
-    rw_counter_end_of_reversion: Cell<F>,
-    restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
@@ -38,7 +37,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         let code_address_word = cb.query_word_rlc();
         let value = cb.query_word_rlc();
         let is_value_zero = IsZeroGadget::construct(cb, value.expr());
-        let rw_counter_end_of_reversion = cb.query_cell();
 
         // require_in_set method will spilit into more low degree expressions if exceed
         // max_degree. otherwise need to do fixed lookup for these opcodes
@@ -72,40 +70,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         // current call context is readonly
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsStatic, 1.expr());
 
-        // current call must be failed
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
         // constrain not root call as at least one previous staticcall preset.
         cb.require_zero(
             "ErrorWriteProtection only happen in internal call",
             cb.curr.state.is_root.expr(),
         );
 
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-        // Restore caller state to next StepState
-        let restore_context = RestoreContextGadget::construct(
-            cb,
-            0.expr(),
-            0.expr(),
-            0.expr(),
-            0.expr(),
-            0.expr(),
-            0.expr(),
-            0.expr(),
-        );
-        // constrain RwCounterEndOfReversion
-        let rw_counter_end_of_step =
-            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
-        cb.require_equal(
-            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
-            rw_counter_end_of_reversion.expr(),
-            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
-        );
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 0.expr());
 
         Self {
             opcode,
@@ -114,8 +85,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             code_address: code_address_word,
             value,
             is_value_zero,
-            rw_counter_end_of_reversion,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -154,12 +124,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         self.is_value_zero
             .assign(region, offset, sum::value(&value.to_le_bytes()))?;
 
-        self.rw_counter_end_of_reversion.assign(
-            region,
-            offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
-        )?;
-        self.restore_context.assign(
+        self.common_error_gadget.assign(
             region,
             offset,
             block,
@@ -167,6 +132,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             step,
             3 + (is_call as usize * 3),
         )?;
+
         Ok(())
     }
 }

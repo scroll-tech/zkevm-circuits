@@ -52,6 +52,7 @@ hex = "0.4.3"
 itertools = "0.10.1"
 mock = { path = "../mock" }
 pretty_assertions = "1.0.0"
+cli-table = "0.4"
 
 [features]
 default = ["test", "test-circuits", "onephase", "enable-sign-verify"]

@@ -63,15 +63,17 @@ pub struct CircuitsParams {
     /// Maximum number of bytes supported in the Bytecode Circuit
     pub max_bytecode: usize,
     /// Pad evm circuit number of rows.
-    /// When 0, the EVM circuit number of row will be dynamically calculated, so
-    /// the same circuit will not be able to proof different witnesses. In this
-    /// case it will contain as many rows for all steps + 1 row
+    /// When 0, the EVM circuit number of rows will be dynamically calculated,
+    /// so the same circuit will not be able to proof different witnesses.
+    /// In this case it will contain as many rows for all steps + 1 row
     /// for EndBlock.
     pub max_evm_rows: usize,
-    // TODO: Rename for consistency
     /// Pad the keccak circuit with this number of invocations to a static
     /// capacity.  Number of keccak_f that the Keccak circuit will support.
-    pub keccak_padding: Option<usize>,
+    /// When 0, the Keccak circuit number of rows will be dynamically
+    /// calculated, so the same circuit will not be able to prove different
+    /// witnesses.
+    pub max_keccak_rows: usize,
 }
 
 impl Default for CircuitsParams {
@@ -88,7 +90,7 @@ impl Default for CircuitsParams {
             max_exp_steps: 1000,
             max_bytecode: 512,
             max_evm_rows: 0,
-            keccak_padding: None,
+            max_keccak_rows: 0,
         }
     }
 }

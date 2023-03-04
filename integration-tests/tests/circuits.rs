@@ -36,6 +36,11 @@ macro_rules! declare_tests {
             }
 
             #[tokio::test]
+            async fn [<serial_test_keccak_ $name>]() {
+                run_test! (KECCAK_CIRCUIT_TEST, $block_tag, $real_prover);
+            }
+
+            #[tokio::test]
             async fn [<serial_test_super_ $name>]() {
                 run_test! (SUPER_CIRCUIT_TEST, $block_tag, $real_prover);
             }
@@ -52,6 +57,7 @@ macro_rules! unroll_tests {
             TX_CIRCUIT_TEST,
             BYTECODE_CIRCUIT_TEST,
             COPY_CIRCUIT_TEST,
+            KECCAK_CIRCUIT_TEST,
             SUPER_CIRCUIT_TEST
         };
         use integration_tests::log_init;

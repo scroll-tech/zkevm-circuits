@@ -483,14 +483,15 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Push 2 reversible [`AccountOp`] to update `sender` and `receiver`'s
-    /// balance by `value`, with `sender` being extraly charged with `fee`.
+    /// balance by `value`. If `fee` is existing (not None), also need to push 1
+    /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
     pub fn transfer_with_fee(
         &mut self,
         step: &mut ExecStep,
         sender: Address,
         receiver: Address,
         value: Word,
-        fee: Word,
+        fee: Option<Word>,
     ) -> Result<(), Error> {
         let (found, sender_account) = self.sdb.get_account(&sender);
         if !found {
@@ -498,13 +499,13 @@ impl<'a> CircuitInputStateRef<'a> {
         }
         let mut sender_balance_prev = sender_account.balance;
         debug_assert!(
-            sender_account.balance >= value + fee,
+            sender_account.balance >= value + fee.unwrap_or_default(),
             "invalid amount balance {:?} value {:?} fee {:?}",
             sender_balance_prev,
             value,
             fee
         );
-        if !fee.is_zero() {
+        if let Some(fee) = fee {
             let sender_balance = sender_balance_prev - fee;
             log::trace!(
                 "sender balance update with fee (not reversible): {:?} {:?}->{:?}",
@@ -573,7 +574,7 @@ impl<'a> CircuitInputStateRef<'a> {
         receiver: Address,
         value: Word,
     ) -> Result<(), Error> {
-        self.transfer_with_fee(step, sender, receiver, value, Word::zero())
+        self.transfer_with_fee(step, sender, receiver, value, None)
     }
 
     /// Fetch and return code for the given code hash from the code DB.
@@ -931,15 +932,16 @@ impl<'a> CircuitInputStateRef<'a> {
             if !self.call()?.is_root {
                 let (offset, length) = match step.op {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
-                        let (offset, length) =
-                            if self.call()?.is_create() && self.call()?.is_success() {
-                                (0, 0)
-                            } else {
-                                (
-                                    step.stack.nth_last(0)?.as_usize(),
-                                    step.stack.nth_last(1)?.as_usize(),
-                                )
-                            };
+                        let (offset, length) = if step.error.is_some()
+                            || (self.call()?.is_create() && self.call()?.is_success())
+                        {
+                            (0, 0)
+                        } else {
+                            (
+                                step.stack.nth_last(0)?.as_usize(),
+                                step.stack.nth_last(1)?.as_usize(),
+                            )
+                        };
 
                         // At the moment it conflicts with `call_ctx` and `caller_ctx`.
                         let callee_memory = self.call_ctx()?.memory.clone();
