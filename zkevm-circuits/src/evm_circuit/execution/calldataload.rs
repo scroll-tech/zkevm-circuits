@@ -1,5 +1,5 @@
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -7,14 +7,15 @@ use halo2_proofs::{
 
 use crate::{
     evm_circuit::{
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_WORD},
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
         util::{
-            common_gadget::SameContextGadget,
+            and,
+            common_gadget::{SameContextGadget, WordRangeGadget},
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes,
+            math_gadget::LtGadget,
             memory_gadget::BufferReaderGadget,
-            not, CachedRegion, Cell, MemoryAddress,
+            not, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -34,8 +35,6 @@ pub(crate) struct CallDataLoadGadget<F> {
     /// Source of data, this is transaction ID for a root call and caller ID for
     /// an internal call.
     src_id: Cell<F>,
-    /// The bytes offset in calldata, from which we load a 32-bytes word.
-    offset: MemoryAddress<F>,
     /// The size of the call's data (tx input for a root call or calldata length
     /// of an internal call).
     call_data_length: Cell<F>,
@@ -43,6 +42,11 @@ pub(crate) struct CallDataLoadGadget<F> {
     /// tx data starts at the first byte, but can be non-zero offset for an
     /// internal call.
     call_data_offset: Cell<F>,
+    /// The bytes offset in calldata, from which we load a 32-bytes word. It
+    /// could be Uint64 overflow.
+    offset_word: WordRangeGadget<F>,
+    /// Check if offset is less than calldata length.
+    offset_lt_call_data_length: LtGadget<F, N_BYTES_U64>,
     /// Gadget to read from tx calldata, which we validate against the word
     /// pushed to stack.
     buffer_reader: BufferReaderGadget<F, N_BYTES_WORD, N_BYTES_MEMORY_ADDRESS>,
@@ -56,61 +60,98 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let offset = cb.query_word_rlc();
+        let offset_word = WordRangeGadget::construct(cb, N_BYTES_U64);
+
+        // Reset data offset to the maximum value of Uint64 if overflow.
+        let offset = select::expr(
+            offset_word.within_range_expr(),
+            offset_word.valid_value_expr(N_BYTES_U64),
+            u64::MAX.expr(),
+        );
 
         // Pop the offset value from stack.
-        cb.stack_pop(offset.expr());
+        cb.stack_pop(offset_word.original_word_expr());
 
         // Add a lookup constrain for TxId in the RW table.
         let src_id = cb.query_cell();
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
+        let offset_lt_call_data_length =
+            LtGadget::construct(cb, offset.expr(), call_data_length.expr());
 
-        let src_addr = from_bytes::expr(&offset.cells) + call_data_offset.expr();
-        let src_addr_end = call_data_length.expr() + call_data_offset.expr();
-
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, src_id.expr());
-            cb.call_context_lookup(
-                false.expr(),
-                None,
-                CallContextFieldTag::CallDataLength,
+        // Set source start as the minimun value of offset and call data length.
+        let src_addr = call_data_offset.expr()
+            + select::expr(
+                offset_lt_call_data_length.expr(),
+                offset,
                 call_data_length.expr(),
             );
-            cb.require_equal(
-                "if is_root then call_data_offset == 0",
-                call_data_offset.expr(),
-                0.expr(),
-            );
-        });
-        cb.condition(not::expr(cb.curr.state.is_root.expr()), |cb| {
-            cb.call_context_lookup(
-                false.expr(),
-                None,
-                CallContextFieldTag::CallerId,
-                src_id.expr(),
-            );
-            cb.call_context_lookup(
-                false.expr(),
-                None,
-                CallContextFieldTag::CallDataLength,
-                call_data_length.expr(),
-            );
-            cb.call_context_lookup(
-                false.expr(),
-                None,
-                CallContextFieldTag::CallDataOffset,
-                call_data_offset.expr(),
-            );
-        });
+        let src_addr_end = call_data_offset.expr() + call_data_length.expr();
 
-        let buffer_reader = BufferReaderGadget::construct(cb, src_addr.clone(), src_addr_end);
+        cb.condition(
+            and::expr([
+                offset_word.within_range_expr(),
+                cb.curr.state.is_root.expr(),
+            ]),
+            |cb| {
+                cb.call_context_lookup(
+                    false.expr(),
+                    None,
+                    CallContextFieldTag::TxId,
+                    src_id.expr(),
+                );
+                cb.call_context_lookup(
+                    false.expr(),
+                    None,
+                    CallContextFieldTag::CallDataLength,
+                    call_data_length.expr(),
+                );
+                cb.require_equal(
+                    "if is_root then call_data_offset == 0",
+                    call_data_offset.expr(),
+                    0.expr(),
+                );
+            },
+        );
 
-        let mut calldata_word = (0..N_BYTES_WORD)
+        cb.condition(
+            and::expr([
+                offset_word.within_range_expr(),
+                not::expr(cb.curr.state.is_root.expr()),
+            ]),
+            |cb| {
+                cb.call_context_lookup(
+                    false.expr(),
+                    None,
+                    CallContextFieldTag::CallerId,
+                    src_id.expr(),
+                );
+                cb.call_context_lookup(
+                    false.expr(),
+                    None,
+                    CallContextFieldTag::CallDataLength,
+                    call_data_length.expr(),
+                );
+                cb.call_context_lookup(
+                    false.expr(),
+                    None,
+                    CallContextFieldTag::CallDataOffset,
+                    call_data_offset.expr(),
+                );
+            },
+        );
+
+        let buffer_reader = BufferReaderGadget::construct(cb, src_addr.expr(), src_addr_end);
+
+        let mut calldata_word: Vec<_> = (0..N_BYTES_WORD)
             .map(|idx| {
-                // for a root call, the call data comes from tx's data field.
+                // For a root call, the call data comes from tx's data field.
                 cb.condition(
-                    cb.curr.state.is_root.expr() * buffer_reader.read_flag(idx),
+                    and::expr([
+                        offset_word.within_range_expr(),
+                        buffer_reader.read_flag(idx),
+                        cb.curr.state.is_root.expr(),
+                    ]),
                     |cb| {
                         cb.tx_context_lookup(
                             src_id.expr(),
@@ -120,9 +161,13 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                         );
                     },
                 );
-                // for an internal call, the call data comes from memory.
+                // For an internal call, the call data comes from memory.
                 cb.condition(
-                    (1.expr() - cb.curr.state.is_root.expr()) * buffer_reader.read_flag(idx),
+                    and::expr([
+                        offset_word.within_range_expr(),
+                        buffer_reader.read_flag(idx),
+                        not::expr(cb.curr.state.is_root.expr()),
+                    ]),
                     |cb| {
                         cb.memory_lookup(
                             0.expr(),
@@ -134,7 +179,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 );
                 buffer_reader.byte(idx)
             })
-            .collect::<Vec<Expression<F>>>();
+            .collect();
 
         // Since the stack items are in little endian form, we reverse the bytes
         // here.
@@ -157,10 +202,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         Self {
             same_context,
-            offset,
             src_id,
             call_data_length,
             call_data_offset,
+            offset_word,
+            offset_lt_call_data_length,
             buffer_reader,
         }
     }
@@ -176,62 +222,72 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        // set the value for bytes offset in calldata. This is where we start
-        // reading bytes from.
         let data_offset = block.rws[step.rw_indices[0]].stack_value();
-
-        // assign the calldata start and end cells.
-        self.offset.assign(
-            region,
-            offset,
-            Some(
-                data_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
-
-        // assign to the buffer reader gadget.
-        let (calldata_length, calldata_offset, src_id) = if call.is_root {
-            (tx.call_data_length as u64, 0u64, tx.id as u64)
+        let offset_within_range =
+            self.offset_word
+                .assign(region, offset, N_BYTES_U64, data_offset)?;
+        let data_offset = if offset_within_range {
+            data_offset.as_u64()
         } else {
-            (
-                call.call_data_length,
-                call.call_data_offset,
-                call.caller_id as u64,
-            )
+            u64::MAX
+        };
+
+        // Assign to the buffer reader gadget.
+        let (src_id, call_data_offset, call_data_length) = if call.is_root {
+            (tx.id, 0, tx.call_data_length as u64)
+        } else {
+            (call.caller_id, call.call_data_offset, call.call_data_length)
         };
         self.src_id
-            .assign(region, offset, Value::known(F::from(src_id)))?;
+            .assign(region, offset, Value::known(F::from(src_id as u64)))?;
         self.call_data_length
-            .assign(region, offset, Value::known(F::from(calldata_length)))?;
+            .assign(region, offset, Value::known(F::from(call_data_length)))?;
         self.call_data_offset
-            .assign(region, offset, Value::known(F::from(calldata_offset)))?;
+            .assign(region, offset, Value::known(F::from(call_data_offset)))?;
+
+        self.offset_lt_call_data_length.assign(
+            region,
+            offset,
+            F::from(data_offset),
+            F::from(call_data_length),
+        )?;
 
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
         let (src_addr, src_addr_end) = (
-            data_offset.as_usize() + calldata_offset as usize,
-            calldata_length as usize + calldata_offset as usize,
+            // Set source start as the minimun value of data offset and call data length.
+            call_data_offset
+                + if data_offset < call_data_length {
+                    data_offset
+                } else {
+                    call_data_length
+                },
+            call_data_offset + call_data_length,
         );
 
-        for (i, byte) in calldata_bytes.iter_mut().enumerate() {
-            if call.is_root {
-                // fetch from tx call data
-                if src_addr + i < tx.call_data_length {
-                    *byte = tx.call_data[src_addr + i];
-                }
-            } else {
-                // fetch from memory
-                if src_addr + i < (call.call_data_offset + call.call_data_length) as usize {
-                    *byte = block.rws[step.rw_indices[OFFSET_RW_MEMORY_INDICES + i]].memory_value();
+        if offset_within_range {
+            for (i, byte) in calldata_bytes.iter_mut().enumerate() {
+                if call.is_root {
+                    // Fetch from tx call data.
+                    if src_addr.checked_add(i as u64).unwrap() < tx.call_data_length as u64 {
+                        *byte = tx.call_data[src_addr as usize + i];
+                    }
+                } else {
+                    // Fetch from memory.
+                    if src_addr.checked_add(i as u64).unwrap()
+                        < call.call_data_offset + call.call_data_length
+                    {
+                        *byte =
+                            block.rws[step.rw_indices[OFFSET_RW_MEMORY_INDICES + i]].memory_value();
+                    }
                 }
             }
         }
+
         self.buffer_reader.assign(
             region,
             offset,
-            src_addr as u64,
-            src_addr_end as u64,
+            src_addr,
+            src_addr_end,
             &calldata_bytes,
             &[true; N_BYTES_WORD],
         )?;
@@ -246,9 +302,9 @@ mod test {
     use eth_types::{bytecode, ToWord, Word};
     use mock::TestContext;
 
-    fn test_root_ok(offset: usize) {
+    fn test_root_ok(offset: Word) {
         let bytecode = bytecode! {
-            PUSH32(Word::from(offset))
+            PUSH32(offset)
             CALLDATALOAD
             STOP
         };
@@ -259,12 +315,12 @@ mod test {
         .run();
     }
 
-    fn test_internal_ok(call_data_length: usize, call_data_offset: usize, offset: usize) {
+    fn test_internal_ok(call_data_length: usize, call_data_offset: usize, offset: Word) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = bytecode! {
-            PUSH32(Word::from(offset))
+            PUSH32(offset)
             CALLDATALOAD
             STOP
         };
@@ -308,17 +364,23 @@ mod test {
 
     #[test]
     fn calldataload_gadget_root() {
-        test_root_ok(0x00);
-        test_root_ok(0x08);
-        test_root_ok(0x10);
-        test_root_ok(0x2010);
+        test_root_ok(0x00.into());
+        test_root_ok(0x08.into());
+        test_root_ok(0x10.into());
+        test_root_ok(0x2010.into());
     }
 
     #[test]
     fn calldataload_gadget_internal() {
-        test_internal_ok(0x20, 0x00, 0x00);
-        test_internal_ok(0x20, 0x10, 0x10);
-        test_internal_ok(0x40, 0x20, 0x08);
-        test_internal_ok(0x1010, 0xff, 0x10);
+        test_internal_ok(0x20, 0x00, 0x00.into());
+        test_internal_ok(0x20, 0x10, 0x10.into());
+        test_internal_ok(0x40, 0x20, 0x08.into());
+        test_internal_ok(0x1010, 0xff, 0x10.into());
+    }
+
+    #[test]
+    fn calldataload_gadget_offset_overflow() {
+        test_root_ok(Word::MAX);
+        test_internal_ok(0x1010, 0xff, Word::MAX);
     }
 }
