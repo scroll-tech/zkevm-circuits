@@ -980,8 +980,10 @@ impl<F: Field> LookupTable<F> for BytecodeTable {
 
 /// Tag to identify the field in a Block Table row
 // Keep the sequence consistent with OpcodeId for scalar
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 pub enum BlockContextFieldTag {
+    /// Null
+    Null = 0,
     /// Coinbase field
     Coinbase = 1,
     /// Timestamp field
@@ -1007,6 +1009,12 @@ pub enum BlockContextFieldTag {
     CumNumTxs,
 }
 impl_expr!(BlockContextFieldTag);
+
+impl From<BlockContextFieldTag> for usize {
+    fn from(value: BlockContextFieldTag) -> Self {
+        value as usize
+    }
+}
 
 /// Table with Block header fields
 #[derive(Clone, Debug)]
