@@ -36,6 +36,7 @@ use crate::table::BlockContextFieldTag::{
     Timestamp,
 };
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
+use halo2_proofs::circuit::{Cell, RegionIndex};
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
