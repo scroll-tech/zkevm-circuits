@@ -855,7 +855,7 @@ pub(crate) mod super_circuit_tests {
             max_exp_steps: 256,
             max_bytecode: 512,
             max_evm_rows: 0,
-            keccak_padding: None,
+            max_keccak_rows: 0,
             max_inner_blocks: MAX_INNER_BLOCKS,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
@@ -878,7 +878,7 @@ pub(crate) mod super_circuit_tests {
             max_rws: MAX_RWS,
             max_copy_rows: MAX_COPY_ROWS,
             max_bytecode: 512,
-            keccak_padding: None,
+            max_keccak_rows: 0,
             max_inner_blocks: MAX_INNER_BLOCKS,
             max_exp_steps: 256,
             max_evm_rows: 0,
@@ -904,7 +904,7 @@ pub(crate) mod super_circuit_tests {
             max_exp_steps: 256,
             max_bytecode: 512,
             max_evm_rows: 0,
-            keccak_padding: None,
+            max_keccak_rows: 0,
             max_inner_blocks: MAX_INNER_BLOCKS,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
@@ -927,7 +927,7 @@ pub(crate) mod super_circuit_tests {
             max_rws: MAX_RWS,
             max_copy_rows: MAX_COPY_ROWS,
             max_bytecode: 512,
-            keccak_padding: None,
+            max_keccak_rows: 0,
             max_inner_blocks: MAX_INNER_BLOCKS,
             max_exp_steps: 256,
             max_evm_rows: 0,
@@ -952,7 +952,7 @@ pub(crate) mod super_circuit_tests {
             max_exp_steps: 256,
             max_bytecode: 512,
             max_evm_rows: 0,
-            keccak_padding: None,
+            max_keccak_rows: 0,
             max_inner_blocks: MAX_INNER_BLOCKS,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(

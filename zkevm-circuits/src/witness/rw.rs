@@ -41,7 +41,7 @@ impl RwMap {
             debug_assert_eq!(idx, rw_counter - 1);
         }
     }
-    /// ..
+    /// Check value in the same way like StateCircuit
     pub fn check_value(&self) {
         let mock_rand = Fr::from(0x1000u64);
         let err_msg_first = "first access reads don't change value";

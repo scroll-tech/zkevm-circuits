@@ -72,5 +72,7 @@ stats_evm_circuit: # Print a table with EVM Circuit stats by ExecState/opcode
 stats_copy_circuit: # Print a table with Copy Circuit stats by ExecState/opcode
 	@cargo test -p zkevm-circuits --features=test,warn-unimplemented get_copy_states_stats -- --nocapture --ignored
 
+evm_exec_steps_occupancy: # Print a table for each EVM-CellManager CellType with the top 10 occupancy ExecutionSteps associated
+	@cargo test -p zkevm-circuits --release get_exec_steps_occupancy --features=test,warn-unimplemented -- --nocapture --ignored
 
-.PHONY: clippy doc fmt test test_benches test-all evm_bench state_bench circuit_benches help
+.PHONY: clippy doc fmt test test_benches test-all evm_bench state_bench circuit_benches evm_exec_steps_occupancy stats_state_circuit stats_evm_circuit stats_copy_circuit help

@@ -149,16 +149,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         let mut lookup_counter = 0;
         let part_size = get_num_bits_per_absorb_lookup();
         let input = absorb_from.expr() + absorb_data.expr();
-        let absorb_fat = split::expr(
-            meta,
-            &mut cell_manager,
-            &mut cb,
-            input,
-            0,
-            part_size,
-            false,
-            None,
-        );
+        let absorb_fat = split::expr(meta, &mut cell_manager, &mut cb, input, 0, part_size, false);
         cell_manager.start_region();
         let absorb_res = transform::expr(
             "absorb",
@@ -194,7 +185,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             0,
             NUM_BYTES_PER_WORD,
             false,
-            None,
         );
         cell_manager.start_region();
         let input_bytes = transform::expr(
@@ -245,7 +235,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                 1,
                 part_size_c,
                 false,
-                None,
             ));
         }
         // Now calculate `bc` by normalizing `c`
@@ -428,16 +417,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         cell_manager.start_region();
         let part_size = get_num_bits_per_absorb_lookup();
         let input = s[0][0].clone() + round_cst_expr.clone();
-        let iota_parts = split::expr(
-            meta,
-            &mut cell_manager,
-            &mut cb,
-            input,
-            0,
-            part_size,
-            false,
-            None,
-        );
+        let iota_parts = split::expr(meta, &mut cell_manager, &mut cb, input, 0, part_size, false);
         cell_manager.start_region();
         // Could share columns with absorb which may end up using 1 lookup/column
         // fewer...
@@ -487,7 +467,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             0,
             8,
             false,
-            None,
         );
         cell_manager.start_region();
         let squeeze_bytes = transform::expr(
@@ -972,7 +951,7 @@ impl<F: Field> KeccakCircuitConfig<F> {
 #[derive(Default, Clone, Debug)]
 pub struct KeccakCircuit<F: Field> {
     inputs: Vec<Vec<u8>>,
-    num_rows: Option<usize>,
+    num_rows: usize,
     _marker: PhantomData<F>,
 }
 
@@ -984,7 +963,7 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     /// independently of the permutations required by `inputs`.
     fn new_from_block(block: &witness::Block<F>) -> Self {
         Self::new(
-            block.circuits_params.keccak_padding,
+            block.circuits_params.max_keccak_rows,
             block.keccak_inputs.clone(),
         )
     }
@@ -998,7 +977,7 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
                 .iter()
                 .map(|bytes| (bytes.len() as f64 / 136.0).ceil() as usize * rows_per_chunk)
                 .sum(),
-            block.circuits_params.keccak_padding.unwrap_or_default(),
+            block.circuits_params.max_keccak_rows,
         )
     }
 
@@ -1053,7 +1032,7 @@ impl<F: Field> Circuit<F> for KeccakCircuit<F> {
 
 impl<F: Field> KeccakCircuit<F> {
     /// Creates a new circuit instance
-    pub fn new(num_rows: Option<usize>, inputs: Vec<Vec<u8>>) -> Self {
+    pub fn new(num_rows: usize, inputs: Vec<Vec<u8>>) -> Self {
         KeccakCircuit {
             inputs,
             num_rows,
@@ -1063,9 +1042,12 @@ impl<F: Field> KeccakCircuit<F> {
 
     /// The number of keccak_f's that can be done in this circuit
     pub fn capacity(&self) -> Option<usize> {
-        // Subtract two for unusable rows
-        self.num_rows
-            .map(|num_rows| num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
+        if self.num_rows > 0 {
+            // Subtract two for unusable rows
+            Some(self.num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
+        } else {
+            None
+        }
     }
 
     /// Sets the witness using the data to be hashed

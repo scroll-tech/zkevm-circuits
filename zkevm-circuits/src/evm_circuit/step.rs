@@ -15,6 +15,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
+use std::fmt::Display;
 use std::iter;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -116,6 +117,12 @@ pub enum ExecutionState {
 impl Default for ExecutionState {
     fn default() -> Self {
         Self::STOP
+    }
+}
+
+impl Display for ExecutionState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 

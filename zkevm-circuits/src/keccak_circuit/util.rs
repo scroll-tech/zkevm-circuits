@@ -217,7 +217,7 @@ pub fn get_num_bits_per_lookup(range: usize) -> usize {
 }
 
 // Implementation of the above without environment dependency.
-pub fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> usize {
+pub(crate) fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> usize {
     let num_unusable_rows = 31;
     let height = 2usize.pow(log_height as u32);
     let mut num_bits = 1;
@@ -305,7 +305,9 @@ mod tests {
 
     #[test]
     fn pack_into_bits() {
-        let msb = 1 << (7 * 3);
+        // The example number 128 in binary: |1|0|0|0|0|0|0|0|
+        // In packed form:                 |001|000|000|000|000|000|000|000|
+        let msb = 1 << (7 * BIT_COUNT);
         for (idx, expected) in [(0, 0), (1, 1), (128, msb), (129, msb | 1)] {
             let packed: F = pack(&into_bits(&[idx as u8]));
             assert_eq!(packed, F::from(expected));
@@ -319,7 +321,7 @@ mod tests {
         assert_eq!(get_num_bits_per_lookup_impl(4, 19), 9);
         assert_eq!(get_num_bits_per_lookup_impl(5, 19), 8);
         assert_eq!(get_num_bits_per_lookup_impl(6, 19), 7);
-        // The largest imaginable value does not overflow u64.
+        // The largest possible value does not overflow u64.
         assert_eq!(get_num_bits_per_lookup_impl(3, 32) * BIT_COUNT, 60);
     }
 }

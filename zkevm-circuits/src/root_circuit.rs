@@ -23,6 +23,7 @@ pub use snark_verifier::system::halo2::{compile, Config};
 pub use aggregation::TestAggregationCircuit;
 
 /// RootCircuit for aggregating SuperCircuit into a much smaller proof.
+#[derive(Clone)]
 pub struct RootCircuit<'a, M: MultiMillerLoop> {
     svk: KzgSvk<M>,
     snark: SnarkWitness<'a, M::G1Affine>,
@@ -173,7 +174,7 @@ mod test {
                 max_exp_steps: 256,
                 max_bytecode: 512,
                 max_evm_rows: 0,
-                keccak_padding: None,
+                max_keccak_rows: 0,
                 max_inner_blocks: 64,
             };
             let (k, circuit, instance, _) =

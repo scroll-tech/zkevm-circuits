@@ -3,7 +3,7 @@ set -e
 
 ARG_DEFAULT_SUDO=
 ARG_DEFAULT_STEPS="setup gendata tests cleanup"
-ARG_DEFAULT_TESTS="rpc circuit_input_builder circuits:mock_prover"
+ARG_DEFAULT_TESTS="rpc circuit_input_builder circuits::mock_prover"
 
 usage() {
     cat >&2 << EOF

@@ -22,6 +22,7 @@ use std::hash::{Hash, Hasher};
 
 pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
+pub(crate) mod instrumentation;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
 

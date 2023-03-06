@@ -44,7 +44,7 @@ impl FromStr for StackAddress {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.strip_prefix("0x").unwrap_or(s);
         let value = usize::from_str_radix(s, 16).map_err(|_| Error::StackAddressParsing)?;
-        // Stack only has 1023 slots avaliable.
+        // Stack only has 1023 slots available.
         if value >= 1024 {
             return Err(Error::InvalidStackPointer);
         };
@@ -106,7 +106,7 @@ impl Stack {
         Stack(words)
     }
 
-    /// Returns the first avaliable/free `StackAddress`.
+    /// Returns the first available/free `StackAddress`.
     pub fn stack_pointer(&self) -> StackAddress {
         // Stack has 1024 slots.
         // First allocation slot for us in the stack is 1023.

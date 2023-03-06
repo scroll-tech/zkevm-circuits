@@ -49,6 +49,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let external_address_word = cb.query_word_rlc();
         let external_address =
             from_bytes::expr(&external_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
+
         let memory_offset = cb.query_cell_phase2();
         let data_offset = cb.query_word_rlc();
         let memory_length = cb.query_word_rlc();
@@ -155,10 +156,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let [external_address, memory_offset, data_offset, memory_length] =
             [0, 1, 2, 3].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
-
         self.external_address_word
             .assign(region, offset, Some(external_address.to_le_bytes()))?;
-
         let memory_address =
             self.memory_address
                 .assign(region, offset, memory_offset, memory_length)?;
