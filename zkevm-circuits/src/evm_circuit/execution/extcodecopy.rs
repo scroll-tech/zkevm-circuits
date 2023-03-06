@@ -1,15 +1,16 @@
 use crate::{
     evm_circuit::{
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::SameContextGadget,
+            common_gadget::{SameContextGadget, WordRangeGadget},
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition,
             },
             from_bytes,
+            math_gadget::LtGadget,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            not, select, CachedRegion, Cell, MemoryAddress, Word,
+            not, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -27,7 +28,8 @@ pub(crate) struct ExtcodecopyGadget<F> {
     same_context: SameContextGadget<F>,
     external_address_word: Word<F>,
     memory_address: MemoryAddressGadget<F>,
-    data_offset: MemoryAddress<F>,
+    code_offset_word: WordRangeGadget<F>,
+    code_offset_lt_code_size: LtGadget<F, N_BYTES_U64>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     is_warm: Cell<F>,
@@ -50,13 +52,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let external_address =
             from_bytes::expr(&external_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
 
-        let memory_offset = cb.query_cell_phase2();
-        let data_offset = cb.query_word_rlc();
         let memory_length = cb.query_word_rlc();
+        let memory_offset = cb.query_cell_phase2();
+        let code_offset_word = WordRangeGadget::construct(cb, N_BYTES_U64);
 
         cb.stack_pop(external_address_word.expr());
         cb.stack_pop(memory_offset.expr());
-        cb.stack_pop(data_offset.expr());
+        cb.stack_pop(code_offset_word.original_word_expr());
         cb.stack_pop(memory_length.expr());
 
         let memory_address = MemoryAddressGadget::construct(cb, memory_offset, memory_length);
@@ -81,6 +83,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let code_size = cb.query_cell();
         cb.bytecode_length(code_hash.expr(), code_size.expr());
 
+        // Reset code offset to the maximum value of Uint64 if overflow.
+        let code_offset = select::expr(
+            code_offset_word.within_range_expr(),
+            code_offset_word.valid_value_expr(N_BYTES_U64),
+            u64::MAX.expr(),
+        );
+
+        let code_offset_lt_code_size =
+            LtGadget::construct(cb, code_offset.expr(), code_size.expr());
+
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
@@ -101,7 +113,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 CopyDataType::Bytecode.expr(),
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                from_bytes::expr(&data_offset.cells),
+                // Set source start as the minimun value of code offset and code size.
+                select::expr(
+                    code_offset_lt_code_size.expr(),
+                    code_offset,
+                    code_size.expr(),
+                ),
                 code_size.expr(),
                 memory_address.offset(),
                 memory_address.length(),
@@ -131,7 +148,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             same_context,
             external_address_word,
             memory_address,
-            data_offset,
+            code_offset_word,
+            code_offset_lt_code_size,
             tx_id,
             is_warm,
             reversion_info,
@@ -154,22 +172,17 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [external_address, memory_offset, data_offset, memory_length] =
+        let [external_address, memory_offset, code_offset, memory_length] =
             [0, 1, 2, 3].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
         self.external_address_word
             .assign(region, offset, Some(external_address.to_le_bytes()))?;
         let memory_address =
             self.memory_address
                 .assign(region, offset, memory_offset, memory_length)?;
-        self.data_offset.assign(
-            region,
-            offset,
-            Some(
-                data_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+
+        let code_offset_within_range =
+            self.code_offset_word
+                .assign(region, offset, N_BYTES_U64, code_offset)?;
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
@@ -188,7 +201,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.code_hash
             .assign(region, offset, region.word_rlc(code_hash))?;
 
-        let bytecode_len = if code_hash.is_zero() {
+        let code_size = if code_hash.is_zero() {
             0
         } else {
             block
@@ -196,10 +209,21 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 .get(&code_hash)
                 .expect("could not find external bytecode")
                 .bytes
-                .len()
+                .len() as u64
         };
         self.code_size
-            .assign(region, offset, Value::known(F::from(bytecode_len as u64)))?;
+            .assign(region, offset, Value::known(F::from(code_size)))?;
+
+        self.code_offset_lt_code_size.assign(
+            region,
+            offset,
+            F::from(if code_offset_within_range {
+                code_offset.as_u64()
+            } else {
+                u64::MAX
+            }),
+            F::from(code_size),
+        )?;
 
         self.copy_rwc_inc.assign(
             region,
@@ -246,8 +270,8 @@ mod test {
 
     fn test_ok(
         external_account: Option<Account>,
+        code_offset: Word,
         memory_offset: usize,
-        data_offset: usize,
         length: usize,
         is_warm: bool,
     ) {
@@ -267,7 +291,7 @@ mod test {
         }
         code.append(&bytecode! {
             PUSH32(length)
-            PUSH32(data_offset)
+            PUSH32(code_offset)
             PUSH32(memory_offset)
             PUSH20(external_address.to_word())
             #[start]
@@ -307,8 +331,8 @@ mod test {
 
     #[test]
     fn extcodecopy_empty_account() {
-        test_ok(None, 0x00, 0x00, 0x36, true); // warm account
-        test_ok(None, 0x00, 0x00, 0x36, false); // cold account
+        test_ok(None, 0x00.into(), 0x00, 0x36, true); // warm account
+        test_ok(None, 0x00.into(), 0x00, 0x36, false); // cold account
     }
 
     #[test]
@@ -319,7 +343,7 @@ mod test {
                 code: Bytes::from([10, 40]),
                 ..Default::default()
             }),
-            0x00,
+            0x00.into(),
             0x00,
             0x36,
             true,
@@ -331,7 +355,7 @@ mod test {
                 code: Bytes::from([10, 40]),
                 ..Default::default()
             }),
-            0x00,
+            0x00.into(),
             0x00,
             0x36,
             false,
@@ -346,7 +370,7 @@ mod test {
                 code: Bytes::from(rand_bytes_array::<256>()),
                 ..Default::default()
             }),
-            0x00,
+            0x00.into(),
             0x00,
             0x36,
             true,
@@ -357,7 +381,7 @@ mod test {
                 code: Bytes::from(rand_bytes_array::<256>()),
                 ..Default::default()
             }),
-            0x00,
+            0x00.into(),
             0x00,
             0x36,
             false,
@@ -372,8 +396,8 @@ mod test {
                 code: Bytes::from(rand_bytes_array::<64>()),
                 ..Default::default()
             }),
+            0x20.into(),
             0x00,
-            0x20,
             0x104,
             true,
         );
@@ -383,9 +407,35 @@ mod test {
                 code: Bytes::from(rand_bytes_array::<64>()),
                 ..Default::default()
             }),
+            0x20.into(),
             0x00,
-            0x20,
             0x104,
+            false,
+        );
+    }
+
+    #[test]
+    fn extcodecopy_code_offset_overflow() {
+        test_ok(
+            Some(Account {
+                address: *EXTERNAL_ADDRESS,
+                code: Bytes::from(rand_bytes_array::<256>()),
+                ..Default::default()
+            }),
+            Word::MAX,
+            0x00,
+            0x36,
+            true,
+        );
+        test_ok(
+            Some(Account {
+                address: *EXTERNAL_ADDRESS,
+                code: Bytes::from(rand_bytes_array::<256>()),
+                ..Default::default()
+            }),
+            Word::MAX,
+            0x00,
+            0x36,
             false,
         );
     }
