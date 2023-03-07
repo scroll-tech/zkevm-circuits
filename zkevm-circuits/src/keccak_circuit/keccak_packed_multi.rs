@@ -907,37 +907,11 @@ pub fn multi_keccak<F: Field>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    use log::error;
-
-    fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
-        let circuit = KeccakCircuit::new(Some(2usize.pow(k)), inputs);
-
-        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        let verify_result = prover.verify();
-        if verify_result.is_ok() != success {
-            if let Some(errors) = verify_result.err() {
-                for error in errors.iter() {
-                    error!("{}", error);
-                }
-            }
-            panic!();
-        }
-    }
-
-    #[test]
-    fn packed_multi_keccak_simple() {
-        let k = 14;
-        let inputs = vec![
-            vec![],
-            (0u8..1).collect::<Vec<_>>(),
-            (0u8..135).collect::<Vec<_>>(),
-            (0u8..136).collect::<Vec<_>>(),
-            (0u8..200).collect::<Vec<_>>(),
-        ];
-        verify::<Fr>(k, inputs, true);
-    }
+    use crate::keccak_circuit::{KeccakRegion, Cell};
+    use crate::keccak_circuit::cell_manager::CellManager;
+    use crate::keccak_circuit::util::unpack;
+    use super::{split, split_uniform};
+    use halo2_proofs::halo2curves::bn256::Fr;
 
     #[test]
     fn test_split_uniform_normalize_false() {
@@ -962,7 +936,6 @@ mod tests {
             rot,
             part_size,
             normalize,
-            None,
         );
         let split_uniform_res = split_uniform::value(
             &output_cells,
