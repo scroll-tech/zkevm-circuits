@@ -21,7 +21,7 @@ use crate::{
     util::{query_expression, Challenges, Expr},
 };
 use bus_mapping::util::read_env_var;
-use eth_types::{evm_unimplemented, Field};
+use eth_types::Field;
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -77,6 +77,7 @@ mod dup;
 mod end_block;
 mod end_inner_block;
 mod end_tx;
+mod error_code_store;
 mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
@@ -152,6 +153,7 @@ use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_inner_block::EndInnerBlockGadget;
 use end_tx::EndTxGadget;
+use error_code_store::ErrorCodeStoreGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
@@ -319,7 +321,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_ext_codecopy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
-    error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
+    error_code_store: ErrorCodeStoreGadget<F>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
@@ -574,7 +576,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_exp: configure_gadget!(),
             error_oog_create2: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
-            error_oog_code_store: configure_gadget!(),
+            error_code_store: configure_gadget!(),
             error_insufficient_balance: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
             error_invalid_opcode: configure_gadget!(),
@@ -1393,8 +1395,8 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_oog_self_destruct)
             }
 
-            ExecutionState::ErrorOutOfGasCodeStore => {
-                assign_exec_step!(self.error_oog_code_store)
+            ExecutionState::ErrorCodeStore => {
+                assign_exec_step!(self.error_code_store)
             }
             ExecutionState::ErrorStack => {
                 assign_exec_step!(self.error_stack)
@@ -1427,8 +1429,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
             }
-
-            _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         }
 
         // Fill in the witness values for stored expressions
@@ -1451,6 +1451,7 @@ impl<F: Field> ExecutionConfig<F> {
                 );
             }
         }
+        //}
         Ok(())
     }
 
