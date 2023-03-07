@@ -1,33 +1,20 @@
 use crate::evm_circuit::{
     execution::ExecutionGadget,
     step::ExecutionState,
+    table::{FixedTableTag, Lookup},
     util::{
-        common_gadget::RestoreContextGadget,
-        constraint_builder::{
-            ConstraintBuilder, StepStateTransition,
-            Transition::{Delta, Same},
-        },
-        math_gadget::LtGadget,
-        CachedRegion, Cell,
+        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, CachedRegion, Cell,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
-use crate::table::CallContextFieldTag;
 use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-const N_BYTES_STACK: usize = 2;
-
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorStackGadget<F> {
     opcode: Cell<F>,
-    min_stack_pointer: Cell<F>,
-    max_stack_pointer: Cell<F>,
-    is_overflow: LtGadget<F, N_BYTES_STACK>,
-    is_underflow: LtGadget<F, N_BYTES_STACK>,
-    rw_counter_end_of_reversion: Cell<F>,
-    restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
@@ -37,99 +24,24 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let min_stack_pointer = cb.query_cell();
-        let max_stack_pointer = cb.query_cell();
-        let rw_counter_end_of_reversion = cb.query_cell();
-
-        cb.opcode_stack_lookup(
-            opcode.expr(),
-            min_stack_pointer.expr(),
-            max_stack_pointer.expr(),
-        );
-        // Check whether current stack pointer is underflow or overflow
-
-        let is_overflow = LtGadget::construct(
-            cb,
-            cb.curr.state.stack_pointer.expr(),
-            min_stack_pointer.expr(),
-        );
-        let is_underflow = LtGadget::construct(
-            cb,
-            max_stack_pointer.expr(),
-            cb.curr.state.stack_pointer.expr(),
-        );
-        // is_overflow and is_underflow is bool ensure by LtGadget.
-
-        // constrain one of [is_underflow, is_overflow] must be true when stack error
-        // happens
-        cb.require_equal(
-            "is_underflow + is_overflow = 1",
-            is_underflow.expr() + is_overflow.expr(),
-            1.expr(),
+        cb.add_lookup(
+            "Responsible opcode lookup for invalid stack pointer",
+            Lookup::Fixed {
+                tag: FixedTableTag::ResponsibleOpcode.expr(),
+                values: [
+                    Self::EXECUTION_STATE.as_u64().expr(),
+                    opcode.expr(),
+                    cb.curr.state.stack_pointer.expr(),
+                ],
+            },
         );
 
-        // current call must be failed.
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-
-        // Go to EndTx only when is_root
-        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
-        cb.require_equal(
-            "Go to EndTx if and only if is_root",
-            cb.curr.state.is_root.expr(),
-            is_to_end_tx,
-        );
-
-        // When it's a root call
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            // Do step state transition
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                rw_counter: Delta(2.expr() + cb.curr.state.reversible_write_counter.expr()),
-                ..StepStateTransition::any()
-            });
-        });
-
-        // When it's an internal call, need to restore caller's state as finishing this
-        // call. Restore caller state to next StepState
-        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                // rw_offset is handled in construct internally
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
-
-        // constrain RwCounterEndOfReversion
-        let rw_counter_end_of_step =
-            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
-        cb.require_equal(
-            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
-            rw_counter_end_of_reversion.expr(),
-            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
-        );
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 2.expr());
 
         Self {
             opcode,
-            min_stack_pointer,
-            max_stack_pointer,
-            is_overflow,
-            is_underflow,
-            rw_counter_end_of_reversion,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -143,36 +55,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-
-        let (min_stack, max_stack) = opcode.valid_stack_ptr_range();
-
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        // Inputs/Outputs
-        self.min_stack_pointer
-            .assign(region, offset, Value::known(F::from(min_stack as u64)))?;
-        self.max_stack_pointer
-            .assign(region, offset, Value::known(F::from(max_stack as u64)))?;
 
-        self.is_overflow.assign(
-            region,
-            offset,
-            F::from(step.stack_pointer as u64),
-            F::from(min_stack as u64),
-        )?;
-        self.is_underflow.assign(
-            region,
-            offset,
-            F::from(max_stack as u64),
-            F::from(step.stack_pointer as u64),
-        )?;
-
-        self.rw_counter_end_of_reversion.assign(
-            region,
-            offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
-        )?;
-        self.restore_context
+        self.common_error_gadget
             .assign(region, offset, block, call, step, 2)?;
 
         Ok(())

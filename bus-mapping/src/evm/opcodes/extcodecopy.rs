@@ -32,23 +32,8 @@ impl Opcode for Extcodecopy {
 
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
-        if length != 0 {
-            let minimal_length = (dest_offset + length) as usize;
-            memory.extend_at_least(minimal_length);
 
-            let mem_starts = dest_offset as usize;
-            let mem_ends = mem_starts + length as usize;
-            let code_starts = code_offset as usize;
-            let code_ends = code_starts + length as usize;
-            if code_ends <= code.len() {
-                memory[mem_starts..mem_ends].copy_from_slice(&code[code_starts..code_ends]);
-            } else if let Some(actual_length) = code.len().checked_sub(code_starts) {
-                let mem_code_ends = mem_starts + actual_length;
-                memory[mem_starts..mem_code_ends].copy_from_slice(&code[code_starts..]);
-                // since we already resize the memory, no need to copy 0s for
-                // out of bound bytes
-            }
-        }
+        memory.copy_from(dest_offset, &code, code_offset, length as usize);
 
         let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(copy_event);
@@ -62,7 +47,8 @@ fn gen_extcodecopy_step(
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
 
-    let external_address = geth_step.stack.nth_last(0)?.to_address();
+    let external_address_word = geth_step.stack.nth_last(0)?;
+    let external_address = external_address_word.to_address();
     let dest_offset = geth_step.stack.nth_last(1)?;
     let offset = geth_step.stack.nth_last(2)?;
     let length = geth_step.stack.nth_last(3)?;
@@ -71,7 +57,7 @@ fn gen_extcodecopy_step(
     state.stack_read(
         &mut exec_step,
         geth_step.stack.nth_last_filled(0),
-        external_address.to_word(),
+        external_address_word,
     )?;
     state.stack_read(
         &mut exec_step,
@@ -121,7 +107,7 @@ fn gen_extcodecopy_step(
         AccountField::CodeHash,
         code_hash.to_word(),
         code_hash.to_word(),
-    )?;
+    );
     Ok(exec_step)
 }
 

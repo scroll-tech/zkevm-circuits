@@ -17,11 +17,17 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::keccak_circuit::keccak_packed_multi::KeccakCircuit;
+    use zkevm_circuits::keccak_circuit::KeccakCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_packed_multi_keccak_circuit_prover() {
+        let setup_prfx = crate::constants::SETUP_PREFIX;
+        let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
+        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
+        //Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "Packed Multi-Keccak Circuit";
+
         let degree: u32 = var("DEGREE")
             .expect("No DEGREE env var was provided")
             .parse()
@@ -31,7 +37,7 @@ mod tests {
         let inputs = vec![(0u8..135).collect::<Vec<_>>(); 3];
 
         // Create the circuit. Leave last dozens of rows for blinding.
-        let circuit = KeccakCircuit::new(Some(2usize.pow(degree) - 64), inputs);
+        let circuit = KeccakCircuit::new(2usize.pow(degree) - 64, inputs);
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([
@@ -40,7 +46,7 @@ mod tests {
         ]);
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", degree);
+        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
         let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
@@ -54,8 +60,8 @@ mod tests {
 
         // Bench proof generation time
         let proof_message = format!(
-            "Packed Multi-Keccak Proof generation with degree = {}",
-            degree
+            "{} {} with degree = {}",
+            BENCHMARK_ID, proof_gen_prfx, degree
         );
         let start2 = start_timer!(|| proof_message);
         create_proof::<
@@ -78,7 +84,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "Packed Multi-Keccak Proof verification");
+        let start3 = start_timer!(|| format!("{} {}", BENCHMARK_ID, proof_ver_prfx));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

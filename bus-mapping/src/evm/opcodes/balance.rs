@@ -69,7 +69,7 @@ impl Opcode for Balance {
             AccountField::CodeHash,
             code_hash.to_word(),
             code_hash.to_word(),
-        )?;
+        );
         if exists {
             state.account_read(
                 &mut exec_step,
@@ -77,7 +77,7 @@ impl Opcode for Balance {
                 AccountField::Balance,
                 balance,
                 balance,
-            )?;
+            );
         }
 
         // Write the BALANCE result to stack.

@@ -401,6 +401,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.evm_word())
     }
 
+    pub(crate) fn query_keccak_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
+        RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.keccak_input())
+    }
+
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
         self.query_bytes_dyn(N).try_into().unwrap()
     }
@@ -546,7 +550,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             16 => ("Range16", FixedTableTag::Range16),
             32 => ("Range32", FixedTableTag::Range32),
             64 => ("Range64", FixedTableTag::Range64),
-            128 => ("Range64", FixedTableTag::Range128),
+            128 => ("Range128", FixedTableTag::Range128),
             256 => ("Range256", FixedTableTag::Range256),
             512 => ("Range512", FixedTableTag::Range512),
             1024 => ("Range1024", FixedTableTag::Range1024),
@@ -568,22 +572,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             Lookup::Fixed {
                 tag: FixedTableTag::ConstantGasCost.expr(),
                 values: [opcode, gas, 0.expr()],
-            },
-        );
-    }
-
-    // look up opcode's min and max stack pointer
-    pub(crate) fn opcode_stack_lookup(
-        &mut self,
-        opcode: Expression<F>,
-        min_stack: Expression<F>,
-        max_stack: Expression<F>,
-    ) {
-        self.add_lookup(
-            "op code stack info",
-            Lookup::Fixed {
-                tag: FixedTableTag::OpcodeStack.expr(),
-                values: [opcode, min_stack, max_stack],
             },
         );
     }

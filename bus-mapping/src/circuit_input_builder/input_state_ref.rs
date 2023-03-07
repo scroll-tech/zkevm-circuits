@@ -21,7 +21,7 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    evm_unimplemented, Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
+    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use keccak256::EMPTY_HASH;
@@ -308,9 +308,11 @@ impl<'a> CircuitInputStateRef<'a> {
             && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
             && account.is_empty()
         {
-            panic!(
+            log::error!(
                 "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
-                rw, self.block_ctx.rwc.0, op
+                rw,
+                self.block_ctx.rwc.0,
+                op
             );
         }
         // -- sanity check end --
@@ -337,10 +339,9 @@ impl<'a> CircuitInputStateRef<'a> {
         field: AccountField,
         value: Word,
         value_prev: Word,
-    ) -> Result<(), Error> {
+    ) {
         let op = AccountOp::new(address, field, value, value_prev);
         self.push_op(step, RW::READ, op);
-        Ok(())
     }
 
     /// Push a write type [`AccountOp`] into the
@@ -482,30 +483,51 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Push 2 reversible [`AccountOp`] to update `sender` and `receiver`'s
-    /// balance by `value`, with `sender` being extraly charged with `fee`.
+    /// balance by `value`. If `fee` is existing (not None), also need to push 1
+    /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
     pub fn transfer_with_fee(
         &mut self,
         step: &mut ExecStep,
         sender: Address,
         receiver: Address,
         value: Word,
-        fee: Word,
+        fee: Option<Word>,
     ) -> Result<(), Error> {
         let (found, sender_account) = self.sdb.get_account(&sender);
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
-        let sender_balance_prev = sender_account.balance;
+        let mut sender_balance_prev = sender_account.balance;
         debug_assert!(
-            sender_account.balance >= value + fee,
+            sender_account.balance >= value + fee.unwrap_or_default(),
             "invalid amount balance {:?} value {:?} fee {:?}",
-            sender_account.balance,
+            sender_balance_prev,
             value,
             fee
         );
-        let sender_balance = sender_account.balance - value - fee;
+        if let Some(fee) = fee {
+            let sender_balance = sender_balance_prev - fee;
+            log::trace!(
+                "sender balance update with fee (not reversible): {:?} {:?}->{:?}",
+                sender,
+                sender_balance_prev,
+                sender_balance
+            );
+            self.push_op(
+                step,
+                RW::WRITE,
+                AccountOp {
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
+                },
+            );
+            sender_balance_prev = sender_balance;
+        }
+        let sender_balance = sender_balance_prev - value;
         log::trace!(
-            "sender balance update: {:?} {:?}->{:?}",
+            "sender balance update with value: {:?} {:?}->{:?}",
             sender,
             sender_balance_prev,
             sender_balance
@@ -552,7 +574,7 @@ impl<'a> CircuitInputStateRef<'a> {
         receiver: Address,
         value: Word,
     ) -> Result<(), Error> {
-        self.transfer_with_fee(step, sender, receiver, value, Word::zero())
+        self.transfer_with_fee(step, sender, receiver, value, None)
     }
 
     /// Fetch and return code for the given code hash from the code DB.
@@ -732,9 +754,10 @@ impl<'a> CircuitInputStateRef<'a> {
                 } else {
                     let (found, account) = self.sdb.get_account(&code_address);
                     if !found {
-                        return Err(Error::AccountNotFound(code_address));
+                        (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
+                    } else {
+                        (CodeSource::Address(code_address), account.code_hash)
                     }
-                    (CodeSource::Address(code_address), account.code_hash)
                 }
             }
         };
@@ -826,14 +849,6 @@ impl<'a> CircuitInputStateRef<'a> {
                     None
                 }
             }
-            OperationRef(Target::AccountDestructed, idx) => {
-                let operation = &self.block.container.account_destructed[*idx];
-                if operation.rw().is_write() && operation.reversible() {
-                    Some(OpEnum::AccountDestructed(operation.op().reverse()))
-                } else {
-                    None
-                }
-            }
             _ => None,
         }
     }
@@ -873,7 +888,6 @@ impl<'a> CircuitInputStateRef<'a> {
             OpEnum::TxRefund(op) => {
                 self.sdb.set_refund(op.value);
             }
-            OpEnum::AccountDestructed(_) => evm_unimplemented!("AcountDestructed"),
             _ => unreachable!(),
         };
     }
@@ -918,8 +932,16 @@ impl<'a> CircuitInputStateRef<'a> {
             if !self.call()?.is_root {
                 let (offset, length) = match step.op {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
-                        let offset = step.stack.nth_last(0)?.as_usize();
-                        let length = step.stack.nth_last(1)?.as_usize();
+                        let (offset, length) = if step.error.is_some()
+                            || (self.call()?.is_create() && self.call()?.is_success())
+                        {
+                            (0, 0)
+                        } else {
+                            (
+                                step.stack.nth_last(0)?.as_usize(),
+                                step.stack.nth_last(1)?.as_usize(),
+                            )
+                        };
 
                         // At the moment it conflicts with `call_ctx` and `caller_ctx`.
                         let callee_memory = self.call_ctx()?.memory.clone();
@@ -1084,11 +1106,19 @@ impl<'a> CircuitInputStateRef<'a> {
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
                 CallContextField::LastCalleeReturnDataOffset,
-                last_callee_return_data_offset,
+                if call.is_create() && call.is_success {
+                    0.into()
+                } else {
+                    last_callee_return_data_offset
+                },
             ),
             (
                 CallContextField::LastCalleeReturnDataLength,
-                last_callee_return_data_length,
+                if call.is_create() && call.is_success {
+                    0.into()
+                } else {
+                    last_callee_return_data_length
+                },
             ),
         ] {
             self.call_context_write(exec_step, caller.call_id, field, value);
@@ -1274,19 +1304,13 @@ impl<'a> CircuitInputStateRef<'a> {
                 step.op,
                 OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL
             ) {
-                let caller = self.call()?;
-                let callee_address = match CallKind::try_from(step.op)? {
-                    CallKind::Call | CallKind::StaticCall => step.stack.nth_last(1)?.to_address(),
-                    CallKind::CallCode | CallKind::DelegateCall => caller.address,
-                    _ => unreachable!(),
-                };
-
-                if is_precompiled(&callee_address) {
+                let code_address = step.stack.nth_last(1)?.to_address();
+                if is_precompiled(&code_address) {
                     // Log the precompile address and gas left. Since this failure is mainly caused
                     // by out of gas.
                     log::trace!(
-                        "Precompile failed: callee_address = {}, step.gas = {}",
-                        callee_address,
+                        "Precompile failed: code_address = {}, step.gas = {}",
+                        code_address,
                         step.gas.0,
                     );
                     return Ok(Some(ExecError::PrecompileFailed));

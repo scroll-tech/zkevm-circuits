@@ -8,5 +8,5 @@ pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T
         .map(|s| s.parse::<T>().unwrap_or_else(|_| default.clone()))
         .unwrap_or(default)
 }
-pub(crate) static CHECK_MEM_STRICT: Lazy<bool> =
-    Lazy::new(|| read_env_var("CHECK_MEM_STRICT", false));
+/// ..
+pub static CHECK_MEM_STRICT: Lazy<bool> = Lazy::new(|| read_env_var("CHECK_MEM_STRICT", false));

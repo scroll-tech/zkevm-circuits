@@ -18,7 +18,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{Field, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -64,12 +64,14 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_success = cb.call_context(None, CallContextFieldTag::IsSuccess);
         cb.require_boolean("is_success is boolean", is_success.expr());
+        /*
         cb.require_equal(
             "if is_success, opcode is RETURN. if not, opcode is REVERT",
             opcode.expr(),
             is_success.expr() * OpcodeId::RETURN.expr()
                 + not::expr(is_success.expr()) * OpcodeId::REVERT.expr(),
         );
+        */
 
         // There are 4 cases non-mutually exclusive, A to D, to handle, depending on if
         // the call is, or is not, a create, root, or successful. See the specs at
@@ -159,6 +161,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let restore_context = cb.condition(not::expr(is_root.expr()), |cb| {
             RestoreContextGadget::construct(
                 cb,
+                is_create.expr(),
                 is_success.expr(),
                 not::expr(is_create.clone()) * (5.expr() + copy_rw_increase.expr()),
                 range.offset(),

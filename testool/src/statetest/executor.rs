@@ -8,7 +8,7 @@ use ethers_core::types::transaction::eip2718::TypedTransaction;
 use ethers_core::types::TransactionRequest;
 use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
-use external_tracer::TraceConfig;
+use external_tracer::{LoggerConfig, TraceConfig};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
@@ -137,7 +137,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 number: U64::from(st.env.current_number),
                 difficulty: st.env.current_difficulty,
                 gas_limit: U256::from(st.env.current_gas_limit),
-                base_fee: U256::one(),
+                base_fee: st.env.current_base_fee,
             },
 
             transactions: vec![geth_types::Transaction {
@@ -157,7 +157,10 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 hash: tx_hash.into(),
             }],
             accounts: st.pre,
-            ..Default::default()
+            logger_config: LoggerConfig {
+                enable_memory: *bus_mapping::util::CHECK_MEM_STRICT,
+                ..Default::default()
+            },
         },
         st.result,
     )
@@ -228,6 +231,7 @@ pub fn run_test(
             s: tx.s,
             v: U64::from(tx.v),
             block_number: Some(U64::from(trace_config.block_constants.number.as_u64())),
+            chain_id: Some(trace_config.chain_id),
             ..eth_types::Transaction::default()
         })
         .collect();
@@ -245,7 +249,10 @@ pub fn run_test(
 
     let wallet: LocalWallet = SigningKey::from_bytes(&st.secret_key).unwrap().into();
     let mut wallets = HashMap::new();
-    wallets.insert(wallet.address(), wallet.with_chain_id(1u64));
+    wallets.insert(
+        wallet.address(),
+        wallet.with_chain_id(trace_config.chain_id.as_u64()),
+    );
 
     // process the transaction
     let mut geth_data = eth_types::geth_types::GethData {
@@ -265,8 +272,9 @@ pub fn run_test(
             max_calldata: 5000,
             max_bytecode: 5000,
             max_copy_rows: 55000,
+            max_evm_rows: 0,
             max_exp_steps: 5000,
-            keccak_padding: None,
+            max_keccak_rows: 0,
             max_inner_blocks: 64,
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
@@ -291,7 +299,8 @@ pub fn run_test(
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
-            keccak_padding: None,
+            max_evm_rows: 0,
+            max_keccak_rows: 0,
             max_inner_blocks: 64,
         };
         let (k, circuit, instance, _builder) =

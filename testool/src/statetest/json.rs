@@ -17,9 +17,15 @@ use std::ops::RangeBounds;
 use std::str::FromStr;
 use yaml_rust::Yaml;
 
+fn default_block_base_fee() -> String {
+    "10".to_string()
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TestEnv {
+    #[serde(default = "default_block_base_fee")]
+    current_base_fee: String,
     current_coinbase: String,
     current_difficulty: String,
     current_gas_limit: String,
@@ -200,6 +206,8 @@ impl<'a> JsonStateTestBuilder<'a> {
     /// parse env section
     fn parse_env(env: &TestEnv) -> Result<Env> {
         Ok(Env {
+            current_base_fee: parse::parse_u256(&env.current_base_fee)
+                .unwrap_or_else(|_| U256::from(10)),
             current_coinbase: parse::parse_address(&env.current_coinbase)?,
             current_difficulty: parse::parse_u256(&env.current_difficulty)?,
             current_gas_limit: parse::parse_u64(&env.current_gas_limit)?,
@@ -377,6 +385,7 @@ mod test {
             path: "test_path".to_string(),
             id: "add11_d0_g0_v0".to_string(),
             env: Env {
+                current_base_fee: U256::from(10),
                 current_coinbase: Address::from_str("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba")?,
                 current_difficulty: U256::from(131072u64),
                 current_gas_limit: 0xFF112233445566,

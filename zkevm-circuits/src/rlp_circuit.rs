@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::Field;
+use ethers_core::utils::rlp;
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use gadgets::is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction};
 use gadgets::util::{select, sum};
@@ -454,6 +455,16 @@ impl<F: Field> RlpCircuitConfig<F> {
             //     "interm == is_simple_tag "
             //     is_simple_tag.clone()
             // )
+            cb.condition(
+                is_simple_tag.clone(),
+                |cb| {
+                    cb.require_equal(
+                        "tag_length =? 1",
+                        meta.query_advice(rlp_table.tag_length_eq_one, Rotation::cur()),
+                        tlength_eq.clone(),
+                    );
+                }
+            );
             // if tag_index == tag_length && tag_length == 1
             cb.condition(
                 is_simple_tag.clone() * tindex_eq_tlength.clone() * tlength_eq.clone(),
@@ -1375,6 +1386,11 @@ impl<F: Field> RlpCircuitConfig<F> {
                             ("is_prefix_tag", self.is_prefix_tag, is_prefix_tag),
                             ("is_dp_tag", self.is_dp_tag, is_dp_tag),
                             ("tag_index", rlp_table.tag_rindex, (row.tag_rindex as u64)),
+                            (
+                                "tag_length_eq_one",
+                                rlp_table.tag_length_eq_one,
+                                (row.tag_length == 1) as u64,
+                            ),
                             ("data_type", rlp_table.data_type, (row.data_type as u64)),
                             ("index", self.index, (row.index as u64)),
                             ("rindex", self.rindex, (rindex)),
@@ -1523,6 +1539,11 @@ impl<F: Field> RlpCircuitConfig<F> {
                             ("is_prefix_tag", self.is_prefix_tag, is_prefix_tag),
                             ("is_dp_tag", self.is_dp_tag, is_dp_tag),
                             ("tag_rindex", rlp_table.tag_rindex, row.tag_rindex as u64),
+                            (
+                                "tag_length_eq_one",
+                                rlp_table.tag_length_eq_one,
+                                (row.tag_length == 1) as u64,
+                            ),
                             ("data_type", rlp_table.data_type, row.data_type as u64),
                             ("index", self.index, row.index as u64),
                             ("rindex", self.rindex, rindex),
@@ -1785,7 +1806,7 @@ impl<F: Field> Circuit<F> for RlpCircuit<F, SignedTransaction> {
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
+        let challenges = challenges.values(&layouter);
         config.assign(
             &mut layouter,
             self.inputs.as_slice(),

@@ -181,13 +181,15 @@ impl TxTable {
         }
     }
 
-    /// Assign the `TxTable` from a list of block `Transaction`s, followig the
+    /// Assign the `TxTable` from a list of block `Transaction`s, following the
     /// same layout that the Tx Circuit uses.
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         txs: &[Transaction],
         max_txs: usize,
+        max_calldata: usize,
+        chain_id: u64,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         assert!(
@@ -196,28 +198,61 @@ impl TxTable {
             txs.len(),
             max_txs
         );
+        let sum_txs_calldata = txs.iter().map(|tx| tx.call_data.len()).sum();
+        assert!(
+            sum_txs_calldata <= max_calldata,
+            "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
+            sum_txs_calldata,
+            max_calldata,
+        );
+
+        fn assign_row<F: Field>(
+            region: &mut Region<'_, F>,
+            offset: usize,
+            advice_columns: &[Column<Advice>],
+            tag: &Column<Fixed>,
+            row: &[Value<F>; 4],
+            msg: &str,
+        ) -> Result<(), Error> {
+            for (index, column) in advice_columns.iter().enumerate() {
+                region.assign_advice(
+                    || format!("tx table {} row {}", msg, offset),
+                    *column,
+                    offset,
+                    || row[if index > 0 { index + 1 } else { index }],
+                )?;
+            }
+            region.assign_fixed(
+                || format!("tx table {} row {}", msg, offset),
+                *tag,
+                offset,
+                || row[1],
+            )?;
+            Ok(())
+        }
+
         layouter.assign_region(
             || "tx table",
             |mut region| {
                 let mut offset = 0;
                 let advice_columns = [self.tx_id, self.index, self.value];
-                for column in advice_columns {
-                    region.assign_advice(
-                        || "tx table all-zero row",
-                        column,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
-                }
-                region.assign_fixed(
-                    || "tx table all-zero row",
-                    self.tag,
+                assign_row(
+                    &mut region,
                     offset,
-                    || Value::known(F::zero()),
+                    &advice_columns,
+                    &self.tag,
+                    &[(); 4].map(|_| Value::known(F::zero())),
+                    "all-zero",
                 )?;
                 offset += 1;
 
-                let chain_id = if !txs.is_empty() { txs[0].chain_id } else { 1 };
+                // Tx Table contains an initial region that has a size parametrized by max_txs
+                // with all the tx data except for calldata, and then a second
+                // region that has a size parametrized by max_calldata with all
+                // the tx calldata.  This is required to achieve a constant fixed column tag
+                // regardless of the number of input txs or the calldata size of each tx.
+                let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
+                // Assign Tx data (all tx fields except for calldata)
                 let padding_txs = (txs.len()..max_txs)
                     .into_iter()
                     .map(|tx_id| {
@@ -229,42 +264,26 @@ impl TxTable {
                     .collect::<Vec<Transaction>>();
                 for (i, tx) in txs.iter().chain(padding_txs.iter()).enumerate() {
                     debug_assert_eq!(i + 1, tx.id);
-                    for row in tx.table_assignments_fixed(*challenges) {
-                        for (index, column) in advice_columns.iter().enumerate() {
-                            region.assign_advice(
-                                || format!("tx table row {}", offset),
-                                *column,
-                                offset,
-                                || row[if index > 0 { index + 1 } else { index }],
-                            )?;
-                        }
-                        region.assign_fixed(
-                            || format!("tx table row {}", offset),
-                            self.tag,
-                            offset,
-                            || row[1],
-                        )?;
+                    let tx_data = tx.table_assignments_fixed(*challenges);
+                    let tx_calldata = tx.table_assignments_dyn(*challenges);
+                    for row in tx_data {
+                        assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;
                     }
+                    calldata_assignments.extend(tx_calldata.iter());
                 }
-                for tx in txs.iter() {
-                    for row in tx.table_assignments_dyn(*challenges) {
-                        for (index, column) in advice_columns.iter().enumerate() {
-                            region.assign_advice(
-                                || format!("tx table row {}", offset),
-                                *column,
-                                offset,
-                                || row[if index > 0 { index + 1 } else { index }],
-                            )?;
-                        }
-                        region.assign_fixed(
-                            || format!("tx table row {}", offset),
-                            self.tag,
-                            offset,
-                            || row[1],
-                        )?;
-                        offset += 1;
-                    }
+                // Assign Tx calldata
+                let padding_calldata = (sum_txs_calldata..max_calldata).map(|_| {
+                    [
+                        Value::known(F::zero()),
+                        Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                        Value::known(F::zero()),
+                        Value::known(F::zero()),
+                    ]
+                });
+                for row in calldata_assignments.into_iter().chain(padding_calldata) {
+                    assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
+                    offset += 1;
                 }
                 Ok(())
             },
@@ -320,8 +339,6 @@ pub enum RwTableTag {
     TxRefund,
     /// Account operation
     Account,
-    /// Account Destructed operation
-    AccountDestructed,
     /// Call Context operation
     CallContext,
     /// Tx Log operation
@@ -341,7 +358,6 @@ impl RwTableTag {
                 | RwTableTag::TxRefund
                 | RwTableTag::Account
                 | RwTableTag::AccountStorage
-                | RwTableTag::AccountDestructed
         )
     }
 }
@@ -583,7 +599,7 @@ impl RwTable {
 }
 
 /// The types of proofs in the MPT table
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 pub enum ProofType {
     /// Nonce updated
     NonceChanged = AccountFieldTag::Nonce as isize,
@@ -593,8 +609,6 @@ pub enum ProofType {
     CodeHashExists = AccountFieldTag::CodeHash as isize,
     /// Account does not exist
     AccountDoesNotExist = AccountFieldTag::NonExisting as isize,
-    /// Account destroyed
-    AccountDestructed,
     /// Storage updated
     StorageChanged,
     /// Storage does not exist
@@ -624,13 +638,13 @@ impl<F: Field> LookupTable<F> for MptTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
-            String::from("Address"),
-            String::from("Storage key"),
-            String::from("Proof type"),
-            String::from("New root"),
-            String::from("Old root"),
-            String::from("New value"),
-            String::from("Old value"),
+            String::from("address"),
+            String::from("storage_key"),
+            String::from("proof_type"),
+            String::from("new_root"),
+            String::from("old_root"),
+            String::from("new_value"),
+            String::from("old_value"),
         ]
     }
 }
@@ -899,7 +913,7 @@ impl BytecodeTable {
         }
     }
 
-    /// Assign the `BytecodeTable` from a list of bytecodes, followig the same
+    /// Assign the `BytecodeTable` from a list of bytecodes, following the same
     /// table layout that the Bytecode Circuit uses.
     pub fn load<'a, F: Field>(
         &self,
@@ -1213,7 +1227,7 @@ impl KeccakTable {
     }
 
     /// returns matchings between the circuit columns passed as parameters and
-    /// the table collumns
+    /// the table columns
     pub fn match_columns(
         &self,
         value_rlc: Column<Advice>,
@@ -1733,6 +1747,8 @@ pub struct RlpTable {
     /// `TxSign` (transaction data that needs to be signed) or `TxHash`
     /// (signed transaction's data).
     pub data_type: Column<Advice>,
+    /// Denotes if the tag_length is equal to 1
+    pub tag_length_eq_one: Column<Advice>,
 }
 
 impl<F: Field> LookupTable<F> for RlpTable {
@@ -1743,6 +1759,7 @@ impl<F: Field> LookupTable<F> for RlpTable {
             self.tag_rindex.into(),
             self.value_acc.into(),
             self.data_type.into(),
+            self.tag_length_eq_one.into(),
         ]
     }
 
@@ -1753,6 +1770,7 @@ impl<F: Field> LookupTable<F> for RlpTable {
             String::from("tag_rindex"),
             String::from("value_acc"),
             String::from("data_type"),
+            String::from("tag_length_eq_one"),
         ]
     }
 }
@@ -1766,6 +1784,7 @@ impl RlpTable {
             tag_rindex: meta.advice_column(),
             value_acc: meta.advice_column_in(SecondPhase),
             data_type: meta.advice_column(),
+            tag_length_eq_one: meta.advice_column(),
         }
     }
 
@@ -1773,7 +1792,7 @@ impl RlpTable {
     pub fn dev_assignments<F: Field>(
         txs: Vec<SignedTransaction>,
         challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 5]> {
+    ) -> Vec<[Value<F>; 6]> {
         let mut assignments = vec![];
         for signed_tx in txs {
             for row in signed_tx
@@ -1789,6 +1808,7 @@ impl RlpTable {
                     Value::known(F::from(row.tag_rindex as u64)),
                     row.value_acc,
                     Value::known(F::from(row.data_type as u64)),
+                    Value::known(F::from((row.tag_length == 1) as u64)),
                 ]);
             }
         }

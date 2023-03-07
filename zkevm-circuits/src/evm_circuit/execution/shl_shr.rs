@@ -36,6 +36,8 @@ pub(crate) struct ShlShrGadget<F> {
     shf0: Cell<F>,
     /// Gadget that verifies quotient * divisor + remainder = dividend
     mul_add_words: MulAddWordsGadget<F>,
+    /// Identify if `shift` is less than 256 or not
+    shf_lt256: IsZeroGadget<F>,
     /// Check if divisor is zero
     divisor_is_zero: IsZeroGadget<F>,
     /// Check if remainder is zero
@@ -63,6 +65,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
 
         let mul_add_words =
             MulAddWordsGadget::construct(cb, [&quotient, &divisor, &remainder, &dividend]);
+        let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.cells[1..32]));
         let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&divisor.cells));
         let remainder_is_zero = IsZeroGadget::construct(cb, sum::expr(&remainder.cells));
         let remainder_lt_divisor = LtWordGadget::construct(cb, &remainder, &divisor);
@@ -85,6 +88,11 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         cb.require_zero(
             "shift == shift.cells[0] when divisor != 0",
             (1.expr() - divisor_is_zero.expr()) * (shift.expr() - shift.cells[0].expr()),
+        );
+
+        cb.require_zero(
+            "shift < 256 when divisor != 0 or shift >= 256 when divisor == 0",
+            1.expr() - divisor_is_zero.expr() - shf_lt256.expr(),
         );
 
         cb.require_zero(
@@ -135,6 +143,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
             shift,
             shf0,
             mul_add_words,
+            shf_lt256,
             divisor_is_zero,
             remainder_is_zero,
             remainder_lt_divisor,
@@ -153,8 +162,16 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
         let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
         let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
-        let shf0 = pop1.to_le_bytes()[0];
-        let divisor = if U256::from(shf0) == pop1 {
+        let shf0 = u64::from(pop1.to_le_bytes()[0]);
+        let shf_lt256 = pop1
+            .to_le_bytes()
+            .iter()
+            .fold(Some(0_u64), |acc, val| {
+                acc.and_then(|acc| acc.checked_add(u64::from(*val)))
+            })
+            .unwrap()
+            - shf0;
+        let divisor = if shf_lt256 == 0 {
             U256::from(1) << shf0
         } else {
             U256::from(0)
@@ -176,9 +193,10 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         self.shift
             .assign(region, offset, Some(pop1.to_le_bytes()))?;
         self.shf0
-            .assign(region, offset, Value::known(u64::from(shf0).into()))?;
+            .assign(region, offset, Value::known(F::from(shf0)))?;
         self.mul_add_words
             .assign(region, offset, [quotient, divisor, remainder, dividend])?;
+        self.shf_lt256.assign(region, offset, F::from(shf_lt256))?;
         let divisor_sum = (0..32).fold(0, |acc, idx| acc + divisor.byte(idx) as u64);
         self.divisor_is_zero
             .assign(region, offset, F::from(divisor_sum))?;

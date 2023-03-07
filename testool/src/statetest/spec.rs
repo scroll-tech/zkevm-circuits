@@ -6,6 +6,7 @@ use std::{collections::HashMap, str::FromStr};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Env {
+    pub current_base_fee: U256,
     pub current_coinbase: Address,
     pub current_difficulty: U256,
     pub current_gas_limit: u64,
@@ -255,6 +256,7 @@ impl StateTest {
             path: String::default(),
             id: String::default(),
             env: Env {
+                current_base_fee: U256::from(1),
                 current_coinbase: Address::default(),
                 current_difficulty: U256::default(),
                 current_gas_limit: 16000000,

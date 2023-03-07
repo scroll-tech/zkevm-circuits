@@ -52,7 +52,7 @@ impl ProgramCounter {
     }
 }
 
-/// Defines the gas left to perate.
+/// Defines the gas left to operate.
 #[derive(Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Gas(pub u64);
 
@@ -136,6 +136,9 @@ impl GasCost {
     pub const MEMORY_EXPANSION_LINEAR_COEFF: Self = Self(3);
     /// Constant gas for LOG[0-4] op codes
     pub const LOG: Self = Self(375);
+    /// Times ceil exponent byte size for the EXP instruction, EIP-158 changed
+    /// it from 10 to 50.
+    pub const EXP_BYTE_TIMES: Self = Self(50);
 }
 
 impl GasCost {

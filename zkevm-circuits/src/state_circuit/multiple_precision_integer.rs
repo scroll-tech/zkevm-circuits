@@ -76,6 +76,18 @@ impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
         }
         Ok(())
     }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        let mut annotations = Vec::new();
+        for (i, _) in self.limbs.iter().enumerate() {
+            annotations.push(format!("MPI_limbs_address_{}", i));
+        }
+        self.limbs
+            .iter()
+            .zip(annotations.iter())
+            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+    }
 }
 
 impl Config<u32, N_LIMBS_RW_COUNTER> {
@@ -94,6 +106,18 @@ impl Config<u32, N_LIMBS_RW_COUNTER> {
             )?;
         }
         Ok(())
+    }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        let mut annotations = Vec::new();
+        for (i, _) in self.limbs.iter().enumerate() {
+            annotations.push(format!("MPI_limbs_u32_{}", i));
+        }
+        self.limbs
+            .iter()
+            .zip(annotations.iter())
+            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
     }
 }
 

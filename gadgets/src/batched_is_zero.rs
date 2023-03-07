@@ -5,6 +5,7 @@
 //!   it exists, `0` otherwise
 //! - is_zero: 1 if all `values` are `0`, `0` otherwise
 
+use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -24,6 +25,21 @@ pub struct BatchedIsZeroConfig {
     pub is_zero: Column<Advice>,
     /// If some value is non-zero, this is its inverse
     pub nonempty_witness: Column<Advice>,
+}
+
+impl BatchedIsZeroConfig {
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        [
+            (self.is_zero, "GADGETS_BATCHED_IS_ZERO_is_zero"),
+            (
+                self.nonempty_witness,
+                "GADGETS_BATCHED_IS_ZERO_nonempty_witness",
+            ),
+        ]
+        .iter()
+        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+    }
 }
 
 /// Verify that a list of values are all 0.
@@ -89,6 +105,7 @@ impl<F: FieldExt, const N: usize> BatchedIsZeroChip<F, N> {
                 (F::one(), F::zero())
             }
         });
+
         region.assign_advice(
             || "is_zero",
             config.is_zero,

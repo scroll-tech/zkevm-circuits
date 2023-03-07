@@ -63,7 +63,7 @@ impl Opcode for Extcodesize {
             AccountField::CodeHash,
             code_hash.to_word(),
             code_hash.to_word(),
-        )?;
+        );
         let code_size = if exists {
             state.code(code_hash)?.len()
         } else {

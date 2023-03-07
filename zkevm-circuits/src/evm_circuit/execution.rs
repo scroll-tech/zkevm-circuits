@@ -4,7 +4,7 @@ use super::{
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
-    util::{CachedRegion, CellManager, StoredExpression},
+    util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
 };
 use crate::{
     evm_circuit::{
@@ -81,10 +81,15 @@ mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_dynamic_memory;
+mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
+mod error_precompile_failed;
+mod error_return_data_oo_bound;
 mod error_stack;
+mod error_write_protection;
 mod exp;
 mod extcodecopy;
 mod extcodehash;
@@ -150,9 +155,15 @@ use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_dynamic_memory::ErrorOOGDynamicMemoryGadget;
+use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
+use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
+use error_precompile_failed::ErrorPrecompileFailedGadget;
+use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
+use error_write_protection::ErrorWriteProtectionGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
 use extcodehash::ExtcodehashGadget;
@@ -226,6 +237,7 @@ pub(crate) struct ExecutionConfig<F> {
     step: Step<F>,
     pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+    instrument: Instrument,
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
@@ -292,18 +304,17 @@ pub(crate) struct ExecutionConfig<F> {
     // error gadgets
     error_oog_call: ErrorOOGCallGadget<F>,
     error_oog_constant: ErrorOOGConstantGadget<F>,
+    error_oog_exp: ErrorOOGExpGadget<F>,
     error_oog_sload_sstore: ErrorOOGSloadSstoreGadget<F>,
-    error_oog_static_memory_gadget:
-        DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
+    error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
     error_stack: ErrorStackGadget<F>,
-    error_oog_dynamic_memory_gadget:
-        DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
+    error_write_protection: ErrorWriteProtectionGadget<F>,
+    error_oog_dynamic_memory_gadget: ErrorOOGDynamicMemoryGadget<F>,
     error_oog_log: ErrorOOGLogGadget<F>,
     error_oog_memory_copy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>,
     error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
     error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
     error_oog_ext_codecopy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>,
-    error_oog_exp: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXP }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
     error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
@@ -311,13 +322,11 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
-    error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
     error_contract_address_collision:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
-    error_return_data_out_of_bound:
-        DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
-    error_precompile_failed: DummyGadget<F, 0, 0, { ExecutionState::ErrorPrecompileFailed }>,
+    error_return_data_out_of_bound: ErrorReturnDataOutOfBoundGadget<F>,
+    error_precompile_failed: ErrorPrecompileFailedGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -335,6 +344,7 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
     ) -> Self {
+        let mut instrument = Instrument::default();
         let q_usable = meta.complex_selector();
         let q_step = meta.advice_column();
         let constants = meta.fixed_column();
@@ -417,6 +427,14 @@ impl<F: Field> ExecutionConfig<F> {
                     1.expr(),
                 )
             });
+            // For every step, is_create and is_root are boolean.
+            cb.condition(q_step.clone(), |cb| {
+                cb.require_boolean(
+                    "step.is_create is boolean",
+                    step_curr.state.is_create.expr(),
+                );
+                cb.require_boolean("step.is_root is boolean", step_curr.state.is_root.expr());
+            });
             // q_step needs to be enabled on the last row
             cb.condition(q_step_last, |cb| {
                 cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
@@ -446,7 +464,6 @@ impl<F: Field> ExecutionConfig<F> {
 
         let mut stored_expressions_map = HashMap::new();
 
-        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -459,9 +476,9 @@ impl<F: Field> ExecutionConfig<F> {
                     q_step_last,
                     &challenges,
                     &step_curr,
-                    &step_next,
                     &mut height_map,
                     &mut stored_expressions_map,
+                    &mut instrument,
                 )
             };
         }
@@ -569,6 +586,7 @@ impl<F: Field> ExecutionConfig<F> {
             step: step_curr,
             height_map,
             stored_expressions_map,
+            instrument,
         };
 
         Self::configure_lookup(
@@ -588,6 +606,10 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
+    pub(crate) fn instrument(&self) -> &Instrument {
+        &self.instrument
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
@@ -599,16 +621,17 @@ impl<F: Field> ExecutionConfig<F> {
         q_step_last: Selector,
         challenges: &Challenges<Expression<F>>,
         step_curr: &Step<F>,
-        step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        instrument: &mut Instrument,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
         // height
         let height = {
+            let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
             let mut cb = ConstraintBuilder::new(
                 step_curr.clone(),
-                step_next.clone(),
+                dummy_step_next,
                 challenges,
                 G::EXECUTION_STATE,
             );
@@ -628,6 +651,45 @@ impl<F: Field> ExecutionConfig<F> {
 
         let gadget = G::configure(&mut cb);
 
+        Self::configure_gadget_impl(
+            meta,
+            q_usable,
+            q_step,
+            num_rows_until_next_step,
+            q_step_first,
+            q_step_last,
+            step_curr,
+            step_next,
+            height_map,
+            stored_expressions_map,
+            instrument,
+            G::NAME,
+            G::EXECUTION_STATE,
+            height,
+            cb,
+        );
+
+        gadget
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn configure_gadget_impl(
+        meta: &mut ConstraintSystem<F>,
+        q_usable: Selector,
+        q_step: Column<Advice>,
+        num_rows_until_next_step: Column<Advice>,
+        q_step_first: Selector,
+        q_step_last: Selector,
+        step_curr: &Step<F>,
+        step_next: &Step<F>,
+        height_map: &mut HashMap<ExecutionState, usize>,
+        stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        instrument: &mut Instrument,
+        name: &'static str,
+        execution_state: ExecutionState,
+        height: usize,
+        mut cb: ConstraintBuilder<F>,
+    ) {
         // Enforce the step height for this opcode
         let num_rows_until_next_step_next = query_expression(meta, |meta| {
             meta.query_advice(num_rows_until_next_step, Rotation::next())
@@ -638,18 +700,20 @@ impl<F: Field> ExecutionConfig<F> {
             (height - 1).expr(),
         );
 
+        instrument.on_gadget_built(execution_state, &cb);
+
         let (constraints, stored_expressions, _) = cb.build();
         debug_assert!(
-            !height_map.contains_key(&G::EXECUTION_STATE),
+            !height_map.contains_key(&execution_state),
             "execution state already configured"
         );
 
-        height_map.insert(G::EXECUTION_STATE, height);
+        height_map.insert(execution_state, height);
         debug_assert!(
-            !stored_expressions_map.contains_key(&G::EXECUTION_STATE),
+            !stored_expressions_map.contains_key(&execution_state),
             "execution state already configured"
         );
-        stored_expressions_map.insert(G::EXECUTION_STATE, stored_expressions);
+        stored_expressions_map.insert(execution_state, stored_expressions);
 
         // Enforce the logic for this opcode
         let sel_step: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
@@ -669,7 +733,7 @@ impl<F: Field> ExecutionConfig<F> {
             (sel_not_step_last, constraints.not_step_last),
         ] {
             if !constraints.is_empty() {
-                meta.create_gate(G::NAME, |meta| {
+                meta.create_gate(name, |meta| {
                     let q_usable = meta.query_selector(q_usable);
                     let selector = selector(meta);
                     constraints.into_iter().map(move |(name, constraint)| {
@@ -705,7 +769,7 @@ impl<F: Field> ExecutionConfig<F> {
                             vec![ExecutionState::EndBlock],
                         ),
                     ])
-                    .filter(move |(_, from, _)| *from == G::EXECUTION_STATE)
+                    .filter(move |(_, from, _)| *from == execution_state)
                     .map(|(_, _, to)| 1.expr() - step_next.execution_state_selector(to)),
                 )
                 .chain(
@@ -734,7 +798,7 @@ impl<F: Field> ExecutionConfig<F> {
                             vec![ExecutionState::EndTx, ExecutionState::EndInnerBlock],
                         ),
                     ])
-                    .filter(move |(_, _, from)| !from.contains(&G::EXECUTION_STATE))
+                    .filter(move |(_, _, from)| !from.contains(&execution_state))
                     .map(|(_, to, _)| step_next.execution_state_selector([to])),
                 )
                 .chain(
@@ -752,7 +816,7 @@ impl<F: Field> ExecutionConfig<F> {
                             step_next.state.block_number.expr() - step_curr.state.block_number.expr(),
                         ),
                     ])
-                    .filter(move |(_, from, _, _)| *from == G::EXECUTION_STATE)
+                    .filter(move |(_, from, _, _)| *from == execution_state)
                     .map(|(_, _, to, expr)| step_next.execution_state_selector(to) * expr)
                 )
                 .chain(
@@ -763,7 +827,7 @@ impl<F: Field> ExecutionConfig<F> {
                             step_next.state.block_number.expr() - step_curr.state.block_number.expr(),
                         ),
                     ])
-                    .filter(move |(_, from, _)| *from != G::EXECUTION_STATE)
+                    .filter(move |(_, from, _)| *from != execution_state)
                     .map(|(_, _, expr)| expr)
                 )
                 // Accumulate all state transition checks.
@@ -773,12 +837,10 @@ impl<F: Field> ExecutionConfig<F> {
                     q_usable.clone()
                         * q_step.clone()
                         * (1.expr() - q_step_last.clone())
-                        * step_curr.execution_state_selector([G::EXECUTION_STATE])
+                        * step_curr.execution_state_selector([execution_state])
                         * poly
                 })
         });
-
-        gadget
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -831,7 +893,7 @@ impl<F: Field> ExecutionConfig<F> {
     pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
         // Start at 1 so we can be sure there is an unused `next` row available
         let mut num_rows = 1;
-        let evm_rows = block.evm_circuit_pad_to;
+        let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
             for transaction in &block.txs {
                 for step in &transaction.steps {
@@ -840,7 +902,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
             num_rows += 1; // EndBlock
         } else {
-            num_rows = block.evm_circuit_pad_to;
+            num_rows = block.circuits_params.max_evm_rows;
         }
         num_rows
     }
@@ -934,7 +996,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
                     .peekable();
 
-                let evm_rows = block.evm_circuit_pad_to;
+                let evm_rows = block.circuits_params.max_evm_rows;
                 let no_padding = evm_rows == 0;
 
                 // part1: assign real steps
@@ -1104,6 +1166,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
+        region.name_column(|| "EVM_q_step", self.q_step);
         region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
         region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
         region.name_column(|| "Copy_Constr_const", self.constants);
@@ -1137,7 +1200,7 @@ impl<F: Field> ExecutionConfig<F> {
             1,
             offset_begin,
         );
-        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
+        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step, false)?;
 
         region.replicate_assignment_for_range(
             || format!("repeat {:?} rows", step.execution_state),
@@ -1194,12 +1257,14 @@ impl<F: Field> ExecutionConfig<F> {
                 transaction_next,
                 call_next,
                 step_next,
+                false,
             )?;
         }
 
-        self.assign_exec_step_int(region, offset, block, transaction, call, step)
+        self.assign_exec_step_int(region, offset, block, transaction, call, step, true)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn assign_exec_step_int(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -1208,6 +1273,7 @@ impl<F: Field> ExecutionConfig<F> {
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
+        check_rw: bool,
     ) -> Result<(), Error> {
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
@@ -1367,7 +1433,7 @@ impl<F: Field> ExecutionConfig<F> {
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
         // enable with `CHECK_RW_LOOKUP=true`
-        if *CHECK_RW_LOOKUP {
+        if *CHECK_RW_LOOKUP && check_rw {
             let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
                 && step.rw_indices.is_empty();
             if !is_padding_step {

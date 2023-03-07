@@ -684,6 +684,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "cli-table"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adfbb116d9e2c4be7011360d0c0bee565712c11e969c9609b25b619366dc379d"
+dependencies = [
+ "cli-table-derive",
+ "csv",
+ "termcolor",
+ "unicode-width",
+]
+
+[[package]]
+name = "cli-table-derive"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2af3bfb9da627b0a6c467624fb7963921433774ed435493b5c08a3053e829ad4"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1939,6 +1962,7 @@ version = "0.1.0"
 dependencies = [
  "eth-types",
  "geth-utils",
+ "log",
  "serde",
  "serde_json",
 ]
@@ -2095,7 +2119,7 @@ dependencies = [
 [[package]]
 name = "fp-evm"
 version = "3.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "evm",
  "frame-support",
@@ -2530,7 +2554,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-0220#ffd33d77b0a5ae42cd14bf46853cc60c0a091621"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-0220#5689a747c6acf9f7316b73dbe5ce4a1b3628c60c"
 dependencies = [
  "ark-std",
  "blake2b_simd",
@@ -2542,7 +2566,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "plotters",
- "poseidon 0.2.0 (git+https://github.com/appliedzkp/poseidon.git)",
+ "poseidon 0.2.0 (git+https://github.com/privacy-scaling-explorations/poseidon.git)",
  "rand_core 0.6.4",
  "rayon",
  "sha3 0.9.1",
@@ -3596,7 +3620,7 @@ dependencies = [
 [[package]]
 name = "pallet-evm-precompile-blake2"
 version = "2.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "fp-evm",
 ]
@@ -3604,7 +3628,7 @@ dependencies = [
 [[package]]
 name = "pallet-evm-precompile-bn128"
 version = "2.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "fp-evm",
  "sp-core",
@@ -3614,7 +3638,7 @@ dependencies = [
 [[package]]
 name = "pallet-evm-precompile-curve25519"
 version = "1.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "curve25519-dalek 4.0.0-pre.1",
  "fp-evm",
@@ -3623,7 +3647,7 @@ dependencies = [
 [[package]]
 name = "pallet-evm-precompile-modexp"
 version = "2.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "fp-evm",
  "num",
@@ -3632,7 +3656,7 @@ dependencies = [
 [[package]]
 name = "pallet-evm-precompile-simple"
 version = "2.0.0-dev"
-source = "git+https://github.com/paritytech/frontier?rev=73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca#73e6223e8bc26bf8e57cd9b212f1bc2fd288c5ca"
+source = "git+https://github.com/paritytech/frontier?rev=9f27e187#9f27e18761bff422d6934e1a4f4897375b982815"
 dependencies = [
  "fp-evm",
  "ripemd",
@@ -4057,7 +4081,7 @@ dependencies = [
 [[package]]
 name = "poseidon"
 version = "0.2.0"
-source = "git+https://github.com/appliedzkp/poseidon.git#0b9965fbcd9e03559088b8f68489592286bc55e0"
+source = "git+https://github.com/privacy-scaling-explorations/poseidon.git#0b9965fbcd9e03559088b8f68489592286bc55e0"
 dependencies = [
  "group",
  "halo2curves 0.2.1",
@@ -5684,6 +5708,7 @@ dependencies = [
  "anyhow",
  "bus-mapping",
  "clap 3.2.23",
+ "ctor",
  "env_logger",
  "eth-types",
  "ethers-core",
@@ -6756,6 +6781,7 @@ version = "0.1.0"
 dependencies = [
  "array-init",
  "bus-mapping",
+ "cli-table",
  "criterion",
  "ctor",
  "env_logger",
@@ -6783,7 +6809,6 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rand_xorshift",
  "rayon",
- "rlp",
  "sha3 0.10.6",
  "snark-verifier",
  "strum",

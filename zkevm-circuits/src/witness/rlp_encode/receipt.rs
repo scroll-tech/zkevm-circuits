@@ -1,3 +1,4 @@
+use ethers_core::utils::rlp::{self, Encodable};
 use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
 use crate::{evm_circuit::witness::Receipt, impl_expr};

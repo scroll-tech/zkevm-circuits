@@ -16,7 +16,7 @@ use mpt_zktrie::{operation::AccountOp, EthTrie, EthTrieCircuit, EthTrieConfig};
 #[derive(Default, Clone, Debug)]
 pub struct MptCircuit<F: Field>(pub(crate) EthTrieCircuit<F, false>);
 
-/// Circuit configuration argumen ts
+/// Circuit configuration argument ts
 pub struct MptCircuitConfigArgs<F: Field> {
     /// PoseidonTable
     pub poseidon_table: PoseidonTable,
@@ -68,7 +68,7 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
             (
                 // notice we do not use the accompanied hash circuit so just assign any size
                 100usize,
-                Some(block.evm_circuit_pad_to),
+                Some(block.circuits_params.max_evm_rows),
             ),
             &block.mpt_updates.proof_types,
         );
@@ -98,7 +98,7 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
     ) -> Result<(), Error> {
         config.0.load_mpt_table(
             layouter,
-            challenges.evm_word().inner,
+            crate::test_util::escape_value(challenges.evm_word()),
             self.0.ops.as_slice(),
             self.0.mpt_table.iter().copied(),
             self.0.calcs,
@@ -152,7 +152,7 @@ impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
+        let challenges = challenges.values(&layouter);
         config.0.dev_load_hash_table(
             &mut layouter,
             self.0.ops.iter().flat_map(|op| op.hash_traces()),
