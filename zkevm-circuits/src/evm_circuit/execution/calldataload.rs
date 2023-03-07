@@ -188,7 +188,13 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         // Add a lookup constraint for the 32-bytes that should have been pushed
         // to the stack.
         let calldata_word: [Expression<F>; N_BYTES_WORD] = calldata_word.try_into().unwrap();
-        cb.stack_push(cb.word_rlc(calldata_word));
+        let calldata_word = cb.word_rlc(calldata_word);
+        cb.require_zero(
+            "Stack push result must be 0 if stack pop offset is Uint64 overflow",
+            offset_word.overflow_expr() * calldata_word.expr(),
+        );
+
+        cb.stack_push(calldata_word);
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),

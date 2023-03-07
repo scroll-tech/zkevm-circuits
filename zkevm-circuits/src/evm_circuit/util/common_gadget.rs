@@ -1124,6 +1124,10 @@ impl<F: Field> WordRangeGadget<F> {
         from_bytes::expr(&self.original.cells[..valid_bytes])
     }
 
+    pub(crate) fn overflow_expr(&self) -> Expression<F> {
+        not::expr(self.within_range_expr())
+    }
+
     pub(crate) fn within_range_expr(&self) -> Expression<F> {
         self.within_range.expr()
     }
