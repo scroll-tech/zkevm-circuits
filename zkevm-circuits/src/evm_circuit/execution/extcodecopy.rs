@@ -28,7 +28,7 @@ pub(crate) struct ExtcodecopyGadget<F> {
     same_context: SameContextGadget<F>,
     external_address_word: Word<F>,
     memory_address: MemoryAddressGadget<F>,
-    code_offset_word: WordRangeGadget<F>,
+    code_offset_word: WordRangeGadget<F, N_BYTES_U64>,
     code_offset_lt_code_size: LtGadget<F, N_BYTES_U64>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -54,7 +54,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let memory_length = cb.query_word_rlc();
         let memory_offset = cb.query_cell_phase2();
-        let code_offset_word = WordRangeGadget::construct(cb, N_BYTES_U64);
+        let code_offset_word = WordRangeGadget::construct(cb);
 
         cb.stack_pop(external_address_word.expr());
         cb.stack_pop(memory_offset.expr());
@@ -90,7 +90,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         // Reset code offset to the maximum value of Uint64 if overflow.
         let code_offset = select::expr(
             code_offset_word.within_range_expr(),
-            code_offset_word.valid_value_expr(N_BYTES_U64),
+            code_offset_word.valid_value_expr(),
             u64::MAX.expr(),
         );
 
@@ -184,9 +184,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             self.memory_address
                 .assign(region, offset, memory_offset, memory_length)?;
 
-        let code_offset_within_range =
-            self.code_offset_word
-                .assign(region, offset, N_BYTES_U64, code_offset)?;
+        let code_offset_within_range = self.code_offset_word.assign(region, offset, code_offset)?;
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;

@@ -25,7 +25,7 @@ pub(crate) struct CodeCopyGadget<F> {
     same_context: SameContextGadget<F>,
     /// Holds the memory address for the offset in code from where we
     /// read (checked with Uint64 overflow).
-    code_offset_word: WordRangeGadget<F>,
+    code_offset_word: WordRangeGadget<F, N_BYTES_U64>,
     /// Checks if code offset is less than code size.
     code_offset_lt_code_size: LtGadget<F, N_BYTES_U64>,
     /// Holds the size of the current environment's bytecode.
@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         // Query elements to be popped from the stack.
         let size = cb.query_word_rlc();
         let dst_memory_offset = cb.query_cell_phase2();
-        let code_offset_word = WordRangeGadget::construct(cb, N_BYTES_U64);
+        let code_offset_word = WordRangeGadget::construct(cb);
 
         // Pop items from stack.
         cb.stack_pop(dst_memory_offset.expr());
@@ -75,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         // Reset code offset to the maximum value of Uint64 if overflow.
         let code_offset = select::expr(
             code_offset_word.within_range_expr(),
-            code_offset_word.valid_value_expr(N_BYTES_U64),
+            code_offset_word.valid_value_expr(),
             u64::MAX.expr(),
         );
 
@@ -165,9 +165,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             [0, 1, 2].map(|i| block.rws[step.rw_indices[i]].stack_value());
 
         // assign the code offset word.
-        let code_offset_within_range =
-            self.code_offset_word
-                .assign(region, offset, N_BYTES_U64, code_offset)?;
+        let code_offset_within_range = self.code_offset_word.assign(region, offset, code_offset)?;
 
         let bytecode = block
             .bytecodes

@@ -44,7 +44,7 @@ pub(crate) struct CallDataLoadGadget<F> {
     call_data_offset: Cell<F>,
     /// The bytes offset in calldata, from which we load a 32-bytes word. It
     /// could be Uint64 overflow.
-    offset_word: WordRangeGadget<F>,
+    offset_word: WordRangeGadget<F, N_BYTES_U64>,
     /// Check if offset is less than calldata length.
     offset_lt_call_data_length: LtGadget<F, N_BYTES_U64>,
     /// Gadget to read from tx calldata, which we validate against the word
@@ -60,12 +60,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let offset_word = WordRangeGadget::construct(cb, N_BYTES_U64);
+        let offset_word = WordRangeGadget::construct(cb);
 
         // Reset data offset to the maximum value of Uint64 if overflow.
         let offset = select::expr(
             offset_word.within_range_expr(),
-            offset_word.valid_value_expr(N_BYTES_U64),
+            offset_word.valid_value_expr(),
             u64::MAX.expr(),
         );
 
@@ -229,9 +229,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let data_offset = block.rws[step.rw_indices[0]].stack_value();
-        let offset_within_range =
-            self.offset_word
-                .assign(region, offset, N_BYTES_U64, data_offset)?;
+        let offset_within_range = self.offset_word.assign(region, offset, data_offset)?;
         let data_offset = if offset_within_range {
             data_offset.as_u64()
         } else {

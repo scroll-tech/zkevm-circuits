@@ -28,7 +28,7 @@ use std::cmp::min;
 pub(crate) struct CallDataCopyGadget<F> {
     same_context: SameContextGadget<F>,
     memory_address: MemoryAddressGadget<F>,
-    data_offset_word: WordRangeGadget<F>,
+    data_offset_word: WordRangeGadget<F, N_BYTES_U64>,
     data_offset_lt_call_data_length: LtGadget<F, N_BYTES_U64>,
     src_id: Cell<F>,
     call_data_length: Cell<F>,
@@ -48,12 +48,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         let length = cb.query_word_rlc();
         let memory_offset = cb.query_cell_phase2();
-        let data_offset_word = WordRangeGadget::construct(cb, N_BYTES_U64);
+        let data_offset_word = WordRangeGadget::construct(cb);
 
         // Reset data offset to the maximum value of Uint64 if overflow.
         let data_offset = select::expr(
             data_offset_word.within_range_expr(),
-            data_offset_word.valid_value_expr(N_BYTES_U64),
+            data_offset_word.valid_value_expr(),
             u64::MAX.expr(),
         );
 
@@ -192,9 +192,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_offset, length)?;
-        let data_offset_within_range =
-            self.data_offset_word
-                .assign(region, offset, N_BYTES_U64, data_offset)?;
+        let data_offset_within_range = self.data_offset_word.assign(region, offset, data_offset)?;
         let src_id = if call.is_root { tx.id } else { call.caller_id };
         self.src_id.assign(
             region,

@@ -28,7 +28,7 @@ const NUM_PREV_BLOCK_ALLOWED: u64 = 257;
 #[derive(Clone, Debug)]
 pub(crate) struct BlockHashGadget<F> {
     same_context: SameContextGadget<F>,
-    block_number_word: WordRangeGadget<F>,
+    block_number_word: WordRangeGadget<F, N_BYTES_U64>,
     current_block_number: Cell<F>,
     block_hash: Word<F>,
     block_lt: LtGadget<F, N_BYTES_U64>,
@@ -41,8 +41,8 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKHASH;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let block_number_word = WordRangeGadget::construct(cb, N_BYTES_U64);
-        let block_number = block_number_word.valid_value_expr(N_BYTES_U64);
+        let block_number_word = WordRangeGadget::construct(cb);
+        let block_number = block_number_word.valid_value_expr();
         cb.stack_pop(block_number_word.original_word_expr());
 
         let current_block_number = cb.query_cell();
@@ -117,7 +117,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 
         let block_number = block.rws[step.rw_indices[0]].stack_value();
         self.block_number_word
-            .assign(region, offset, N_BYTES_U64, block_number)?;
+            .assign(region, offset, block_number)?;
         let block_number: F = block_number.to_scalar().unwrap();
 
         let current_block_number = block.context.ctxs[&tx.block_number].number;
