@@ -912,7 +912,7 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
 
     #[test]
-    fn test_split_uniform_normalize_false() {
+    fn split_and_split_uniform() {
         let number_of_rows = 100;
         let mut cell_manager = CellManager::new(number_of_rows);
         let mut region = KeccakRegion::new();

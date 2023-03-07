@@ -315,6 +315,18 @@ mod tests {
     }
 
     #[test]
+    fn unpack_into_bits() {
+        // The example number 128 in binary: |1|0|0|0|0|0|0|0|
+        // In packed form:                 |001|000|000|000|000|000|000|000|
+        // after unpack: back to 128 in binary
+        for (idx, expected) in [(0, 0), (1, 1), (128, 128), (129, 129)] {
+            let unpacked_bits = unpack(pack::<F>(&into_bits(&[idx as u8])));
+            let unpacked = pack_with_base::<F>(&unpacked_bits, 2);
+            assert_eq!(unpacked, F::from(expected));
+        }
+    }
+
+    #[test]
     fn num_bits_per_lookup() {
         // Typical values.
         assert_eq!(get_num_bits_per_lookup_impl(3, 19), 11);
@@ -323,5 +335,46 @@ mod tests {
         assert_eq!(get_num_bits_per_lookup_impl(6, 19), 7);
         // The largest possible value does not overflow u64.
         assert_eq!(get_num_bits_per_lookup_impl(3, 32) * BIT_COUNT, 60);
+    }
+
+    #[test]
+    fn to_bytes_value() {
+        let bytes = to_bytes::value(&[1, 0, 0, 0, 0, 0, 0, 1]);
+        assert_eq!(bytes, vec![129]);
+    }
+
+    #[test]
+    fn field_xor_operation() {
+        //       a = 10001010101 (little endian)
+        //       b = 11010101011 (little endian)
+        // a xor b = 01011111110 (little endian)
+        let a = pack_with_base::<F>(&[1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1], 2);
+        let b = pack_with_base::<F>(&[1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1], 2);
+        let c = pack_with_base::<F>(&[0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0], 2);
+        let a_xor_b = field_xor::<F>(a, b);
+        assert_eq!(c, a_xor_b);
+    }
+
+    #[test]
+    fn word_parts() {
+        // WordParts with part_size = 7 and rot = 2
+        let part_size = 7;
+        let rot = 2;
+        // normalize = true
+        // Part bits = 0..4|5..11|12..18|19..25|26..32|33..39|
+        //                  40..46|47..53|54..60|61|62..63
+        let word_parts = WordParts::new(part_size, rot, true);
+        assert_eq!(word_parts.parts[0].bits, vec![0, 1, 2, 3, 4]);
+        assert_eq!(word_parts.parts[7].bits, vec![47, 48, 49, 50, 51, 52, 53]);
+        assert_eq!(word_parts.parts[9].bits, vec![61]);
+        assert_eq!(word_parts.parts[10].bits, vec![62, 63]);
+        // normalize = false
+        // Part bits = 0..6|7..13|14..20|21..27|28..34|35..41|
+        //                  42..48|49..55|56..61|62..63
+        let word_parts = WordParts::new(part_size, rot, false);
+        assert_eq!(word_parts.parts[0].bits, vec![0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(word_parts.parts[7].bits, vec![49, 50, 51, 52, 53, 54, 55]);
+        assert_eq!(word_parts.parts[8].bits, vec![56, 57, 58, 59, 60, 61]);
+        assert_eq!(word_parts.parts[9].bits, vec![62, 63]);
     }
 }
