@@ -95,8 +95,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let effective_tip = cb.query_word_rlc();
         let sub_gas_price_by_base_fee =
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
-        let mul_effective_tip_by_gas_used =
-            MulWordByU64Gadget::construct(cb, effective_tip, gas_used.clone());
+        let mul_effective_tip_by_gas_used = MulWordByU64Gadget::construct(
+            cb,
+            effective_tip,
+            gas_used.clone() - effective_refund.min(),
+        );
         let coinbase_reward = UpdateBalanceGadget::construct(
             cb,
             coinbase.expr(),
@@ -253,12 +256,13 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             [effective_tip, context.base_fee],
             tx.gas_price,
         )?;
+        let coinbase_reward = effective_tip * (gas_used - effective_refund);
         self.mul_effective_tip_by_gas_used.assign(
             region,
             offset,
             effective_tip,
-            gas_used,
-            effective_tip * gas_used,
+            gas_used - effective_refund,
+            coinbase_reward,
         )?;
         self.coinbase.assign(
             region,
@@ -274,7 +278,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             region,
             offset,
             coinbase_balance_prev,
-            vec![effective_tip * gas_used],
+            vec![coinbase_reward],
             coinbase_balance,
         )?;
 

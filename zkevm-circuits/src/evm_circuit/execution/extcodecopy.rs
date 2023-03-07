@@ -9,14 +9,14 @@ use crate::{
             },
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            not, select, CachedRegion, Cell, MemoryAddress, RandomLinearCombination,
+            not, select, CachedRegion, Cell, MemoryAddress, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{evm_types::GasCost, Field, ToAddress, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -25,7 +25,7 @@ use super::ExecutionGadget;
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodecopyGadget<F> {
     same_context: SameContextGadget<F>,
-    external_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    external_address_word: Word<F>,
     memory_address: MemoryAddressGadget<F>,
     data_offset: MemoryAddress<F>,
     tx_id: Cell<F>,
@@ -46,12 +46,15 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let external_address = cb.query_word_rlc();
+        let external_address_word = cb.query_word_rlc();
+        let external_address =
+            from_bytes::expr(&external_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
+
         let memory_offset = cb.query_cell_phase2();
         let data_offset = cb.query_word_rlc();
         let memory_length = cb.query_word_rlc();
 
-        cb.stack_pop(external_address.expr());
+        cb.stack_pop(external_address_word.expr());
         cb.stack_pop(memory_offset.expr());
         cb.stack_pop(data_offset.expr());
         cb.stack_pop(memory_length.expr());
@@ -63,7 +66,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let is_warm = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
-            from_bytes::expr(&external_address.cells),
+            external_address.expr(),
             1.expr(),
             is_warm.expr(),
             Some(&mut reversion_info),
@@ -71,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let code_hash = cb.query_cell_phase2();
         cb.account_read(
-            from_bytes::expr(&external_address.cells),
+            external_address.expr(),
             AccountFieldTag::CodeHash,
             code_hash.expr(),
         );
@@ -126,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         Self {
             same_context,
-            external_address,
+            external_address_word,
             memory_address,
             data_offset,
             tx_id,
@@ -153,11 +156,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let [external_address, memory_offset, data_offset, memory_length] =
             [0, 1, 2, 3].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
-        let mut le_bytes = external_address.to_address().0;
-        le_bytes.reverse();
-        self.external_address
-            .assign(region, offset, Some(le_bytes))?;
-
+        self.external_address_word
+            .assign(region, offset, Some(external_address.to_le_bytes()))?;
         let memory_address =
             self.memory_address
                 .assign(region, offset, memory_offset, memory_length)?;

@@ -29,6 +29,7 @@ use tokio::sync::Mutex as TokioMutex;
 use zkevm_circuits::bytecode_circuit::circuit::BytecodeCircuit;
 use zkevm_circuits::copy_circuit::CopyCircuit;
 use zkevm_circuits::evm_circuit::EvmCircuit;
+use zkevm_circuits::keccak_circuit::KeccakCircuit;
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::TxCircuit;
@@ -53,7 +54,9 @@ const MAX_EVM_ROWS: usize = 10000;
 /// MAX_INNER_BLOCKS
 pub const MAX_INNER_BLOCKS: usize = 64;
 /// MAX_EXP_STEPS
-pub const MAX_EXP_STEPS: usize = 1000;
+const MAX_EXP_STEPS: usize = 1000;
+
+const MAX_KECCAK_ROWS: usize = 10000;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: MAX_RWS,
@@ -64,7 +67,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_copy_rows: MAX_COPY_ROWS,
     max_evm_rows: MAX_EVM_ROWS,
     max_exp_steps: MAX_EXP_STEPS,
-    keccak_padding: None,
+    max_keccak_rows: MAX_KECCAK_ROWS,
 };
 
 /// EVM Circuit degree
@@ -77,6 +80,8 @@ const TX_CIRCUIT_DEGREE: u32 = 20;
 const BYTECODE_CIRCUIT_DEGREE: u32 = 16;
 /// Copy Circuit degree
 const COPY_CIRCUIT_DEGREE: u32 = 16;
+
+const KECCAK_CIRCUIT_DEGREE: u32 = 16;
 /// Super Circuit degree
 const SUPER_CIRCUIT_DEGREE: u32 = 20;
 
@@ -113,6 +118,10 @@ lazy_static! {
     /// Integration test for Copy circuit
     pub static ref COPY_CIRCUIT_TEST: TokioMutex<IntegrationTest<CopyCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("Copy", COPY_CIRCUIT_DEGREE));
+
+    /// Integration test for Keccak circuit
+    pub static ref KECCAK_CIRCUIT_TEST: TokioMutex<IntegrationTest<KeccakCircuit<Fr>>> =
+    TokioMutex::new(IntegrationTest::new("Keccak", KECCAK_CIRCUIT_DEGREE));
 
     /// Integration test for Copy circuit
     pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>>> =

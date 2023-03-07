@@ -47,7 +47,8 @@ fn gen_extcodecopy_step(
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
 
-    let external_address = geth_step.stack.nth_last(0)?.to_address();
+    let external_address_word = geth_step.stack.nth_last(0)?;
+    let external_address = external_address_word.to_address();
     let dest_offset = geth_step.stack.nth_last(1)?;
     let offset = geth_step.stack.nth_last(2)?;
     let length = geth_step.stack.nth_last(3)?;
@@ -56,7 +57,7 @@ fn gen_extcodecopy_step(
     state.stack_read(
         &mut exec_step,
         geth_step.stack.nth_last_filled(0),
-        external_address.to_word(),
+        external_address_word,
     )?;
     state.stack_read(
         &mut exec_step,

@@ -30,7 +30,7 @@ use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries a
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
 #[cfg(test)]
 use std::collections::HashMap;
-use std::{iter::once, marker::PhantomData};
+use std::marker::PhantomData;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -232,8 +232,6 @@ impl<F: Field> StateCircuitConfig<F> {
             padding_length
         );
         let rows_len = rows.len();
-        let rows = rows.iter();
-        let prev_rows = once(None).chain(rows.clone().map(Some));
 
         let mut state_root =
             randomness.map(|randomness| rlc::value(&updates.old_root().to_le_bytes(), randomness));
@@ -243,7 +241,7 @@ impl<F: Field> StateCircuitConfig<F> {
         // annotate columns
         self.annotate_circuit_in_region(region);
 
-        for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
+        for (offset, row) in rows.iter().enumerate() {
             if offset == 0 || offset + 1 >= padding_length {
                 log::trace!("state circuit assign offset:{} row:{:?}", offset, row);
             }
@@ -275,7 +273,8 @@ impl<F: Field> StateCircuitConfig<F> {
                     .assign(region, offset, randomness, storage_key)?;
             }
 
-            if let Some(prev_row) = prev_row {
+            if offset > 0 {
+                let prev_row = &rows[offset - 1];
                 let index = self
                     .lexicographic_ordering
                     .assign(region, offset, row, prev_row)?;

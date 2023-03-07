@@ -307,13 +307,14 @@ pub(crate) mod cached {
     use halo2_proofs::halo2curves::bn256::Fr;
     use lazy_static::lazy_static;
 
-    /// Cache
     struct Cache {
         cs: ConstraintSystem<Fr>,
         config: (EvmCircuitConfig<Fr>, Challenges),
     }
 
     lazy_static! {
+        /// Cached values of the ConstraintSystem after the EVM Circuit configuration and the EVM
+        /// Circuit configuration.  These values are calculated just once.
         static ref CACHE: Cache = {
             let mut meta = ConstraintSystem::<Fr>::default();
             let config = EvmCircuit::<Fr>::configure(&mut meta);
@@ -321,6 +322,11 @@ pub(crate) mod cached {
         };
     }
 
+    /// Wrapper over the EvmCircuit that behaves the same way and also
+    /// implements the halo2 Circuit trait, but reuses the precalculated
+    /// results of the configuration which are cached in the public variable
+    /// `CACHE`.  This wrapper is useful for testing because it allows running
+    /// many unit tests while reusing the configuration step of the circuit.
     pub struct EvmCircuitCached(EvmCircuit<Fr>);
 
     impl Circuit<Fr> for EvmCircuitCached {
@@ -478,12 +484,27 @@ pub mod test {
 
 #[cfg(test)]
 mod evm_circuit_stats {
-    use crate::evm_circuit::step::ExecutionState;
+    use crate::evm_circuit::{
+        param::{
+            LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
+        },
+        step::ExecutionState,
+        EvmCircuit,
+    };
     use crate::stats::print_circuit_stats_by_states;
     use crate::test_util::CircuitTestBuilder;
+    use crate::witness::block_convert;
+    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use bus_mapping::mock::BlockData;
+    use cli_table::{print_stdout, Cell, Style, Table};
+    use eth_types::geth_types::GethData;
     use eth_types::{bytecode, evm_types::OpcodeId, ToWord};
-    use mock::test_ctx::TestContext;
-    use mock::MOCK_ACCOUNTS;
+    use halo2_proofs::plonk::{Circuit, ConstraintSystem};
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+    use itertools::Itertools;
+    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
+    use mock::test_ctx::helpers::tx_from_1_to_0;
+    use mock::{test_ctx::TestContext, MOCK_ACCOUNTS};
 
     #[test]
     pub fn empty_evm_circuit_no_padding() {
@@ -543,5 +564,127 @@ mod evm_circuit_stats {
             },
             |_, state, _| state.get_step_height_option().unwrap(),
         );
+    }
+
+    /// This function prints to stdout a table with the top X ExecutionState
+    /// cell consumers of each EVM Cell type.
+    ///
+    /// Run with:
+    /// `cargo test -p zkevm-circuits --release get_exec_steps_occupancy
+    /// --features test -- --nocapture --ignored`
+    #[ignore]
+    #[test]
+    fn get_exec_steps_occupancy() {
+        let mut meta = ConstraintSystem::<Fr>::default();
+        let circuit = EvmCircuit::configure(&mut meta);
+
+        let report = circuit.0.execution.instrument().clone().analyze();
+        macro_rules! gen_report {
+            ($report:expr, $($id:ident, $cols:expr), +) => {
+                $(
+                let row_report = report
+                    .iter()
+                    .sorted_by(|a, b| a.$id.utilization.partial_cmp(&b.$id.utilization).unwrap())
+                    .rev()
+                    .take(10)
+                    .map(|exec| {
+                        vec![
+                            format!("{:?}", exec.state),
+                            format!("{:?}", exec.$id.available_cells),
+                            format!("{:?}", exec.$id.unused_cells),
+                            format!("{:?}", exec.$id.used_cells),
+                            format!("{:?}", exec.$id.top_height),
+                            format!("{:?}", exec.$id.used_columns),
+                            format!("{:?}", exec.$id.utilization),
+                        ]
+                    })
+                    .collect::<Vec<Vec<String>>>();
+
+                let table = row_report.table().title(vec![
+                    format!("{:?}", stringify!($id)).cell().bold(true),
+                    format!("total_available_cells").cell().bold(true),
+                    format!("unused_cells").cell().bold(true),
+                    format!("cells").cell().bold(true),
+                    format!("top_height").cell().bold(true),
+                    format!("used columns (Max: {:?})", $cols).cell().bold(true),
+                    format!("Utilization").cell().bold(true),
+                ]);
+                print_stdout(table).unwrap();
+                )*
+            };
+        }
+
+        gen_report!(
+            report,
+            storage_1,
+            N_PHASE1_COLUMNS,
+            storage_2,
+            N_PHASE2_COLUMNS,
+            storage_perm,
+            N_COPY_COLUMNS,
+            byte_lookup,
+            N_BYTE_LOOKUPS,
+            fixed_table,
+            LOOKUP_CONFIG[0].1,
+            tx_table,
+            LOOKUP_CONFIG[1].1,
+            rw_table,
+            LOOKUP_CONFIG[2].1,
+            bytecode_table,
+            LOOKUP_CONFIG[3].1,
+            block_table,
+            LOOKUP_CONFIG[4].1,
+            copy_table,
+            LOOKUP_CONFIG[5].1,
+            keccak_table,
+            LOOKUP_CONFIG[6].1,
+            exp_table,
+            LOOKUP_CONFIG[7].1
+        );
+    }
+    #[test]
+    fn variadic_size_check() {
+        let params = CircuitsParams {
+            max_evm_rows: 1 << 12,
+            ..Default::default()
+        };
+        // Empty
+        let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
+            .unwrap()
+            .into();
+        let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
+            .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let k = block.get_test_degree();
+
+        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
+        let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+
+        let code = bytecode! {
+            STOP
+        };
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |b, _| b,
+        )
+        .unwrap()
+        .into();
+        let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
+            .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let k = block.get_test_degree();
+        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
+        let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+
+        assert_eq!(prover1.fixed(), prover2.fixed());
+        assert_eq!(prover1.permutation(), prover2.permutation());
     }
 }

@@ -90,7 +90,7 @@ mod tests {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_inner_blocks: MAX_INNER_BLOCKS,
-            keccak_padding: None,
+            max_keccak_rows: 0,
         };
         let (_, circuit, instance, _) =
             SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>::build(

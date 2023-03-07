@@ -137,7 +137,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 number: U64::from(st.env.current_number),
                 difficulty: st.env.current_difficulty,
                 gas_limit: U256::from(st.env.current_gas_limit),
-                base_fee: U256::one(),
+                base_fee: st.env.current_base_fee,
             },
 
             transactions: vec![geth_types::Transaction {
@@ -274,7 +274,7 @@ pub fn run_test(
             max_copy_rows: 55000,
             max_evm_rows: 0,
             max_exp_steps: 5000,
-            keccak_padding: None,
+            max_keccak_rows: 0,
             max_inner_blocks: 64,
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
@@ -300,7 +300,7 @@ pub fn run_test(
             max_exp_steps: 256,
             max_bytecode: 512,
             max_evm_rows: 0,
-            keccak_padding: None,
+            max_keccak_rows: 0,
             max_inner_blocks: 64,
         };
         let (k, circuit, instance, _builder) =

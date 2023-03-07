@@ -154,10 +154,10 @@ mod tests {
         });
 
         // On all rows, all inputs/outputs are correct, i.e. they have the same low bit.
-        assert_eq!(BIT_COUNT, 3);
+        assert_eq!(BIT_COUNT, 3, "this test assumes BIT_COUNT=3");
         for (inp, out) in table.iter() {
             for pos in (0..64).step_by(BIT_COUNT) {
-                assert_eq!((inp >> pos) & 1, (out >> pos) & (4 + 2 + 1));
+                assert_eq!((inp >> pos) & 1, (out >> pos) & 0b111);
             }
         }
     }
