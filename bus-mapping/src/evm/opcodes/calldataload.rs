@@ -64,8 +64,8 @@ impl Opcode for Calldataload {
             let call_data_offset = state.call()?.call_data_offset;
             let call_data_length = state.call()?.call_data_length;
             let (src_addr, src_addr_end, caller_id, call_data) = (
-                // Set source start as minimun value of offset and call data length to avoid
-                // overflow.
+                // Set source start to the minimum value of offset and call data length for
+                // avoiding overflow.
                 call_data_offset + offset.min(call_data_length),
                 call_data_offset + call_data_length,
                 state.call()?.caller_id,
@@ -93,6 +93,7 @@ impl Opcode for Calldataload {
 
             U256::from_big_endian(&calldata)
         } else {
+            // Stack push `0` as result directly if overflow.
             U256::zero()
         };
 

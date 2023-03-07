@@ -137,7 +137,8 @@ fn gen_copy_event(
     let call_data_length = state.call()?.call_data_length;
 
     let (src_addr, src_addr_end) = (
-        // Set source start as minimun value of data offset and call data length to avoid overflow.
+        // Set source start to the minimum value of data offset and call data length for avoiding
+        // overflow.
         call_data_offset + data_offset.min(call_data_length),
         call_data_offset + call_data_length,
     );

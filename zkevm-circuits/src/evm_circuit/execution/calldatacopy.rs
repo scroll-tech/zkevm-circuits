@@ -127,7 +127,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
                 call_data_offset.expr()
-                    // Set source start as the minimun value of data offset and call data length.
+                    // Set source start to the minimun value of data offset and call data length.
                     + select::expr(
                         data_offset_lt_call_data_length.expr(),
                         data_offset,
@@ -279,8 +279,8 @@ mod test {
     fn test_ok_root(
         call_data_length: usize,
         memory_offset: usize,
-        data_offset: Word,
         length: usize,
+        data_offset: Word,
     ) {
         let bytecode = bytecode! {
             PUSH32(length)
@@ -318,15 +318,15 @@ mod test {
         call_data_offset: usize,
         call_data_length: usize,
         dst_offset: usize,
-        offset: Word,
         length: usize,
+        data_offset: Word,
     ) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = bytecode! {
-            PUSH32(length)  // size
-            PUSH32(offset)     // offset
+            PUSH32(length) // size
+            PUSH32(data_offset) // data_offset
             PUSH32(dst_offset) // dst_offset
             CALLDATACOPY
             STOP
@@ -372,31 +372,31 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_simple() {
-        test_ok_root(0x40, 0x40, 0x00.into(), 10);
-        test_ok_internal(0x40, 0x40, 0xA0, 0x10.into(), 10);
+        test_ok_root(0x40, 0x40, 10, 0x00.into());
+        test_ok_internal(0x40, 0x40, 0xA0, 10, 0x10.into());
     }
 
     #[test]
     fn calldatacopy_gadget_large() {
-        test_ok_root(0x204, 0x103, 0x102.into(), 0x101);
-        test_ok_internal(0x30, 0x204, 0x103, 0x102.into(), 0x101);
+        test_ok_root(0x204, 0x103, 0x101, 0x102.into());
+        test_ok_internal(0x30, 0x204, 0x103, 0x101, 0x102.into());
     }
 
     #[test]
     fn calldatacopy_gadget_out_of_bound() {
-        test_ok_root(0x40, 0x40, 0x20.into(), 40);
-        test_ok_internal(0x40, 0x20, 0xA0, 0x28.into(), 10);
+        test_ok_root(0x40, 0x40, 40, 0x20.into());
+        test_ok_internal(0x40, 0x20, 0xA0, 10, 0x28.into());
     }
 
     #[test]
     fn calldatacopy_gadget_zero_length() {
-        test_ok_root(0x40, 0x40, 0x00.into(), 0);
-        test_ok_internal(0x40, 0x40, 0xA0, 0x10.into(), 0);
+        test_ok_root(0x40, 0x40, 0, 0x00.into());
+        test_ok_internal(0x40, 0x40, 0xA0, 0, 0x10.into());
     }
 
     #[test]
     fn calldatacopy_gadget_data_offset_overflow() {
-        test_ok_root(0x40, 0x40, Word::MAX, 0);
-        test_ok_internal(0x40, 0x40, 0xA0, Word::MAX, 0);
+        test_ok_root(0x40, 0x40, 0, Word::MAX);
+        test_ok_internal(0x40, 0x40, 0xA0, 0, Word::MAX);
     }
 }

@@ -113,7 +113,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 CopyDataType::Bytecode.expr(),
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                // Set source start as the minimun value of code offset and code size.
+                // Set source start to the minimum value of code offset and code size.
                 select::expr(
                     code_offset_lt_code_size.expr(),
                     code_offset,

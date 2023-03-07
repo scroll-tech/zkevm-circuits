@@ -79,7 +79,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let offset_lt_call_data_length =
             LtGadget::construct(cb, offset.expr(), call_data_length.expr());
 
-        // Set source start as the minimun value of offset and call data length.
+        // Set source start to the minimun value of offset and call data length.
         let src_addr = call_data_offset.expr()
             + select::expr(
                 offset_lt_call_data_length.expr(),
@@ -254,7 +254,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
         let (src_addr, src_addr_end) = (
-            // Set source start as the minimun value of data offset and call data length.
+            // Set source start to the minimun value of data offset and call data length.
             call_data_offset
                 + if data_offset < call_data_length {
                     data_offset

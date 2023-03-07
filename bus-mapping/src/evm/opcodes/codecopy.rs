@@ -105,6 +105,8 @@ fn gen_copy_event(
     let code_hash = state.call()?.code_hash;
     let bytecode: Bytecode = state.code(code_hash)?.into();
     let code_size = bytecode.code.len() as u64;
+    // Set source start to the minimum value of code offset and code size for
+    // avoiding overflow.
     let src_addr = code_offset.min(code_size);
     let src_addr_end = code_size;
 
