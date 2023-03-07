@@ -73,8 +73,8 @@ pub enum OogError {
     /// Out of Gas for CREATE, RETURN, REVERT, which have dynamic memory
     /// expansion gas cost
     DynamicMemoryExpansion,
-    /// Out of Gas for CALLDATACOPY, CODECOPY, RETURNDATACOPY, which copy a
-    /// specified chunk of memory
+    /// Out of Gas for CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY,
+    /// which copy a specified chunk of memory
     MemoryCopy,
     /// Out of Gas for BALANCE, EXTCODESIZE, EXTCODEHASH, which possibly touch
     /// an extra account
@@ -88,8 +88,6 @@ pub enum OogError {
     Exp,
     /// Out of Gas for SHA3
     Sha3,
-    /// Out of Gas for EXTCODECOPY
-    ExtCodeCopy,
     /// Out of Gas for SLOAD and SSTORE
     SloadSstore,
     /// Out of Gas for CALL, CALLCODE, DELEGATECALL and STATICCALL
@@ -146,9 +144,10 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             OpcodeId::CREATE | OpcodeId::RETURN | OpcodeId::REVERT => {
                 OogError::DynamicMemoryExpansion
             }
-            OpcodeId::CALLDATACOPY | OpcodeId::CODECOPY | OpcodeId::RETURNDATACOPY => {
-                OogError::MemoryCopy
-            }
+            OpcodeId::CALLDATACOPY
+            | OpcodeId::CODECOPY
+            | OpcodeId::EXTCODECOPY
+            | OpcodeId::RETURNDATACOPY => OogError::MemoryCopy,
             OpcodeId::BALANCE | OpcodeId::EXTCODESIZE | OpcodeId::EXTCODEHASH => {
                 OogError::AccountAccess
             }
@@ -157,7 +156,6 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             }
             OpcodeId::EXP => OogError::Exp,
             OpcodeId::SHA3 => OogError::Sha3,
-            OpcodeId::EXTCODECOPY => OogError::ExtCodeCopy,
             OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
                 OogError::Call
             }

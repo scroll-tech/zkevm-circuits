@@ -67,8 +67,9 @@ impl From<&ExecError> for ExecutionState {
             ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
             ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
-            ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
-            ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::CodeStoreOutOfGas | ExecError::MaxCodeSizeExceeded => {
+                ExecutionState::ErrorCodeStore
+            }
             ExecError::PrecompileFailed => ExecutionState::ErrorPrecompileFailed,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
@@ -80,11 +81,10 @@ impl From<&ExecError> for ExecutionState {
                 }
                 OogError::MemoryCopy => ExecutionState::ErrorOutOfGasMemoryCopy,
                 OogError::AccountAccess => ExecutionState::ErrorOutOfGasAccountAccess,
-                OogError::CodeStore => ExecutionState::ErrorOutOfGasCodeStore,
+                OogError::CodeStore => ExecutionState::ErrorCodeStore,
                 OogError::Log => ExecutionState::ErrorOutOfGasLOG,
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
-                OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
                 OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
