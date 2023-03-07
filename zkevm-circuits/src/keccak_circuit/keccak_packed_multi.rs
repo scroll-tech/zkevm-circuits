@@ -907,9 +907,7 @@ pub fn multi_keccak<F: Field>(
 
 #[cfg(test)]
 mod tests {
-    use crate::keccak_circuit::{KeccakRegion, Cell};
-    use crate::keccak_circuit::cell_manager::CellManager;
-    use crate::keccak_circuit::util::unpack;
+    use crate::keccak_circuit::{KeccakRegion, Cell, cell_manager::CellManager, util::unpack};
     use super::{split, split_uniform};
     use halo2_proofs::halo2curves::bn256::Fr;
 
