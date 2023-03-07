@@ -235,7 +235,7 @@ impl BlockContext {
             [
                 Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                 Value::known(current_block_number),
-                Value::known(self.difficulty.to_scalar().unwrap()),
+                randomness.map(|rand| rlc::value(&self.difficulty.to_le_bytes(), rand)),
             ],
             [
                 Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
@@ -250,7 +250,7 @@ impl BlockContext {
             [
                 Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                 Value::known(current_block_number),
-                Value::known(F::from(self.chain_id.as_u64())),
+                randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
             ],
             [
                 Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),

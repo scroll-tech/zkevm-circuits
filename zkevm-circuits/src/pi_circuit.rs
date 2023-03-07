@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use crate::table::{BlockContextFieldTag, TxTable};
 use crate::table::{BlockTable, KeccakTable, LookupTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
-use eth_types::{Address, Field, ToBigEndian, ToScalar, Word};
+use eth_types::{Address, Field, ToBigEndian, Word};
 use eth_types::{Hash, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
@@ -46,6 +46,8 @@ const BLOCK_LEN: usize = 10;
 const NUM_HISTORY_HASHES: usize = 1;
 const BYTE_POW_BASE: u64 = 256;
 const BLOCK_HEADER_BYTES_NUM: usize = 124;
+// chain_id || coinbase || difficulty
+const BLOCK_HEADER_CONST_BYTES_NUM: usize = 84;
 const KECCAK_DIGEST_SIZE: usize = 32;
 const RPI_CELL_IDX: usize = 0;
 const RPI_RLC_ACC_CELL_IDX: usize = 1;
@@ -63,7 +65,7 @@ const CHAIN_ID_OFFSET: usize = 6;
 const COINBASE_OFFSET: usize = 0;
 const DIFFICULTY_OFFSET: usize = 3;
 
-pub(crate) static CHAIN_ID: Lazy<u64> = Lazy::new(|| read_env_var("CHAIN_ID", 0));
+pub(crate) static CHAIN_ID: Lazy<Word> = Lazy::new(|| read_env_var("CHAIN_ID", Word::zero()));
 pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| read_env_var("COINBASE", Address::zero()));
 pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
 
@@ -177,7 +179,7 @@ impl PublicData {
 impl Default for BlockContext {
     fn default() -> Self {
         Self {
-            chain_id: Word::from(*CHAIN_ID),
+            chain_id: *CHAIN_ID,
             coinbase: *COINBASE,
             difficulty: *DIFFICULTY,
             gas_limit: 0,
@@ -301,6 +303,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let block_tag_bits = BinaryNumberChip::configure(meta, q_block_tag, Some(block_table.tag));
 
         meta.enable_equality(constant);
+        meta.enable_equality(rpi_bytes);
         meta.enable_equality(rpi);
         meta.enable_equality(real_rpi);
         meta.enable_equality(rpi_rlc_acc);
@@ -539,25 +542,20 @@ impl<F: Field> PiCircuitConfig<F> {
         self.q_start.enable(region, offset)?;
 
         // assign constants
-        let pi_constants = vec![
-            (F::from(*CHAIN_ID), "CHAIN_ID"),
-            ((*COINBASE).to_scalar().unwrap(), "COINBASE"),
-            (
-                (*DIFFICULTY)
-                    .to_scalar()
-                    .expect("DIFFICULTY must fit into scalar field"),
-                "DIFFICULTY",
-            ),
-        ];
+        let mut pi_constants = vec![];
+        pi_constants.extend_from_slice(&CHAIN_ID.to_be_bytes()[..]);
+        pi_constants.extend_from_slice(&COINBASE.to_fixed_bytes()[..]);
+        pi_constants.extend_from_slice(&DIFFICULTY.to_be_bytes()[..]);
+
         let pi_constants = pi_constants
             .into_iter()
             .enumerate()
-            .map(|(row, (constant, annotation))| {
+            .map(|(i, byte)| {
                 region.assign_fixed(
-                    || format!("PI constant {}", annotation),
+                    || format!("PI constant {}", i),
                     self.constant,
-                    row,
-                    || Value::known(constant),
+                    i,
+                    || Value::known(F::from(byte as u64)),
                 )
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -783,24 +781,75 @@ impl<F: Field> PiCircuitConfig<F> {
                 &num_l1_msgs.to_be_bytes(),
                 &mut rpi_rlc_acc,
                 &mut rpi_length_acc,
-                true,
+                false,
                 is_rpi_padding,
                 challenges,
                 false,
             )?;
 
-            let offsets = vec![CHAIN_ID_OFFSET, COINBASE_OFFSET, DIFFICULTY_OFFSET];
-            for (constant, offset) in pi_constants.iter().zip(offsets.into_iter()) {
-                region.constrain_equal(
-                    constant.cell(),
-                    block_value_cells[block_table_offset + offset - 1].cell(),
-                )?;
+            // chain_id
+            let chain_id_cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &CHAIN_ID.to_be_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                false,
+                true,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                chain_id_cells[RPI_CELL_IDX].clone(),
+                block_table_offset + CHAIN_ID_OFFSET,
+            ));
+            // coinbase
+            let coinbase_cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &COINBASE.to_fixed_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                false,
+                true,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                coinbase_cells[RPI_CELL_IDX].clone(),
+                block_table_offset + COINBASE_OFFSET,
+            ));
+            // difficulty
+            let difficulty_cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &DIFFICULTY.to_be_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                false,
+                true,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                difficulty_cells[RPI_CELL_IDX].clone(),
+                block_table_offset + DIFFICULTY_OFFSET,
+            ));
+
+            let mut pi_cells = vec![];
+            pi_cells.extend_from_slice(&chain_id_cells[2..]);
+            pi_cells.extend_from_slice(&coinbase_cells[2..]);
+            pi_cells.extend_from_slice(&difficulty_cells[2..]);
+
+            for (constant, byte) in pi_constants.iter().zip(pi_cells.into_iter()) {
+                region.constrain_equal(constant.cell(), byte.cell())?;
             }
             block_table_offset += BLOCK_LEN;
         }
         debug_assert_eq!(
             offset,
-            32 * 3 + BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks
+            32 * 3
+                + (BLOCK_HEADER_BYTES_NUM + BLOCK_HEADER_CONST_BYTES_NUM) * self.max_inner_blocks
         );
 
         // assign tx hashes
@@ -828,7 +877,7 @@ impl<F: Field> PiCircuitConfig<F> {
 
         debug_assert_eq!(
             offset,
-            BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks
+            (BLOCK_HEADER_BYTES_NUM + BLOCK_HEADER_CONST_BYTES_NUM) * self.max_inner_blocks
                 + KECCAK_DIGEST_SIZE * 3
                 + KECCAK_DIGEST_SIZE * self.max_txs
         );
@@ -935,7 +984,7 @@ impl<F: Field> PiCircuitConfig<F> {
         rpi_rlc_acc: &mut Value<F>,
         rpi_length_acc: &mut u64,
         is_block: bool,
-        is_padding: bool,
+        skip_for_keccak: bool,
         challenges: &Challenges<Value<F>>,
         keccak_hi_lo: bool,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
@@ -959,22 +1008,22 @@ impl<F: Field> PiCircuitConfig<F> {
                     .and_then(|(acc, t)| Value::known(acc * t + F::from(*byte as u64)))
             });
 
-        let mut cells = vec![None, None];
+        let mut cells = vec![None; 2 + value_bytes.len()];
         for (i, byte) in value_bytes.iter().enumerate() {
             let row_offset = *offset + i;
 
-            let real_value = if is_padding {
+            let real_value = if skip_for_keccak {
                 Value::known(F::zero())
             } else {
                 value
             };
-            *rpi_length_acc += if is_padding { 0 } else { 1 };
+            *rpi_length_acc += if skip_for_keccak { 0 } else { 1 };
             // calculate acc
             value_bytes_acc = value_bytes_acc
                 .zip(t)
                 .and_then(|(acc, t)| Value::known(acc * t + F::from(*byte as u64)));
 
-            if !is_padding {
+            if !skip_for_keccak {
                 *rpi_rlc_acc = rpi_rlc_acc
                     .zip(r)
                     .and_then(|(acc, rand)| Value::known(acc * rand + F::from(*byte as u64)));
@@ -996,7 +1045,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 row_offset,
                 || Value::known(use_rlc),
             )?;
-            region.assign_advice(
+            let field_byte_cell = region.assign_advice(
                 || "field byte",
                 self.rpi_field_bytes,
                 row_offset,
@@ -1024,7 +1073,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 || "is_rpi_padding",
                 self.is_rpi_padding,
                 row_offset,
-                || Value::known(F::from(is_padding as u64)),
+                || Value::known(F::from(skip_for_keccak as u64)),
             )?;
             let real_rpi_cell =
                 region.assign_advice(|| "real_rpi", self.real_rpi, row_offset, || real_value)?;
@@ -1043,6 +1092,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 };
                 cells[RPI_RLC_ACC_CELL_IDX] = Some(rpi_rlc_cell);
             }
+            cells[2 + i] = Some(field_byte_cell);
         }
         *offset += len;
 
@@ -1439,8 +1489,10 @@ mod pi_circuit_test {
         const MAX_INNER_BLOCKS: usize = 4;
 
         let mut difficulty_be_bytes = [0u8; 32];
+        let mut chain_id_be_bytes = [0u8; 32];
         MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
-        set_var("CHAIN_ID", MOCK_CHAIN_ID.to_string());
+        MOCK_CHAIN_ID.to_big_endian(&mut chain_id_be_bytes);
+        set_var("CHAIN_ID", hex::encode(chain_id_be_bytes));
         set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
         let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode! {
