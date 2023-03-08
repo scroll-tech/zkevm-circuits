@@ -507,20 +507,15 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 (31u64 + initialization_code_length.as_u64()).into(),
             )?;
 
-        self.gas_left.assign(
-            region,
-            offset,
-            (step.gas_left
-                - GasCost::CREATE.as_u64()
-                - memory_expansion_gas_cost
-                - if is_create2 {
-                    u64::try_from(initialization_code_word_size).unwrap()
-                        * GasCost::COPY_SHA3.as_u64()
-                } else {
-                    0
-                })
-            .into(),
-        )?;
+        let gas_left = step.gas_left
+            - GasCost::CREATE.as_u64()
+            - memory_expansion_gas_cost
+            - if is_create2 {
+                u64::try_from(initialization_code_word_size).unwrap() * GasCost::COPY_SHA3.as_u64()
+            } else {
+                0
+            };
+        self.gas_left.assign(region, offset, gas_left.into())?;
 
         self.callee_is_success.assign(
             region,

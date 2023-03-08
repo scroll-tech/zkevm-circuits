@@ -548,7 +548,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let callee_code_hash = block.rws[step.rw_indices[13 + rw_offset]]
             .account_codehash_pair()
             .0;
-        let callee_exists = !callee_code_hash.is_zero();
+        let callee_exists = !callee_code_hash.is_zero() || is_precompile;
 
         let (is_warm, is_warm_prev) =
             block.rws[step.rw_indices[14 + rw_offset]].tx_access_list_value_pair();
@@ -568,14 +568,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, caller_balance, value)?;
 
         let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
+
         // only call opcode do transfer in sucessful case.
         let (caller_balance_pair, callee_balance_pair) =
             if is_call && !is_insufficient && !value.is_zero() {
+                if !callee_exists {
+                    rw_offset += 1;
+                }
+                let caller_balance_pair =
+                    block.rws[step.rw_indices[18 + rw_offset]].account_balance_pair();
+                let callee_balance_pair =
+                    block.rws[step.rw_indices[19 + rw_offset]].account_balance_pair();
                 rw_offset += 2;
-                (
-                    block.rws[step.rw_indices[16 + rw_offset]].account_balance_pair(),
-                    block.rws[step.rw_indices[17 + rw_offset]].account_balance_pair(),
-                )
+                (caller_balance_pair, callee_balance_pair)
             } else {
                 ((U256::zero(), U256::zero()), (U256::zero(), U256::zero()))
             };
