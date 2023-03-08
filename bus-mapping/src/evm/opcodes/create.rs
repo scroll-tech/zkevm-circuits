@@ -6,10 +6,7 @@ use crate::{
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
     Error,
 };
-use eth_types::{
-    evm_types::gas_utils::memory_expansion_gas_cost, Bytecode, GethExecStep, ToBigEndian, ToWord,
-    Word, H160, H256,
-};
+use eth_types::{Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
 
 #[derive(Debug, Copy, Clone)]
@@ -26,7 +23,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let offset = geth_step.stack.nth_last(1)?.as_usize();
         let length = geth_step.stack.nth_last(2)?.as_usize();
 
-        let curr_memory_word_size = state.call_ctx()?.memory_word_size();
         if length != 0 {
             state
                 .call_ctx_mut()?
@@ -134,13 +130,9 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             },
         )?;
 
-        let memory_expansion_gas_cost =
-            memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
-
         // Per EIP-150, all but one 64th of the caller's gas is sent to the
         // initialization call.
-        let caller_gas_left =
-            (geth_step.gas.0 - geth_step.gas_cost.0 - memory_expansion_gas_cost) / 64;
+        let caller_gas_left = (geth_step.gas.0 - geth_step.gas_cost.0) / 64;
 
         for (field, value) in [
             (
