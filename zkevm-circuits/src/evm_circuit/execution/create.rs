@@ -272,6 +272,13 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         });
 
         cb.condition(not::expr(initialization_code.has_length()), |cb| {
+            for field_tag in [
+                CallContextFieldTag::LastCalleeId,
+                CallContextFieldTag::LastCalleeReturnDataOffset,
+                CallContextFieldTag::LastCalleeReturnDataLength,
+            ] {
+                cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
+            }
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(cb.rw_counter_offset()),
                 program_counter: Delta(1.expr()),

@@ -218,6 +218,13 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         state.block.sha3_inputs.push(keccak_input);
 
         if length == 0 {
+            for (field, value) in [
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+            ] {
+                state.call_context_write(&mut exec_step, caller.call_id, field, value);
+            }
             state.handle_return(geth_step)?;
         }
 

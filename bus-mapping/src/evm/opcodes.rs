@@ -463,7 +463,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // consistent codehash for precompile contract.
     let callee_account = &state.sdb.get_account(&call.address).1.clone();
     let callee_exists = !callee_account.is_empty() || is_precompiled(&call.address);
-    if !callee_exists {
+    if !callee_exists && call.value.is_zero() {
         state.sdb.get_account_mut(&call.address).1.storage.clear();
     }
     let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {

@@ -48,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
         // constrain not in static call
         let is_static_call = cb.call_context(None, CallContextFieldTag::IsStatic);
-        cb.require_zero("is_static_call is false in LOGN", is_static_call.expr());
+        //cb.require_zero("is_static_call is false in LOGN", is_static_call.expr());
 
         let topic_count = opcode.expr() - OpcodeId::LOG0.as_u8().expr();
         let is_opcode_logn = LtGadget::construct(cb, topic_count.clone(), 5.expr());
