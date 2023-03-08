@@ -88,7 +88,7 @@ pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
     /// Execution Trace from geth
-    pub geth_traces: [eth_types::GethExecTrace; NTX],
+    pub geth_traces: Vec<eth_types::GethExecTrace>,
 }
 
 impl<const NACC: usize, const NTX: usize> From<TestContext<NACC, NTX>> for GethData {
@@ -171,7 +171,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
         let geth_traces = gen_geth_traces(
             chain_id,
             block.clone(),
-            accounts.clone(),
+            accounts.to_vec(),
             history_hashes.clone(),
             logger_config,
         )?;
@@ -228,13 +228,13 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
 
 /// Generates execution traces for the transactions included in the provided
 /// Block
-fn gen_geth_traces<const NACC: usize, const NTX: usize>(
+pub fn gen_geth_traces(
     chain_id: Word,
     block: Block<Transaction>,
-    accounts: [Account; NACC],
+    accounts: Vec<Account>,
     history_hashes: Option<Vec<Word>>,
     logger_config: LoggerConfig,
-) -> Result<[GethExecTrace; NTX], Error> {
+) -> Result<Vec<GethExecTrace>, Error> {
     let trace_config = TraceConfig {
         chain_id,
         history_hashes: history_hashes.unwrap_or_default(),
@@ -251,8 +251,7 @@ fn gen_geth_traces<const NACC: usize, const NTX: usize>(
         logger_config,
     };
     let traces = trace(&trace_config)?;
-    let result: [GethExecTrace; NTX] = traces.try_into().expect("Unexpected len mismatch");
-    Ok(result)
+    Ok(traces)
 }
 
 /// Collection of helper functions which contribute to specific rutines on the

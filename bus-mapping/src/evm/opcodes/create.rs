@@ -6,10 +6,7 @@ use crate::{
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
     Error,
 };
-use eth_types::{
-    evm_types::gas_utils::memory_expansion_gas_cost, Bytecode, GethExecStep, ToBigEndian, ToWord,
-    Word, H160, H256,
-};
+use eth_types::{Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
 
 #[derive(Debug, Copy, Clone)]
@@ -26,7 +23,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let offset = geth_step.stack.nth_last(1)?.as_usize();
         let length = geth_step.stack.nth_last(2)?.as_usize();
 
-        let curr_memory_word_size = state.call_ctx()?.memory_word_size();
         if length != 0 {
             state
                 .call_ctx_mut()?
@@ -90,7 +86,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let caller_nonce = state.sdb.get_nonce(&caller.address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             AccountOp {
                 address: caller.address,
                 field: AccountField::Nonce,
@@ -116,9 +111,17 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         }
 
         debug_assert!(state.sdb.get_nonce(&callee.address) == 0);
+        state.transfer(
+            &mut exec_step,
+            callee.caller_address,
+            callee.address,
+            true,
+            true,
+            callee.value,
+        )?;
+
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             AccountOp {
                 address: callee.address,
                 field: AccountField::Nonce,
@@ -127,20 +130,9 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             },
         )?;
 
-        state.transfer(
-            &mut exec_step,
-            callee.caller_address,
-            callee.address,
-            callee.value,
-        )?;
-
-        let memory_expansion_gas_cost =
-            memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
-
         // Per EIP-150, all but one 64th of the caller's gas is sent to the
         // initialization call.
-        let caller_gas_left =
-            (geth_step.gas.0 - geth_step.gas_cost.0 - memory_expansion_gas_cost) / 64;
+        let caller_gas_left = (geth_step.gas.0 - geth_step.gas_cost.0) / 64;
 
         for (field, value) in [
             (
@@ -226,6 +218,13 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         state.block.sha3_inputs.push(keccak_input);
 
         if length == 0 {
+            for (field, value) in [
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+            ] {
+                state.call_context_write(&mut exec_step, caller.call_id, field, value);
+            }
             state.handle_return(geth_step)?;
         }
 
@@ -258,18 +257,21 @@ fn handle_copy(
         );
     }
 
-    state.push_copy(CopyEvent {
-        rw_counter_start,
-        src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(callee_id),
-        src_addr: offset.try_into().unwrap(),
-        src_addr_end: (offset + length).try_into().unwrap(),
-        dst_type: CopyDataType::Bytecode,
-        dst_id,
-        dst_addr: 0,
-        log_id: None,
-        bytes,
-    });
+    state.push_copy(
+        step,
+        CopyEvent {
+            rw_counter_start,
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(callee_id),
+            src_addr: offset.try_into().unwrap(),
+            src_addr_end: (offset + length).try_into().unwrap(),
+            dst_type: CopyDataType::Bytecode,
+            dst_id,
+            dst_addr: 0,
+            log_id: None,
+            bytes,
+        },
+    );
 
     Ok(initialization_bytes)
 }

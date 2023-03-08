@@ -20,6 +20,8 @@ pub struct ExecStep {
     pub call_index: usize,
     /// The indices in the RW trace incurred in this step
     pub rw_indices: Vec<(RwTableTag, usize)>,
+    /// Number of rw operations performed via a copy event in this step.
+    pub copy_rw_counter_delta: u64,
     /// The execution state for the step
     pub execution_state: ExecutionState,
     /// The Read/Write counter before the step
@@ -34,8 +36,10 @@ pub struct ExecStep {
     pub gas_cost: u64,
     /// The memory size in bytes
     pub memory_size: u64,
-    /// The counter for reversible writes
+    /// The counter for reversible writes at the beginning of the step
     pub reversible_write_counter: usize,
+    /// The number of reversible writes from this step
+    pub reversible_write_counter_delta: usize,
     /// The counter for log index within tx
     pub log_id: usize,
     /// The opcode corresponds to the step
@@ -67,8 +71,9 @@ impl From<&ExecError> for ExecutionState {
             ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
             ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
-            ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
-            ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::CodeStoreOutOfGas | ExecError::MaxCodeSizeExceeded => {
+                ExecutionState::ErrorCodeStore
+            }
             ExecError::PrecompileFailed => ExecutionState::ErrorPrecompileFailed,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
@@ -80,11 +85,10 @@ impl From<&ExecError> for ExecutionState {
                 }
                 OogError::MemoryCopy => ExecutionState::ErrorOutOfGasMemoryCopy,
                 OogError::AccountAccess => ExecutionState::ErrorOutOfGasAccountAccess,
-                OogError::CodeStore => ExecutionState::ErrorOutOfGasCodeStore,
+                OogError::CodeStore => ExecutionState::ErrorCodeStore,
                 OogError::Log => ExecutionState::ErrorOutOfGasLOG,
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
-                OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
                 OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
@@ -223,6 +227,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u6
                 (tag, x.as_usize())
             })
             .collect(),
+        copy_rw_counter_delta: step.copy_rw_counter_delta,
         execution_state: ExecutionState::from(step),
         rw_counter: usize::from(step.rwc),
         program_counter: usize::from(step.pc) as u64,
@@ -235,6 +240,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u6
         },
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
+        reversible_write_counter_delta: step.reversible_write_counter_delta,
         log_id: step.log_id,
         block_num,
     }

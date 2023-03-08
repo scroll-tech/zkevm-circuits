@@ -399,6 +399,14 @@ impl<'a> CircuitInputBuilder {
                         geth_step.stack.nth_last(5),
                         geth_step.stack.nth_last(6),
                     )
+                } else if geth_step.op.is_create() {
+                    format!(
+                        "value {:?} offset {:?} size {:?} (salt {:?})",
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1),
+                        geth_step.stack.nth_last(2),
+                        geth_step.stack.nth_last(3),
+                    )
                 } else if matches!(geth_step.op, OpcodeId::MLOAD) {
                     format!(
                         "{:?}",

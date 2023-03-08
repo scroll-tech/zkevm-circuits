@@ -2,7 +2,7 @@ use super::Opcode;
 use crate::circuit_input_builder::{
     CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
 };
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
+use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp};
 use crate::Error;
 use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};
 
@@ -18,13 +18,13 @@ impl Opcode for Extcodecopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_steps = vec![gen_extcodecopy_step(state, geth_step)?];
+        let mut exec_steps = vec![gen_extcodecopy_step(state, geth_step)?];
 
         // reconstruction
         let address = geth_steps[0].stack.nth_last(0)?.to_address();
-        let dest_offset = geth_steps[0].stack.nth_last(1)?.as_u64();
-        let code_offset = geth_steps[0].stack.nth_last(2)?.as_u64();
-        let length = geth_steps[0].stack.nth_last(3)?.as_u64();
+        let dst_offset = geth_steps[0].stack.nth_last(1)?;
+        let code_offset = geth_step.stack.nth_last(2)?;
+        let length = geth_steps[0].stack.nth_last(3)?;
 
         let (_, account) = state.sdb.get_account(&address);
         let code_hash = account.code_hash;
@@ -33,10 +33,10 @@ impl Opcode for Extcodecopy {
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
 
-        memory.copy_from(dest_offset, &code, code_offset, length as usize);
+        memory.copy_from(dst_offset, code_offset, length, &code);
 
         let copy_event = gen_copy_event(state, geth_step)?;
-        state.push_copy(copy_event);
+        state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
 }
@@ -84,7 +84,6 @@ fn gen_extcodecopy_step(
     let is_warm = state.sdb.check_account_in_access_list(&external_address);
     state.push_op_reversible(
         &mut exec_step,
-        RW::WRITE,
         TxAccessListAccountOp {
             tx_id: state.tx_ctx.id(),
             address: external_address,
@@ -106,34 +105,8 @@ fn gen_extcodecopy_step(
         external_address,
         AccountField::CodeHash,
         code_hash.to_word(),
-        code_hash.to_word(),
     );
     Ok(exec_step)
-}
-
-fn gen_copy_steps(
-    state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-    src_addr: u64,
-    dst_addr: u64,
-    src_addr_end: u64,
-    bytes_left: u64,
-    code: &Bytecode,
-) -> Result<Vec<(u8, bool)>, Error> {
-    let mut copy_steps = Vec::with_capacity(bytes_left as usize);
-    for idx in 0..bytes_left {
-        let addr = src_addr + idx;
-        let step = if addr < src_addr_end {
-            let code = code.code.get(addr as usize).unwrap();
-            (code.value, code.is_code)
-        } else {
-            (0, false)
-        };
-        copy_steps.push(step);
-        state.memory_write(exec_step, (dst_addr + idx).into(), step.0)?;
-    }
-
-    Ok(copy_steps)
 }
 
 fn gen_copy_event(
@@ -141,9 +114,10 @@ fn gen_copy_event(
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
+
     let external_address = geth_step.stack.nth_last(0)?.to_address();
-    let memory_offset = geth_step.stack.nth_last(1)?.as_u64();
-    let data_offset = geth_step.stack.nth_last(2)?.as_u64();
+    let dst_offset = geth_step.stack.nth_last(1)?;
+    let code_offset = geth_step.stack.nth_last(2)?;
     let length = geth_step.stack.nth_last(3)?.as_u64();
 
     let account = state.sdb.get_account(&external_address).1;
@@ -154,28 +128,38 @@ fn gen_copy_event(
         H256::zero()
     };
 
-    let code: Bytecode = if exists {
+    let bytecode: Bytecode = if exists {
         state.code(code_hash)?.into()
     } else {
         Bytecode::default()
     };
-    let src_addr_end = code.code.len() as u64;
+    let code_size = bytecode.code.len() as u64;
+
+    let dst_addr = dst_offset.as_u64();
+    let src_addr_end = code_size;
+
+    // Reset offset to Uint64 maximum value if overflow, and set source start to the
+    // minimum value of offset and code size.
+    let src_addr = u64::try_from(code_offset)
+        .unwrap_or(u64::MAX)
+        .min(src_addr_end);
+
     let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = gen_copy_steps(
-        state,
+    let copy_steps = state.gen_copy_steps_for_bytecode(
         &mut exec_step,
-        data_offset,
-        memory_offset,
+        &bytecode,
+        src_addr,
+        dst_addr,
         src_addr_end,
         length,
-        &code,
     )?;
+
     Ok(CopyEvent {
-        src_addr: data_offset,
+        src_addr,
         src_addr_end,
         src_type: CopyDataType::Bytecode,
         src_id: NumberOrHash::Hash(code_hash),
-        dst_addr: memory_offset,
+        dst_addr,
         dst_type: CopyDataType::Memory,
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         log_id: None,

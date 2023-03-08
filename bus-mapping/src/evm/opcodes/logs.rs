@@ -18,7 +18,7 @@ impl Opcode for Log {
         let mut exec_step = gen_log_step(state, geth_step)?;
         if state.call()?.is_persistent {
             let copy_event = gen_copy_event(state, geth_step, &mut exec_step)?;
-            state.push_copy(copy_event);
+            state.push_copy(&mut exec_step, copy_event);
             state.tx_ctx.log_id += 1;
         }
 

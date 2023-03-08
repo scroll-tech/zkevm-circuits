@@ -145,7 +145,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
                 0.expr(),
                 0.expr(),
                 0.expr(),
-                0.expr(),
             )
         });
 

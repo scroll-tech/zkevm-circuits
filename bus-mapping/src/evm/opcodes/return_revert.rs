@@ -74,7 +74,6 @@ impl Opcode for ReturnRevert {
 
             state.push_op_reversible(
                 &mut exec_step,
-                RW::WRITE,
                 AccountOp {
                     address: state.call()?.address,
                     field: AccountField::CodeHash,
@@ -139,27 +138,6 @@ impl Opcode for ReturnRevert {
                     },
                 )?;
             }
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeId,
-                state.call()?.call_id.into(),
-            );
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeReturnDataOffset,
-                offset.into(),
-            );
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeReturnDataLength,
-                length.into(),
-            );
         }
 
         state.handle_return(step)?;
@@ -205,18 +183,21 @@ fn handle_copy(
         );
     }
 
-    state.push_copy(CopyEvent {
-        rw_counter_start,
-        src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(source.id),
-        src_addr: source.offset.try_into().unwrap(),
-        src_addr_end: (source.offset + source.length).try_into().unwrap(),
-        dst_type: CopyDataType::Memory,
-        dst_id: NumberOrHash::Number(destination.id),
-        dst_addr: destination.offset.try_into().unwrap(),
-        log_id: None,
-        bytes,
-    });
+    state.push_copy(
+        step,
+        CopyEvent {
+            rw_counter_start,
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(source.id),
+            src_addr: source.offset.try_into().unwrap(),
+            src_addr_end: (source.offset + source.length).try_into().unwrap(),
+            dst_type: CopyDataType::Memory,
+            dst_id: NumberOrHash::Number(destination.id),
+            dst_addr: destination.offset.try_into().unwrap(),
+            log_id: None,
+            bytes,
+        },
+    );
 
     Ok(())
 }
@@ -245,18 +226,21 @@ fn handle_create(
         );
     }
 
-    state.push_copy(CopyEvent {
-        rw_counter_start,
-        src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(source.id),
-        src_addr: source.offset.try_into().unwrap(),
-        src_addr_end: (source.offset + source.length).try_into().unwrap(),
-        dst_type: CopyDataType::Bytecode,
-        dst_id,
-        dst_addr: 0,
-        log_id: None,
-        bytes,
-    });
+    state.push_copy(
+        step,
+        CopyEvent {
+            rw_counter_start,
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(source.id),
+            src_addr: source.offset.try_into().unwrap(),
+            src_addr_end: (source.offset + source.length).try_into().unwrap(),
+            dst_type: CopyDataType::Bytecode,
+            dst_id,
+            dst_addr: 0,
+            log_id: None,
+            bytes,
+        },
+    );
 
     Ok(code_hash)
 }

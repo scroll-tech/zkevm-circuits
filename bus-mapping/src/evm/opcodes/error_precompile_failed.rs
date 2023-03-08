@@ -23,6 +23,14 @@ impl Opcode for PrecompileFailed {
         let mut exec_step = state.new_step(geth_step)?;
         exec_step.error = Some(ExecError::PrecompileFailed);
 
+        let args_offset = geth_step.stack.nth_last(stack_input_num - 4)?.as_usize();
+        let args_length = geth_step.stack.nth_last(stack_input_num - 3)?.as_usize();
+        let ret_offset = geth_step.stack.nth_last(stack_input_num - 2)?.as_usize();
+        let ret_length = geth_step.stack.nth_last(stack_input_num - 1)?.as_usize();
+
+        // we need to keep the memory until parse_call complete
+        state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
+
         for i in 0..stack_input_num {
             state.stack_read(
                 &mut exec_step,

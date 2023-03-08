@@ -321,6 +321,34 @@ impl Rw {
         }
     }
 
+    pub fn account_balance_pair(&self) -> (Word, Word) {
+        self.account_value_pair_field_tag(AccountFieldTag::Balance)
+    }
+    pub fn account_codehash_pair(&self) -> (Word, Word) {
+        self.account_value_pair_field_tag(AccountFieldTag::CodeHash)
+    }
+    pub fn account_nonce_pair(&self) -> (Word, Word) {
+        self.account_value_pair_field_tag(AccountFieldTag::Nonce)
+    }
+
+    pub fn account_value_pair_field_tag(
+        &self,
+        required_field_tag: AccountFieldTag,
+    ) -> (Word, Word) {
+        match self {
+            Self::Account {
+                value,
+                value_prev,
+                field_tag,
+                ..
+            } => {
+                debug_assert_eq!(*field_tag, required_field_tag, "invalid rw {:?}", &self);
+                (*value, *value_prev)
+            }
+            _ => unreachable!(),
+        }
+    }
+
     pub fn aux_pair(&self) -> (usize, Word) {
         match self {
             Self::AccountStorage {

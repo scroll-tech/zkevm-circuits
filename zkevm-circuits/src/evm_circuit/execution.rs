@@ -21,7 +21,7 @@ use crate::{
     util::{query_expression, Challenges, Expr},
 };
 use bus_mapping::util::read_env_var;
-use eth_types::{evm_unimplemented, Field};
+use eth_types::Field;
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -77,6 +77,7 @@ mod dup;
 mod end_block;
 mod end_inner_block;
 mod end_tx;
+mod error_code_store;
 mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
@@ -84,6 +85,7 @@ mod error_oog_constant;
 mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
+mod error_oog_memory_copy;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_precompile_failed;
@@ -151,6 +153,7 @@ use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_inner_block::EndInnerBlockGadget;
 use end_tx::EndTxGadget;
+use error_code_store::ErrorCodeStoreGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
@@ -158,6 +161,7 @@ use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_dynamic_memory::ErrorOOGDynamicMemoryGadget;
 use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
+use error_oog_memory_copy::ErrorOOGMemoryCopyGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
 use error_precompile_failed::ErrorPrecompileFailedGadget;
@@ -305,19 +309,19 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_call: ErrorOOGCallGadget<F>,
     error_oog_constant: ErrorOOGConstantGadget<F>,
     error_oog_exp: ErrorOOGExpGadget<F>,
+    error_oog_memory_copy: ErrorOOGMemoryCopyGadget<F>,
     error_oog_sload_sstore: ErrorOOGSloadSstoreGadget<F>,
     error_oog_static_memory_gadget: ErrorOOGStaticMemoryGadget<F>,
     error_stack: ErrorStackGadget<F>,
     error_write_protection: ErrorWriteProtectionGadget<F>,
     error_oog_dynamic_memory_gadget: ErrorOOGDynamicMemoryGadget<F>,
     error_oog_log: ErrorOOGLogGadget<F>,
-    error_oog_memory_copy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>,
     error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
     error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
     error_oog_ext_codecopy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
-    error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
+    error_code_store: ErrorCodeStoreGadget<F>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
@@ -572,7 +576,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_exp: configure_gadget!(),
             error_oog_create2: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
-            error_oog_code_store: configure_gadget!(),
+            error_code_store: configure_gadget!(),
             error_insufficient_balance: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
             error_invalid_opcode: configure_gadget!(),
@@ -1391,8 +1395,8 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_oog_self_destruct)
             }
 
-            ExecutionState::ErrorOutOfGasCodeStore => {
-                assign_exec_step!(self.error_oog_code_store)
+            ExecutionState::ErrorCodeStore => {
+                assign_exec_step!(self.error_code_store)
             }
             ExecutionState::ErrorStack => {
                 assign_exec_step!(self.error_stack)
@@ -1425,8 +1429,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
             }
-
-            _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         }
 
         // Fill in the witness values for stored expressions
@@ -1449,6 +1451,7 @@ impl<F: Field> ExecutionConfig<F> {
                 );
             }
         }
+        //}
         Ok(())
     }
 
@@ -1491,12 +1494,8 @@ impl<F: Field> ExecutionConfig<F> {
             return;
         }
         let mut assigned_rw_values = Vec::new();
-        // Reversion lookup expressions have different ordering compared to rw table,
-        // making it a bit complex to check,
-        // so we skip checking reversion lookups.
         for (name, v) in assigned_stored_expressions {
             if name.starts_with("rw lookup ")
-                && !name.contains(" with reversion")
                 && !v.is_zero_vartime()
                 && !assigned_rw_values.contains(&(name.clone(), *v))
             {
@@ -1517,6 +1516,8 @@ impl<F: Field> ExecutionConfig<F> {
                 set
             });
 
+        // Check that every rw_lookup assigned from the execution steps in the EVM
+        // Circuit is in the set of rw operations generated by the step.
         let mut log_ctx_done = false;
         let mut log_ctx = |assigned_rw_values: &[(String, F)]| {
             if log_ctx_done {
@@ -1546,7 +1547,8 @@ impl<F: Field> ExecutionConfig<F> {
                 tx
             );
         };
-        for (idx, (_name, value)) in assigned_rw_values.iter().enumerate() {
+        for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
+            let (_name, value) = assigned_rw_value;
             if idx >= step.rw_indices.len() {
                 log_ctx(&assigned_rw_values);
                 panic!(
@@ -1555,6 +1557,41 @@ impl<F: Field> ExecutionConfig<F> {
                     step.rw_indices.len()
                 );
             }
+            // Check that the number of rw operations generated from the bus-mapping
+            // correspond to the number of assigned rw lookups by the EVM Circuit
+            // plus the number of rw lookups done by the copy circuit.
+            if step.rw_indices.len()
+                != assigned_rw_values.len() + step.copy_rw_counter_delta as usize
+            {
+                log::error!(
+                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}", 
+                step.rw_indices.len(),
+                assigned_rw_values.len(),
+                step.copy_rw_counter_delta,
+                step
+            );
+            }
+            let mut rev_count = 0;
+            let is_rev = if assigned_rw_value.0.contains(" with reversion") {
+                rev_count += 1;
+                true
+            } else {
+                false
+            };
+            assert!(
+                rev_count <= step.reversible_write_counter_delta,
+                "Assigned {} reversions, but step only has {}",
+                rev_count,
+                step.reversible_write_counter_delta
+            );
+            // In the EVM Circuit, reversion rw lookups are assigned after their
+            // corresponding rw lookup, but in the bus-mapping they are
+            // generated at the end of the step.
+            let idx = if is_rev {
+                step.rw_indices.len() - rev_count
+            } else {
+                idx - rev_count
+            };
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
             let table_assignments = rw.table_assignment_aux(evm_randomness);

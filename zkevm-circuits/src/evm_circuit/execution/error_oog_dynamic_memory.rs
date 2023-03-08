@@ -93,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
         );
 
         let memory_expansion =
-            MemoryExpansionGadget::construct(cb, [address_low::expr(&address) + size.expr()]);
+            MemoryExpansionGadget::construct(cb, [address_low::expr(&address) + size_low.expr()]);
 
         let insufficient_gas = LtGadget::construct(
             cb,
@@ -138,7 +138,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
         let restore_context = cb.condition(not::expr(cb.curr.state.is_root.expr()), |cb| {
             RestoreContextGadget::construct(
                 cb,
-                0.expr(),
                 0.expr(),
                 0.expr(),
                 0.expr(),

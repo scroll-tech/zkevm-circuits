@@ -62,18 +62,21 @@ impl Opcode for Sha3 {
         state.block.sha3_inputs.push(memory);
 
         let call_id = state.call()?.call_id;
-        state.push_copy(CopyEvent {
-            src_addr: offset.as_u64(),
-            src_addr_end: offset.as_u64() + size.as_u64(),
-            src_type: CopyDataType::Memory,
-            src_id: NumberOrHash::Number(call_id),
-            dst_addr: 0,
-            dst_type: CopyDataType::RlcAcc,
-            dst_id: NumberOrHash::Number(call_id),
-            log_id: None,
-            rw_counter_start,
-            bytes: steps,
-        });
+        state.push_copy(
+            &mut exec_step,
+            CopyEvent {
+                src_addr: offset.as_u64(),
+                src_addr_end: offset.as_u64() + size.as_u64(),
+                src_type: CopyDataType::Memory,
+                src_id: NumberOrHash::Number(call_id),
+                dst_addr: 0,
+                dst_type: CopyDataType::RlcAcc,
+                dst_id: NumberOrHash::Number(call_id),
+                log_id: None,
+                rw_counter_start,
+                bytes: steps,
+            },
+        );
 
         Ok(vec![exec_step])
     }
