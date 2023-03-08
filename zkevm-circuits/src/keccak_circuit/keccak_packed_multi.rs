@@ -972,7 +972,7 @@ mod tests {
         let part_size = 7;
         let rot = 2;
         // if normalize is false test will fail
-        let normalize = true; 
+        let normalize = true;
         // input in keccak sparse word: input_bits = [0,0,1,0,...,0]
         let input = 64;
         let split_uniform_res = split_uniform::value(
