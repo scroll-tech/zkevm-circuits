@@ -907,44 +907,94 @@ pub fn multi_keccak<F: Field>(
 
 #[cfg(test)]
 mod tests {
-    use super::{split, split_uniform};
-    use crate::keccak_circuit::{cell_manager::CellManager, util::unpack, Cell, KeccakRegion};
-    use halo2_proofs::halo2curves::bn256::Fr;
+    use super::*;
+    use crate::keccak_circuit::{cell_manager::CellManager, Cell, KeccakRegion};
+    use halo2_proofs::halo2curves::bn256::Fr as F;
 
     #[test]
-    fn split_and_split_uniform() {
+    fn split() {
         let number_of_rows = 100;
         let mut cell_manager = CellManager::new(number_of_rows);
         let mut region = KeccakRegion::new();
         cell_manager.start_region();
-        let mut output_cells: Vec<Cell<Fr>> = vec![];
+        let mut output_cells: Vec<Cell<F>> = vec![];
         for row_idx in 0..number_of_rows {
             output_cells.push(cell_manager.query_cell_value_at_row(row_idx as i32));
         }
-        let part_size = 8;
+        let part_size = 7;
         let rot = 2;
-        let normalize = true; // if normalize is false test will fail
-        let input = 256;
-        let input_bits = unpack::<Fr>(input.into());
-        println!("input_bits = {:?}", input_bits);
+        // input in keccak sparse word: input_bits = [0,0,1,0,...,0]
+        let input = 64;
+        // normalize = true
+        // Part bits = 0..4|5..11|12..18|19..25|26..32|33..39|
+        //                  40..46|47..53|54..60|61|62..63
+        let normalize = true;
         let split_res = split::value(
             &mut cell_manager,
             &mut region,
-            Fr::from(input as u64),
+            F::from(input as u64),
             rot,
             part_size,
             normalize,
         );
+        assert_eq!(split_res[0].num_bits, 5);
+        assert_eq!(split_res[0].value, F::from(input));
+        assert_eq!(split_res[9].num_bits, 1);
+        assert_eq!(split_res[9].value, F::from(0 as u64));
+        // normalize = false
+        // Part bits = 0..6|7..13|14..20|21..27|28..34|35..41|
+        //                  42..48|49..55|56..61|62..63
+        let normalize = false;
+        let split_res = split::value(
+            &mut cell_manager,
+            &mut region,
+            F::from(input as u64),
+            rot,
+            part_size,
+            normalize,
+        );
+        assert_eq!(split_res[0].num_bits, 7);
+        assert_eq!(split_res[0].value, F::from(input));
+        assert_eq!(split_res[9].num_bits, 2);
+        assert_eq!(split_res[9].value, F::from(0 as u64));
+    }
+
+    #[test]
+    fn split_uniform() {
+        let number_of_rows = 100;
+        let mut cell_manager = CellManager::new(number_of_rows);
+        let mut region = KeccakRegion::new();
+        cell_manager.start_region();
+        let mut output_cells: Vec<Cell<F>> = vec![];
+        for row_idx in 0..number_of_rows {
+            output_cells.push(cell_manager.query_cell_value_at_row(row_idx as i32));
+        }
+        let part_size = 7;
+        let rot = 2;
+        // if normalize is false test will fail
+        let normalize = true; 
+        // input in keccak sparse word: input_bits = [0,0,1,0,...,0]
+        let input = 64;
         let split_uniform_res = split_uniform::value(
             &output_cells,
             &mut cell_manager,
             &mut region,
-            Fr::from(input as u64),
+            F::from(input as u64),
             rot,
             part_size,
             normalize,
         );
-        println!("split_res = {:?} \n", split_res);
-        println!("split_uniform_res = {:?} \n", split_uniform_res);
+        // normalize = true
+        // Part bits = 0..4|5..11|12..18|19..25|26..32|33..39|
+        //                  40..46|47..53|54..60|61|62..63
+        // output_parts = 62,63,0..4|5..11|12..18|19..25|26..32|
+        //                  33..39|40..46|47..53|54..60|61
+        assert_eq!(split_uniform_res[0].num_bits, 7);
+        assert_eq!(
+            split_uniform_res[0].value,
+            F::from(input * BIT_SIZE.pow(2) as u64)
+        );
+        assert_eq!(split_uniform_res[9].num_bits, 1);
+        assert_eq!(split_uniform_res[9].value, F::from(0));
     }
 }
