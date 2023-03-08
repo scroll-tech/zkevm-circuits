@@ -19,17 +19,16 @@ impl Opcode for Returndatacopy {
 
         // reconstruction
         let geth_step = &geth_steps[0];
-        let dest_offset = geth_step.stack.nth_last(0)?;
-        let offset = geth_step.stack.nth_last(1)?;
-        let size = geth_step.stack.nth_last(2)?;
+        let dst_offset = geth_step.stack.nth_last(0)?;
+        let src_offset = geth_step.stack.nth_last(1)?;
+        let length = geth_step.stack.nth_last(2)?;
 
         // can we reduce this clone?
         let return_data = state.call_ctx()?.return_data.clone();
 
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
-        let length = size.as_usize();
-        memory.copy_from(dest_offset.as_u64(), &return_data, offset.as_u64(), length);
+        memory.copy_from(dst_offset, src_offset, length, &return_data);
 
         let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(&mut exec_steps[0], copy_event);

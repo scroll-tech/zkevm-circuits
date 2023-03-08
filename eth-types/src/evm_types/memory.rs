@@ -328,9 +328,19 @@ impl Memory {
     }
 
     /// Copy source data to memory. Used in (ext)codecopy/calldatacopy.
-    pub fn copy_from(&mut self, dst_offset: u64, data: &[u8], data_offset: u64, length: usize) {
-        // https://github.com/ethereum/go-ethereum/blob/df52967ff6080a27243569020ff64cd956fb8362/core/vm/instructions.go#L312
+    pub fn copy_from(&mut self, dst_offset: Word, src_offset: Word, length: Word, data: &[u8]) {
+        // Reference go-ethereum `opCallDataCopy` function for defails.
+        // https://github.com/ethereum/go-ethereum/blob/bb4ac2d396de254898a5f44b1ea2086bfe5bd193/core/vm/instructions.go#L299
+
+        // Both `dst_offset` and `length` should be checked for overflow during gas cost
+        // calculation. Otherwise should return an out of gas error previously.
+        let length = length.as_usize();
         if length != 0 {
+            let dst_offset = dst_offset.as_u64();
+
+            // Reset data offset to the maximum value of Uint64 if overflow.
+            let src_offset = u64::try_from(src_offset).unwrap_or(u64::MAX);
+
             let minimal_length = dst_offset as usize + length;
             self.extend_at_least(minimal_length);
 
@@ -338,7 +348,7 @@ impl Memory {
             let mem_ends = mem_starts + length as usize;
             let dst_slice = &mut self.0[mem_starts..mem_ends];
             dst_slice.fill(0);
-            let data_starts = data_offset as usize;
+            let data_starts = src_offset as usize;
             let actual_length = std::cmp::min(
                 length,
                 data.len().checked_sub(data_starts).unwrap_or_default(),

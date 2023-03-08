@@ -21,7 +21,7 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
+    Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use keccak256::EMPTY_HASH;
@@ -1501,5 +1501,64 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         Ok(())
+    }
+
+    /// Generate copy steps for bytecode.
+    pub(crate) fn gen_copy_steps_for_bytecode(
+        &mut self,
+        exec_step: &mut ExecStep,
+        bytecode: &Bytecode,
+        src_addr: u64,
+        dst_addr: u64,
+        src_addr_end: u64,
+        bytes_left: u64,
+    ) -> Result<Vec<(u8, bool)>, Error> {
+        let mut copy_steps = Vec::with_capacity(bytes_left as usize);
+        for idx in 0..bytes_left {
+            let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
+            let step = if addr < src_addr_end {
+                let code = bytecode.code.get(addr as usize).unwrap();
+                (code.value, code.is_code)
+            } else {
+                (0, false)
+            };
+            copy_steps.push(step);
+            self.memory_write(exec_step, (dst_addr + idx).into(), step.0)?;
+        }
+
+        Ok(copy_steps)
+    }
+
+    /// Generate copy steps for call data.
+    pub(crate) fn gen_copy_steps_for_call_data(
+        &mut self,
+        exec_step: &mut ExecStep,
+        src_addr: u64,
+        dst_addr: u64,
+        src_addr_end: u64,
+        bytes_left: u64,
+    ) -> Result<Vec<(u8, bool)>, Error> {
+        let mut copy_steps = Vec::with_capacity(bytes_left as usize);
+        for idx in 0..bytes_left {
+            let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
+            let value = if addr < src_addr_end {
+                let byte =
+                    self.call_ctx()?.call_data[(addr - self.call()?.call_data_offset) as usize];
+                if !self.call()?.is_root {
+                    self.push_op(
+                        exec_step,
+                        RW::READ,
+                        MemoryOp::new(self.call()?.caller_id, addr.into(), byte),
+                    );
+                }
+                byte
+            } else {
+                0
+            };
+            copy_steps.push((value, false));
+            self.memory_write(exec_step, (dst_addr + idx).into(), value)?;
+        }
+
+        Ok(copy_steps)
     }
 }
