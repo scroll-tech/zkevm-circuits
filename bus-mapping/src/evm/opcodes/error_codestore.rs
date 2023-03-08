@@ -35,15 +35,9 @@ impl Opcode for ErrorCodeStore {
         let call = state.call()?;
         let call_id = call.call_id;
         let is_success = call.is_success;
-        assert!(call.is_create() && !call.is_root);
 
-        // must be in create context
-        state.call_context_read(
-            &mut exec_step,
-            call_id,
-            CallContextField::IsCreate,
-            (call.is_create() as u64).into(),
-        );
+        // create context check
+        assert!(call.is_create());
 
         state.call_context_read(
             &mut exec_step,
