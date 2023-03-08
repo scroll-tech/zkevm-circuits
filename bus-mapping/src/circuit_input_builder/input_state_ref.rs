@@ -964,7 +964,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 let (offset, length) = match step.op {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
                         let (offset, length) = if step.error.is_some()
-                            || (self.call()?.is_create() && self.call()?.is_success())
+                            || (self.call()?.is_create() && step.op == OpcodeId::RETURN)
                         {
                             (0, 0)
                         } else {
@@ -1161,7 +1161,7 @@ impl<'a> CircuitInputStateRef<'a> {
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
                 CallContextField::LastCalleeReturnDataOffset,
-                if call.is_create() && call.is_success {
+                if call.is_create() && geth_step.op == OpcodeId::RETURN {
                     U256::zero()
                 } else {
                     last_callee_return_data_offset
@@ -1169,7 +1169,7 @@ impl<'a> CircuitInputStateRef<'a> {
             ),
             (
                 CallContextField::LastCalleeReturnDataLength,
-                if call.is_create() && call.is_success {
+                if call.is_create() && geth_step.op == OpcodeId::RETURN {
                     U256::zero()
                 } else {
                     last_callee_return_data_length

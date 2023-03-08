@@ -132,7 +132,18 @@ impl<F: Field> RestoreContextGadget<F> {
 
         // Update caller's last callee information
         // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
-        let is_call_create_and_success_expr = cb.curr.state.is_create.expr() * is_success.clone();
+        // There is only one case where RETURNDATASIZE != 0:
+        //      opcode is REVERT, and no stack/oog error occured.
+        // In other words, for RETURN opcode, RETURNDATASIZE is 0 for both successful
+        // and fail case.
+        let discard_return_data = cb.curr.state.is_create.expr()
+            * not::expr(
+                cb.curr
+                    .state
+                    .execution_state
+                    .selector([ExecutionState::RETURN_REVERT as usize])
+                    * not::expr(is_success.clone()),
+            );
         for (field_tag, value) in [
             (
                 CallContextFieldTag::LastCalleeId,
@@ -140,19 +151,11 @@ impl<F: Field> RestoreContextGadget<F> {
             ),
             (
                 CallContextFieldTag::LastCalleeReturnDataOffset,
-                select::expr(
-                    is_call_create_and_success_expr.clone(),
-                    0.expr(),
-                    return_data_offset,
-                ),
+                select::expr(discard_return_data.clone(), 0.expr(), return_data_offset),
             ),
             (
                 CallContextFieldTag::LastCalleeReturnDataLength,
-                select::expr(
-                    is_call_create_and_success_expr,
-                    0.expr(),
-                    return_data_length.clone(),
-                ),
+                select::expr(discard_return_data, 0.expr(), return_data_length.clone()),
             ),
         ] {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
