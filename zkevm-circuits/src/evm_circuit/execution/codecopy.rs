@@ -7,7 +7,7 @@ use crate::{
         param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::{SameContextGadget, WordRangeGadget},
+            common_gadget::{SameContextGadget, WordByteRangeGadget},
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             math_gadget::LtGadget,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
@@ -25,7 +25,7 @@ pub(crate) struct CodeCopyGadget<F> {
     same_context: SameContextGadget<F>,
     /// Holds the memory address for the offset in code from where we
     /// read (checked with Uint64 overflow).
-    code_offset_word: WordRangeGadget<F, N_BYTES_U64>,
+    code_offset_word: WordByteRangeGadget<F, N_BYTES_U64>,
     /// Checks if code offset is less than code size.
     code_offset_lt_code_size: LtGadget<F, N_BYTES_U64>,
     /// Holds the size of the current environment's bytecode.
@@ -55,11 +55,11 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         // Query elements to be popped from the stack.
         let size = cb.query_word_rlc();
         let dst_memory_offset = cb.query_cell_phase2();
-        let code_offset_word = WordRangeGadget::construct(cb);
+        let code_offset_word = WordByteRangeGadget::construct(cb);
 
         // Pop items from stack.
         cb.stack_pop(dst_memory_offset.expr());
-        cb.stack_pop(code_offset_word.original_word_expr());
+        cb.stack_pop(code_offset_word.original_word());
         cb.stack_pop(size.expr());
 
         // Construct memory address in the destionation (memory) to which we copy code.
@@ -74,8 +74,8 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         // Reset code offset to the maximum value of Uint64 if overflow.
         let code_offset = select::expr(
-            code_offset_word.within_range_expr(),
-            code_offset_word.valid_value_expr(),
+            code_offset_word.within_range(),
+            code_offset_word.valid_value(),
             u64::MAX.expr(),
         );
 

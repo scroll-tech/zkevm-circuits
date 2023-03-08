@@ -3,7 +3,7 @@ use crate::{
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::{SameContextGadget, WordRangeGadget},
+            common_gadget::{SameContextGadget, WordByteRangeGadget},
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition,
             },
@@ -28,7 +28,7 @@ pub(crate) struct ExtcodecopyGadget<F> {
     same_context: SameContextGadget<F>,
     external_address_word: Word<F>,
     memory_address: MemoryAddressGadget<F>,
-    code_offset_word: WordRangeGadget<F, N_BYTES_U64>,
+    code_offset_word: WordByteRangeGadget<F, N_BYTES_U64>,
     code_offset_lt_code_size: LtGadget<F, N_BYTES_U64>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -54,11 +54,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let memory_length = cb.query_word_rlc();
         let memory_offset = cb.query_cell_phase2();
-        let code_offset_word = WordRangeGadget::construct(cb);
+        let code_offset_word = WordByteRangeGadget::construct(cb);
 
         cb.stack_pop(external_address_word.expr());
         cb.stack_pop(memory_offset.expr());
-        cb.stack_pop(code_offset_word.original_word_expr());
+        cb.stack_pop(code_offset_word.original_word());
         cb.stack_pop(memory_length.expr());
 
         let memory_address = MemoryAddressGadget::construct(cb, memory_offset, memory_length);
@@ -89,8 +89,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         // Reset code offset to the maximum value of Uint64 if overflow.
         let code_offset = select::expr(
-            code_offset_word.within_range_expr(),
-            code_offset_word.valid_value_expr(),
+            code_offset_word.within_range(),
+            code_offset_word.valid_value(),
             u64::MAX.expr(),
         );
 

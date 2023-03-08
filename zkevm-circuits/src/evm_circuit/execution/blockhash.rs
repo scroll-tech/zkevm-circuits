@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             and,
-            common_gadget::{SameContextGadget, WordRangeGadget},
+            common_gadget::{SameContextGadget, WordByteCapGadget},
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::LtGadget,
             CachedRegion, Cell, Word,
@@ -28,10 +28,9 @@ const NUM_PREV_BLOCK_ALLOWED: u64 = 257;
 #[derive(Clone, Debug)]
 pub(crate) struct BlockHashGadget<F> {
     same_context: SameContextGadget<F>,
-    block_number_word: WordRangeGadget<F, N_BYTES_U64>,
+    block_number: WordByteCapGadget<F, N_BYTES_U64>,
     current_block_number: Cell<F>,
     block_hash: Word<F>,
-    block_lt: LtGadget<F, N_BYTES_U64>,
     diff_lt: LtGadget<F, N_BYTES_U64>,
 }
 
@@ -41,11 +40,10 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKHASH;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let block_number_word = WordRangeGadget::construct(cb);
-        let block_number = block_number_word.valid_value_expr();
-        cb.stack_pop(block_number_word.original_word_expr());
-
         let current_block_number = cb.query_cell();
+        let block_number = WordByteCapGadget::construct(cb, current_block_number.expr());
+        cb.stack_pop(block_number.original_word());
+
         // FIXME
         //cb.block_lookup(
         //    BlockContextFieldTag::Number.expr(),
@@ -55,28 +53,23 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 
         let block_hash = cb.query_word_rlc();
 
-        let block_lt = LtGadget::construct(cb, block_number.expr(), current_block_number.expr());
         let diff_lt = LtGadget::construct(
             cb,
             current_block_number.expr(),
-            NUM_PREV_BLOCK_ALLOWED.expr() + block_number.expr(),
+            NUM_PREV_BLOCK_ALLOWED.expr() + block_number.valid_value(),
         );
 
-        let is_valid_block_number = and::expr([
-            block_number_word.within_range_expr(),
-            block_lt.expr(),
-            diff_lt.expr(),
-        ]);
+        let is_valid = and::expr([block_number.lt_cap(), diff_lt.expr()]);
 
-        cb.condition(is_valid_block_number.expr(), |cb| {
+        cb.condition(is_valid.expr(), |cb| {
             cb.block_lookup(
                 BlockContextFieldTag::BlockHash.expr(),
-                block_number,
+                block_number.valid_value(),
                 block_hash.expr(),
             );
         });
 
-        cb.condition(not::expr(is_valid_block_number), |cb| {
+        cb.condition(not::expr(is_valid), |cb| {
             cb.require_zero(
                 "Invalid block number for block hash lookup",
                 block_hash.expr(),
@@ -96,10 +89,9 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
         Self {
             same_context,
-            block_number_word,
+            block_number,
             current_block_number,
             block_hash,
-            block_lt,
             diff_lt,
         }
     }
@@ -115,31 +107,24 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
+        let current_block_number = block.context.ctxs[&tx.block_number].number;
+        let current_block_number = current_block_number
+            .to_scalar()
+            .expect("unexpected U256 -> Scalar conversion failure");
+
         let block_number = block.rws[step.rw_indices[0]].stack_value();
-        self.block_number_word
-            .assign(region, offset, block_number)?;
+        self.block_number
+            .assign(region, offset, block_number, current_block_number)?;
         let block_number: F = block_number.to_scalar().unwrap();
 
-        let current_block_number = block.context.ctxs[&tx.block_number].number;
-        self.current_block_number.assign(
-            region,
-            offset,
-            Value::known(
-                current_block_number
-                    .to_scalar()
-                    .expect("unexpected U256 -> Scalar conversion failure"),
-            ),
-        )?;
-        let current_block_number: F = current_block_number.to_scalar().unwrap();
+        self.current_block_number
+            .assign(region, offset, Value::known(current_block_number))?;
 
         self.block_hash.assign(
             region,
             offset,
             Some(block.rws[step.rw_indices[1]].stack_value().to_le_bytes()),
         )?;
-
-        self.block_lt
-            .assign(region, offset, block_number, current_block_number)?;
 
         self.diff_lt.assign(
             region,

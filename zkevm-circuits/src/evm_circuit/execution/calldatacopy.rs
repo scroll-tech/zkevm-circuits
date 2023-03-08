@@ -4,7 +4,7 @@ use crate::{
         param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::{SameContextGadget, WordRangeGadget},
+            common_gadget::{SameContextGadget, WordByteRangeGadget},
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
@@ -28,7 +28,7 @@ use std::cmp::min;
 pub(crate) struct CallDataCopyGadget<F> {
     same_context: SameContextGadget<F>,
     memory_address: MemoryAddressGadget<F>,
-    data_offset_word: WordRangeGadget<F, N_BYTES_U64>,
+    data_offset_word: WordByteRangeGadget<F, N_BYTES_U64>,
     data_offset_lt_call_data_length: LtGadget<F, N_BYTES_U64>,
     src_id: Cell<F>,
     call_data_length: Cell<F>,
@@ -48,18 +48,18 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         let length = cb.query_word_rlc();
         let memory_offset = cb.query_cell_phase2();
-        let data_offset_word = WordRangeGadget::construct(cb);
+        let data_offset_word = WordByteRangeGadget::construct(cb);
 
         // Reset data offset to the maximum value of Uint64 if overflow.
         let data_offset = select::expr(
-            data_offset_word.within_range_expr(),
-            data_offset_word.valid_value_expr(),
+            data_offset_word.within_range(),
+            data_offset_word.valid_value(),
             u64::MAX.expr(),
         );
 
         // Pop memory_offset, data_offset, length from stack
         cb.stack_pop(memory_offset.expr());
-        cb.stack_pop(data_offset_word.original_word_expr());
+        cb.stack_pop(data_offset_word.original_word());
         cb.stack_pop(length.expr());
 
         let memory_address = MemoryAddressGadget::construct(cb, memory_offset, length);

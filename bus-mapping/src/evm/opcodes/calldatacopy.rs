@@ -103,12 +103,14 @@ fn gen_copy_event(
     let call_data_length = state.call()?.call_data_length;
 
     let dst_addr = memory_offset.as_u64();
-    let src_addr_end = call_data_offset + call_data_length;
+    let src_addr_end = call_data_offset.checked_add(call_data_length).unwrap();
 
-    // Reset offset to Uint64 maximum value if overflow, and set source start to the
-    // minimum value of offset and code size.
+    // Reset offset to call_data_length if overflow, and set source start to the
+    // minimum value of offset and call_data_length.
     let src_addr = u64::try_from(data_offset)
-        .unwrap_or(u64::MAX)
+        .ok()
+        .and_then(|offset| offset.checked_add(call_data_offset))
+        .unwrap_or(src_addr_end)
         .min(src_addr_end);
 
     let mut exec_step = state.new_step(geth_step)?;
