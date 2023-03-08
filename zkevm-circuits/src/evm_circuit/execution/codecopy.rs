@@ -7,9 +7,8 @@ use crate::{
         param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::{SameContextGadget, WordByteRangeGadget},
+            common_gadget::{SameContextGadget, WordByteCapGadget},
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
-            math_gadget::LtGadget,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             not, select, CachedRegion, Cell,
         },
@@ -24,10 +23,8 @@ use super::ExecutionGadget;
 pub(crate) struct CodeCopyGadget<F> {
     same_context: SameContextGadget<F>,
     /// Holds the memory address for the offset in code from where we
-    /// read (checked with Uint64 overflow).
-    code_offset_word: WordByteRangeGadget<F, N_BYTES_U64>,
-    /// Checks if code offset is less than code size.
-    code_offset_lt_code_size: LtGadget<F, N_BYTES_U64>,
+    /// read. It is valid if within range of Uint64 and less than code_size.
+    code_offset: WordByteCapGadget<F, N_BYTES_U64>,
     /// Holds the size of the current environment's bytecode.
     code_size: Cell<F>,
     /// The code from current environment is copied to memory. To verify this
@@ -52,14 +49,15 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        // Query elements to be popped from the stack.
+        let code_size = cb.query_cell();
+
         let size = cb.query_word_rlc();
         let dst_memory_offset = cb.query_cell_phase2();
-        let code_offset_word = WordByteRangeGadget::construct(cb);
+        let code_offset = WordByteCapGadget::construct(cb, code_size.expr());
 
         // Pop items from stack.
         cb.stack_pop(dst_memory_offset.expr());
-        cb.stack_pop(code_offset_word.original_word());
+        cb.stack_pop(code_offset.original_word());
         cb.stack_pop(size.expr());
 
         // Construct memory address in the destionation (memory) to which we copy code.
@@ -69,18 +67,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let code_hash = cb.curr.state.code_hash.clone();
 
         // Fetch the bytecode length from the bytecode table.
-        let code_size = cb.query_cell();
         cb.bytecode_length(code_hash.expr(), code_size.expr());
-
-        // Reset code offset to the maximum value of Uint64 if overflow.
-        let code_offset = select::expr(
-            code_offset_word.within_range(),
-            code_offset_word.valid_value(),
-            u64::MAX.expr(),
-        );
-
-        let code_offset_lt_code_size =
-            LtGadget::construct(cb, code_offset.expr(), code_size.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
@@ -94,17 +81,19 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         cb.condition(dst_memory_addr.has_length(), |cb| {
+            // Set source start to the minimun value of code offset and code size.
+            let src_addr = select::expr(
+                code_offset.lt_cap(),
+                code_offset.valid_value(),
+                code_size.expr(),
+            );
+
             cb.copy_table_lookup(
                 code_hash.expr(),
                 CopyDataType::Bytecode.expr(),
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                // Set source start to the minimum value of code offset and code size.
-                select::expr(
-                    code_offset_lt_code_size.expr(),
-                    code_offset,
-                    code_size.expr(),
-                ),
+                src_addr,
                 code_size.expr(),
                 dst_memory_addr.offset(),
                 dst_memory_addr.length(),
@@ -134,8 +123,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         Self {
             same_context,
-            code_offset_word,
-            code_offset_lt_code_size,
+            code_offset,
             code_size,
             dst_memory_addr,
             memory_expansion,
@@ -164,9 +152,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let [dest_offset, code_offset, size] =
             [0, 1, 2].map(|i| block.rws[step.rw_indices[i]].stack_value());
 
-        // assign the code offset word.
-        let code_offset_within_range = self.code_offset_word.assign(region, offset, code_offset)?;
-
         let bytecode = block
             .bytecodes
             .get(&call.code_hash)
@@ -176,16 +161,8 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         self.code_size
             .assign(region, offset, Value::known(F::from(code_size)))?;
 
-        self.code_offset_lt_code_size.assign(
-            region,
-            offset,
-            F::from(if code_offset_within_range {
-                code_offset.as_u64()
-            } else {
-                u64::MAX
-            }),
-            F::from(code_size),
-        )?;
+        self.code_offset
+            .assign(region, offset, code_offset, F::from(code_size))?;
 
         // assign the destination memory offset.
         let memory_address = self

@@ -4,12 +4,11 @@ use crate::{
         param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::{SameContextGadget, WordByteRangeGadget},
+            common_gadget::{SameContextGadget, WordByteCapGadget},
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::LtGadget,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             not, select, CachedRegion, Cell,
         },
@@ -28,8 +27,7 @@ use std::cmp::min;
 pub(crate) struct CallDataCopyGadget<F> {
     same_context: SameContextGadget<F>,
     memory_address: MemoryAddressGadget<F>,
-    data_offset_word: WordByteRangeGadget<F, N_BYTES_U64>,
-    data_offset_lt_call_data_length: LtGadget<F, N_BYTES_U64>,
+    data_offset: WordByteCapGadget<F, N_BYTES_U64>,
     src_id: Cell<F>,
     call_data_length: Cell<F>,
     call_data_offset: Cell<F>, // Only used in the internal call
@@ -46,28 +44,18 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let length = cb.query_word_rlc();
-        let memory_offset = cb.query_cell_phase2();
-        let data_offset_word = WordByteRangeGadget::construct(cb);
-
-        // Reset data offset to the maximum value of Uint64 if overflow.
-        let data_offset = select::expr(
-            data_offset_word.within_range(),
-            data_offset_word.valid_value(),
-            u64::MAX.expr(),
-        );
-
-        // Pop memory_offset, data_offset, length from stack
-        cb.stack_pop(memory_offset.expr());
-        cb.stack_pop(data_offset_word.original_word());
-        cb.stack_pop(length.expr());
-
-        let memory_address = MemoryAddressGadget::construct(cb, memory_offset, length);
         let src_id = cb.query_cell();
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
-        let data_offset_lt_call_data_length =
-            LtGadget::construct(cb, data_offset.expr(), call_data_length.expr());
+
+        let length = cb.query_word_rlc();
+        let memory_offset = cb.query_cell_phase2();
+        let data_offset = WordByteCapGadget::construct(cb, call_data_length.expr());
+
+        // Pop memory_offset, data_offset, length from stack
+        cb.stack_pop(memory_offset.expr());
+        cb.stack_pop(data_offset.original_word());
+        cb.stack_pop(length.expr());
 
         // Lookup the calldata_length and caller_address in Tx context table or
         // Call context table
@@ -107,6 +95,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         // Calculate the next memory size and the gas cost for this memory
         // access
+        let memory_address = MemoryAddressGadget::construct(cb, memory_offset, length);
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
@@ -121,19 +110,23 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             CopyDataType::Memory.expr(),
         );
         cb.condition(memory_address.has_length(), |cb| {
+            // Set source start to the minimun value of data offset and call data length.
+            let src_addr = call_data_offset.expr()
+                + select::expr(
+                    data_offset.lt_cap(),
+                    data_offset.valid_value(),
+                    call_data_length.expr(),
+                );
+
+            let src_addr_end = call_data_offset.expr() + call_data_length.expr();
+
             cb.copy_table_lookup(
                 src_id.expr(),
                 src_tag,
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                call_data_offset.expr()
-                    // Set source start to the minimun value of data offset and call data length.
-                    + select::expr(
-                        data_offset_lt_call_data_length.expr(),
-                        data_offset,
-                        call_data_length.expr(),
-                    ),
-                call_data_offset.expr() + call_data_length.expr(),
+                src_addr,
+                src_addr_end,
                 memory_address.offset(),
                 memory_address.length(),
                 0.expr(), // for CALLDATACOPY rlc_acc is 0
@@ -164,8 +157,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         Self {
             same_context,
             memory_address,
-            data_offset_word,
-            data_offset_lt_call_data_length,
+            data_offset,
             src_id,
             call_data_length,
             call_data_offset,
@@ -192,7 +184,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_offset, length)?;
-        let data_offset_within_range = self.data_offset_word.assign(region, offset, data_offset)?;
         let src_id = if call.is_root { tx.id } else { call.caller_id };
         self.src_id.assign(
             region,
@@ -211,16 +202,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.call_data_offset
             .assign(region, offset, Value::known(F::from(call_data_offset)))?;
 
-        self.data_offset_lt_call_data_length.assign(
-            region,
-            offset,
-            F::from(if data_offset_within_range {
-                data_offset.as_u64()
-            } else {
-                u64::MAX
-            }),
-            F::from(call_data_length),
-        )?;
+        self.data_offset
+            .assign(region, offset, data_offset, F::from(call_data_length))?;
 
         // rw_counter increase from copy lookup is `length` memory writes + a variable
         // number of memory reads.
@@ -232,9 +215,10 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 // memory reads when reading from memory of caller is capped by call_data_length
                 // - data_offset.
                 min(
-                    length.low_u64(),
-                    call_data_length
-                        .checked_sub(data_offset.low_u64())
+                    length.as_u64(),
+                    u64::try_from(data_offset)
+                        .ok()
+                        .and_then(|offset| call_data_length.checked_sub(offset))
                         .unwrap_or_default(),
                 )
             };

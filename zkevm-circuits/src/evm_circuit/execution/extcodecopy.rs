@@ -3,12 +3,11 @@ use crate::{
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::{SameContextGadget, WordByteRangeGadget},
+            common_gadget::{SameContextGadget, WordByteCapGadget},
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition,
             },
             from_bytes,
-            math_gadget::LtGadget,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             not, select, CachedRegion, Cell, Word,
         },
@@ -28,8 +27,7 @@ pub(crate) struct ExtcodecopyGadget<F> {
     same_context: SameContextGadget<F>,
     external_address_word: Word<F>,
     memory_address: MemoryAddressGadget<F>,
-    code_offset_word: WordByteRangeGadget<F, N_BYTES_U64>,
-    code_offset_lt_code_size: LtGadget<F, N_BYTES_U64>,
+    code_offset: WordByteCapGadget<F, N_BYTES_U64>,
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     is_warm: Cell<F>,
@@ -52,16 +50,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let external_address =
             from_bytes::expr(&external_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
 
+        let code_size = cb.query_cell();
+
         let memory_length = cb.query_word_rlc();
         let memory_offset = cb.query_cell_phase2();
-        let code_offset_word = WordByteRangeGadget::construct(cb);
+        let code_offset = WordByteCapGadget::construct(cb, code_size.expr());
 
         cb.stack_pop(external_address_word.expr());
         cb.stack_pop(memory_offset.expr());
-        cb.stack_pop(code_offset_word.original_word());
+        cb.stack_pop(code_offset.original_word());
         cb.stack_pop(memory_length.expr());
-
-        let memory_address = MemoryAddressGadget::construct(cb, memory_offset, memory_length);
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
@@ -80,23 +78,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.expr(),
         );
-        let code_size = cb.query_cell();
         // TODO: If external_address doesn't exist, we will get code_hash = 0.  With
         // this value, the bytecode_length lookup will not work, and the copy
         // from code_hash = 0 will not work. We should use EMPTY_HASH when
         // code_hash = 0.
         cb.bytecode_length(code_hash.expr(), code_size.expr());
 
-        // Reset code offset to the maximum value of Uint64 if overflow.
-        let code_offset = select::expr(
-            code_offset_word.within_range(),
-            code_offset_word.valid_value(),
-            u64::MAX.expr(),
-        );
-
-        let code_offset_lt_code_size =
-            LtGadget::construct(cb, code_offset.expr(), code_size.expr());
-
+        let memory_address = MemoryAddressGadget::construct(cb, memory_offset, memory_length);
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
@@ -112,17 +100,19 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         cb.condition(memory_address.has_length(), |cb| {
+            // Set source start to the minimun value of code offset and code size.
+            let src_addr = select::expr(
+                code_offset.lt_cap(),
+                code_offset.valid_value(),
+                code_size.expr(),
+            );
+
             cb.copy_table_lookup(
                 code_hash.expr(),
                 CopyDataType::Bytecode.expr(),
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                // Set source start to the minimum value of code offset and code size.
-                select::expr(
-                    code_offset_lt_code_size.expr(),
-                    code_offset,
-                    code_size.expr(),
-                ),
+                src_addr,
                 code_size.expr(),
                 memory_address.offset(),
                 memory_address.length(),
@@ -152,8 +142,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             same_context,
             external_address_word,
             memory_address,
-            code_offset_word,
-            code_offset_lt_code_size,
+            code_offset,
             tx_id,
             is_warm,
             reversion_info,
@@ -183,8 +172,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let memory_address =
             self.memory_address
                 .assign(region, offset, memory_offset, memory_length)?;
-
-        let code_offset_within_range = self.code_offset_word.assign(region, offset, code_offset)?;
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
@@ -216,16 +203,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.code_size
             .assign(region, offset, Value::known(F::from(code_size)))?;
 
-        self.code_offset_lt_code_size.assign(
-            region,
-            offset,
-            F::from(if code_offset_within_range {
-                code_offset.as_u64()
-            } else {
-                u64::MAX
-            }),
-            F::from(code_size),
-        )?;
+        self.code_offset
+            .assign(region, offset, code_offset, F::from(code_size))?;
 
         self.copy_rwc_inc.assign(
             region,
