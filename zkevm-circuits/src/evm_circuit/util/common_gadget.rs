@@ -982,11 +982,26 @@ pub(crate) struct CommonErrorGadget<F> {
 }
 
 impl<F: Field> CommonErrorGadget<F> {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
+    ) -> Self {
+        Self::construct_with_lastcallee_return_data(
+            cb,
+            opcode,
+            rw_counter_delta,
+            0.expr(),
+            0.expr(),
+        )
+    }
+
+    pub(crate) fn construct_with_lastcallee_return_data(
+        cb: &mut ConstraintBuilder<F>,
+        opcode: Expression<F>,
+        rw_counter_delta: Expression<F>,
+        return_data_offset: Expression<F>,
+        return_data_length: Expression<F>,
     ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
@@ -1027,8 +1042,8 @@ impl<F: Field> CommonErrorGadget<F> {
                 cb,
                 0.expr(),
                 0.expr(),
-                0.expr(),
-                0.expr(),
+                return_data_offset,
+                return_data_length,
                 0.expr(),
                 0.expr(),
             )
