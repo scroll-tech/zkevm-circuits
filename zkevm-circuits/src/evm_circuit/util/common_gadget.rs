@@ -1108,7 +1108,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
             cap
         };
 
-        self.lt_cap.assign(region, offset, value, F::from(cap))?;
+        self.lt_cap.assign(region, offset, value, cap)?;
 
         Ok(within_range)
     }
