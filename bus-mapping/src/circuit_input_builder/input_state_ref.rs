@@ -1072,6 +1072,10 @@ impl<'a> CircuitInputStateRef<'a> {
         exec_step: &mut ExecStep,
     ) -> Result<(), Error> {
         let call = self.call()?.clone();
+
+        if call.is_root {
+            return Ok(());
+        }
         let caller = self.caller()?.clone();
         self.call_context_read(
             exec_step,
