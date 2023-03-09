@@ -331,6 +331,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
     error_return_data_out_of_bound: ErrorReturnDataOutOfBoundGadget<F>,
     error_precompile_failed: ErrorPrecompileFailedGadget<F>,
+    error_gas_uint_overflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorGasUintOverflow }>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -586,6 +587,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
             error_precompile_failed: configure_gadget!(),
+            error_gas_uint_overflow: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -1228,16 +1230,6 @@ impl<F: Field> ExecutionConfig<F> {
         next: Option<(&Transaction, &Call, &ExecStep)>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        if !(matches!(step.execution_state, ExecutionState::EndBlock) && step.rw_indices.is_empty())
-        {
-            log::trace!(
-                "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
-                offset,
-                step.execution_state,
-                step,
-                call
-            );
-        }
         // Make the region large enough for the current step and the next step.
         // The next step's next step may also be accessed, so make the region large
         // enough for 3 steps.
@@ -1261,11 +1253,11 @@ impl<F: Field> ExecutionConfig<F> {
                 transaction_next,
                 call_next,
                 step_next,
-                false,
+                true,
             )?;
         }
 
-        self.assign_exec_step_int(region, offset, block, transaction, call, step, true)
+        self.assign_exec_step_int(region, offset, block, transaction, call, step, false)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1277,8 +1269,21 @@ impl<F: Field> ExecutionConfig<F> {
         transaction: &Transaction,
         call: &Call,
         step: &ExecStep,
-        check_rw: bool,
+        verbose: bool,
     ) -> Result<(), Error> {
+        if verbose {
+            if !(matches!(step.execution_state, ExecutionState::EndBlock)
+                && step.rw_indices.is_empty())
+            {
+                log::trace!(
+                    "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
+                    offset,
+                    step.execution_state,
+                    step,
+                    call
+                );
+            }
+        }
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
 
@@ -1429,13 +1434,16 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
             }
+            ExecutionState::ErrorGasUintOverflow => {
+                assign_exec_step!(self.error_gas_uint_overflow)
+            }
         }
 
         // Fill in the witness values for stored expressions
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
         // enable with `CHECK_RW_LOOKUP=true`
-        if *CHECK_RW_LOOKUP && check_rw {
+        if *CHECK_RW_LOOKUP && verbose {
             let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
                 && step.rw_indices.is_empty();
             if !is_padding_step {

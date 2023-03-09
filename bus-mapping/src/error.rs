@@ -131,11 +131,16 @@ pub enum ExecError {
     MaxCodeSizeExceeded,
     /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
     PrecompileFailed,
+    /// ..
+    GasUintOverflow,
 }
 
 // TODO: Move to impl block.
 pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
-    if error == GETH_ERR_OUT_OF_GAS || error == GETH_ERR_GAS_UINT_OVERFLOW {
+    if error == GETH_ERR_GAS_UINT_OVERFLOW {
+        return ExecError::GasUintOverflow;
+    }
+    if error == GETH_ERR_OUT_OF_GAS {
         // NOTE: We report a GasUintOverflow error as an OutOfGas error
         let oog_err = match op {
             OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {

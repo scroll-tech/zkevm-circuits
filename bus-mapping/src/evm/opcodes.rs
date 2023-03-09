@@ -275,7 +275,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     }
 }
 
-fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociatedOps> {
+fn fn_gen_error_state_associated_ops(
+    geth_step: &GethExecStep,
+    error: &ExecError,
+) -> Option<FnGenAssociatedOps> {
     match error {
         ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
         ExecError::InvalidOpcode => Some(ErrorSimple::gen_associated_ops),
@@ -300,7 +303,12 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::PrecompileFailed => Some(PrecompileFailed::gen_associated_ops),
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
-
+        ExecError::ContractAddressCollision => match geth_step.op {
+            OpcodeId::CREATE => Some(StackOnlyOpcode::<3, 1>::gen_associated_ops),
+            OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 1>::gen_associated_ops),
+            _ => unreachable!(),
+        },
+        ExecError::GasUintOverflow => Some(ErrorSimple::gen_associated_ops),
         // more future errors place here
         _ => {
             evm_unimplemented!("TODO: error state {:?} not implemented", error);
@@ -375,8 +383,13 @@ pub fn gen_associated_ops(
         // TODO: after more error state handled, refactor all error handling in
         // fn_gen_error_state_associated_ops method
         // For exceptions that have been implemented
-        if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(&exec_error) {
-            return fn_gen_error_ops(state, geth_steps);
+        if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(geth_step, &exec_error) {
+            let mut steps = fn_gen_error_ops(state, geth_steps)?;
+            if let Some(e) = &steps[0].error {
+                debug_assert_eq!(&exec_error, e);
+            }
+            steps[0].error = Some(exec_error.clone());
+            return Ok(steps);
         } else {
             // For exceptions that already enter next call context, but fail immediately
             // (e.g. Depth, InsufficientBalance), we still need to parse the call.

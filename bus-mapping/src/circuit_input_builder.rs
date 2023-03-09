@@ -401,11 +401,15 @@ impl<'a> CircuitInputBuilder {
                     )
                 } else if geth_step.op.is_create() {
                     format!(
-                        "value {:?} offset {:?} size {:?} (salt {:?})",
+                        "value {:?} offset {:?} size {:?} {}",
                         geth_step.stack.nth_last(0),
                         geth_step.stack.nth_last(1),
                         geth_step.stack.nth_last(2),
-                        geth_step.stack.nth_last(3),
+                        if geth_step.op == OpcodeId::CREATE2 {
+                            format!("salt {:?}", geth_step.stack.nth_last(3))
+                        } else {
+                            "".to_string()
+                        }
                     )
                 } else if matches!(geth_step.op, OpcodeId::MLOAD) {
                     format!(
