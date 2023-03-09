@@ -3,7 +3,7 @@ set -e
 #set -x
 
 prnumber=$1
-base_dir="/home/ubuntu/CI_Prover_Benches/"
+base_dir="/home/CI/CI_Prover_Benches/"
 target_dir="$base_dir"PR"$1"
 k=$2
 circuit=$(echo $3 | awk '{ print $2 }' | tr '[:upper:]' '[:lower:]')

@@ -38,7 +38,7 @@ for prover in $provers; do
             aws route53 change-resource-record-sets --profile $profile --hosted-zone-id $zone_id --change-batch file://$route53_dir/route53.template.json
             sleep 61
             rm $route53_dir/route53.template.json
-	    ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R "prover.cirunners.internal"
+	    ssh-keygen -f "/home/CI/.ssh/known_hosts" -R "prover.cirunners.internal"
         fi
         break
     fi
