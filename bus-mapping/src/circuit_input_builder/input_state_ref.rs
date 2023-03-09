@@ -709,7 +709,14 @@ impl<'a> CircuitInputStateRef<'a> {
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
-        Ok(get_contract_address(sender, account.nonce))
+        let address = get_contract_address(sender, account.nonce);
+        log::trace!(
+            "create_address {:?}, from {:?}, nonce {:?}",
+            address,
+            self.call()?.address,
+            account.nonce
+        );
+        Ok(address)
     }
 
     /// Return the contract address of a CREATE2 step.  This is calculated
@@ -718,11 +725,15 @@ impl<'a> CircuitInputStateRef<'a> {
         let salt = step.stack.nth_last(3)?;
         let call_ctx = self.call_ctx()?;
         let init_code = get_create_init_code(call_ctx, step)?.to_vec();
-        Ok(get_create2_address(
+        let address =
+            get_create2_address(self.call()?.address, salt.to_be_bytes().to_vec(), init_code);
+        log::trace!(
+            "create2_address {:?}, from {:?}, salt {:?}",
+            address,
             self.call()?.address,
-            salt.to_be_bytes().to_vec(),
-            init_code,
-        ))
+            salt
+        );
+        Ok(address)
     }
 
     pub(crate) fn reversion_info_read(&mut self, step: &mut ExecStep, call: &Call) {

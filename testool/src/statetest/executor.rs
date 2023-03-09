@@ -61,6 +61,7 @@ fn check_post(
     builder: &CircuitInputBuilder,
     post: &HashMap<Address, AccountMatch>,
 ) -> Result<(), StateTestError> {
+    log::trace!("check post");
     // check if the generated account data is the expected one
     for (address, expected) in post {
         let (_, actual) = builder.sdb.get_account(address);
@@ -73,6 +74,11 @@ fn check_post(
         }
 
         if expected.nonce.map(|v| v == actual.nonce) == Some(false) {
+            log::trace!(
+                "nonce mismatch, expected {:?} actual {:?}",
+                expected,
+                actual
+            );
             return Err(StateTestError::NonceMismatch {
                 expected: expected.nonce.unwrap(),
                 found: actual.nonce,
@@ -103,6 +109,7 @@ fn check_post(
             }
         }
     }
+    log::trace!("check post done");
     Ok(())
 }
 

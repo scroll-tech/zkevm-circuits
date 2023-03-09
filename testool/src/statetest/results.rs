@@ -182,7 +182,7 @@ impl Report {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Results {
     pub tests: HashMap<String, ResultInfo>,
     pub cache: Option<PathBuf>,
