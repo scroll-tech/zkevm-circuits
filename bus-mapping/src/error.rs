@@ -133,6 +133,8 @@ pub enum ExecError {
     PrecompileFailed,
     /// ..
     GasUintOverflow,
+    /// ..
+    NonceUintOverflow,
 }
 
 // TODO: Move to impl block.

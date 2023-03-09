@@ -303,7 +303,7 @@ fn fn_gen_error_state_associated_ops(
         ExecError::PrecompileFailed => Some(PrecompileFailed::gen_associated_ops),
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
-        ExecError::ContractAddressCollision => match geth_step.op {
+        ExecError::ContractAddressCollision | ExecError::NonceUintOverflow => match geth_step.op {
             OpcodeId::CREATE => Some(StackOnlyOpcode::<3, 1>::gen_associated_ops),
             OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 1>::gen_associated_ops),
             _ => unreachable!(),

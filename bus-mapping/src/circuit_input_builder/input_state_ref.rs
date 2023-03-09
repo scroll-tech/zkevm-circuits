@@ -1385,6 +1385,15 @@ impl<'a> CircuitInputStateRef<'a> {
                 }
             }
 
+            if matches!(step.op, OpcodeId::CREATE | OpcodeId::CREATE2) {
+                let addr = call.address;
+                let acc = self.sdb.get_account(&addr).1;
+                let max_nonce = (-1i64 as u64).into();
+                if acc.nonce == max_nonce {
+                    return Ok(Some(ExecError::NonceUintOverflow));
+                }
+            }
+
             return Err(Error::UnexpectedExecStepError(
                 "*CALL*/CREATE* code not executed",
                 step.clone(),
