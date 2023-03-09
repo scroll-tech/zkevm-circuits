@@ -177,7 +177,7 @@ fn go() -> Result<()> {
         // when running a report, the tests result of the containing cache file
         // are used, but removing all Ignored tests
         let mut results = if let Some(cache_filename) = args.cache {
-            let cache_filename = if cache_filename == "auto".to_string() {
+            let cache_filename = if cache_filename == *"auto" {
                 let file = previous.clone().unwrap().0;
                 format!("{}/{}", REPORT_FOLDER, file)
             } else {
