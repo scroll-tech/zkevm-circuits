@@ -57,6 +57,7 @@ mod stop;
 mod swap;
 
 mod error_codestore;
+mod error_contract_address_collision;
 mod error_invalid_jump;
 mod error_oog_call;
 mod error_oog_dynamic_memory;
@@ -88,6 +89,7 @@ use codesize::Codesize;
 use create::Create;
 use dup::Dup;
 use error_codestore::ErrorCodeStore;
+use error_contract_address_collision::ContractAddressCollision;
 use error_invalid_jump::InvalidJump;
 use error_oog_call::OOGCall;
 use error_oog_dynamic_memory::OOGDynamicMemory;
@@ -303,7 +305,12 @@ fn fn_gen_error_state_associated_ops(
         ExecError::PrecompileFailed => Some(PrecompileFailed::gen_associated_ops),
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
-        ExecError::ContractAddressCollision | ExecError::NonceUintOverflow => match geth_step.op {
+        ExecError::ContractAddressCollision => match geth_step.op {
+            OpcodeId::CREATE => Some(ContractAddressCollision::<false>::gen_associated_ops),
+            OpcodeId::CREATE2 => Some(ContractAddressCollision::<true>::gen_associated_ops),
+            _ => unreachable!(),
+        },
+        ExecError::NonceUintOverflow => match geth_step.op {
             OpcodeId::CREATE => Some(StackOnlyOpcode::<3, 1>::gen_associated_ops),
             OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 1>::gen_associated_ops),
             _ => unreachable!(),

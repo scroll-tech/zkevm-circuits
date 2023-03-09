@@ -151,7 +151,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        let is_extcodecopy = usize::from(opcode == OpcodeId::EXTCODECOPY);
+        let is_extcodecopy = opcode == OpcodeId::EXTCODECOPY;
 
         log::debug!(
             "ErrorOutOfGasMemoryCopy: opcode = {}, gas_left = {}, gas_cost = {}",
@@ -160,7 +160,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             step.gas_cost,
         );
 
-        let (is_warm, external_address) = if is_extcodecopy == 1 {
+        let (is_warm, external_address) = if is_extcodecopy {
             (
                 block.rws[step.rw_indices[1]].tx_access_list_value_pair().0,
                 block.rws[step.rw_indices[2]].stack_value(),
@@ -169,7 +169,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             (false, U256::zero())
         };
 
-        let rw_offset = 3 * is_extcodecopy;
+        let rw_offset = if is_extcodecopy { 3 } else { 0 };
         let [dst_offset, src_offset, copy_size] = [rw_offset, rw_offset + 1, rw_offset + 2]
             .map(|idx| block.rws[step.rw_indices[idx]].stack_value());
 
@@ -189,13 +189,26 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         let (_, memory_expansion_cost) =
             self.memory_expansion
                 .assign(region, offset, step.memory_word_size(), [memory_addr])?;
-        self.memory_copier_gas
-            .assign(region, offset, copy_size.as_u64(), memory_expansion_cost)?;
+        let memory_copier_gas = self.memory_copier_gas.assign(
+            region,
+            offset,
+            copy_size.as_u64(),
+            memory_expansion_cost,
+        )?;
+        let constant_gas_cost = if is_extcodecopy {
+            if is_warm {
+                GasCost::WARM_ACCESS
+            } else {
+                GasCost::COLD_ACCOUNT_ACCESS
+            }
+        } else {
+            GasCost::FASTEST
+        };
         self.insufficient_gas.assign_value(
             region,
             offset,
             Value::known(F::from(step.gas_left)),
-            Value::known(F::from(step.gas_cost)),
+            Value::known(F::from(memory_copier_gas + constant_gas_cost.0)),
         )?;
         self.is_extcodecopy.assign(
             region,
@@ -210,7 +223,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
             step,
             // EXTCODECOPY has extra 1 call context lookup (tx_id), 1 account access list
             // read (is_warm), and 1 stack pop (external_address).
-            5 + 3 * is_extcodecopy,
+            5 + if is_extcodecopy { 3 } else { 0 },
         )?;
 
         Ok(())

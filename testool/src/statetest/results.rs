@@ -131,11 +131,21 @@ impl Report {
         by_result_short.print_tty(false)?;
         let (_, files_diff) = self.diffs.gen_info();
         files_diff.print_tty(false)?;
+        let mut num_succ = 0f32;
+        let mut num_fail = 0f32;
         for (test_id, info) in &self.tests {
+            if info.level == ResultLevel::Success {
+                num_succ += 1.0;
+            }
             if info.level == ResultLevel::Fail || info.level == ResultLevel::Panic {
+                num_fail += 1.0;
                 println!("- {:?} {}", info.level, test_id);
             }
         }
+        log::info!(
+            "success rate: {:.1}%",
+            100f32 * num_succ / (num_succ + num_fail)
+        );
         Ok(())
     }
     pub fn gen_html(&self) -> Result<String> {

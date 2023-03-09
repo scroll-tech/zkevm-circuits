@@ -254,6 +254,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             (CallContextFieldTag::IsStatic, false.expr()),
             (CallContextFieldTag::IsCreate, true.expr()),
             (CallContextFieldTag::CodeHash, code_hash.expr()),
+            (CallContextFieldTag::Value, value.expr()),
         ] {
             cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
         }
