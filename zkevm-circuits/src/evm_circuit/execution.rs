@@ -1271,19 +1271,19 @@ impl<F: Field> ExecutionConfig<F> {
         step: &ExecStep,
         verbose: bool,
     ) -> Result<(), Error> {
-        if verbose {
-            if !(matches!(step.execution_state, ExecutionState::EndBlock)
+        if verbose
+            && !(matches!(step.execution_state, ExecutionState::EndBlock)
                 && step.rw_indices.is_empty())
-            {
-                log::trace!(
-                    "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
-                    offset,
-                    step.execution_state,
-                    step,
-                    call
-                );
-            }
+        {
+            log::trace!(
+                "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
+                offset,
+                step.execution_state,
+                step,
+                call
+            );
         }
+
         self.step
             .assign_exec_step(region, offset, block, transaction, call, step)?;
 
