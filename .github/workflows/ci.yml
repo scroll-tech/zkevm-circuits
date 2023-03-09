@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v2
       - name: set HOME env
         run: |
-          echo "HOME=/home/ubuntu" >> $GITHUB_ENV
+          echo "HOME=/home/CI" >> $GITHUB_ENV
       - uses: actions-rs/toolchain@v1
         with:
           override: false
@@ -62,9 +62,6 @@ jobs:
         with:
           cache: false
           go-version: ~1.18
-      # https://github.com/actions/cache/issues/133#issuecomment-599102035
-      - name: Delete old cache
-        run: sudo rm -rf ../../../go/pkg/mod/* &>/dev/null
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -114,9 +111,6 @@ jobs:
           override: false
       - name: Add target
         run: rustup target add ${{ matrix.target }}
-      # https://github.com/actions/cache/issues/133#issuecomment-599102035
-      - name: Delete old cache
-        run: sudo rm -rf ../../../go/pkg/mod/* &>/dev/null
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -158,9 +152,6 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
-      # https://github.com/actions/cache/issues/133#issuecomment-599102035
-      - name: Delete old cache
-        run: sudo rm -rf ../../../go/pkg/mod/* &>/dev/null
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -197,9 +188,6 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
-      # https://github.com/actions/cache/issues/133#issuecomment-599102035
-      - name: Delete old cache
-        run: sudo rm -rf ../../../go/pkg/mod/* &>/dev/null
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -242,9 +230,6 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
-      # https://github.com/actions/cache/issues/133#issuecomment-599102035
-      - name: Delete old cache
-        run: sudo rm -rf ../../../go/pkg/mod/* &>/dev/null
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
