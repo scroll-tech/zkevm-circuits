@@ -916,11 +916,6 @@ mod tests {
         let number_of_rows = 100;
         let mut cell_manager = CellManager::new(number_of_rows);
         let mut region = KeccakRegion::new();
-        cell_manager.start_region();
-        let mut output_cells: Vec<Cell<F>> = vec![];
-        for row_idx in 0..number_of_rows {
-            output_cells.push(cell_manager.query_cell_value_at_row(row_idx as i32));
-        }
         let part_size = 7;
         let rot = 2;
         // input in keccak sparse word: input_bits = [0,0,1,0,...,0]
@@ -928,6 +923,7 @@ mod tests {
         // normalize = true
         // Part bits = 0..4|5..11|12..18|19..25|26..32|33..39|
         //                  40..46|47..53|54..60|61|62..63
+        cell_manager.start_region();
         let normalize = true;
         let split_res = split::value(
             &mut cell_manager,
@@ -944,6 +940,7 @@ mod tests {
         // normalize = false
         // Part bits = 0..6|7..13|14..20|21..27|28..34|35..41|
         //                  42..48|49..55|56..61|62..63
+        cell_manager.start_region();
         let normalize = false;
         let split_res = split::value(
             &mut cell_manager,
@@ -996,5 +993,38 @@ mod tests {
         );
         assert_eq!(split_uniform_res[9].num_bits, 1);
         assert_eq!(split_uniform_res[9].value, F::from(0));
+    }
+
+    #[test]
+    fn transform_to() {
+        let number_of_rows = 100;
+        let mut cell_manager = CellManager::new(number_of_rows);
+        let mut region = KeccakRegion::new();
+        for (input, do_packing, expected) in [
+            (64, true, 64),
+            (128, true, 0),
+            (64, false, 4),
+            (128, false, 0),
+        ] {
+            // 64 in keccak sparse word: input_bits  = [0,0,1,0,...,0]
+            // 128 in keccak sparse word: input_bits = [0,0,2,0,...,0]
+            cell_manager.start_region();
+            let split_res = split::value(
+                &mut cell_manager,
+                &mut region,
+                F::from(input as u64),
+                0,
+                8,
+                true,
+            );
+            cell_manager.start_region();
+            let mut cells: Vec<Cell<F>> = vec![];
+            for row_idx in 0..number_of_rows {
+                cells.push(cell_manager.query_cell_value_at_row(row_idx as i32));
+            }
+            let transform_to_value =
+                transform_to::value(&cells, &mut region, split_res, do_packing, |v| v & 1);
+            assert_eq!(transform_to_value[0].value, F::from(expected));
+        }
     }
 }
