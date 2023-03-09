@@ -234,7 +234,7 @@ mod tests {
     ];
 
     const TESTING_DST_OFFSET_COPY_SIZE_PAIRS: &[(u64, u64)] =
-        &[(0x20, 0) /* , (0x40, 20), (0x2000, 0x200) */];
+        &[/* (0x20, 0) , (0x40, 20), */ (0x2000, 0x200)];
 
     #[test]
     fn test_oog_memory_copy_for_common_opcodes() {
