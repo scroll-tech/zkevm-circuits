@@ -2,9 +2,9 @@ import argparse, json
 from pprint import pprint
 import reporting_modules as rmod
 
-env = json.load(open('/home/ubuntu/env.json'))
-cstats = '/home/ubuntu/cpu.stats'
-mstats = '/home/ubuntu/mem.stats'
+env = json.load(open('/home/CI/env.json'))
+cstats = '/home/CI/cpu.stats'
+mstats = '/home/CI/mem.stats'
 
 def main():
     parser = argparse.ArgumentParser(
