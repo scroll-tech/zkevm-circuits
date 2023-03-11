@@ -980,7 +980,7 @@ impl<'a> CircuitInputStateRef<'a> {
                             (0, 0)
                         } else {
                             (
-                                step.stack.nth_last(0)?.as_usize(),
+                                step.stack.nth_last(0)?.low_u64() as usize,
                                 step.stack.nth_last(1)?.as_usize(),
                             )
                         };
