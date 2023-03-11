@@ -280,7 +280,8 @@ impl<'a> CircuitInputStateRef<'a> {
         if matches!(rw, RW::READ) && op.value_prev != op.value {
             log::error!(
                 "RWTable Account field read where value_prev != value rwc: {}, op: {:?}",
-                self.block_ctx.rwc.0, op
+                self.block_ctx.rwc.0,
+                op
             )
         }
         // NOTE: In the State Circuit we use code_hash=0 to encode non-existing
@@ -309,7 +310,10 @@ impl<'a> CircuitInputStateRef<'a> {
             log::error!(
                 "RWTable Account field {:?} lookup doesn't match account value
         account: {:?}, rwc: {}, op: {:?}",
-                rw, account, self.block_ctx.rwc.0, op
+                rw,
+                account,
+                self.block_ctx.rwc.0,
+                op
             );
         }
         // Verify that no read is done to a field other than CodeHash to a non-existing
