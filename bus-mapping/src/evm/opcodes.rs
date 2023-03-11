@@ -296,6 +296,7 @@ fn fn_gen_error_state_associated_ops(
         ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
+        //ExecError::
         ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::CodeStoreOutOfGas => Some(ErrorCodeStore::gen_associated_ops),
@@ -400,7 +401,9 @@ pub fn gen_associated_ops(
         } else {
             // For exceptions that already enter next call context, but fail immediately
             // (e.g. Depth, InsufficientBalance), we still need to parse the call.
-            if geth_step.op.is_call_or_create() {
+            if geth_step.op.is_call_or_create()
+                && !matches!(exec_error, ExecError::OutOfGas(OogError::Create2))
+            {
                 let call = state.parse_call(geth_step)?;
                 state.push_call(call);
             // For exceptions that fail to enter next call context, we need
