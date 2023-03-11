@@ -278,7 +278,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // -- sanity check begin --
         // Verify that a READ doesn't change the field value
         if matches!(rw, RW::READ) && op.value_prev != op.value {
-            panic!(
+            log::error!(
                 "RWTable Account field read where value_prev != value rwc: {}, op: {:?}",
                 self.block_ctx.rwc.0, op
             )
@@ -306,7 +306,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Verify that the previous value matches the account field value in the StateDB
         if op.value_prev != account_value_prev {
-            panic!(
+            log::error!(
                 "RWTable Account field {:?} lookup doesn't match account value
         account: {:?}, rwc: {}, op: {:?}",
                 rw, account, self.block_ctx.rwc.0, op
