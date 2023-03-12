@@ -62,6 +62,7 @@ impl Opcode for Balance {
         } else {
             H256::zero()
         };
+        debug_assert_eq!(balance, geth_steps[1].stack.nth_last(0)?);
         state.account_read(
             &mut exec_step,
             address,

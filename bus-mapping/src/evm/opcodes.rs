@@ -799,18 +799,64 @@ fn dummy_gen_selfdestruct_ops(
         },
     )?;
 
-    let (found, _) = state.sdb.get_account(&receiver);
+    let (found, receiver_account) = state.sdb.get_account(&receiver);
     if !found {
         return Err(Error::AccountNotFound(receiver));
     }
+    let receiver_account = &receiver_account.clone();
     let (found, sender_account) = state.sdb.get_account(&sender);
     if !found {
         return Err(Error::AccountNotFound(sender));
     }
+    let sender_account = &sender_account.clone();
     let value = sender_account.balance;
+    log::trace!(
+        "self destruct, sender {:?} receiver {:?} value {:?}",
+        sender,
+        receiver,
+        value
+    );
     // NOTE: In this dummy implementation we assume that the receiver already
     // exists.
-    state.transfer(&mut exec_step, sender, receiver, true, false, value)?;
+
+    state.push_op_reversible(
+        &mut exec_step,
+        AccountOp {
+            address: sender,
+            field: AccountField::Balance,
+            value: Word::zero(),
+            value_prev: value,
+        },
+    )?;
+    state.push_op_reversible(
+        &mut exec_step,
+        AccountOp {
+            address: sender,
+            field: AccountField::Nonce,
+            value: Word::zero(),
+            value_prev: sender_account.nonce,
+        },
+    )?;
+    state.push_op_reversible(
+        &mut exec_step,
+        AccountOp {
+            address: sender,
+            field: AccountField::CodeHash,
+            value: Word::zero(),
+            value_prev: sender_account.code_hash.to_word(),
+        },
+    )?;
+    if receiver != sender {
+        state.push_op_reversible(
+            &mut exec_step,
+            AccountOp {
+                address: receiver,
+                field: AccountField::Balance,
+                value: receiver_account.balance + value,
+                value_prev: receiver_account.balance,
+            },
+        )?;
+    }
 
     if state.call()?.is_persistent {
         state.sdb.destruct_account(sender);

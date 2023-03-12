@@ -31,6 +31,10 @@ impl Opcode for PrecompileFailed {
         // we need to keep the memory until parse_call complete
         state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
+        let call = state.parse_call(geth_step)?;
+        state.push_call(call);
+        state.handle_return(&geth_step)?;
+
         for i in 0..stack_input_num {
             state.stack_read(
                 &mut exec_step,

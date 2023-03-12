@@ -101,6 +101,12 @@ fn check_post(
         for (slot, expected_value) in &expected.storage {
             let actual_value = actual.storage.get(slot).cloned().unwrap_or_else(U256::zero);
             if expected_value != &actual_value {
+                log::error!(
+                    "StorageMismatch address {:?}, expected {:?}, actual {:?}",
+                    address,
+                    expected,
+                    actual
+                );
                 return Err(StateTestError::StorageMismatch {
                     slot: *slot,
                     expected: *expected_value,

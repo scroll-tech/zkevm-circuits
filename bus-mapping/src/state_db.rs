@@ -279,6 +279,7 @@ impl StateDB {
 
     /// Set account as self destructed.
     pub fn destruct_account(&mut self, addr: Address) {
+        self.state.insert(addr, Account::zero());
         self.destructed_account.insert(addr);
     }
 
