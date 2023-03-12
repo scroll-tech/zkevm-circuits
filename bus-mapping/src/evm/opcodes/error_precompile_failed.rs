@@ -33,7 +33,7 @@ impl Opcode for PrecompileFailed {
 
         let call = state.parse_call(geth_step)?;
         state.push_call(call);
-        state.handle_return(&geth_step)?;
+        state.handle_return(geth_step)?;
 
         for i in 0..stack_input_num {
             state.stack_read(

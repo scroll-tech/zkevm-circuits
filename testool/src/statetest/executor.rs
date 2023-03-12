@@ -138,6 +138,19 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
 
     let sig = wallet.sign_transaction_sync(&tx);
     let tx_hash = keccak256(tx.rlp_signed(&sig));
+    let mut accounts = st.pre;
+    for i in 1..=9 {
+        let mut addr_bytes = [0u8; 20];
+        addr_bytes[19] = i as u8;
+        let address = Address::from(addr_bytes);
+        let acc = eth_types::geth_types::Account {
+            //balance: 1.into(),
+            nonce: 1.into(),
+            address,
+            ..Default::default()
+        };
+        accounts.insert(address, acc);
+    }
 
     (
         st.id,
@@ -169,7 +182,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 s: sig.s,
                 hash: tx_hash.into(),
             }],
-            accounts: st.pre,
+            accounts,
             logger_config: LoggerConfig {
                 enable_memory: *bus_mapping::util::CHECK_MEM_STRICT,
                 ..Default::default()
