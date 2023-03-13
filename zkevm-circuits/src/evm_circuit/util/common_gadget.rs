@@ -766,12 +766,12 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         if IS_SUCCESS_CALL {
             self.is_success
                 .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
-            self.gas_is_u64.assign(
-                region,
-                offset,
-                sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
-            )?;
         }
+        self.gas_is_u64.assign(
+            region,
+            offset,
+            sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
+        )?;
         let cd_address = self
             .cd_address
             .assign(region, offset, cd_offset, cd_length)?;
