@@ -22,9 +22,10 @@ pub fn memory_copier_gas_cost(
     curr_memory_word_size: u64,
     next_memory_word_size: u64,
     num_copy_bytes: u64,
+    per_word_copy_gas: u64,
 ) -> u64 {
     let num_words = (num_copy_bytes + 31) / 32;
-    num_words * GasCost::COPY.as_u64() +
+    num_words * per_word_copy_gas +
         // Note that opcodes with a byte size parameter of 0 will not trigger
         // memory expansion, regardless of their offset parameters.
         if num_words > 0 {

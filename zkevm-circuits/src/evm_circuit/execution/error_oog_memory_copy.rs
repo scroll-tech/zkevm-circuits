@@ -303,7 +303,7 @@ mod tests {
 
             let gas_cost = OpcodeId::PUSH32.constant_gas_cost().0 * 3
                 + opcode.constant_gas_cost().0
-                + memory_copier_gas_cost(0, memory_word_size, copy_size);
+                + memory_copier_gas_cost(0, memory_word_size, copy_size, GasCost::COPY.as_u64());
 
             Self { bytecode, gas_cost }
         }
@@ -323,7 +323,7 @@ mod tests {
 
             let mut gas_cost = OpcodeId::PUSH32.constant_gas_cost().0 * 4
                 + GasCost::COLD_ACCOUNT_ACCESS.0
-                + memory_copier_gas_cost(0, memory_word_size, copy_size);
+                + memory_copier_gas_cost(0, memory_word_size, copy_size, GasCost::COPY.as_u64());
 
             if is_warm {
                 bytecode.append(&bytecode! {
@@ -336,7 +336,12 @@ mod tests {
 
                 gas_cost += OpcodeId::PUSH32.constant_gas_cost().0 * 4
                     + GasCost::WARM_ACCESS.0
-                    + memory_copier_gas_cost(memory_word_size, memory_word_size, copy_size);
+                    + memory_copier_gas_cost(
+                        memory_word_size,
+                        memory_word_size,
+                        copy_size,
+                        GasCost::COPY.as_u64(),
+                    );
             }
 
             Self { bytecode, gas_cost }
