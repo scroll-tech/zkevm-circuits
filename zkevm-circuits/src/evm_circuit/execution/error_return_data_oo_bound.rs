@@ -8,22 +8,21 @@ use crate::{
             constraint_builder::ConstraintBuilder,
             from_bytes,
             math_gadget::{AddWordsGadget, IsZeroGadget, LtGadget},
-            not, CachedRegion, Cell,
+            not, or, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToScalar, U256};
-
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorReturnDataOutOfBoundGadget<F> {
     opcode: Cell<F>,
     memory_offset: Cell<F>,
-    sum: AddWordsGadget<F, 2, true>,
+    sum: AddWordsGadget<F, 2, false>,
     /// Holds the size of the last callee return data.
     return_data_length: Cell<F>,
 
@@ -69,13 +68,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         );
 
         // check `data_offset` u64 overflow
-        let data_offset_larger_u64 = from_bytes::expr(&data_offset.cells[8..]);
+        let data_offset_larger_u64 = sum::expr(&data_offset.cells[N_BYTES_U64..]);
         let is_data_offset_within_range = IsZeroGadget::construct(cb, data_offset_larger_u64);
 
         // check if `end` u64  overflow or not.
         let sum = AddWordsGadget::construct(cb, [data_offset, length], end.clone());
 
-        let end_larger_u64 = from_bytes::expr(&end.cells[8..]);
+        let end_larger_u64 = sum::expr(&end.cells[N_BYTES_U64..]);
         let is_end_within_range = IsZeroGadget::construct(cb, end_larger_u64);
 
         // check if `end` exceeds return data length
@@ -84,13 +83,23 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             return_data_length.expr(),
             from_bytes::expr(&end.cells[..N_BYTES_U64]),
         );
-        // Any of [offset_out_of_range, end_out_of_range, end_exceed_length] occurs.
-        cb.require_in_set(
-            "Any of [offset_out_of_range, end_out_of_range, end_exceed_length] occurs",
-            not::expr(is_data_offset_within_range.expr())
-                + not::expr(is_end_within_range.expr())
-                + is_end_exceed_length.expr(),
-            vec![1.expr(), 2.expr(), 3.expr()],
+
+        // `end > U256::MAX` is necessary to check with AddWordsGadget carry. Since
+        // offset plus length may exceed a Word and remainder (end) may be less
+        // than `u64::MAX` (e.g. Word::MAX + 1).
+        cb.require_equal(
+            "Any of [offset > u64::MAX, end > U256::MAX, remainder_end > u64::MAX, remainder_end > return_data_length] occurs",
+            or::expr([
+                // offset > u64::MAX
+                not::expr(is_data_offset_within_range.expr()),
+                // end > U256::MAX
+                sum.carry().as_ref().unwrap().expr(),
+                // remainder_end > u64::MAX
+                not::expr(is_end_within_range.expr()),
+                // remainder_end > return_data_length
+                is_end_exceed_length.expr(),
+            ]),
+            1.expr(),
         );
 
         let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 6.expr());
@@ -127,7 +136,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         self.memory_offset
             .assign(region, offset, Value::known(F::from(dest_offset.as_u64())))?;
 
-        let end = data_offset + size;
+        let end = data_offset.overflowing_add(size).0;
 
         self.sum.assign(region, offset, [data_offset, size], end)?;
         let return_data_length = block.rws[step.rw_indices[3]].call_context_value();
@@ -141,18 +150,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             ),
         )?;
 
-        // when u64::MAX < data_offset = true, not within u64 range.
-        let data_offset_overflow = U256::from(u64::MAX) < data_offset;
-        self.is_data_offset_within_range.assign(
-            region,
-            offset,
-            F::from(data_offset_overflow as u64),
-        )?;
-        // check `end` if u64 overflow.
-        let end_overflow = U256::from(u64::MAX) < end;
+        let data_offset_overflow = data_offset.to_le_bytes()[N_BYTES_U64..]
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
+        self.is_data_offset_within_range
+            .assign(region, offset, F::from(data_offset_overflow))?;
 
+        let end_overflow = end.to_le_bytes()[N_BYTES_U64..]
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
         self.is_end_within_range
-            .assign(region, offset, F::from(end_overflow as u64))?;
+            .assign(region, offset, F::from(end_overflow))?;
 
         // check if it exceeds last callee return data length
         let end_u64 = end.low_u64();
@@ -177,7 +185,7 @@ mod test {
         return_data_offset: usize,
         return_data_size: usize,
         dest_offset: usize,
-        offset: u128,
+        offset: Word,
         size: usize,
         is_root: bool,
     ) {
@@ -261,18 +269,31 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    // test root & internal calls
+    // data_offset > u64::MAX
     #[test]
-    fn returndatacopy_out_of_bound_error() {
-        // test root call cases: `end` exceed return data size
-        test_ok(0x00, 0x10, 0x20, 0x10, 0x10, true);
-        // test root call case: `end` exceed return data size
-        test_ok(0x00, 0x10, 0x20, 0x10, 0x10, true);
-        // test data offset u64 overflow
-        test_ok(0x00, 0x10, 0x20, u128::from(u64::MAX) + 1, 0x10, false);
-        // test end = data offset + length(size) overflow
-        test_ok(0x00, 0x10, 0x20, 0x1, 0x10, false);
-        // test end overflow with end > 0xff
-        test_ok(0x00, 0x10, 0x20, 0x1, 0xff, false);
+    fn test_return_data_oo_bound_data_offset_overflow() {
+        test_ok(0, 0x10, 0x20, Word::from(u64::MAX) + 1, 0x10, false);
+        test_ok(0, 0x10, 0x20, Word::MAX, 0, true);
+    }
+
+    // data_offset + size > U256::MAX
+    #[test]
+    fn test_return_data_oo_bound_data_offset_plus_size_word_overflow() {
+        test_ok(0, 0x10, 0x20, Word::MAX, 1, false);
+        test_ok(0, 0x10, 0x20, Word::MAX - 1000, 1001, true);
+    }
+
+    // data_offset + size > u64::MAX
+    #[test]
+    fn test_return_data_oo_bound_data_offset_plus_size_u64_overflow() {
+        test_ok(0, 0x10, 0x20, Word::from(u64::MAX), 1, false);
+        test_ok(0, 0x10, 0x20, Word::from(u64::MAX) - 100, 101, true);
+    }
+
+    // data_offset + size > return_data_length
+    #[test]
+    fn test_return_data_oo_bound_exceed_return_data_length() {
+        test_ok(0, 0x10, 0x20, 0x10.into(), 0x10, false);
+        test_ok(0, 0x10, 0x20, 1.into(), 0xff, true);
     }
 }
