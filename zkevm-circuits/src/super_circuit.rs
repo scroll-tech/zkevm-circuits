@@ -210,6 +210,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let tx_circuit = TxCircuitConfig::new(
             meta,
             TxCircuitConfigArgs {
+                block_table: block_table.clone(),
                 tx_table: tx_table.clone(),
                 keccak_table: keccak_table.clone(),
                 rlp_table,
