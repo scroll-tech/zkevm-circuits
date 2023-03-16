@@ -18,19 +18,23 @@ impl Opcode for Log {
         let mut exec_step = gen_log_step(state, geth_step)?;
         if state.call()?.is_persistent {
             let copy_event = gen_copy_event(state, geth_step, &mut exec_step)?;
-            state.push_copy(copy_event);
+            state.push_copy(&mut exec_step, copy_event);
             state.tx_ctx.log_id += 1;
         }
 
         // reconstruction
-        let offset = geth_step.stack.nth_last(0)?.as_usize();
-        let length = geth_step.stack.nth_last(1)?.as_usize();
+        let offset = geth_step.stack.nth_last(0)?;
+        let length = geth_step.stack.nth_last(1)?.as_u64();
 
         if length != 0 {
-            state
-                .call_ctx_mut()?
-                .memory
-                .extend_at_least(offset + length);
+            // Offset should be within range of Uint64 if length is non-zero.
+            let memory_length = offset
+                .as_u64()
+                .checked_add(length)
+                .and_then(|val| usize::try_from(val).ok())
+                .unwrap();
+
+            state.call_ctx_mut()?.memory.extend_at_least(memory_length);
         }
 
         Ok(vec![exec_step])
@@ -127,41 +131,6 @@ fn gen_log_step(
     Ok(exec_step)
 }
 
-fn gen_copy_steps(
-    state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-    src_addr: u64,
-    bytes_left: usize,
-) -> Result<Vec<(u8, bool)>, Error> {
-    // Get memory data
-    let mem = state
-        .call_ctx()?
-        .memory
-        .read_chunk(src_addr.into(), bytes_left.into());
-
-    let mut copy_steps = Vec::with_capacity(bytes_left);
-    for (idx, byte) in mem.iter().enumerate() {
-        let addr = src_addr + idx as u64;
-
-        // Read memory
-        state.memory_read(exec_step, (addr as usize).into(), *byte)?;
-
-        copy_steps.push((*byte, false));
-
-        // Write log
-        state.tx_log_write(
-            exec_step,
-            state.tx_ctx.id(),
-            state.tx_ctx.log_id + 1,
-            TxLogField::Data,
-            idx,
-            Word::from(*byte),
-        )?;
-    }
-
-    Ok(copy_steps)
-}
-
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
@@ -170,12 +139,15 @@ fn gen_copy_event(
     let rw_counter_start = state.block_ctx.rwc;
 
     assert!(state.call()?.is_persistent, "Error: Call is not persistent");
-    let memory_start = geth_step.stack.nth_last(0)?.as_u64();
-    let msize = geth_step.stack.nth_last(1)?.as_usize();
 
-    let (src_addr, src_addr_end) = (memory_start, memory_start + msize as u64);
+    // Get low Uint64 for memory start as below reference. Memory size must be
+    // within range of Uint64, otherwise returns ErrGasUintOverflow.
+    // https://github.com/ethereum/go-ethereum/blob/b80f05bde2c4e93ae64bb3813b6d67266b5fc0e6/core/vm/instructions.go#L850
+    let memory_start = geth_step.stack.nth_last(0)?.low_u64();
+    let msize = geth_step.stack.nth_last(1)?.as_u64();
 
-    let steps = gen_copy_steps(state, exec_step, src_addr, msize)?;
+    let (src_addr, src_addr_end) = (memory_start, memory_start.checked_add(msize).unwrap());
+    let steps = state.gen_copy_steps_for_log(exec_step, src_addr, msize)?;
 
     Ok(CopyEvent {
         src_type: CopyDataType::Memory,

@@ -198,7 +198,7 @@ impl TxTable {
             txs.len(),
             max_txs
         );
-        let sum_txs_calldata = txs.iter().map(|tx| tx.call_data.len()).sum();
+        let sum_txs_calldata: usize = txs.iter().map(|tx| tx.call_data.len()).sum();
         assert!(
             sum_txs_calldata <= max_calldata,
             "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
@@ -273,15 +273,7 @@ impl TxTable {
                     calldata_assignments.extend(tx_calldata.iter());
                 }
                 // Assign Tx calldata
-                let padding_calldata = (sum_txs_calldata..max_calldata).map(|_| {
-                    [
-                        Value::known(F::zero()),
-                        Value::known(F::from(TxContextFieldTag::CallData as u64)),
-                        Value::known(F::zero()),
-                        Value::known(F::zero()),
-                    ]
-                });
-                for row in calldata_assignments.into_iter().chain(padding_calldata) {
+                for row in calldata_assignments.into_iter() {
                     assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                     offset += 1;
                 }

@@ -17,13 +17,12 @@ impl Opcode for Codecopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_steps = vec![gen_codecopy_step(state, geth_step)?];
+        let mut exec_steps = vec![gen_codecopy_step(state, geth_step)?];
 
         // reconstruction
-
-        let dest_offset = geth_step.stack.nth_last(0)?.as_u64();
-        let code_offset = geth_step.stack.nth_last(1)?.as_u64();
-        let length = geth_step.stack.nth_last(2)?.as_u64();
+        let dst_offset = geth_step.stack.nth_last(0)?;
+        let code_offset = geth_step.stack.nth_last(1)?;
+        let length = geth_step.stack.nth_last(2)?;
 
         let code_hash = state.call()?.code_hash;
         let code = state.code(code_hash)?;
@@ -31,10 +30,10 @@ impl Opcode for Codecopy {
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
 
-        memory.copy_from(dest_offset, &code, code_offset, length as usize);
+        memory.copy_from(dst_offset, code_offset, length, &code);
 
         let copy_event = gen_copy_event(state, geth_step)?;
-        state.push_copy(copy_event);
+        state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
 }
@@ -65,56 +64,48 @@ fn gen_codecopy_step(
     Ok(exec_step)
 }
 
-fn gen_copy_steps(
-    state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-    src_addr: u64,
-    dst_addr: u64,
-    bytes_left: u64,
-    bytecode: &Bytecode,
-) -> Result<Vec<(u8, bool)>, Error> {
-    let mut steps = Vec::with_capacity(bytes_left as usize);
-    for idx in 0..bytes_left {
-        let addr = src_addr + idx;
-        let bytecode_element = bytecode.get(addr as usize).unwrap_or_default();
-        steps.push((bytecode_element.value, bytecode_element.is_code));
-        state.memory_write(exec_step, (dst_addr + idx).into(), bytecode_element.value)?;
-    }
-    Ok(steps)
-}
-
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
-    let dst_offset = geth_step.stack.nth_last(0)?.as_u64();
-    let code_offset = geth_step.stack.nth_last(1)?.as_u64();
+    let dst_offset = geth_step.stack.nth_last(0)?;
+    let code_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?.as_u64();
 
     let code_hash = state.call()?.code_hash;
     let bytecode: Bytecode = state.code(code_hash)?.into();
-    let src_addr_end = bytecode.to_vec().len() as u64;
+    let code_size = bytecode.code.len() as u64;
+
+    // Get low Uint64 of offset.
+    let dst_addr = dst_offset.low_u64();
+    let src_addr_end = code_size;
+
+    // Reset offset to Uint64 maximum value if overflow, and set source start to the
+    // minimum value of offset and code size.
+    let src_addr = u64::try_from(code_offset)
+        .unwrap_or(u64::MAX)
+        .min(src_addr_end);
 
     let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = gen_copy_steps(
-        state,
+    let copy_steps = state.gen_copy_steps_for_bytecode(
         &mut exec_step,
-        code_offset,
-        dst_offset,
-        length,
         &bytecode,
+        src_addr,
+        dst_addr,
+        src_addr_end,
+        length,
     )?;
 
     Ok(CopyEvent {
         src_type: CopyDataType::Bytecode,
         src_id: NumberOrHash::Hash(code_hash),
-        src_addr: code_offset,
+        src_addr,
         src_addr_end,
         dst_type: CopyDataType::Memory,
         dst_id: NumberOrHash::Number(state.call()?.call_id),
-        dst_addr: dst_offset,
+        dst_addr,
         log_id: None,
         rw_counter_start,
         bytes: copy_steps,

@@ -49,7 +49,7 @@ impl Opcode for ErrorReturnDataOutOfBound {
             "callee return data size should be correct"
         );
 
-        let end = data_offset + length;
+        let end = data_offset.overflowing_add(length).0;
         // check data_offset or end is u64 overflow, or
         // last_callee_return_data_length < end
         let data_offset_overflow = data_offset > Word::from(u64::MAX);

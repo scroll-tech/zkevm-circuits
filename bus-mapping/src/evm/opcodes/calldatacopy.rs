@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use crate::operation::{CallContextField, MemoryOp, RW};
+use crate::operation::CallContextField;
 use crate::Error;
 use eth_types::GethExecStep;
 
@@ -14,19 +14,19 @@ impl Opcode for Calldatacopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
+        let mut exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
 
         // reconstruction
-        let memory_offset = geth_step.stack.nth_last(0)?.as_u64();
-        let data_offset = geth_step.stack.nth_last(1)?.as_u64();
-        let length = geth_step.stack.nth_last(2)?.as_usize();
+        let memory_offset = geth_step.stack.nth_last(0)?;
+        let data_offset = geth_step.stack.nth_last(1)?;
+        let length = geth_step.stack.nth_last(2)?;
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
 
-        memory.copy_from(memory_offset, &call_ctx.call_data, data_offset, length);
+        memory.copy_from(memory_offset, data_offset, length, &call_ctx.call_data);
 
         let copy_event = gen_copy_event(state, geth_step)?;
-        state.push_copy(copy_event);
+        state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
 }
@@ -89,64 +89,38 @@ fn gen_calldatacopy_step(
     Ok(exec_step)
 }
 
-fn gen_copy_steps(
-    state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-    src_addr: u64,
-    dst_addr: u64,
-    src_addr_end: u64,
-    bytes_left: u64,
-    is_root: bool,
-) -> Result<Vec<(u8, bool)>, Error> {
-    let mut copy_steps = Vec::with_capacity(bytes_left as usize);
-    for idx in 0..bytes_left {
-        let addr = src_addr + idx;
-        let value = if addr < src_addr_end {
-            let byte =
-                state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
-            if !is_root {
-                state.push_op(
-                    exec_step,
-                    RW::READ,
-                    MemoryOp::new(state.call()?.caller_id, addr.into(), byte),
-                );
-            }
-            byte
-        } else {
-            0
-        };
-        copy_steps.push((value, false));
-        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
-    }
-
-    Ok(copy_steps)
-}
-
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
-    let memory_offset = geth_step.stack.nth_last(0)?.as_u64();
-    let data_offset = geth_step.stack.nth_last(1)?.as_u64();
+
+    let memory_offset = geth_step.stack.nth_last(0)?;
+    let data_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?.as_u64();
 
     let call_data_offset = state.call()?.call_data_offset;
     let call_data_length = state.call()?.call_data_length;
-    let (src_addr, src_addr_end) = (
-        call_data_offset + data_offset,
-        call_data_offset + call_data_length,
-    );
+
+    // Get low Uint64 of offset.
+    let dst_addr = memory_offset.low_u64();
+    let src_addr_end = call_data_offset.checked_add(call_data_length).unwrap();
+
+    // Reset offset to call_data_length if overflow, and set source start to the
+    // minimum value of offset and call_data_length.
+    let src_addr = u64::try_from(data_offset)
+        .ok()
+        .and_then(|offset| offset.checked_add(call_data_offset))
+        .unwrap_or(src_addr_end)
+        .min(src_addr_end);
 
     let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = gen_copy_steps(
-        state,
+    let copy_steps = state.gen_copy_steps_for_call_data(
         &mut exec_step,
         src_addr,
-        memory_offset,
+        dst_addr,
         src_addr_end,
         length,
-        state.call()?.is_root,
     )?;
 
     let (src_type, src_id) = if state.call()?.is_root {
@@ -162,7 +136,7 @@ fn gen_copy_event(
         src_addr_end,
         dst_type: CopyDataType::Memory,
         dst_id: NumberOrHash::Number(state.call()?.call_id),
-        dst_addr: memory_offset,
+        dst_addr,
         log_id: None,
         rw_counter_start,
         bytes: copy_steps,

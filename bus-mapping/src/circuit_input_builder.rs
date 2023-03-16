@@ -300,6 +300,7 @@ impl<'a> CircuitInputBuilder {
         };
 
         let total_rws = state.block_ctx.rwc.0 - 1;
+        let max_rws = if max_rws == 0 { total_rws + 2 } else { max_rws };
         // We need at least 1 extra Start row
         #[allow(clippy::int_plus_one)]
         {
@@ -398,6 +399,18 @@ impl<'a> CircuitInputBuilder {
                         geth_step.stack.nth_last(4),
                         geth_step.stack.nth_last(5),
                         geth_step.stack.nth_last(6),
+                    )
+                } else if geth_step.op.is_create() {
+                    format!(
+                        "value {:?} offset {:?} size {:?} {}",
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1),
+                        geth_step.stack.nth_last(2),
+                        if geth_step.op == OpcodeId::CREATE2 {
+                            format!("salt {:?}", geth_step.stack.nth_last(3))
+                        } else {
+                            "".to_string()
+                        }
                     )
                 } else if matches!(geth_step.op, OpcodeId::MLOAD) {
                     format!(
@@ -672,10 +685,17 @@ pub fn get_create_init_code<'a>(
     call_ctx: &'a CallContext,
     step: &GethExecStep,
 ) -> Result<&'a [u8], Error> {
-    let offset = step.stack.nth_last(1)?;
-    let length = step.stack.nth_last(2)?;
-    Ok(&call_ctx.memory.0
-        [offset.low_u64() as usize..(offset.low_u64() + length.low_u64()) as usize])
+    let offset = step.stack.nth_last(1)?.low_u64() as usize;
+    let length = step.stack.nth_last(2)?.as_usize();
+
+    let mem_len = call_ctx.memory.0.len();
+    if offset >= mem_len {
+        return Ok(&[]);
+    }
+
+    let offset_end = offset.checked_add(length).unwrap_or(mem_len);
+
+    Ok(&call_ctx.memory.0[offset..offset_end])
 }
 
 /// Retrieve the memory offset and length of call.

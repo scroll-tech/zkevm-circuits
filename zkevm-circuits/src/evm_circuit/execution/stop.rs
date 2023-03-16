@@ -79,7 +79,6 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
             RestoreContextGadget::construct(
                 cb,
-                0.expr(),
                 true.expr(),
                 0.expr(),
                 0.expr(),

@@ -1,0 +1,22 @@
+diff --git a/libyul/AssemblyStack.cpp b/libyul/AssemblyStack.cpp
+index 8a00608cf..ac5327310 100644
+--- a/libyul/AssemblyStack.cpp
++++ b/libyul/AssemblyStack.cpp
+@@ -65,7 +65,7 @@ Dialect const& languageToDialect(AssemblyStack::Language _language, EVMVersion _
+ 
+ // Duplicated from libsolidity/codegen/CompilerContext.cpp
+ // TODO: refactor and remove duplication
+-evmasm::Assembly::OptimiserSettings translateOptimiserSettings(
++[[maybe_unused]] evmasm::Assembly::OptimiserSettings translateOptimiserSettings(
+ 	frontend::OptimiserSettings const& _settings,
+ 	langutil::EVMVersion _evmVersion
+ )
+@@ -285,7 +285,7 @@ AssemblyStack::assembleEVMWithDeployed(optional<string_view> _deployName) const
+ 	EthAssemblyAdapter adapter(assembly);
+ 	compileEVM(adapter, m_optimiserSettings.optimizeStackAllocation);
+ 
+-	assembly.optimise(translateOptimiserSettings(m_optimiserSettings, m_evmVersion));
++	// assembly.optimise(translateOptimiserSettings(m_optimiserSettings, m_evmVersion));
+ 
+ 	optional<size_t> subIndex;
+ 

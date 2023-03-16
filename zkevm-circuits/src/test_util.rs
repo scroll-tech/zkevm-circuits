@@ -184,6 +184,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         } else {
             self.circuits_params.unwrap_or_default()
         };
+        log::debug!("params in CircuitTestBuilder: {:?}", params);
 
         let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()

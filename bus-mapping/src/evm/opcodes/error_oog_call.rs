@@ -75,7 +75,6 @@ impl Opcode for OOGCall {
             call_address,
             AccountField::CodeHash,
             callee_code_hash_word,
-            callee_code_hash_word,
         );
 
         let is_warm = state.sdb.check_account_in_access_list(&call_address);

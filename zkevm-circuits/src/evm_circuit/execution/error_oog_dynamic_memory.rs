@@ -93,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
         );
 
         let memory_expansion =
-            MemoryExpansionGadget::construct(cb, [address_low::expr(&address) + size.expr()]);
+            MemoryExpansionGadget::construct(cb, [address_low::expr(&address) + size_low.expr()]);
 
         let insufficient_gas = LtGadget::construct(
             cb,
@@ -138,7 +138,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
         let restore_context = cb.condition(not::expr(cb.curr.state.is_root.expr()), |cb| {
             RestoreContextGadget::construct(
                 cb,
-                0.expr(),
                 0.expr(),
                 0.expr(),
                 0.expr(),
@@ -239,18 +238,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
             F::from(1u64 << (N_BYTES_MEMORY_ADDRESS * 8)),
         )?;
 
-        self.memory_expansion.assign(
-            region,
-            offset,
-            step.memory_word_size(),
-            [expanded_address],
-        )?;
+        let memory_expansion_gas = self
+            .memory_expansion
+            .assign(region, offset, step.memory_word_size(), [expanded_address])?
+            .1;
+        let constant_gas_cost = opcode.constant_gas_cost().0;
 
         self.insufficient_gas.assign(
             region,
             offset,
             F::from(step.gas_left),
-            F::from(step.gas_cost),
+            F::from(memory_expansion_gas + constant_gas_cost),
         )?;
 
         self.rw_counter_end_of_reversion.assign(

@@ -57,11 +57,14 @@ mod stackonlyop;
 mod stop;
 mod swap;
 
+mod error_codestore;
+mod error_contract_address_collision;
 mod error_invalid_jump;
 mod error_oog_call;
 mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
+mod error_oog_memory_copy;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_precompile_failed;
@@ -86,11 +89,14 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::Create;
 use dup::Dup;
+use error_codestore::ErrorCodeStore;
+use error_contract_address_collision::ContractAddressCollision;
 use error_invalid_jump::InvalidJump;
 use error_oog_call::OOGCall;
 use error_oog_dynamic_memory::OOGDynamicMemory;
 use error_oog_exp::OOGExp;
 use error_oog_log::ErrorOOGLog;
+use error_oog_memory_copy::OOGMemoryCopy;
 use error_oog_sload_sstore::OOGSloadSstore;
 use error_oog_static_memory::OOGStaticMemory;
 use error_precompile_failed::PrecompileFailed;
@@ -272,7 +278,10 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     }
 }
 
-fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociatedOps> {
+fn fn_gen_error_state_associated_ops(
+    geth_step: &GethExecStep,
+    error: &ExecError,
+) -> Option<FnGenAssociatedOps> {
     match error {
         ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
         ExecError::InvalidOpcode => Some(ErrorSimple::gen_associated_ops),
@@ -286,15 +295,34 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
             Some(OOGStaticMemory::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
+        ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
+        //ExecError::
         ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
+        ExecError::CodeStoreOutOfGas => Some(ErrorCodeStore::gen_associated_ops),
+        ExecError::MaxCodeSizeExceeded => Some(ErrorCodeStore::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
-        ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
+        ExecError::InsufficientBalance => {
+            if geth_step.op.is_create() {
+                unimplemented!("insufficient balance for create");
+            }
+            Some(CallOpcode::<7>::gen_associated_ops)
+        }
         ExecError::PrecompileFailed => Some(PrecompileFailed::gen_associated_ops),
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
-
+        ExecError::ContractAddressCollision => match geth_step.op {
+            OpcodeId::CREATE => Some(ContractAddressCollision::<false>::gen_associated_ops),
+            OpcodeId::CREATE2 => Some(ContractAddressCollision::<true>::gen_associated_ops),
+            _ => unreachable!(),
+        },
+        ExecError::NonceUintOverflow => match geth_step.op {
+            OpcodeId::CREATE => Some(StackOnlyOpcode::<3, 1>::gen_associated_ops),
+            OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 1>::gen_associated_ops),
+            _ => unreachable!(),
+        },
+        ExecError::GasUintOverflow => Some(ErrorSimple::gen_associated_ops),
         // more future errors place here
         _ => {
             evm_unimplemented!("TODO: error state {:?} not implemented", error);
@@ -369,12 +397,19 @@ pub fn gen_associated_ops(
         // TODO: after more error state handled, refactor all error handling in
         // fn_gen_error_state_associated_ops method
         // For exceptions that have been implemented
-        if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(&exec_error) {
-            return fn_gen_error_ops(state, geth_steps);
+        if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(geth_step, &exec_error) {
+            let mut steps = fn_gen_error_ops(state, geth_steps)?;
+            if let Some(e) = &steps[0].error {
+                debug_assert_eq!(&exec_error, e);
+            }
+            steps[0].error = Some(exec_error.clone());
+            return Ok(steps);
         } else {
             // For exceptions that already enter next call context, but fail immediately
             // (e.g. Depth, InsufficientBalance), we still need to parse the call.
-            if geth_step.op.is_call_or_create() {
+            if geth_step.op.is_call_or_create()
+                && !matches!(exec_error, ExecError::OutOfGas(OogError::Create2))
+            {
                 let call = state.parse_call(geth_step)?;
                 state.push_call(call);
             // For exceptions that fail to enter next call context, we need
@@ -451,25 +486,21 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     } + call_data_gas_cost;
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
-    // Transfer with fee
-    state.transfer_with_fee(
-        &mut exec_step,
-        call.caller_address,
-        call.address,
-        call.value,
-        Some(state.tx.gas_price * state.tx.gas),
-    )?;
-
     // Get code_hash of callee
     // FIXME: call with value to precompile will cause the codehash of precompile
     // address to `CodeDB::empty_code_hash()`. FIXME: we should have a
     // consistent codehash for precompile contract.
-    let (_, callee_account) = state.sdb.get_account(&call.address);
-    let callee_account = callee_account.clone();
-    let callee_account = &callee_account;
-    let callee_exists = !callee_account.is_empty();
-    if !callee_exists {
+    let callee_account = &state.sdb.get_account(&call.address).1.clone();
+    let callee_exists = !callee_account.is_empty() || is_precompiled(&call.address);
+    if !callee_exists && call.value.is_zero() {
         state.sdb.get_account_mut(&call.address).1.storage.clear();
+    }
+    if state.tx.is_create()
+        && ((!callee_account.code_hash.is_zero()
+            && !callee_account.code_hash.eq(&CodeDB::empty_code_hash()))
+            || !callee_account.nonce.is_zero())
+    {
+        unimplemented!("deployment collision");
     }
     let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
         (true, _) => (call.code_hash.to_word(), false),
@@ -486,6 +517,25 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         }
         (_, false) => (Word::zero(), true),
     };
+    if !state.is_precompiled(&call.address) && !call.is_create() {
+        state.account_read(
+            &mut exec_step,
+            call.address,
+            AccountField::CodeHash,
+            callee_code_hash,
+        );
+    }
+
+    // Transfer with fee
+    state.transfer_with_fee(
+        &mut exec_step,
+        call.caller_address,
+        call.address,
+        callee_exists,
+        call.is_create(),
+        call.value,
+        Some(state.tx.gas_price * state.tx.gas),
+    )?;
 
     // In case of contract creation we wish to verify the correctness of the
     // contract's address (callee). This address is defined as:
@@ -515,7 +565,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         (true, _, _) => {
             state.push_op_reversible(
                 &mut exec_step,
-                RW::WRITE,
                 AccountOp {
                     address: call.address,
                     field: AccountField::Nonce,
@@ -548,46 +597,17 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 1.into()),
-                (CallContextField::CodeHash, callee_code_hash),
+                (CallContextField::CodeHash, call.code_hash.to_word()),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
             Ok(exec_step)
         }
         // 2. Call to precompiled.
-        (_, true, _) => {
-            state.account_read(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                callee_code_hash,
-                callee_code_hash,
-            );
-
-            Ok(exec_step)
-        }
+        (_, true, _) => Ok(exec_step),
         (_, _, is_empty_code_hash) => {
-            state.account_read(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                callee_code_hash,
-                callee_code_hash,
-            );
-
             // 3. Call to account with empty code.
             if is_empty_code_hash {
-                // if the transfer values make an account from non-exist to exist
-                // we need to handle to codehash change
-                if !call.value.is_zero() {
-                    state.account_write(
-                        &mut exec_step,
-                        call.address,
-                        AccountField::CodeHash,
-                        CodeDB::empty_code_hash().to_word(),
-                        CodeDB::empty_code_hash().to_word(), // or Word::zero()?
-                    )?;
-                }
                 return Ok(exec_step);
             }
 
@@ -771,7 +791,6 @@ fn dummy_gen_selfdestruct_ops(
     let is_warm = state.sdb.check_account_in_access_list(&receiver);
     state.push_op_reversible(
         &mut exec_step,
-        RW::WRITE,
         TxAccessListAccountOp {
             tx_id: state.tx_ctx.id(),
             address: receiver,
@@ -780,16 +799,64 @@ fn dummy_gen_selfdestruct_ops(
         },
     )?;
 
-    let (found, _) = state.sdb.get_account(&receiver);
+    let (found, receiver_account) = state.sdb.get_account(&receiver);
     if !found {
         return Err(Error::AccountNotFound(receiver));
     }
+    let receiver_account = &receiver_account.clone();
     let (found, sender_account) = state.sdb.get_account(&sender);
     if !found {
         return Err(Error::AccountNotFound(sender));
     }
+    let sender_account = &sender_account.clone();
     let value = sender_account.balance;
-    state.transfer(&mut exec_step, sender, receiver, value)?;
+    log::trace!(
+        "self destruct, sender {:?} receiver {:?} value {:?}",
+        sender,
+        receiver,
+        value
+    );
+    // NOTE: In this dummy implementation we assume that the receiver already
+    // exists.
+
+    state.push_op_reversible(
+        &mut exec_step,
+        AccountOp {
+            address: sender,
+            field: AccountField::Balance,
+            value: Word::zero(),
+            value_prev: value,
+        },
+    )?;
+    state.push_op_reversible(
+        &mut exec_step,
+        AccountOp {
+            address: sender,
+            field: AccountField::Nonce,
+            value: Word::zero(),
+            value_prev: sender_account.nonce,
+        },
+    )?;
+    state.push_op_reversible(
+        &mut exec_step,
+        AccountOp {
+            address: sender,
+            field: AccountField::CodeHash,
+            value: Word::zero(),
+            value_prev: sender_account.code_hash.to_word(),
+        },
+    )?;
+    if receiver != sender {
+        state.push_op_reversible(
+            &mut exec_step,
+            AccountOp {
+                address: receiver,
+                field: AccountField::Balance,
+                value: receiver_account.balance + value,
+                value_prev: receiver_account.balance,
+            },
+        )?;
+    }
 
     if state.call()?.is_persistent {
         state.sdb.destruct_account(sender);

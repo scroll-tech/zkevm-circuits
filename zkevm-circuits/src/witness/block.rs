@@ -4,6 +4,8 @@ use std::collections::HashMap;
 
 #[cfg(any(feature = "test", test))]
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
+#[cfg(feature = "test")]
+use crate::tx_circuit::TX_LEN;
 
 use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
 use bus_mapping::{
@@ -133,7 +135,7 @@ impl<F: Field> Block<F> {
             self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
         let num_rows_required_for_tx_table: usize =
-            self.txs.iter().map(|tx| 9 + tx.call_data.len()).sum();
+            TX_LEN * self.circuits_params.max_txs + self.circuits_params.max_calldata;
         let num_rows_required_for_exp_table: usize = self
             .exp_events
             .iter()
@@ -323,6 +325,11 @@ pub fn block_convert<F: Field>(
         end_block_not_last,
         end_block_last
     );
+    let max_rws = if block.circuits_params.max_rws == 0 {
+        end_block_last.rw_counter + end_block_last.rw_indices.len() + 1
+    } else {
+        block.circuits_params.max_rws
+    };
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
@@ -361,7 +368,10 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        circuits_params: block.circuits_params,
+        circuits_params: CircuitsParams {
+            max_rws,
+            ..block.circuits_params
+        },
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,

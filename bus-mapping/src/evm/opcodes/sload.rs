@@ -85,7 +85,6 @@ impl Opcode for Sload {
         state.stack_write(&mut exec_step, stack_position, value)?;
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountStorageOp {
                 tx_id: state.tx_ctx.id(),
                 address: contract_addr,
