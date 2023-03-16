@@ -25,7 +25,7 @@ pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
 use eth_types::{
     self,
-    evm_types::{GasCost, OpcodeId},
+    evm_types::OpcodeId,
     geth_types,
     sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
     Address, GethExecStep, GethExecTrace, ToBigEndian, ToWord, Word, H256, U256,
@@ -364,14 +364,7 @@ impl<'a> CircuitInputBuilder {
         // - execution_state: BeginTx
         // - op: None
         // Generate BeginTx step
-        let mut begin_tx_step = gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
-        begin_tx_step.gas_cost = if geth_trace.struct_logs.is_empty() {
-            GasCost(geth_trace.gas.0)
-        } else {
-            GasCost(tx.gas - geth_trace.struct_logs[0].gas.0)
-        };
-        log::trace!("begin_tx_step {:?}", begin_tx_step);
-        tx.steps_mut().push(begin_tx_step);
+        gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx), geth_trace)?;
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);

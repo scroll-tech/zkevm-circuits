@@ -13,7 +13,7 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
-    evm_unimplemented, GethExecStep, ToAddress, ToWord, Word,
+    evm_unimplemented, GethExecStep, GethExecTrace, ToAddress, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
 
@@ -430,7 +430,10 @@ pub fn gen_associated_ops(
     fn_gen_associated_ops(state, geth_steps)
 }
 
-pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
+pub fn gen_begin_tx_ops(
+    state: &mut CircuitInputStateRef,
+    geth_trace: &GethExecTrace,
+) -> Result<(), Error> {
     let mut exec_step = state.new_begin_tx_step();
     let call = state.call()?.clone();
 
@@ -495,7 +498,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // address to `CodeDB::empty_code_hash()`. FIXME: we should have a
     // consistent codehash for precompile contract.
     let callee_account = &state.sdb.get_account(&call.address).1.clone();
-    let callee_exists = !callee_account.is_empty() || is_precompiled(&call.address);
+    let is_precompile = is_precompiled(&call.address);
+    let callee_exists = !callee_account.is_empty() || is_precompile;
     if !callee_exists && call.value.is_zero() {
         state.sdb.get_account_mut(&call.address).1.storage.clear();
     }
@@ -521,7 +525,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         }
         (_, false) => (Word::zero(), true),
     };
-    if !state.is_precompiled(&call.address) && !call.is_create() {
+    if !is_precompile && !call.is_create() {
         state.account_read(
             &mut exec_step,
             call.address,
@@ -560,11 +564,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     }
 
     // There are 4 branches from here.
-    match (
-        call.is_create(),
-        is_precompiled(&call.address),
-        is_empty_code_hash,
-    ) {
+    match (call.is_create(), is_precompile, is_empty_code_hash) {
         // 1. Creation transaction.
         (true, _, _) => {
             state.push_op_reversible(
@@ -605,47 +605,62 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
-            Ok(exec_step)
         }
         // 2. Call to precompiled.
-        (_, true, _) => Ok(exec_step),
+        (_, true, _) => (),
         (_, _, is_empty_code_hash) => {
-            // 3. Call to account with empty code.
-            if is_empty_code_hash {
-                return Ok(exec_step);
+            // 3. Call to account with empty code (is_empty_code_hash == true).
+            // 4. Call to account with non-empty code (is_empty_code_hash == false).
+            if !is_empty_code_hash {
+                for (field, value) in [
+                    (CallContextField::Depth, call.depth.into()),
+                    (
+                        CallContextField::CallerAddress,
+                        call.caller_address.to_word(),
+                    ),
+                    (CallContextField::CalleeAddress, call.address.to_word()),
+                    (
+                        CallContextField::CallDataOffset,
+                        call.call_data_offset.into(),
+                    ),
+                    (
+                        CallContextField::CallDataLength,
+                        call.call_data_length.into(),
+                    ),
+                    (CallContextField::Value, call.value),
+                    (CallContextField::IsStatic, (call.is_static as usize).into()),
+                    (CallContextField::LastCalleeId, 0.into()),
+                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                    (CallContextField::IsRoot, 1.into()),
+                    (CallContextField::IsCreate, call.is_create().to_word()),
+                    (CallContextField::CodeHash, callee_code_hash),
+                ] {
+                    state.call_context_write(&mut exec_step, call.call_id, field, value);
+                }
             }
-
-            // 4. Call to account with non-empty code.
-            for (field, value) in [
-                (CallContextField::Depth, call.depth.into()),
-                (
-                    CallContextField::CallerAddress,
-                    call.caller_address.to_word(),
-                ),
-                (CallContextField::CalleeAddress, call.address.to_word()),
-                (
-                    CallContextField::CallDataOffset,
-                    call.call_data_offset.into(),
-                ),
-                (
-                    CallContextField::CallDataLength,
-                    call.call_data_length.into(),
-                ),
-                (CallContextField::Value, call.value),
-                (CallContextField::IsStatic, (call.is_static as usize).into()),
-                (CallContextField::LastCalleeId, 0.into()),
-                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                (CallContextField::LastCalleeReturnDataLength, 0.into()),
-                (CallContextField::IsRoot, 1.into()),
-                (CallContextField::IsCreate, call.is_create().to_word()),
-                (CallContextField::CodeHash, callee_code_hash),
-            ] {
-                state.call_context_write(&mut exec_step, call.call_id, field, value);
-            }
-
-            Ok(exec_step)
         }
     }
+
+    exec_step.gas_cost = if geth_trace.struct_logs.is_empty() {
+        GasCost(geth_trace.gas.0)
+    } else {
+        GasCost(state.tx.gas - geth_trace.struct_logs[0].gas.0)
+    };
+
+    log::trace!("begin_tx_step: {:?}", exec_step);
+    state.tx.steps_mut().push(exec_step);
+
+    // TRICKY:
+    // Process the reversion only for Precompile in begin TX. Since no associated
+    // opcodes could process reversion afterwards.
+    // TODO:
+    // Move it to code of generating precompiled operations when implemented.
+    if is_precompile && !state.call().unwrap().is_success {
+        state.handle_reversion();
+    }
+
+    Ok(())
 }
 
 pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {

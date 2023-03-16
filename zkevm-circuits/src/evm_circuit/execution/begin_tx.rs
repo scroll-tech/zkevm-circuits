@@ -77,11 +77,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id.expr(),
         ); // rwc_delta += 1
         let mut reversion_info = cb.reversion_info_write(None); // rwc_delta += 2
+        let is_persistent = reversion_info.is_persistent();
         cb.call_context_lookup(
             1.expr(),
             Some(call_id.expr()),
             CallContextFieldTag::IsSuccess,
-            reversion_info.is_persistent(),
+            is_persistent.expr(),
         ); // rwc_delta += 1
 
         let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =
@@ -341,11 +342,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 no_callee_code.expr(),
                 true.expr(),
             );
-            cb.require_equal(
-                "Tx to precompile should be persistent",
-                reversion_info.is_persistent(),
-                1.expr(),
-            );
+            // TODO: verify that precompile could fail in begin tx.
+            // cb.require_equal(
+            // "Tx to precompile should be persistent",
+            // reversion_info.is_persistent(),
+            // 1.expr(),
+            // );
             cb.require_equal(
                 "Go to EndTx when Tx to precompile",
                 cb.next.execution_state_selector([ExecutionState::EndTx]),
@@ -353,16 +355,27 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
 
             cb.require_step_state_transition(StepStateTransition {
-                // 8 reads and writes:
+                // 7 + TransferWithGasFeeGadget associated reads or writes:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
                 //   - Write CallContext IsSuccess
-                //   - Write Account Nonce
-                //   - Write TxAccessListAccount
-                //   - Write TxAccessListAccount
+                //   - Write Account (Caller) Nonce
+                //   - Write TxAccessListAccount (Caller)
+                //   - Write TxAccessListAccount (Callee)
                 //   - a TransferWithGasFeeGadget
-                rw_counter: Delta(7.expr() + transfer_with_gas_fee.rw_delta()),
+                rw_counter: Delta(
+                    7.expr()
+                        + transfer_with_gas_fee.rw_delta()
+                        // TRICKY:
+                        // Process the reversion only for Precompile in begin TX. Since no
+                        // associated opcodes could process reversion afterwards
+                        // (corresponding to `handle_reversion` call in `gen_begin_tx_ops`).
+                        // TODO:
+                        // Move it to code of generating precompiled operations when implemented.
+                        + not::expr(is_persistent.expr())
+                            * transfer_with_gas_fee.reversible_w_delta(),
+                ),
                 call_id: To(call_id.expr()),
                 ..StepStateTransition::any()
             });
