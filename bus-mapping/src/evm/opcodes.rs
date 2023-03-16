@@ -61,6 +61,7 @@ mod error_codestore;
 mod error_contract_address_collision;
 mod error_invalid_jump;
 mod error_oog_call;
+mod error_oog_create2;
 mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
@@ -76,6 +77,7 @@ mod error_write_protection;
 mod memory_expansion_test;
 
 use self::sha3::Sha3;
+use crate::evm::opcodes::error_oog_create2::OOGCreate2;
 use crate::precompile::is_precompiled;
 use address::Address;
 use balance::Balance;
@@ -287,6 +289,7 @@ fn fn_gen_error_state_associated_ops(
         ExecError::InvalidOpcode => Some(ErrorSimple::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::Constant) => Some(ErrorSimple::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Create2) => Some(OOGCreate2::gen_associated_ops),
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::DynamicMemoryExpansion) => {
             Some(OOGDynamicMemory::gen_associated_ops)
