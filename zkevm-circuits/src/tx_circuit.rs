@@ -109,8 +109,7 @@ pub struct TxCircuitConfig<F: Field> {
 
     /// TxFieldTag assigned to the row.
     tag: BinaryNumberConfig<TxFieldTag, 5>,
-    rlp_tag: Column<Advice>,
-    tag_table: TagTable,
+    rlp_tag: Column<Fixed>,
 
     tx_id_is_zero: IsEqualConfig<F>,
     /// Primarily used to verify if the `CallDataLength` is zero or non-zero.
@@ -185,15 +184,13 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
     ) -> Self {
         let q_enable = meta.fixed_column();
         let tag = BinaryNumberChip::configure(meta, q_enable, None);
-        let rlp_tag = meta.advice_column();
+        let rlp_tag = meta.fixed_column();
         let value_inv = meta.advice_column_in(SecondPhase);
         let is_calldata = meta.advice_column(); // to reduce degree
         let is_create = meta.advice_column();
-        let num_txs_in_block = meta.advice_column();
-        let cum_num_txs = meta.advice_column();
-        let tx_idx_in_block = meta.advice_column();
-        let is_padding_tx = meta.advice_column();
         let is_tag_block_num = meta.advice_column();
+        let cum_num_txs = meta.advice_column();
+        let is_padding_tx = meta.advice_column();
         let lookup_conditions = [
             LookupCondition::TxCalldata,
             LookupCondition::Tag,
@@ -206,7 +203,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         .map(|condition| (condition, meta.advice_column()))
         .collect::<HashMap<LookupCondition, Column<Advice>>>();
 
-        let tag_table = TagTable::construct(meta);
         let sv_address = meta.advice_column();
         meta.enable_equality(tx_table.value);
         meta.enable_equality(sv_address);
@@ -292,33 +288,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     lookup_conditions[&LookupCondition::TxCalldata],
                     Rotation::cur(),
                 ),
-            );
-
-            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
-        });
-
-        meta.create_gate("lookup into tag table condition", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            let is_tag_in_set = sum::expr([
-                is_nonce(meta),
-                is_gas_price(meta),
-                is_gas(meta),
-                is_to(meta),
-                is_value(meta),
-                is_data_length(meta),
-                is_sig_v(meta),
-                is_sig_r(meta),
-                is_sig_s(meta),
-                is_sign_length(meta),
-                is_sign_rlc(meta),
-                is_hash_length(meta),
-                is_hash_rlc(meta),
-            ]);
-            cb.require_equal(
-                "condition",
-                is_tag_in_set,
-                meta.query_advice(lookup_conditions[&LookupCondition::Tag], Rotation::cur()),
             );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -484,7 +453,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             q_enable,
             rlp_tag,
             &lookup_conditions,
-            &tag_table,
             is_final,
             calldata_length,
             calldata_gas_cost_acc,
@@ -576,8 +544,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 not::expr(tx_id_is_zero.is_equal_expression.expr()),
             ]))
         });
-
-        // 1. remove rlp tag
 
         // 3. tx id change is in u16 range
 
@@ -687,7 +653,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             q_enable,
             tag,
             rlp_tag,
-            tag_table,
             tx_id_is_zero,
             value_is_zero,
             tx_id_unchanged,
@@ -716,44 +681,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 impl<F: Field> TxCircuitConfig<F> {
     /// Load ECDSA RangeChip table.
     pub fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_region(
-            || "tag table region",
-            |mut region| {
-                for (i, (tag, rlp_tag)) in [
-                    (Nonce, RlpTxTag::Nonce),
-                    (GasPrice, RlpTxTag::GasPrice),
-                    (Gas, RlpTxTag::Gas),
-                    (CalleeAddress, RlpTxTag::To),
-                    (TxFieldTag::Value, RlpTxTag::Value),
-                    (CallDataLength, RlpTxTag::DataPrefix),
-                    (SigV, RlpTxTag::SigV),
-                    (SigR, RlpTxTag::SigR),
-                    (SigS, RlpTxTag::SigS),
-                    (TxSignLength, RlpTxTag::RlpLength),
-                    (TxHashLength, RlpTxTag::RlpLength),
-                    (TxSignRLC, RlpTxTag::Rlp),
-                    (TxHashRLC, RlpTxTag::Rlp),
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    region.assign_fixed(
-                        || "tx tag",
-                        self.tag_table.tx_tag,
-                        i,
-                        || Value::known(F::from(tag as u64)),
-                    )?;
-                    region.assign_fixed(
-                        || "rlp tag",
-                        self.tag_table.rlp_tag,
-                        i,
-                        || Value::known(F::from(rlp_tag as u64)),
-                    )?;
-                }
-
-                Ok(())
-            },
-        )?;
         #[cfg(feature = "enable-sign-verify")]
         self.sign_verify.load_range(layouter)?;
 
@@ -807,34 +734,7 @@ impl<F: Field> TxCircuitConfig<F> {
             Value::known(F::from(tx_id_next as u64)),
         )?;
 
-        /*
         region.assign_fixed(
-            || "tx_table.tag",
-            self.tx_table.tag,
-            *offset,
-            || Value::known(F::from(tag as u64)),
-        )?;
-        region.assign_advice(
-            || "tx_table.tx_id",
-            self.tx_table.tx_id,
-            *offset,
-            || Value::known(F::from(tx_id as u64)),
-        )?;
-        region.assign_advice(
-            || "tx_table.index",
-            self.tx_table.index,
-            *offset,
-            || Value::known(F::from())
-        )?;
-        region.assign_advice(
-            || "tx_table.value",
-            self.tx_table.value,
-            *offset,
-            value,
-        )?;
-        */
-
-        region.assign_advice(
             || "rlp tag",
             self.rlp_tag,
             *offset,
@@ -1008,6 +908,12 @@ impl<F: Field> TxCircuitConfig<F> {
                 offset,
                 || Value::known(F::one()),
             )?;
+            region.assign_fixed(
+                || "rlp_tag",
+                self.rlp_tag,
+                offset,
+                || Value::known(rlp_data),
+            )?;
             region.assign_fixed(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
             tag_chip.assign(region, offset, &CallData)?;
             // no need to assign tx_id_is_zero_chip for real prover as tx_id = 0
@@ -1030,7 +936,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 (self.tx_table.tx_id, F::zero()),
                 (self.tx_table.index, F::zero()),
                 (self.tx_table.value, F::zero()),
-                (self.rlp_tag, rlp_data),
                 (self.is_final, F::one()),
                 (self.is_calldata, F::one()),
                 (self.is_create, F::zero()),
@@ -1089,9 +994,8 @@ impl<F: Field> TxCircuitConfig<F> {
     fn configure_lookups(
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
-        rlp_tag: Column<Advice>,
+        rlp_tag: Column<Fixed>,
         lookup_conditions: &HashMap<LookupCondition, Column<Advice>>,
-        tag_table: &TagTable,
         is_final: Column<Advice>,
         calldata_length: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
@@ -1174,36 +1078,6 @@ impl<F: Field> TxCircuitConfig<F> {
         /////////////////    RLP table lookups     //////////////////////
         /////////////////////////////////////////////////////////////////
 
-        // lookup to tag table to make sure rlp_tag is correct
-        meta.lookup_any("(tag, rlp_tag) in tag table", |meta| {
-            // nonce -> nonce
-            // gas_price -> gas_price
-            // gas -> gas
-            // callee_address -> to
-            // value -> value
-            // call_data_length -> data_prefix
-            // sig_v -> sig_v
-            // sig_r -> sig_r
-            // sig_s -> sig_s
-            // sign_length -> rlp_length
-            // sign_rlc -> rlp
-            // hash_length -> rlp_length
-            // hash_rlc -> rlp
-            let enable = and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_advice(lookup_conditions[&LookupCondition::Tag], Rotation::cur()),
-            ]);
-            let tx_tag = meta.query_fixed(tx_table.tag, Rotation::cur());
-            let rlp_tag = meta.query_advice(rlp_tag, Rotation::cur());
-            let tx_tag_table = meta.query_fixed(tag_table.tx_tag, Rotation::cur());
-            let rlp_tag_table = meta.query_fixed(tag_table.rlp_tag, Rotation::cur());
-
-            vec![
-                (enable.expr() * tx_tag, tx_tag_table),
-                (enable.expr() * rlp_tag, rlp_tag_table),
-            ]
-        });
-
         // lookup tx tag in rlp table for TxSign.
         meta.lookup_any("tx tag in RLP Table::TxSign", |meta| {
             let enable = and::expr([
@@ -1213,7 +1087,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     Rotation::cur(),
                 ),
             ]);
-            let rlp_tag = meta.query_advice(rlp_tag, Rotation::cur());
+            let rlp_tag = meta.query_fixed(rlp_tag, Rotation::cur());
 
             vec![
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
@@ -1230,7 +1104,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
         // lookup tx tag in rlp table for TxHash
         meta.lookup_any("tx tag in RLP Table::TxHash", |meta| {
-            let rlp_tag = meta.query_advice(rlp_tag, Rotation::cur());
+            let rlp_tag = meta.query_fixed(rlp_tag, Rotation::cur());
             let enable = and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_advice(
@@ -1466,12 +1340,12 @@ impl<F: Field> TxCircuit<F> {
         layouter.assign_region(
             || "dev block table",
             |mut region| {
-                let mut offset = 0;
-                for (block_num, cum_num_txs) in
-                    iter::once((0, 0)).chain(block_nums.iter().scan(0, |cum_num_txs, block_num| {
+                for (offset, (block_num, cum_num_txs)) in iter::once((0, 0))
+                    .chain(block_nums.iter().scan(0, |cum_num_txs, block_num| {
                         *cum_num_txs += num_txs_in_blocks[block_num];
                         Some((*block_num, *cum_num_txs))
                     }))
+                    .enumerate()
                 {
                     region.assign_advice(
                         || "block_table.tag",
@@ -1491,8 +1365,6 @@ impl<F: Field> TxCircuit<F> {
                         offset,
                         || Value::known(F::from(cum_num_txs as u64)),
                     )?;
-
-                    offset += 1;
                 }
                 Ok(())
             },
@@ -1534,7 +1406,7 @@ impl<F: Field> TxCircuit<F> {
                     false,
                     None,
                     None,
-                    false,
+                    is_padding_tx,
                     cum_num_txs,
                 )?;
 
@@ -1584,7 +1456,7 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             CallerAddress,
-                            RlpTxTag::Padding, // FIXME
+                            RlpTxTag::Padding, // no corresponding rlp tag
                             Value::known(tx.caller_address.to_scalar().expect("tx.from too big")),
                         ),
                         (
@@ -1599,7 +1471,7 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             IsCreate,
-                            RlpTxTag::Padding, // FIXME
+                            RlpTxTag::Padding, // no corresponding rlp tag
                             Value::known(F::from(tx.is_create as u64)),
                         ),
                         (
@@ -1616,7 +1488,7 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             CallDataGasCost,
-                            RlpTxTag::Padding, // FIXME
+                            RlpTxTag::Padding, // no corresponding rlp tag
                             Value::known(F::from(tx.call_data_gas_cost)),
                         ),
                         (SigV, RlpTxTag::SigV, Value::known(F::from(tx.v))),
@@ -1650,7 +1522,7 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             TxSignHash,
-                            RlpTxTag::Padding, // FIXME
+                            RlpTxTag::Padding, // no corresponding rlp tag
                             tx_sign_hash,
                         ),
                         (
@@ -1669,7 +1541,7 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             TxFieldTag::TxHash,
-                            RlpTxTag::Padding, // FIXME
+                            RlpTxTag::Padding, // no corresponding rlp tag
                             challenges.evm_word().map(|challenge| {
                                 tx.hash
                                     .to_fixed_bytes()
@@ -1681,8 +1553,8 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             TxFieldTag::BlockNumber,
-                            RlpTxTag::Padding,                      // FIXME
-                            Value::known(F::from(tx.block_number)), // FIXME
+                            RlpTxTag::Padding, // no corresponding rlp tag
+                            Value::known(F::from(tx.block_number)),
                         ),
                     ] {
                         let tx_id_next = match tag {
