@@ -101,6 +101,25 @@ impl ZktrieState {
     where
         BYTES: IntoIterator<Item = &'d [u8]>,
     {
+        Self::from_trace_with_additional(
+            state_root,
+            account_proofs,
+            storage_proofs,
+            std::iter::empty(),
+        )
+    }
+
+    /// construct from external data, with additional proofs (trie node) can be
+    /// provided
+    pub fn from_trace_with_additional<'d, BYTES>(
+        state_root: Hash,
+        account_proofs: impl Iterator<Item = (&'d Address, BYTES)> + Clone,
+        storage_proofs: impl Iterator<Item = (&'d Address, &'d Word, BYTES)> + Clone,
+        additional_proofs: impl Iterator<Item = &'d [u8]> + Clone,
+    ) -> Result<Self, Error>
+    where
+        BYTES: IntoIterator<Item = &'d [u8]>,
+    {
         use builder::{AccountProof, BytesArray, StorageProof};
 
         let mut sdb = StateDB::new();
@@ -109,7 +128,8 @@ impl ZktrieState {
         let proofs = account_proofs
             .clone()
             .flat_map(|(_, bytes)| bytes)
-            .chain(storage_proofs.clone().flat_map(|(_, _, bytes)| bytes));
+            .chain(storage_proofs.clone().flat_map(|(_, _, bytes)| bytes))
+            .chain(additional_proofs);
 
         for (addr, bytes) in account_proofs {
             let acc_proof = builder::verify_proof_leaf(
