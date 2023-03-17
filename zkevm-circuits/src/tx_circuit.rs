@@ -53,7 +53,7 @@ pub use halo2_proofs::halo2curves::{
     },
     secp256k1::{self, Secp256k1Affine, Secp256k1Compressed},
 };
-use halo2_proofs::plonk::Fixed;
+use halo2_proofs::plonk::{Fixed, TableColumn};
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -62,6 +62,7 @@ use halo2_proofs::plonk::SecondPhase;
 
 use crate::table::BlockContextFieldTag::CumNumTxs;
 use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
+use halo2_proofs::circuit::Chip;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
@@ -110,6 +111,7 @@ pub struct TxCircuitConfig<F: Field> {
     /// TxFieldTag assigned to the row.
     tag: BinaryNumberConfig<TxFieldTag, 5>,
     rlp_tag: Column<Fixed>,
+    u16_table: TableColumn,
 
     tx_id_is_zero: IsEqualConfig<F>,
     /// Primarily used to verify if the `CallDataLength` is zero or non-zero.
@@ -185,6 +187,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let q_enable = meta.fixed_column();
         let tag = BinaryNumberChip::configure(meta, q_enable, None);
         let rlp_tag = meta.fixed_column();
+        let u16_table = meta.lookup_table_column();
         let value_inv = meta.advice_column_in(SecondPhase);
         let is_calldata = meta.advice_column(); // to reduce degree
         let is_create = meta.advice_column();
@@ -448,6 +451,23 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 .collect::<Vec<_>>()
         });
 
+        meta.lookup("tx_id_diff must in u16", |meta| {
+            let tx_id = meta.query_advice(tx_table.tx_id, Rotation::cur());
+            let tx_id_next = meta.query_advice(tx_table.tx_id, Rotation::next());
+            let q_enable = meta.query_fixed(q_enable, Rotation::next());
+            let tx_id_inv_next = meta.query_advice(
+                tx_id_is_zero.is_zero_chip.config().value_inv,
+                Rotation::next(),
+            );
+            let is_calldata = meta.query_advice(is_calldata, Rotation::cur());
+            let tx_id_next_is_zero = q_enable * (1.expr() - tx_id_next.clone() * tx_id_inv_next);
+
+            vec![(
+                is_calldata * not::expr(tx_id_next_is_zero) * (tx_id_next - tx_id),
+                u16_table,
+            )]
+        });
+
         Self::configure_lookups(
             meta,
             q_enable,
@@ -524,8 +544,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             });
 
             // on the final call data byte, tx_id must change.
-            // FIXME: tx id change is not sufficient as tx id can change from 4 -> 5 -> 4
-            //  instead we need to ensure that tx_id_next > tx_id if tx_id_next != 0
             cb.condition(is_final_cur, |cb| {
                 cb.require_zero(
                     "tx_id changes at is_final == 1",
@@ -544,28 +562,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 not::expr(tx_id_is_zero.is_equal_expression.expr()),
             ]))
         });
-
-        // 3. tx id change is in u16 range
-
-        // 4. tx chain_id equals to constant
-
-        /*
-        meta.create_gate("tx id change at nonce row", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "tx_id::cur == tx_id::prev + 1",
-                meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                meta.query_advice(tx_table.tx_id, Rotation::prev()) + 1.expr(),
-            );
-
-            cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                // meta.query_advice(is_usable, Rotation::cur()),
-                tag.value_equals(TxFieldTag::Nonce, Rotation::cur())(meta),
-            ]))
-        });
-        */
 
         /*
         meta.create_gate("tx signature v", |meta| {
@@ -653,6 +649,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             q_enable,
             tag,
             rlp_tag,
+            u16_table,
             tx_id_is_zero,
             value_is_zero,
             tx_id_unchanged,
@@ -681,6 +678,21 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 impl<F: Field> TxCircuitConfig<F> {
     /// Load ECDSA RangeChip table.
     pub fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_table(
+            || "u16 fixed table",
+            |mut table| {
+                for i in 0..(1 << 16) {
+                    table.assign_cell(
+                        || format!("u16_row_{}", i),
+                        self.u16_table,
+                        i,
+                        || Value::known(F::from(i as u64)),
+                    )?;
+                }
+                Ok(())
+            },
+        )?;
+
         #[cfg(feature = "enable-sign-verify")]
         self.sign_verify.load_range(layouter)?;
 
