@@ -285,6 +285,11 @@ fn fn_gen_error_state_associated_ops(
     match error {
         ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
         ExecError::InvalidOpcode => Some(ErrorSimple::gen_associated_ops),
+        ExecError::Depth => {
+            let op = geth_step.op;
+            assert!(op.is_call());
+            Some(fn_gen_associated_ops(&op))
+        }
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::Constant) => Some(ErrorSimple::gen_associated_ops),
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
