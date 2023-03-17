@@ -20,7 +20,6 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGCreate2Gadget<F> {
     opcode: Cell<F>,
-    is_create2: IsEqualGadget<F>,
     value: Word<F>,
     address: Word<F>,
     size: Word<F>,
@@ -44,11 +43,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let is_create2 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::CREATE2.expr());
-
-        cb.require_true(
+        cb.require_equal(
             "ErrorOutOfGasCREATE2 opcode must be CREATE2",
-            is_create2.expr(),
+            opcode.expr(),
+            OpcodeId::CREATE2.expr(),
         );
 
         let value = cb.query_word_rlc();
@@ -134,7 +132,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
 
         Self {
             opcode,
-            is_create2,
             value,
             address,
             size,
@@ -163,13 +160,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-
-        self.is_create2.assign(
-            region,
-            offset,
-            F::from(opcode.as_u64()),
-            F::from(OpcodeId::CREATE2.as_u64()),
-        )?;
 
         self.value.assign(
             region,
