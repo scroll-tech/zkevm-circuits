@@ -4,7 +4,7 @@ use crate::evm_circuit::step::ExecutionState;
 use crate::evm_circuit::util::common_gadget::RestoreContextGadget;
 use crate::evm_circuit::util::constraint_builder::Transition::{Delta, Same};
 use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
-use crate::evm_circuit::util::math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget};
+use crate::evm_circuit::util::math_gadget::{IsZeroGadget, LtGadget};
 use crate::evm_circuit::util::memory_gadget::{
     address_high, address_low, MemoryExpansionGadget, MemoryWordSizeGadget,
 };
