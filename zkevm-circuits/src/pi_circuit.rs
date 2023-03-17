@@ -3,7 +3,7 @@
 use std::iter;
 use std::marker::PhantomData;
 
-use crate::table::TxTable;
+use crate::table::{BlockContextFieldTag, TxTable};
 use crate::table::{BlockTable, KeccakTable, LookupTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{Address, Field, ToBigEndian, Word};
@@ -24,7 +24,6 @@ use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness::{self, Block, BlockContext, BlockContexts, Transaction};
 use bus_mapping::util::read_env_var;
 use gadgets::util::{not, select, Expr};
-use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
@@ -32,14 +31,23 @@ use halo2_proofs::{
 };
 use once_cell::sync::Lazy;
 
+use crate::table::BlockContextFieldTag::{
+    BaseFee, BlockHash, ChainId, Coinbase, CumNumTxs, Difficulty, GasLimit, NumTxs, Number,
+    Timestamp,
+};
+use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
+use halo2_proofs::circuit::{Cell, RegionIndex};
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
+use itertools::Itertools;
 
 /// Fixed by the spec
 const BLOCK_LEN: usize = 10;
 const NUM_HISTORY_HASHES: usize = 1;
 const BYTE_POW_BASE: u64 = 256;
 const BLOCK_HEADER_BYTES_NUM: usize = 124;
+// chain_id || coinbase || difficulty
+const BLOCK_HEADER_CONST_BYTES_NUM: usize = 84;
 const KECCAK_DIGEST_SIZE: usize = 32;
 const RPI_CELL_IDX: usize = 0;
 const RPI_RLC_ACC_CELL_IDX: usize = 1;
@@ -52,9 +60,14 @@ const TIMESTAMP_OFFSET: usize = 1;
 const BASE_FEE_OFFSET: usize = 5;
 const GAS_LIMIT_OFFSET: usize = 4;
 const NUM_TXS_OFFSET: usize = 7;
+const CUM_NUM_TXS_OFFSET: usize = 8;
+const CHAIN_ID_OFFSET: usize = 6;
+const COINBASE_OFFSET: usize = 0;
+const DIFFICULTY_OFFSET: usize = 3;
 
-pub(crate) static CHAIN_ID: Lazy<u64> = Lazy::new(|| read_env_var("CHAIN_ID", 0));
+pub(crate) static CHAIN_ID: Lazy<Word> = Lazy::new(|| read_env_var("CHAIN_ID", Word::zero()));
 pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| read_env_var("COINBASE", Address::zero()));
+pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
 
 /// PublicData contains all the values that the PiCircuit receives as input
 #[derive(Debug, Clone)]
@@ -163,6 +176,22 @@ impl PublicData {
     }
 }
 
+impl Default for BlockContext {
+    fn default() -> Self {
+        Self {
+            chain_id: *CHAIN_ID,
+            coinbase: *COINBASE,
+            difficulty: *DIFFICULTY,
+            gas_limit: 0,
+            number: Default::default(),
+            timestamp: Default::default(),
+            base_fee: Default::default(),
+            history_hashes: vec![],
+            eth_block: Default::default(),
+        }
+    }
+}
+
 /// Config for PiCircuit
 #[derive(Clone, Debug)]
 pub struct PiCircuitConfig<F: Field> {
@@ -173,6 +202,9 @@ pub struct PiCircuitConfig<F: Field> {
     /// Max number of supported inner blocks in a batch
     max_inner_blocks: usize,
 
+    /// dedicated column to store the chain_id, difficulty, coinbase constants
+    constant: Column<Fixed>,
+
     raw_public_inputs: Column<Advice>, // block, history_hashes, states, tx hashes
     rpi_field_bytes: Column<Advice>,   // rpi in bytes
     rpi_field_bytes_acc: Column<Advice>,
@@ -181,6 +213,11 @@ pub struct PiCircuitConfig<F: Field> {
 
     is_rpi_padding: Column<Advice>,
     real_rpi: Column<Advice>,
+
+    // columns for assertion about cum_num_txs in block table
+    cum_num_txs: Column<Advice>,
+    block_tag_bits: BinaryNumberConfig<BlockContextFieldTag, 4>,
+    q_block_tag: Column<Fixed>,
 
     q_field_start: Selector,
     q_field_step: Selector,
@@ -237,6 +274,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
+        let constant = meta.fixed_column();
         let rpi = meta.advice_column_in(SecondPhase);
         let rpi_bytes = meta.advice_column();
         let rpi_bytes_acc = meta.advice_column_in(SecondPhase);
@@ -260,6 +298,12 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_not_end = meta.complex_selector();
         let q_keccak = meta.complex_selector();
 
+        let q_block_tag = meta.fixed_column();
+        let cum_num_txs = meta.advice_column();
+        let block_tag_bits = BinaryNumberChip::configure(meta, q_block_tag, Some(block_table.tag));
+
+        meta.enable_equality(constant);
+        meta.enable_equality(rpi_bytes);
         meta.enable_equality(rpi);
         meta.enable_equality(real_rpi);
         meta.enable_equality(rpi_rlc_acc);
@@ -401,8 +445,43 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         // | lo  |    ...    |      ...      |     ...     |
         // | lo  |     b0    | b15*2^120+... | b31*r^31+...|
 
-        // TODO: add constraints on block_table.value for tag = 'CumNumTxs'.
-        //       cur_block.cum_num_txs = prev_block.cum_num_txs + cur_block.num_txs
+        meta.create_gate("cum_num_txs == 0 for first row", |meta| {
+            let q_start = meta.query_selector(q_start);
+            let cum_num_txs = meta.query_advice(cum_num_txs, Rotation::next());
+
+            vec![q_start * cum_num_txs]
+        });
+        meta.create_gate(
+            "cum_num_txs::next == cum_num_txs::cur + (block_table.tag == NumTxs) ? block_table.value : 0",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
+                let q_block_tag = meta.query_fixed(q_block_tag, Rotation::cur());
+                let num_txs = meta.query_advice(block_table.value, Rotation::cur());
+                let cum_num_txs_cur = meta.query_advice(cum_num_txs, Rotation::cur());
+                let cum_num_txs_next = meta.query_advice(cum_num_txs, Rotation::next());
+                let is_num_txs_field = block_tag_bits.value_equals(BlockContextFieldTag::NumTxs, Rotation::cur())(meta);
+                let block_tag = meta.query_advice(block_table.tag, Rotation::cur());
+                let tag_bits = block_tag_bits.value(Rotation::cur())(meta);
+
+                let num_txs = select::expr(
+                    is_num_txs_field,
+                    num_txs,
+                    0.expr(),
+                );
+                cb.require_equal(
+                    "block_tag_bits == block_tag",
+                    block_tag,
+                    tag_bits,
+                );
+                cb.require_equal(
+                    "cum_num_txs",
+                    cum_num_txs_next,
+                    cum_num_txs_cur + num_txs,
+                );
+
+                cb.gate(q_block_tag)
+            }
+        );
 
         Self {
             max_txs,
@@ -411,6 +490,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             block_table,
             tx_table,
             keccak_table,
+            constant,
             raw_public_inputs: rpi,
             rpi_field_bytes: rpi_bytes,
             rpi_field_bytes_acc: rpi_bytes_acc,
@@ -425,6 +505,9 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             q_start,
             q_not_end,
             q_keccak,
+            cum_num_txs,
+            block_tag_bits,
+            q_block_tag,
             pi,
             _marker: PhantomData,
             state_roots: None,
@@ -438,6 +521,7 @@ impl<F: Field> PiCircuitConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         public_data: &PublicData,
+        block_value_cells: &[AssignedCell<F, F>],
         challenges: &Challenges<Value<F>>,
     ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
         let block_values = &public_data.block_ctxs;
@@ -456,6 +540,25 @@ impl<F: Field> PiCircuitConfig<F> {
         let dummy_tx_hash = get_dummy_tx_hash(public_data.chain_id.as_u64());
 
         self.q_start.enable(region, offset)?;
+
+        // assign constants
+        let mut pi_constants = vec![];
+        pi_constants.extend_from_slice(&CHAIN_ID.to_be_bytes()[..]);
+        pi_constants.extend_from_slice(&COINBASE.to_fixed_bytes()[..]);
+        pi_constants.extend_from_slice(&DIFFICULTY.to_be_bytes()[..]);
+
+        let pi_constants = pi_constants
+            .into_iter()
+            .enumerate()
+            .map(|(i, byte)| {
+                region.assign_fixed(
+                    || format!("PI constant {}", i),
+                    self.constant,
+                    i,
+                    || Value::known(F::from(byte as u64)),
+                )
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
 
         // assign state roots
         // previous_state_root before applying this batch
@@ -555,7 +658,7 @@ impl<F: Field> PiCircuitConfig<F> {
             // FIXME: this should be assigned in the future
             let num_l1_msgs = 0_u16;
 
-            // Assign fields in block table
+            // Assign fields in pi columns and connect them to block table
             // block hash
             self.assign_field_in_pi(
                 region,
@@ -678,17 +781,75 @@ impl<F: Field> PiCircuitConfig<F> {
                 &num_l1_msgs.to_be_bytes(),
                 &mut rpi_rlc_acc,
                 &mut rpi_length_acc,
-                true,
+                false,
                 is_rpi_padding,
                 challenges,
                 false,
             )?;
 
+            // chain_id
+            let chain_id_cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &CHAIN_ID.to_be_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                false,
+                true,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                chain_id_cells[RPI_CELL_IDX].clone(),
+                block_table_offset + CHAIN_ID_OFFSET,
+            ));
+            // coinbase
+            let coinbase_cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &COINBASE.to_fixed_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                false,
+                true,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                coinbase_cells[RPI_CELL_IDX].clone(),
+                block_table_offset + COINBASE_OFFSET,
+            ));
+            // difficulty
+            let difficulty_cells = self.assign_field_in_pi(
+                region,
+                &mut offset,
+                &DIFFICULTY.to_be_bytes(),
+                &mut rpi_rlc_acc,
+                &mut rpi_length_acc,
+                false,
+                true,
+                challenges,
+                false,
+            )?;
+            block_copy_cells.push((
+                difficulty_cells[RPI_CELL_IDX].clone(),
+                block_table_offset + DIFFICULTY_OFFSET,
+            ));
+
+            let mut pi_cells = vec![];
+            pi_cells.extend_from_slice(&chain_id_cells[2..]);
+            pi_cells.extend_from_slice(&coinbase_cells[2..]);
+            pi_cells.extend_from_slice(&difficulty_cells[2..]);
+
+            for (constant, byte) in pi_constants.iter().zip(pi_cells.into_iter()) {
+                region.constrain_equal(constant.cell(), byte.cell())?;
+            }
             block_table_offset += BLOCK_LEN;
         }
         debug_assert_eq!(
             offset,
-            32 * 3 + BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks
+            32 * 3
+                + (BLOCK_HEADER_BYTES_NUM + BLOCK_HEADER_CONST_BYTES_NUM) * self.max_inner_blocks
         );
 
         // assign tx hashes
@@ -716,7 +877,7 @@ impl<F: Field> PiCircuitConfig<F> {
 
         debug_assert_eq!(
             offset,
-            BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks
+            (BLOCK_HEADER_BYTES_NUM + BLOCK_HEADER_CONST_BYTES_NUM) * self.max_inner_blocks
                 + KECCAK_DIGEST_SIZE * 3
                 + KECCAK_DIGEST_SIZE * self.max_txs
         );
@@ -728,11 +889,8 @@ impl<F: Field> PiCircuitConfig<F> {
         for (block_cell, row_offset) in block_copy_cells.into_iter() {
             region.constrain_equal(
                 block_cell.cell(),
-                Cell {
-                    region_index: RegionIndex(0), // FIXME: this is not safe
-                    row_offset,
-                    column: self.block_table.value.into(),
-                },
+                block_value_cells[row_offset - 1].cell(), /* -1 for block table's first row of
+                                                           * all-zeros */
             )?;
         }
         #[cfg(feature = "reject-eip2718")]
@@ -826,7 +984,7 @@ impl<F: Field> PiCircuitConfig<F> {
         rpi_rlc_acc: &mut Value<F>,
         rpi_length_acc: &mut u64,
         is_block: bool,
-        is_padding: bool,
+        skip_for_keccak: bool,
         challenges: &Challenges<Value<F>>,
         keccak_hi_lo: bool,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
@@ -850,22 +1008,22 @@ impl<F: Field> PiCircuitConfig<F> {
                     .and_then(|(acc, t)| Value::known(acc * t + F::from(*byte as u64)))
             });
 
-        let mut cells = vec![None, None];
+        let mut cells = vec![None; 2 + value_bytes.len()];
         for (i, byte) in value_bytes.iter().enumerate() {
             let row_offset = *offset + i;
 
-            let real_value = if is_padding {
+            let real_value = if skip_for_keccak {
                 Value::known(F::zero())
             } else {
                 value
             };
-            *rpi_length_acc += if is_padding { 0 } else { 1 };
+            *rpi_length_acc += if skip_for_keccak { 0 } else { 1 };
             // calculate acc
             value_bytes_acc = value_bytes_acc
                 .zip(t)
                 .and_then(|(acc, t)| Value::known(acc * t + F::from(*byte as u64)));
 
-            if !is_padding {
+            if !skip_for_keccak {
                 *rpi_rlc_acc = rpi_rlc_acc
                     .zip(r)
                     .and_then(|(acc, rand)| Value::known(acc * rand + F::from(*byte as u64)));
@@ -887,7 +1045,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 row_offset,
                 || Value::known(use_rlc),
             )?;
-            region.assign_advice(
+            let field_byte_cell = region.assign_advice(
                 || "field byte",
                 self.rpi_field_bytes,
                 row_offset,
@@ -915,7 +1073,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 || "is_rpi_padding",
                 self.is_rpi_padding,
                 row_offset,
-                || Value::known(F::from(is_padding as u64)),
+                || Value::known(F::from(skip_for_keccak as u64)),
             )?;
             let real_rpi_cell =
                 region.assign_advice(|| "real_rpi", self.real_rpi, row_offset, || real_value)?;
@@ -934,10 +1092,110 @@ impl<F: Field> PiCircuitConfig<F> {
                 };
                 cells[RPI_RLC_ACC_CELL_IDX] = Some(rpi_rlc_cell);
             }
+            cells[2 + i] = Some(field_byte_cell);
         }
         *offset += len;
 
         Ok(cells.into_iter().map(|cell| cell.unwrap()).collect())
+    }
+
+    fn assign_block_table(
+        &self,
+        region: &mut Region<'_, F>,
+        public_data: &PublicData,
+        max_inner_blocks: usize,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        let mut offset = 0;
+
+        let block_tag_chip = BinaryNumberChip::construct(self.block_tag_bits);
+        let block_table_columns = <BlockTable as LookupTable<F>>::advice_columns(&self.block_table);
+
+        region.assign_fixed(
+            || "block table all-zero row for fixed",
+            self.q_block_tag,
+            offset,
+            || Value::known(F::zero()),
+        )?;
+        for column in block_table_columns
+            .iter()
+            .chain(iter::once(&self.cum_num_txs))
+        {
+            region.assign_advice(
+                || "block table all-zero row",
+                *column,
+                offset,
+                || Value::known(F::zero()),
+            )?;
+        }
+        block_tag_chip.assign(region, offset, &BlockContextFieldTag::Null)?;
+        offset += 1;
+
+        let mut cum_num_txs = 0usize;
+        let mut block_value_cells = vec![];
+        let block_ctxs = &public_data.block_ctxs;
+        for (block_idx, block_ctx) in block_ctxs
+            .ctxs
+            .values()
+            .cloned()
+            .chain(
+                (block_ctxs.ctxs.len()..max_inner_blocks)
+                    .into_iter()
+                    .map(|_| BlockContext::default()),
+            )
+            .enumerate()
+        {
+            let num_txs = public_data
+                .transactions
+                .iter()
+                .filter(|tx| tx.block_number == block_ctx.number.as_u64())
+                .count();
+            let tag = [
+                Coinbase, Timestamp, Number, Difficulty, GasLimit, BaseFee, ChainId, NumTxs,
+                CumNumTxs, BlockHash,
+            ];
+            let mut cum_num_txs_field = F::from(cum_num_txs as u64);
+            cum_num_txs += num_txs;
+            for (row, tag) in block_ctx
+                .table_assignments(num_txs, cum_num_txs, challenges)
+                .into_iter()
+                .zip(tag.iter())
+            {
+                for (column, value) in block_table_columns.iter().zip_eq(row) {
+                    let cell = region.assign_advice(
+                        || format!("block table row {}", offset),
+                        *column,
+                        offset,
+                        || value,
+                    )?;
+                    if *column == self.block_table.value {
+                        block_value_cells.push(cell);
+                    }
+                }
+                block_tag_chip.assign(region, offset, tag)?;
+                if block_idx != max_inner_blocks - 1 || *tag != BlockHash {
+                    // it's not the last row of block table
+                    region.assign_fixed(
+                        || "q_block_tag",
+                        self.q_block_tag,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
+                }
+                if *tag == CumNumTxs {
+                    cum_num_txs_field = F::from(cum_num_txs as u64);
+                }
+                region.assign_advice(
+                    || "cum_num_txs",
+                    self.cum_num_txs,
+                    offset,
+                    || Value::known(cum_num_txs_field),
+                )?;
+                offset += 1;
+            }
+        }
+
+        Ok(block_value_cells)
     }
 }
 
@@ -1050,12 +1308,23 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             || "pi region",
             |mut region| {
                 // Annotate columns
-
                 config.tx_table.annotate_columns_in_region(&mut region);
-                // assign
-                let (keccak_hi_cell, keccak_lo_cell) =
-                    config.assign(&mut region, &self.public_data, challenges)?;
                 config.block_table.annotate_columns_in_region(&mut region);
+
+                // assign block table
+                let block_value_cells = config.assign_block_table(
+                    &mut region,
+                    &self.public_data,
+                    self.max_inner_blocks,
+                    challenges,
+                )?;
+                // assign pi cols
+                let (keccak_hi_cell, keccak_lo_cell) = config.assign(
+                    &mut region,
+                    &self.public_data,
+                    &block_value_cells,
+                    challenges,
+                )?;
 
                 Ok(vec![keccak_hi_cell, keccak_lo_cell])
             },
@@ -1165,14 +1434,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
     ) -> Result<(), Error> {
         let challenges = challenges.values(&layouter);
 
-        // assign block table
-        config.block_table.load(
-            &mut layouter,
-            &self.0.public_data.block_ctxs,
-            &self.0.public_data.transactions,
-            self.0.max_inner_blocks,
-            &challenges,
-        )?;
         // assign tx table
         config.tx_table.load(
             &mut layouter,
@@ -1205,12 +1466,10 @@ mod pi_circuit_test {
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
-    use mock::TestContext;
-    //use mock::MOCK_CHAIN_ID;
-    //use mock::CORRECT_MOCK_TXS;
+    use mock::{TestContext, MOCK_CHAIN_ID, MOCK_DIFFICULTY};
     use pretty_assertions::assert_eq;
-    //use rand_chacha::ChaCha20Rng;
-    //use rand::SeedableRng;
+    // use rand_chacha::ChaCha20Rng;
+    // use rand::SeedableRng;
 
     fn run<
         F: Field,
@@ -1248,9 +1507,18 @@ mod pi_circuit_test {
 
     #[test]
     fn test_simple_pi() {
+        use std::env::set_var;
+
         const MAX_TXS: usize = 4;
         const MAX_CALLDATA: usize = 20;
         const MAX_INNER_BLOCKS: usize = 4;
+
+        let mut difficulty_be_bytes = [0u8; 32];
+        let mut chain_id_be_bytes = [0u8; 32];
+        MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
+        MOCK_CHAIN_ID.to_big_endian(&mut chain_id_be_bytes);
+        set_var("CHAIN_ID", hex::encode(chain_id_be_bytes));
+        set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
         let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode! {
             STOP

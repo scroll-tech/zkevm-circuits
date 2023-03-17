@@ -210,6 +210,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let tx_circuit = TxCircuitConfig::new(
             meta,
             TxCircuitConfigArgs {
+                block_table: block_table.clone(),
                 tx_table: tx_table.clone(),
                 keccak_table: keccak_table.clone(),
                 rlp_table,
@@ -566,14 +567,6 @@ impl<
         // their load() functions which however do not emit the cells.
         // To set up copy constraints between pi cells and block/tx table cells,
         // we need to construct them manually.
-        config.block_table.load(
-            &mut layouter,
-            &block.context,
-            &block.txs,
-            block.circuits_params.max_inner_blocks,
-            &challenges,
-        )?;
-
         config.tx_table.load(
             &mut layouter,
             &block.txs,
@@ -665,10 +658,11 @@ pub(crate) mod super_circuit_tests {
     use halo2_proofs::dev::MockProver;
     use halo2_proofs::halo2curves::bn256::Fr;
     use log::error;
-    use mock::{eth, TestContext, MOCK_CHAIN_ID};
+    use mock::{eth, TestContext, MOCK_CHAIN_ID, MOCK_DIFFICULTY};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use std::collections::HashMap;
+    use std::env::set_var;
 
     use eth_types::evm_types::OpcodeId;
     use eth_types::{address, bytecode, geth_types::GethData, Bytecode, Word};
@@ -691,6 +685,13 @@ pub(crate) mod super_circuit_tests {
         block: GethData,
         circuits_params: CircuitsParams,
     ) {
+        let mut difficulty_be_bytes = [0u8; 32];
+        let mut chain_id_be_bytes = [0u8; 32];
+        MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
+        MOCK_CHAIN_ID.to_big_endian(&mut chain_id_be_bytes);
+        set_var("CHAIN_ID", hex::encode(chain_id_be_bytes));
+        set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
+
         let (k, circuit, instance, _) =
             SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>::build(
                 block,
