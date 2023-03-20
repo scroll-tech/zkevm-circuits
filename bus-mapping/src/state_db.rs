@@ -79,7 +79,7 @@ impl CodeDB {
     /// always return Self::empty_code_hash() for empty code
     pub fn insert(&mut self, code: Vec<u8>) -> Hash {
         let hash = Self::hash(&code);
-        
+
         self.0.insert(hash, code);
         hash
     }
@@ -92,10 +92,8 @@ impl CodeDB {
 
     /// Compute hash of given code.
     pub fn hash(code: &[u8]) -> Hash {
-        H256(keccak256(&code))
+        H256(keccak256(code))
     }
-
-    
 }
 
 /// Account of the Ethereum State Trie, which contains an in-memory key-value

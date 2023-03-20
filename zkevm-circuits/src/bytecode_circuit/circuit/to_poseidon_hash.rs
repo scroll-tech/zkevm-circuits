@@ -3,6 +3,7 @@ use crate::{
     table::{BytecodeFieldTag, KeccakTable, PoseidonTable},
     util::{Challenges, Expr, SubCircuitConfig},
 };
+use bus_mapping::state_db::CodeDB;
 use eth_types::Field;
 use gadgets::is_zero::IsZeroChip;
 use halo2_proofs::{
@@ -10,7 +11,6 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, VirtualCells},
     poly::Rotation,
 };
-use keccak256::EMPTY_HASH_LE;
 use log::trace;
 use std::vec;
 
@@ -412,7 +412,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
 
         let empty_hash = challenges
             .evm_word()
-            .map(|challenge| rlc::value(EMPTY_HASH_LE.as_ref(), challenge));
+            .map(|challenge| rlc::value(CodeDB::empty_code_hash().as_ref(), challenge));
 
         layouter.assign_region(
             || "assign bytecode with poseidon hash extension",

@@ -4,7 +4,6 @@ use crate::{
     },
     evm::Opcode,
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
-    state_db::CodeDB,
     Error,
 };
 use eth_types::{Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};

@@ -801,11 +801,11 @@ impl<'a> CircuitInputStateRef<'a> {
                     _ => address,
                 };
                 if is_precompiled(&code_address) {
-                    (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
+                    (CodeSource::Address(code_address), CodeDB::empty_code_hash())
                 } else {
                     let (found, account) = self.sdb.get_account(&code_address);
                     if !found {
-                        (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
+                        (CodeSource::Address(code_address), CodeDB::empty_code_hash())
                     } else {
                         (CodeSource::Address(code_address), account.code_hash)
                     }

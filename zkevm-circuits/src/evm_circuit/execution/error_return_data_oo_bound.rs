@@ -98,7 +98,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
                 is_remainder_end_exceed_len.expr(),
             ]),
             1.expr(),
-            
         );
 
         let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 6.expr());

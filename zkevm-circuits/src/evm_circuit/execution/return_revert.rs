@@ -18,7 +18,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
+use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
 use eth_types::{Field, ToScalar, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 

@@ -516,7 +516,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             );
             (
                 call.code_hash.to_word(),
-            call.code_hash == CodeDB::empty_code_hash(),
+                call.code_hash == CodeDB::empty_code_hash(),
             )
         }
         (_, false) => (Word::zero(), true),
