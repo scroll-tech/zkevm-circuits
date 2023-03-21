@@ -7,8 +7,10 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::ConstraintBuilder,
             math_gadget::LtGadget,
-            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
-            CachedRegion, Cell,
+            memory_gadget::{
+                MemoryCopierGasGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
+            },
+            or, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -25,7 +27,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGSha3Gadget<F> {
     opcode: Cell<F>,
-    memory_address: MemoryAddressGadget<F>,
+    memory_address: MemoryExpandedAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY_SHA3 }>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
@@ -45,13 +47,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
             OpcodeId::SHA3.expr(),
         );
 
-        let memory_offset = cb.query_cell_phase2();
-        let memory_size = cb.query_word_rlc();
+        let memory_address = MemoryExpandedAddressGadget::construct(cb);
+        cb.stack_pop(memory_address.offset_rlc());
+        cb.stack_pop(memory_address.length_rlc());
 
-        cb.stack_pop(memory_offset.expr());
-        cb.stack_pop(memory_size.expr());
-
-        let memory_address = MemoryAddressGadget::construct(cb, memory_offset, memory_size);
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
@@ -66,8 +65,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
         );
 
         cb.require_equal(
-            "Gas left is less than gas cost",
-            insufficient_gas.expr(),
+            "Offset plus length is greater than maximum expanded address or gas left is less than cost",
+            or::expr([memory_address.address_overflow(), insufficient_gas.expr()]),
             1.expr(),
         );
 
@@ -92,33 +91,31 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
-
-        // gupeng
-        println!(
-            // log::debug!(
+        log::debug!(
             "ErrorOutOfGasSHA3: gas_cost = {}, gas_left = {}",
-            step.gas_cost, step.gas_left,
+            step.gas_cost,
+            step.gas_left,
         );
 
-        let [memory_offset, memory_size] =
-            [0, 1].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
-
+        let opcode = step.opcode.unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        let memory_address =
+
+        let [memory_offset, memory_length] =
+            [0, 1].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
+        let expanded_address =
             self.memory_address
-                .assign(region, offset, memory_offset, memory_size)?;
+                .assign(region, offset, memory_offset, memory_length)?;
         let (_, memory_expansion_cost) = self.memory_expansion.assign(
             region,
             offset,
             step.memory_word_size(),
-            [memory_address],
+            [expanded_address],
         )?;
         let memory_copier_gas = self.memory_copier_gas.assign(
             region,
             offset,
-            memory_size.as_u64(),
+            memory_length.low_u64(),
             memory_expansion_cost,
         )?;
         self.insufficient_gas.assign_value(
@@ -129,6 +126,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
                 OpcodeId::SHA3.constant_gas_cost().0 + memory_copier_gas,
             )),
         )?;
+
         self.common_error_gadget
             .assign(region, offset, block, call, step, 4)?;
 
@@ -146,6 +144,8 @@ mod tests {
     use mock::{
         eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
     };
+
+    const BLOCK_GAS_LIMIT: u64 = 10_000_000_000_000_000;
 
     #[test]
     fn test_oog_sha3_less_than_constant_gas() {
@@ -167,6 +167,26 @@ mod tests {
         test_internal(&testing_data);
     }
 
+    #[test]
+    fn test_oog_sha3_max_expanded_address() {
+        // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
+        // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+        let testing_data = TestingData::new(0xffffffff1, 0xffffffff0, BLOCK_GAS_LIMIT);
+
+        test_root(&testing_data);
+        test_internal(&testing_data);
+    }
+
+    #[test]
+    fn test_oog_sha3_max_u64_address() {
+        // If `offset + length > MAX_U64 - 31`, return ErrGasUintOverflow.
+        // https://github.com/ethereum/go-ethereum/blob/e6b6a8b738069ad0579f6798ee59fde93ed13b43/core/vm/common.go#L68
+        let testing_data = TestingData::new(u64::MAX - 100 - 31, 100, BLOCK_GAS_LIMIT);
+
+        test_root(&testing_data);
+        test_internal(&testing_data);
+    }
+
     struct TestingData {
         bytecode: Bytecode,
         gas_cost: u64,
@@ -180,7 +200,14 @@ mod tests {
                 SHA3
             };
 
-            let gas_cost = gas_cost + OpcodeId::PUSH32.constant_gas_cost().0 * 2;
+            let gas_cost = gas_cost
+                .checked_add(OpcodeId::PUSH32.constant_gas_cost().0 * 2)
+                .unwrap_or(BLOCK_GAS_LIMIT);
+            let gas_cost = if gas_cost > BLOCK_GAS_LIMIT {
+                BLOCK_GAS_LIMIT
+            } else {
+                gas_cost
+            };
 
             Self { bytecode, gas_cost }
         }
@@ -198,15 +225,25 @@ mod tests {
     }
 
     fn test_root(testing_data: &TestingData) {
+        let gas_cost = GasCost::TX
+            .0
+            // Decrease expected gas cost (by 1) to trigger out of gas error.
+            .checked_add(testing_data.gas_cost - 1)
+            .unwrap_or(BLOCK_GAS_LIMIT);
+        let gas_cost = if gas_cost > BLOCK_GAS_LIMIT {
+            BLOCK_GAS_LIMIT
+        } else {
+            gas_cost
+        };
+
         let ctx = TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(testing_data.bytecode.clone()),
             |mut txs, accs| {
-                // Decrease expected gas cost (by 1) to trigger out of gas error.
                 txs[0]
                     .from(accs[1].address)
                     .to(accs[0].address)
-                    .gas((GasCost::TX.0 + testing_data.gas_cost - 1).into());
+                    .gas(gas_cost.into());
             },
             |block, _tx| block.number(0xcafe_u64),
         )

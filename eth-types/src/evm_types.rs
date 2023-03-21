@@ -60,6 +60,10 @@ impl fmt::Debug for Gas {
     }
 }
 
+/// This constant ((2^32 - 1) * 32) is the highest number that can be used without overflowing the
+/// square operation of gas calculation.
+/// https://github.com/ethereum/go-ethereum/blob/e6b6a8b738069ad0579f6798ee59fde93ed13b43/core/vm/gas_table.go#L38
+pub const MAX_EXPANDED_MEMORY_ADDRESS: u64 = 0x1FFFFFFFE0;
 /// Quotient for max refund of gas used
 pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
 /// Gas stipend when CALL or CALLCODE is attached with value.

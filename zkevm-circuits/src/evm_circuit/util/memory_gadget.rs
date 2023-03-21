@@ -1,18 +1,24 @@
 use super::CachedRegion;
 use crate::{
     evm_circuit::{
-        param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         util::{
+            common_gadget::WordByteRangeGadget,
             constraint_builder::ConstraintBuilder,
             from_bytes,
-            math_gadget::{ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, RangeCheckGadget},
-            select, sum, Cell, CellType, MemoryAddress,
+            math_gadget::{
+                ConstantDivisionGadget, IsZeroGadget, LtGadget, MinMaxGadget, RangeCheckGadget,
+            },
+            not, select, sum, Cell, CellType, MemoryAddress,
         },
     },
     util::Expr,
 };
 use array_init::array_init;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};
+use eth_types::{
+    evm_types::{GasCost, MAX_EXPANDED_MEMORY_ADDRESS},
+    Field, ToLittleEndian, U256,
+};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -171,6 +177,124 @@ impl<F: Field> MemoryAddressGadget<F> {
 
     pub(crate) fn address(&self) -> Expression<F> {
         self.offset() + self.length()
+    }
+}
+
+/// Convert the dynamic memory offset and length from random linear combination to Uint64. It is
+/// mainly used for memory expanded address in error execution states except Uint64 overflow. It
+/// also checks with MAX_EXPANDED_MEMORY_ADDRESS for out of gas, and the returned expanded address
+/// should be within the range of N_BYTES_MEMORY_WORD_SIZE which is constrained in other memory
+/// gadgets (as MemoryWordSizeGadget).
+#[derive(Clone, Debug)]
+pub(crate) struct MemoryExpandedAddressGadget<F> {
+    offset: WordByteRangeGadget<F, N_BYTES_U64>,
+    length: WordByteRangeGadget<F, N_BYTES_U64>,
+    length_is_zero: IsZeroGadget<F>,
+    // Offset plus length may be overflow for Uint64.
+    address_within_range: LtGadget<F, { N_BYTES_U64 + 1 }>,
+}
+
+impl<F: Field> MemoryExpandedAddressGadget<F> {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+        let offset = WordByteRangeGadget::construct(cb);
+        let length = WordByteRangeGadget::construct(cb);
+
+        cb.require_zero("Memory length cannot be Uint64 overflow", length.overflow());
+        let length_is_zero = IsZeroGadget::construct(cb, length.valid_value());
+
+        cb.condition(not::expr(length_is_zero.expr()), |cb| {
+            cb.require_zero(
+                "Memory offset cannot be Uint64 overflow if length is non-zero",
+                offset.overflow(),
+            );
+        });
+
+        let address = select::expr(
+            length_is_zero.expr(),
+            0.expr(),
+            offset.valid_value() + length.valid_value(),
+        );
+        let address_within_range =
+            LtGadget::construct(cb, address, (MAX_EXPANDED_MEMORY_ADDRESS + 1).expr());
+
+        Self {
+            offset,
+            length,
+            length_is_zero,
+            address_within_range,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        memory_offset: U256,
+        memory_length: U256,
+    ) -> Result<u64, Error> {
+        self.offset.assign(region, offset, memory_offset)?;
+        self.length.assign(region, offset, memory_length)?;
+
+        let memory_offset = memory_offset.low_u64();
+        let memory_length = memory_length.low_u64();
+        self.length_is_zero
+            .assign(region, offset, memory_length.into())?;
+
+        // Address should be within 9 (N_BYTES_U64 + 1) bytes.
+        let address = if memory_length == 0 {
+            0
+        } else {
+            u128::from(memory_offset) + u128::from(memory_length)
+        };
+        let address_cap = u128::from(MAX_EXPANDED_MEMORY_ADDRESS + 1);
+        self.address_within_range.assign(
+            region,
+            offset,
+            F::from_u128(address),
+            F::from_u128(address_cap),
+        )?;
+
+        // Return MAX_EXPANDED_MEMORY_ADDRESS if address overflow.
+        Ok(if address < address_cap {
+            address.try_into().unwrap()
+        } else {
+            MAX_EXPANDED_MEMORY_ADDRESS
+        })
+    }
+
+    /// Return word of memory offset.
+    pub(crate) fn offset_rlc(&self) -> Expression<F> {
+        self.offset.original_word()
+    }
+
+    /// Return word of memory length.
+    pub(crate) fn length_rlc(&self) -> Expression<F> {
+        self.length.original_word()
+    }
+
+    /// Return Uint64 of memory length.
+    pub(crate) fn length(&self) -> Expression<F> {
+        self.length.valid_value()
+    }
+
+    /// Return expanded address if within range, otherwise return MAX_EXPANDED_MEMORY_ADDRESS.
+    pub(crate) fn address(&self) -> Expression<F> {
+        let address = select::expr(
+            self.length_is_zero.expr(),
+            0.expr(),
+            self.offset.valid_value() + self.length.valid_value(),
+        );
+
+        select::expr(
+            self.address_within_range.expr(),
+            address,
+            MAX_EXPANDED_MEMORY_ADDRESS.expr(),
+        )
+    }
+
+    /// Check if expanded address is greater than MAX_EXPANDED_MEMORY_ADDRESS.
+    pub(crate) fn address_overflow(&self) -> Expression<F> {
+        not::expr(self.address_within_range.expr())
     }
 }
 
