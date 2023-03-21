@@ -111,7 +111,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         state.account_read(
             &mut exec_step,
             callee_address,
-            AccountField::PoseidonCodeHash,
+            AccountField::CodeHash,
             callee_code_hash_word,
         );
 

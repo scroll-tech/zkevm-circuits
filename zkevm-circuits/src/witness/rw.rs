@@ -746,8 +746,8 @@ impl From<&operation::OperationContainer> for RwMap {
                     field_tag: match op.op().field {
                         AccountField::Nonce => AccountFieldTag::Nonce,
                         AccountField::Balance => AccountFieldTag::Balance,
+                        AccountField::CodeHash => AccountFieldTag::PoseidonCodeHash,
                         AccountField::KeccakCodeHash => AccountFieldTag::KeccakCodeHash,
-                        AccountField::PoseidonCodeHash => AccountFieldTag::PoseidonCodeHash,
                         AccountField::CodeSize => AccountFieldTag::CodeSize,
                     },
                     value: op.op().value,

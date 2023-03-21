@@ -71,10 +71,10 @@ pub struct Account {
     pub balance: Word,
     /// Storage key-value map
     pub storage: HashMap<Word, Word>,
+    /// Poseidon hash of code
+    pub code_hash: Hash,
     /// Keccak hash of code
     pub keccak_code_hash: Hash,
-    /// Poseidon hash of code
-    pub poseidon_code_hash: Hash,
     /// Size of code, i.e. code length
     pub code_size: Word,
 }
@@ -86,8 +86,8 @@ impl Account {
             nonce: Word::zero(),
             balance: Word::zero(),
             storage: HashMap::new(),
+            code_hash: *POSEIDON_CODE_HASH_ZERO,
             keccak_code_hash: *KECCAK_CODE_HASH_ZERO,
-            poseidon_code_hash: *POSEIDON_CODE_HASH_ZERO,
             code_size: Word::zero(),
         }
     }
@@ -98,7 +98,7 @@ impl Account {
             && self.balance.is_zero()
             //&& self.storage.is_empty()
             && self.keccak_code_hash.eq(&KECCAK_CODE_HASH_ZERO)
-            && self.poseidon_code_hash.eq(&POSEIDON_CODE_HASH_ZERO)
+            && self.code_hash.eq(&POSEIDON_CODE_HASH_ZERO)
             && self.code_size.is_zero()
     }
 }

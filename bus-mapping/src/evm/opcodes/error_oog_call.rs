@@ -64,7 +64,7 @@ impl Opcode for OOGCall {
 
         let (_, callee_account) = state.sdb.get_account(&call_address);
         let callee_exists = !callee_account.is_empty();
-        let callee_code_hash = callee_account.poseidon_code_hash;
+        let callee_code_hash = callee_account.code_hash;
         let callee_code_hash_word = if callee_exists {
             callee_code_hash.to_word()
         } else {
@@ -74,7 +74,7 @@ impl Opcode for OOGCall {
         state.account_read(
             &mut exec_step,
             call_address,
-            AccountField::PoseidonCodeHash,
+            AccountField::CodeHash,
             callee_code_hash_word,
         );
 

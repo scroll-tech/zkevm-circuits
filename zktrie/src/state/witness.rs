@@ -61,7 +61,7 @@ impl From<&ZktrieState> for WitnessGenerator {
                     AccountData {
                         nonce: acc_data.nonce.as_u64(),
                         balance: acc_data.balance,
-                        poseidon_code_hash: acc_data.poseidon_code_hash,
+                        poseidon_code_hash: acc_data.code_hash,
                         keccak_code_hash: acc_data.keccak_code_hash,
                         code_size: acc_data.code_size.as_u64(),
                         storage_root: H256::from(storage_root),

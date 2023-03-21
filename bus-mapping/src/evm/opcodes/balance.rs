@@ -61,7 +61,7 @@ impl Opcode for Balance {
         let exists = !account.is_empty();
         let balance = account.balance;
         let code_hash = if exists {
-            account.poseidon_code_hash
+            account.code_hash
         } else {
             H256::zero()
         };
@@ -69,7 +69,7 @@ impl Opcode for Balance {
         state.account_read(
             &mut exec_step,
             address,
-            AccountField::PoseidonCodeHash,
+            AccountField::CodeHash,
             code_hash.to_word(),
         );
         if exists {
@@ -272,7 +272,7 @@ mod balance_tests {
             operation.op(),
             &AccountOp {
                 address,
-                field: AccountField::PoseidonCodeHash,
+                field: AccountField::CodeHash,
                 value: if exists { code_hash } else { U256::zero() },
                 value_prev: if exists { code_hash } else { U256::zero() },
             }

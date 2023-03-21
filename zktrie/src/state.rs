@@ -142,8 +142,9 @@ impl ZktrieState {
                     Account {
                         nonce: acc_data.nonce.into(),
                         balance: acc_data.balance,
+                        code_hash: acc_data.poseidon_code_hash,
                         keccak_code_hash: acc_data.keccak_code_hash,
-                        poseidon_code_hash: acc_data.poseidon_code_hash,
+
                         code_size: acc_data.code_size.into(),
                         storage: Default::default(),
                     },

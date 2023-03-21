@@ -87,10 +87,10 @@ fn check_post(
         }
 
         if let Some(expected_code) = &expected.code {
-            let actual_code = if actual.poseidon_code_hash.is_zero() {
+            let actual_code = if actual.code_hash.is_zero() {
                 std::borrow::Cow::Owned(Vec::new())
             } else {
-                std::borrow::Cow::Borrowed(&builder.code_db.0[&actual.poseidon_code_hash])
+                std::borrow::Cow::Borrowed(&builder.code_db.0[&actual.code_hash])
             };
             if &actual_code as &[u8] != expected_code.0 {
                 return Err(StateTestError::CodeMismatch {

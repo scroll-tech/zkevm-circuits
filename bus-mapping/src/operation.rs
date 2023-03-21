@@ -531,10 +531,10 @@ pub enum AccountField {
     Nonce,
     /// Account Balance
     Balance,
+    /// Poseidon hash of account's code
+    CodeHash,
     /// Keccak hash of account's code
     KeccakCodeHash,
-    /// Poseidon hash of account's code
-    PoseidonCodeHash,
     /// Size of account's code, i.e. code length
     CodeSize,
 }

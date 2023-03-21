@@ -511,9 +511,9 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         (true, _) => (call.code_hash.to_word(), false),
         (_, true) => {
             debug_assert_eq!(
-                callee_account.poseidon_code_hash, call.code_hash,
+                callee_account.code_hash, call.code_hash,
                 "callee account's code hash: {:?}, call's code hash: {:?}",
-                callee_account.poseidon_code_hash, call.code_hash
+                callee_account.code_hash, call.code_hash
             );
             (
                 call.code_hash.to_word(),
@@ -526,7 +526,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         state.account_read(
             &mut exec_step,
             call.address,
-            AccountField::PoseidonCodeHash,
+            AccountField::CodeHash,
             callee_code_hash,
         );
     }
@@ -847,9 +847,9 @@ fn dummy_gen_selfdestruct_ops(
         &mut exec_step,
         AccountOp {
             address: sender,
-            field: AccountField::PoseidonCodeHash,
+            field: AccountField::CodeHash,
             value: Word::zero(),
-            value_prev: sender_account.poseidon_code_hash.to_word(),
+            value_prev: sender_account.code_hash.to_word(),
         },
     )?;
     if receiver != sender {

@@ -83,7 +83,7 @@ impl Opcode for ReturnRevert {
                 &mut exec_step,
                 AccountOp {
                     address: state.call()?.address,
-                    field: AccountField::PoseidonCodeHash,
+                    field: AccountField::CodeHash,
                     value: code_info.poseidon_hash.to_word(),
                     value_prev: POSEIDON_CODE_HASH_ZERO.to_word(),
                 },

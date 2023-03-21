@@ -272,7 +272,7 @@ impl Transaction {
             if !found {
                 return Err(Error::AccountNotFound(address));
             }
-            let code_hash = account.poseidon_code_hash;
+            let code_hash = account.code_hash;
             Call {
                 call_id,
                 kind: CallKind::Call,
