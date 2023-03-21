@@ -75,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let code_hash = cb.query_cell_phase2();
         cb.account_read(
             external_address.expr(),
-            AccountFieldTag::PoseidonCodeHash,
+            AccountFieldTag::CodeHash,
             code_hash.expr(),
         );
         // TODO: If external_address doesn't exist, we will get code_hash = 0.  With

@@ -388,7 +388,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             |cb| {
                 cb.account_write(
                     receiver_address.clone(),
-                    AccountFieldTag::PoseidonCodeHash,
+                    AccountFieldTag::CodeHash,
                     cb.empty_poseidon_hash_rlc(),
                     0.expr(),
                     Some(reversion_info),
@@ -518,7 +518,7 @@ impl<F: Field> TransferGadget<F> {
             |cb| {
                 cb.account_write(
                     receiver_address.clone(),
-                    AccountFieldTag::PoseidonCodeHash,
+                    AccountFieldTag::CodeHash,
                     cb.empty_poseidon_hash_rlc(),
                     0.expr(),
                     Some(reversion_info),
@@ -695,7 +695,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         let phase2_callee_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
         cb.account_read(
             from_bytes::expr(&callee_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]),
-            AccountFieldTag::PoseidonCodeHash,
+            AccountFieldTag::CodeHash,
             phase2_callee_code_hash.expr(),
         );
         let is_empty_code_hash = IsEqualGadget::construct(

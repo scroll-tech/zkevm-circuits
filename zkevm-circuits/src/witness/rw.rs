@@ -324,7 +324,7 @@ impl Rw {
         self.account_value_pair_field_tag(AccountFieldTag::Balance)
     }
     pub fn account_codehash_pair(&self) -> (Word, Word) {
-        self.account_value_pair_field_tag(AccountFieldTag::PoseidonCodeHash)
+        self.account_value_pair_field_tag(AccountFieldTag::CodeHash)
     }
     pub fn account_nonce_pair(&self) -> (Word, Word) {
         self.account_value_pair_field_tag(AccountFieldTag::Nonce)
@@ -605,11 +605,7 @@ impl Rw {
             } => match field_tag {
                 AccountFieldTag::KeccakCodeHash
                 | AccountFieldTag::Balance
-                | AccountFieldTag::PoseidonCodeHash => {
-                    rlc::value(&value.to_le_bytes(), randomness)
-                    // TODO: PoseidonCodeHash is already a field element and
-                    // balance cannot, in practice
-                }
+                | AccountFieldTag::CodeHash => rlc::value(&value.to_le_bytes(), randomness),
                 AccountFieldTag::Nonce
                 | AccountFieldTag::NonExisting
                 | AccountFieldTag::CodeSize => value.to_scalar().unwrap(),
@@ -641,9 +637,7 @@ impl Rw {
             } => Some(match field_tag {
                 AccountFieldTag::KeccakCodeHash
                 | AccountFieldTag::Balance
-                | AccountFieldTag::PoseidonCodeHash => {
-                    rlc::value(&value_prev.to_le_bytes(), randomness)
-                }
+                | AccountFieldTag::CodeHash => rlc::value(&value_prev.to_le_bytes(), randomness),
                 AccountFieldTag::Nonce
                 | AccountFieldTag::NonExisting
                 | AccountFieldTag::CodeSize => value_prev.to_scalar().unwrap(),
@@ -746,7 +740,7 @@ impl From<&operation::OperationContainer> for RwMap {
                     field_tag: match op.op().field {
                         AccountField::Nonce => AccountFieldTag::Nonce,
                         AccountField::Balance => AccountFieldTag::Balance,
-                        AccountField::CodeHash => AccountFieldTag::PoseidonCodeHash,
+                        AccountField::CodeHash => AccountFieldTag::CodeHash,
                         AccountField::KeccakCodeHash => AccountFieldTag::KeccakCodeHash,
                         AccountField::CodeSize => AccountFieldTag::CodeSize,
                     },

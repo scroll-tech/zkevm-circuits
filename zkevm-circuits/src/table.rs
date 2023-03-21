@@ -366,8 +366,8 @@ impl From<RwTableTag> for usize {
 #[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccountFieldTag {
     /// Variant representing the poseidon hash of an account's code.
-    PoseidonCodeHash = 0, /* we need this to match to the field tag of AccountStorage, which is
-                           * always 0 */
+    CodeHash = 0, /* we need this to match to the field tag of AccountStorage, which is
+                   * always 0 */
     /// Nonce field
     Nonce,
     /// Balance field
@@ -607,7 +607,7 @@ pub enum MPTProofType {
     /// Keccak Code hash exists
     KeccakCodeHashExists = AccountFieldTag::KeccakCodeHash as isize,
     /// Poseidon Code hash exits
-    PoseidonCodeHashExists = AccountFieldTag::PoseidonCodeHash as isize,
+    PoseidonCodeHashExists = AccountFieldTag::CodeHash as isize,
     /// Code size exists
     CodeSizeExists = AccountFieldTag::CodeSize as isize,
     /// Account does not exist
@@ -625,7 +625,7 @@ impl From<AccountFieldTag> for MPTProofType {
             AccountFieldTag::Nonce => Self::NonceMod,
             AccountFieldTag::Balance => Self::BalanceMod,
             AccountFieldTag::KeccakCodeHash => Self::KeccakCodeHashExists,
-            AccountFieldTag::PoseidonCodeHash => Self::PoseidonCodeHashExists,
+            AccountFieldTag::CodeHash => Self::PoseidonCodeHashExists,
             AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
             AccountFieldTag::CodeSize => Self::CodeSizeExists,
         }

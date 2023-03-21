@@ -354,8 +354,7 @@ impl<F: Field> StateCircuitConfig<F> {
                     Rw::Account { field_tag, .. } => {
                         if committed_value.is_zero_vartime()
                             && value.is_zero_vartime()
-                            && matches!(field_tag, AccountFieldTag::PoseidonCodeHash)
-                        // todo fix this!!!
+                            && matches!(field_tag, AccountFieldTag::CodeHash)
                         {
                             MPTProofType::NonExistingAccountProof as u64
                         } else {

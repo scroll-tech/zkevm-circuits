@@ -213,7 +213,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             |cb| {
                 cb.account_read(
                     call_callee_address.expr(),
-                    AccountFieldTag::PoseidonCodeHash,
+                    AccountFieldTag::CodeHash,
                     phase2_code_hash.expr(),
                 ); // rwc_delta += 1
             },

@@ -142,7 +142,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 );
                 cb.account_write(
                     address.expr(),
-                    AccountFieldTag::PoseidonCodeHash,
+                    AccountFieldTag::CodeHash,
                     poseidon_code_hash.expr(),
                     cb.empty_poseidon_hash_rlc(),
                     Some(&mut reversion_info),

@@ -227,7 +227,7 @@ impl Key {
         if value_prev.is_zero() && value.is_zero() {
             match self {
                 Key::Account { address, field_tag } => {
-                    if matches!(field_tag, AccountFieldTag::PoseidonCodeHash) {
+                    if matches!(field_tag, AccountFieldTag::CodeHash) {
                         Key::Account {
                             address,
                             field_tag: AccountFieldTag::NonExisting,
