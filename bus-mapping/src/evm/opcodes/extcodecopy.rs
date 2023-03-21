@@ -180,7 +180,7 @@ mod extcodecopy_tests {
             AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, StackOp,
             TxAccessListAccountOp, RW,
         },
-        util::hash_code,
+        state_db::CodeDB,
     };
     use eth_types::{
         address, bytecode,
@@ -218,10 +218,10 @@ mod extcodecopy_tests {
         let bytecode_ext = Bytecode::from(code_ext.to_vec());
         // TODO: bytecode_ext = vec![] is being used to indicate an empty account.
         // Should be an optional vec and we need to add tests for EOA vs. non-EOA.
-        let code_hash = if bytecode_ext.code.is_empty() {
+        let code_hash = if code_ext.is_empty() {
             Default::default()
         } else {
-            hash_code(&code_ext.to_vec())
+            CodeDB::hash(&code_ext)
         };
 
         // Get the execution steps from the external tracer

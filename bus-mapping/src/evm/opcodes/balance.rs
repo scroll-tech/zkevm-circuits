@@ -57,7 +57,6 @@ impl Opcode for Balance {
 
         // Read account balance.
         let account = state.sdb.get_account(&address).1;
-        dbg!(account, account.is_empty());
         let exists = !account.is_empty();
         let balance = account.balance;
         let code_hash = if exists {
@@ -95,7 +94,6 @@ mod balance_tests {
         mock::BlockData,
         operation::{AccountOp, CallContextOp, StackOp, RW},
         state_db::CodeDB,
-        util::hash_code,
     };
     use eth_types::{
         address, bytecode,
@@ -260,7 +258,7 @@ mod balance_tests {
         );
 
         let code_hash = if let Some(code) = account_code {
-            hash_code(&code).to_word()
+            CodeDB::hash(&code).to_word()
         } else if exists {
             CodeDB::empty_code_hash().to_word()
         } else {
