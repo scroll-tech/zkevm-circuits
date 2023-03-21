@@ -320,7 +320,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_account_access:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>>,
     error_oog_sha3: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>>,
-    error_oog_ext_codecopy: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>>,
     error_oog_create2: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>>,
     error_code_store: Box<ErrorCodeStoreGadget<F>>,
     error_oog_self_destruct:
@@ -588,7 +587,6 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_memory_copy: configure_gadget!(),
             error_oog_account_access: configure_gadget!(),
             error_oog_sha3: configure_gadget!(),
-            error_oog_ext_codecopy: configure_gadget!(),
             error_oog_exp: configure_gadget!(),
             error_oog_create2: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
@@ -1402,9 +1400,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorOutOfGasSHA3 => {
                 assign_exec_step!(self.error_oog_sha3)
-            }
-            ExecutionState::ErrorOutOfGasEXTCODECOPY => {
-                assign_exec_step!(self.error_oog_ext_codecopy)
             }
             ExecutionState::ErrorOutOfGasEXP => {
                 assign_exec_step!(self.error_oog_exp)
