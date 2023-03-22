@@ -129,7 +129,7 @@ mod codecopy_tests {
         circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
         operation::{MemoryOp, StackOp, RW},
-        util::hash_code,
+        state_db::CodeDB,
     };
 
     #[test]
@@ -216,8 +216,10 @@ mod codecopy_tests {
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].bytes.len(), size);
-        let code_hash = hash_code(&code.to_vec());
-        assert_eq!(copy_events[0].src_id, NumberOrHash::Hash(code_hash));
+        assert_eq!(
+            copy_events[0].src_id,
+            NumberOrHash::Hash(CodeDB::hash(&code.to_vec()))
+        );
         assert_eq!(copy_events[0].src_addr as usize, code_offset);
         assert_eq!(copy_events[0].src_addr_end as usize, code.to_vec().len());
         assert_eq!(copy_events[0].src_type, CopyDataType::Bytecode);
