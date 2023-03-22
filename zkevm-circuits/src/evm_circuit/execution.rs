@@ -78,6 +78,7 @@ mod end_block;
 mod end_inner_block;
 mod end_tx;
 mod error_code_store;
+mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
@@ -155,6 +156,7 @@ use end_block::EndBlockGadget;
 use end_inner_block::EndInnerBlockGadget;
 use end_tx::EndTxGadget;
 use error_code_store::ErrorCodeStoreGadget;
+use error_invalid_creation_code::ErrorInvalidCreationCodeGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
@@ -333,8 +335,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
     error_contract_address_collision:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>>,
-    error_invalid_creation_code:
-        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>>,
+    error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
     error_gas_uint_overflow: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorGasUintOverflow }>>,

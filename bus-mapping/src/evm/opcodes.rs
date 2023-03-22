@@ -58,6 +58,7 @@ mod swap;
 
 mod error_codestore;
 mod error_contract_address_collision;
+mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_oog_call;
 mod error_oog_dynamic_memory;
@@ -90,6 +91,7 @@ use create::Create;
 use dup::Dup;
 use error_codestore::ErrorCodeStore;
 use error_contract_address_collision::ContractAddressCollision;
+use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
 use error_oog_call::OOGCall;
 use error_oog_dynamic_memory::OOGDynamicMemory;
@@ -327,6 +329,7 @@ fn fn_gen_error_state_associated_ops(
             _ => unreachable!(),
         },
         ExecError::GasUintOverflow => Some(ErrorSimple::gen_associated_ops),
+        ExecError::InvalidCreationCode => Some(ErrorCreationCode::gen_associated_ops),
         // more future errors place here
         _ => {
             evm_unimplemented!("TODO: error state {:?} not implemented", error);
