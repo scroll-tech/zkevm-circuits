@@ -891,37 +891,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         proofs: Vec<eth_types::EIP1186ProofResponse>,
         codes: HashMap<Address, Vec<u8>>,
     ) -> (StateDB, CodeDB) {
-        let mut sdb = StateDB::new();
-        for proof in proofs {
-            let mut storage = HashMap::new();
-            for storage_proof in proof.storage_proof {
-                if !storage_proof.value.is_zero() {
-                    storage.insert(storage_proof.key, storage_proof.value);
-                }
-            }
-            log::trace!(
-                "statedb set_account {:?} balance {:?}",
-                proof.address,
-                proof.balance
-            );
-            sdb.set_account(
-                &proof.address,
-                state_db::Account {
-                    nonce: proof.nonce,
-                    balance: proof.balance,
-                    storage,
-                    code_hash: proof.poseidon_code_hash,
-                    keccak_code_hash: proof.keccak_code_hash,
-                    code_size: proof.code_size,
-                },
-            )
-        }
-
-        let mut code_db = CodeDB::new();
-        for (_address, code) in codes {
-            code_db.insert(code.clone());
-        }
-        (sdb, code_db)
+        build_state_code_db(proofs, codes)
     }
 
     /// Step 5. For each step in TxExecTraces, gen the associated ops and state
