@@ -698,43 +698,41 @@ impl<F: Field> RlpU64Gadget<F> {
     fn rlp_length(&self) -> Expression<F> {
         1.expr() + not::expr(self.is_less_than_128.expr()) * self.n_bytes_nonce()
     }
-    /*
-    fn rlp_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
-        select::expr(
-            and::expr(&[
-                self.is_less_than_128.expr(),
-                not::expr(self.most_significant_byte_is_zero.expr()),
-            ]),
-            self.value(),
-            (0x80.expr() + self.n_bytes_nonce()) * self.randomness_raised_n_bytes_nonce(cb)
-                + self.bytes.expr(),
-        )
-    }
-
-    fn randomness_raised_to_rlp_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
-        let powers_of_randomness = cb.power_of_randomness();
-        powers_of_randomness[0].clone()
-            * select::expr(
-                self.is_less_than_128.expr(),
-                1.expr(),
-                self.randomness_raised_n_bytes_nonce(cb),
-            )
-    }
-
-    fn randomness_raised_n_bytes_nonce(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
-        let powers_of_randomness = cb.power_of_randomness();
-        select::expr(
-            self.most_significant_byte_is_zero.expr(),
-            1.expr(),
-            sum::expr(
-                self.is_most_significant_byte
-                    .iter()
-                    .zip(powers_of_randomness)
-                    .map(|(indicator, power)| indicator.expr() * power.clone()),
-            ),
-        )
-    }
-    */
+    // fn rlp_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    // select::expr(
+    // and::expr(&[
+    // self.is_less_than_128.expr(),
+    // not::expr(self.most_significant_byte_is_zero.expr()),
+    // ]),
+    // self.value(),
+    // (0x80.expr() + self.n_bytes_nonce()) * self.randomness_raised_n_bytes_nonce(cb)
+    // + self.bytes.expr(),
+    // )
+    // }
+    //
+    // fn randomness_raised_to_rlp_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    // let powers_of_randomness = cb.power_of_randomness();
+    // powers_of_randomness[0].clone()
+    // select::expr(
+    // self.is_less_than_128.expr(),
+    // 1.expr(),
+    // self.randomness_raised_n_bytes_nonce(cb),
+    // )
+    // }
+    //
+    // fn randomness_raised_n_bytes_nonce(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    // let powers_of_randomness = cb.power_of_randomness();
+    // select::expr(
+    // self.most_significant_byte_is_zero.expr(),
+    // 1.expr(),
+    // sum::expr(
+    // self.is_most_significant_byte
+    // .iter()
+    // .zip(powers_of_randomness)
+    // .map(|(indicator, power)| indicator.expr() * power.clone()),
+    // ),
+    // )
+    // }
 }
 
 #[cfg(test)]
