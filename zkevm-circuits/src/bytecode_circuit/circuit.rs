@@ -241,19 +241,17 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(length, Rotation::cur()),
             );
 
-            /*
             let empty_hash = rlc::expr(
                 &EMPTY_CODE_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
                 challenges.evm_word(),
             );
 
-                        // FIXME: poseidon
-                        cb.require_equal(
-                            "assert cur.hash == EMPTY_HASH",
-                            meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
-                            empty_hash,
-                        );
-            */
+            cb.require_equal(
+                "assert cur.hash == EMPTY_HASH",
+                meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
+                empty_hash,
+            );
+
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
                 or::expr(vec![
