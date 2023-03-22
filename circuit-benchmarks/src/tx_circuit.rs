@@ -5,13 +5,17 @@ mod tests {
     use ark_std::{end_timer, start_timer};
     use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
     use env_logger::Env;
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
-    use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
-    use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
-    use halo2_proofs::poly::kzg::strategy::SingleStrategy;
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
-        poly::commitment::ParamsProver,
+        plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG},
+                multiopen::{ProverSHPLONK, VerifierSHPLONK},
+                strategy::SingleStrategy,
+            },
+        },
         transcript::{
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
@@ -20,9 +24,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use std::env::var;
-    use zkevm_circuits::tx_circuit::TxCircuit;
-    use zkevm_circuits::util::SubCircuit;
-    use zkevm_circuits::witness::block_convert;
+    use zkevm_circuits::{tx_circuit::TxCircuit, util::SubCircuit, witness::block_convert};
 
     use bus_mapping::rpc::GethClient;
     use ethers::providers::Http;
@@ -91,7 +93,7 @@ mod tests {
         let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
         let mut rng = ChaCha20Rng::seed_from_u64(42);
 
-        //Unique string used by bench results module for parsing the result
+        // Unique string used by bench results module for parsing the result
         const BENCHMARK_ID: &str = "Tx Circuit";
 
         let mock_mode = true;

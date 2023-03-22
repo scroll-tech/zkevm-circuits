@@ -11,6 +11,7 @@ use crate::{
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };
+use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::Field;
 use gadgets::util::{and, not};
 use halo2_proofs::{
@@ -20,7 +21,6 @@ use halo2_proofs::{
         Expression::{self, Constant},
     },
 };
-use keccak256::EMPTY_HASH_LE;
 
 use super::{rlc, CachedRegion, CellType, StoredExpression};
 
@@ -464,8 +464,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         rlc::expr(&bytes, self.challenges.keccak_input())
     }
 
-    pub(crate) fn empty_hash_rlc(&self) -> Expression<F> {
-        self.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr()))
+    pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
+        self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
     }
 
     // Common

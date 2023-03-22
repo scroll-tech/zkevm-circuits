@@ -1,21 +1,26 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE};
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::CommonErrorGadget;
-use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
-use crate::evm_circuit::util::math_gadget::{IsZeroGadget, LtGadget};
-use crate::evm_circuit::util::memory_gadget::{
-    MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        step::ExecutionState,
+        util::{
+            common_gadget::CommonErrorGadget,
+            constraint_builder::ConstraintBuilder,
+            from_bytes,
+            math_gadget::{IsZeroGadget, LtGadget},
+            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
+            select, CachedRegion, Cell, Word,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    table::CallContextFieldTag,
+    util::Expr,
 };
-use crate::evm_circuit::util::{from_bytes, select};
-use crate::evm_circuit::util::{CachedRegion, Cell, Word};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::table::CallContextFieldTag;
-use crate::util::Expr;
-use eth_types::evm_types::{GasCost, OpcodeId};
-use eth_types::{Field, ToLittleEndian, U256};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field, ToLittleEndian, U256,
+};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget to implement the corresponding out of gas errors for
 /// [`OpcodeId::CALLDATACOPY`], [`OpcodeId::CODECOPY`],
@@ -233,13 +238,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm_circuit::test::{rand_bytes, rand_word};
-    use crate::test_util::CircuitTestBuilder;
-    use eth_types::evm_types::gas_utils::memory_copier_gas_cost;
-    use eth_types::{bytecode, Bytecode, ToWord, U256};
+    use crate::{
+        evm_circuit::test::{rand_bytes, rand_word},
+        test_util::CircuitTestBuilder,
+    };
+    use eth_types::{
+        bytecode, evm_types::gas_utils::memory_copier_gas_cost, Bytecode, ToWord, U256,
+    };
     use itertools::Itertools;
-    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::{eth, TestContext, MOCK_ACCOUNTS};
+    use mock::{
+        eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+    };
 
     const TESTING_COMMON_OPCODES: &[OpcodeId] = &[
         OpcodeId::CALLDATACOPY,
@@ -294,7 +303,7 @@ mod tests {
 
             let gas_cost = OpcodeId::PUSH32.constant_gas_cost().0 * 3
                 + opcode.constant_gas_cost().0
-                + memory_copier_gas_cost(0, memory_word_size, copy_size);
+                + memory_copier_gas_cost(0, memory_word_size, copy_size, GasCost::COPY.as_u64());
 
             Self { bytecode, gas_cost }
         }
@@ -314,7 +323,7 @@ mod tests {
 
             let mut gas_cost = OpcodeId::PUSH32.constant_gas_cost().0 * 4
                 + GasCost::COLD_ACCOUNT_ACCESS.0
-                + memory_copier_gas_cost(0, memory_word_size, copy_size);
+                + memory_copier_gas_cost(0, memory_word_size, copy_size, GasCost::COPY.as_u64());
 
             if is_warm {
                 bytecode.append(&bytecode! {
@@ -327,7 +336,12 @@ mod tests {
 
                 gas_cost += OpcodeId::PUSH32.constant_gas_cost().0 * 4
                     + GasCost::WARM_ACCESS.0
-                    + memory_copier_gas_cost(memory_word_size, memory_word_size, copy_size);
+                    + memory_copier_gas_cost(
+                        memory_word_size,
+                        memory_word_size,
+                        copy_size,
+                        GasCost::COPY.as_u64(),
+                    );
             }
 
             Self { bytecode, gas_cost }

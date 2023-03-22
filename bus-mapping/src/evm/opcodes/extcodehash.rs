@@ -60,7 +60,7 @@ impl Opcode for Extcodehash {
         } else {
             H256::zero()
         };
-        //log::trace!("extcodehash addr {:?} acc {:?} exists {:?} codehash {:?}",
+        // log::trace!("extcodehash addr {:?} acc {:?} exists {:?} codehash {:?}",
         // external_address, account, exists, code_hash);
         state.account_read(
             &mut exec_step,
@@ -79,16 +79,18 @@ impl Opcode for Extcodehash {
 #[cfg(test)]
 mod extcodehash_tests {
     use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::mock::BlockData;
-    use crate::operation::{AccountOp, CallContextOp, StackOp, RW};
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{AccountOp, CallContextOp, StackOp, RW},
+        state_db::CodeDB,
+    };
     use eth_types::{
         address, bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
         Bytecode, Bytes, Word, U256,
     };
-    use ethers_core::utils::keccak256;
     use mock::TestContext;
     use pretty_assertions::assert_eq;
 
@@ -167,7 +169,7 @@ mod extcodehash_tests {
         .unwrap()
         .into();
 
-        let code_hash = Word::from(keccak256(code_ext));
+        let code_hash = CodeDB::hash(&code_ext).to_word();
 
         let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder

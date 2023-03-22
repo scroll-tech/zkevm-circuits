@@ -223,8 +223,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::evm_types::Stack;
-    use eth_types::{bytecode, Word};
+    use eth_types::{bytecode, evm_types::Stack, Word};
     use mock::TestContext;
 
     fn test(a: Word, b: Word, n: Word, r: Option<Word>, ok: bool) {

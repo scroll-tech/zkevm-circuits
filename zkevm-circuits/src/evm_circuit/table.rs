@@ -1,6 +1,8 @@
-use crate::evm_circuit::step::{ExecutionState, ResponsibleOp};
-use crate::impl_expr;
 pub use crate::table::TxContextFieldTag;
+use crate::{
+    evm_circuit::step::{ExecutionState, ResponsibleOp},
+    impl_expr,
+};
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use gadgets::util::Expr;

@@ -21,7 +21,7 @@ pub(crate) struct WordParts {
 
 impl WordParts {
     /// Returns a description of how a word will be split into parts
-    pub(crate) fn new(part_size: usize, rot: usize, normalize: bool) -> Self {
+    pub(crate) fn new(part_size: usize, rot: usize, uniform: bool) -> Self {
         let mut bits = (0usize..64).collect::<Vec<_>>();
         bits.rotate_right(rot);
 
@@ -29,29 +29,13 @@ impl WordParts {
         let mut rot_idx = 0;
 
         let mut idx = 0;
-        let target_sizes = if normalize {
+        let target_sizes = if uniform {
             // After the rotation we want the parts of all the words to be at the same
             // positions
             target_part_sizes(part_size)
         } else {
             // Here we only care about minimizing the number of parts
-            let num_parts_a = rot / part_size;
-            let partial_part_a = rot % part_size;
-
-            let num_parts_b = (64 - rot) / part_size;
-            let partial_part_b = (64 - rot) % part_size;
-
-            let mut part_sizes = vec![part_size; num_parts_a];
-            if partial_part_a > 0 {
-                part_sizes.push(partial_part_a);
-            }
-
-            part_sizes.extend(vec![part_size; num_parts_b]);
-            if partial_part_b > 0 {
-                part_sizes.push(partial_part_b);
-            }
-
-            part_sizes
+            target_part_sizes_rot(part_size, rot)
         };
         // Split into parts bit by bit
         for part_size in target_sizes {
@@ -193,6 +177,28 @@ pub(crate) fn target_part_sizes(part_size: usize) -> Vec<usize> {
     if partial_chunk_size > 0 {
         part_sizes.push(partial_chunk_size);
     }
+    part_sizes
+}
+
+/// Returns the size (in bits) of each part size when splitting up a keccak word
+/// in parts of `part_size`, with a special alignment for a rotation.
+pub(crate) fn target_part_sizes_rot(part_size: usize, rot: usize) -> Vec<usize> {
+    let num_parts_a = rot / part_size;
+    let partial_part_a = rot % part_size;
+
+    let num_parts_b = (NUM_BITS_PER_WORD - rot) / part_size;
+    let partial_part_b = (NUM_BITS_PER_WORD - rot) % part_size;
+
+    let mut part_sizes = vec![part_size; num_parts_a];
+    if partial_part_a > 0 {
+        part_sizes.push(partial_part_a);
+    }
+
+    part_sizes.extend(vec![part_size; num_parts_b]);
+    if partial_part_b > 0 {
+        part_sizes.push(partial_part_b);
+    }
+
     part_sizes
 }
 

@@ -4,8 +4,7 @@ use core::fmt::Debug;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{de, Deserialize, Serialize};
-use std::str::FromStr;
-use std::{fmt, matches};
+use std::{fmt, matches, str::FromStr};
 use strum_macros::EnumIter;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.

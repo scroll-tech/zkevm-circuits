@@ -1,26 +1,26 @@
-use super::{Opcode, OpcodeId};
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     error::{ExecError, OogError},
+    evm::Opcode,
     Error,
 };
-use eth_types::GethExecStep;
+use eth_types::{evm_types::OpcodeId, GethExecStep};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
-/// corresponding to the [`OogError::Exp`](crate::error::OogError::Exp).
+/// corresponding to the [`OogError::Sha3`](crate::error::OogError::Sha3).
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct OOGExp;
+pub(crate) struct OOGSha3;
 
-impl Opcode for OOGExp {
+impl Opcode for OOGSha3 {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        debug_assert_eq!(geth_step.op, OpcodeId::EXP);
+        debug_assert_eq!(geth_step.op, OpcodeId::SHA3);
 
         let mut exec_step = state.new_step(geth_step)?;
-        exec_step.error = Some(ExecError::OutOfGas(OogError::Exp));
+        exec_step.error = Some(ExecError::OutOfGas(OogError::Sha3));
 
         for i in 0..2 {
             state.stack_read(

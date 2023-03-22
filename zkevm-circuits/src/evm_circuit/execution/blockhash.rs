@@ -45,7 +45,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         cb.stack_pop(block_number.original_word());
 
         // FIXME
-        //cb.block_lookup(
+        // cb.block_lookup(
         //    BlockContextFieldTag::Number.expr(),
         //    None,
         //    current_block_number.expr(),

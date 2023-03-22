@@ -1,20 +1,15 @@
 #![allow(dead_code, unused_imports)]
 
-use super::parse;
-use super::spec::{AccountMatch, Env, StateTest};
-use crate::abi;
-use crate::compiler::Compiler;
-use crate::utils::MainnetFork;
+use super::{
+    parse,
+    spec::{AccountMatch, Env, StateTest},
+};
+use crate::{abi, compiler::Compiler, utils::MainnetFork};
 use anyhow::{bail, Context, Result};
-use eth_types::evm_types::OpcodeId;
-use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
-use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::utils::secret_key_to_address;
+use eth_types::{evm_types::OpcodeId, geth_types::Account, Address, Bytes, H256, U256};
+use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::ops::RangeBounds;
-use std::str::FromStr;
+use std::{collections::HashMap, convert::TryInto, ops::RangeBounds, str::FromStr};
 use yaml_rust::Yaml;
 
 fn default_block_base_fee() -> String {

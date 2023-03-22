@@ -2,17 +2,19 @@ use itertools::Itertools;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
-use crate::evm_circuit::{
-    param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
-    step::{ExecutionState, Step},
-    table::{FixedTableTag, Table},
-    util::{
-        constraint_builder::ConstraintBuilder, rlc, CachedRegion, CellType, Expr, StoredExpression,
-        LOOKUP_CONFIG,
+use crate::{
+    evm_circuit::{
+        param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
+        step::{ExecutionState, Step},
+        table::{FixedTableTag, Table},
+        util::{
+            constraint_builder::ConstraintBuilder, rlc, CachedRegion, CellType, Expr,
+            StoredExpression, LOOKUP_CONFIG,
+        },
+        Advice, Column, Fixed,
     },
-    Advice, Column, Fixed,
+    table::LookupTable,
 };
-use crate::table::LookupTable;
 
 #[cfg(not(feature = "onephase"))]
 use crate::util::Challenges;

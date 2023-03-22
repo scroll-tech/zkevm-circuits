@@ -6,38 +6,41 @@
 
 pub mod sign_verify;
 
-use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
-use crate::table::{BlockTable, KeccakTable, LookupTable, RlpTable, TxFieldTag, TxTable};
 #[cfg(not(feature = "enable-sign-verify"))]
 use crate::tx_circuit::sign_verify::pub_key_hash_to_address;
-use crate::util::{keccak, random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig};
-use crate::witness;
-use crate::witness::{RlpDataType, RlpTxTag, Transaction};
+use crate::{
+    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    table::{BlockTable, KeccakTable, LookupTable, RlpTable, TxFieldTag, TxTable},
+    util::{keccak, random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig},
+    witness,
+    witness::{RlpDataType, RlpTxTag, Transaction},
+};
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 #[cfg(not(feature = "enable-sign-verify"))]
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness};
-use eth_types::{
-    sign_types::SignData,
-    Address, ToAddress, {Field, ToLittleEndian, ToScalar},
-};
+use eth_types::{sign_types::SignData, Address, Field, ToAddress, ToLittleEndian, ToScalar};
 #[cfg(not(feature = "enable-sign-verify"))]
 use ethers_core::utils::keccak256;
-use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
-use gadgets::is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction};
-use gadgets::util::{and, not, select, sum, Expr};
+use gadgets::{
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
+    util::{and, not, select, sum, Expr},
+};
 #[cfg(feature = "enable-sign-verify")]
 use halo2_proofs::circuit::{Cell, RegionIndex};
-use halo2_proofs::poly::Rotation;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    poly::Rotation,
 };
 use log::error;
 use num::Zero;
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::iter;
-use std::marker::PhantomData;
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    iter,
+    marker::PhantomData,
+};
 
 use crate::table::TxFieldTag::{
     BlockNumber, CallData, CallDataGasCost, CallDataLength, CalleeAddress, CallerAddress, Gas,
@@ -563,23 +566,21 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             ]))
         });
 
-        /*
-        meta.create_gate("tx signature v", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            let chain_id_expr = meta.query_advice(chain_id, Rotation::cur());
-            cb.require_boolean(
-                "V - (chain_id * 2 + 35) Є {0, 1}",
-                meta.query_advice(tx_table.value, Rotation::cur())
-                    - (chain_id_expr.clone() + chain_id_expr + 35.expr()),
-            );
-
-            cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                tag.value_equals(SigV, Rotation::cur())(meta),
-            ]))
-        });
-         */
+        // meta.create_gate("tx signature v", |meta| {
+        // let mut cb = BaseConstraintBuilder::default();
+        //
+        // let chain_id_expr = meta.query_advice(chain_id, Rotation::cur());
+        // cb.require_boolean(
+        // "V - (chain_id * 2 + 35) Є {0, 1}",
+        // meta.query_advice(tx_table.value, Rotation::cur())
+        // - (chain_id_expr.clone() + chain_id_expr + 35.expr()),
+        // );
+        //
+        // cb.gate(and::expr(vec![
+        // meta.query_fixed(q_enable, Rotation::cur()),
+        // tag.value_equals(SigV, Rotation::cur())(meta),
+        // ]))
+        // });
 
         meta.lookup_any(
             "is_create == 1 iff rlp_tag == To && tag_length == 1",
@@ -1018,11 +1019,11 @@ impl<F: Field> TxCircuitConfig<F> {
     ) {
         /////////////////////////////////////////////////////////////////
         /////////////////    block table lookups     ////////////////////
-        /////////////////////////////////////////////////////////////////
+        ///////////////// ////////////////////////////////////////////////
 
         /////////////////////////////////////////////////////////////////
         /////////////////    tx table lookups     ///////////////////////
-        /////////////////////////////////////////////////////////////////
+        ///////////////// ////////////////////////////////////////////////
         // lookup to check CallDataGasCost of the tx's call data.
         meta.lookup_any("tx call data gas cost in TxTable", |meta| {
             // if call data length != 0, then we can lookup the calldata gas cost on the
@@ -1088,7 +1089,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
         /////////////////////////////////////////////////////////////////
         /////////////////    RLP table lookups     //////////////////////
-        /////////////////////////////////////////////////////////////////
+        ///////////////// ////////////////////////////////////////////////
 
         // lookup tx tag in rlp table for TxSign.
         meta.lookup_any("tx tag in RLP Table::TxSign", |meta| {
@@ -1138,27 +1139,25 @@ impl<F: Field> TxCircuitConfig<F> {
             .collect()
         });
 
-        /*
         // lookup RLP table to check Chain ID.
-        meta.lookup_any("rlp table Chain ID", |meta| {
-            let enable = and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                // meta.query_advice(is_usable, Rotation::cur()),
-                tag.value_equals(TxFieldTag::SigV, Rotation::cur())(meta),
-            ]);
-            vec![
-                meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                RlpTxTag::ChainId.expr(), // tag
-                1.expr(),                 // tag_index == 1
-                meta.query_advice(chain_id, Rotation::cur()),
-                RlpDataType::TxSign.expr(),
-            ]
-            .into_iter()
-            .zip(rlp_table.table_exprs(meta).into_iter())
-            .map(|(arg, table)| (enable.clone() * arg, table))
-            .collect()
-        });
-         */
+        // meta.lookup_any("rlp table Chain ID", |meta| {
+        // let enable = and::expr(vec![
+        // meta.query_fixed(q_enable, Rotation::cur()),
+        // meta.query_advice(is_usable, Rotation::cur()),
+        // tag.value_equals(TxFieldTag::SigV, Rotation::cur())(meta),
+        // ]);
+        // vec![
+        // meta.query_advice(tx_table.tx_id, Rotation::cur()),
+        // RlpTxTag::ChainId.expr(), // tag
+        // 1.expr(),                 // tag_index == 1
+        // meta.query_advice(chain_id, Rotation::cur()),
+        // RlpDataType::TxSign.expr(),
+        // ]
+        // .into_iter()
+        // .zip(rlp_table.table_exprs(meta).into_iter())
+        // .map(|(arg, table)| (enable.clone() * arg, table))
+        // .collect()
+        // });
 
         // lookup tx calldata bytes in RLP table for TxSign.
         meta.lookup_any("tx calldata::index in RLP Table::TxSign", |meta| {
@@ -1208,7 +1207,7 @@ impl<F: Field> TxCircuitConfig<F> {
 
         /////////////////////////////////////////////////////////////////
         /////////////////    Keccak table lookups     //////////////////////
-        /////////////////////////////////////////////////////////////////
+        ///////////////// ////////////////////////////////////////////////
         // lookup Keccak table for tx sign data hash, i.e. the sighash that has to be
         // signed.
         // lookup Keccak table for tx hash too.

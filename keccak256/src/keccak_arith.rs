@@ -1,5 +1,4 @@
-use crate::arith_helpers::*;
-use crate::common::*;
+use crate::{arith_helpers::*, common::*};
 use itertools::Itertools;
 
 #[derive(Default)]
@@ -231,9 +230,11 @@ impl Sponge {
 }
 #[cfg(test)]
 mod tests {
-    use crate::arith_helpers::*;
-    use crate::keccak_arith::{Keccak, KeccakFArith, State};
-    use crate::plain::KeccakF;
+    use crate::{
+        arith_helpers::*,
+        keccak_arith::{Keccak, KeccakFArith, State},
+        plain::KeccakF,
+    };
     use itertools::Itertools;
     use num_bigint::BigUint;
     use num_traits::Zero;

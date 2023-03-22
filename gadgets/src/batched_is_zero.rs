@@ -1,8 +1,8 @@
 //! BatchedIsZero chip works as follows:
 //!
 //! Given a list of `values` to be checked if they are all zero:
-//! - nonempty_witness = `inv(value)` for some non-zero `value` from `values` if
-//!   it exists, `0` otherwise
+//! - nonempty_witness = `inv(value)` for some non-zero `value` from `values` if it exists, `0`
+//!   otherwise
 //! - is_zero: 1 if all `values` are `0`, `0` otherwise
 
 use eth_types::Field;

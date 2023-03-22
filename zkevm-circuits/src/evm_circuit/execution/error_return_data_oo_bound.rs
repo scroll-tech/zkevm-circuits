@@ -23,14 +23,13 @@ pub(crate) struct ErrorReturnDataOutOfBoundGadget<F> {
     opcode: Cell<F>,
     memory_offset: Cell<F>,
     sum: AddWordsGadget<F, 2, false>,
-    /// Holds the size of the last callee return data.
+    // Hold the size of the last callee return data.
     return_data_length: Cell<F>,
-
-    is_data_offset_within_range: IsZeroGadget<F>,
-    // end = data_offset + length
-    is_end_within_range: IsZeroGadget<F>,
-    // when `end` not overflow, check if it exceeds return data size.
-    is_end_exceed_length: LtGadget<F, N_BYTES_U64>,
+    is_data_offset_within_u64: IsZeroGadget<F>,
+    // remainder_end = (data_offset + size) mod U256
+    is_remainder_end_within_u64: IsZeroGadget<F>,
+    // when remainder end is within Uint64, check if it exceeds return data size.
+    is_remainder_end_exceed_len: LtGadget<F, N_BYTES_U64>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -43,9 +42,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         let opcode = cb.query_cell();
         let memory_offset = cb.query_cell();
         let data_offset = cb.query_word_rlc();
-        let length = cb.query_word_rlc();
-        let end = cb.query_word_rlc();
-
+        let size = cb.query_word_rlc();
+        let remainder_end = cb.query_word_rlc();
         let return_data_length = cb.query_cell();
 
         cb.require_equal(
@@ -54,12 +52,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             OpcodeId::RETURNDATACOPY.expr(),
         );
 
-        // Pop memory_offset, offset, length from stack
+        // Pop memory_offset, offset, size from stack
         cb.stack_pop(memory_offset.expr());
         cb.stack_pop(data_offset.expr());
-        cb.stack_pop(length.expr());
+        cb.stack_pop(size.expr());
 
-        // read last callee return data length
+        // Read last callee return data length
         cb.call_context_lookup(
             false.expr(),
             None,
@@ -67,37 +65,37 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             return_data_length.expr(),
         );
 
-        // check `data_offset` u64 overflow
+        // Check if `data_offset` is Uint64 overflow.
         let data_offset_larger_u64 = sum::expr(&data_offset.cells[N_BYTES_U64..]);
-        let is_data_offset_within_range = IsZeroGadget::construct(cb, data_offset_larger_u64);
+        let is_data_offset_within_u64 = IsZeroGadget::construct(cb, data_offset_larger_u64);
 
-        // check if `end` u64  overflow or not.
-        let sum = AddWordsGadget::construct(cb, [data_offset, length], end.clone());
+        // Check if `remainder_end` is Uint64 overflow.
+        let sum = AddWordsGadget::construct(cb, [data_offset, size], remainder_end.clone());
+        let is_end_u256_overflow = sum.carry().as_ref().unwrap();
 
-        let end_larger_u64 = sum::expr(&end.cells[N_BYTES_U64..]);
-        let is_end_within_range = IsZeroGadget::construct(cb, end_larger_u64);
+        let remainder_end_larger_u64 = sum::expr(&remainder_end.cells[N_BYTES_U64..]);
+        let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, remainder_end_larger_u64);
 
-        // check if `end` exceeds return data length
-        let is_end_exceed_length = LtGadget::construct(
+        // check if `remainder_end` exceeds return data length.
+        let is_remainder_end_exceed_len = LtGadget::construct(
             cb,
             return_data_length.expr(),
-            from_bytes::expr(&end.cells[..N_BYTES_U64]),
+            from_bytes::expr(&remainder_end.cells[..N_BYTES_U64]),
         );
 
-        // `end > U256::MAX` is necessary to check with AddWordsGadget carry. Since
-        // offset plus length may exceed a Word and remainder (end) may be less
-        // than `u64::MAX` (e.g. Word::MAX + 1).
+        // Need to check if `data_offset + size` is U256 overflow via `AddWordsGadget` carry. If
+        // yes, it should be also an error of return data out of bound.
         cb.require_equal(
-            "Any of [offset > u64::MAX, end > U256::MAX, remainder_end > u64::MAX, remainder_end > return_data_length] occurs",
+            "Any of [data_offset > u64::MAX, data_offset + size > U256::MAX, remainder_end > u64::MAX, remainder_end > return_data_length] occurs",
             or::expr([
-                // offset > u64::MAX
-                not::expr(is_data_offset_within_range.expr()),
-                // end > U256::MAX
-                sum.carry().as_ref().unwrap().expr(),
+                // data_offset > u64::MAX
+                not::expr(is_data_offset_within_u64.expr()),
+                // data_offset + size > U256::MAX
+                is_end_u256_overflow.expr(),
                 // remainder_end > u64::MAX
-                not::expr(is_end_within_range.expr()),
+                not::expr(is_remainder_end_within_u64.expr()),
                 // remainder_end > return_data_length
-                is_end_exceed_length.expr(),
+                is_remainder_end_exceed_len.expr(),
             ]),
             1.expr(),
         );
@@ -107,9 +105,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         Self {
             opcode,
             memory_offset,
-            is_data_offset_within_range,
-            is_end_within_range,
-            is_end_exceed_length,
+            is_data_offset_within_u64,
+            is_remainder_end_within_u64,
+            is_remainder_end_exceed_len,
             sum,
             return_data_length,
             common_error_gadget,
@@ -136,9 +134,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         self.memory_offset
             .assign(region, offset, Value::known(F::from(dest_offset.as_u64())))?;
 
-        let end = data_offset.overflowing_add(size).0;
+        let remainder_end = data_offset.overflowing_add(size).0;
+        self.sum
+            .assign(region, offset, [data_offset, size], remainder_end)?;
 
-        self.sum.assign(region, offset, [data_offset, size], end)?;
         let return_data_length = block.rws[step.rw_indices[3]].call_context_value();
         self.return_data_length.assign(
             region,
@@ -153,20 +152,24 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         let data_offset_overflow = data_offset.to_le_bytes()[N_BYTES_U64..]
             .iter()
             .fold(0, |acc, val| acc + u64::from(*val));
-        self.is_data_offset_within_range
+        self.is_data_offset_within_u64
             .assign(region, offset, F::from(data_offset_overflow))?;
 
-        let end_overflow = end.to_le_bytes()[N_BYTES_U64..]
+        let remainder_end_overflow = remainder_end.to_le_bytes()[N_BYTES_U64..]
             .iter()
             .fold(0, |acc, val| acc + u64::from(*val));
-        self.is_end_within_range
-            .assign(region, offset, F::from(end_overflow))?;
+        self.is_remainder_end_within_u64
+            .assign(region, offset, F::from(remainder_end_overflow))?;
 
         // check if it exceeds last callee return data length
-        let end_u64 = end.low_u64();
+        let remainder_end_u64 = remainder_end.low_u64();
         let return_length = return_data_length.to_scalar().unwrap();
-        self.is_end_exceed_length
-            .assign(region, offset, return_length, F::from(end_u64))?;
+        self.is_remainder_end_exceed_len.assign(
+            region,
+            offset,
+            return_length,
+            F::from(remainder_end_u64),
+        )?;
 
         self.common_error_gadget
             .assign(region, offset, block, call, step, 6)?;
@@ -176,8 +179,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::CircuitTestBuilder;
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, ToWord, Word};
     use mock::test_ctx::TestContext;
 

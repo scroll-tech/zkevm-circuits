@@ -1,8 +1,9 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::Error;
-use eth_types::evm_types::MemoryAddress;
-use eth_types::{GethExecStep, ToBigEndian, ToLittleEndian};
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    Error,
+};
+use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian, ToLittleEndian};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MSTORE`](crate::evm::OpcodeId::MSTORE)

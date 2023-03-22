@@ -19,8 +19,10 @@ use crate::{
 };
 use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToScalar};
-use eth_types::{Field, U256};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field, ToScalar, U256,
+};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]

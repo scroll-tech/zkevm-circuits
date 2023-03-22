@@ -1,6 +1,6 @@
-use crate::evm_circuit::{
-    util::math_gadget::*,
-    util::{self, constraint_builder::ConstraintBuilder, from_bytes, split_u256, CachedRegion},
+use crate::evm_circuit::util::{
+    self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, split_u256,
+    CachedRegion,
 };
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};
@@ -67,11 +67,9 @@ impl<F: Field> LtWordGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::test_util::*;
-    use super::*;
+    use super::{test_util::*, *};
     use eth_types::*;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// LtWordTestContainer: require(a < b)

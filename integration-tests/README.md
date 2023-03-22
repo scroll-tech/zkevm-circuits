@@ -11,7 +11,7 @@ is used like this:
 $ ./run.sh --help                
         Usage: ./run.sh [OPTIONS]
         Options:
-          --sudo         Use sudo for docker-compose commands.
+          --sudo         Use sudo for docker compose commands.
           --steps ARG    Space separated list of steps to do.
                          Default: "setup gendata tests cleanup".
           --tests ARG    Space separated list of tests to run.
@@ -21,7 +21,7 @@ $ ./run.sh --help
 
 ## Steps
 1. Setup: Start the docker container that runs a fresh geth in dev mode, via
-   docker-compose.
+   docker compose.
 2. Gendata: Run the `gen_blockchain_data` binary found in
    `src/bin/gen_blockchain_data.rs` which compiles the contracts, deploys them,
    and executes transactions; in order to generate blocks with a variety of
@@ -45,6 +45,6 @@ themselves are defined in `lib.rs`.
 ## Requirements
 
 The following software needs to be installed to run the integration tests script:
-- docker-compose
+- docker compose
 - Rust toolchain
 - `solc` version 0.7.x or 0.8.x

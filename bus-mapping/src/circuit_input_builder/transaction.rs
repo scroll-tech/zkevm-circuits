@@ -2,9 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use eth_types::evm_types::Memory;
-use eth_types::Signature;
-use eth_types::{geth_types, Address, GethExecTrace, Word, H256};
+use eth_types::{evm_types::Memory, geth_types, Address, GethExecTrace, Signature, Word, H256};
 use ethers_core::utils::get_contract_address;
 
 use crate::{

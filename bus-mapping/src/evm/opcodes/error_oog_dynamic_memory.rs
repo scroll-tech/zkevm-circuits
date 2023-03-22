@@ -1,9 +1,10 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::error::{ExecError, OogError};
-use crate::evm::Opcode;
-use crate::Error;
-use eth_types::evm_types::OpcodeId;
-use eth_types::GethExecStep;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::{ExecError, OogError},
+    evm::Opcode,
+    Error,
+};
+use eth_types::{evm_types::OpcodeId, GethExecStep};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct OOGDynamicMemory {}

@@ -24,8 +24,7 @@ use crate::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, or, Expr};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[cfg(feature = "reject-eip2718")]
 use gadgets::util::select;
@@ -78,11 +77,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id.expr(),
         ); // rwc_delta += 1
         let mut reversion_info = cb.reversion_info_write(None); // rwc_delta += 2
+        let is_persistent = reversion_info.is_persistent();
         cb.call_context_lookup(
             1.expr(),
             Some(call_id.expr()),
             CallContextFieldTag::IsSuccess,
-            reversion_info.is_persistent(),
+            is_persistent.expr(),
         ); // rwc_delta += 1
 
         let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =
@@ -183,7 +183,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Read code_hash of callee
         let phase2_code_hash = cb.query_cell_phase2();
         let is_empty_code_hash =
-            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
+            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_code_hash_rlc());
         let callee_not_exists = IsZeroGadget::construct(cb, phase2_code_hash.expr());
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
@@ -342,11 +342,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 no_callee_code.expr(),
                 true.expr(),
             );
-            cb.require_equal(
-                "Tx to precompile should be persistent",
-                reversion_info.is_persistent(),
-                1.expr(),
-            );
+            // TODO: verify that precompile could fail in begin tx.
+            // cb.require_equal(
+            // "Tx to precompile should be persistent",
+            // reversion_info.is_persistent(),
+            // 1.expr(),
+            // );
             cb.require_equal(
                 "Go to EndTx when Tx to precompile",
                 cb.next.execution_state_selector([ExecutionState::EndTx]),
@@ -354,16 +355,27 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
 
             cb.require_step_state_transition(StepStateTransition {
-                // 8 reads and writes:
+                // 7 + TransferWithGasFeeGadget associated reads or writes:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
                 //   - Write CallContext IsSuccess
-                //   - Write Account Nonce
-                //   - Write TxAccessListAccount
-                //   - Write TxAccessListAccount
+                //   - Write Account (Caller) Nonce
+                //   - Write TxAccessListAccount (Caller)
+                //   - Write TxAccessListAccount (Callee)
                 //   - a TransferWithGasFeeGadget
-                rw_counter: Delta(7.expr() + transfer_with_gas_fee.rw_delta()),
+                rw_counter: Delta(
+                    7.expr()
+                        + transfer_with_gas_fee.rw_delta()
+                        // TRICKY:
+                        // Process the reversion only for Precompile in begin TX. Since no
+                        // associated opcodes could process reversion afterwards
+                        // (corresponding to `handle_reversion` call in `gen_begin_tx_ops`).
+                        // TODO:
+                        // Move it to code of generating precompiled operations when implemented.
+                        + not::expr(is_persistent.expr())
+                            * transfer_with_gas_fee.reversible_w_delta(),
+                ),
                 call_id: To(call_id.expr()),
                 ..StepStateTransition::any()
             });
@@ -636,7 +648,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             region.word_rlc(callee_code_hash),
-            region.empty_hash_rlc(),
+            region.empty_code_hash_rlc(),
         )?;
         self.callee_not_exists
             .assign_value(region, offset, region.word_rlc(callee_code_hash))?;

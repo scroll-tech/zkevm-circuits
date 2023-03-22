@@ -5,12 +5,12 @@ use std::marker::PhantomData;
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::Field;
 use ethers_core::utils::rlp;
-use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
-use gadgets::is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction};
-use gadgets::util::{select, sum};
 use gadgets::{
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
+    is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     less_than::{LtChip, LtConfig, LtInstruction},
+    util::{select, sum},
 };
 
 #[cfg(feature = "onephase")]
@@ -25,19 +25,18 @@ use halo2_proofs::{
 };
 
 // use crate::evm_circuit::table::FixedTableTag;
-use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness::RlpTxTag::{
-    ChainId, DataPrefix, Gas, GasPrice, Nonce, Prefix, SigR, SigS, SigV, To,
-};
-use crate::witness::{Block, Transaction};
 use crate::{
     evm_circuit::{
         util::{and, constraint_builder::BaseConstraintBuilder, not, or},
         witness::{RlpTxTag, RlpWitnessGen},
     },
     table::RlpTable,
-    util::Expr,
-    witness::{RlpDataType, SignedTransaction},
+    util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
+    witness::{
+        Block, RlpDataType,
+        RlpTxTag::{ChainId, DataPrefix, Gas, GasPrice, Nonce, Prefix, SigR, SigS, SigV, To},
+        SignedTransaction, Transaction,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -338,7 +337,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             //////////////////////////////////////////////////////////////////////////////////////
             ////////////////////////////////// RlpTxTag::Prefix //////////////////////////////////
-            //////////////////////////////////////////////////////////////////////////////////////
+            ////////////////////////////////// ////////////////////////////////////////////////////
             cb.condition(is_prefix_tag.expr(), |cb| {
                 // tag_index < 10
                 cb.require_equal(
@@ -440,7 +439,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             //////////////////////////////////////////////////////////////////////////////////////
             //////// RlpTxTag::Nonce, GasPrice, Gas, To, Value, ChainID, SigV, SigR, SigS ////////
-            //////////////////////////////////////////////////////////////////////////////////////
+            //////// //////////////////////////////////////////////////////////////////////////////
             cb.condition(is_simple_tag.clone(), |cb| {
                 // TODO: add tag_length < max_length
 
@@ -455,16 +454,13 @@ impl<F: Field> RlpCircuitConfig<F> {
             //     "interm == is_simple_tag "
             //     is_simple_tag.clone()
             // )
-            cb.condition(
-                is_simple_tag.clone(),
-                |cb| {
-                    cb.require_equal(
-                        "tag_length =? 1",
-                        meta.query_advice(rlp_table.tag_length_eq_one, Rotation::cur()),
-                        tlength_eq.clone(),
-                    );
-                }
-            );
+            cb.condition(is_simple_tag.clone(), |cb| {
+                cb.require_equal(
+                    "tag_length =? 1",
+                    meta.query_advice(rlp_table.tag_length_eq_one, Rotation::cur()),
+                    tlength_eq.clone(),
+                );
+            });
             // if tag_index == tag_length && tag_length == 1
             cb.condition(
                 is_simple_tag.clone() * tindex_eq_tlength.clone() * tlength_eq.clone(),
@@ -524,16 +520,12 @@ impl<F: Field> RlpCircuitConfig<F> {
                     meta.query_advice(tag_length, Rotation::next()),
                     meta.query_advice(tag_length, Rotation::cur()),
                 );
-                let power_base = select::expr(
-                    is_tag_word,
-                    evm_word_rand.expr(),
-                    256.expr(),
-                );
+                let power_base = select::expr(is_tag_word, evm_word_rand.expr(), 256.expr());
                 cb.require_equal(
                     "[simple_tag] value_acc::next == value_acc::cur * power_base + value::next",
                     meta.query_advice(rlp_table.value_acc, Rotation::next()),
-                    meta.query_advice(rlp_table.value_acc, Rotation::cur()) * power_base +
-                        meta.query_advice(byte_value, Rotation::next()),
+                    meta.query_advice(rlp_table.value_acc, Rotation::cur()) * power_base
+                        + meta.query_advice(byte_value, Rotation::next()),
                 );
             });
 
@@ -548,7 +540,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             //////////////////////////////////////////////////////////////////////////////////////
             ///////////////////////////////// RlpTxTag::DataPrefix ///////////////////////////////
-            //////////////////////////////////////////////////////////////////////////////////////
+            ///////////////////////////////// /////////////////////////////////////////////////////
             cb.condition(is_dp_tag.expr(), |cb| {
                 // tag_index < 10
                 cb.require_equal(
@@ -589,11 +581,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 |cb| {
                     let is_tx_hash = meta.query_advice(rlp_table.data_type, Rotation::cur())
                         - RlpDataType::TxSign.expr();
-                    let tag_next = select::expr(
-                        is_tx_hash,
-                        SigV.expr(),
-                        ChainId.expr(),
-                    );
+                    let tag_next = select::expr(is_tx_hash, SigV.expr(), ChainId.expr());
                     cb.require_equal(
                         "value_acc == length_acc",
                         meta.query_advice(rlp_table.value_acc, Rotation::cur()),
@@ -658,39 +646,33 @@ impl<F: Field> RlpCircuitConfig<F> {
             );
 
             // if tag_index < tag_length && tag_length > 1
-            cb.condition(
-                is_dp_tag.expr() * tindex_lt_tlength * tlength_lt,
-                |cb| {
-                    cb.require_equal(
-                        "length_acc == (length_acc::prev * 256) + value",
-                        meta.query_advice(length_acc, Rotation::cur()),
-                        meta.query_advice(length_acc, Rotation::prev()) * 256.expr()
-                            + meta.query_advice(byte_value, Rotation::cur()),
-                    );
-                },
-            );
+            cb.condition(is_dp_tag.expr() * tindex_lt_tlength * tlength_lt, |cb| {
+                cb.require_equal(
+                    "length_acc == (length_acc::prev * 256) + value",
+                    meta.query_advice(length_acc, Rotation::cur()),
+                    meta.query_advice(length_acc, Rotation::prev()) * 256.expr()
+                        + meta.query_advice(byte_value, Rotation::cur()),
+                );
+            });
 
             // if tag_index == tag_length && tag_length == 1
-            cb.condition(
-                is_dp_tag.expr() * tindex_eq_tlength * tlength_eq,
-                |cb| {
-                    cb.require_equal("value < 184", value_lt_184.is_lt(meta, None), 1.expr());
-                    let real_length_acc = select::expr(
-                        value_gt_127.is_lt(meta, None),
-                        meta.query_advice(byte_value, Rotation::cur()) - 128.expr(), // value > 127
-                        1.expr(),
-                    );
-                    cb.require_equal(
-                        "length_acc == value > 127 ? value - 0x80 : 1",
-                        meta.query_advice(length_acc, Rotation::cur()),
-                        real_length_acc,
-                    );
-                },
-            );
+            cb.condition(is_dp_tag.expr() * tindex_eq_tlength * tlength_eq, |cb| {
+                cb.require_equal("value < 184", value_lt_184.is_lt(meta, None), 1.expr());
+                let real_length_acc = select::expr(
+                    value_gt_127.is_lt(meta, None),
+                    meta.query_advice(byte_value, Rotation::cur()) - 128.expr(), // value > 127
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "length_acc == value > 127 ? value - 0x80 : 1",
+                    meta.query_advice(length_acc, Rotation::cur()),
+                    real_length_acc,
+                );
+            });
 
             //////////////////////////////////////////////////////////////////////////////////////
             //////////////////////////////////// RlpTxTag::Data //////////////////////////////////
-            //////////////////////////////////////////////////////////////////////////////////////
+            //////////////////////////////////// //////////////////////////////////////////////////
             cb.condition(is_data(meta), |cb| {
                 // tag_index >= 1
                 cb.require_zero(
@@ -719,7 +701,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                 cb.require_equal(
                     "calldata_bytes_rlc_acc' == calldata_bytes_rlc_acc * r + byte_value'",
                     meta.query_advice(calldata_bytes_rlc_acc, Rotation::next()),
-                    meta.query_advice(calldata_bytes_rlc_acc, Rotation::cur()) * keccak_input_rand.clone()
+                    meta.query_advice(calldata_bytes_rlc_acc, Rotation::cur())
+                        * keccak_input_rand.clone()
                         + meta.query_advice(byte_value, Rotation::next()),
                 );
                 cb.require_equal(
@@ -747,7 +730,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                         meta.query_advice(rlp_table.tag_rindex, Rotation::next()),
                         meta.query_advice(tag_length, Rotation::next()),
                     );
-                }
+                },
             );
 
             // if tag_index == 1 for TxHash
@@ -768,7 +751,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                         meta.query_advice(rlp_table.tag_rindex, Rotation::next()),
                         meta.query_advice(tag_length, Rotation::next()),
                     );
-                }
+                },
             );
 
             cb.gate(meta.query_fixed(q_usable, Rotation::cur()))
@@ -781,7 +764,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             //////////////////////////////////////////////////////////////////////////////////////
             ////////////////////////////////// RlpTxTag::ChainID /////////////////////////////////
-            //////////////////////////////////////////////////////////////////////////////////////
+            ////////////////////////////////// ////////////////////////////////////////////////////
 
             // if tag_index == 1
             cb.condition(is_chainid(meta) * tindex_eq, |cb| {

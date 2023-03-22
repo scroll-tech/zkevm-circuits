@@ -1,5 +1,7 @@
-use super::bytecode_unroller::{unroll, UnrolledBytecode};
-use super::circuit::BytecodeCircuit;
+use super::{
+    bytecode_unroller::{unroll, UnrolledBytecode},
+    circuit::BytecodeCircuit,
+};
 
 use eth_types::Field;
 

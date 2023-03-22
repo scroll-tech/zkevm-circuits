@@ -1,7 +1,6 @@
 use crate::witness::RlpTxTag;
 use eth_types::{Address, U256, U64};
-use halo2_proofs::arithmetic::FieldExt;
-use halo2_proofs::circuit::Value;
+use halo2_proofs::{arithmetic::FieldExt, circuit::Value};
 use num::Zero;
 
 use super::witness_gen::{RlpDataType, RlpWitnessRow};

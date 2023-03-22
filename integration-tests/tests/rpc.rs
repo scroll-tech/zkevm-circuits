@@ -4,8 +4,7 @@ use eth_types::{StorageProof, Word};
 use integration_tests::{get_client, CompiledContract, GenDataOutput, CHAIN_ID, CONTRACTS_PATH};
 use lazy_static::lazy_static;
 use pretty_assertions::assert_eq;
-use std::fs::File;
-use std::path::Path;
+use std::{fs::File, path::Path};
 
 lazy_static! {
     pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();

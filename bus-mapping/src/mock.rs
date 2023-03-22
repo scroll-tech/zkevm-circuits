@@ -1,9 +1,8 @@
 //! Mock types and functions to generate mock data useful for tests
 
 use crate::{
-    circuit_input_builder::BlockHead,
     circuit_input_builder::{
-        get_state_accesses, AccessSet, Block, CircuitInputBuilder, CircuitsParams,
+        get_state_accesses, AccessSet, Block, BlockHead, CircuitInputBuilder, CircuitsParams,
     },
     state_db::{self, CodeDB, StateDB},
 };

@@ -1,9 +1,10 @@
 use super::{Opcode, OpcodeId};
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::error::{ExecError, OogError};
-use crate::operation::{CallContextField, RW};
-use crate::operation::{StorageOp, TxAccessListAccountStorageOp};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::{ExecError, OogError},
+    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, RW},
+    Error,
+};
 use eth_types::{GethExecStep, ToWord};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it

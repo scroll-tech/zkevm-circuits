@@ -1,9 +1,7 @@
 //! Doc this
-use crate::{DebugWord, Word};
-use crate::{Error, ToBigEndian};
+use crate::{DebugWord, Error, ToBigEndian, Word};
 use core::str::FromStr;
-use serde::ser::SerializeSeq;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::fmt;
 
 /// Represents a `StackAddress` of the EVM.

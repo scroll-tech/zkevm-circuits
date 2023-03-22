@@ -1,11 +1,11 @@
-use crate::evm_circuit::util::rlc;
-use crate::evm_circuit::witness::Rw;
-use crate::table::{AccountFieldTag, ProofType};
+use crate::{
+    evm_circuit::{util::rlc, witness::Rw},
+    table::{AccountFieldTag, MPTProofType as ProofType},
+};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
-use mpt_zktrie::state::witness::WitnessGenerator;
-use mpt_zktrie::{serde::SMTTrace, state, MPTProofType};
+use mpt_zktrie::{serde::SMTTrace, state, state::witness::WitnessGenerator, MPTProofType};
 use std::collections::BTreeMap;
 
 pub use state::ZktrieState;
@@ -25,9 +25,9 @@ impl MptUpdate {
         match self.key {
             Key::AccountStorage { .. } => {
                 if self.old_value.is_zero() && self.new_value.is_zero() {
-                    ProofType::StorageDoesNotExist
+                    ProofType::NonExistingStorageProof
                 } else {
-                    ProofType::StorageChanged
+                    ProofType::StorageMod
                 }
             }
             Key::Account { field_tag, .. } => field_tag.into(),

@@ -48,9 +48,8 @@ impl Opcode for Returndatasize {
 
 #[cfg(test)]
 mod returndatasize_tests {
-    use crate::circuit_input_builder::CircuitsParams;
     use crate::{
-        circuit_input_builder::ExecState,
+        circuit_input_builder::{CircuitsParams, ExecState},
         mock::BlockData,
         operation::{CallContextField, CallContextOp, StackOp, RW},
     };

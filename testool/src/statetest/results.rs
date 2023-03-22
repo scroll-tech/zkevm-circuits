@@ -1,16 +1,14 @@
 use anyhow::Result;
 use handlebars::Handlebars;
-use prettytable::Row;
-use prettytable::Table;
-use serde::Deserialize;
-use serde::Serialize;
+use prettytable::{Row, Table};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::io::Read;
-use std::io::Write;
-use std::path::PathBuf;
-use std::str::FromStr;
+use std::{
+    collections::{HashMap, HashSet},
+    io::{Read, Write},
+    path::PathBuf,
+    str::FromStr,
+};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, EnumString}; // 0.17.1
 

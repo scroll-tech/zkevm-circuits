@@ -5,8 +5,7 @@ mod config;
 mod statetest;
 mod utils;
 
-use crate::config::TestSuite;
-use crate::statetest::ResultLevel;
+use crate::{config::TestSuite, statetest::ResultLevel};
 use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
@@ -16,8 +15,7 @@ use statetest::{
     geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
     StateTest,
 };
-use std::path::PathBuf;
-use std::time::SystemTime;
+use std::{path::PathBuf, time::SystemTime};
 use strum::EnumString;
 
 const REPORT_FOLDER: &str = "report";

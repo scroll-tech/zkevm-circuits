@@ -1,22 +1,25 @@
-use bus_mapping::circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams};
-use bus_mapping::Error::JSONRpcError;
-use halo2_proofs::circuit::Value;
-use halo2_proofs::dev::MockProver;
-use halo2_proofs::dev::VerifyFailure;
-use halo2_proofs::halo2curves::bn256::Fr;
-use halo2_proofs::plonk::Circuit;
-use integration_tests::{get_client, log_init};
-use integration_tests::{CIRCUIT, END_BLOCK, START_BLOCK, TX_ID};
-use zkevm_circuits::evm_circuit::witness::block_convert;
-use zkevm_circuits::evm_circuit::EvmCircuit;
-use zkevm_circuits::keccak_circuit::keccak_packed_multi::multi_keccak;
-use zkevm_circuits::rlp_circuit::RlpCircuit;
-use zkevm_circuits::state_circuit::StateCircuit;
-use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::tx_circuit::TxCircuit;
-use zkevm_circuits::util::{Challenges, SubCircuit};
-use zkevm_circuits::witness;
-use zkevm_circuits::witness::SignedTransaction;
+use bus_mapping::{
+    circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams},
+    Error::JSONRpcError,
+};
+use halo2_proofs::{
+    circuit::Value,
+    dev::{MockProver, VerifyFailure},
+    halo2curves::bn256::Fr,
+    plonk::Circuit,
+};
+use integration_tests::{get_client, log_init, CIRCUIT, END_BLOCK, START_BLOCK, TX_ID};
+use zkevm_circuits::{
+    evm_circuit::{witness::block_convert, EvmCircuit},
+    keccak_circuit::keccak_packed_multi::multi_keccak,
+    rlp_circuit::RlpCircuit,
+    state_circuit::StateCircuit,
+    super_circuit::SuperCircuit,
+    tx_circuit::TxCircuit,
+    util::{Challenges, SubCircuit},
+    witness,
+    witness::SignedTransaction,
+};
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 30000,

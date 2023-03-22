@@ -267,8 +267,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::CircuitTestBuilder;
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, ToWord, Word};
     use mock::test_ctx::TestContext;
@@ -379,17 +378,6 @@ mod test {
     fn returndatacopy_gadget_overflow_offset_and_zero_length() {
         test_ok_internal(0, 0x20, 0, 0x20, Word::MAX);
     }
-
-    // TODO: Add negative cases for out-of-bound and out-of-gas
-    // #[test]
-    // #[should_panic]
-    // fn returndatacopy_gadget_out_of_bound() {
     //     test_ok_internal(0, 0x10, 0x10, 0x10, 0x20.into());
-    // }
-
-    // #[test]
-    // #[should_panic]
-    // fn returndatacopy_gadget_out_of_gas() {
     //     test_ok_internal(0, 0x10, 0x10, 0, 0x2000000.into());
-    // }
 }

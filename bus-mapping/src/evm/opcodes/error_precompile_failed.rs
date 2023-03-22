@@ -1,9 +1,10 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::error::ExecError;
-use crate::evm::Opcode;
-use crate::Error;
-use eth_types::evm_types::OpcodeId;
-use eth_types::GethExecStep;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::ExecError,
+    evm::Opcode,
+    Error,
+};
+use eth_types::{evm_types::OpcodeId, GethExecStep};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct PrecompileFailed;

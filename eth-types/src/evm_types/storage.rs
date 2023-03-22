@@ -1,10 +1,7 @@
 //! Doc this
-use crate::{DebugWord, Word};
-use crate::{Error, ToBigEndian};
-use serde::ser::SerializeMap;
-use serde::{Serialize, Serializer};
-use std::collections::HashMap;
-use std::fmt;
+use crate::{DebugWord, Error, ToBigEndian, Word};
+use serde::{ser::SerializeMap, Serialize, Serializer};
+use std::{collections::HashMap, fmt};
 
 /// Represents a snapshot of the EVM stack state at a certain
 /// execution step height.

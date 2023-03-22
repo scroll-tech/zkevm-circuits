@@ -30,10 +30,10 @@
 //! ## Bus Mapping
 //! The goal of this crate is to serve as:
 //! - A parsing lib for EVM execution traces.
-//! - A way to infer some witness data that can only be constructed once we've
-//!   analyzed the full exec trace.
-//! - An easy interface to collect all of the data to witness into the circuits
-//!   and witness it with few function calls.
+//! - A way to infer some witness data that can only be constructed once we've analyzed the full
+//!   exec trace.
+//! - An easy interface to collect all of the data to witness into the circuits and witness it with
+//!   few function calls.
 //!
 //! ## Parsing
 //! Provided a JSON file or a JSON as a stream of bytes, which contains an
@@ -179,8 +179,8 @@
 //!
 //! Once you have the trace built (following the code found above) you can
 //! basically:
-//! - Get an iterator/vector over the `Stack`, `Memory` or `Storage` operations
-//!   ordered on the way the State Proof needs.
+//! - Get an iterator/vector over the `Stack`, `Memory` or `Storage` operations ordered on the way
+//!   the State Proof needs.
 //!
 //! On that way, we would get something like this for the Memory ops:
 //! ```text,ignore

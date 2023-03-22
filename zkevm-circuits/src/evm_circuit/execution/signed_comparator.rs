@@ -218,9 +218,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use eth_types::bytecode;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::Word;
+    use eth_types::{bytecode, evm_types::OpcodeId, Word};
     use mock::TestContext;
 
     use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};

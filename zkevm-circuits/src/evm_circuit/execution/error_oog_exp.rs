@@ -1,16 +1,23 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::N_BYTES_GAS;
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::CommonErrorGadget;
-use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
-use crate::evm_circuit::util::math_gadget::{ByteSizeGadget, LtGadget};
-use crate::evm_circuit::util::{CachedRegion, Cell, Word};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::util::Expr;
-use eth_types::evm_types::{GasCost, OpcodeId};
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::N_BYTES_GAS,
+        step::ExecutionState,
+        util::{
+            common_gadget::CommonErrorGadget,
+            constraint_builder::ConstraintBuilder,
+            math_gadget::{ByteSizeGadget, LtGadget},
+            CachedRegion, Cell, Word,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    util::Expr,
+};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field, ToLittleEndian,
+};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget to implement the corresponding out of gas errors for
 /// [`OpcodeId::EXP`].
@@ -120,12 +127,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::evm_circuit::test::{rand_bytes, rand_word};
-    use crate::test_util::CircuitTestBuilder;
-    use eth_types::evm_types::{GasCost, OpcodeId};
-    use eth_types::{bytecode, Bytecode, ToWord, U256};
-    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::{eth, TestContext, MOCK_ACCOUNTS};
+    use crate::{
+        evm_circuit::test::{rand_bytes, rand_word},
+        test_util::CircuitTestBuilder,
+    };
+    use eth_types::{
+        bytecode,
+        evm_types::{GasCost, OpcodeId},
+        Bytecode, ToWord, U256,
+    };
+    use mock::{
+        eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+    };
 
     #[test]
     fn test_oog_exp() {

@@ -1,10 +1,11 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::error::{ExecError, OogError};
-use crate::evm::Opcode;
-use crate::operation::{CallContextField, TxAccessListAccountOp, RW};
-use crate::Error;
-use eth_types::evm_types::OpcodeId;
-use eth_types::{GethExecStep, ToAddress};
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::{ExecError, OogError},
+    evm::Opcode,
+    operation::{CallContextField, TxAccessListAccountOp, RW},
+    Error,
+};
+use eth_types::{evm_types::OpcodeId, GethExecStep, ToAddress};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the

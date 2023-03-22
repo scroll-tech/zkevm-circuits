@@ -14,8 +14,7 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
-use crate::witness;
-use crate::{evm_circuit::util::rlc, table::TxLogFieldTag};
+use crate::{evm_circuit::util::rlc, table::TxLogFieldTag, witness};
 use eth_types::{Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;

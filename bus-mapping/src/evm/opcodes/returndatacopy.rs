@@ -1,9 +1,11 @@
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
+    evm::Opcode,
+    operation::{CallContextField, MemoryOp, RW},
+    Error,
 };
-use crate::evm::Opcode;
-use crate::operation::{CallContextField, MemoryOp, RW};
-use crate::Error;
 use eth_types::GethExecStep;
 
 #[derive(Clone, Copy, Debug)]
@@ -168,10 +170,11 @@ fn gen_copy_event(
 #[cfg(test)]
 mod return_tests {
     use crate::mock::BlockData;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-    use mock::TestContext;
+    use eth_types::{bytecode, geth_types::GethData, word};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
 
     #[test]
     fn test_ok() {

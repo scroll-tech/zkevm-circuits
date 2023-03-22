@@ -1,8 +1,9 @@
 //! Doc this
-use crate::Error;
-use crate::{DebugByte, ToBigEndian, Word};
-use core::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Range, Sub, SubAssign};
-use core::str::FromStr;
+use crate::{DebugByte, Error, ToBigEndian, Word};
+use core::{
+    ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Range, Sub, SubAssign},
+    str::FromStr,
+};
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
 use std::fmt;

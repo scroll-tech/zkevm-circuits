@@ -3,20 +3,17 @@
 // as `block` and run via `cargo test -p zkevm-circuits --features test
 // prover_error -- --nocapture --ignored`. Change any constant variables like
 // `MAX_TXS` to suit your needs.
-use bus_mapping::circuit_input_builder::CircuitsParams;
-use bus_mapping::mock::BlockData;
+use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use env_logger::Env;
-use eth_types::geth_types::{Account, GethData};
-use eth_types::{Block, Bytes, Error, Transaction, Word, H160, U256};
-use halo2_proofs::dev::MockProver;
-use halo2_proofs::halo2curves::bn256::Fr;
+use eth_types::{
+    geth_types::{Account, GethData},
+    Block, Bytes, Error, Transaction, Word, H160, U256,
+};
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use mock::test_ctx::{gen_geth_traces, LoggerConfig};
 use serde_json::{from_value, Value};
-use std::io::BufReader;
-use std::{collections::HashMap, fs::File};
-use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::util::SubCircuit;
-use zkevm_circuits::witness::block_convert;
+use std::{collections::HashMap, fs::File, io::BufReader};
+use zkevm_circuits::{super_circuit::SuperCircuit, util::SubCircuit, witness::block_convert};
 
 #[derive(serde::Deserialize)]
 struct MyAccount {

@@ -1,8 +1,7 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{CallContextField, TxRefundOp};
 use crate::{
-    operation::{StorageOp, TxAccessListAccountStorageOp},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, TxRefundOp},
     Error,
 };
 
@@ -114,15 +113,18 @@ impl Opcode for Sstore {
 #[cfg(test)]
 mod sstore_tests {
     use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::mock::BlockData;
-    use crate::operation::{CallContextOp, StackOp, RW};
-    use eth_types::bytecode;
-    use eth_types::evm_types::{OpcodeId, StackAddress};
-    use eth_types::geth_types::GethData;
-    use eth_types::Word;
-    use mock::test_ctx::helpers::tx_from_1_to_0;
-    use mock::{TestContext, MOCK_ACCOUNTS};
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{CallContextOp, StackOp, RW},
+    };
+    use eth_types::{
+        bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
+        Word,
+    };
+    use mock::{test_ctx::helpers::tx_from_1_to_0, TestContext, MOCK_ACCOUNTS};
     use pretty_assertions::assert_eq;
 
     fn test_ok(is_warm: bool) {

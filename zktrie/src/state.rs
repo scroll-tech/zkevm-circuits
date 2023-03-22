@@ -4,15 +4,13 @@ use bus_mapping::state_db::{Account, StateDB};
 use eth_types::{Address, Hash, Word, H256, U256};
 use mpt_circuits::MPTProofType;
 
-use std::collections::HashMap;
-use std::io::Error;
+use std::{collections::HashMap, io::Error};
 pub use zktrie::{Hash as ZkTrieHash, ZkMemoryDb, ZkTrie, ZkTrieNode};
 
 pub mod builder;
 pub mod witness;
 
-use std::fmt;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, fmt, rc::Rc};
 
 /// turn a integer (expressed by field) into MPTProofType
 pub fn as_proof_type(v: i32) -> MPTProofType {
@@ -171,7 +169,7 @@ impl ZktrieState {
                 }
             } else {
                 acc.storage.remove(key);
-                //acc.storage.insert(*key, U256::zero());
+                // acc.storage.insert(*key, U256::zero());
             }
         }
 
