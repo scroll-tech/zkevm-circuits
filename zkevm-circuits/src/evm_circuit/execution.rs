@@ -138,7 +138,7 @@ use balance::BalanceGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
-// use blockhash::BlockHashGadget;
+use blockhash::BlockHashGadget;
 use byte::ByteGadget;
 use calldatacopy::CallDataCopyGadget;
 use calldataload::CallDataLoadGadget;
@@ -306,7 +306,7 @@ pub(crate) struct ExecutionConfig<F> {
     sstore_gadget: Box<SstoreGadget<F>>,
     stop_gadget: Box<StopGadget<F>>,
     swap_gadget: Box<SwapGadget<F>>,
-    blockhash_gadget: Box<DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>>,
+    blockhash_gadget: Box<BlockHashGadget<F>>,
     block_ctx_u64_gadget: Box<BlockCtxU64Gadget<F>>,
     block_ctx_u160_gadget: Box<BlockCtxU160Gadget<F>>,
     block_ctx_u256_gadget: Box<BlockCtxU256Gadget<F>>,

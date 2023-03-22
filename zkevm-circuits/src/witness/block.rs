@@ -204,6 +204,62 @@ impl BlockContext {
     ) -> Vec<[Value<F>; 3]> {
         let current_block_number = self.number.to_scalar().unwrap();
         let randomness = challenges.evm_word();
+        [
+            vec![
+                [
+                    Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
+                    Value::known(current_block_number),
+                    Value::known(self.coinbase.to_scalar().unwrap()),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
+                    Value::known(current_block_number),
+                    Value::known(self.timestamp.to_scalar().unwrap()),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::Number as u64)),
+                    Value::known(current_block_number),
+                    Value::known(current_block_number),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
+                    Value::known(current_block_number),
+                    randomness.map(|rand| rlc::value(&self.difficulty.to_le_bytes(), rand)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(self.gas_limit)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
+                    Value::known(current_block_number),
+                    randomness
+                        .map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
+                    Value::known(current_block_number),
+                    randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(num_txs as u64)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::CumNumTxs as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(cum_num_txs as u64)),
+                ],
+            ],
+            self.block_hash_assignments(randomness),
+        ]
+        .concat()
+    }
+
+    #[cfg(feature = "scroll")]
+    fn block_hash_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
         let parent_block_num = if self.number.as_u64() < 1 {
             0
         } else {
@@ -216,59 +272,33 @@ impl BlockContext {
                 .into_iter()
                 .fold(F::zero(), |acc, byte| acc * rand + F::from(byte as u64))
         });
-        [vec![
-            [
-                Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
-                Value::known(current_block_number),
-                Value::known(self.coinbase.to_scalar().unwrap()),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
-                Value::known(current_block_number),
-                Value::known(self.timestamp.to_scalar().unwrap()),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::Number as u64)),
-                Value::known(current_block_number),
-                Value::known(current_block_number),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
-                Value::known(current_block_number),
-                randomness.map(|rand| rlc::value(&self.difficulty.to_le_bytes(), rand)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
-                Value::known(current_block_number),
-                Value::known(F::from(self.gas_limit)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
-                Value::known(current_block_number),
-                randomness.map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
-                Value::known(current_block_number),
-                randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),
-                Value::known(current_block_number),
-                Value::known(F::from(num_txs as u64)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::CumNumTxs as u64)),
-                Value::known(current_block_number),
-                Value::known(F::from(cum_num_txs as u64)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
-                Value::known(parent_block_num.to_scalar().unwrap()),
-                parent_hash_rlc,
-            ],
+        vec![[
+            Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
+            Value::known(parent_block_num.to_scalar().unwrap()),
+            parent_hash_rlc,
         ]]
-        .concat()
+    }
+
+    #[cfg(not(feature = "scroll"))]
+    fn block_hash_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
+        let len_history = self.history_hashes.len();
+        self.history_hashes
+            .iter()
+            .enumerate()
+            .map(|(idx, hash)| {
+                [
+                    Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
+                    Value::known(
+                        self.number
+                            .checked_sub((len_history - idx).into())
+                            .unwrap_or_default()
+                            .to_scalar()
+                            .unwrap(),
+                    ),
+                    randomness.map(|randomness| rlc::value(&hash.to_le_bytes(), randomness)),
+                ]
+            })
+            .collect()
     }
 }
 
