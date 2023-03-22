@@ -141,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             cb.require_equal(
                 "poseidon hash of empty bytes",
                 poseidon_code_hash.expr(),
-                cb.empty_poseidon_hash_rlc(),
+                cb.empty_code_hash_rlc(),
             );
         });
 

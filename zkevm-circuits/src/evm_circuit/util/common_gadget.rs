@@ -389,7 +389,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
-                    cb.empty_poseidon_hash_rlc(),
+                    cb.empty_code_hash_rlc(),
                     0.expr(),
                     Some(reversion_info),
                 );
@@ -519,7 +519,7 @@ impl<F: Field> TransferGadget<F> {
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
-                    cb.empty_poseidon_hash_rlc(),
+                    cb.empty_code_hash_rlc(),
                     0.expr(),
                     Some(reversion_info),
                 );
@@ -698,11 +698,8 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             AccountFieldTag::CodeHash,
             phase2_callee_code_hash.expr(),
         );
-        let is_empty_code_hash = IsEqualGadget::construct(
-            cb,
-            phase2_callee_code_hash.expr(),
-            cb.empty_poseidon_hash_rlc(),
-        );
+        let is_empty_code_hash =
+            IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_code_hash_rlc());
         let callee_not_exists = IsZeroGadget::construct(cb, phase2_callee_code_hash.expr());
 
         Self {
@@ -797,7 +794,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             region,
             offset,
             phase2_callee_code_hash,
-            region.empty_poseidon_hash_rlc(),
+            region.empty_code_hash_rlc(),
         )?;
         self.callee_not_exists
             .assign_value(region, offset, phase2_callee_code_hash)?;
