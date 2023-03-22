@@ -18,7 +18,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::circuit_input_builder::CopyDataType;
+use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
 use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -41,7 +41,7 @@ pub(crate) struct ReturnRevertGadget<F> {
 
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     keccak_code_hash: Cell<F>,
-    poseidon_code_hash: Cell<F>,
+    code_hash: Cell<F>,
     code_size: Cell<F>,
 
     caller_id: Cell<F>,
@@ -101,17 +101,17 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             * is_success.expr()
             * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
             * range.length();
-        let (caller_id, address, reversion_info, keccak_code_hash, poseidon_code_hash, code_size) =
-            cb.condition(is_contract_deployment.clone(), |cb| {
+        let (caller_id, address, reversion_info, code_hash, keccak_code_hash, code_size) = cb
+            .condition(is_contract_deployment.clone(), |cb| {
                 // poseidon hash of code.
                 //
                 // We don't need to place any additional constraints on code_hash because the
                 // copy circuit enforces that it is the hash of the bytes in the copy lookup.
-                let poseidon_code_hash = cb.query_cell_phase2();
+                let code_hash = cb.query_cell_phase2();
                 cb.copy_table_lookup(
                     cb.curr.state.call_id.expr(),
                     CopyDataType::Memory.expr(),
-                    poseidon_code_hash.expr(),
+                    code_hash.expr(),
                     CopyDataType::Bytecode.expr(),
                     range.offset(),
                     range.address(),
@@ -143,7 +143,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 cb.account_write(
                     address.expr(),
                     AccountFieldTag::CodeHash,
-                    poseidon_code_hash.expr(),
+                    code_hash.expr(),
                     cb.empty_code_hash_rlc(),
                     Some(&mut reversion_info),
                 );
@@ -163,8 +163,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     caller_id,
                     address,
                     reversion_info,
+                    code_hash,
                     keccak_code_hash,
-                    poseidon_code_hash,
                     code_size,
                 )
             });
@@ -266,8 +266,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             return_data_length,
             restore_context,
             memory_expansion,
+            code_hash,
             keccak_code_hash,
-            poseidon_code_hash,
             code_size,
             address,
             caller_id,
@@ -328,11 +328,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
 
             // poseidon hash of code.
-            let poseidon_code_hash = bus_mapping::util::hash_code(&values);
-            self.poseidon_code_hash.assign(
+            let mut code_hash = CodeDB::hash(&values).to_fixed_bytes();
+            code_hash.reverse();
+            self.code_hash.assign(
                 region,
                 offset,
-                region.word_rlc(U256::from_big_endian(poseidon_code_hash.as_bytes())),
+                region.word_rlc(U256::from_little_endian(&code_hash)),
             )?;
 
             // code size.
@@ -354,7 +355,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_contract_deployment = call.is_create && call.is_success && !length.is_zero();
         if !call.is_root {
-            // here....
             let rw_counter_offset = 3 + if is_contract_deployment {
                 7 + length.as_u64()
             } else {

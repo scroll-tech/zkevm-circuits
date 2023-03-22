@@ -9,10 +9,7 @@ use crate::{
     util::{query_expression, Challenges, Expr},
     witness::{Block, ExecStep, Rw, RwMap},
 };
-use bus_mapping::{
-    state_db::CodeDB,
-    util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
-};
+use bus_mapping::state_db::CodeDB;
 use eth_types::{Address, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -200,14 +197,6 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     }
     pub fn empty_code_hash_rlc(&self) -> Value<F> {
         self.word_rlc(CodeDB::empty_code_hash().to_word())
-    }
-
-    pub fn empty_keccak_hash_rlc(&self) -> Value<F> {
-        self.word_rlc(KECCAK_CODE_HASH_ZERO.to_word())
-    }
-
-    pub fn empty_poseidon_hash_rlc(&self) -> Value<F> {
-        self.word_rlc(POSEIDON_CODE_HASH_ZERO.to_word())
     }
 
     /// Constrains a cell to have a constant value.

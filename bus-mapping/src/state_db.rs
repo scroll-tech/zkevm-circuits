@@ -3,7 +3,7 @@
 
 use crate::{
     precompile::is_precompiled,
-    util::{hash_code, KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
+    util::{hash_code, KECCAK_CODE_HASH_ZERO},
 };
 use eth_types::{Address, Hash, Word, H256, U256};
 use lazy_static::lazy_static;
@@ -86,7 +86,7 @@ impl Account {
             nonce: Word::zero(),
             balance: Word::zero(),
             storage: HashMap::new(),
-            code_hash: *POSEIDON_CODE_HASH_ZERO,
+            code_hash: CodeDB::empty_code_hash(),
             keccak_code_hash: *KECCAK_CODE_HASH_ZERO,
             code_size: Word::zero(),
         }
@@ -98,7 +98,7 @@ impl Account {
             && self.balance.is_zero()
             //&& self.storage.is_empty()
             && self.keccak_code_hash.eq(&KECCAK_CODE_HASH_ZERO)
-            && self.code_hash.eq(&POSEIDON_CODE_HASH_ZERO)
+            && self.code_hash.eq(&CodeDB::empty_code_hash())
             && self.code_size.is_zero()
     }
 }

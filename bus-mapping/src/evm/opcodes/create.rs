@@ -4,7 +4,7 @@ use crate::{
     },
     evm::Opcode,
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
-    util::{hash_code, POSEIDON_CODE_HASH_ZERO},
+    state_db::CodeDB,
     Error,
 };
 use eth_types::{Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};
@@ -69,7 +69,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let (initialization_code, keccak_code_hash, poseidon_code_hash) = if length > 0 {
             handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?
         } else {
-            (vec![], H256(keccak256([])), *POSEIDON_CODE_HASH_ZERO)
+            (vec![], H256(keccak256([])), CodeDB::empty_code_hash())
         };
 
         let tx_id = state.tx_ctx.id();
@@ -250,7 +250,7 @@ fn handle_copy(
 ) -> Result<(Vec<u8>, H256, H256), Error> {
     let initialization_bytes = state.call_ctx()?.memory.0[offset..offset + length].to_vec();
     let keccak_code_hash = H256(keccak256(&initialization_bytes));
-    let poseidon_code_hash = hash_code(&initialization_bytes);
+    let poseidon_code_hash = CodeDB::hash(&initialization_bytes);
     let bytes: Vec<_> = Bytecode::from(initialization_bytes.clone())
         .code
         .iter()

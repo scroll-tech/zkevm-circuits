@@ -3,7 +3,8 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
     evm::opcodes::ExecStep,
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
-    util::{hash_code, KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
+    state_db::CodeDB,
+    util::KECCAK_CODE_HASH_ZERO,
     Error,
 };
 use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
@@ -85,7 +86,7 @@ impl Opcode for ReturnRevert {
                     address: state.call()?.address,
                     field: AccountField::CodeHash,
                     value: code_info.poseidon_hash.to_word(),
-                    value_prev: POSEIDON_CODE_HASH_ZERO.to_word(),
+                    value_prev: CodeDB::empty_code_hash().to_word(),
                 },
             )?;
             state.push_op_reversible(
@@ -231,9 +232,9 @@ fn handle_create(
 ) -> Result<AccountCodeInfo, Error> {
     let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
     let keccak_hash = H256(keccak256(&values));
-    let poseidon_hash = hash_code(&values);
+    let code_hash = CodeDB::hash(&values);
     let size = values.len();
-    let dst_id = NumberOrHash::Hash(poseidon_hash);
+    let dst_id = NumberOrHash::Hash(code_hash);
     let bytes: Vec<_> = Bytecode::from(values)
         .code
         .iter()
@@ -267,7 +268,7 @@ fn handle_create(
 
     Ok(AccountCodeInfo {
         keccak_hash,
-        poseidon_hash,
+        poseidon_hash: code_hash,
         size,
     })
 }

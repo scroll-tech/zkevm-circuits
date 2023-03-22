@@ -19,7 +19,7 @@ pub static CHECK_MEM_STRICT: Lazy<bool> = Lazy::new(|| read_env_var("CHECK_MEM_S
 pub const POSEIDON_HASH_BYTES_IN_FIELD: usize = 31;
 
 /// Default code hash (use poseidon hash now)
-pub fn hash_code(code: &[u8]) -> Hash {
+pub(crate) fn hash_code(code: &[u8]) -> Hash {
     use poseidon_circuit::hash::{Hashable, MessageHashable, HASHABLE_DOMAIN_SPEC};
 
     let bytes_in_field = POSEIDON_HASH_BYTES_IN_FIELD;
@@ -93,5 +93,3 @@ fn code_hashing() {
 
 /// the zero keccak code hash
 pub static KECCAK_CODE_HASH_ZERO: Lazy<Hash> = Lazy::new(|| H256(keccak256([])));
-/// the zero poseidon code hash
-pub static POSEIDON_CODE_HASH_ZERO: Lazy<Hash> = Lazy::new(|| hash_code(&[]));
