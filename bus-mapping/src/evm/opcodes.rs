@@ -78,8 +78,7 @@ mod error_write_protection;
 mod memory_expansion_test;
 
 use self::sha3::Sha3;
-use crate::evm::opcodes::error_oog_create2::OOGCreate2;
-use crate::precompile::is_precompiled;
+use crate::{evm::opcodes::error_oog_create2::OOGCreate2, precompile::is_precompiled};
 use address::Address;
 use balance::Balance;
 use calldatacopy::Calldatacopy;
