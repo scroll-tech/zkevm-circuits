@@ -215,7 +215,6 @@ mod test {
             STOP
         });
 
-        // TODO: this does not actually test a non-existent account if account is None.
         let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
