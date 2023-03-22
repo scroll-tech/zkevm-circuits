@@ -523,7 +523,7 @@ impl<F: Field> TransferGadget<F> {
                     0.expr(),
                     Some(reversion_info),
                 );
-                // TODO: also write poseidon? codesize seems not need yet
+                // TODO: also write empty keccak code hash? codesize seems not need yet. write a test to verify this.
             },
         );
         // Skip transfer if value == 0

@@ -310,50 +310,51 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         // and code_hash. Each sequence of bytes occurs in a fixed position, so to
         // compute the RLC of the input, we only need to compute some fixed powers of
         // the randomness.
-        //     let randomness_raised_to_16 = cb.power_of_randomness()[15].clone();
-        //     let randomness_raised_to_32 = randomness_raised_to_16.square();
-        //     let randomness_raised_to_64 = randomness_raised_to_32.clone().square();
-        //     let randomness_raised_to_84 =
-        //         randomness_raised_to_64.clone() * cb.power_of_randomness()[19].clone();
-        //     cb.require_equal(
-        //         "for CREATE2, keccak input is 0xff ++ address ++ salt ++ code_hash",
-        //         keccak_input.expr(),
-        //         0xff.expr() * randomness_raised_to_84
-        //             + caller_address.expr() * randomness_raised_to_64
-        //             + salt.expr() * randomness_raised_to_32
-        //             + code_hash.expr(),
-        //     );
-        //     cb.require_equal(
-        //         "for CREATE2, keccak input length is 85",
-        //         keccak_input_length.expr(),
-        //         (1 + 20 + 32 + 32).expr(),
-        //     );
+        // let randomness_raised_to_16 = cb.power_of_randomness()[15].clone();
+        // let randomness_raised_to_32 = randomness_raised_to_16.square();
+        // let randomness_raised_to_64 = randomness_raised_to_32.clone().square();
+        // let randomness_raised_to_84 =
+        // randomness_raised_to_64.clone() * cb.power_of_randomness()[19].clone();
+        // cb.require_equal(
+        // "for CREATE2, keccak input is 0xff ++ address ++ salt ++ code_hash",
+        // keccak_input.expr(),
+        // 0xff.expr() * randomness_raised_to_84
+        // + caller_address.expr() * randomness_raised_to_64
+        // + salt.expr() * randomness_raised_to_32
+        // + code_hash.expr(),
+        // );
+        // cb.require_equal(
+        // "for CREATE2, keccak input length is 85",
+        // keccak_input_length.expr(),
+        // (1 + 20 + 32 + 32).expr(),
+        // );
         // });
 
         // cb.condition(not::expr(is_create2.expr()), |cb| {
-        //     let randomness_raised_to_20 = cb.power_of_randomness()[19].clone();
-        //     let randomness_raised_to_21 = cb.power_of_randomness()[20].clone();
-        //     cb.require_equal(
-        //         "for CREATE, keccak input is rlp([address, nonce])",
-        //         keccak_input.expr(),
-        //         nonce.rlp_rlc(cb)
-        //             + nonce.randomness_raised_to_rlp_length(cb)
-        //                 * (((0xc0.expr() + 21.expr() + nonce.rlp_length())
-        //                     * randomness_raised_to_21)
-        //                     + (0x80 + 20).expr() * randomness_raised_to_20
-        //                     + caller_address.expr()),
-        //     );
-        //     cb.require_equal(
-        //         "for CREATE, keccak input length is rlp([address, nonce]).len()",
-        //         keccak_input_length.expr(),
-        //         (1 + 1 + 20).expr() + nonce.rlp_length(),
-        //     );
+        // let randomness_raised_to_20 = cb.power_of_randomness()[19].clone();
+        // let randomness_raised_to_21 = cb.power_of_randomness()[20].clone();
+        // cb.require_equal(
+        // "for CREATE, keccak input is rlp([address, nonce])",
+        // keccak_input.expr(),
+        // nonce.rlp_rlc(cb)
+        // + nonce.randomness_raised_to_rlp_length(cb)
+        // * (((0xc0.expr() + 21.expr() + nonce.rlp_length())
+        // * randomness_raised_to_21)
+        // + (0x80 + 20).expr() * randomness_raised_to_20
+        // + caller_address.expr()),
+        // );
+        // cb.require_equal(
+        // "for CREATE, keccak input length is rlp([address, nonce]).len()",
+        // keccak_input_length.expr(),
+        // (1 + 1 + 20).expr() + nonce.rlp_length(),
+        // );
         // });
-
+        //
+        //
         // cb.keccak_table_lookup(
-        //     keccak_input.expr(),
-        //     keccak_input_length.expr(),
-        //     keccak_output.expr(),
+        // keccak_input.expr(),
+        // keccak_input_length.expr(),
+        // keccak_output.expr(),
         // );
 
         Self {
