@@ -77,7 +77,7 @@ pub struct Call {
     pub address: Address,
     /// Code Source
     pub code_source: CodeSource,
-    /// Poseidon Code Hash
+    /// Code Hash
     pub code_hash: Hash,
     /// Depth
     pub depth: usize,
