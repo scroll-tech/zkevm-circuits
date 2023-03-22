@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         cb.require_true("is_create is true", cb.curr.state.is_create.expr());
 
         let memory_address = MemoryAddressGadget::construct(cb, offset, length);
-        // TODO: lookup memory for first byte
+        // lookup memory for first byte
         cb.memory_lookup(0.expr(), memory_address.offset(), first_byte.expr(), None);
 
         // constrain first byte is 0xef
@@ -224,7 +224,7 @@ mod test {
         }
     }
 
-    // TODO: add tx deploy case for invalid creation code.
+    // add tx deploy case for invalid creation code.
     #[test]
     fn test_tx_deploy_invalid_creation_code() {
         let code = initialization_bytecode();
