@@ -8,7 +8,6 @@ use crate::{
         TxRefundOp, RW,
     },
     state_db::CodeDB,
-    util::KECCAK_CODE_HASH_ZERO,
     Error,
 };
 use core::fmt::Debug;
@@ -501,8 +500,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         state.sdb.get_account_mut(&call.address).1.storage.clear();
     }
     if state.tx.is_create()
-        && ((!callee_account.keccak_code_hash.is_zero()
-            && !callee_account.keccak_code_hash.eq(&*KECCAK_CODE_HASH_ZERO))
+        && ((!callee_account.code_hash.is_zero()
+            && !callee_account.code_hash.eq(&CodeDB::empty_code_hash()))
             || !callee_account.nonce.is_zero())
     {
         unimplemented!("deployment collision");
