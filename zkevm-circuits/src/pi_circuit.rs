@@ -1507,6 +1507,7 @@ mod pi_circuit_test {
     //     assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
     // }
 
+    #[cfg(feature = "scroll")]
     #[test]
     fn test_simple_pi() {
         use std::env::set_var;
