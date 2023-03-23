@@ -11,7 +11,7 @@ use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 
 use super::{
@@ -268,14 +268,22 @@ impl BlockContext {
     fn block_hash_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
         use eth_types::ToWord;
 
-        let len_history = std::cmp::min(self.history_hashes.len(), NUM_PREV_BLOCK_ALLOWED as usize);
-        let history_hashes = &self.history_hashes[0..len_history];
+        #[cfg(not(feature = "scroll"))]
+        let history_hashes: &[U256] = &self.history_hashes;
+        #[cfg(feature = "scroll")]
+        let history_hashes: &[U256] = &[self.eth_block.parent_hash.to_word()];
+
+        let len_history = history_hashes.len();
 
         history_hashes
             .iter()
             .enumerate()
             .map(|(idx, hash)| {
-                let block_number = self.number.low_u64() - len_history as u64 + idx as u64;
+                let block_number = self
+                    .number
+                    .low_u64()
+                    .checked_sub((len_history - idx) as u64)
+                    .unwrap_or_default();
                 if block_number + 1 == self.number.low_u64() {
                     debug_assert_eq!(self.eth_block.parent_hash.to_word(), hash.into());
                 }
