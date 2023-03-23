@@ -1502,7 +1502,7 @@ mod pi_circuit_test {
 
     #[cfg(feature = "scroll")]
     #[test]
-    fn test_simple_pi() {
+    fn serial_test_simple_pi() {
         use mock::test_ctx::helpers::tx_from_1_to_0;
         use std::env::set_var;
 
