@@ -271,6 +271,7 @@ pub fn run_test(
         gas_limit: trace_config.block_constants.gas_limit,
         base_fee_per_gas: Some(trace_config.block_constants.base_fee),
         transactions,
+        parent_hash: st.env.previous_hash,
         ..eth_types::Block::default()
     };
 

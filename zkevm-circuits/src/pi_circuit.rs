@@ -39,7 +39,6 @@ use crate::table::BlockContextFieldTag::{
     Timestamp,
 };
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
-use halo2_proofs::circuit::{Cell, RegionIndex};
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
@@ -898,6 +897,7 @@ impl<F: Field> PiCircuitConfig<F> {
         }
         #[cfg(feature = "reject-eip2718")]
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
+            use halo2_proofs::circuit::{Cell, RegionIndex};
             region.constrain_equal(
                 tx_hash_cell.cell(),
                 Cell {
@@ -1460,16 +1460,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
 
 #[cfg(test)]
 mod pi_circuit_test {
+
     use super::*;
-    use crate::witness::block_convert;
-    use bus_mapping::mock::BlockData;
-    use eth_types::{bytecode, geth_types::GethData};
-    use halo2_proofs::{
-        dev::{MockProver, VerifyFailure},
-        halo2curves::bn256::Fr,
-    };
-    use mock::{TestContext, MOCK_CHAIN_ID, MOCK_DIFFICULTY};
-    use pretty_assertions::assert_eq;
+    use halo2_proofs::dev::{MockProver, VerifyFailure};
     // use rand_chacha::ChaCha20Rng;
     // use rand::SeedableRng;
 
@@ -1507,9 +1500,21 @@ mod pi_circuit_test {
     //     assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
     // }
 
+    #[cfg(feature = "scroll")]
     #[test]
-    fn test_simple_pi() {
+    fn serial_test_simple_pi() {
+        use mock::test_ctx::helpers::tx_from_1_to_0;
         use std::env::set_var;
+
+        use crate::witness::block_convert;
+        use bus_mapping::mock::BlockData;
+        use eth_types::{bytecode, geth_types::GethData};
+        use halo2_proofs::halo2curves::bn256::Fr;
+        use mock::{
+            test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_CHAIN_ID,
+            MOCK_DIFFICULTY,
+        };
+        use pretty_assertions::assert_eq;
 
         const MAX_TXS: usize = 4;
         const MAX_CALLDATA: usize = 20;
@@ -1522,9 +1527,15 @@ mod pi_circuit_test {
         set_var("CHAIN_ID", hex::encode(chain_id_be_bytes));
         set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
-        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode! {
+        let bytecode = bytecode! {
             STOP
-        })
+        };
+        let test_ctx = TestContext::<2, 1>::new(
+            Some(vec![Word::zero()]),
+            account_0_code_account_1_no_code(bytecode),
+            tx_from_1_to_0,
+            |block, _txs| block.number(0xcafeu64),
+        )
         .unwrap();
         let block: GethData = test_ctx.into();
         let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
