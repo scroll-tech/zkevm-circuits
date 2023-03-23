@@ -91,10 +91,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        let [base, exponent] = [0, 1].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
-
         log::debug!(
-            "ErrorOutOfGasEXP: gas_left = {}, gas_cost = {}",
+            "ErrorOutOfGasAccountAccess: gas_left = {}, gas_cost = {}",
             step.gas_left,
             step.gas_cost,
         );
@@ -127,108 +125,171 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::{
-        evm_circuit::test::{rand_bytes, rand_word},
-        test_util::CircuitTestBuilder,
-    };
-    use bus_mapping::{evm::Opcode, state_db::Account};
+mod test {
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{
-        bytecode,
+        address, bytecode,
         evm_types::{GasCost, OpcodeId},
-        Bytecode, ToWord, U256,
+        geth_types::Account,
+        Address, Bytecode, ToWord, Word, U256,
     };
-    use mock::{
-        eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
-    };
+    use lazy_static::lazy_static;
+    use mock::TestContext;
+
+    lazy_static! {
+        static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
+    }
 
     #[test]
-    fn test_oog_exp() {
-        [
-            OpcodeId::BALANCE,
-            //TODO: add extcodehash, extcodesize
-        ]
-        .into_iter()
-        .for_each(|opcode| {
-            let testing_data = TestingData::new(opcode);
+    fn oog_account_access_root() {
+        let account = Some(Account {
+            address: *TEST_ADDRESS,
+            balance: U256::from(900),
+            ..Default::default()
+        });
 
-            test_root(&testing_data);
-            test_internal(&testing_data);
-        })
+        test_root_ok(&account, false);
+        test_root_ok(&account, true);
+
+        // test_internal_ok(0x20, 0x00, &account, false);
+        // test_internal_ok(0x1010, 0xff, &account, false);
     }
 
-    struct TestingData {
-        bytecode: Bytecode,
-        gas_cost: u64,
+    #[test]
+    fn oog_account_internal() {
+        let account = Some(Account {
+            address: *TEST_ADDRESS,
+            balance: U256::from(900),
+            ..Default::default()
+        });
+
+        test_root_ok(&account, true);
+        test_internal_ok(0x20, 0x00, &account, true);
+        test_internal_ok(0x1010, 0xff, &account, true);
     }
 
-    impl TestingData {
-        pub fn new(opcode: OpcodeId) -> Self {
-            //let account = Account.
-            let bytecode = bytecode! {
-                PUSH32(rand_word()) // random address
+    fn test_root_ok(account: &Option<Account>, is_warm: bool) {
+        let address = account.as_ref().map(|a| a.address).unwrap_or(*TEST_ADDRESS);
+
+        let mut code = Bytecode::default();
+        if is_warm {
+            code.append(&bytecode! {
+                PUSH20(address.to_word())
                 BALANCE
-            };
-
-            let gas_cost = OpcodeId::BALANCE.constant_gas_cost().0 * 2
-
-            Self { bytecode, gas_cost }
+                POP
+            });
         }
-    }
+        code.append(&bytecode! {
+            PUSH20(address.to_word())
+            BALANCE
+            STOP
+        });
 
-    fn test_root(testing_data: &TestingData) {
-        let ctx = TestContext::<2, 1>::new(
+        let gas = GasCost::TX.0
+            + if is_warm {
+                GasCost::WARM_ACCESS.as_u64()
+                    + OpcodeId::PUSH32.constant_gas_cost().0
+                    + OpcodeId::POP.constant_gas_cost().0
+                    + GasCost::COLD_ACCOUNT_ACCESS.as_u64()
+            } else {
+                GasCost::COLD_ACCOUNT_ACCESS.as_u64()
+            }
+            + OpcodeId::PUSH32.constant_gas_cost().0
+            - 1;
+        let ctx = TestContext::<3, 1>::new(
             None,
-            account_0_code_account_1_no_code(testing_data.bytecode.clone()),
-            |mut txs, accs| {
-                // Decrease expected gas cost (by 1) to trigger out of gas error.
-                txs[0]
-                    .from(accs[1].address)
-                    .to(accs[0].address)
-                    .gas((GasCost::TX.0 + testing_data.gas_cost - 1).into());
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(Word::from(1_u64 << 20))
+                    .code(code);
+                // Set balance if account exists.
+                if let Some(account) = account {
+                    accs[1].address(address).balance(account.balance);
+                } else {
+                    accs[1]
+                        .address(address!("0x0000000000000000000000000000000000000010"))
+                        .balance(Word::from(1_u64 << 20));
+                }
+                accs[2]
+                    .address(address!("0x0000000000000000000000000000000000000020"))
+                    .balance(Word::from(1_u64 << 20));
             },
-            |block, _tx| block.number(0xcafe_u64),
+            |mut txs, accs| {
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[2].address)
+                    .gas(gas.into());
+            },
+            |block, _tx| block,
         )
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn test_internal(testing_data: &TestingData) {
-        let (addr_a, addr_b) = (MOCK_ACCOUNTS[0], MOCK_ACCOUNTS[1]);
+    fn test_internal_ok(
+        call_data_offset: usize,
+        call_data_length: usize,
+        account: &Option<Account>,
+        is_warm: bool,
+    ) {
+        let address = account.as_ref().map(|a| a.address).unwrap_or(*TEST_ADDRESS);
+        let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
-        let code_b = testing_data.bytecode.clone();
-        let gas_cost_b = testing_data.gas_cost;
+        let mut code_b = Bytecode::default();
+        if is_warm {
+            code_b.append(&bytecode! {
+                PUSH20(address.to_word())
+                BALANCE
+                POP
+            });
+        }
+        code_b.append(&bytecode! {
+            PUSH20(address.to_word())
+            BALANCE
+            STOP
+        });
 
-        // Code A calls code B.
+        // code A calls code B.
+        let pushdata = rand_bytes(8);
         let code_a = bytecode! {
             // populate memory in A's context.
-            PUSH8(U256::from_big_endian(&rand_bytes(8)))
+            PUSH8(Word::from_big_endian(&pushdata))
             PUSH1(0x00) // offset
             MSTORE
             // call ADDR_B.
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
-            PUSH32(0x00) // argsLength
-            PUSH32(0x20) // argsOffset
+            PUSH32(call_data_length) // argsLength
+            PUSH32(call_data_offset) // argsOffset
             PUSH1(0x00) // value
             PUSH32(addr_b.to_word()) // addr
-            // Decrease expected gas cost (by 1) to trigger out of gas error.
-            PUSH32(gas_cost_b - 1) // gas
+            PUSH32(0x1_0000) // gas
             CALL
             STOP
         };
 
-        let ctx = TestContext::<3, 1>::new(
+        let ctx = TestContext::<4, 1>::new(
             None,
             |accs| {
                 accs[0].address(addr_b).code(code_b);
                 accs[1].address(addr_a).code(code_a);
-                accs[2].address(MOCK_ACCOUNTS[2]).balance(eth(10));
+                // Set balance if account exists.
+                if let Some(account) = account {
+                    accs[2].address(address).balance(account.balance);
+                } else {
+                    accs[2]
+                        .address(mock::MOCK_ACCOUNTS[2])
+                        .balance(Word::from(1_u64 << 20));
+                }
+                accs[3]
+                    .address(mock::MOCK_ACCOUNTS[3])
+                    .balance(Word::from(1_u64 << 20));
             },
             |mut txs, accs| {
-                txs[0].from(accs[2].address).to(accs[1].address);
+                txs[0].to(accs[1].address).from(accs[3].address);
             },
             |block, _tx| block,
         )

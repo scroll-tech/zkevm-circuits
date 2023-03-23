@@ -401,11 +401,9 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        log::warn!(
+        println!(
             "geth error {:?} occurred in  {:?} at pc {:?}",
-            exec_error,
-            geth_step.op,
-            geth_step.pc,
+            exec_error, geth_step.op, geth_step.pc,
         );
 
         exec_step.error = Some(exec_error.clone());
