@@ -5,19 +5,15 @@ use crate::{
         step::ExecutionState,
         util::{
             and,
-            common_gadget::RestoreContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
-            },
+            common_gadget::CommonErrorGadget,
+            constraint_builder::ConstraintBuilder,
             math_gadget::{IsZeroGadget, LtGadget},
             memory_gadget::{
                 address_high, address_low, MemoryExpansionGadget, MemoryWordSizeGadget,
             },
-            not, CachedRegion, Cell, Word,
+            CachedRegion, Cell, Word,
         },
     },
-    table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
@@ -37,8 +33,10 @@ pub(crate) struct ErrorOOGCreate2Gadget<F> {
     minimum_word_size: MemoryWordSizeGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_ADDRESS>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
-    rw_counter_end_of_reversion: Cell<F>,
-    restore_context: RestoreContextGadget<F>,
+    // gupeng
+    // rw_counter_end_of_reversion: Cell<F>,
+    // restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
@@ -48,7 +46,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
 
         cb.require_equal(
             "ErrorOutOfGasCREATE2 opcode must be CREATE2",
@@ -107,35 +104,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
             true.expr(),
         );
 
-        // Current call must fail.
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
-        let rw_counter_end_of_reversion = cb.query_cell();
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                rw_counter: Delta(6.expr() + cb.curr.state.reversible_write_counter.expr()),
-                ..StepStateTransition::any()
-            });
-        });
-        let restore_context = cb.condition(not::expr(cb.curr.state.is_root.expr()), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 6.expr());
 
         Self {
             opcode,
@@ -149,8 +118,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
             minimum_word_size,
             memory_expansion,
             insufficient_gas,
-            rw_counter_end_of_reversion,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -236,13 +204,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
             F::from(6 * minimum_word_size + memory_expansion_gas + constant_gas_cost),
         )?;
 
-        self.rw_counter_end_of_reversion.assign(
-            region,
-            offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
-        )?;
-
-        self.restore_context
+        self.common_error_gadget
             .assign(region, offset, block, call, step, 6)?;
 
         Ok(())
@@ -265,7 +227,7 @@ mod tests {
     }
 
     #[test]
-    fn test() {
+    fn test_oog_create2() {
         let cases = [
             // memory expansion
             TestCase {
