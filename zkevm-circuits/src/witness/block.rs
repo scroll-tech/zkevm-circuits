@@ -20,6 +20,11 @@ use super::{
 };
 use crate::util::{Challenges, DEFAULT_RAND};
 
+#[cfg(feature = "scroll")]
+pub const NUM_PREV_BLOCK_ALLOWED: u64 = 1;
+#[cfg(not(feature = "scroll"))]
+pub const NUM_PREV_BLOCK_ALLOWED: u64 = 256;
+
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
@@ -258,43 +263,24 @@ impl BlockContext {
         .concat()
     }
 
-    #[cfg(feature = "scroll")]
-    fn block_hash_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
-        let parent_block_num = if self.number.as_u64() < 1 {
-            0
-        } else {
-            self.number.as_u64() - 1
-        };
-        let parent_hash_rlc = randomness.map(|rand| {
-            self.eth_block
-                .parent_hash
-                .to_fixed_bytes()
-                .into_iter()
-                .fold(F::zero(), |acc, byte| acc * rand + F::from(byte as u64))
-        });
-        vec![[
-            Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
-            Value::known(parent_block_num.to_scalar().unwrap()),
-            parent_hash_rlc,
-        ]]
-    }
-
     #[cfg(not(feature = "scroll"))]
     fn block_hash_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
-        let len_history = self.history_hashes.len();
+        use eth_types::ToWord;
+
+        let len_history = std::cmp::min(self.history_hashes.len(), NUM_PREV_BLOCK_ALLOWED as usize);
+        let history_hashes = &self.history_hashes[0..len_history];
+
         self.history_hashes
             .iter()
             .enumerate()
             .map(|(idx, hash)| {
+                let block_number = self.number.low_u64() - len_history as u64 + idx as u64;
+                if block_number + 1 == self.number.low_u64() {
+                    debug_assert_eq!(self.eth_block.parent_hash.to_word(), hash.into());
+                }
                 [
                     Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
-                    Value::known(
-                        self.number
-                            .checked_sub((len_history - idx).into())
-                            .unwrap_or_default()
-                            .to_scalar()
-                            .unwrap(),
-                    ),
+                    Value::known(F::from(block_number)),
                     randomness.map(|randomness| rlc::value(&hash.to_le_bytes(), randomness)),
                 ]
             })
