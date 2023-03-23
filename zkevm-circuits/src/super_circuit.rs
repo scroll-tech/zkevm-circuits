@@ -611,6 +611,7 @@ impl<
     ) -> Result<(u32, Self, Vec<Vec<F>>, CircuitInputBuilder), bus_mapping::Error> {
         let block_data =
             BlockData::new_from_geth_data_with_params(geth_data.clone(), circuits_params);
+
         let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
@@ -740,7 +741,7 @@ pub(crate) mod super_circuit_tests {
 
         let tx_input = callee_bytecode(true, 300, 20).code();
         let mut block: GethData = TestContext::<2, 1>::new(
-            None,
+            Some(vec![Word::zero()]),
             |accs| {
                 accs[0].address(addr_a).balance(eth(10));
             },
@@ -774,7 +775,7 @@ pub(crate) mod super_circuit_tests {
         wallets.insert(wallet_a.address(), wallet_a);
 
         let mut block: GethData = TestContext::<2, 1>::new(
-            None,
+            Some(vec![Word::zero()]),
             |accs| {
                 accs[0]
                     .address(addr_b)
@@ -815,7 +816,7 @@ pub(crate) mod super_circuit_tests {
         wallets.insert(wallet_a.address(), wallet_a);
 
         let mut block: GethData = TestContext::<2, 2>::new(
-            None,
+            Some(vec![Word::zero()]),
             |accs| {
                 accs[0]
                     .address(addr_b)

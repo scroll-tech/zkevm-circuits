@@ -39,7 +39,6 @@ use crate::table::BlockContextFieldTag::{
     Timestamp,
 };
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
-use halo2_proofs::circuit::{Cell, RegionIndex};
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
@@ -898,6 +897,7 @@ impl<F: Field> PiCircuitConfig<F> {
         }
         #[cfg(feature = "reject-eip2718")]
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
+            use halo2_proofs::circuit::{Cell, RegionIndex};
             region.constrain_equal(
                 tx_hash_cell.cell(),
                 Cell {
@@ -1507,7 +1507,6 @@ mod pi_circuit_test {
     //     assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
     // }
 
-    #[cfg(feature = "scroll")]
     #[test]
     fn test_simple_pi() {
         use std::env::set_var;

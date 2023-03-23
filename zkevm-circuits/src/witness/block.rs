@@ -20,8 +20,10 @@ use super::{
 };
 use crate::util::{Challenges, DEFAULT_RAND};
 
+/// max range of prev blocks allowed inside BLOCKHASH opcode
 #[cfg(feature = "scroll")]
 pub const NUM_PREV_BLOCK_ALLOWED: u64 = 1;
+/// max range of prev blocks allowed inside BLOCKHASH opcode
 #[cfg(not(feature = "scroll"))]
 pub const NUM_PREV_BLOCK_ALLOWED: u64 = 256;
 
@@ -263,14 +265,13 @@ impl BlockContext {
         .concat()
     }
 
-    #[cfg(not(feature = "scroll"))]
     fn block_hash_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
         use eth_types::ToWord;
 
         let len_history = std::cmp::min(self.history_hashes.len(), NUM_PREV_BLOCK_ALLOWED as usize);
         let history_hashes = &self.history_hashes[0..len_history];
 
-        self.history_hashes
+        history_hashes
             .iter()
             .enumerate()
             .map(|(idx, hash)| {
