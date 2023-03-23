@@ -60,6 +60,7 @@ mod error_codestore;
 mod error_contract_address_collision;
 mod error_invalid_creation_code;
 mod error_invalid_jump;
+mod error_oog_account_access;
 mod error_oog_call;
 mod error_oog_dynamic_memory;
 mod error_oog_exp;
@@ -72,7 +73,6 @@ mod error_precompile_failed;
 mod error_return_data_outofbound;
 mod error_simple;
 mod error_write_protection;
-mod error_oog_account_access;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -95,6 +95,7 @@ use error_codestore::ErrorCodeStore;
 use error_contract_address_collision::ContractAddressCollision;
 use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
+use error_oog_account_access::ErrorOOGAccountAccess;
 use error_oog_call::OOGCall;
 use error_oog_dynamic_memory::OOGDynamicMemory;
 use error_oog_exp::OOGExp;
@@ -107,7 +108,6 @@ use error_precompile_failed::PrecompileFailed;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_simple::ErrorSimple;
 use error_write_protection::ErrorWriteProtection;
-use error_oog_account_access::ErrorOOGAccountAccess;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -308,7 +308,9 @@ fn fn_gen_error_state_associated_ops(
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::Sha3) => Some(OOGSha3::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
-        ExecError::OutOfGas(OogError::AccountAccess) => Some(ErrorOOGAccountAccess::gen_associated_ops),
+        ExecError::OutOfGas(OogError::AccountAccess) => {
+            Some(ErrorOOGAccountAccess::gen_associated_ops)
+        }
         // ExecError::
         ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
