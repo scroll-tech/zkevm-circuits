@@ -61,24 +61,19 @@ mod error_contract_address_collision;
 mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_oog_call;
-mod error_oog_create2;
 mod error_oog_dynamic_memory;
-mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
-mod error_oog_sha3;
 mod error_oog_sload_sstore;
-mod error_oog_static_memory;
 mod error_precompile_failed;
 mod error_return_data_outofbound;
-mod error_simple;
 mod error_write_protection;
 
 #[cfg(test)]
 mod memory_expansion_test;
 
 use self::sha3::Sha3;
-use crate::{evm::opcodes::error_oog_create2::OOGCreate2, precompile::is_precompiled};
+use crate::precompile::is_precompiled;
 use address::Address;
 use balance::Balance;
 use calldatacopy::Calldatacopy;
@@ -97,15 +92,11 @@ use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
 use error_oog_call::OOGCall;
 use error_oog_dynamic_memory::OOGDynamicMemory;
-use error_oog_exp::OOGExp;
 use error_oog_log::ErrorOOGLog;
 use error_oog_memory_copy::OOGMemoryCopy;
-use error_oog_sha3::OOGSha3;
 use error_oog_sload_sstore::OOGSloadSstore;
-use error_oog_static_memory::OOGStaticMemory;
 use error_precompile_failed::PrecompileFailed;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
-use error_simple::ErrorSimple;
 use error_write_protection::ErrorWriteProtection;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
@@ -288,29 +279,37 @@ fn fn_gen_error_state_associated_ops(
 ) -> Option<FnGenAssociatedOps> {
     match error {
         ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
-        ExecError::InvalidOpcode => Some(ErrorSimple::gen_associated_ops),
+        ExecError::InvalidOpcode => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
         ExecError::Depth => {
             let op = geth_step.op;
             assert!(op.is_call());
             Some(fn_gen_associated_ops(&op))
         }
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
-        ExecError::OutOfGas(OogError::Constant) => Some(ErrorSimple::gen_associated_ops),
-        ExecError::OutOfGas(OogError::Create2) => Some(OOGCreate2::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Constant) => {
+            Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops)
+        }
+        ExecError::OutOfGas(OogError::Create2) => {
+            Some(StackOnlyOpcode::<4, 0, true>::gen_associated_ops)
+        }
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::DynamicMemoryExpansion) => {
             Some(OOGDynamicMemory::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::StaticMemoryExpansion) => {
-            Some(OOGStaticMemory::gen_associated_ops)
+            Some(StackOnlyOpcode::<1, 0, true>::gen_associated_ops)
         }
-        ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Exp) => {
+            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+        }
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
-        ExecError::OutOfGas(OogError::Sha3) => Some(OOGSha3::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Sha3) => {
+            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+        }
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         // ExecError::
-        ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
-        ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
+        ExecError::StackOverflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
+        ExecError::StackUnderflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
         ExecError::CodeStoreOutOfGas => Some(ErrorCodeStore::gen_associated_ops),
         ExecError::MaxCodeSizeExceeded => Some(ErrorCodeStore::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
@@ -333,7 +332,7 @@ fn fn_gen_error_state_associated_ops(
             OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 1>::gen_associated_ops),
             _ => unreachable!(),
         },
-        ExecError::GasUintOverflow => Some(ErrorSimple::gen_associated_ops),
+        ExecError::GasUintOverflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
         ExecError::InvalidCreationCode => Some(ErrorCreationCode::gen_associated_ops),
         // more future errors place here
         _ => {
