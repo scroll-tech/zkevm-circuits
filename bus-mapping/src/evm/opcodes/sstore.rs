@@ -262,7 +262,8 @@ mod sstore_tests {
                 )
             )
         );
-        let refund_op = &builder.block.container.tx_refund[step.bus_mapping_instance[9].as_usize()];
+        let refund_op =
+            &builder.block.container.tx_refund[step.bus_mapping_instance[10].as_usize()];
         assert_eq!(
             (refund_op.rw(), refund_op.op()),
             (
