@@ -63,7 +63,7 @@ jobs:
           cache: false
           go-version: ~1.18
       - name: Clear previous cache
-        run: sudo rm -rf /home/CI/go/pkg/mod /home/CI/.cache/go-build
+        run: rm -rf /home/CI/go/pkg/mod /home/CI/.cache/go-build
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -114,7 +114,7 @@ jobs:
       - name: Add target
         run: rustup target add ${{ matrix.target }}
       - name: Clear previous cache
-        run: sudo rm -rf /home/CI/go/pkg/mod /home/CI/.cache/go-build
+        run: rm -rf /home/CI/go/pkg/mod /home/CI/.cache/go-build
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -157,7 +157,7 @@ jobs:
         with:
           override: false
       - name: Clear previous cache
-        run: sudo rm -rf /home/CI/go/pkg/mod /home/CI/.cache/go-build
+        run: rm -rf /home/CI/go/pkg/mod /home/CI/.cache/go-build
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -195,7 +195,7 @@ jobs:
         with:
           override: false
       - name: Clear previous cache
-        run: sudo rm -rf /home/CI/go/pkg/mod /home/CI/.cache/go-build
+        run: rm -rf /home/CI/go/pkg/mod /home/CI/.cache/go-build
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -239,7 +239,7 @@ jobs:
         with:
           override: false
       - name: Clear previous cache
-        run: sudo rm -rf /home/CI/go/pkg/mod /home/CI/.cache/go-build
+        run: rm -rf /home/CI/go/pkg/mod /home/CI/.cache/go-build
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
