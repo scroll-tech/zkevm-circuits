@@ -138,6 +138,7 @@
 //!
 //! let geth_steps: Vec<GethExecStep> = serde_json::from_str(input_trace).unwrap();
 //! let geth_trace = GethExecTrace {
+//!     l1_fee: 0,
 //!     return_value: "".to_string(),
 //!     gas: Gas(block.eth_block.transactions[0].gas.as_u64()),
 //!     failed: false,
