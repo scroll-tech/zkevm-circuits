@@ -763,6 +763,7 @@ pub fn build_state_code_db(
                 balance: proof.balance,
                 storage,
                 code_hash: proof.code_hash,
+                ..Default::default()
             },
         )
     }

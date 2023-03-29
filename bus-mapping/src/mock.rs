@@ -78,6 +78,7 @@ impl BlockData {
                     balance: account.balance,
                     storage: account.storage,
                     code_hash,
+                    ..Default::default()
                 },
             );
         }

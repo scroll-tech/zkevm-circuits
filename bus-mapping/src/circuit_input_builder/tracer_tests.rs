@@ -44,6 +44,7 @@ impl CircuitInputBuilderTx {
         let tx_ctx = TransactionContext::new(
             &block.eth_block.transactions[0],
             &GethExecTrace {
+                l1_fee: 0,
                 gas: Gas(0),
                 failed: false,
                 return_value: "".to_owned(),
@@ -467,8 +468,9 @@ fn tracer_err_address_collision() {
     builder.builder.sdb.set_account(
         &ADDR_B,
         Account {
-            balance: Word::from(555u64), /* same value as in
-                                          * `mock::new_tracer_account` */
+            // same value as in
+            // `mock::new_tracer_account`
+            balance: Word::from(555u64),
             ..Account::zero()
         },
     );

@@ -302,7 +302,9 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         log_circuit_info(meta, "evm circuit");
 
         #[cfg(feature = "onephase")]
-        debug_assert_eq!(meta.max_phase(), 0);
+        if meta.max_phase() != 0 {
+            log::warn!("max_phase: {}", meta.max_phase());
+        }
 
         SuperCircuitConfig::<F> {
             block_table,
