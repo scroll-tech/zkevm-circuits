@@ -17,13 +17,12 @@ pub static CHECK_MEM_STRICT: Lazy<bool> = Lazy::new(|| read_env_var("CHECK_MEM_S
 /// Default number of bytes to pack into a field element.
 pub const POSEIDON_HASH_BYTES_IN_FIELD: usize = 31;
 
-
 /// Default code hash
 pub(crate) fn hash_code(code: &[u8]) -> Hash {
     #[cfg(feature = "scroll")]
     return hash_code_poseidon(code);
     #[cfg(not(feature = "scroll"))]
-    return hash_code_poseidon(code);
+    return hash_code_keccak(code);
 }
 
 pub(crate) fn hash_code_keccak(code: &[u8]) -> Hash {
