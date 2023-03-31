@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     circuit_input_builder::access::gen_state_access_trace,
-    error::{ExecError, InsufficientBalanceError},
+    error::{ExecError, InsufficientBalanceError, OogError},
     geth_errors::{
         GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
         GETH_ERR_STACK_UNDERFLOW,
@@ -1411,7 +1411,7 @@ fn tracer_err_gas_uint_overflow() {
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
-        Some(ExecError::GasUintOverflow)
+        Some(ExecError::OutOfGas(OogError::StaticMemoryExpansion))
     );
 }
 

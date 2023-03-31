@@ -337,7 +337,6 @@ fn fn_gen_error_state_associated_ops(
             OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 1>::gen_associated_ops),
             _ => unreachable!(),
         },
-        ExecError::GasUintOverflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
         ExecError::InvalidCreationCode => Some(ErrorCreationCode::gen_associated_ops),
         // more future errors place here
         _ => {

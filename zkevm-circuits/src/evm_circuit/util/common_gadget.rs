@@ -1,7 +1,7 @@
 use super::{
     from_bytes,
     math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
-    memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
+    memory_gadget::{CommonMemoryAddressGadget, MemoryExpansionGadget},
     CachedRegion,
 };
 use crate::{
@@ -612,15 +612,15 @@ impl<F: Field> TransferGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
+pub(crate) struct CommonCallGadget<F, MemAddrGadget, const IS_SUCCESS_CALL: bool> {
     pub is_success: Cell<F>,
 
     pub gas: Word<F>,
     pub gas_is_u64: IsZeroGadget<F>,
     pub callee_address: Word<F>,
     pub value: Word<F>,
-    pub cd_address: MemoryAddressGadget<F>,
-    pub rd_address: MemoryAddressGadget<F>,
+    pub cd_address: MemAddrGadget,
+    pub rd_address: MemAddrGadget,
     pub memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
 
     value_is_zero: IsZeroGadget<F>,
@@ -631,7 +631,9 @@ pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
     pub callee_not_exists: IsZeroGadget<F>,
 }
 
-impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL> {
+impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CALL: bool>
+    CommonCallGadget<F, MemAddrGadget, IS_SUCCESS_CALL>
+{
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         is_call: Expression<F>,
@@ -649,11 +651,10 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         let gas_word = cb.query_word_rlc();
         let callee_address_word = cb.query_word_rlc();
         let value = cb.query_word_rlc();
-        let cd_offset = cb.query_cell_phase2();
-        let cd_length = cb.query_word_rlc();
-        let rd_offset = cb.query_cell_phase2();
-        let rd_length = cb.query_word_rlc();
         let is_success = cb.query_bool();
+
+        let cd_address = MemAddrGadget::construct_self(cb);
+        let rd_address = MemAddrGadget::construct_self(cb);
 
         // Lookup values from stack
         // `callee_address` is poped from stack and used to check if it exists in
@@ -668,10 +669,10 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
         // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
         cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.expr()));
-        cb.stack_pop(cd_offset.expr());
-        cb.stack_pop(cd_length.expr());
-        cb.stack_pop(rd_offset.expr());
-        cb.stack_pop(rd_length.expr());
+        cb.stack_pop(cd_address.offset_rlc());
+        cb.stack_pop(cd_address.length_rlc());
+        cb.stack_pop(rd_address.offset_rlc());
+        cb.stack_pop(rd_address.length_rlc());
         cb.stack_push(if IS_SUCCESS_CALL {
             is_success.expr()
         } else {
@@ -680,8 +681,6 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
         // Recomposition of random linear combination to integer
         let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
-        let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
-        let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 

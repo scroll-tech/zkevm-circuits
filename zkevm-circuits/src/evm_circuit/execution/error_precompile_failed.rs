@@ -3,8 +3,10 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::ConstraintBuilder, math_gadget::IsZeroGadget,
-            memory_gadget::MemoryAddressGadget, CachedRegion, Cell, Word,
+            constraint_builder::ConstraintBuilder,
+            math_gadget::IsZeroGadget,
+            memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
+            CachedRegion, Cell, Word,
         },
     },
     util::Expr,

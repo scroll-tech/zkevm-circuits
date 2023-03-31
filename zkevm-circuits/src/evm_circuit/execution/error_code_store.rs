@@ -4,8 +4,11 @@ use crate::{
         param::{N_BYTES_GAS, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-            math_gadget::LtGadget, memory_gadget::MemoryAddressGadget, CachedRegion, Cell,
+            common_gadget::CommonErrorGadget,
+            constraint_builder::ConstraintBuilder,
+            math_gadget::LtGadget,
+            memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },

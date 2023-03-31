@@ -110,7 +110,6 @@ pub enum ExecutionState {
     ErrorOutOfGasSloadSstore,
     ErrorOutOfGasCREATE2,
     ErrorOutOfGasSELFDESTRUCT,
-    ErrorGasUintOverflow,
 }
 
 impl Default for ExecutionState {
@@ -145,7 +144,6 @@ impl ExecutionState {
                 | Self::ErrorInvalidCreationCode
                 | Self::ErrorInvalidJump
                 | Self::ErrorReturnDataOutOfBound
-                | Self::ErrorGasUintOverflow
                 | Self::ErrorOutOfGasConstant
                 | Self::ErrorOutOfGasStaticMemoryExpansion
                 | Self::ErrorOutOfGasDynamicMemoryExpansion

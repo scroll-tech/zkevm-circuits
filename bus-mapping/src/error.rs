@@ -143,17 +143,12 @@ pub enum ExecError {
     /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
     PrecompileFailed,
     /// ..
-    GasUintOverflow,
-    /// ..
     NonceUintOverflow,
 }
 
 // TODO: Move to impl block.
 pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
-    if error == GETH_ERR_GAS_UINT_OVERFLOW {
-        return ExecError::GasUintOverflow;
-    }
-    if error == GETH_ERR_OUT_OF_GAS {
+    if [GETH_ERR_OUT_OF_GAS, GETH_ERR_GAS_UINT_OVERFLOW].contains(&error) {
         // NOTE: We report a GasUintOverflow error as an OutOfGas error
         let oog_err = match op {
             OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {

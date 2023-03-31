@@ -15,7 +15,9 @@ use crate::{
             math_gadget::{
                 ConstantDivisionGadget, ContractCreateGadget, IsZeroGadget, LtWordGadget,
             },
-            memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
+            memory_gadget::{
+                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
+            },
             not, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},

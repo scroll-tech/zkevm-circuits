@@ -9,7 +9,10 @@ use crate::evm_circuit::{
     util::{
         common_gadget::SameContextGadget,
         constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
-        memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
+        memory_gadget::{
+            CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
+            MemoryExpansionGadget,
+        },
         rlc, CachedRegion, Cell, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
