@@ -607,7 +607,7 @@ mod test {
             bytecode.write_op(OpcodeId::MSTORE);
         }
         bytecode.append(&bytecode! {
-            PUSH3(0x123456) // salt
+            PUSH3(0x12) // salt
             PUSH1(initializer.len()) // length
             PUSH1(0) // offset
             PUSH1(0) // value
