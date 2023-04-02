@@ -74,7 +74,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         );
 
         let value = cb.query_word_rlc();
-
+            
         let init_code_memory_offset = cb.query_cell_phase2();
         let init_code_length = cb.query_word_rlc();
         let init_code =
