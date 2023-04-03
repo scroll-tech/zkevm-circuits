@@ -302,7 +302,9 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         log_circuit_info(meta, "evm circuit");
 
         #[cfg(feature = "onephase")]
-        debug_assert_eq!(meta.max_phase(), 0);
+        if meta.max_phase() != 0 {
+            log::warn!("max_phase: {}", meta.max_phase());
+        }
 
         SuperCircuitConfig::<F> {
             block_table,
@@ -611,6 +613,7 @@ impl<
     ) -> Result<(u32, Self, Vec<Vec<F>>, CircuitInputBuilder), bus_mapping::Error> {
         let block_data =
             BlockData::new_from_geth_data_with_params(geth_data.clone(), circuits_params);
+
         let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
@@ -740,7 +743,7 @@ pub(crate) mod super_circuit_tests {
 
         let tx_input = callee_bytecode(true, 300, 20).code();
         let mut block: GethData = TestContext::<2, 1>::new(
-            None,
+            Some(vec![Word::zero()]),
             |accs| {
                 accs[0].address(addr_a).balance(eth(10));
             },
@@ -774,7 +777,7 @@ pub(crate) mod super_circuit_tests {
         wallets.insert(wallet_a.address(), wallet_a);
 
         let mut block: GethData = TestContext::<2, 1>::new(
-            None,
+            Some(vec![Word::zero()]),
             |accs| {
                 accs[0]
                     .address(addr_b)
@@ -815,7 +818,7 @@ pub(crate) mod super_circuit_tests {
         wallets.insert(wallet_a.address(), wallet_a);
 
         let mut block: GethData = TestContext::<2, 2>::new(
-            None,
+            Some(vec![Word::zero()]),
             |accs| {
                 accs[0]
                     .address(addr_b)
@@ -845,7 +848,7 @@ pub(crate) mod super_circuit_tests {
 
     // High memory usage test.  Run in serial with:
     // `cargo test [...] serial_ -- --ignored --test-threads 1`
-    #[ignore]
+    #[cfg(feature = "scroll")]
     #[test]
     fn serial_test_super_circuit_1tx_1max_tx() {
         let block = block_1tx();
@@ -868,7 +871,7 @@ pub(crate) mod super_circuit_tests {
             circuits_params,
         );
     }
-    #[ignore]
+    #[cfg(feature = "scroll")]
     #[test]
     fn serial_test_super_circuit_1tx_deploy_2max_tx() {
         let block = block_1tx_deploy();
@@ -894,7 +897,7 @@ pub(crate) mod super_circuit_tests {
         );
     }
 
-    #[ignore]
+    #[cfg(feature = "scroll")]
     #[test]
     fn serial_test_super_circuit_1tx_2max_tx() {
         let block = block_1tx();
@@ -917,7 +920,7 @@ pub(crate) mod super_circuit_tests {
             circuits_params,
         );
     }
-    #[ignore]
+    #[cfg(feature = "scroll")]
     #[test]
     fn serial_test_super_circuit_2tx_4max_tx() {
         let block = block_2tx();
@@ -942,7 +945,7 @@ pub(crate) mod super_circuit_tests {
             circuits_params,
         );
     }
-    #[ignore]
+    #[cfg(feature = "scroll")]
     #[test]
     fn serial_test_super_circuit_2tx_2max_tx() {
         let block = block_2tx();

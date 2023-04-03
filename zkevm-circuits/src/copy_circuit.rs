@@ -385,7 +385,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         });
 
         // create case unimplemented for poseidon hash
-        #[cfg(feature = "codehash")]
         meta.lookup_any("Bytecode lookup", |meta| {
             use crate::table::BytecodeFieldTag;
             let cond = meta.query_fixed(q_enable, Rotation::cur())

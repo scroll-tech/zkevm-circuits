@@ -2,7 +2,8 @@ use crate::{
     circuit_input_builder::{
         CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
-    evm::Opcode,
+    error::ExecError,
+    evm::{Opcode, OpcodeId},
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
     Error,
 };
@@ -118,25 +119,47 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.call_context_write(&mut exec_step, callee.call_id, field, value);
         }
 
-        debug_assert!(state.sdb.get_nonce(&callee.address) == 0);
-        state.transfer(
-            &mut exec_step,
-            callee.caller_address,
-            callee.address,
-            true,
-            true,
-            callee.value,
-        )?;
+        // if address created before, nonce is not zero
 
-        state.push_op_reversible(
+        // this could be good place for checking callee_exists = true, since above
+        // operation happens in evm create() method before checking
+        // ErrContractAddressCollision
+        let code_hash_previous = if callee_exists {
+            // only create2 possibly cause address collision error.
+            assert_eq!(geth_step.op, OpcodeId::CREATE2);
+            exec_step.error = Some(ExecError::ContractAddressCollision);
+            callee_account.code_hash
+        } else {
+            H256::zero()
+        };
+
+        // use CodeHash rw not zero to check address already exists
+        state.account_read(
             &mut exec_step,
-            AccountOp {
-                address: callee.address,
-                field: AccountField::Nonce,
-                value: 1.into(),
-                value_prev: 0.into(),
-            },
-        )?;
+            address,
+            AccountField::CodeHash,
+            code_hash_previous.to_word(),
+        );
+
+        if !callee_exists {
+            state.transfer(
+                &mut exec_step,
+                callee.caller_address,
+                callee.address,
+                true,
+                true,
+                callee.value,
+            )?;
+            state.push_op_reversible(
+                &mut exec_step,
+                AccountOp {
+                    address: callee.address,
+                    field: AccountField::Nonce,
+                    value: 1.into(),
+                    value_prev: 0.into(),
+                },
+            )?;
+        }
 
         // Per EIP-150, all but one 64th of the caller's gas is sent to the
         // initialization call.
@@ -226,7 +249,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         state.block.sha3_inputs.push(keccak_input);
 
-        if length == 0 {
+        if length == 0 || callee_exists {
             for (field, value) in [
                 (CallContextField::LastCalleeId, 0.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
@@ -283,4 +306,75 @@ fn handle_copy(
     );
 
     Ok(initialization_bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::RW};
+    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word};
+    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
+
+    #[test]
+    fn test_create_address_collision_error() {
+        let code = bytecode! {
+            PUSH21(word!("6B6020600060003760206000F3600052600C6014F3"))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1 (0xef) // salt
+            PUSH1 (0x15) // size
+            PUSH1 (0xB) // offset
+            PUSH1 (0)   // value
+            CREATE2
+
+            PUSH1 (0xef) // salt
+            PUSH1 (0x15) // size
+            PUSH1 (0xB) // offset
+            PUSH1 (0)   // value
+            CREATE2
+
+            PUSH1 (0x20)   // retLength
+            PUSH1 (0x20)   // retOffset
+            PUSH1 (0x20)   // argsLength
+            PUSH1 (0x00)      // argsOffset
+            PUSH1 (0x00)      // value
+            DUP6           // addr from above CREATE2
+            PUSH2 (0xFFFF) // gas
+            CALL
+            STOP
+        };
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            |mut txs, accs| {
+                txs[0].from(accs[1].address).to(accs[0].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+
+        let tx_id = 1;
+        let transaction = &builder.block.txs()[tx_id - 1];
+        let step = transaction
+            .steps()
+            .iter()
+            .filter(|step| step.exec_state == ExecState::Op(OpcodeId::CREATE2))
+            .last()
+            .unwrap();
+
+        assert_eq!(step.error, Some(ExecError::ContractAddressCollision));
+
+        let container = builder.block.container.clone();
+        let operation = &container.stack[step.bus_mapping_instance[0].as_usize()];
+        assert_eq!(operation.rw(), RW::READ);
+    }
 }

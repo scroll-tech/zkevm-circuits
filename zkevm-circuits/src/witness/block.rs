@@ -11,7 +11,7 @@ use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 
 use super::{
@@ -19,6 +19,13 @@ use super::{
     MptUpdates, RwMap, Transaction,
 };
 use crate::util::{Challenges, DEFAULT_RAND};
+
+/// max range of prev blocks allowed inside BLOCKHASH opcode
+#[cfg(feature = "scroll")]
+pub const NUM_PREV_BLOCK_ALLOWED: u64 = 1;
+/// max range of prev blocks allowed inside BLOCKHASH opcode
+#[cfg(not(feature = "scroll"))]
+pub const NUM_PREV_BLOCK_ALLOWED: u64 = 256;
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -204,71 +211,89 @@ impl BlockContext {
     ) -> Vec<[Value<F>; 3]> {
         let current_block_number = self.number.to_scalar().unwrap();
         let randomness = challenges.evm_word();
-        let parent_block_num = if self.number.as_u64() < 1 {
-            0
-        } else {
-            self.number.as_u64() - 1
-        };
-        let parent_hash_rlc = randomness.map(|rand| {
-            self.eth_block
-                .parent_hash
-                .to_fixed_bytes()
-                .into_iter()
-                .fold(F::zero(), |acc, byte| acc * rand + F::from(byte as u64))
-        });
-        [vec![
-            [
-                Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
-                Value::known(current_block_number),
-                Value::known(self.coinbase.to_scalar().unwrap()),
+        [
+            vec![
+                [
+                    Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
+                    Value::known(current_block_number),
+                    Value::known(self.coinbase.to_scalar().unwrap()),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
+                    Value::known(current_block_number),
+                    Value::known(self.timestamp.to_scalar().unwrap()),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::Number as u64)),
+                    Value::known(current_block_number),
+                    Value::known(current_block_number),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
+                    Value::known(current_block_number),
+                    randomness.map(|rand| rlc::value(&self.difficulty.to_le_bytes(), rand)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(self.gas_limit)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
+                    Value::known(current_block_number),
+                    randomness
+                        .map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
+                    Value::known(current_block_number),
+                    randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(num_txs as u64)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::CumNumTxs as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(cum_num_txs as u64)),
+                ],
             ],
-            [
-                Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
-                Value::known(current_block_number),
-                Value::known(self.timestamp.to_scalar().unwrap()),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::Number as u64)),
-                Value::known(current_block_number),
-                Value::known(current_block_number),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
-                Value::known(current_block_number),
-                randomness.map(|rand| rlc::value(&self.difficulty.to_le_bytes(), rand)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
-                Value::known(current_block_number),
-                Value::known(F::from(self.gas_limit)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
-                Value::known(current_block_number),
-                randomness.map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
-                Value::known(current_block_number),
-                randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),
-                Value::known(current_block_number),
-                Value::known(F::from(num_txs as u64)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::CumNumTxs as u64)),
-                Value::known(current_block_number),
-                Value::known(F::from(cum_num_txs as u64)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
-                Value::known(parent_block_num.to_scalar().unwrap()),
-                parent_hash_rlc,
-            ],
-        ]]
+            self.block_hash_assignments(randomness),
+        ]
         .concat()
+    }
+
+    fn block_hash_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
+        use eth_types::ToWord;
+
+        #[cfg(not(feature = "scroll"))]
+        let history_hashes: &[U256] = &self.history_hashes;
+        #[cfg(feature = "scroll")]
+        let history_hashes: &[U256] = &[self.eth_block.parent_hash.to_word()];
+
+        let len_history = history_hashes.len();
+
+        history_hashes
+            .iter()
+            .enumerate()
+            .map(|(idx, hash)| {
+                let block_number = self
+                    .number
+                    .low_u64()
+                    .checked_sub((len_history - idx) as u64)
+                    .unwrap_or_default();
+                if block_number + 1 == self.number.low_u64() {
+                    debug_assert_eq!(self.eth_block.parent_hash.to_word(), hash.into());
+                }
+                [
+                    Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
+                    Value::known(F::from(block_number)),
+                    randomness.map(|randomness| rlc::value(&hash.to_le_bytes(), randomness)),
+                ]
+            })
+            .collect()
     }
 }
 

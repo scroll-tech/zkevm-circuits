@@ -82,6 +82,17 @@ impl Opcode for Sload {
 
         // First stack write
         state.stack_write(&mut exec_step, stack_position, value)?;
+        state.push_op(
+            &mut exec_step,
+            RW::READ,
+            TxAccessListAccountStorageOp {
+                tx_id: state.tx_ctx.id(),
+                address: contract_addr,
+                key,
+                is_warm,
+                is_warm_prev: is_warm,
+            },
+        );
         state.push_op_reversible(
             &mut exec_step,
             TxAccessListAccountStorageOp {
@@ -188,20 +199,35 @@ mod sload_tests {
             )
         );
 
-        let access_list_op = &builder.block.container.tx_access_list_account_storage
-            [step.bus_mapping_instance[7].as_usize()];
         assert_eq!(
-            (access_list_op.rw(), access_list_op.op()),
-            (
-                RW::WRITE,
-                &TxAccessListAccountStorageOp {
-                    tx_id: 1,
-                    address: MOCK_ACCOUNTS[0],
-                    key: Word::from(0x0u32),
-                    is_warm: true,
-                    is_warm_prev: is_warm,
-                },
-            )
+            [7, 8]
+                .map(
+                    |idx| &builder.block.container.tx_access_list_account_storage
+                        [step.bus_mapping_instance[idx].as_usize()]
+                )
+                .map(|operation| (operation.rw(), operation.op())),
+            [
+                (
+                    RW::READ,
+                    &TxAccessListAccountStorageOp {
+                        tx_id: 1,
+                        address: MOCK_ACCOUNTS[0],
+                        key: Word::from(0x0u32),
+                        is_warm,
+                        is_warm_prev: is_warm,
+                    },
+                ),
+                (
+                    RW::WRITE,
+                    &TxAccessListAccountStorageOp {
+                        tx_id: 1,
+                        address: MOCK_ACCOUNTS[0],
+                        key: Word::from(0x0u32),
+                        is_warm: true,
+                        is_warm_prev: is_warm,
+                    },
+                )
+            ]
         )
     }
 

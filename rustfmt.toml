@@ -4,6 +4,6 @@ comment_width = 100
 imports_granularity = "Crate"
 max_width = 100
 newline_style = "Unix"
-normalize_comments = true
+#normalize_comments = true
 reorder_imports = true
 wrap_comments = true

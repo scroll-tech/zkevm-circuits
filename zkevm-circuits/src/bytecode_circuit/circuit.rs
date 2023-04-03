@@ -378,7 +378,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 is_byte_to_header(meta),
             ]))
         });
-        #[cfg(feature = "codehash")]
+        #[cfg(not(feature = "poseidon-codehash"))]
         meta.lookup_any(
             "keccak256_table_lookup(cur.value_rlc, cur.length, cur.hash)",
             |meta| {
@@ -476,6 +476,9 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     )?;
                     return Ok(());
                 }
+                // annotate columns
+                self.annotate_circuit(&mut region);
+
                 let mut offset = 0;
                 for bytecode in witness.iter() {
                     self.assign_bytecode(
@@ -577,21 +580,22 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     length,
                     F::from(push_data_size as u64),
                 )?;
-
-                // trace!(
-                // "bytecode.set_row({}): last:{} h:{:?} t:{:?} i:{:?} c:{:?} v:{:?} pdl:{} rlc:{:?}
-                // l:{:?} pds:{:?}", offset,
-                // offset == last_row_offset,
-                // code_hash,
-                // row.tag.get_lower_32(),
-                // row.index.get_lower_32(),
-                // row.is_code.get_lower_32(),
-                // row.value.get_lower_32(),
-                // push_data_left,
-                // value_rlc,
-                // length.get_lower_32(),
-                // push_data_size
-                // );
+                /*
+                trace!(
+                    "bytecode.set_row({}): last:{} h:{:?} t:{:?} i:{:?} c:{:?} v:{:?} pdl:{} rlc:{:?} l:{:?} pds:{:?}",
+                    offset,
+                    offset == last_row_offset,
+                    code_hash,
+                    row.tag.get_lower_32(),
+                    row.index.get_lower_32(),
+                    row.is_code.get_lower_32(),
+                    row.value.get_lower_32(),
+                    push_data_left,
+                    value_rlc,
+                    length.get_lower_32(),
+                    push_data_size
+                );
+                */
 
                 *offset += 1;
                 push_data_left = next_push_data_left
@@ -1040,7 +1044,6 @@ mod tests {
     }
 
     /// Test invalid code_hash data
-    #[cfg(feature = "codehash")]
     #[test]
     fn bytecode_invalid_hash_data() {
         let k = 9;
@@ -1085,7 +1088,6 @@ mod tests {
 
     /// Test invalid byte data
 
-    #[cfg(feature = "codehash")]
     #[test]
     fn bytecode_invalid_byte_data() {
         let k = 9;

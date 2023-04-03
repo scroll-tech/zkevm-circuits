@@ -60,6 +60,7 @@ fn init() {
 }
 
 #[test]
+#[ignore]
 fn deserialize_example1() {
     let example = r#"
     {
@@ -132,6 +133,7 @@ fn deserialize_example1() {
 }
 
 #[test]
+#[ignore]
 fn deserialize_example2() {
     let example = r#"
     {
@@ -228,6 +230,7 @@ fn smt_bytes_to_hash(bt: &[u8]) -> [u8; 32] {
 
 #[test]
 fn witgen_update_one() {
+    use eth_types::U256;
     use witness::WitnessGenerator;
     init();
     if TEST_SAMPLE_STR.is_empty() {

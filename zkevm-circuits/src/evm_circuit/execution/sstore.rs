@@ -82,6 +82,12 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         );
 
         let is_warm = cb.query_bool();
+        cb.account_storage_access_list_read(
+            tx_id.expr(),
+            callee_address.expr(),
+            phase2_key.expr(),
+            is_warm.expr(),
+        );
         cb.account_storage_access_list_write(
             tx_id.expr(),
             callee_address.expr(),
@@ -127,7 +133,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         );
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(10.expr()),
+            rw_counter: Delta(11.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr()),
             reversible_write_counter: Delta(3.expr()),
@@ -202,7 +208,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[9]].tx_refund_value_pair();
+        let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[10]].tx_refund_value_pair();
         self.tx_refund_prev
             .assign(region, offset, Value::known(F::from(tx_refund_prev)))?;
 

@@ -76,11 +76,12 @@ pub enum ExecutionState {
     MSIZE,
     GAS,
     JUMPDEST,
-    PUSH,          // PUSH1, PUSH2, ..., PUSH32
-    DUP,           // DUP1, DUP2, ..., DUP16
-    SWAP,          // SWAP1, SWAP2, ..., SWAP16
-    LOG,           // LOG0, LOG1, ..., LOG4
-    CREATE,        // CREATE, CREATE2
+    PUSH, // PUSH1, PUSH2, ..., PUSH32
+    DUP,  // DUP1, DUP2, ..., DUP16
+    SWAP, // SWAP1, SWAP2, ..., SWAP16
+    LOG,  // LOG0, LOG1, ..., LOG4
+    CREATE,
+    CREATE2,
     CALL_OP,       // CALL, CALLCODE, DELEGATECALL, STATICCALL
     RETURN_REVERT, // RETURN, REVERT
     SELFDESTRUCT,

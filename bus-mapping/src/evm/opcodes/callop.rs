@@ -325,7 +325,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             }
             // 2. Call to account with empty code.
             (false, _, true) => {
-                log::warn!("Call to account with empty code is not supported yet.");
                 for (field, value) in [
                     (CallContextField::LastCalleeId, 0.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),

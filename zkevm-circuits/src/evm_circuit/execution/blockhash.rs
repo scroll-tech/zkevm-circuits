@@ -14,16 +14,12 @@ use crate::{
     },
     table::BlockContextFieldTag,
     util::Expr,
+    witness::NUM_PREV_BLOCK_ALLOWED,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, ToScalar};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
-
-#[cfg(feature = "scroll")]
-const NUM_PREV_BLOCK_ALLOWED: u64 = 2;
-#[cfg(not(feature = "scroll"))]
-const NUM_PREV_BLOCK_ALLOWED: u64 = 257;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BlockHashGadget<F> {
@@ -56,7 +52,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let diff_lt = LtGadget::construct(
             cb,
             current_block_number.expr(),
-            NUM_PREV_BLOCK_ALLOWED.expr() + block_number.valid_value(),
+            (NUM_PREV_BLOCK_ALLOWED + 1).expr() + block_number.valid_value(),
         );
 
         let is_valid = and::expr([block_number.lt_cap(), diff_lt.expr()]);
@@ -115,7 +111,6 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let block_number = block.rws[step.rw_indices[0]].stack_value();
         self.block_number
             .assign(region, offset, block_number, current_block_number)?;
-        let block_number: F = block_number.to_scalar().unwrap();
 
         self.current_block_number
             .assign(region, offset, Value::known(current_block_number))?;
@@ -126,11 +121,16 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             Some(block.rws[step.rw_indices[1]].stack_value().to_le_bytes()),
         )?;
 
+        // Block number overflow should be constrained by WordByteCapGadget.
+        let block_number: F = block_number
+            .low_u64()
+            .to_scalar()
+            .expect("unexpected U256 -> Scalar conversion failure");
         self.diff_lt.assign(
             region,
             offset,
             current_block_number,
-            block_number + F::from(257),
+            block_number + F::from(NUM_PREV_BLOCK_ALLOWED + 1),
         )?;
 
         Ok(())

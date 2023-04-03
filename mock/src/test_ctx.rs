@@ -3,7 +3,7 @@
 use crate::{eth, MockAccount, MockBlock, MockTransaction};
 use eth_types::{
     geth_types::{Account, BlockConstants, GethData},
-    Block, Bytecode, Error, GethExecTrace, Transaction, Word,
+    BigEndianHash, Block, Bytecode, Error, GethExecTrace, Transaction, Word, H256,
 };
 use external_tracer::{trace, TraceConfig};
 use helpers::*;
@@ -155,6 +155,11 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
 
         // Build Block modifiers
         let mut block = MockBlock::default();
+        let parent_hash = history_hashes
+            .as_ref()
+            .and_then(|hashes| hashes.last().copied())
+            .unwrap_or_default();
+        block.parent_hash(H256::from_uint(&parent_hash));
         block.transactions.extend_from_slice(&transactions);
         func_block(&mut block, transactions).build();
 

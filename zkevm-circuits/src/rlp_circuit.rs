@@ -1762,7 +1762,7 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, SignedTransaction> {
                 len += rlp::encode(&signed_tx).len() + 1; // 1 for DataPrefix placeholder
                 len
             })
-            .count();
+            .sum();
         (rows, std::cmp::max(1 << 18, rows))
     }
 }
