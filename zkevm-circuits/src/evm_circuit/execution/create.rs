@@ -100,7 +100,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         cb.stack_pop(init_code.offset_rlc());
         cb.stack_pop(init_code.length_rlc());
         cb.condition(IS_CREATE2.expr(), |cb| {
-            cb.stack_pop(create.salt_keccak_rlc());
+            cb.stack_pop(create.salt_word_rlc(cb));
         });
 
         cb.stack_push(callee_is_success.expr() * new_address_rlc);
