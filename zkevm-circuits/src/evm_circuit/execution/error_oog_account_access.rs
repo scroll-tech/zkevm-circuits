@@ -91,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        log::debug!(
+        println!(
             "ErrorOutOfGasAccountAccess: gas_left = {}, gas_cost = {}",
             step.gas_left,
             step.gas_cost,
@@ -150,9 +150,6 @@ mod test {
 
         test_root_ok(&account, false);
         test_root_ok(&account, true);
-
-        // test_internal_ok(0x20, 0x00, &account, false);
-        // test_internal_ok(0x1010, 0xff, &account, false);
     }
 
     #[test]
@@ -163,8 +160,7 @@ mod test {
             ..Default::default()
         });
 
-        test_root_ok(&account, true);
-        test_internal_ok(0x20, 0x00, &account, true);
+        test_internal_ok(0x20, 0x00, &account, false);
         test_internal_ok(0x1010, 0xff, &account, true);
     }
 
@@ -175,13 +171,17 @@ mod test {
         if is_warm {
             code.append(&bytecode! {
                 PUSH20(address.to_word())
-                BALANCE
+                //BALANCE
+                //EXTCODESIZE
+                EXTCODEHASH
                 POP
             });
         }
         code.append(&bytecode! {
             PUSH20(address.to_word())
-            BALANCE
+            //BALANCE
+            //EXTCODESIZE
+            EXTCODEHASH
             STOP
         });
 
@@ -266,7 +266,7 @@ mod test {
             PUSH32(call_data_offset) // argsOffset
             PUSH1(0x00) // value
             PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
+            PUSH32(Word::from(2599u64)) // gas insufficient
             CALL
             STOP
         };

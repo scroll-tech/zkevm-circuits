@@ -1,11 +1,11 @@
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     error::{ExecError, OogError},
-    evm::Opcode,
+    evm::{Opcode, OpcodeId},
     operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
-use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256};
+use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256, };
 
 #[derive(Debug, Copy, Clone)]
 pub struct ErrorOOGAccountAccess;
@@ -19,13 +19,14 @@ impl Opcode for ErrorOOGAccountAccess {
         let mut exec_step = state.new_step(geth_step)?;
         exec_step.error = Some(ExecError::OutOfGas(OogError::AccountAccess));
 
+        // assert op code is balance,
+        assert!([OpcodeId::BALANCE, OpcodeId::EXTCODESIZE, OpcodeId::EXTCODEHASH].contains(&geth_step.op));
         // Read account address from stack.
         let address_word = geth_step.stack.last()?;
         let address = address_word.to_address();
         state.stack_read(&mut exec_step, geth_step.stack.last_filled(), address_word)?;
 
-        // Read transaction ID, rw_counter_end_of_reversion, and is_persistent
-        // from call context.
+        // Read transaction ID from call context.
         state.call_context_read(
             &mut exec_step,
             state.call()?.call_id,
@@ -33,9 +34,9 @@ impl Opcode for ErrorOOGAccountAccess {
             U256::from(state.tx_ctx.id()),
         );
 
-        // Update transaction access list for account address.
+        // transaction access list for account address.
         let is_warm = state.sdb.check_account_in_access_list(&address);
-        // TODO: push `is_warm` read to state
+        // read `is_warm` state
         state.push_op(
             &mut exec_step,
             RW::READ,
