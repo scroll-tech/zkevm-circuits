@@ -191,7 +191,7 @@ pub struct ContractCreateGadget<F, const IS_CREATE2: bool> {
     /// appropriate RLC wherever needed.
     code_hash: [Cell<F>; N_BYTES_WORD],
     /// Random salt for CREATE2.
-    salt: RandomLinearCombination<F, N_BYTES_WORD>,
+    salt: [Cell<F>; N_BYTES_WORD],
 }
 
 impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
@@ -200,7 +200,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         let caller_address = cb.query_keccak_rlc();
         let nonce = RlpU64Gadget::construct(cb);
         let code_hash = array_init::array_init(|_| cb.query_byte());
-        let salt = cb.query_keccak_rlc();
+        let salt = array_init::array_init(|_| cb.query_byte());
 
         Self {
             caller_address,
@@ -227,15 +227,17 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
 
         self.nonce.assign(region, offset, caller_nonce)?;
 
-        self.salt.assign(
-            region,
-            offset,
-            Some(salt.map(|v| v.to_le_bytes()).unwrap_or_default()),
-        )?;
         for (c, v) in self
             .code_hash
             .iter()
             .zip(code_hash.map(|v| v.to_le_bytes()).unwrap_or_default())
+        {
+            c.assign(region, offset, Value::known(F::from(v as u64)))?;
+        }
+        for (c, v) in self
+            .salt
+            .iter()
+            .zip(salt.map(|v| v.to_le_bytes()).unwrap_or_default())
         {
             c.assign(region, offset, Value::known(F::from(v as u64)))?;
         }
@@ -277,9 +279,28 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         )
     }
 
+    /// Salt EVM word RLC.
+    pub(crate) fn salt_word_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+        cb.word_rlc::<N_BYTES_WORD>(
+            self.salt
+                .iter()
+                .map(Expr::expr)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        )
+    }
+
     /// Salt keccak RLC.
-    pub(crate) fn salt_keccak_rlc(&self) -> Expression<F> {
-        self.salt.expr()
+    pub(crate) fn salt_keccak_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+        cb.keccak_rlc::<N_BYTES_WORD>(
+            self.salt
+                .iter()
+                .map(Expr::expr)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        )
     }
 
     /// Caller address' RLC value.
@@ -323,7 +344,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
             let challenge_power_84 = challenge_power_64.clone() * challenge_power_20;
             (0xff.expr() * challenge_power_84)
                 + (self.caller_address_rlc() * challenge_power_64)
-                + (self.salt_keccak_rlc() * challenge_power_32)
+                + (self.salt_keccak_rlc(cb) * challenge_power_32)
                 + self.code_hash_keccak_rlc(cb)
         } else {
             // RLC(RLP([caller_address, caller_nonce]))
