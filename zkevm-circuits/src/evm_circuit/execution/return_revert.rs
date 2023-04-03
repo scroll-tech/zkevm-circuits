@@ -105,8 +105,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             .condition(is_contract_deployment.clone(), |cb| {
                 // poseidon hash of code.
                 //
-                // We don't need to place any additional constraints on code_hash because the
-                // copy circuit enforces that it is the hash of the bytes in the copy lookup.
+                // We don't need to place any additional constraints on code_hash. The lookup to
+                // copy table ensures the bytes are copied correctly. And the copy circuit ensures
+                // those bytes are in fact assigned in the bytecode circuit layout. The bytecode
+                // circuit does the lookup to poseidon table.
                 let code_hash = cb.query_cell_phase2();
                 cb.copy_table_lookup(
                     cb.curr.state.call_id.expr(),
