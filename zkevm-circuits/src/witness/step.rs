@@ -67,7 +67,7 @@ impl From<&ExecError> for ExecutionState {
             ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
             ExecError::Depth => ExecutionState::ErrorDepth,
             ExecError::InsufficientBalance => ExecutionState::ErrorInsufficientBalance,
-            ExecError::ContractAddressCollision => ExecutionState::ErrorContractAddressCollision,
+            ExecError::ContractAddressCollision => ExecutionState::CREATE,
             ExecError::NonceUintOverflow => ExecutionState::ErrorNonceUintOverflow,
             ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
             ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,

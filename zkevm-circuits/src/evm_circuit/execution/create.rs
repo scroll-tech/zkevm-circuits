@@ -12,7 +12,7 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{ConstantDivisionGadget, ContractCreateGadget},
+            math_gadget::{ConstantDivisionGadget, ContractCreateGadget, IsZeroGadget},
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             not, select, CachedRegion, Cell, Word,
         },
@@ -47,6 +47,10 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
     create: ContractCreateGadget<F, IS_CREATE2>,
     keccak_output: Word<F>,
+    // prevous code hash befor creating
+    code_hash_previous: Cell<F>,
+    // if code_hash_previous is zero, then no collision
+    not_address_collision: IsZeroGadget<F>,
 }
 
 impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<F>
@@ -59,7 +63,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
-
+        let code_hash_previous = cb.query_cell();
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
@@ -100,7 +104,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         cb.stack_pop(init_code.offset_rlc());
         cb.stack_pop(init_code.length_rlc());
         cb.condition(IS_CREATE2.expr(), |cb| {
-            cb.stack_pop(create.salt_keccak_rlc());
+            cb.stack_pop(create.salt_word_rlc(cb));
         });
 
         cb.stack_push(callee_is_success.expr() * new_address_rlc);
@@ -175,23 +179,43 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             );
         });
 
-        let transfer = TransferGadget::construct(
-            cb,
-            create.caller_address(),
+        // check for address collision case by code hash previous
+        cb.account_read(
             new_address.clone(),
-            0.expr(),
-            1.expr(),
-            value.clone(),
-            &mut callee_reversion_info,
+            AccountFieldTag::CodeHash,
+            code_hash_previous.expr(),
         );
 
-        cb.account_write(
-            new_address.clone(),
-            AccountFieldTag::Nonce,
-            1.expr(),
-            0.expr(),
-            Some(&mut callee_reversion_info),
-        );
+        let not_address_collision = IsZeroGadget::construct(cb, code_hash_previous.expr());
+        cb.condition(not::expr(not_address_collision.expr()), |cb| {
+            cb.require_equal(
+                "op code is create2 for address collision",
+                opcode.expr(),
+                OpcodeId::CREATE2.expr(),
+            );
+        });
+
+        // conditional transfer for address collision case
+        let transfer = cb.condition(not_address_collision.expr(), |cb| {
+            let tansfer_gadget = TransferGadget::construct(
+                cb,
+                create.caller_address(),
+                new_address.clone(),
+                0.expr(),
+                1.expr(),
+                value.clone(),
+                &mut callee_reversion_info,
+            );
+            cb.account_write(
+                new_address.clone(),
+                AccountFieldTag::Nonce,
+                1.expr(),
+                0.expr(),
+                Some(&mut callee_reversion_info),
+            );
+
+            tansfer_gadget
+        });
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [init_code.address()]);
 
@@ -260,20 +284,45 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             create.input_length(),
             keccak_output.expr(),
         );
-        cb.condition(init_code.has_length(), |cb| {
-            cb.require_step_state_transition(StepStateTransition {
-                rw_counter: Delta(cb.rw_counter_offset()),
-                call_id: To(callee_call_id.expr()),
-                is_root: To(false.expr()),
-                is_create: To(true.expr()),
-                code_hash: To(create.code_hash_word_rlc(cb)),
-                gas_left: To(callee_gas_left),
-                reversible_write_counter: To(1.expr() + transfer.reversible_w_delta()),
-                ..StepStateTransition::new_context()
-            })
-        });
+        cb.condition(
+            init_code.has_length() * not_address_collision.expr(),
+            |cb| {
+                cb.require_step_state_transition(StepStateTransition {
+                    rw_counter: Delta(cb.rw_counter_offset()),
+                    call_id: To(callee_call_id.expr()),
+                    is_root: To(false.expr()),
+                    is_create: To(true.expr()),
+                    code_hash: To(create.code_hash_word_rlc(cb)),
+                    gas_left: To(callee_gas_left),
+                    reversible_write_counter: To(1.expr() + transfer.reversible_w_delta()),
+                    ..StepStateTransition::new_context()
+                })
+            },
+        );
 
-        cb.condition(not::expr(init_code.has_length()), |cb| {
+        cb.condition(
+            not::expr(init_code.has_length()) * not_address_collision.expr(),
+            |cb| {
+                for field_tag in [
+                    CallContextFieldTag::LastCalleeId,
+                    CallContextFieldTag::LastCalleeReturnDataOffset,
+                    CallContextFieldTag::LastCalleeReturnDataLength,
+                ] {
+                    cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
+                }
+                cb.require_step_state_transition(StepStateTransition {
+                    rw_counter: Delta(cb.rw_counter_offset()),
+                    program_counter: Delta(1.expr()),
+                    stack_pointer: Delta(2.expr() + IS_CREATE2.expr()),
+                    gas_left: Delta(-gas_cost),
+                    reversible_write_counter: Delta(3.expr() + transfer.reversible_w_delta()),
+                    ..Default::default()
+                })
+            },
+        );
+
+        // handle collision case
+        cb.condition(not::expr(not_address_collision.expr()), |cb| {
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
                 CallContextFieldTag::LastCalleeReturnDataOffset,
@@ -284,9 +333,10 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(cb.rw_counter_offset()),
                 program_counter: Delta(1.expr()),
-                stack_pointer: Delta(2.expr() + IS_CREATE2.expr()),
-                gas_left: Delta(-gas_cost),
-                reversible_write_counter: Delta(3.expr() + transfer.reversible_w_delta()),
+                stack_pointer: Delta(3.expr()),
+
+                gas_left: To(gas_left.quotient()),
+                reversible_write_counter: Delta(2.expr()),
                 ..Default::default()
             })
         });
@@ -307,6 +357,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             init_code_word_size,
             create,
             keccak_output,
+            code_hash_previous,
+            not_address_collision,
         }
     }
 
@@ -395,30 +447,44 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             callee_is_persistent.low_u64() != 0,
         )?;
 
-        let mut rw_offset = 0;
+        // retrieve code_hash for creating address
+        let code_hash_previous = block.rws
+            [step.rw_indices[12 + usize::from(is_create2) + copy_rw_increase]]
+            .account_codehash_pair();
+        let code_hash_previous_rlc = region.word_rlc(code_hash_previous.0);
+        self.code_hash_previous
+            .assign(region, offset, code_hash_previous_rlc)?;
+        self.not_address_collision
+            .assign_value(region, offset, code_hash_previous_rlc)?;
+        let is_address_collision = !code_hash_previous.0.is_zero();
 
-        let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-            rw_offset += 2;
-            [13, 14].map(|i| {
-                let rw = block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]];
-                debug_assert_eq!(
-                    rw.field_tag(),
-                    Some(AccountFieldTag::Balance as u64),
-                    "invalid rw {:?}",
-                    rw
-                );
-                rw.account_value_pair()
-            })
-        } else {
-            [(0.into(), 0.into()), (0.into(), 0.into())]
-        };
-        self.transfer.assign(
-            region,
-            offset,
-            caller_balance_pair,
-            callee_balance_pair,
-            value,
-        )?;
+        let mut rw_offset = 0;
+        if !is_address_collision {
+            let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
+                rw_offset += 2;
+                [14, 15].map(|i| {
+                    let rw =
+                        block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]];
+                    debug_assert_eq!(
+                        rw.field_tag(),
+                        Some(AccountFieldTag::Balance as u64),
+                        "invalid rw {:?}",
+                        rw
+                    );
+                    rw.account_value_pair()
+                })
+            } else {
+                [(0.into(), 0.into()), (0.into(), 0.into())]
+            };
+
+            self.transfer.assign(
+                region,
+                offset,
+                caller_balance_pair,
+                callee_balance_pair,
+                value,
+            )?;
+        }
 
         let (_next_memory_word_size, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
@@ -446,13 +512,15 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.callee_is_success.assign(
             region,
             offset,
-            Value::known(
+            Value::known(if is_address_collision {
+                F::zero()
+            } else {
                 block.rws
-                    [step.rw_indices[21 + rw_offset + usize::from(is_create2) + copy_rw_increase]]
+                    [step.rw_indices[22 + rw_offset + usize::from(is_create2) + copy_rw_increase]]
                     .call_context_value()
                     .to_scalar()
-                    .unwrap(),
-            ),
+                    .unwrap()
+            }),
         )?;
 
         let keccak_input: Vec<u8> = if is_create2 {
@@ -568,6 +636,40 @@ mod test {
         code
     }
 
+    fn creater_bytecode_address_collision(initialization_bytecode: Bytecode) -> Bytecode {
+        let initialization_bytes = initialization_bytecode.code();
+        let mut code = bytecode! {
+            PUSH32(Word::from_big_endian(&initialization_bytes))
+            PUSH1(0)
+            MSTORE
+        };
+
+        code.append(&bytecode! {PUSH1(45)}); // salt;
+        code.append(&bytecode! {
+            PUSH1(initialization_bytes.len()) // size
+            PUSH1(32 - initialization_bytes.len()) // length
+            PUSH2(23414) // value
+        });
+        code.write_op(OpcodeId::CREATE2);
+
+        // construct address collision by create2 twice
+        code.append(&bytecode! {PUSH1(45)}); // salt;
+
+        code.append(&bytecode! {
+            PUSH1(initialization_bytes.len()) // size
+            PUSH1(32 - initialization_bytes.len()) // length
+            PUSH2(23414) // value
+        });
+        code.write_op(OpcodeId::CREATE2);
+        code.append(&bytecode! {
+            PUSH1(0)
+            PUSH1(0)
+            REVERT
+        });
+
+        code
+    }
+
     fn test_context(caller: Account) -> TestContext<2, 1> {
         TestContext::new(
             None,
@@ -658,5 +760,19 @@ mod test {
             };
             run_test_circuits(test_context(caller));
         }
+    }
+
+    #[test]
+    fn test_create_address_collision_error() {
+        let initialization_code = initialization_bytecode(false);
+        let root_code = creater_bytecode_address_collision(initialization_code);
+        let caller = Account {
+            address: *CALLER_ADDRESS,
+            code: root_code.into(),
+            nonce: Word::one(),
+            balance: eth(10),
+            ..Default::default()
+        };
+        run_test_circuits(test_context(caller));
     }
 }
