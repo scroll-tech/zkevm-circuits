@@ -19,7 +19,7 @@ impl Opcode for ErrorOOGAccountAccess {
         let mut exec_step = state.new_step(geth_step)?;
         exec_step.error = Some(ExecError::OutOfGas(OogError::AccountAccess));
 
-        // assert op code is balance,
+        // assert op code is BALANCE | EXTCODESIZE | EXTCODEHASH
         assert!([OpcodeId::BALANCE, OpcodeId::EXTCODESIZE, OpcodeId::EXTCODEHASH].contains(&geth_step.op));
         // Read account address from stack.
         let address_word = geth_step.stack.last()?;

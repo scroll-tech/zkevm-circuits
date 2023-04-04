@@ -47,7 +47,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_warm = cb.query_bool();
-        // TODO：change to read
+        // read is_warm
         cb.account_access_list_read(tx_id.expr(), address.expr(), is_warm.expr());
 
         let gas_cost = select::expr(
@@ -59,8 +59,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
         let insufficient_gas_cost = LtGadget::construct(
             cb,
             cb.curr.state.gas_left.expr(),
-            // static_gas = 10
-            // gas_cost = dynamic_gas + static_gas
             gas_cost,
         );
 
@@ -133,6 +131,7 @@ mod test {
         geth_types::Account,
         Address, Bytecode, ToWord, Word, U256,
     };
+    use itertools::Itertools;
     use lazy_static::lazy_static;
     use mock::TestContext;
 
@@ -147,9 +146,13 @@ mod test {
             balance: U256::from(900),
             ..Default::default()
         });
-
-        test_root_ok(&account, false);
-        test_root_ok(&account, true);
+       
+        for (opcode, is_warm) in [OpcodeId::BALANCE, OpcodeId::EXTCODESIZE, OpcodeId::EXTCODEHASH]
+            .iter()
+            .cartesian_product(&[true, false]) {
+            test_root_ok(&account, *opcode, *is_warm);
+            test_root_ok(&account, *opcode, *is_warm); 
+        } 
     }
 
     #[test]
@@ -164,26 +167,24 @@ mod test {
         test_internal_ok(0x1010, 0xff, &account, true);
     }
 
-    fn test_root_ok(account: &Option<Account>, is_warm: bool) {
+    fn test_root_ok(account: &Option<Account>, opcode: OpcodeId, is_warm: bool) {
         let address = account.as_ref().map(|a| a.address).unwrap_or(*TEST_ADDRESS);
 
         let mut code = Bytecode::default();
         if is_warm {
             code.append(&bytecode! {
                 PUSH20(address.to_word())
-                //BALANCE
-                //EXTCODESIZE
-                EXTCODEHASH
-                POP
             });
+            code.write_op(opcode);
+            code.write_op(OpcodeId::POP);
         }
         code.append(&bytecode! {
             PUSH20(address.to_word())
-            //BALANCE
-            //EXTCODESIZE
-            EXTCODEHASH
-            STOP
         });
+
+        code.write_op(opcode);
+        code.write_op(OpcodeId::STOP);
+
 
         let gas = GasCost::TX.0
             + if is_warm {
