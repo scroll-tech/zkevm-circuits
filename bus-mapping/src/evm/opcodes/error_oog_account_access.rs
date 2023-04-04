@@ -2,10 +2,10 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     error::{ExecError, OogError},
     evm::{Opcode, OpcodeId},
-    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
+    operation::{CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
-use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256, };
+use eth_types::{GethExecStep, ToAddress, U256};
 
 #[derive(Debug, Copy, Clone)]
 pub struct ErrorOOGAccountAccess;
@@ -20,7 +20,12 @@ impl Opcode for ErrorOOGAccountAccess {
         exec_step.error = Some(ExecError::OutOfGas(OogError::AccountAccess));
 
         // assert op code is BALANCE | EXTCODESIZE | EXTCODEHASH
-        assert!([OpcodeId::BALANCE, OpcodeId::EXTCODESIZE, OpcodeId::EXTCODEHASH].contains(&geth_step.op));
+        assert!([
+            OpcodeId::BALANCE,
+            OpcodeId::EXTCODESIZE,
+            OpcodeId::EXTCODEHASH
+        ]
+        .contains(&geth_step.op));
         // Read account address from stack.
         let address_word = geth_step.stack.last()?;
         let address = address_word.to_address();
@@ -42,7 +47,7 @@ impl Opcode for ErrorOOGAccountAccess {
             RW::READ,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
-                address: address,
+                address,
                 is_warm,
                 is_warm_prev: is_warm,
             },

@@ -4,11 +4,8 @@ use crate::{
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS},
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
-            from_bytes,
-            math_gadget::{ByteSizeGadget, LtGadget},
-            select, CachedRegion, Cell, Word,
+            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, from_bytes,
+            math_gadget::LtGadget, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -40,6 +37,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        cb.require_in_set(
+            "ErrorOutOfGasAccountAccess happens for BALANCE | EXTCODESIZE | EXTCODEHASH ",
+            opcode.expr(),
+            vec![
+                OpcodeId::BALANCE.expr(),
+                OpcodeId::EXTCODESIZE.expr(),
+                OpcodeId::EXTCODEHASH.expr(),
+            ],
+        );
 
         let address_word = cb.query_word_rlc();
         let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
@@ -56,11 +62,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         );
 
-        let insufficient_gas_cost = LtGadget::construct(
-            cb,
-            cb.curr.state.gas_left.expr(),
-            gas_cost,
-        );
+        let insufficient_gas_cost =
+            LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
 
         cb.require_equal(
             "Gas left is less than gas cost",
@@ -89,12 +92,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        println!(
-            "ErrorOutOfGasAccountAccess: gas_left = {}, gas_cost = {}",
-            step.gas_left,
-            step.gas_cost,
-        );
-
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
@@ -109,11 +106,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm)))?;
 
+        // BALANCE EXTCODESIZE EXTCODEHASH shares same gas cost model
+        let gas_cost = if is_warm {
+            GasCost::WARM_ACCESS
+        } else {
+            GasCost::COLD_ACCOUNT_ACCESS
+        };
+
         self.insufficient_gas_cost.assign_value(
             region,
             offset,
             Value::known(F::from(step.gas_left)),
-            Value::known(F::from(step.gas_cost)),
+            Value::known(F::from(gas_cost.as_u64())),
         )?;
         self.common_error_gadget
             .assign(region, offset, block, call, step, 5)?;
@@ -146,13 +150,17 @@ mod test {
             balance: U256::from(900),
             ..Default::default()
         });
-       
-        for (opcode, is_warm) in [OpcodeId::BALANCE, OpcodeId::EXTCODESIZE, OpcodeId::EXTCODEHASH]
-            .iter()
-            .cartesian_product(&[true, false]) {
-            test_root_ok(&account, *opcode, *is_warm);
-            test_root_ok(&account, *opcode, *is_warm); 
-        } 
+
+        for (opcode, is_warm) in [
+            OpcodeId::BALANCE,
+            OpcodeId::EXTCODESIZE,
+            OpcodeId::EXTCODEHASH,
+        ]
+        .iter()
+        .cartesian_product([true, false])
+        {
+            test_root_ok(&account, *opcode, is_warm);
+        }
     }
 
     #[test]
@@ -163,8 +171,17 @@ mod test {
             ..Default::default()
         });
 
-        test_internal_ok(0x20, 0x00, &account, false);
-        test_internal_ok(0x1010, 0xff, &account, true);
+        for (opcode, is_warm) in [
+            OpcodeId::BALANCE,
+            OpcodeId::EXTCODESIZE,
+            OpcodeId::EXTCODEHASH,
+        ]
+        .iter()
+        .cartesian_product([false, true])
+        {
+            test_internal_ok(0x20, 0x20, &account, *opcode, is_warm);
+            test_internal_ok(0x1010, 0xff, &account, *opcode, is_warm);
+        }
     }
 
     fn test_root_ok(account: &Option<Account>, opcode: OpcodeId, is_warm: bool) {
@@ -172,19 +189,14 @@ mod test {
 
         let mut code = Bytecode::default();
         if is_warm {
-            code.append(&bytecode! {
-                PUSH20(address.to_word())
-            });
+            code.push(20, address.to_word());
             code.write_op(opcode);
             code.write_op(OpcodeId::POP);
         }
-        code.append(&bytecode! {
-            PUSH20(address.to_word())
-        });
 
+        code.push(20, address.to_word());
         code.write_op(opcode);
         code.write_op(OpcodeId::STOP);
-
 
         let gas = GasCost::TX.0
             + if is_warm {
@@ -233,6 +245,7 @@ mod test {
         call_data_offset: usize,
         call_data_length: usize,
         account: &Option<Account>,
+        opcode: OpcodeId,
         is_warm: bool,
     ) {
         let address = account.as_ref().map(|a| a.address).unwrap_or(*TEST_ADDRESS);
@@ -241,17 +254,15 @@ mod test {
         // code B gets called by code A, so the call is an internal call.
         let mut code_b = Bytecode::default();
         if is_warm {
-            code_b.append(&bytecode! {
-                PUSH20(address.to_word())
-                BALANCE
-                POP
-            });
+            code_b.push(20, address.to_word());
+
+            code_b.write_op(opcode);
+            code_b.write_op(OpcodeId::POP);
         }
-        code_b.append(&bytecode! {
-            PUSH20(address.to_word())
-            BALANCE
-            STOP
-        });
+
+        code_b.push(20, address.to_word());
+        code_b.write_op(opcode);
+        code_b.write_op(OpcodeId::STOP);
 
         // code A calls code B.
         let pushdata = rand_bytes(8);
