@@ -1,8 +1,6 @@
-use crate::{
-    table::BytecodeFieldTag,
-    util::{get_push_size, keccak},
-};
-use eth_types::{Field, Word, U256};
+use crate::{table::BytecodeFieldTag, util::get_push_size};
+use bus_mapping::state_db::CodeDB;
+use eth_types::{Field, ToWord, Word, U256};
 use std::vec;
 
 /// Public data for the bytecode
@@ -24,8 +22,8 @@ pub struct UnrolledBytecode<F: Field> {
 
 /// Get unrolled bytecode from raw bytes
 pub fn unroll<F: Field>(bytes: Vec<u8>) -> UnrolledBytecode<F> {
-    let code_hash = keccak(&bytes[..]);
-    unroll_with_codehash(code_hash, bytes)
+    let code_hash = CodeDB::hash(&bytes[..]);
+    unroll_with_codehash(code_hash.to_word(), bytes)
 }
 
 /// Get unrolled bytecode from raw bytes and codehash

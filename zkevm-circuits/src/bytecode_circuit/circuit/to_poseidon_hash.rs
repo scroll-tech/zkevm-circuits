@@ -3,7 +3,7 @@ use crate::{
     table::{BytecodeFieldTag, KeccakTable, PoseidonTable},
     util::{Challenges, Expr, SubCircuitConfig},
 };
-use bus_mapping::state_db::CodeDB;
+use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::Field;
 use gadgets::is_zero::IsZeroChip;
 use halo2_proofs::{
@@ -20,7 +20,7 @@ use super::{
 };
 
 /// specify byte in field for encoding bytecode
-pub const HASHBLOCK_BYTES_IN_FIELD: usize = 16;
+pub const HASHBLOCK_BYTES_IN_FIELD: usize = bus_mapping::util::POSEIDON_HASH_BYTES_IN_FIELD;
 
 #[derive(Clone, Debug)]
 /// Bytecode circuit (for hash block) configuration
@@ -304,7 +304,6 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         //  * PoseidonTable::INPUT_WIDTH lookups for each input field
         //  * PoseidonTable::INPUT_WIDTH -1 lookups for the padded zero input
         //  so we have 2*PoseidonTable::INPUT_WIDTH -1 lookups
-
         for i in 0..PoseidonTable::INPUT_WIDTH {
             meta.lookup_any("poseidon input", |meta| {
                 // Conditions:
@@ -407,7 +406,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
 
         let empty_hash = challenges
             .evm_word()
-            .map(|challenge| rlc::value(CodeDB::empty_code_hash().as_ref(), challenge));
+            .map(|challenge| rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge));
 
         layouter.assign_region(
             || "assign bytecode with poseidon hash extension",

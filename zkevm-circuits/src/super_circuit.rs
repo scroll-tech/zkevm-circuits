@@ -848,6 +848,7 @@ pub(crate) mod super_circuit_tests {
 
     // High memory usage test.  Run in serial with:
     // `cargo test [...] serial_ -- --ignored --test-threads 1`
+    #[ignore]
     #[cfg(feature = "scroll")]
     #[test]
     fn serial_test_super_circuit_1tx_1max_tx() {
@@ -871,6 +872,8 @@ pub(crate) mod super_circuit_tests {
             circuits_params,
         );
     }
+
+    #[ignore]
     #[cfg(feature = "scroll")]
     #[test]
     fn serial_test_super_circuit_1tx_deploy_2max_tx() {
@@ -897,6 +900,7 @@ pub(crate) mod super_circuit_tests {
         );
     }
 
+    #[ignore]
     #[cfg(feature = "scroll")]
     #[test]
     fn serial_test_super_circuit_1tx_2max_tx() {
@@ -920,6 +924,8 @@ pub(crate) mod super_circuit_tests {
             circuits_params,
         );
     }
+
+    #[ignore]
     #[cfg(feature = "scroll")]
     #[test]
     fn serial_test_super_circuit_2tx_4max_tx() {
@@ -945,6 +951,8 @@ pub(crate) mod super_circuit_tests {
             circuits_params,
         );
     }
+
+    #[ignore]
     #[cfg(feature = "scroll")]
     #[test]
     fn serial_test_super_circuit_2tx_2max_tx() {

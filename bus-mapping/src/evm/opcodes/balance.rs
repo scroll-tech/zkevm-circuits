@@ -106,20 +106,24 @@ mod balance_tests {
 
     #[test]
     fn test_balance_of_non_existing_address() {
-        test_ok(false, false);
+        test_ok(false, false, None);
     }
 
     #[test]
     fn test_balance_of_cold_address() {
-        test_ok(true, false);
+        test_ok(true, false, None);
+        test_ok(true, false, Some(vec![1, 2, 3]))
     }
 
     #[test]
     fn test_balance_of_warm_address() {
-        test_ok(true, true);
+        test_ok(true, true, None);
+        test_ok(true, true, Some(vec![2, 3, 4]))
     }
 
-    fn test_ok(exists: bool, is_warm: bool) {
+    // account_code = None should be the same as exists = false, so we can remove
+    // it.
+    fn test_ok(exists: bool, is_warm: bool, account_code: Option<Vec<u8>>) {
         let address = address!("0xaabbccddee000000000000000000000000000000");
 
         // Pop balance first for warm account.
@@ -152,7 +156,11 @@ mod balance_tests {
                     .balance(Word::from(1u64 << 20))
                     .code(code.clone());
                 if exists {
-                    accs[1].address(address).balance(balance);
+                    if let Some(code) = account_code.clone() {
+                        accs[1].address(address).balance(balance).code(code);
+                    } else {
+                        accs[1].address(address).balance(balance);
+                    }
                 } else {
                     accs[1]
                         .address(address!("0x0000000000000000000000000000000000000020"))
@@ -249,7 +257,13 @@ mod balance_tests {
             }
         );
 
-        let code_hash = CodeDB::empty_code_hash().to_word();
+        let code_hash = if let Some(code) = account_code {
+            CodeDB::hash(&code).to_word()
+        } else if exists {
+            CodeDB::empty_code_hash().to_word()
+        } else {
+            U256::zero()
+        };
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(

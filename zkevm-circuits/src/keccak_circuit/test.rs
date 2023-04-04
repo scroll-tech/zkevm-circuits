@@ -23,7 +23,7 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
 
 #[test]
 fn packed_multi_keccak_simple() {
-    let k = 14;
+    let k = 19;
     let inputs = vec![
         vec![],
         (0u8..1).collect::<Vec<_>>(),
@@ -36,7 +36,7 @@ fn packed_multi_keccak_simple() {
 
 #[test]
 fn variadic_size_check() {
-    let k = 14;
+    let k = 19;
     let num_rows = 2usize.pow(k);
     // Empty
     let inputs = vec![];

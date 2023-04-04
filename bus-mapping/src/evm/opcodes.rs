@@ -60,7 +60,6 @@ mod error_codestore;
 mod error_contract_address_collision;
 mod error_invalid_creation_code;
 mod error_invalid_jump;
-mod error_oog_account_access;
 mod error_oog_call;
 mod error_oog_dynamic_memory;
 mod error_oog_log;
@@ -88,9 +87,9 @@ use codesize::Codesize;
 use create::Create;
 use dup::Dup;
 use error_codestore::ErrorCodeStore;
+use error_contract_address_collision::ContractAddressCollision;
 use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
-use error_oog_account_access::ErrorOOGAccountAccess;
 use error_oog_call::OOGCall;
 use error_oog_dynamic_memory::OOGDynamicMemory;
 use error_oog_log::ErrorOOGLog;
@@ -308,9 +307,6 @@ fn fn_gen_error_state_associated_ops(
             Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
-        ExecError::OutOfGas(OogError::AccountAccess) => {
-            Some(ErrorOOGAccountAccess::gen_associated_ops)
-        }
         // ExecError::
         ExecError::StackOverflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
         ExecError::StackUnderflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
@@ -326,8 +322,11 @@ fn fn_gen_error_state_associated_ops(
         ExecError::PrecompileFailed => Some(PrecompileFailed::gen_associated_ops),
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
-        // only create2 may cause ContractAddressCollision error, so use Create::<true>.
-        ExecError::ContractAddressCollision => Some(Create::<true>::gen_associated_ops),
+        ExecError::ContractAddressCollision => match geth_step.op {
+            OpcodeId::CREATE => Some(ContractAddressCollision::<false>::gen_associated_ops),
+            OpcodeId::CREATE2 => Some(ContractAddressCollision::<true>::gen_associated_ops),
+            _ => unreachable!(),
+        },
         ExecError::NonceUintOverflow => match geth_step.op {
             OpcodeId::CREATE => Some(StackOnlyOpcode::<3, 1>::gen_associated_ops),
             OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 1>::gen_associated_ops),
@@ -543,6 +542,7 @@ pub fn gen_begin_tx_ops(
     }
 
     // Transfer with fee
+    let fee = state.tx.gas_price * state.tx.gas + state.tx_ctx.l1_fee;
     state.transfer_with_fee(
         &mut exec_step,
         call.caller_address,
@@ -550,7 +550,7 @@ pub fn gen_begin_tx_ops(
         callee_exists,
         call.is_create(),
         call.value,
-        Some(state.tx.gas_price * state.tx.gas),
+        Some(fee),
     )?;
 
     // In case of contract creation we wish to verify the correctness of the
@@ -724,7 +724,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         .clone();
     let effective_tip = state.tx.gas_price - block_info.base_fee;
     let gas_cost = state.tx.gas - exec_step.gas_left.0 - effective_refund;
-    let coinbase_reward = effective_tip * gas_cost;
+    let coinbase_reward = effective_tip * gas_cost + state.tx_ctx.l1_fee;
     log::trace!(
         "coinbase reward = ({} - {}) * ({} - {} - {}) = {}",
         state.tx.gas_price,

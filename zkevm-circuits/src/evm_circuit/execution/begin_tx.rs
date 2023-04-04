@@ -36,6 +36,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_gas: Cell<F>,
     tx_gas_price: Word<F>,
     mul_gas_fee_by_gas: MulWordByU64Gadget<F>,
+    tx_fee: Word<F>,
     tx_caller_address: Cell<F>,
     tx_caller_address_is_zero: IsZeroGadget<F>,
     tx_callee_address: Cell<F>,
@@ -143,20 +144,39 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Calculate transaction gas fee
         let mul_gas_fee_by_gas =
             MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.expr());
+        let tx_fee = cb.query_word_rlc();
 
-        // TODO: Take gas cost of access list (EIP 2930) into consideration.
+        // TODO: contraint l1 fee
+        #[cfg(not(feature = "scroll"))]
+        cb.require_equal(
+            "tx_fee == l1_fee + l2_fee, l1_fee == 0",
+            mul_gas_fee_by_gas.product().expr(),
+            tx_fee.expr(),
+        );
+
+        // a valid precompile address is: 1 <= addr <= 9 (addr != 0 && addr < 0xA)
+        let is_precompile_lt = LtGadget::construct(cb, tx_callee_address.expr(), 0xA.expr());
+        let is_precompile = and::expr([
+            not::expr(tx_callee_address_is_zero.expr()),
+            is_precompile_lt.expr(),
+        ]);
+
+        // TODO1: Take gas cost of access list (EIP 2930) into consideration.
         // Use intrinsic gas
+        // TODO2: contrain calling precompile directly
         let intrinsic_gas_cost = cb.query_cell();
         #[cfg(feature = "reject-eip2718")]
-        cb.require_equal(
-            "calculate intrinsic gas cost",
-            intrinsic_gas_cost.expr(),
-            select::expr(
-                tx_is_create.expr(),
-                eth_types::evm_types::GasCost::CREATION_TX.expr(),
-                eth_types::evm_types::GasCost::TX.expr(),
-            ) + tx_call_data_gas_cost.expr(),
-        );
+        cb.condition(not::expr(is_precompile.expr()), |cb| {
+            cb.require_equal(
+                "calculate intrinsic gas cost",
+                intrinsic_gas_cost.expr(),
+                select::expr(
+                    tx_is_create.expr(),
+                    eth_types::evm_types::GasCost::CREATION_TX.expr(),
+                    eth_types::evm_types::GasCost::TX.expr(),
+                ) + tx_call_data_gas_cost.expr(),
+            )
+        });
         // Check gas_left is sufficient
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
@@ -190,12 +210,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // code_hash = 0).
         let no_callee_code = is_empty_code_hash.expr() + callee_not_exists.expr();
 
-        // a valid precompile address is: 1 <= addr <= 9 (addr != 0 && addr < 0xA)
-        let is_precompile_lt = LtGadget::construct(cb, tx_callee_address.expr(), 0xA.expr());
-        let is_precompile = and::expr([
-            not::expr(tx_callee_address_is_zero.expr()),
-            is_precompile_lt.expr(),
-        ]);
         cb.condition(
             and::expr([
                 not::expr(tx_is_create.expr()),
@@ -218,7 +232,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             or::expr([not::expr(callee_not_exists.expr()), is_precompile.expr()]),
             tx_is_create.expr(),
             tx_value.clone(),
-            mul_gas_fee_by_gas.product().clone(),
+            tx_fee.clone(),
             &mut reversion_info,
         );
 
@@ -382,7 +396,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
 
         // 3. Call to account with empty code.
-
         cb.condition(
             and::expr([
                 not::expr(tx_is_create.expr()),
@@ -491,6 +504,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_gas,
             tx_gas_price,
             mul_gas_fee_by_gas,
+            tx_fee,
             tx_caller_address,
             tx_caller_address_is_zero,
             tx_callee_address,
@@ -523,7 +537,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_fee = tx.gas_price * tx.gas;
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
@@ -556,8 +569,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Some(tx.gas_price.to_le_bytes()))?;
         self.tx_value
             .assign(region, offset, Some(tx.value.to_le_bytes()))?;
-        self.mul_gas_fee_by_gas
-            .assign(region, offset, tx.gas_price, tx.gas, gas_fee)?;
+        self.mul_gas_fee_by_gas.assign(
+            region,
+            offset,
+            tx.gas_price,
+            tx.gas,
+            tx.gas_price * tx.gas,
+        )?;
         let caller_address = tx
             .caller_address
             .to_scalar()
@@ -617,6 +635,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
+        let tx_fee = caller_balance_sub_fee_pair.1 - caller_balance_sub_fee_pair.0;
+        self.tx_fee
+            .assign(region, offset, Some(tx_fee.to_le_bytes()))?;
         self.transfer_with_gas_fee.assign(
             region,
             offset,
@@ -624,7 +645,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             caller_balance_sub_value_pair,
             callee_balance_pair,
             tx.value,
-            gas_fee,
+            tx_fee,
         )?;
         self.phase2_code_hash
             .assign(region, offset, region.word_rlc(callee_code_hash))?;

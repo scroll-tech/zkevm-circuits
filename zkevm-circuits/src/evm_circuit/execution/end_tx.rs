@@ -13,7 +13,7 @@ use crate::{
                 AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, MinMaxGadget,
                 MulWordByU64Gadget,
             },
-            CachedRegion, Cell,
+            CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -22,7 +22,7 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
+use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -33,6 +33,7 @@ pub(crate) struct EndTxGadget<F> {
     max_refund: ConstantDivisionGadget<F, N_BYTES_GAS>,
     refund: Cell<F>,
     effective_refund: MinMaxGadget<F, N_BYTES_GAS>,
+    effective_fee: Word<F>,
     mul_gas_price_by_refund: MulWordByU64Gadget<F>,
     tx_caller_address: Cell<F>,
     gas_fee_refund: UpdateBalanceGadget<F, 2, true>,
@@ -100,12 +101,18 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             effective_tip,
             gas_used.clone() - effective_refund.min(),
         );
-        let coinbase_reward = UpdateBalanceGadget::construct(
-            cb,
-            coinbase.expr(),
-            vec![mul_effective_tip_by_gas_used.product().clone()],
-            None,
+
+        let effective_fee = cb.query_word_rlc();
+        // TODO: contraint l1 fee
+        #[cfg(not(feature = "scroll"))]
+        cb.require_equal(
+            "tx_fee == l1_fee + l2_fee, l1_fee == 0",
+            mul_effective_tip_by_gas_used.product().expr(),
+            effective_fee.expr(),
         );
+
+        let coinbase_reward =
+            UpdateBalanceGadget::construct(cb, coinbase.expr(), vec![effective_fee.clone()], None);
 
         // constrain tx receipt fields
         cb.tx_receipt_lookup(
@@ -183,6 +190,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             max_refund,
             refund,
             effective_refund,
+            effective_fee,
             mul_gas_price_by_refund,
             tx_caller_address,
             gas_fee_refund,
@@ -274,11 +282,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
+        let effective_fee = coinbase_balance - coinbase_balance_prev;
+        self.effective_fee
+            .assign(region, offset, Some(effective_fee.to_le_bytes()))?;
         self.coinbase_reward.assign(
             region,
             offset,
             coinbase_balance_prev,
-            vec![coinbase_reward],
+            vec![effective_fee],
             coinbase_balance,
         )?;
 

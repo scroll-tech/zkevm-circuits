@@ -173,10 +173,13 @@ mod test {
 
     #[test]
     fn blockhash_gadget_simple() {
-        test_ok(0.into(), 5);
-        test_ok(1.into(), 5);
-        test_ok(2.into(), 5);
-        test_ok(3.into(), 5);
+        #[cfg(not(feature = "scroll"))]
+        {
+            test_ok(0.into(), 5);
+            test_ok(1.into(), 5);
+            test_ok(2.into(), 5);
+            test_ok(3.into(), 5);
+        }
         test_ok(4.into(), 5);
         test_ok(5.into(), 5);
         test_ok(6.into(), 5);
@@ -185,6 +188,7 @@ mod test {
     #[test]
     fn blockhash_gadget_large() {
         test_ok((0xcafe - 257).into(), 0xcafeu64);
+        #[cfg(not(feature = "scroll"))]
         test_ok((0xcafe - 256).into(), 0xcafeu64);
         test_ok((0xcafe - 1).into(), 0xcafeu64);
         test_ok(0xcafe.into(), 0xcafeu64);

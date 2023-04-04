@@ -78,12 +78,17 @@ impl<'a> CircuitInputStateRef<'a> {
             exec_state: ExecState::EndTx,
             gas_left: if prev_step.error.is_none() {
                 let mut gas_left = prev_step.gas_left.0 - prev_step.gas_cost.0;
-                if let Ok(call) = self.call() {
-                    if call.is_create() {
-                        let code_hash = self.sdb.get_account(&call.address).1.code_hash;
-                        let bytecode_len = self.code(code_hash).unwrap().len() as u64;
-                        gas_left += bytecode_len * GasCost::CODE_DEPOSIT_BYTE_COST.as_u64();
-                    }
+                // handling for contract creation tx
+                let call = self.tx.calls()[0].clone();
+                if call.is_create() {
+                    let code_hash = self.sdb.get_account(&call.address).1.code_hash;
+                    let bytecode_len = self.code(code_hash).unwrap().len() as u64;
+                    let deposit_cost = bytecode_len * GasCost::CODE_DEPOSIT_BYTE_COST.as_u64();
+                    assert!(
+                        gas_left >= deposit_cost,
+                        "gas left {gas_left} is not enough for deposit cost {deposit_cost}"
+                    );
+                    gas_left -= deposit_cost;
                 }
                 Gas(gas_left)
             } else {

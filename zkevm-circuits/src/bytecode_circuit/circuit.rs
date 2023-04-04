@@ -909,10 +909,10 @@ mod tests {
             bytecode_unroller::{unroll, BytecodeRow},
             dev::test_bytecode_circuit_unrolled,
         },
-        util::{is_push, keccak},
+        util::is_push,
     };
-    use bus_mapping::evm::OpcodeId;
-    use eth_types::{Bytecode, Word};
+    use bus_mapping::{evm::OpcodeId, state_db::CodeDB};
+    use eth_types::{Bytecode, ToWord, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
 
     /// Verify unrolling code
@@ -959,7 +959,7 @@ mod tests {
             }
         }
         // Set the code_hash of the complete bytecode in the rows
-        let code_hash = keccak(&bytecode.to_vec()[..]);
+        let code_hash = CodeDB::hash(&bytecode.to_vec()[..]).to_word();
         for row in rows.iter_mut() {
             row.code_hash = code_hash;
         }

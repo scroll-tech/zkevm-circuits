@@ -79,10 +79,6 @@ pub struct BlockContexts {
 }
 
 impl BlockContexts {
-    /// Get the chain ID for the block.
-    pub fn chain_id(&self) -> Word {
-        self.first_or_default().chain_id
-    }
     /// ..
     pub fn first(&self) -> &BlockContext {
         self.ctxs.iter().next().unwrap().1

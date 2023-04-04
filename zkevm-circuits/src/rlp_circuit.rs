@@ -1723,7 +1723,7 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, SignedTransaction> {
                 signature: *sig,
             })
             .chain((block.txs.len()..max_txs).into_iter().map(|tx_id| {
-                let mut padding_tx = Transaction::dummy(block.context.chain_id().as_u64());
+                let mut padding_tx = Transaction::dummy(block.chain_id.as_u64());
                 padding_tx.id = tx_id + 1;
 
                 (&padding_tx).into()
