@@ -19,7 +19,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
-use eth_types::{Field, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -94,6 +94,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_contract_deployment =
             is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr());
+        let code_deposit_cost = cb.curr.state.is_create.expr()
+            * is_success.expr()
+            * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
+            * range.length();
         let (caller_id, address, reversion_info, code_hash) =
             cb.condition(is_contract_deployment.clone(), |cb| {
                 // We don't need to place any additional constraints on code_hash because the
@@ -147,7 +151,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                         + not::expr(is_success.expr())
                             * cb.curr.state.reversible_write_counter.expr(),
                 ),
-                gas_left: Delta(-memory_expansion.gas_cost()),
+                gas_left: Delta(-memory_expansion.gas_cost() - code_deposit_cost.expr()),
                 reversible_write_counter: To(0.expr()),
                 memory_word_size: To(0.expr()),
                 ..StepStateTransition::default()
