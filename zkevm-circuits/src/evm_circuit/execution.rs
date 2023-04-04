@@ -81,6 +81,7 @@ mod error_code_store;
 mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_invalid_opcode;
+mod error_oog_account_access;
 mod error_oog_call;
 mod error_oog_constant;
 mod error_oog_create2;
@@ -161,6 +162,7 @@ use error_code_store::ErrorCodeStoreGadget;
 use error_invalid_creation_code::ErrorInvalidCreationCodeGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
+use error_oog_account_access::ErrorOOGAccountAccessGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_create2::ErrorOOGCreate2Gadget;
@@ -324,8 +326,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_write_protection: Box<ErrorWriteProtectionGadget<F>>,
     error_oog_dynamic_memory_gadget: Box<ErrorOOGDynamicMemoryGadget<F>>,
     error_oog_log: Box<ErrorOOGLogGadget<F>>,
-    error_oog_account_access:
-        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>>,
+    error_oog_account_access: Box<ErrorOOGAccountAccessGadget<F>>,
     error_oog_sha3: Box<ErrorOOGSha3Gadget<F>>,
     error_oog_create2: Box<ErrorOOGCreate2Gadget<F>>,
     error_code_store: Box<ErrorCodeStoreGadget<F>>,
@@ -338,8 +339,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_jump: Box<ErrorInvalidJumpGadget<F>>,
     error_invalid_opcode: Box<ErrorInvalidOpcodeGadget<F>>,
     error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
-    error_contract_address_collision:
-        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>>,
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
@@ -604,7 +603,6 @@ impl<F: Field> ExecutionConfig<F> {
             error_write_protection: configure_gadget!(),
             error_depth: configure_gadget!(),
             error_nonce_uint_overflow: configure_gadget!(),
-            error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
             error_precompile_failed: configure_gadget!(),
@@ -1446,7 +1444,7 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_nonce_uint_overflow)
             }
             ExecutionState::ErrorContractAddressCollision => {
-                assign_exec_step!(self.error_contract_address_collision)
+                assign_exec_step!(self.create_gadget)
             }
             ExecutionState::ErrorInvalidCreationCode => {
                 assign_exec_step!(self.error_invalid_creation_code)
