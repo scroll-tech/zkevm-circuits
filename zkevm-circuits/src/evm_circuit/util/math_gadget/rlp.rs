@@ -325,18 +325,6 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         )
     }
 
-    /// Salt EVM word RLC.
-    pub(crate) fn salt_word_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
-        cb.word_rlc::<N_BYTES_WORD>(
-            self.salt
-                .iter()
-                .map(Expr::expr)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-        )
-    }
-
     /// Salt keccak RLC.
     pub(crate) fn salt_keccak_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
         cb.keccak_rlc::<N_BYTES_WORD>(
