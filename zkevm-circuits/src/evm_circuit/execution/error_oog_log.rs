@@ -50,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
         // constrain not in static call
         let is_static_call = cb.call_context(None, CallContextFieldTag::IsStatic);
-        // cb.require_zero("is_static_call is false in LOGN", is_static_call.expr());
+        //cb.require_zero("is_static_call is false in LOGN", is_static_call.expr());
 
         let topic_count = opcode.expr() - OpcodeId::LOG0.as_u8().expr();
         let is_opcode_logn = LtGadget::construct(cb, topic_count.clone(), 5.expr());
@@ -115,8 +115,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             .assign(region, offset, memory_start, msize)?;
 
         // Memory expansion
-        self.memory_expansion
-            .assign(region, offset, step.memory_word_size(), [memory_address])?;
+        let memory_expansion_cost = self
+            .memory_expansion
+            .assign(region, offset, step.memory_word_size(), [memory_address])?
+            .1;
 
         let topic_count = opcode.postfix().expect("opcode with postfix") as u64;
         assert!(topic_count <= 4);
@@ -126,13 +128,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         self.is_opcode_logn
             .assign(region, offset, F::from(topic_count), F::from(5u64))?;
 
+        let gas_cost = GasCost::LOG.as_u64()
+            + GasCost::LOG.as_u64() * topic_count
+            + 8 * msize.low_u64()
+            + memory_expansion_cost;
         // Gas insufficient check
-        self.insufficient_gas.assign(
-            region,
-            offset,
-            F::from(step.gas_left),
-            F::from(step.gas_cost),
-        )?;
+        self.insufficient_gas
+            .assign(region, offset, F::from(step.gas_left), F::from(gas_cost))?;
         self.common_error_gadget
             .assign(region, offset, block, call, step, 5)?;
         Ok(())

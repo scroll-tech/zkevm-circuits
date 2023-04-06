@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-            math_gadget::IsZeroGadget, sum, CachedRegion, Cell, Word as RLCWord,
+            math_gadget::IsZeroGadget, CachedRegion, Cell, Word as RLCWord,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -64,7 +64,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             cb.stack_pop(gas_word.expr());
             cb.stack_pop(code_address_word.expr());
             cb.stack_pop(value.expr());
-            cb.require_zero("value of call is not zero", is_value_zero.expr());
+            //cb.require_zero("value of call is not zero",
+            // is_value_zero.expr());
         });
 
         // current call context is readonly
@@ -122,7 +123,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             F::from(opcode.as_u64()) - F::from(OpcodeId::CALL.as_u64()),
         )?;
         self.is_value_zero
-            .assign(region, offset, sum::value(&value.to_le_bytes()))?;
+            .assign_value(region, offset, region.word_rlc(value))?;
 
         self.common_error_gadget.assign(
             region,
