@@ -263,7 +263,10 @@ mod extcodesize_tests {
                 },
             );
         }
-        let operation = &container.stack[indices.last().unwrap().as_usize()];
+        let rw_offset = 6;
+        #[cfg(feature = "scroll")]
+        let rw_offset = if exists { rw_offset + 1 } else { rw_offset };
+        let operation = &container.stack[rw_offset];
         assert_eq!(operation.rw(), RW::WRITE);
         assert_eq!(
             operation.op(),
