@@ -10,7 +10,7 @@ on:
 
       matrices:
         description: 'The matrix at index 0 is intended for not running on the self-hosted runner'
-        default: '[["ubuntu-latest"], ["jenkins"], ["jenkins2"]]'
+        default: '[["ubuntu-latest"], ["jenkins1"], ["jenkins2"]]'
         required: false
         type: string
 

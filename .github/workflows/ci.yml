@@ -38,8 +38,8 @@ jobs:
       (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
     uses: ./.github/workflows/select-runner.yml
 
-  test:
-    name: Test
+  test-default:
+    name: Test Default
     needs: [runner]
     runs-on: ${{ matrix.os }}
     concurrency: ${{ needs.runner.outputs.concurrency-group1 }}
@@ -94,14 +94,12 @@ jobs:
     name: Test Scroll
     needs: [runner]
     runs-on: ${{ matrix.os }}
-    # concurrency: ${{ needs.runner.outputs.concurrency-group2 }}
-    concurrency: ${{ needs.runner.outputs.concurrency-group1 }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group2 }}
     strategy:
       matrix:
         # We don't need to test across multiple platforms yet
         # os: [ubuntu-latest, windows-latest, macOS-latest]
-        # os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
-        os: ${{ fromJSON(needs.runner.outputs.runner-matrix1) }}
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
 
     steps:
       - uses: actions/checkout@v2
