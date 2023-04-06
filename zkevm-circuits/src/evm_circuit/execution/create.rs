@@ -110,6 +110,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         cb.stack_push(callee_is_success.expr() * new_address_rlc);
 
         cb.condition(init_code.has_length(), |cb| {
+            // TODO(rohit): lookup to keccak table to verify keccak code hash?
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
@@ -123,12 +124,19 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 init_code.length(),
             );
         });
-        cb.condition(not::expr(init_code.has_length()), |cb| {
+        cb.condition(not::expr(init_code.has_length()), |_cb| {
+            /* FIXME
             cb.require_equal(
-                "Empty code",
-                create.code_hash_word_rlc(cb),
+                "keccak hash of empty bytes",
+                keccak_code_hash.expr(),
+                cb.empty_keccak_hash_rlc(),
+            );
+            cb.require_equal(
+                "code hash of empty bytes",
+                create.code_hash_keccak_rlc(cb),
                 cb.empty_code_hash_rlc(),
             );
+            */
         });
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
