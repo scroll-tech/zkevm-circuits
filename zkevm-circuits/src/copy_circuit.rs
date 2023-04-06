@@ -25,7 +25,8 @@ use halo2_proofs::plonk::SecondPhase;
 use crate::{
     evm_circuit::util::{constraint_builder::BaseConstraintBuilder, rlc},
     table::{
-        BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag, TxContextFieldTag, TxTable,
+        BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
+        TxContextFieldTag, TxTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
@@ -384,9 +385,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .collect()
         });
 
-        // create case unimplemented for poseidon hash
         meta.lookup_any("Bytecode lookup", |meta| {
-            use crate::table::BytecodeFieldTag;
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()));
@@ -475,8 +474,6 @@ impl<F: Field> CopyCircuitConfig<F> {
             if is_read {
                 self.q_step.enable(region, *offset)?;
             }
-            // FIXME: finish padding of copy circuit
-            // Now temporarily set it to 0 to make vk univeral
             // q_enable
             region.assign_fixed(
                 || "q_enable",
@@ -513,6 +510,7 @@ impl<F: Field> CopyCircuitConfig<F> {
 
             *offset += 1;
         }
+
         Ok(())
     }
 
@@ -1113,7 +1111,6 @@ mod tests {
         );
     }
 
-    #[ignore = "codehash related"]
     #[test]
     fn copy_circuit_invalid_codecopy() {
         let mut builder = gen_codecopy_data();
@@ -1130,7 +1127,6 @@ mod tests {
         );
     }
 
-    #[ignore = "codehash related"]
     #[test]
     fn copy_circuit_invalid_extcodecopy() {
         let mut builder = gen_extcodecopy_data();

@@ -54,7 +54,7 @@ impl Opcode for Extcodesize {
         let account = state.sdb.get_account(&address).1;
         let exists = !account.is_empty();
         let (code_hash, code_size) = if exists {
-            (account.keccak_code_hash, account.code_size)
+            (account.code_hash, account.code_size)
         } else {
             (H256::zero(), Word::zero())
         };
@@ -64,6 +64,11 @@ impl Opcode for Extcodesize {
             AccountField::KeccakCodeHash,
             code_hash.to_word(),
         );
+        // If "scroll" feature is enabled, CodeSize is read of AccountTrie,
+        // so the full code don't need to be put into bytecode circuit.
+        // TODO: check the bytecode circuit assignment codes, to make sure this optimization
+        // is correctly applied.
+        #[cfg(feature = "scroll")]
         if exists {
             state.account_read(&mut exec_step, address, AccountField::CodeSize, code_size);
         }
@@ -244,7 +249,9 @@ mod extcodesize_tests {
                 value_prev: if exists { code_hash } else { Word::zero() },
             }
         );
+        #[cfg(feature = "scroll")]
         if exists {
+            let code_size = account.code.len().to_word();
             let operation = &container.account[indices[6].as_usize()];
             assert_eq!(operation.rw(), RW::READ);
             assert_eq!(
@@ -257,8 +264,7 @@ mod extcodesize_tests {
                 },
             );
         }
-
-        let operation = &container.stack[indices[if exists { 7 } else { 6 }].as_usize()];
+        let operation = &container.stack[indices.last().unwrap().as_usize()];
         assert_eq!(operation.rw(), RW::WRITE);
         assert_eq!(
             operation.op(),

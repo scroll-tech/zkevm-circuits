@@ -115,6 +115,10 @@ impl MptUpdates {
         }
     }
 
+    pub(crate) fn mock_from(rows: &[Rw]) -> Self {
+        Self::from_rws_with_mock_state_roots(rows, 0xcafeu64.into(), 0xdeadbeefu64.into())
+    }
+
     pub(crate) fn from_rws_with_mock_state_roots(
         rows: &[Rw],
         old_root: U256,

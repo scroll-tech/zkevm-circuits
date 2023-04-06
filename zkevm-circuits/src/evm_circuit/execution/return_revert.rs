@@ -133,6 +133,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 // TODO(rohit): constraints on keccak hash of code.
                 // lookup to keccak table?
                 let keccak_code_hash = cb.query_cell_phase2();
+                #[cfg(feature = "scroll")]
                 cb.account_write(
                     address.expr(),
                     AccountFieldTag::KeccakCodeHash,
@@ -151,6 +152,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 // code size.
                 let code_size = cb.query_cell_phase2();
                 cb.require_equal("range == code size", range.length(), code_size.expr());
+                #[cfg(feature = "scroll")]
                 cb.account_write(
                     address.expr(),
                     AccountFieldTag::CodeSize,
@@ -194,6 +196,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         });
 
         // Case C in the specs.
+        #[cfg(feature = "scroll")]
+        let contract_deployment_rw_num = 3; // dual code hash + code size
+        #[cfg(not(feature = "scroll"))]
+        let contract_deployment_rw_num = 1;
         let restore_context = cb.condition(not::expr(is_root.expr()), |cb| {
             RestoreContextGadget::construct(
                 cb,
@@ -202,8 +208,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 range.offset(),
                 range.length(),
                 memory_expansion.gas_cost(),
-                3.expr() * is_contract_deployment, /* There are three reversible writes in this
-                                                    * case. */
+                contract_deployment_rw_num.expr() * is_contract_deployment,
+                                                
             )
         });
 
@@ -360,6 +366,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             } else {
                 0
             };
+            #[cfg(feature = "scroll")]
+            let rw_counter_offset = rw_counter_offset + 2;
             self.restore_context.assign(
                 region,
                 offset,

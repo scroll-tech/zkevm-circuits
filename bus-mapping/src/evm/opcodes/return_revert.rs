@@ -71,6 +71,16 @@ impl Opcode for ReturnRevert {
                 state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
             }
 
+            #[cfg(feature = "scroll")]
+            state.push_op_reversible(
+                &mut exec_step,
+                AccountOp {
+                    address: state.call()?.address,
+                    field: AccountField::KeccakCodeHash,
+                    value: code_info.keccak_hash.to_word(),
+                    value_prev: crate::util::KECCAK_CODE_HASH_ZERO.to_word(),
+                },
+            )?;
             state.push_op_reversible(
                 &mut exec_step,
                 AccountOp {
@@ -85,17 +95,18 @@ impl Opcode for ReturnRevert {
                 AccountOp {
                     address: state.call()?.address,
                     field: AccountField::CodeHash,
-                    value: code_info.poseidon_hash.to_word(),
+                    value: code_info.hash.to_word(),
                     value_prev: CodeDB::empty_code_hash().to_word(),
                 },
             )?;
+            #[cfg(feature = "scroll")]
             state.push_op_reversible(
                 &mut exec_step,
                 AccountOp {
                     address: state.call()?.address,
                     field: AccountField::CodeSize,
                     value: code_info.size.to_word(),
-                    value_prev: Word::zero(),
+                    value_prev: eth_types::Word::zero(),
                 },
             )?;
         }
@@ -221,7 +232,7 @@ fn handle_copy(
 
 struct AccountCodeInfo {
     keccak_hash: H256,
-    poseidon_hash: H256,
+    hash: H256,
     size: usize,
 }
 
@@ -268,7 +279,7 @@ fn handle_create(
 
     Ok(AccountCodeInfo {
         keccak_hash,
-        poseidon_hash: code_hash,
+        hash: code_hash,
         size,
     })
 }

@@ -181,7 +181,7 @@ fn state_circuit_simple_2() {
     );
 
     let storage_op_0 = Operation::new(
-        RWCounter::from(1),
+        RWCounter::from(0),
         RW::WRITE,
         StorageOp::new(
             U256::from(100).to_address(),
@@ -494,7 +494,7 @@ fn storage_key_byte_out_of_range() {
         committed_value: U256::from(500),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0x1000)),
+        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0xcafeu64)),
         ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
     ]);
 
@@ -531,7 +531,7 @@ fn nonlexicographic_order_tag() {
         is_write: true,
         call_id: 1,
         memory_address: 10,
-        byte: 0,
+        byte: 12,
     };
     let second = Rw::CallContext {
         rw_counter: 2,
@@ -603,7 +603,7 @@ fn nonlexicographic_order_address() {
         account_address: address!("0x2000000000000000000000000000000000000000"),
         field_tag: AccountFieldTag::CodeHash,
         value: U256::one(),
-        value_prev: U256::zero(),
+        value_prev: U256::one(),
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
@@ -721,7 +721,6 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
     );
 }
 
-#[ignore]
 #[test]
 fn read_inconsistency() {
     let rows = vec![
@@ -1010,8 +1009,7 @@ fn variadic_size_check() {
         },
     ];
 
-    let updates =
-        MptUpdates::from_rws_with_mock_state_roots(&rows, 0xcafeu64.into(), 0xdeadbeefu64.into());
+    let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows: rows.clone(),
         updates,
@@ -1040,8 +1038,7 @@ fn variadic_size_check() {
         },
     ]);
 
-    let updates =
-        MptUpdates::from_rws_with_mock_state_roots(&rows, 0xcafeu64.into(), 0xdeadbeefu64.into());
+    let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows,
         updates,
@@ -1080,8 +1077,7 @@ fn bad_initial_tx_receipt_value() {
 }
 
 fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
-    let updates =
-        MptUpdates::from_rws_with_mock_state_roots(&rows, 0xcafeu64.into(), 0xdeadbeefu64.into());
+    let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows,
         updates,
