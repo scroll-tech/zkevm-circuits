@@ -28,6 +28,7 @@ pub(crate) struct ReturnRevertGadget<F> {
     opcode: Cell<F>,
 
     range: MemoryAddressGadget<F>,
+    init_code_rlc: Cell<F>,
 
     is_success: Cell<F>,
     restore_context: RestoreContextGadget<F>,
@@ -101,75 +102,81 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             * is_success.expr()
             * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
             * range.length();
-        let (caller_id, address, reversion_info, code_hash, keccak_code_hash, code_size) = cb
-            .condition(is_contract_deployment.clone(), |cb| {
-                // poseidon hash of code.
-                //
-                // We don't need to place any additional constraints on code_hash. The lookup to
-                // copy table ensures the bytes are copied correctly. And the copy circuit ensures
-                // those bytes are in fact assigned in the bytecode circuit layout. The bytecode
-                // circuit does the lookup to poseidon table.
-                let code_hash = cb.query_cell_phase2();
-                cb.copy_table_lookup(
-                    cb.curr.state.call_id.expr(),
-                    CopyDataType::Memory.expr(),
-                    code_hash.expr(),
-                    CopyDataType::Bytecode.expr(),
-                    range.offset(),
-                    range.address(),
-                    0.expr(),
-                    range.length(),
-                    0.expr(),
-                    copy_rw_increase.expr(),
-                );
+        let (
+            caller_id,
+            address,
+            reversion_info,
+            code_hash,
+            keccak_code_hash,
+            code_size,
+            init_code_rlc,
+        ) = cb.condition(is_contract_deployment.clone(), |cb| {
+            // poseidon hash of code.
+            //
+            // We don't need to place any additional constraints on code_hash. The lookup to
+            // copy table ensures the bytes are copied correctly. And the copy circuit ensures
+            // those bytes are in fact assigned in the bytecode circuit layout. The bytecode
+            // circuit does the lookup to poseidon table.
+            let code_hash = cb.query_cell_phase2();
+            let init_code_rlc = cb.query_cell_phase2();
+            cb.copy_table_lookup(
+                cb.curr.state.call_id.expr(),
+                CopyDataType::Memory.expr(),
+                code_hash.expr(),
+                CopyDataType::Bytecode.expr(),
+                range.offset(),
+                range.address(),
+                0.expr(),
+                range.length(),
+                init_code_rlc.expr(),
+                copy_rw_increase.expr(),
+            );
 
-                let [caller_id, address] = [
-                    CallContextFieldTag::CallerId,
-                    CallContextFieldTag::CalleeAddress,
-                ]
-                .map(|tag| cb.call_context(None, tag));
-                let mut reversion_info = cb.reversion_info_read(None);
+            let [caller_id, address] = [
+                CallContextFieldTag::CallerId,
+                CallContextFieldTag::CalleeAddress,
+            ]
+            .map(|tag| cb.call_context(None, tag));
+            let mut reversion_info = cb.reversion_info_read(None);
 
-                // keccak hash of code.
-                //
-                // TODO(rohit): constraints on keccak hash of code.
-                // lookup to keccak table?
-                let keccak_code_hash = cb.query_cell_phase2();
-                cb.account_write(
-                    address.expr(),
-                    AccountFieldTag::KeccakCodeHash,
-                    keccak_code_hash.expr(),
-                    cb.empty_keccak_hash_rlc(),
-                    Some(&mut reversion_info),
-                );
-                cb.account_write(
-                    address.expr(),
-                    AccountFieldTag::CodeHash,
-                    code_hash.expr(),
-                    cb.empty_code_hash_rlc(),
-                    Some(&mut reversion_info),
-                );
+            // keccak hash of code.
+            let keccak_code_hash = cb.query_cell_phase2();
+            cb.account_write(
+                address.expr(),
+                AccountFieldTag::KeccakCodeHash,
+                keccak_code_hash.expr(),
+                cb.empty_keccak_hash_rlc(),
+                Some(&mut reversion_info),
+            );
+            cb.account_write(
+                address.expr(),
+                AccountFieldTag::CodeHash,
+                code_hash.expr(),
+                cb.empty_code_hash_rlc(),
+                Some(&mut reversion_info),
+            );
 
-                // code size.
-                let code_size = cb.query_cell_phase2();
-                cb.require_equal("range == code size", range.length(), code_size.expr());
-                cb.account_write(
-                    address.expr(),
-                    AccountFieldTag::CodeSize,
-                    code_size.expr(),
-                    0.expr(),
-                    Some(&mut reversion_info),
-                );
+            // code size.
+            let code_size = cb.query_cell_phase2();
+            cb.require_equal("range == code size", range.length(), code_size.expr());
+            cb.account_write(
+                address.expr(),
+                AccountFieldTag::CodeSize,
+                code_size.expr(),
+                0.expr(),
+                Some(&mut reversion_info),
+            );
 
-                (
-                    caller_id,
-                    address,
-                    reversion_info,
-                    code_hash,
-                    keccak_code_hash,
-                    code_size,
-                )
-            });
+            (
+                caller_id,
+                address,
+                reversion_info,
+                code_hash,
+                keccak_code_hash,
+                code_size,
+                init_code_rlc,
+            )
+        });
 
         // Case B in the specs.
         cb.condition(is_root.expr(), |cb| {
@@ -260,6 +267,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         Self {
             opcode,
             range,
+            init_code_rlc,
             is_success,
             copy_length,
             copy_rw_increase,
@@ -320,6 +328,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             let values: Vec<_> = (3..3 + length.as_usize())
                 .map(|i| block.rws[step.rw_indices[i]].memory_value())
                 .collect();
+            self.init_code_rlc.assign(
+                region,
+                offset,
+                region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>()),
+            )?;
 
             // keccak hash of code.
             let keccak_code_hash = keccak256(&values);

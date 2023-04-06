@@ -43,6 +43,7 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     transfer: TransferGadget<F>,
     init_code: MemoryAddressGadget<F>,
     init_code_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    init_code_rlc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
     create: ContractCreateGadget<F, IS_CREATE2>,
@@ -106,14 +107,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         cb.stack_push(callee_is_success.expr() * new_address_rlc);
 
-        let keccak_code_hash = cb.query_cell_phase2();
-
-        cb.condition(init_code.has_length(), |cb| {
-            // TODO(rohit): keccak table lookup to verify init code's keccak hash.
-            // cb.keccak_table_lookup(input_rlc, init_code.length(), keccak_code_hash.expr());
-
+        let (init_code_rlc, keccak_code_hash) = cb.condition(init_code.has_length(), |cb| {
             // the init code is being copied from memory to bytecode, so a copy table lookup to
             // verify that the associated fields for the copy event.
+            let keccak_code_hash = cb.query_cell_phase2();
+            let init_code_rlc = cb.query_cell_phase2();
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
@@ -123,9 +121,15 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 init_code.address(),
                 0.expr(),
                 init_code.length(),
-                0.expr(),
+                init_code_rlc.expr(),
                 init_code.length(),
             );
+            cb.keccak_table_lookup(
+                init_code_rlc.expr(),
+                init_code.length(),
+                keccak_code_hash.expr(),
+            );
+            (init_code_rlc, keccak_code_hash)
         });
         cb.condition(not::expr(init_code.has_length()), |cb| {
             cb.require_equal(
@@ -307,6 +311,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             callee_reversion_info,
             transfer,
             init_code,
+            init_code_rlc,
             memory_expansion,
             gas_left,
             callee_is_success,
@@ -351,6 +356,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let init_code_address =
             self.init_code
                 .assign(region, offset, init_code_start, init_code_length)?;
+        self.init_code_rlc.assign(
+            region,
+            offset,
+            region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>()),
+        )?;
 
         self.tx_id
             .assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
