@@ -148,9 +148,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         let rw_offset = 6;
         #[cfg(feature = "scroll")]
         let rw_offset = if code_hash.is_zero() {
-            rw_offset + 1
-        } else {
             rw_offset
+        } else {
+            rw_offset + 1
         };
         let code_size = block.rws[step.rw_indices[rw_offset]].stack_value().as_u64();
         self.code_size
