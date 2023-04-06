@@ -209,7 +209,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 range.length(),
                 memory_expansion.gas_cost(),
                 contract_deployment_rw_num.expr() * is_contract_deployment,
-                                                
             )
         });
 

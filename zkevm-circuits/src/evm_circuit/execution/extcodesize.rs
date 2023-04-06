@@ -54,18 +54,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         );
 
         let code_hash = cb.query_cell_phase2();
-        // TODO: we don't need to lookup the keccak code hash here anymore.
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read(
-            address.expr(),
-            AccountFieldTag::KeccakCodeHash,
-            code_hash.expr(),
-        );
+        cb.account_read(address.expr(), AccountFieldTag::CodeHash, code_hash.expr());
         let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
         let exists = not::expr(not_exists.expr());
 
         let code_size = cb.query_word_rlc();
-        cb.condition(exists.clone(), |cb| {
+        cb.condition(exists.expr(), |cb| {
             #[cfg(feature = "scroll")]
             cb.account_read(
                 address.expr(),
@@ -73,6 +68,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
                 from_bytes::expr(&code_size.cells),
             );
             #[cfg(not(feature = "scroll"))]
+            cb.bytecode_length(code_hash.expr(), from_bytes::expr(&code_size.cells));
         });
 
         cb.condition(not_exists.expr(), |cb| {
@@ -152,7 +148,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         let code_size = block.rws[*step.rw_indices.last().unwrap()]
             .stack_value()
             .as_u64();
-        
         self.code_size
             .assign(region, offset, Some(code_size.to_le_bytes()))?;
 
