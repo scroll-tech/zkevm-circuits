@@ -145,9 +145,14 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         self.not_exists
             .assign_value(region, offset, region.word_rlc(code_hash))?;
 
-        let code_size = block.rws[*step.rw_indices.last().unwrap()]
-            .stack_value()
-            .as_u64();
+        let rw_offset = 6;
+        #[cfg(feature = "scroll")]
+        let rw_offset = if code_hash.is_zero() {
+            rw_offset + 1
+        } else {
+            rw_offset
+        };
+        let code_size = block.rws[step.rw_indices[rw_offset]].stack_value().as_u64();
         self.code_size
             .assign(region, offset, Some(code_size.to_le_bytes()))?;
 

@@ -298,7 +298,7 @@ impl Rw {
                 is_warm_prev,
                 ..
             } => (*is_warm, *is_warm_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -307,7 +307,7 @@ impl Rw {
             Self::TxRefund {
                 value, value_prev, ..
             } => (*value, *value_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -316,7 +316,7 @@ impl Rw {
             Self::Account {
                 value, value_prev, ..
             } => (*value, *value_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -344,7 +344,7 @@ impl Rw {
                 debug_assert_eq!(*field_tag, required_field_tag, "invalid rw {:?}", &self);
                 (*value, *value_prev)
             }
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -355,7 +355,7 @@ impl Rw {
                 committed_value,
                 ..
             } => (*tx_id, *committed_value),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -368,42 +368,42 @@ impl Rw {
                 committed_value,
                 ..
             } => (*value, *value_prev, *tx_id, *committed_value),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn call_context_value(&self) -> Word {
         match self {
             Self::CallContext { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn log_value(&self) -> Word {
         match self {
             Self::TxLog { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn receipt_value(&self) -> u64 {
         match self {
             Self::TxReceipt { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn memory_value(&self) -> u8 {
         match self {
             Self::Memory { byte, .. } => *byte,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
