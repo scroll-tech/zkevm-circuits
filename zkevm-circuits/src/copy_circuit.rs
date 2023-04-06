@@ -245,28 +245,47 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     rw_diff,
                 );
             });
-            cb.condition(
-                and::expr([
-                    meta.query_advice(is_last, Rotation::next()),
-                    or::expr([
-                        tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(meta),
-                        and::expr([
-                            tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
-                            tag.value_equals(CopyDataType::Bytecode, Rotation::next())(meta),
-                        ]),
-                    ]),
-                ]),
-                |cb| {
-                    cb.require_equal(
-                        "value_acc == rlc_acc on the last row for dst == RlcAcc || (src == Memory, dst == Bytecode)",
-                        meta.query_advice(value_acc, Rotation::next()),
-                        meta.query_advice(rlc_acc, Rotation::next()),
-                    );
-                },
-            );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
+
+        meta.create_gate("Last Step (check value accumulator) RlcAcc", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "value_acc == rlc_acc on the last row",
+                meta.query_advice(value_acc, Rotation::next()),
+                meta.query_advice(rlc_acc, Rotation::next()),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_last, Rotation::next()),
+                and::expr([
+                    tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
+                    tag.value_equals(CopyDataType::Bytecode, Rotation::next())(meta),
+                ]),
+            ]))
+        });
+
+        meta.create_gate(
+            "Last Step (check value accumulator) Memory => Bytecode",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
+
+                cb.require_equal(
+                    "value_acc == rlc_acc on the last row",
+                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(rlc_acc, Rotation::next()),
+                );
+
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(is_last, Rotation::next()),
+                    tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(meta),
+                ]))
+            },
+        );
 
         meta.create_gate("verify step (q_step == 1)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
