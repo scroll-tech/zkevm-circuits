@@ -38,8 +38,8 @@ jobs:
       (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
     uses: ./.github/workflows/select-runner.yml
 
-  test:
-    name: Test
+  test-default:
+    name: Test Default
     needs: [runner]
     runs-on: ${{ matrix.os }}
     concurrency: ${{ needs.runner.outputs.concurrency-group1 }}
@@ -90,7 +90,6 @@ jobs:
           args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
 
   test-scroll:
-    if: false
     name: Test Scroll
     needs: [runner]
     runs-on: ${{ matrix.os }}
