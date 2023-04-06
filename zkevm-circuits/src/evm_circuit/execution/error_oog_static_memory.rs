@@ -216,12 +216,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             panic!("address overflow {} bytes", N_BYTES_MEMORY_ADDRESS);
         }
 
-        self.memory_expansion.assign(
-            region,
-            offset,
-            step.memory_word_size(),
-            [expanded_address],
-        )?;
+        let memory_expansion_cost = self
+            .memory_expansion
+            .assign(region, offset, step.memory_word_size(), [expanded_address])?
+            .1;
 
         // Gas insufficient check
         // Get `gas_available` variable here once it's available
@@ -229,7 +227,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             region,
             offset,
             F::from(step.gas_left),
-            F::from(step.gas_cost),
+            F::from(OpcodeId::MLOAD.constant_gas_cost().0 + memory_expansion_cost),
         )?;
 
         self.rw_counter_end_of_reversion.assign(
