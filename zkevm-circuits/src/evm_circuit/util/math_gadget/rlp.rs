@@ -208,6 +208,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
 
         #[cfg(not(feature = "poseidon-codehash"))]
         cb.require_equal(
+            "codehash",
             cb.word_rlc::<N_BYTES_WORD>(
                 keccak_code_hash
                     .iter()
