@@ -365,12 +365,17 @@ impl From<RwTableTag> for usize {
 /// Tag for an AccountField in RwTable
 #[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccountFieldTag {
+    /// Variant representing the poseidon hash of an account's code.
+    CodeHash = 0, /* we need this to match to the field tag of AccountStorage, which is
+                   * always 0 */
     /// Nonce field
-    Nonce = 1,
+    Nonce,
     /// Balance field
     Balance,
-    /// CodeHash field
-    CodeHash,
+    /// Variant representing the keccak hash of an account's code.
+    KeccakCodeHash,
+    /// Variant representing the code size, i.e. length of account's code.
+    CodeSize,
     /// NonExisting field
     NonExisting,
 }
@@ -599,8 +604,12 @@ pub enum MPTProofType {
     NonceMod = AccountFieldTag::Nonce as isize,
     /// Balance updated
     BalanceMod = AccountFieldTag::Balance as isize,
-    /// Code hash exists
-    CodeHashMod = AccountFieldTag::CodeHash as isize,
+    /// Keccak Code hash exists
+    KeccakCodeHashExists = AccountFieldTag::KeccakCodeHash as isize,
+    /// Poseidon Code hash exits
+    PoseidonCodeHashExists = AccountFieldTag::CodeHash as isize,
+    /// Code size exists
+    CodeSizeExists = AccountFieldTag::CodeSize as isize,
     /// Account does not exist
     NonExistingAccountProof = AccountFieldTag::NonExisting as isize,
     /// Storage updated
@@ -615,8 +624,10 @@ impl From<AccountFieldTag> for MPTProofType {
         match tag {
             AccountFieldTag::Nonce => Self::NonceMod,
             AccountFieldTag::Balance => Self::BalanceMod,
-            AccountFieldTag::CodeHash => Self::CodeHashMod,
+            AccountFieldTag::KeccakCodeHash => Self::KeccakCodeHashExists,
+            AccountFieldTag::CodeHash => Self::PoseidonCodeHashExists,
             AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
+            AccountFieldTag::CodeSize => Self::CodeSizeExists,
         }
     }
 }

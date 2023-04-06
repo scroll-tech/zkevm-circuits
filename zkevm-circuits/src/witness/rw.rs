@@ -603,10 +603,12 @@ impl Rw {
             Self::Account {
                 value, field_tag, ..
             } => match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
-                    rlc::value(&value.to_le_bytes(), randomness)
-                }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => value.to_scalar().unwrap(),
+                AccountFieldTag::KeccakCodeHash
+                | AccountFieldTag::Balance
+                | AccountFieldTag::CodeHash => rlc::value(&value.to_le_bytes(), randomness),
+                AccountFieldTag::Nonce
+                | AccountFieldTag::NonExisting
+                | AccountFieldTag::CodeSize => value.to_scalar().unwrap(),
             },
             Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
                 rlc::value(&value.to_le_bytes(), randomness)
@@ -633,12 +635,12 @@ impl Rw {
                 field_tag,
                 ..
             } => Some(match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
-                    rlc::value(&value_prev.to_le_bytes(), randomness)
-                }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => {
-                    value_prev.to_scalar().unwrap()
-                }
+                AccountFieldTag::KeccakCodeHash
+                | AccountFieldTag::Balance
+                | AccountFieldTag::CodeHash => rlc::value(&value_prev.to_le_bytes(), randomness),
+                AccountFieldTag::Nonce
+                | AccountFieldTag::NonExisting
+                | AccountFieldTag::CodeSize => value_prev.to_scalar().unwrap(),
             }),
             Self::AccountStorage { value_prev, .. } => {
                 Some(rlc::value(&value_prev.to_le_bytes(), randomness))
@@ -739,6 +741,8 @@ impl From<&operation::OperationContainer> for RwMap {
                         AccountField::Nonce => AccountFieldTag::Nonce,
                         AccountField::Balance => AccountFieldTag::Balance,
                         AccountField::CodeHash => AccountFieldTag::CodeHash,
+                        AccountField::KeccakCodeHash => AccountFieldTag::KeccakCodeHash,
+                        AccountField::CodeSize => AccountFieldTag::CodeSize,
                     },
                     value: op.op().value,
                     value_prev: op.op().value_prev,

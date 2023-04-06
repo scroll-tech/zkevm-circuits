@@ -132,6 +132,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             |meta| meta.query_fixed(selector, Rotation::cur()),
             |meta| {
                 [
+                    meta.query_advice(rw_table.field_tag, Rotation::cur()),
                     meta.query_advice(initial_value, Rotation::cur()),
                     meta.query_advice(rw_table.value, Rotation::cur()),
                 ]
@@ -324,31 +325,35 @@ impl<F: Field> StateCircuitConfig<F> {
             )?;
 
             // Identify non-existing if both committed value and new value are zero.
-            let committed_value_value = randomness.map(|randomness| {
+            let is_non_exist_inputs = randomness.map(|randomness| {
                 let (_, committed_value) = updates
                     .get(row)
                     .map(|u| u.value_assignments(randomness))
                     .unwrap_or_default();
                 let value = row.value_assignment(randomness);
-                [committed_value, value]
+                [
+                    F::from(row.field_tag().unwrap_or_default()),
+                    committed_value,
+                    value,
+                ]
             });
             BatchedIsZeroChip::construct(self.is_non_exist.clone()).assign(
                 region,
                 offset,
-                committed_value_value,
+                is_non_exist_inputs,
             )?;
-            let mpt_proof_type = committed_value_value.map(|pair| {
+            let mpt_proof_type = is_non_exist_inputs.map(|[_field_tag, committed_value, value]| {
                 F::from(match row {
                     Rw::AccountStorage { .. } => {
-                        if pair[0].is_zero_vartime() && pair[1].is_zero_vartime() {
+                        if committed_value.is_zero_vartime() && value.is_zero_vartime() {
                             MPTProofType::NonExistingStorageProof as u64
                         } else {
                             MPTProofType::StorageMod as u64
                         }
                     }
                     Rw::Account { field_tag, .. } => {
-                        if pair[0].is_zero_vartime()
-                            && pair[1].is_zero_vartime()
+                        if committed_value.is_zero_vartime()
+                            && value.is_zero_vartime()
                             && matches!(field_tag, AccountFieldTag::CodeHash)
                         {
                             MPTProofType::NonExistingAccountProof as u64

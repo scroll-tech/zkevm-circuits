@@ -763,7 +763,8 @@ pub fn build_state_code_db(
                 balance: proof.balance,
                 storage,
                 code_hash: proof.code_hash,
-                ..Default::default()
+                keccak_code_hash: proof.keccak_code_hash,
+                code_size: proof.code_size,
             },
         )
     }

@@ -6,7 +6,8 @@ use crate::{
     },
     state_db::{self, CodeDB, StateDB},
 };
-use eth_types::{geth_types::GethData, Word};
+use eth_types::{geth_types::GethData, ToWord, Word, H256};
+use ethers_core::utils::keccak256;
 
 const MOCK_OLD_STATE_ROOT: u64 = 0xcafeu64;
 
@@ -65,12 +66,13 @@ impl BlockData {
         }
 
         for account in geth_data.accounts {
-            let code_hash = code_db.insert(account.code.to_vec());
+            let keccak_code_hash = H256(keccak256(account.code.to_vec()));
             log::trace!(
                 "trace code {:?} {:?}",
-                code_hash,
+                keccak_code_hash,
                 hex::encode(account.code.to_vec())
             );
+            let code_hash = code_db.insert(account.code.to_vec());
             sdb.set_account(
                 &account.address,
                 state_db::Account {
@@ -78,7 +80,8 @@ impl BlockData {
                     balance: account.balance,
                     storage: account.storage,
                     code_hash,
-                    ..Default::default()
+                    keccak_code_hash,
+                    code_size: account.code.len().to_word(),
                 },
             );
         }

@@ -23,7 +23,7 @@ use eth_types::{
     },
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
-use ethers_core::utils::{get_contract_address, get_create2_address};
+use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -90,6 +90,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     );
                     gas_left -= deposit_cost;
                 }
+
                 Gas(gas_left)
             } else {
                 // consume all remaining gas when non revert err happens
@@ -293,6 +294,19 @@ impl<'a> CircuitInputStateRef<'a> {
         let account_value_prev = match op.field {
             AccountField::Nonce => account.nonce,
             AccountField::Balance => account.balance,
+            AccountField::KeccakCodeHash => {
+                if account.is_empty() {
+                    if op.value.is_zero() {
+                        // Writing code_hash=0 to empty account is a noop to the StateDB.
+                        return;
+                    }
+                    // Reading a code_hash=EMPTY_HASH of an empty account in the StateDB is encoded
+                    // as code_hash=0 (non-existing account encoding) in the State Circuit.
+                    Word::zero()
+                } else {
+                    account.keccak_code_hash.to_word()
+                }
+            }
             AccountField::CodeHash => {
                 if account.is_empty() {
                     if op.value.is_zero() {
@@ -306,6 +320,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     account.code_hash.to_word()
                 }
             }
+            AccountField::CodeSize => account.code_size,
         };
 
         // Verify that the previous value matches the account field value in the StateDB
@@ -323,8 +338,10 @@ impl<'a> CircuitInputStateRef<'a> {
         // account (only CodeHash reads with value=0 can be done to non-existing
         // accounts, which the State Circuit translates to MPT
         // AccountNonExisting proofs lookups).
-        if (!matches!(op.field, AccountField::CodeHash)
-            && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
+        if (!matches!(
+            op.field,
+            AccountField::CodeHash | AccountField::KeccakCodeHash
+        ) && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
             && account.is_empty()
         {
             log::error!(
@@ -340,7 +357,11 @@ impl<'a> CircuitInputStateRef<'a> {
             match op.field {
                 AccountField::Nonce => account.nonce = op.value,
                 AccountField::Balance => account.balance = op.value,
+                AccountField::KeccakCodeHash => {
+                    account.keccak_code_hash = H256::from(op.value.to_be_bytes())
+                }
                 AccountField::CodeHash => account.code_hash = H256::from(op.value.to_be_bytes()),
+                AccountField::CodeSize => account.code_size = op.value,
             }
         }
     }
@@ -1044,12 +1065,15 @@ impl<'a> CircuitInputStateRef<'a> {
             let code = call_ctx
                 .memory
                 .read_chunk(offset.low_u64().into(), length.low_u64().into());
+            let keccak_code_hash = H256(keccak256(&code));
             let code_hash = self.code_db.insert(code);
             let (found, callee_account) = self.sdb.get_account_mut(&call.address);
             if !found {
                 return Err(Error::AccountNotFound(call.address));
             }
             callee_account.code_hash = code_hash;
+            callee_account.keccak_code_hash = keccak_code_hash;
+            callee_account.code_size = length;
         }
 
         // Handle reversion if this call doesn't end successfully
