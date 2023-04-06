@@ -43,9 +43,11 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     transfer: TransferGadget<F>,
     init_code: MemoryAddressGadget<F>,
     init_code_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    init_code_rlc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
     create: ContractCreateGadget<F, IS_CREATE2>,
+    keccak_code_hash: Cell<F>,
     keccak_output: Word<F>,
     // prevous code hash befor creating
     code_hash_previous: Cell<F>,
@@ -109,23 +111,31 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         cb.stack_push(callee_is_success.expr() * new_address_rlc);
 
-        cb.condition(init_code.has_length(), |cb| {
-            // TODO(rohit): lookup to keccak table to verify keccak code hash?
+        let (init_code_rlc, keccak_code_hash) = cb.condition(init_code.has_length(), |cb| {
+            // the init code is being copied from memory to bytecode, so a copy table lookup to
+            // verify that the associated fields for the copy event.
+            let keccak_code_hash = cb.query_cell_phase2();
+            let init_code_rlc = cb.query_cell_phase2();
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                create.code_hash_word_rlc(cb),
+                create.code_hash_word_rlc(),
                 CopyDataType::Bytecode.expr(),
                 init_code.offset(),
                 init_code.address(),
                 0.expr(),
                 init_code.length(),
-                0.expr(),
+                init_code_rlc.expr(),
                 init_code.length(),
             );
+            cb.keccak_table_lookup(
+                init_code_rlc.expr(),
+                init_code.length(),
+                keccak_code_hash.expr(),
+            );
+            (init_code_rlc, keccak_code_hash)
         });
-        cb.condition(not::expr(init_code.has_length()), |_cb| {
-            /* FIXME
+        cb.condition(not::expr(init_code.has_length()), |cb| {
             cb.require_equal(
                 "keccak hash of empty bytes",
                 keccak_code_hash.expr(),
@@ -133,10 +143,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             );
             cb.require_equal(
                 "code hash of empty bytes",
-                create.code_hash_keccak_rlc(cb),
+                create.code_hash_word_rlc(),
                 cb.empty_code_hash_rlc(),
             );
-            */
         });
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -273,17 +282,19 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             (CallContextFieldTag::IsRoot, false.expr()),
             (CallContextFieldTag::IsStatic, false.expr()),
             (CallContextFieldTag::IsCreate, true.expr()),
-            (CallContextFieldTag::CodeHash, create.code_hash_word_rlc(cb)),
+            (CallContextFieldTag::CodeHash, create.code_hash_word_rlc()),
             (CallContextFieldTag::Value, value.expr()),
         ] {
             cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
         }
 
+        // keccak table lookup to verify contract address.
         cb.keccak_table_lookup(
             create.input_rlc(cb),
             create.input_length(),
             keccak_output.expr(),
         );
+
         cb.condition(
             init_code.has_length() * not_address_collision.expr(),
             |cb| {
@@ -292,7 +303,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     call_id: To(callee_call_id.expr()),
                     is_root: To(false.expr()),
                     is_create: To(true.expr()),
-                    code_hash: To(create.code_hash_word_rlc(cb)),
+                    code_hash: To(create.code_hash_word_rlc()),
                     gas_left: To(callee_gas_left),
                     reversible_write_counter: To(1.expr() + transfer.reversible_w_delta()),
                     ..StepStateTransition::new_context()
@@ -351,11 +362,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             callee_reversion_info,
             transfer,
             init_code,
+            init_code_rlc,
             memory_expansion,
             gas_left,
             callee_is_success,
             init_code_word_size,
             create,
+            keccak_code_hash,
             keccak_output,
             code_hash_previous,
             not_address_collision,
@@ -391,10 +404,16 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             ..4 + usize::from(is_create2) + init_code_length.as_usize())
             .map(|i| block.rws[step.rw_indices[i]].memory_value())
             .collect();
+        let keccak_code_hash = keccak256(&values);
 
         let init_code_address =
             self.init_code
                 .assign(region, offset, init_code_start, init_code_length)?;
+        self.init_code_rlc.assign(
+            region,
+            offset,
+            region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>()),
+        )?;
 
         self.tx_id
             .assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
@@ -527,7 +546,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             once(0xffu8)
                 .chain(call.callee_address.to_fixed_bytes())
                 .chain(salt.to_be_bytes())
-                .chain(keccak256(&values))
+                .chain(keccak_code_hash)
                 .collect()
         } else {
             let mut stream = ethers_core::utils::rlp::RlpStream::new();
@@ -548,9 +567,17 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             offset,
             call.callee_address,
             caller_nonce,
-            Some(U256::from_big_endian(&code_hash)),
+            Some(U256::from(keccak_code_hash)),
+            Some(U256::from(code_hash.to_fixed_bytes())),
             Some(salt),
         )?;
+
+        self.keccak_code_hash.assign(
+            region,
+            offset,
+            region.word_rlc(U256::from_big_endian(&keccak_code_hash)),
+        )?;
+
         Ok(())
     }
 }

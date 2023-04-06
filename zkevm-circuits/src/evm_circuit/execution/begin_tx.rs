@@ -695,6 +695,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             tx.caller_address,
             tx.nonce,
+            None,
             Some(callee_code_hash),
             None,
         )?;

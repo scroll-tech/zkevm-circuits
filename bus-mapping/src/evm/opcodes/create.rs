@@ -226,7 +226,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 get_create2_address(
                     caller.address,
                     salt.to_be_bytes().to_vec(),
-                    initialization_code
+                    initialization_code.clone(),
                 )
             );
             std::iter::once(0xffu8)
@@ -248,6 +248,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         );
 
         state.block.sha3_inputs.push(keccak_input);
+        state.block.sha3_inputs.push(initialization_code);
 
         if length == 0 || callee_exists {
             for (field, value) in [
