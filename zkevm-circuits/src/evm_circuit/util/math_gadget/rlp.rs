@@ -229,6 +229,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Assign witness data to the ContractCreate gadget.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -247,7 +248,9 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         self.nonce.assign(region, offset, caller_nonce)?;
 
         #[cfg(feature = "poseidon-codehash")]
-        debug_assert_ne!(code_hash, keccak_code_hash);
+        if code_hash.is_some() || keccak_code_hash.is_some() {
+            debug_assert_ne!(code_hash, keccak_code_hash);
+        }
         #[cfg(not(feature = "poseidon-codehash"))]
         debug_assert_eq!(code_hash, keccak_code_hash);
 

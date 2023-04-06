@@ -141,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
             // keccak hash of code.
             let keccak_code_hash = cb.query_cell_phase2();
-                #[cfg(feature = "scroll")]
+            #[cfg(feature = "scroll")]
             cb.account_write(
                 address.expr(),
                 AccountFieldTag::KeccakCodeHash,
@@ -160,7 +160,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             // code size.
             let code_size = cb.query_cell_phase2();
             cb.require_equal("range == code size", range.length(), code_size.expr());
-                #[cfg(feature = "scroll")]
+            #[cfg(feature = "scroll")]
             cb.account_write(
                 address.expr(),
                 AccountFieldTag::CodeSize,
