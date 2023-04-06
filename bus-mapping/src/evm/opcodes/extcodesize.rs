@@ -266,7 +266,7 @@ mod extcodesize_tests {
         let rw_offset = 6;
         #[cfg(feature = "scroll")]
         let rw_offset = if exists { rw_offset + 1 } else { rw_offset };
-        let operation = &container.stack[rw_offset];
+        let operation = &container.stack[indices[rw_offset].as_usize()];
         assert_eq!(operation.rw(), RW::WRITE);
         assert_eq!(
             operation.op(),
