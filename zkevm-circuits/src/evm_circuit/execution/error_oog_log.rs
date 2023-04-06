@@ -130,7 +130,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
         let gas_cost = GasCost::LOG.as_u64()
             + GasCost::LOG.as_u64() * topic_count
-            + 8 * memory_address
+            + 8 * msize.low_u64()
             + memory_expansion_cost;
         // Gas insufficient check
         self.insufficient_gas
