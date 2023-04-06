@@ -375,13 +375,14 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_contract_deployment = call.is_create && call.is_success && !length.is_zero();
         if !call.is_root {
-            let rw_counter_offset = 3 + if is_contract_deployment {
-                5 + length.as_u64()
-            } else {
-                0
-            };
-            #[cfg(feature = "scroll")]
-            let rw_counter_offset = rw_counter_offset + 2;
+            let mut rw_counter_offset = 3;
+            if is_contract_deployment {
+                rw_counter_offset += 5 + length.as_u64();
+                #[cfg(feature = "scroll")]
+                {
+                    rw_counter_offset += 2;
+                }
+            }
             self.restore_context.assign(
                 region,
                 offset,
