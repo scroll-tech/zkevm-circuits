@@ -4,10 +4,9 @@ use crate::{
     evm::opcodes::ExecStep,
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
     state_db::CodeDB,
-    util::KECCAK_CODE_HASH_ZERO,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
+use eth_types::{Bytecode, GethExecStep, ToWord, H256};
 use ethers_core::utils::keccak256;
 
 #[derive(Debug, Copy, Clone)]
@@ -79,15 +78,6 @@ impl Opcode for ReturnRevert {
                     field: AccountField::KeccakCodeHash,
                     value: code_info.keccak_hash.to_word(),
                     value_prev: crate::util::KECCAK_CODE_HASH_ZERO.to_word(),
-                },
-            )?;
-            state.push_op_reversible(
-                &mut exec_step,
-                AccountOp {
-                    address: state.call()?.address,
-                    field: AccountField::KeccakCodeHash,
-                    value: code_info.keccak_hash.to_word(),
-                    value_prev: KECCAK_CODE_HASH_ZERO.to_word(),
                 },
             )?;
             state.push_op_reversible(

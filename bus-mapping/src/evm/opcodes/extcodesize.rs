@@ -61,7 +61,7 @@ impl Opcode for Extcodesize {
         state.account_read(
             &mut exec_step,
             address,
-            AccountField::KeccakCodeHash,
+            AccountField::CodeHash,
             code_hash.to_word(),
         );
         // If "scroll" feature is enabled, CodeSize is read of AccountTrie,
@@ -92,6 +92,7 @@ mod extcodesize_tests {
         circuit_input_builder::ExecState,
         mock::BlockData,
         operation::{AccountOp, CallContextOp, StackOp, RW},
+        state_db::CodeDB,
     };
     use eth_types::{
         bytecode,
@@ -99,7 +100,6 @@ mod extcodesize_tests {
         geth_types::{Account, GethData},
         Bytecode, U256,
     };
-    use ethers_core::utils::keccak256;
     use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
     use pretty_assertions::assert_eq;
 
@@ -236,15 +236,14 @@ mod extcodesize_tests {
             }
         );
 
-        let code_hash = Word::from(keccak256(account.code.clone()));
-        let code_size = account.code.len().to_word();
+        let code_hash = CodeDB::hash(&account.code).to_word();
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
             &AccountOp {
                 address: account.address,
-                field: AccountField::KeccakCodeHash,
+                field: AccountField::CodeHash,
                 value: if exists { code_hash } else { Word::zero() },
                 value_prev: if exists { code_hash } else { Word::zero() },
             }

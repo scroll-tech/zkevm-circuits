@@ -361,7 +361,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let is_contract_deployment = call.is_create && call.is_success && !length.is_zero();
         if !call.is_root {
             let rw_counter_offset = 3 + if is_contract_deployment {
-                7 + length.as_u64()
+                5 + length.as_u64()
             } else {
                 0
             };

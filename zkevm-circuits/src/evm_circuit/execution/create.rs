@@ -21,8 +21,8 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
-use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord, U256};
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use gadgets::util::expr_from_bytes;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -542,13 +542,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.keccak_output
             .assign(region, offset, Some(keccak_output))?;
 
-        let code_hash = CodeDB::hash(&values);
+        let code_hash = keccak256(&values);
         self.create.assign(
             region,
             offset,
             call.callee_address,
             caller_nonce,
-            Some(code_hash.to_word()),
+            Some(U256::from_big_endian(&code_hash)),
             Some(salt),
         )?;
         Ok(())
