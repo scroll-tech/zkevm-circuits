@@ -11,6 +11,8 @@ runner2=$(aws ec2 describe-instances --profile $profile --filters Name=tag:Name,
 
 while true; do
     runner_status=$(aws ec2 describe-instances --profile $profile --instance-ids $runner1 --query "Reservations[*].Instances[*].State.[Name]" ${region_opt} --output text)
+    echo 'runner1'
+    echo $runner_status
     if [[ $runner_status = "stopped" ]]; then
         aws ec2 start-instances --profile $profile --instance-ids $runner1 ${region_opt}
         break
@@ -27,6 +29,8 @@ done
 
 while true; do
     runner_status=$(aws ec2 describe-instances --profile $profile --instance-ids $runner2 --query "Reservations[*].Instances[*].State.[Name]" --output text)
+    echo 'runner2'
+    echo $runner_status
     if [[ $runner_status = "stopped" ]]; then
         aws ec2 start-instances --profile $profile --instance-ids $runner2
         break
