@@ -96,8 +96,6 @@ impl Account {
     pub fn is_empty(&self) -> bool {
         self.nonce.is_zero()
             && self.balance.is_zero()
-            //&& self.storage.is_empty()
-            && self.keccak_code_hash.eq(&KECCAK_CODE_HASH_ZERO)
             && self.code_hash.eq(&CodeDB::empty_code_hash())
             && self.code_size.is_zero()
     }
