@@ -332,8 +332,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_code_store: Box<ErrorCodeStoreGadget<F>>,
     error_oog_self_destruct:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>>,
-    error_insufficient_balance:
-        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>>,
     error_nonce_uint_overflow:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorNonceUintOverflow }>>,
     error_invalid_jump: Box<ErrorInvalidJumpGadget<F>>,
@@ -597,7 +595,6 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_create2: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
             error_code_store: configure_gadget!(),
-            error_insufficient_balance: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
             error_invalid_opcode: configure_gadget!(),
             error_write_protection: configure_gadget!(),
@@ -1423,10 +1420,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorStack => {
                 assign_exec_step!(self.error_stack)
-            }
-
-            ExecutionState::ErrorInsufficientBalance => {
-                assign_exec_step!(self.error_insufficient_balance)
             }
             ExecutionState::ErrorInvalidJump => {
                 assign_exec_step!(self.error_invalid_jump)

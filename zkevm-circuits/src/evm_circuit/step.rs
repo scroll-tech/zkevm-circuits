@@ -90,7 +90,6 @@ pub enum ExecutionState {
     ErrorStack,
     ErrorWriteProtection,
     ErrorDepth,
-    ErrorInsufficientBalance,
     ErrorNonceUintOverflow,
     ErrorContractAddressCollision,
     ErrorInvalidCreationCode,
@@ -142,7 +141,6 @@ impl ExecutionState {
                 | Self::ErrorStack
                 | Self::ErrorWriteProtection
                 | Self::ErrorDepth
-                | Self::ErrorInsufficientBalance
                 | Self::ErrorContractAddressCollision
                 | Self::ErrorInvalidCreationCode
                 | Self::ErrorInvalidJump

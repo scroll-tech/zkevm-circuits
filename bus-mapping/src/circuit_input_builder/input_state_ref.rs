@@ -6,7 +6,7 @@ use super::{
     TransactionContext,
 };
 use crate::{
-    error::{get_step_reported_error, ExecError},
+    error::{get_step_reported_error, ExecError, InsufficientBalanceError},
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
@@ -1390,7 +1390,20 @@ impl<'a> CircuitInputStateRef<'a> {
                 return Err(Error::AccountNotFound(sender));
             }
             if account.balance < value {
-                return Ok(Some(ExecError::InsufficientBalance));
+                return Ok(Some(match step.op {
+                    OpcodeId::CALL | OpcodeId::CALLCODE => {
+                        ExecError::InsufficientBalance(InsufficientBalanceError::Call)
+                    }
+                    OpcodeId::CREATE => {
+                        ExecError::InsufficientBalance(InsufficientBalanceError::Create)
+                    }
+                    OpcodeId::CREATE2 => {
+                        ExecError::InsufficientBalance(InsufficientBalanceError::Create2)
+                    }
+                    op => {
+                        unreachable!("insufficient balance error unexpected for opcode: {:?}", op)
+                    }
+                }));
             }
 
             // Address collision
