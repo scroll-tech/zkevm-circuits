@@ -26,7 +26,7 @@ use crate::{
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
 use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::keccak256;
-use gadgets::util::expr_from_bytes;
+use gadgets::util::{and, expr_from_bytes};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use std::iter::once;
@@ -132,11 +132,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 init_code_rlc.expr(),
                 init_code.length(),
             );
-            cb.keccak_table_lookup(
-                init_code_rlc.expr(),
-                init_code.length(),
-                keccak_code_hash.expr(),
-            );
             (init_code_rlc, keccak_code_hash)
         });
         cb.condition(not::expr(init_code.has_length()), |cb| {
@@ -185,6 +180,20 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         );
         let is_insufficient_balance = LtWordGadget::construct(cb, &caller_balance, &value);
 
+        cb.condition(
+            and::expr([
+                init_code.has_length(),
+                not::expr(is_insufficient_balance.expr()),
+            ]),
+            |cb| {
+                cb.keccak_table_lookup(
+                    init_code_rlc.expr(),
+                    init_code.length(),
+                    keccak_code_hash.expr(),
+                );
+            },
+        );
+
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
         cb.require_equal(
             "callee_is_persistent == is_persistent ⋅ is_success",
@@ -216,26 +225,32 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         });
 
         // conditional transfer for address collision case
-        let transfer = cb.condition(not_address_collision.expr(), |cb| {
-            let tansfer_gadget = TransferGadget::construct(
-                cb,
-                create.caller_address(),
-                new_address.clone(),
-                0.expr(),
-                1.expr(),
-                value.clone(),
-                &mut callee_reversion_info,
-            );
-            cb.account_write(
-                new_address.clone(),
-                AccountFieldTag::Nonce,
-                1.expr(),
-                0.expr(),
-                Some(&mut callee_reversion_info),
-            );
+        let transfer = cb.condition(
+            and::expr([
+                not_address_collision.expr(),
+                not::expr(is_insufficient_balance.expr()),
+            ]),
+            |cb| {
+                let tansfer_gadget = TransferGadget::construct(
+                    cb,
+                    create.caller_address(),
+                    new_address.clone(),
+                    0.expr(),
+                    1.expr(),
+                    value.clone(),
+                    &mut callee_reversion_info,
+                );
+                cb.account_write(
+                    new_address.clone(),
+                    AccountFieldTag::Nonce,
+                    1.expr(),
+                    0.expr(),
+                    Some(&mut callee_reversion_info),
+                );
 
-            tansfer_gadget
-        });
+                tansfer_gadget
+            },
+        );
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [init_code.address()]);
 
@@ -275,76 +290,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         let depth = cb.call_context(None, CallContextFieldTag::Depth);
 
-        for (field_tag, value) in [
-            (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
-            (CallContextFieldTag::IsSuccess, callee_is_success.expr()),
-            (
-                CallContextFieldTag::IsPersistent,
-                callee_reversion_info.is_persistent(),
-            ),
-            (CallContextFieldTag::TxId, tx_id.expr()),
-            (CallContextFieldTag::CallerAddress, create.caller_address()),
-            (CallContextFieldTag::CalleeAddress, new_address),
-            (
-                CallContextFieldTag::RwCounterEndOfReversion,
-                callee_reversion_info.rw_counter_end_of_reversion(),
-            ),
-            (CallContextFieldTag::Depth, depth.expr() + 1.expr()),
-            (CallContextFieldTag::IsRoot, false.expr()),
-            (CallContextFieldTag::IsStatic, false.expr()),
-            (CallContextFieldTag::IsCreate, true.expr()),
-            (CallContextFieldTag::CodeHash, create.code_hash_word_rlc()),
-            (CallContextFieldTag::Value, value.expr()),
-        ] {
-            cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
-        }
-
-        // keccak table lookup to verify contract address.
-        cb.keccak_table_lookup(
-            create.input_rlc(cb),
-            create.input_length(),
-            keccak_output.expr(),
-        );
-
-        cb.condition(
-            init_code.has_length() * not_address_collision.expr(),
-            |cb| {
-                cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(cb.rw_counter_offset()),
-                    call_id: To(callee_call_id.expr()),
-                    is_root: To(false.expr()),
-                    is_create: To(true.expr()),
-                    code_hash: To(create.code_hash_word_rlc()),
-                    gas_left: To(callee_gas_left),
-                    reversible_write_counter: To(1.expr() + transfer.reversible_w_delta()),
-                    ..StepStateTransition::new_context()
-                })
-            },
-        );
-
-        cb.condition(
-            not::expr(init_code.has_length()) * not_address_collision.expr(),
-            |cb| {
-                for field_tag in [
-                    CallContextFieldTag::LastCalleeId,
-                    CallContextFieldTag::LastCalleeReturnDataOffset,
-                    CallContextFieldTag::LastCalleeReturnDataLength,
-                ] {
-                    cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
-                }
-                cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(cb.rw_counter_offset()),
-                    program_counter: Delta(1.expr()),
-                    stack_pointer: Delta(2.expr() + IS_CREATE2.expr()),
-                    gas_left: Delta(-gas_cost),
-                    reversible_write_counter: Delta(3.expr() + transfer.reversible_w_delta()),
-                    ..Default::default()
-                })
-            },
-        );
-
-        // handle collision case
-        cb.condition(not::expr(not_address_collision.expr()), |cb| {
+        // handle the case where caller balance was insufficient.
+        cb.condition(is_insufficient_balance.expr(), |cb| {
+            // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
                 CallContextFieldTag::LastCalleeReturnDataOffset,
@@ -352,15 +300,111 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             ] {
                 cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
             }
+
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(cb.rw_counter_offset()),
                 program_counter: Delta(1.expr()),
-                stack_pointer: Delta(3.expr()),
-
-                gas_left: To(gas_left.quotient()),
+                stack_pointer: Delta(2.expr() + IS_CREATE2.expr()),
+                memory_word_size: To(memory_expansion.next_memory_word_size()),
+                // - (Reversible) Write TxAccessListAccount (Contract Address)
+                // - (Reversible) Write Account (Caller) Nonce
                 reversible_write_counter: Delta(2.expr()),
-                ..Default::default()
-            })
+                gas_left: Delta(-gas_cost.expr()),
+                ..StepStateTransition::default()
+            });
+        });
+
+        // proceed to handle the case where caller balance was sufficient.
+        cb.condition(not::expr(is_insufficient_balance.expr()), |cb| {
+            for (field_tag, value) in [
+                (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
+                (CallContextFieldTag::IsSuccess, callee_is_success.expr()),
+                (
+                    CallContextFieldTag::IsPersistent,
+                    callee_reversion_info.is_persistent(),
+                ),
+                (CallContextFieldTag::TxId, tx_id.expr()),
+                (CallContextFieldTag::CallerAddress, create.caller_address()),
+                (CallContextFieldTag::CalleeAddress, new_address),
+                (
+                    CallContextFieldTag::RwCounterEndOfReversion,
+                    callee_reversion_info.rw_counter_end_of_reversion(),
+                ),
+                (CallContextFieldTag::Depth, depth.expr() + 1.expr()),
+                (CallContextFieldTag::IsRoot, false.expr()),
+                (CallContextFieldTag::IsStatic, false.expr()),
+                (CallContextFieldTag::IsCreate, true.expr()),
+                (CallContextFieldTag::CodeHash, create.code_hash_word_rlc()),
+                (CallContextFieldTag::Value, value.expr()),
+            ] {
+                cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
+            }
+
+            // keccak table lookup to verify contract address.
+            cb.keccak_table_lookup(
+                create.input_rlc(cb),
+                create.input_length(),
+                keccak_output.expr(),
+            );
+
+            // handle state transition if non-empty init code and no collision.
+            cb.condition(
+                init_code.has_length() * not_address_collision.expr(),
+                |cb| {
+                    cb.require_step_state_transition(StepStateTransition {
+                        rw_counter: Delta(cb.rw_counter_offset()),
+                        call_id: To(callee_call_id.expr()),
+                        is_root: To(false.expr()),
+                        is_create: To(true.expr()),
+                        code_hash: To(create.code_hash_word_rlc()),
+                        gas_left: To(callee_gas_left),
+                        reversible_write_counter: To(1.expr() + transfer.reversible_w_delta()),
+                        ..StepStateTransition::new_context()
+                    })
+                },
+            );
+
+            // handle state transition if empty init code and no collision.
+            cb.condition(
+                not::expr(init_code.has_length()) * not_address_collision.expr(),
+                |cb| {
+                    for field_tag in [
+                        CallContextFieldTag::LastCalleeId,
+                        CallContextFieldTag::LastCalleeReturnDataOffset,
+                        CallContextFieldTag::LastCalleeReturnDataLength,
+                    ] {
+                        cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
+                    }
+                    cb.require_step_state_transition(StepStateTransition {
+                        rw_counter: Delta(cb.rw_counter_offset()),
+                        program_counter: Delta(1.expr()),
+                        stack_pointer: Delta(2.expr() + IS_CREATE2.expr()),
+                        gas_left: Delta(-gas_cost.expr()),
+                        reversible_write_counter: Delta(3.expr() + transfer.reversible_w_delta()),
+                        ..Default::default()
+                    })
+                },
+            );
+
+            // handle address collision.
+            cb.condition(not::expr(not_address_collision.expr()), |cb| {
+                for field_tag in [
+                    CallContextFieldTag::LastCalleeId,
+                    CallContextFieldTag::LastCalleeReturnDataOffset,
+                    CallContextFieldTag::LastCalleeReturnDataLength,
+                ] {
+                    cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
+                }
+
+                cb.require_step_state_transition(StepStateTransition {
+                    rw_counter: Delta(cb.rw_counter_offset()),
+                    program_counter: Delta(1.expr()),
+                    stack_pointer: Delta(3.expr()),
+                    gas_left: To(gas_left.quotient()),
+                    reversible_write_counter: Delta(2.expr()),
+                    ..Default::default()
+                })
+            });
         });
 
         Self {
@@ -467,6 +511,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             [step.rw_indices[10 + usize::from(is_create2) + copy_rw_increase]]
             .account_balance_pair()
             .1;
+        let is_insufficient_balance = caller_balance < value;
 
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [11, 12].map(|i| {
             let rw = block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]];
@@ -495,7 +540,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let is_address_collision = !code_hash_previous.0.is_zero();
 
         let mut rw_offset = 0;
-        if !is_address_collision {
+        if !is_address_collision && !is_insufficient_balance {
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
                 rw_offset += 2;
                 [15, 16].map(|i| {
@@ -545,7 +590,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 F::zero()
             } else {
                 block.rws
-                    [step.rw_indices[23 + rw_offset + usize::from(is_create2) + copy_rw_increase]]
+                    [step.rw_indices[22 + rw_offset + usize::from(is_create2) + copy_rw_increase]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
