@@ -461,6 +461,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             ..4 + usize::from(is_create2) + init_code_length.as_usize())
             .map(|i| block.rws[step.rw_indices[i]].memory_value())
             .collect();
+        let copy_rw_increase = init_code_length.as_usize();
         let keccak_code_hash = keccak256(&values);
 
         let init_code_address =
@@ -487,7 +488,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             call.is_persistent,
         )?;
 
-        let copy_rw_increase = init_code_length.as_usize();
         let tx_access_rw =
             block.rws[step.rw_indices[7 + usize::from(is_create2) + copy_rw_increase]];
         self.was_warm.assign(
@@ -539,10 +539,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             .assign_value(region, offset, code_hash_previous_rlc)?;
         let is_address_collision = !code_hash_previous.0.is_zero();
 
-        let mut rw_offset = 0;
         if !is_address_collision && !is_insufficient_balance {
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-                rw_offset += 2;
                 [15, 16].map(|i| {
                     block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]]
                         .account_balance_pair()
@@ -586,11 +584,10 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.callee_is_success.assign(
             region,
             offset,
-            Value::known(if is_address_collision {
+            Value::known(if is_address_collision || is_insufficient_balance {
                 F::zero()
             } else {
-                block.rws
-                    [step.rw_indices[22 + rw_offset + usize::from(is_create2) + copy_rw_increase]]
+                block.rws[step.rw_indices[25 + usize::from(is_create2) + copy_rw_increase]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
