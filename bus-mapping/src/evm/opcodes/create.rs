@@ -103,6 +103,14 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 value_prev: caller_nonce.into(),
             },
         )?;
+        let caller_balance = state.sdb.get_balance(&callee.caller_address);
+        state.account_read(
+            &mut exec_step,
+            callee.caller_address,
+            AccountField::Balance,
+            caller_balance,
+        );
+        let insufficient_balance = callee.value > caller_balance;
 
         // TODO: look into when this can be pushed. Could it be done in parse call?
         state.push_call(callee.clone());
@@ -142,7 +150,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             code_hash_previous.to_word(),
         );
 
-        if !callee_exists {
+        if !callee_exists && !insufficient_balance {
             state.transfer(
                 &mut exec_step,
                 callee.caller_address,
@@ -191,6 +199,18 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             CallContextField::Depth,
             caller.depth.to_word(),
         );
+
+        if insufficient_balance {
+            for (field, value) in [
+                (CallContextField::LastCalleeId, 0.into()),
+                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextField::LastCalleeReturnDataLength, 0.into()),
+            ] {
+                state.call_context_write(&mut exec_step, caller.call_id, field, value);
+            }
+            state.handle_return(geth_step)?;
+            return Ok(vec![exec_step]);
+        }
 
         for (field, value) in [
             (CallContextField::CallerId, caller.call_id.into()),

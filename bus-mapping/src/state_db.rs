@@ -202,6 +202,12 @@ impl StateDB {
         self.dirty_storage.insert((*addr, *key), *value);
     }
 
+    /// Get balance of account with the given address.
+    pub fn get_balance(&self, addr: &Address) -> Word {
+        let (_, account) = self.get_account(addr);
+        account.balance
+    }
+
     /// Get nonce of account with `addr`.
     pub fn get_nonce(&self, addr: &Address) -> u64 {
         let (_, account) = self.get_account(addr);
