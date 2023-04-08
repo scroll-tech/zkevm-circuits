@@ -539,8 +539,10 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             .assign_value(region, offset, code_hash_previous_rlc)?;
         let is_address_collision = !code_hash_previous.0.is_zero();
 
+        let mut rw_offset = 0;
         if !is_address_collision && !is_insufficient_balance {
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
+                rw_offset += 2;
                 [15, 16].map(|i| {
                     block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]]
                         .account_balance_pair()
@@ -587,7 +589,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Value::known(if is_address_collision || is_insufficient_balance {
                 F::zero()
             } else {
-                block.rws[step.rw_indices[25 + usize::from(is_create2) + copy_rw_increase]]
+                block.rws
+                    [step.rw_indices[23 + rw_offset + usize::from(is_create2) + copy_rw_increase]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
