@@ -9,12 +9,10 @@ pub mod opcode_ids;
 pub mod stack;
 pub mod storage;
 
-pub use {
-    memory::{Memory, MemoryAddress},
-    opcode_ids::OpcodeId,
-    stack::{Stack, StackAddress},
-    storage::Storage,
-};
+pub use memory::{Memory, MemoryAddress};
+pub use opcode_ids::OpcodeId;
+pub use stack::{Stack, StackAddress};
+pub use storage::Storage;
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
 #[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
@@ -52,7 +50,7 @@ impl ProgramCounter {
     }
 }
 
-/// Defines the gas left to perate.
+/// Defines the gas left to operate.
 #[derive(Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Gas(pub u64);
 
@@ -62,6 +60,10 @@ impl fmt::Debug for Gas {
     }
 }
 
+/// This constant ((2^32 - 1) * 32) is the highest number that can be used without overflowing the
+/// square operation of gas calculation.
+/// <https://github.com/ethereum/go-ethereum/blob/e6b6a8b738069ad0579f6798ee59fde93ed13b43/core/vm/gas_table.go#L38>
+pub const MAX_EXPANDED_MEMORY_ADDRESS: u64 = 0x1FFFFFFFE0;
 /// Quotient for max refund of gas used
 pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
 /// Gas stipend when CALL or CALLCODE is attached with value.
@@ -136,6 +138,9 @@ impl GasCost {
     pub const MEMORY_EXPANSION_LINEAR_COEFF: Self = Self(3);
     /// Constant gas for LOG[0-4] op codes
     pub const LOG: Self = Self(375);
+    /// Times ceil exponent byte size for the EXP instruction, EIP-158 changed
+    /// it from 10 to 50.
+    pub const EXP_BYTE_TIMES: Self = Self(50);
 }
 
 impl GasCost {

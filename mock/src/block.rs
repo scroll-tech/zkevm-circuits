@@ -2,8 +2,7 @@
 
 use crate::{MockTransaction, MOCK_BASEFEE, MOCK_CHAIN_ID, MOCK_DIFFICULTY, MOCK_GASLIMIT};
 use eth_types::{Address, Block, Bytes, Hash, Transaction, Word, H64, U64};
-use ethers_core::types::Bloom;
-use ethers_core::types::OtherFields;
+use ethers_core::types::{Bloom, OtherFields};
 
 #[derive(Clone, Debug)]
 /// Mock structure which represents an Ethereum Block and can be used for tests.

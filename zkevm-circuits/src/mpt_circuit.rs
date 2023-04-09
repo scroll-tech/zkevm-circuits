@@ -10,14 +10,13 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
-use mpt_zktrie::hash::Hashable;
-use mpt_zktrie::{operation::AccountOp, EthTrie, EthTrieCircuit, EthTrieConfig};
+use mpt_zktrie::{hash::Hashable, operation::AccountOp, EthTrie, EthTrieCircuit, EthTrieConfig};
 
 /// re-wrapping for mpt circuit
 #[derive(Default, Clone, Debug)]
 pub struct MptCircuit<F: Field>(pub(crate) EthTrieCircuit<F, false>);
 
-/// Circuit configuration argumen ts
+/// Circuit configuration argument ts
 pub struct MptCircuitConfigArgs<F: Field> {
     /// PoseidonTable
     pub poseidon_table: PoseidonTable,
@@ -69,7 +68,7 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
             (
                 // notice we do not use the accompanied hash circuit so just assign any size
                 100usize,
-                Some(block.evm_circuit_pad_to),
+                Some(block.circuits_params.max_rws),
             ),
             &block.mpt_updates.proof_types,
         );
@@ -99,7 +98,7 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
     ) -> Result<(), Error> {
         config.0.load_mpt_table(
             layouter,
-            Some(extract_field(challenges.evm_word())),
+            crate::test_util::escape_value(challenges.evm_word()),
             self.0.ops.as_slice(),
             self.0.mpt_table.iter().copied(),
             self.0.calcs,

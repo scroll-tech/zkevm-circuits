@@ -1,7 +1,9 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{AccountField, CallContextField};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    operation::{AccountField, CallContextField},
+    Error,
+};
 use eth_types::{GethExecStep, ToWord};
 
 #[derive(Debug, Copy, Clone)]
@@ -31,8 +33,7 @@ impl Opcode for Selfbalance {
             callee_address,
             AccountField::Balance,
             self_balance,
-            self_balance,
-        )?;
+        );
 
         // Stack write of self_balance
         state.stack_write(

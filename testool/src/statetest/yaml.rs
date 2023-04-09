@@ -1,14 +1,12 @@
-use super::parse;
-use super::spec::{AccountMatch, Env, StateTest};
-use crate::utils::MainnetFork;
-use crate::Compiler;
+use super::{
+    parse,
+    spec::{AccountMatch, Env, StateTest},
+};
+use crate::{utils::MainnetFork, Compiler};
 use anyhow::{bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
-use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::utils::secret_key_to_address;
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::str::FromStr;
+use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
+use std::{collections::HashMap, convert::TryInto, str::FromStr};
 use yaml_rust::Yaml;
 
 type Label = String;
@@ -102,8 +100,10 @@ impl<'a> YamlStateTestBuilder<'a> {
                 .map(Self::parse_u256)
                 .collect::<Result<_>>()?;
 
+            let max_fee_per_gas = Self::parse_u256(&yaml_transaction["maxFeePerGas"])
+                .unwrap_or_else(|_| U256::zero());
             let gas_price =
-                Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| U256::one());
+                Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or(max_fee_per_gas);
 
             // TODO handle maxPriorityFeePerGas & maxFeePerGas
             let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;
@@ -205,6 +205,8 @@ impl<'a> YamlStateTestBuilder<'a> {
     /// parse env section
     fn parse_env(yaml: &Yaml) -> Result<Env> {
         Ok(Env {
+            current_base_fee: Self::parse_u256(&yaml["currentBaseFee"])
+                .unwrap_or_else(|_| U256::from(10)),
             current_coinbase: Self::parse_address(&yaml["currentCoinbase"])?,
             current_difficulty: Self::parse_u256(&yaml["currentDifficulty"])?,
             current_gas_limit: Self::parse_u64(&yaml["currentGasLimit"])?,
@@ -428,10 +430,10 @@ impl<'a> YamlStateTestBuilder<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::config::TestSuite;
-    use crate::statetest::run_test;
-    use crate::statetest::CircuitsConfig;
-    use crate::statetest::StateTestError;
+    use crate::{
+        config::TestSuite,
+        statetest::{run_test, CircuitsConfig, StateTestError},
+    };
     use eth_types::address;
 
     const TEMPLATE: &str = r#"
@@ -601,6 +603,7 @@ arith:
             path: "".into(),
             id: "arith_d0_g0_v0".into(),
             env: Env {
+                current_base_fee: U256::from(10),
                 current_coinbase: address!("0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba"),
                 current_difficulty: U256::from(0x20000u64),
                 current_number: 1,
@@ -663,8 +666,6 @@ arith:
 
     #[test]
     fn result_pass() -> Result<()> {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
         let mut tc = YamlStateTestBuilder::new(&mut Compiler::default())
             .load_yaml("", &Template::default().to_string())?;
         let t1 = tc.remove(0);

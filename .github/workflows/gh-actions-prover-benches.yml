@@ -15,7 +15,7 @@ jobs:
       - run: .github/proverCiScripts/wakeUpProver.sh
         shell: bash
       - run: |
-          ssh prover "bash -s" -- < .github/proverCiScripts/rsSysstat.sh
+          ssh prover "bash -s" -- < .github/proverCiScripts/rsSysstat.sh "${{ env.PR_NUMBER }}"
       - run: |
           ssh prover "bash -s" -- < .github/proverCiScripts/prepareProver.sh "${{ env.PR_NUMBER }}" "${{ github.workspace }}"
       - run: .github/proverCiScripts/deployToProver.sh "${{ env.PR_NUMBER }}" "${{ github.workspace }}"
@@ -25,6 +25,12 @@ jobs:
         shell: bash
       - run: |
           ssh prover "bash -s" -- < .github/proverCiScripts/getSysstat.sh "${{ env.PR_NUMBER }}"
-      - run: .github/proverCiScripts/shutdownProver.sh
+      - name: Calculate Benchmark Result
+        if: success() || failure()
+        run: .github/proverCiScripts/processResults.sh "${{ env.PR_NUMBER }}" '"${{ github.event.label.name }}"' "19"
+        shell: bash
+      - name: PowerOff prover
+        if: always()
+        run: .github/proverCiScripts/shutdownProver.sh
         shell: bash
 

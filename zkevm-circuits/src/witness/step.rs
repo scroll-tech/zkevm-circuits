@@ -1,6 +1,6 @@
 use bus_mapping::{
     circuit_input_builder,
-    error::{ExecError, OogError},
+    error::{ExecError, InsufficientBalanceError, OogError},
     evm::OpcodeId,
     operation,
 };
@@ -20,6 +20,8 @@ pub struct ExecStep {
     pub call_index: usize,
     /// The indices in the RW trace incurred in this step
     pub rw_indices: Vec<(RwTableTag, usize)>,
+    /// Number of rw operations performed via a copy event in this step.
+    pub copy_rw_counter_delta: u64,
     /// The execution state for the step
     pub execution_state: ExecutionState,
     /// The Read/Write counter before the step
@@ -34,8 +36,10 @@ pub struct ExecStep {
     pub gas_cost: u64,
     /// The memory size in bytes
     pub memory_size: u64,
-    /// The counter for reversible writes
+    /// The counter for reversible writes at the beginning of the step
     pub reversible_write_counter: usize,
+    /// The number of reversible writes from this step
+    pub reversible_write_counter_delta: usize,
     /// The counter for log index within tx
     pub log_id: usize,
     /// The opcode corresponds to the step
@@ -62,14 +66,21 @@ impl From<&ExecError> for ExecutionState {
             ExecError::StackOverflow | ExecError::StackUnderflow => ExecutionState::ErrorStack,
             ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
             ExecError::Depth => ExecutionState::ErrorDepth,
-            ExecError::InsufficientBalance => ExecutionState::ErrorInsufficientBalance,
-            ExecError::ContractAddressCollision => ExecutionState::ErrorContractAddressCollision,
+            ExecError::InsufficientBalance(insuff_balance_err) => match insuff_balance_err {
+                InsufficientBalanceError::Call => ExecutionState::CALL_OP,
+                InsufficientBalanceError::Create => ExecutionState::CREATE,
+                InsufficientBalanceError::Create2 => ExecutionState::CREATE2,
+            },
+            ExecError::ContractAddressCollision => ExecutionState::CREATE,
+            ExecError::NonceUintOverflow => ExecutionState::ErrorNonceUintOverflow,
             ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
             ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
-            ExecError::CodeStoreOutOfGas => ExecutionState::ErrorOutOfGasCodeStore,
-            ExecError::MaxCodeSizeExceeded => ExecutionState::ErrorMaxCodeSizeExceeded,
+            ExecError::CodeStoreOutOfGas | ExecError::MaxCodeSizeExceeded => {
+                ExecutionState::ErrorCodeStore
+            }
             ExecError::PrecompileFailed => ExecutionState::ErrorPrecompileFailed,
+            ExecError::GasUintOverflow => ExecutionState::ErrorGasUintOverflow,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {
@@ -80,13 +91,12 @@ impl From<&ExecError> for ExecutionState {
                 }
                 OogError::MemoryCopy => ExecutionState::ErrorOutOfGasMemoryCopy,
                 OogError::AccountAccess => ExecutionState::ErrorOutOfGasAccountAccess,
-                OogError::CodeStore => ExecutionState::ErrorOutOfGasCodeStore,
+                OogError::CodeStore => ExecutionState::ErrorCodeStore,
                 OogError::Log => ExecutionState::ErrorOutOfGasLOG,
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
-                OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
-                OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
+                OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
             },
@@ -183,11 +193,11 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
-                    OpcodeId::CREATE | OpcodeId::CREATE2 => ExecutionState::CREATE,
+                    OpcodeId::CREATE => ExecutionState::CREATE,
+                    OpcodeId::CREATE2 => ExecutionState::CREATE2,
                     OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
                     // dummy ops
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
-                    OpcodeId::INVALID(_) => ExecutionState::ErrorInvalidOpcode,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
@@ -215,7 +225,6 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u6
                     }
                     operation::Target::TxRefund => RwTableTag::TxRefund,
                     operation::Target::Account => RwTableTag::Account,
-                    operation::Target::AccountDestructed => RwTableTag::AccountDestructed,
                     operation::Target::CallContext => RwTableTag::CallContext,
                     operation::Target::TxReceipt => RwTableTag::TxReceipt,
                     operation::Target::TxLog => RwTableTag::TxLog,
@@ -224,6 +233,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u6
                 (tag, x.as_usize())
             })
             .collect(),
+        copy_rw_counter_delta: step.copy_rw_counter_delta,
         execution_state: ExecutionState::from(step),
         rw_counter: usize::from(step.rwc),
         program_counter: usize::from(step.pc) as u64,
@@ -236,6 +246,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u6
         },
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
+        reversible_write_counter_delta: step.reversible_write_counter_delta,
         log_id: step.log_id,
         block_num,
     }

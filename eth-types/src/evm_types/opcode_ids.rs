@@ -4,8 +4,7 @@ use core::fmt::Debug;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{de, Deserialize, Serialize};
-use std::fmt;
-use std::str::FromStr;
+use std::{fmt, matches, str::FromStr};
 use strum_macros::EnumIter;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
@@ -673,9 +672,9 @@ impl OpcodeId {
         }
     }
 
-    /// Returns the constant min & stack pointer of `OpcodeId`
-    pub const fn valid_stack_ptr_range(&self) -> (u32, u32) {
-        match self {
+    /// Returns invalid stack pointers of `OpcodeId`
+    pub fn invalid_stack_ptrs(&self) -> Vec<u32> {
+        let (min_stack_ptr, max_stack_ptr): (u32, u32) = match self {
             // `min_stack_pointer` 0 means stack overflow never happen, for example, `OpcodeId::ADD`
             // can only encounter underflow error, but never encounter overflow error.
             // `max_stack_pointer` means max stack poniter for op code normally run. for example,
@@ -698,7 +697,7 @@ impl OpcodeId {
             OpcodeId::SLT => (0, 1022),
             OpcodeId::SGT => (0, 1022),
             OpcodeId::EQ => (0, 1022),
-            OpcodeId::ISZERO => (0, 1022),
+            OpcodeId::ISZERO => (0, 1023),
             OpcodeId::AND => (0, 1022),
             OpcodeId::OR => (0, 1022),
             OpcodeId::XOR => (0, 1022),
@@ -723,10 +722,9 @@ impl OpcodeId {
             OpcodeId::EXTCODECOPY => (0, 1020),
             OpcodeId::RETURNDATASIZE => (1, 1024),
             OpcodeId::RETURNDATACOPY => (0, 1021),
-            OpcodeId::EXTCODEHASH => (1, 1024),
+            OpcodeId::EXTCODEHASH => (0, 1023),
             OpcodeId::BLOCKHASH => (0, 1023),
             OpcodeId::COINBASE => (1, 1024),
-
             OpcodeId::TIMESTAMP => (1, 1024),
             OpcodeId::NUMBER => (1, 1024),
             OpcodeId::DIFFICULTY => (1, 1024),
@@ -826,7 +824,14 @@ impl OpcodeId {
             OpcodeId::REVERT => (0, 1022),
             OpcodeId::SELFDESTRUCT => (0, 1023),
             _ => (0, 0),
-        }
+        };
+
+        debug_assert!(max_stack_ptr <= 1024);
+
+        (0..min_stack_ptr)
+            // Range (1025..=1024) is valid and it should be converted to an empty vector.
+            .chain(max_stack_ptr.checked_add(1).unwrap()..=1024)
+            .collect()
     }
 
     /// Returns `true` if the `OpcodeId` has memory access
@@ -877,10 +882,20 @@ impl OpcodeId {
         }
     }
 
+    /// Returns the all valid opcodes.
+    pub fn valid_opcodes() -> Vec<Self> {
+        (u8::MIN..=u8::MAX).fold(vec![], |mut acc, val| {
+            if !matches!(val.into(), Self::INVALID(_)) {
+                acc.push(val.into());
+            }
+            acc
+        })
+    }
+
     /// Returns the all invalid opcodes.
     pub fn invalid_opcodes() -> Vec<Self> {
         (u8::MIN..=u8::MAX).fold(vec![], |mut acc, val| {
-            if let Self::INVALID(val) = val.into() {
+            if matches!(val.into(), Self::INVALID(_)) {
                 acc.push(Self::INVALID(val));
             }
             acc

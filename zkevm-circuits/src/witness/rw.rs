@@ -3,15 +3,14 @@ use std::collections::HashMap;
 
 use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 
-use crate::evm_circuit::util::rlc;
-use crate::table::{
-    AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag,
+use crate::{
+    evm_circuit::util::rlc,
+    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    util::build_tx_log_address,
 };
-use crate::util::build_tx_log_address;
 
 use super::MptUpdates;
 
@@ -41,7 +40,7 @@ impl RwMap {
             debug_assert_eq!(idx, rw_counter - 1);
         }
     }
-    /// ..
+    /// Check value in the same way like StateCircuit
     pub fn check_value(&self) {
         let mock_rand = Fr::from(0x1000u64);
         let err_msg_first = "first access reads don't change value";
@@ -193,15 +192,6 @@ pub enum Rw {
         tx_id: usize,
         committed_value: Word,
     },
-    /// AccountDestructed
-    AccountDestructed {
-        rw_counter: usize,
-        is_write: bool,
-        tx_id: usize,
-        account_address: Address,
-        is_destructed: bool,
-        is_destructed_prev: bool,
-    },
     /// CallContext
     CallContext {
         rw_counter: usize,
@@ -308,7 +298,7 @@ impl Rw {
                 is_warm_prev,
                 ..
             } => (*is_warm, *is_warm_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -317,7 +307,7 @@ impl Rw {
             Self::TxRefund {
                 value, value_prev, ..
             } => (*value, *value_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -326,7 +316,35 @@ impl Rw {
             Self::Account {
                 value, value_prev, ..
             } => (*value, *value_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
+        }
+    }
+
+    pub fn account_balance_pair(&self) -> (Word, Word) {
+        self.account_value_pair_field_tag(AccountFieldTag::Balance)
+    }
+    pub fn account_codehash_pair(&self) -> (Word, Word) {
+        self.account_value_pair_field_tag(AccountFieldTag::CodeHash)
+    }
+    pub fn account_nonce_pair(&self) -> (Word, Word) {
+        self.account_value_pair_field_tag(AccountFieldTag::Nonce)
+    }
+
+    pub fn account_value_pair_field_tag(
+        &self,
+        required_field_tag: AccountFieldTag,
+    ) -> (Word, Word) {
+        match self {
+            Self::Account {
+                value,
+                value_prev,
+                field_tag,
+                ..
+            } => {
+                debug_assert_eq!(*field_tag, required_field_tag, "invalid rw {:?}", &self);
+                (*value, *value_prev)
+            }
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -337,7 +355,7 @@ impl Rw {
                 committed_value,
                 ..
             } => (*tx_id, *committed_value),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -350,42 +368,42 @@ impl Rw {
                 committed_value,
                 ..
             } => (*value, *value_prev, *tx_id, *committed_value),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn call_context_value(&self) -> Word {
         match self {
             Self::CallContext { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn log_value(&self) -> Word {
         match self {
             Self::TxLog { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn receipt_value(&self) -> u64 {
         match self {
             Self::TxReceipt { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn memory_value(&self) -> u8 {
         match self {
             Self::Memory { byte, .. } => *byte,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -448,7 +466,6 @@ impl Rw {
             | Self::TxAccessListAccountStorage { rw_counter, .. }
             | Self::TxRefund { rw_counter, .. }
             | Self::Account { rw_counter, .. }
-            | Self::AccountDestructed { rw_counter, .. }
             | Self::CallContext { rw_counter, .. }
             | Self::TxLog { rw_counter, .. }
             | Self::TxReceipt { rw_counter, .. } => *rw_counter,
@@ -465,7 +482,6 @@ impl Rw {
             | Self::TxAccessListAccountStorage { is_write, .. }
             | Self::TxRefund { is_write, .. }
             | Self::Account { is_write, .. }
-            | Self::AccountDestructed { is_write, .. }
             | Self::CallContext { is_write, .. }
             | Self::TxLog { is_write, .. }
             | Self::TxReceipt { is_write, .. } => *is_write,
@@ -482,7 +498,6 @@ impl Rw {
             Self::TxAccessListAccountStorage { .. } => RwTableTag::TxAccessListAccountStorage,
             Self::TxRefund { .. } => RwTableTag::TxRefund,
             Self::Account { .. } => RwTableTag::Account,
-            Self::AccountDestructed { .. } => RwTableTag::AccountDestructed,
             Self::CallContext { .. } => RwTableTag::CallContext,
             Self::TxLog { .. } => RwTableTag::TxLog,
             Self::TxReceipt { .. } => RwTableTag::TxReceipt,
@@ -500,7 +515,7 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::Start { .. } | Self::Account { .. } | Self::AccountDestructed { .. } => None,
+            Self::Start { .. } | Self::Account { .. } => None,
         }
     }
 
@@ -516,9 +531,6 @@ impl Rw {
                 account_address, ..
             }
             | Self::AccountStorage {
-                account_address, ..
-            }
-            | Self::AccountDestructed {
                 account_address, ..
             } => Some(*account_address),
             Self::Memory { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
@@ -553,8 +565,7 @@ impl Rw {
             | Self::TxAccessListAccount { .. }
             | Self::TxAccessListAccountStorage { .. }
             | Self::TxRefund { .. }
-            | Self::TxLog { .. }
-            | Self::AccountDestructed { .. } => None,
+            | Self::TxLog { .. } => None,
         }
     }
 
@@ -569,7 +580,6 @@ impl Rw {
             | Self::TxRefund { .. }
             | Self::Account { .. }
             | Self::TxAccessListAccount { .. }
-            | Self::AccountDestructed { .. }
             | Self::TxLog { .. }
             | Self::TxReceipt { .. } => None,
         }
@@ -593,10 +603,12 @@ impl Rw {
             Self::Account {
                 value, field_tag, ..
             } => match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
-                    rlc::value(&value.to_le_bytes(), randomness)
-                }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => value.to_scalar().unwrap(),
+                AccountFieldTag::KeccakCodeHash
+                | AccountFieldTag::Balance
+                | AccountFieldTag::CodeHash => rlc::value(&value.to_le_bytes(), randomness),
+                AccountFieldTag::Nonce
+                | AccountFieldTag::NonExisting
+                | AccountFieldTag::CodeSize => value.to_scalar().unwrap(),
             },
             Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
                 rlc::value(&value.to_le_bytes(), randomness)
@@ -611,7 +623,6 @@ impl Rw {
 
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
-            Self::AccountDestructed { is_destructed, .. } => F::from(*is_destructed as u64),
             Self::Memory { byte, .. } => F::from(u64::from(*byte)),
             Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
         }
@@ -624,12 +635,12 @@ impl Rw {
                 field_tag,
                 ..
             } => Some(match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
-                    rlc::value(&value_prev.to_le_bytes(), randomness)
-                }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => {
-                    value_prev.to_scalar().unwrap()
-                }
+                AccountFieldTag::KeccakCodeHash
+                | AccountFieldTag::Balance
+                | AccountFieldTag::CodeHash => rlc::value(&value_prev.to_le_bytes(), randomness),
+                AccountFieldTag::Nonce
+                | AccountFieldTag::NonExisting
+                | AccountFieldTag::CodeSize => value_prev.to_scalar().unwrap(),
             }),
             Self::AccountStorage { value_prev, .. } => {
                 Some(rlc::value(&value_prev.to_le_bytes(), randomness))
@@ -638,9 +649,6 @@ impl Rw {
             | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
                 Some(F::from(*is_warm_prev as u64))
             }
-            Self::AccountDestructed {
-                is_destructed_prev, ..
-            } => Some(F::from(*is_destructed_prev as u64)),
             Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
             Self::Start { .. }
             | Self::Stack { .. }
@@ -733,6 +741,8 @@ impl From<&operation::OperationContainer> for RwMap {
                         AccountField::Nonce => AccountFieldTag::Nonce,
                         AccountField::Balance => AccountFieldTag::Balance,
                         AccountField::CodeHash => AccountFieldTag::CodeHash,
+                        AccountField::KeccakCodeHash => AccountFieldTag::KeccakCodeHash,
+                        AccountField::CodeSize => AccountFieldTag::CodeSize,
                     },
                     value: op.op().value,
                     value_prev: op.op().value_prev,
@@ -753,21 +763,6 @@ impl From<&operation::OperationContainer> for RwMap {
                     value_prev: op.op().value_prev,
                     tx_id: op.op().tx_id,
                     committed_value: op.op().committed_value,
-                })
-                .collect(),
-        );
-        rws.insert(
-            RwTableTag::AccountDestructed,
-            container
-                .account_destructed
-                .iter()
-                .map(|op| Rw::AccountDestructed {
-                    rw_counter: op.rwc().into(),
-                    is_write: true,
-                    tx_id: op.op().tx_id,
-                    account_address: op.op().address,
-                    is_destructed: op.op().is_destructed,
-                    is_destructed_prev: op.op().is_destructed_prev,
                 })
                 .collect(),
         );

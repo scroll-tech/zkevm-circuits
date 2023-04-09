@@ -1,16 +1,18 @@
-use super::executor::run_test;
-use super::JsonStateTestBuilder;
-use super::Results;
-use super::{CircuitsConfig, StateTest};
-use crate::compiler::Compiler;
-use crate::config::{Config, TestSuite};
-use crate::statetest::results::{ResultInfo, ResultLevel};
-use crate::statetest::YamlStateTestBuilder;
+use super::{executor::run_test, CircuitsConfig, JsonStateTestBuilder, Results, StateTest};
+use crate::{
+    compiler::Compiler,
+    config::{Config, TestSuite},
+    statetest::{
+        results::{ResultInfo, ResultLevel},
+        YamlStateTestBuilder,
+    },
+};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
-use std::panic::AssertUnwindSafe;
-use std::sync::Arc;
-use std::sync::RwLock;
+use std::{
+    panic::AssertUnwindSafe,
+    sync::{Arc, RwLock},
+};
 
 pub fn load_statetests_suite(
     path: &str,

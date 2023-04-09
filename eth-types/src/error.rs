@@ -49,7 +49,7 @@ impl Display for Error {
 
 impl StdError for Error {}
 
-/// Error type for a failure while parsig an Ethereum Address.
+/// Error type for a failure while parsing an Ethereum Address.
 #[derive(Debug)]
 pub enum EthAddressParsingError {
     /// Hex string containing the Ethereum Address is not 20*2 characters

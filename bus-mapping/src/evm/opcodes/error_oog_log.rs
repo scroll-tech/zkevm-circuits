@@ -1,7 +1,9 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::{Opcode, OpcodeId};
-use crate::operation::CallContextField;
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::{Opcode, OpcodeId},
+    operation::CallContextField,
+    Error,
+};
 use eth_types::{GethExecStep, Word};
 
 #[derive(Debug, Copy, Clone)]

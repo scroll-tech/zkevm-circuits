@@ -29,24 +29,25 @@ use halo2_proofs::{
     halo2curves::{bn256::Fr, group::ff::PrimeField},
 };
 
-use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
-use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
-pub use ethers_core::abi::ethereum_types::{BigEndianHash, U512};
+use crate::evm_types::{
+    memory::Memory, stack::Stack, storage::Storage, Gas, GasCost, OpcodeId, ProgramCounter,
+};
 use ethers_core::types;
-pub use ethers_core::types::{
-    transaction::{eip2930::AccessList, response::Transaction},
-    Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
+pub use ethers_core::{
+    abi::ethereum_types::{BigEndianHash, U512},
+    types::{
+        transaction::{eip2930::AccessList, response::Transaction},
+        Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
+    },
 };
 
 use serde::{de, Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fmt;
-use std::str::FromStr;
+use std::{collections::HashMap, fmt, str::FromStr};
 
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
 /// trait and its repr.
 pub trait Field:
-    FieldExt + Halo2Field + PrimeField<Repr = [u8; 32]> + mpt_circuits::hash::Hashable
+    FieldExt + Halo2Field + PrimeField<Repr = [u8; 32]> + poseidon_circuit::hash::Hashable
 {
 }
 
@@ -56,7 +57,7 @@ impl Field for Fr {}
 
 // Impl custom `Field` trait for BN256 Frq to be used and consistent with the
 // rest of the workspace.
-//impl Field for Fq {}
+// impl Field for Fq {}
 
 /// Trait used to define types that can be converted to a 256 bit scalar value.
 pub trait ToScalar<F> {
@@ -76,7 +77,7 @@ pub trait ToAddress {
     fn to_address(&self) -> Address;
 }
 
-/// Trait uset do convert a scalar value to a 32 byte array in big endian.
+/// Trait used do convert a scalar value to a 32 byte array in big endian.
 pub trait ToBigEndian {
     /// Convert the value to a 32 byte array in big endian.
     fn to_be_bytes(&self) -> [u8; 32];
@@ -255,8 +256,13 @@ pub struct EIP1186ProofResponse {
     pub address: Address,
     /// The balance of the account
     pub balance: U256,
-    /// The hash of the code of the account
+    /// The keccak hash of the code of the account
+    pub keccak_code_hash: H256,
+    /// The poseidon hash of the code of the account
+    #[serde(alias = "poseidonCodeHash")]
     pub code_hash: H256,
+    /// Size of the code, i.e. code length
+    pub code_size: U256,
     /// The nonce of the account
     pub nonce: U256,
     /// SHA3 of the StorageRoot
@@ -398,6 +404,9 @@ pub struct ResultGethExecTrace {
 /// before the step is executed.
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
 pub struct GethExecTrace {
+    /// L1 fee
+    #[serde(default)]
+    pub l1_fee: u64,
     /// Used gas
     pub gas: Gas,
     /// True when the transaction has failed.
@@ -446,8 +455,7 @@ macro_rules! word_map {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm_types::opcode_ids::OpcodeId;
-    use crate::evm_types::{memory::Memory, stack::Stack};
+    use crate::evm_types::{memory::Memory, opcode_ids::OpcodeId, stack::Stack};
 
     #[test]
     fn deserialize_geth_exec_trace2() {
@@ -516,6 +524,7 @@ mod tests {
         assert_eq!(
             trace,
             GethExecTrace {
+                l1_fee: 0,
                 gas: Gas(26809),
                 failed: false,
                 return_value: "".to_owned(),
@@ -588,8 +597,7 @@ mod tests {
 #[cfg(test)]
 mod eth_types_test {
     use super::*;
-    use crate::Error;
-    use crate::Word;
+    use crate::{Error, Word};
     use std::str::FromStr;
 
     #[test]
@@ -671,6 +679,18 @@ mod eth_types_test {
         let word_from_str = Word::from_str(word_str).unwrap();
 
         assert_eq!(word_from_u128, word_from_str);
+        Ok(())
+    }
+
+    #[test]
+    fn creation_tx_into_tx_req() -> Result<(), Error> {
+        let tx = &geth_types::Transaction {
+            to: None,
+            ..Default::default()
+        };
+
+        let req: ethers_core::types::TransactionRequest = tx.into();
+        assert_eq!(req.to, None);
         Ok(())
     }
 }

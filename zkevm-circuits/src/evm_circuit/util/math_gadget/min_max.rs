@@ -68,12 +68,10 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
 
 #[cfg(test)]
 mod tests {
-    use super::test_util::*;
-    use super::*;
+    use super::{test_util::*, *};
     use crate::evm_circuit::util::Cell;
     use eth_types::{ToScalar, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// MinMaxTestContainer: require(min(a, b) == (a if MIN_IS_A else b))

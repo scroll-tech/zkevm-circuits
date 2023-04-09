@@ -1,8 +1,10 @@
 use super::{Opcode, OpcodeId};
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{CallContextField, RW};
-use crate::operation::{StorageOp, TxAccessListAccountStorageOp};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::{ExecError, OogError},
+    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, RW},
+    Error,
+};
 use eth_types::{GethExecStep, ToWord};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -20,8 +22,7 @@ impl Opcode for OOGSloadSstore {
         debug_assert!([OpcodeId::SLOAD, OpcodeId::SSTORE].contains(&geth_step.op));
 
         let mut exec_step = state.new_step(geth_step)?;
-        let next_step = geth_steps.get(1);
-        exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
+        exec_step.error = Some(ExecError::OutOfGas(OogError::SloadSstore));
 
         let call_id = state.call()?.call_id;
         let callee_address = state.call()?.address;

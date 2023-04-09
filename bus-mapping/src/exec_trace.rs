@@ -21,7 +21,6 @@ impl fmt::Debug for OperationRef {
                 Target::TxAccessListAccountStorage => "TxAccessListAccountStorage",
                 Target::TxRefund => "TxRefund",
                 Target::Account => "Account",
-                Target::AccountDestructed => "AccountDestructed",
                 Target::CallContext => "CallContext",
                 Target::TxReceipt => "TxReceipt",
                 Target::TxLog => "TxLog",

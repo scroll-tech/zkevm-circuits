@@ -1,20 +1,17 @@
-use crate::table::CallContextFieldTag;
-use crate::util::Expr;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
-            common_gadget::{CommonCallGadget, RestoreContextGadget},
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
-            },
+            common_gadget::{CommonCallGadget, CommonErrorGadget},
+            constraint_builder::ConstraintBuilder,
             math_gadget::{IsZeroGadget, LtGadget},
             CachedRegion, Cell,
         },
     },
+    table::CallContextFieldTag,
+    util::Expr,
     witness::{Block, Call, ExecStep, Transaction},
 };
 use bus_mapping::evm::OpcodeId;
@@ -36,8 +33,7 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     call: CommonCallGadget<F, false>,
     is_warm: Cell<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
-    rw_counter_end_of_reversion: Cell<F>,
-    restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
@@ -47,7 +43,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
+
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
         let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
         let is_delegatecall =
@@ -55,7 +51,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let is_staticcall =
             IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
 
-        let rw_counter_end_of_reversion = cb.query_cell();
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
 
@@ -75,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_warm.expr(),
         );
 
-        cb.condition(call_gadget.has_value.expr(), |cb| {
+        cb.condition(is_call.expr() * call_gadget.has_value.expr(), |cb| {
             cb.require_zero(
                 "CALL with value must not be in static call stack",
                 is_static.expr(),
@@ -93,62 +88,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             1.expr(),
         );
 
-        // current call must be failed.
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-
-        // Go to EndTx only when is_root
-        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
-        cb.require_equal(
-            "Go to EndTx only when is_root",
-            cb.curr.state.is_root.expr(),
-            is_to_end_tx,
-        );
-
-        // When it's a root call
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            // Do step state transition
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                // Both CALL and CALLCODE opcodes have an extra stack pop `value` relative to
-                // DELEGATECALL and STATICCALL.
-                rw_counter: Delta(
-                    13.expr()
-                        + is_call.expr()
-                        + is_callcode.expr()
-                        + cb.curr.state.reversible_write_counter.expr(),
-                ),
-                ..StepStateTransition::any()
-            });
-        });
-
-        // When it's an internal call, need to restore caller's state as finishing this
-        // call. Restore caller state to next StepState
-        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
-
-        // constrain RwCounterEndOfReversion
-        let rw_counter_end_of_step =
-            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
-        cb.require_equal(
-            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
-            rw_counter_end_of_reversion.expr(),
-            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        // Both CALL and CALLCODE opcodes have an extra stack pop `value` relative to
+        // DELEGATECALL and STATICCALL.
+        let common_error_gadget = CommonErrorGadget::construct(
+            cb,
+            opcode.expr(),
+            13.expr() + is_call.expr() + is_callcode.expr(),
         );
 
         Self {
@@ -162,8 +107,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             call: call_gadget,
             is_warm,
             insufficient_gas,
-            rw_counter_end_of_reversion,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -272,27 +216,27 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             Value::known(F::from(gas_cost)),
         )?;
 
-        self.rw_counter_end_of_reversion.assign(
-            region,
-            offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
-        )?;
-
         // Both CALL and CALLCODE opcodes have an extra stack pop `value` relative to
         // DELEGATECALL and STATICCALL.
-        self.restore_context
-            .assign(region, offset, block, call, step, 13 + is_call_or_callcode)
+        self.common_error_gadget.assign(
+            region,
+            offset,
+            block,
+            call,
+            step,
+            13 + is_call_or_callcode,
+        )?;
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::bytecode::Bytecode;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::Account;
-    use eth_types::{address, bytecode};
-    use eth_types::{Address, ToWord, Word};
+    use eth_types::{
+        address, bytecode, bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account, Address,
+        ToWord, Word,
+    };
     use mock::TestContext;
     use std::default::Default;
 
@@ -305,7 +249,7 @@ mod test {
 
     #[derive(Clone, Copy, Debug, Default)]
     struct Stack {
-        gas: u64,
+        gas: Word,
         value: Word,
         cd_offset: u64,
         cd_length: u64,
@@ -325,7 +269,7 @@ mod test {
         }
         bytecode.append(&bytecode! {
             PUSH32(address.to_word())
-            PUSH32(Word::from(stack.gas))
+            PUSH32(stack.gas)
             .write_op(opcode)
             PUSH1(0)
             PUSH1(0)
@@ -391,9 +335,9 @@ mod test {
     }
 
     #[test]
-    fn call_with_oog_root() {
+    fn test_oog_call_root() {
         let stack = Stack {
-            gas: 100,
+            gas: 100.into(),
             cd_offset: 64,
             cd_length: 320,
             rd_offset: 0,
@@ -411,9 +355,9 @@ mod test {
     }
 
     #[test]
-    fn call_with_oog_internal() {
+    fn test_oog_call_internal() {
         let caller_stack = Stack {
-            gas: 100,
+            gas: 100.into(),
             cd_offset: 64,
             cd_length: 320,
             rd_offset: 0,
@@ -421,7 +365,7 @@ mod test {
             ..Default::default()
         };
         let callee_stack = Stack {
-            gas: 21,
+            gas: 21.into(),
             cd_offset: 64,
             cd_length: 320,
             rd_offset: 0,
@@ -438,5 +382,23 @@ mod test {
             ));
             test_oog(&caller, &callee, false);
         }
+    }
+
+    #[test]
+    fn test_oog_call_with_overflow_gas() {
+        let stack = Stack {
+            gas: Word::MAX,
+            cd_offset: 64,
+            cd_length: 320,
+            rd_offset: 0,
+            rd_length: 32,
+            ..Default::default()
+        };
+        let callee = callee(bytecode! {
+            PUSH32(Word::from(0))
+            PUSH32(Word::from(0))
+            STOP
+        });
+        test_oog(&caller(OpcodeId::CALL, stack), &callee, true);
     }
 }

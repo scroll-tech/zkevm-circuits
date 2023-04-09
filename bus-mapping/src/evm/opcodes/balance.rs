@@ -1,7 +1,9 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::Opcode;
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::Opcode,
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
+    Error,
+};
 use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256};
 
 #[derive(Debug, Copy, Clone)]
@@ -45,7 +47,6 @@ impl Opcode for Balance {
         let is_warm = state.sdb.check_account_in_access_list(&address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address,
@@ -63,21 +64,15 @@ impl Opcode for Balance {
         } else {
             H256::zero()
         };
+        debug_assert_eq!(balance, geth_steps[1].stack.nth_last(0)?);
         state.account_read(
             &mut exec_step,
             address,
             AccountField::CodeHash,
             code_hash.to_word(),
-            code_hash.to_word(),
-        )?;
+        );
         if exists {
-            state.account_read(
-                &mut exec_step,
-                address,
-                AccountField::Balance,
-                balance,
-                balance,
-            )?;
+            state.account_read(&mut exec_step, address, AccountField::Balance, balance);
         }
 
         // Write the BALANCE result to stack.
@@ -94,32 +89,41 @@ impl Opcode for Balance {
 #[cfg(test)]
 mod balance_tests {
     use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::mock::BlockData;
-    use crate::operation::{AccountOp, CallContextOp, StackOp};
-    use eth_types::evm_types::{OpcodeId, StackAddress};
-    use eth_types::geth_types::GethData;
-    use eth_types::{address, bytecode, Bytecode, ToWord, Word, U256};
-    use keccak256::EMPTY_HASH_LE;
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{AccountOp, CallContextOp, StackOp, RW},
+        state_db::CodeDB,
+    };
+    use eth_types::{
+        address, bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
+        Bytecode, ToWord, Word, U256,
+    };
     use mock::TestContext;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn test_balance_of_non_existing_address() {
-        test_ok(false, false);
+        test_ok(false, false, None);
     }
 
     #[test]
     fn test_balance_of_cold_address() {
-        test_ok(true, false);
+        test_ok(true, false, None);
+        test_ok(true, false, Some(vec![1, 2, 3]))
     }
 
     #[test]
     fn test_balance_of_warm_address() {
-        test_ok(true, true);
+        test_ok(true, true, None);
+        test_ok(true, true, Some(vec![2, 3, 4]))
     }
 
-    fn test_ok(exists: bool, is_warm: bool) {
+    // account_code = None should be the same as exists = false, so we can remove
+    // it.
+    fn test_ok(exists: bool, is_warm: bool, account_code: Option<Vec<u8>>) {
         let address = address!("0xaabbccddee000000000000000000000000000000");
 
         // Pop balance first for warm account.
@@ -152,7 +156,11 @@ mod balance_tests {
                     .balance(Word::from(1u64 << 20))
                     .code(code.clone());
                 if exists {
-                    accs[1].address(address).balance(balance);
+                    if let Some(code) = account_code.clone() {
+                        accs[1].address(address).balance(balance).code(code);
+                    } else {
+                        accs[1].address(address).balance(balance);
+                    }
                 } else {
                     accs[1]
                         .address(address!("0x0000000000000000000000000000000000000020"))
@@ -249,7 +257,13 @@ mod balance_tests {
             }
         );
 
-        let code_hash = Word::from_little_endian(&*EMPTY_HASH_LE);
+        let code_hash = if let Some(code) = account_code {
+            CodeDB::hash(&code).to_word()
+        } else if exists {
+            CodeDB::empty_code_hash().to_word()
+        } else {
+            U256::zero()
+        };
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(

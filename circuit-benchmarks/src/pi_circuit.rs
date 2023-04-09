@@ -1,17 +1,22 @@
 //! Public input circuit benchmarks
 #[cfg(test)]
 mod tests {
+    use std::env::var;
+
     use ark_std::{end_timer, start_timer};
     use bus_mapping::mock::BlockData;
-    use eth_types::bytecode;
-    use eth_types::geth_types::GethData;
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
-    use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
-    use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
-    use halo2_proofs::poly::kzg::strategy::SingleStrategy;
+    use eth_types::{bytecode, geth_types::GethData};
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
-        poly::commitment::ParamsProver,
+        plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG},
+                multiopen::{ProverSHPLONK, VerifierSHPLONK},
+                strategy::SingleStrategy,
+            },
+        },
         transcript::{
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
@@ -19,23 +24,35 @@ mod tests {
     use mock::TestContext;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    use zkevm_circuits::pi_circuit::{PiCircuit, PiTestCircuit};
-    use zkevm_circuits::util::SubCircuit;
-    use zkevm_circuits::witness::{block_convert, Block};
-
-    use crate::bench_params::DEGREE;
+    use zkevm_circuits::{
+        pi_circuit::{PiCircuit, PiTestCircuit},
+        util::SubCircuit,
+        witness::{block_convert, Block},
+    };
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_pi_circuit_prover() {
+        let setup_prfx = crate::constants::SETUP_PREFIX;
+        let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
+        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
+        // Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "Pi Circuit";
+
         const MAX_TXS: usize = 10;
         const MAX_CALLDATA: usize = 128;
         const MAX_INNER_BLOCKS: usize = 64;
+
+        let degree: u32 = var("DEGREE")
+            .unwrap_or_else(|_| "19".to_string())
+            .parse()
+            .expect("Cannot parse DEGREE env var as u32");
 
         let block = generate_block::<MAX_TXS, MAX_CALLDATA>();
         let circuit = PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(
             PiCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, &block),
         );
+
         let public_inputs = circuit.0.instance();
         let instance: Vec<&[Fr]> = public_inputs.iter().map(|input| &input[..]).collect();
         let instances = &[&instance[..]];
@@ -46,9 +63,9 @@ mod tests {
         ]);
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", DEGREE);
+        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(DEGREE as u32, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(degree as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
@@ -59,7 +76,10 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("PI_circuit Proof generation with {} rows", DEGREE);
+        let proof_message = format!(
+            "{} {} with degree = {}",
+            BENCHMARK_ID, proof_gen_prfx, degree
+        );
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -81,7 +101,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "PI_circuit Proof verification");
+        let start3 = start_timer!(|| format!("{} {}", BENCHMARK_ID, proof_ver_prfx));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

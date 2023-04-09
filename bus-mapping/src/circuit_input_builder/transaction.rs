@@ -2,9 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use eth_types::evm_types::Memory;
-use eth_types::Signature;
-use eth_types::{geth_types, Address, GethExecTrace, Word, H256};
+use eth_types::{evm_types::Memory, geth_types, Address, GethExecTrace, Signature, Word, H256};
 use ethers_core::utils::get_contract_address;
 
 use crate::{
@@ -17,6 +15,8 @@ use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecS
 #[derive(Debug, Default)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
 pub struct TransactionContext {
+    /// L1 fee
+    pub l1_fee: u64,
     /// Unique identifier of transaction of the block. The value is `index + 1`.
     id: usize,
     /// The index of logs made in the transaction.
@@ -80,6 +80,7 @@ impl TransactionContext {
             call_is_success,
             calls: Vec::new(),
             reversion_groups: Vec::new(),
+            l1_fee: geth_trace.l1_fee,
         };
         tx_ctx.push_call_ctx(0, eth_tx.input.to_vec());
 

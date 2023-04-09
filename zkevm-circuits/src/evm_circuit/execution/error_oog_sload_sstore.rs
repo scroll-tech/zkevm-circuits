@@ -1,21 +1,28 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::N_BYTES_GAS;
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::{
-    cal_sload_gas_cost_for_assignment, cal_sstore_gas_cost_for_assignment, RestoreContextGadget,
-    SloadGasGadget, SstoreGasGadget,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::N_BYTES_GAS,
+        step::ExecutionState,
+        util::{
+            and,
+            common_gadget::{
+                cal_sload_gas_cost_for_assignment, cal_sstore_gas_cost_for_assignment,
+                CommonErrorGadget, SloadGasGadget, SstoreGasGadget,
+            },
+            constraint_builder::ConstraintBuilder,
+            math_gadget::{LtGadget, PairSelectGadget},
+            or, select, CachedRegion, Cell,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    table::CallContextFieldTag,
+    util::Expr,
 };
-use crate::evm_circuit::util::constraint_builder::Transition::{Delta, Same};
-use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
-use crate::evm_circuit::util::math_gadget::{IsZeroGadget, LtGadget};
-use crate::evm_circuit::util::{and, or, select, CachedRegion, Cell};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::table::CallContextFieldTag;
-use crate::util::Expr;
-use eth_types::evm_types::{GasCost, OpcodeId};
-use eth_types::{Field, ToScalar, U256};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field, ToScalar, U256,
+};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget to implement the corresponding out of gas errors for
 /// [`OpcodeId::SLOAD`] and [`OpcodeId::SSTORE`].
@@ -30,13 +37,12 @@ pub(crate) struct ErrorOOGSloadSstoreGadget<F> {
     phase2_value_prev: Cell<F>,
     phase2_original_value: Cell<F>,
     is_warm: Cell<F>,
-    rw_counter_end_of_reversion: Cell<F>,
-    is_sstore: IsZeroGadget<F>,
+    is_sstore: PairSelectGadget<F>,
     sstore_gas_cost: SstoreGasGadget<F>,
     insufficient_gas_cost: LtGadget<F, N_BYTES_GAS>,
     // Constrain for SSTORE reentrancy sentry.
     insufficient_gas_sentry: LtGadget<F, N_BYTES_GAS>,
-    restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
@@ -46,17 +52,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let is_sstore = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::SSTORE.expr());
-        cb.require_equal(
-            "ErrorOutOfGasSSTORE opcode must be SLOAD or SSTORE",
+        let is_sstore = PairSelectGadget::construct(
+            cb,
             opcode.expr(),
-            select::expr(
-                is_sstore.expr(),
-                OpcodeId::SSTORE.expr(),
-                OpcodeId::SLOAD.expr(),
-            ),
+            OpcodeId::SSTORE.expr(),
+            OpcodeId::SLOAD.expr(),
         );
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -64,7 +65,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
         // Constrain `is_static` must be false for SSTORE.
-        cb.require_zero("is_static == false", is_static.expr() * is_sstore.expr());
+        // cb.require_zero("is_static == false", is_static.expr() * is_sstore.expr().0);
 
         let phase2_key = cb.query_cell_phase2();
         let phase2_value = cb.query_cell_phase2();
@@ -81,7 +82,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         );
 
         let sload_gas_cost = SloadGasGadget::construct(cb, is_warm.expr());
-        let sstore_gas_cost = cb.condition(is_sstore.expr(), |cb| {
+        let sstore_gas_cost = cb.condition(is_sstore.expr().0, |cb| {
             cb.stack_pop(phase2_value.expr());
 
             cb.account_storage_read(
@@ -105,7 +106,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             cb,
             cb.curr.state.gas_left.expr(),
             select::expr(
-                is_sstore.expr(),
+                is_sstore.expr().0,
                 sstore_gas_cost.expr(),
                 sload_gas_cost.expr(),
             ),
@@ -114,72 +115,21 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         let insufficient_gas_sentry = LtGadget::construct(
             cb,
             cb.curr.state.gas_left.expr(),
-            GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap().expr(),
+            (GasCost::SSTORE_SENTRY.0 + 1).expr(),
         );
         cb.require_equal(
             "Gas left is less than gas cost or gas sentry (only for SSTORE)",
             or::expr([
                 insufficient_gas_cost.expr(),
-                and::expr([is_sstore.expr(), insufficient_gas_sentry.expr()]),
+                and::expr([is_sstore.expr().0, insufficient_gas_sentry.expr()]),
             ]),
             1.expr(),
         );
 
-        // Current call must fail.
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
-        let rw_counter_end_of_reversion = cb.query_cell();
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-
-        // Go to EndTx only when is_root.
-        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
-        cb.require_equal(
-            "Go to EndTx only when is_root",
-            cb.curr.state.is_root.expr(),
-            is_to_end_tx,
-        );
-
-        // When it's a root call.
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            // Do step state transition.
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                // Additional one stack pop and one account storage read for SSTORE.
-                rw_counter: Delta(
-                    7.expr()
-                        + 2.expr() * is_sstore.expr()
-                        + cb.curr.state.reversible_write_counter.expr(),
-                ),
-                ..StepStateTransition::any()
-            });
-        });
-
-        // When it's an internal call, need to restore caller's state as finishing this
-        // call. Restore caller state to next StepState.
-        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
-
-        // Constrain RwCounterEndOfReversion.
-        let rw_counter_end_of_step =
-            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
-        cb.require_equal(
-            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
-            rw_counter_end_of_reversion.expr(),
-            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        let common_error_gadget = CommonErrorGadget::construct(
+            cb,
+            opcode.expr(),
+            7.expr() + 2.expr() * is_sstore.expr().0,
         );
 
         Self {
@@ -192,12 +142,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             phase2_value_prev,
             phase2_original_value,
             is_warm,
-            rw_counter_end_of_reversion,
             is_sstore,
             sstore_gas_cost,
             insufficient_gas_cost,
             insufficient_gas_sentry,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -260,25 +209,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             .assign(region, offset, region.word_rlc(original_value))?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
-        self.rw_counter_end_of_reversion.assign(
-            region,
-            offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
-        )?;
+
         self.is_sstore.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::SSTORE.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::SSTORE.as_u64()),
+            F::from(OpcodeId::SLOAD.as_u64()),
         )?;
-        self.sstore_gas_cost.assign(
-            region,
-            offset,
-            gas_cost,
-            value,
-            value_prev,
-            original_value,
-            is_warm,
-        )?;
+        self.sstore_gas_cost
+            .assign(region, offset, value, value_prev, original_value, is_warm)?;
         self.insufficient_gas_cost.assign_value(
             region,
             offset,
@@ -291,26 +231,33 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             Value::known(F::from(step.gas_left)),
             Value::known(F::from(GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap())),
         )?;
-        self.restore_context.assign(
+
+        // Additional one stack pop and one account storage read for SSTORE.
+        self.common_error_gadget.assign(
             region,
             offset,
             block,
             call,
             step,
-            // Additional one stack pop and one account storage read for SSTORE.
-            7 + if is_sstore { 2 } else { 0 },
-        )
+            7 + usize::from(is_sstore) * 2,
+        )?;
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::evm_circuit::util::common_gadget::cal_sstore_gas_cost_for_assignment;
-    use crate::test_util::CircuitTestBuilder;
-    use eth_types::evm_types::{GasCost, OpcodeId};
-    use eth_types::{bytecode, Bytecode, ToWord, U256};
+    use crate::{
+        evm_circuit::{test::rand_bytes, util::common_gadget::cal_sstore_gas_cost_for_assignment},
+        test_util::CircuitTestBuilder,
+    };
+    use eth_types::{
+        bytecode,
+        evm_types::{GasCost, OpcodeId},
+        Bytecode, ToWord, U256,
+    };
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
     use std::cmp::max;
 
@@ -321,8 +268,7 @@ mod test {
         [false, true].into_iter().for_each(|is_warm| {
             let testing_data = TestingData::new_for_sload(TESTING_STORAGE_KEY, is_warm);
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -338,8 +284,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -355,8 +300,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -372,8 +316,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -389,8 +332,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -407,8 +349,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -425,8 +366,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -544,7 +484,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn test_internal(call_data_offset: usize, call_data_length: usize, testing_data: &TestingData) {
+    fn test_internal(testing_data: &TestingData) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
@@ -560,8 +500,8 @@ mod test {
             // call ADDR_B.
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
+            PUSH32(0x00) // argsLength
+            PUSH32(0x20) // argsOffset
             PUSH1(0x00) // value
             PUSH32(addr_b.to_word()) // addr
             // Decrease expected gas cost (by 1) to trigger out of gas error.

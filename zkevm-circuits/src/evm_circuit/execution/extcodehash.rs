@@ -52,7 +52,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
         let code_hash = cb.query_cell_phase2();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read(address, AccountFieldTag::CodeHash, code_hash.expr());
+        cb.account_read(address, AccountFieldTag::KeccakCodeHash, code_hash.expr());
         cb.stack_push(code_hash.expr());
 
         let gas_cost = select::expr(

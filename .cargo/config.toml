@@ -2,3 +2,5 @@
 rustflags = ["-C", "link-args=-framework CoreFoundation -framework Security"]
 [net]
 git-fetch-with-cli = true
+[env]
+RUST_MIN_STACK = "16777216"

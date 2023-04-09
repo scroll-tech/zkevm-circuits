@@ -15,7 +15,7 @@ members = [
 ]
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "halo2-ecc-snark-verifier-0323" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v0.4" }
 [patch."https://github.com/privacy-scaling-explorations/poseidon.git"]
 poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "scroll-dev-0220" }
 [patch."https://github.com/privacy-scaling-explorations/halo2curves.git"]
@@ -31,8 +31,7 @@ debug-assertions = false
 overflow-checks = false
 rpath = false
 lto = "thin"
-incremental = false
-codegen-units = 1
+incremental = true
 
 [profile.release]
 opt-level = 3
@@ -41,4 +40,4 @@ debug-assertions = true
 overflow-checks = true
 rpath = false
 lto = "thin"
-incremental = false
+incremental = true

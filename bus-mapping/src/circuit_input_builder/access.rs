@@ -3,6 +3,9 @@ use eth_types::{evm_types::OpcodeId, Address, GethExecStep, GethExecTrace, ToAdd
 use ethers_core::utils::get_contract_address;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
+use AccessValue::{Account, Code, Storage};
+use RW::{READ, WRITE};
+
 /// State and Code Access with "keys/index" used in the access operation.
 #[derive(Debug, PartialEq, Eq)]
 pub enum AccessValue {
@@ -123,9 +126,6 @@ pub fn gen_state_access_trace<TX>(
     tx: &eth_types::Transaction,
     geth_trace: &GethExecTrace,
 ) -> Result<Vec<Access>, Error> {
-    use AccessValue::{Account, Code, Storage};
-    use RW::{READ, WRITE};
-
     let mut call_stack: Vec<(Address, CodeSource)> = Vec::new();
     let mut accs = vec![Access::new(None, WRITE, Account { address: tx.from })];
     if let Some(to) = tx.to {
@@ -152,117 +152,124 @@ pub fn gen_state_access_trace<TX>(
             pop_call_stack = step.depth - 1 == next_step.depth;
         }
 
-        match step.op {
-            OpcodeId::SSTORE => {
-                let address = contract_address;
-                let key = step.stack.nth_last(0)?;
-                accs.push(Access::new(i, WRITE, Storage { address, key }));
-            }
-            OpcodeId::SLOAD => {
-                let address = contract_address;
-                let key = step.stack.nth_last(0)?;
-                accs.push(Access::new(i, READ, Storage { address, key }));
-            }
-            OpcodeId::SELFBALANCE => {
-                let address = contract_address;
-                accs.push(Access::new(i, READ, Account { address }));
-            }
-            OpcodeId::CODESIZE => {
-                if let CodeSource::Address(address) = code_source {
+        let result: Result<(), Error> = (|| {
+            match step.op {
+                OpcodeId::SSTORE => {
+                    let address = contract_address;
+                    let key = step.stack.nth_last(0)?;
+                    accs.push(Access::new(i, WRITE, Storage { address, key }));
+                }
+                OpcodeId::SLOAD => {
+                    let address = contract_address;
+                    let key = step.stack.nth_last(0)?;
+                    accs.push(Access::new(i, READ, Storage { address, key }));
+                }
+                OpcodeId::SELFBALANCE => {
+                    let address = contract_address;
+                    accs.push(Access::new(i, READ, Account { address }));
+                }
+                OpcodeId::CODESIZE => {
+                    if let CodeSource::Address(address) = code_source {
+                        accs.push(Access::new(i, READ, Code { address }));
+                    }
+                }
+                OpcodeId::CODECOPY => {
+                    if let CodeSource::Address(address) = code_source {
+                        accs.push(Access::new(i, READ, Code { address }));
+                    }
+                }
+                OpcodeId::BALANCE => {
+                    let address = step.stack.nth_last(0)?.to_address();
+                    accs.push(Access::new(i, READ, Account { address }));
+                }
+                OpcodeId::EXTCODEHASH => {
+                    let address = step.stack.nth_last(0)?.to_address();
+                    accs.push(Access::new(i, READ, Account { address }));
+                }
+                OpcodeId::EXTCODESIZE => {
+                    let address = step.stack.nth_last(0)?.to_address();
                     accs.push(Access::new(i, READ, Code { address }));
                 }
-            }
-            OpcodeId::CODECOPY => {
-                if let CodeSource::Address(address) = code_source {
+                OpcodeId::EXTCODECOPY => {
+                    let address = step.stack.nth_last(0)?.to_address();
                     accs.push(Access::new(i, READ, Code { address }));
                 }
-            }
-            OpcodeId::BALANCE => {
-                let address = step.stack.nth_last(0)?.to_address();
-                accs.push(Access::new(i, READ, Account { address }));
-            }
-            OpcodeId::EXTCODEHASH => {
-                let address = step.stack.nth_last(0)?.to_address();
-                accs.push(Access::new(i, READ, Account { address }));
-            }
-            OpcodeId::EXTCODESIZE => {
-                let address = step.stack.nth_last(0)?.to_address();
-                accs.push(Access::new(i, READ, Code { address }));
-            }
-            OpcodeId::EXTCODECOPY => {
-                let address = step.stack.nth_last(0)?.to_address();
-                accs.push(Access::new(i, READ, Code { address }));
-            }
-            OpcodeId::SELFDESTRUCT => {
-                let address = contract_address;
-                accs.push(Access::new(i, WRITE, Account { address }));
-                let address = step.stack.nth_last(0)?.to_address();
-                accs.push(Access::new(i, WRITE, Account { address }));
-            }
-            OpcodeId::CREATE => {
-                if push_call_stack {
-                    // Find CREATE result
-                    let address = get_call_result(&geth_trace.struct_logs[index..])
-                        .unwrap_or_else(Word::zero)
-                        .to_address();
-                    if !address.is_zero() {
-                        accs.push(Access::new(i, WRITE, Account { address }));
-                        accs.push(Access::new(i, WRITE, Code { address }));
+                OpcodeId::SELFDESTRUCT => {
+                    let address = contract_address;
+                    accs.push(Access::new(i, WRITE, Account { address }));
+                    let address = step.stack.nth_last(0)?.to_address();
+                    accs.push(Access::new(i, WRITE, Account { address }));
+                }
+                OpcodeId::CREATE => {
+                    if push_call_stack {
+                        // Find CREATE result
+                        let address = get_call_result(&geth_trace.struct_logs[index..])
+                            .unwrap_or_else(Word::zero)
+                            .to_address();
+                        if !address.is_zero() {
+                            accs.push(Access::new(i, WRITE, Account { address }));
+                            accs.push(Access::new(i, WRITE, Code { address }));
+                        }
+                        call_stack.push((address, CodeSource::Address(address)));
                     }
-                    call_stack.push((address, CodeSource::Address(address)));
                 }
-            }
-            OpcodeId::CREATE2 => {
-                if push_call_stack {
-                    // Find CREATE2 result
-                    let address = get_call_result(&geth_trace.struct_logs[index..])
-                        .unwrap_or_else(Word::zero)
-                        .to_address();
-                    if !address.is_zero() {
-                        accs.push(Access::new(i, WRITE, Account { address }));
-                        accs.push(Access::new(i, WRITE, Code { address }));
+                OpcodeId::CREATE2 => {
+                    if push_call_stack {
+                        // Find CREATE2 result
+                        let address = get_call_result(&geth_trace.struct_logs[index..])
+                            .unwrap_or_else(Word::zero)
+                            .to_address();
+                        if !address.is_zero() {
+                            accs.push(Access::new(i, WRITE, Account { address }));
+                            accs.push(Access::new(i, WRITE, Code { address }));
+                        }
+                        call_stack.push((address, CodeSource::Address(address)));
                     }
-                    call_stack.push((address, CodeSource::Address(address)));
                 }
-            }
-            OpcodeId::CALL => {
-                let address = contract_address;
-                accs.push(Access::new(i, WRITE, Account { address }));
+                OpcodeId::CALL => {
+                    let address = contract_address;
+                    accs.push(Access::new(i, WRITE, Account { address }));
 
-                let address = step.stack.nth_last(1)?.to_address();
-                accs.push(Access::new(i, WRITE, Account { address }));
-                accs.push(Access::new(i, READ, Code { address }));
-                if push_call_stack {
-                    call_stack.push((address, CodeSource::Address(address)));
+                    let address = step.stack.nth_last(1)?.to_address();
+                    accs.push(Access::new(i, WRITE, Account { address }));
+                    accs.push(Access::new(i, READ, Code { address }));
+                    if push_call_stack {
+                        call_stack.push((address, CodeSource::Address(address)));
+                    }
                 }
-            }
-            OpcodeId::CALLCODE => {
-                let address = contract_address;
-                accs.push(Access::new(i, WRITE, Account { address }));
+                OpcodeId::CALLCODE => {
+                    let address = contract_address;
+                    accs.push(Access::new(i, WRITE, Account { address }));
 
-                let address = step.stack.nth_last(1)?.to_address();
-                accs.push(Access::new(i, WRITE, Account { address }));
-                accs.push(Access::new(i, READ, Code { address }));
-                if push_call_stack {
-                    call_stack.push((address, CodeSource::Address(address)));
+                    let address = step.stack.nth_last(1)?.to_address();
+                    accs.push(Access::new(i, WRITE, Account { address }));
+                    accs.push(Access::new(i, READ, Code { address }));
+                    if push_call_stack {
+                        call_stack.push((address, CodeSource::Address(address)));
+                    }
                 }
-            }
-            OpcodeId::DELEGATECALL => {
-                let address = step.stack.nth_last(1)?.to_address();
-                accs.push(Access::new(i, READ, Code { address }));
-                if push_call_stack {
-                    call_stack.push((contract_address, CodeSource::Address(address)));
+                OpcodeId::DELEGATECALL => {
+                    let address = step.stack.nth_last(1)?.to_address();
+                    accs.push(Access::new(i, READ, Code { address }));
+                    if push_call_stack {
+                        call_stack.push((contract_address, CodeSource::Address(address)));
+                    }
                 }
-            }
-            OpcodeId::STATICCALL => {
-                let address = step.stack.nth_last(1)?.to_address();
-                accs.push(Access::new(i, READ, Code { address }));
-                if push_call_stack {
-                    call_stack.push((address, CodeSource::Address(address)));
+                OpcodeId::STATICCALL => {
+                    let address = step.stack.nth_last(1)?.to_address();
+                    accs.push(Access::new(i, READ, Code { address }));
+                    if push_call_stack {
+                        call_stack.push((address, CodeSource::Address(address)));
+                    }
                 }
+                _ => {}
             }
-            _ => {}
+            Ok(())
+        })();
+        if let Err(e) = result {
+            log::warn!("err when parsing access: {:?}, step {:?}", e, step);
         }
+
         if pop_call_stack {
             if call_stack.len() == 1 {
                 return Err(Error::InvalidGethExecStep(

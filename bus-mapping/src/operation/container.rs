@@ -1,7 +1,7 @@
 use super::{
-    AccountDestructedOp, AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter,
-    StackOp, StartOp, StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp,
-    TxLogOp, TxReceiptOp, TxRefundOp, RW,
+    AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter, StackOp, StartOp,
+    StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogOp, TxReceiptOp,
+    TxRefundOp, RW,
 };
 use crate::exec_trace::OperationRef;
 use itertools::Itertools;
@@ -36,8 +36,6 @@ pub struct OperationContainer {
     pub tx_refund: Vec<Operation<TxRefundOp>>,
     /// Operations of AccountOp
     pub account: Vec<Operation<AccountOp>>,
-    /// Operations of AccountDestructedOp
-    pub account_destructed: Vec<Operation<AccountDestructedOp>>,
     /// Operations of CallContextOp
     pub call_context: Vec<Operation<CallContextOp>>,
     /// Operations of TxReceiptOp
@@ -66,7 +64,6 @@ impl OperationContainer {
             tx_access_list_account_storage: Vec::new(),
             tx_refund: Vec::new(),
             account: Vec::new(),
-            account_destructed: Vec::new(),
             call_context: Vec::new(),
             tx_receipt: Vec::new(),
             tx_log: Vec::new(),
@@ -151,14 +148,6 @@ impl OperationContainer {
                 });
                 OperationRef::from((Target::Account, self.account.len() - 1))
             }
-            OpEnum::AccountDestructed(op) => {
-                self.account_destructed.push(if reversible {
-                    Operation::new_reversible(rwc, rw, op)
-                } else {
-                    Operation::new(rwc, rw, op)
-                });
-                OperationRef::from((Target::AccountDestructed, self.account_destructed.len() - 1))
-            }
             OpEnum::CallContext(op) => {
                 self.call_context.push(Operation::new(rwc, rw, op));
                 OperationRef::from((Target::CallContext, self.call_context.len() - 1))
@@ -202,8 +191,10 @@ mod container_test {
     use super::*;
 
     use crate::operation::{RWCounter, RW};
-    use eth_types::evm_types::{MemoryAddress, StackAddress};
-    use eth_types::{Address, Word};
+    use eth_types::{
+        evm_types::{MemoryAddress, StackAddress},
+        Address, Word,
+    };
 
     #[test]
     fn operation_container_test() {

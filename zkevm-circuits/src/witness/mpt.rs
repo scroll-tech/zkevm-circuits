@@ -1,11 +1,11 @@
-use crate::evm_circuit::util::rlc;
-use crate::evm_circuit::witness::Rw;
-use crate::table::{AccountFieldTag, ProofType};
+use crate::{
+    evm_circuit::{util::rlc, witness::Rw},
+    table::{AccountFieldTag, MPTProofType as ProofType},
+};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
-use mpt_zktrie::state::witness::WitnessGenerator;
-use mpt_zktrie::{serde::SMTTrace, state, MPTProofType};
+use mpt_zktrie::{serde::SMTTrace, state, state::witness::WitnessGenerator, MPTProofType};
 use std::collections::BTreeMap;
 
 pub use state::ZktrieState;
@@ -25,9 +25,9 @@ impl MptUpdate {
         match self.key {
             Key::AccountStorage { .. } => {
                 if self.old_value.is_zero() && self.new_value.is_zero() {
-                    ProofType::StorageDoesNotExist
+                    ProofType::NonExistingStorageProof
                 } else {
-                    ProofType::StorageChanged
+                    ProofType::StorageMod
                 }
             }
             Key::Account { field_tag, .. } => field_tag.into(),
@@ -72,7 +72,7 @@ impl MptUpdates {
         self.proof_types = Vec::new();
 
         for (key, update) in &mut self.updates {
-            log::trace!("apply update {:?} {:?}", key, update);
+            log::trace!("apply update {:?} {:#?}", key, update);
             let proof_tip = state::as_proof_type(update.proof_type() as i32);
             let smt_trace = wit_gen.handle_new_state(
                 proof_tip,
@@ -98,14 +98,25 @@ impl MptUpdates {
             self.proof_types.push(proof_tip);
         }
         log::debug!(
-            "mpt update roots (after zktrie) {:?} {:?}",
+            "mpt update roots (after zktrie) {:#x} {:#x}",
             self.old_root,
             self.new_root
         );
         let root_pair2 = (self.old_root, self.new_root);
         if root_pair2 != root_pair {
-            log::error!("roots non consistent {:?} vs {:?}", root_pair, root_pair2);
+            log::error!(
+                "roots non consistent ({:#x},{:#x}) vs ({:#x},{:#x})",
+                root_pair.0,
+                root_pair.1,
+                root_pair2.0,
+                root_pair2.1
+            );
+            wit_gen.dump();
         }
+    }
+
+    pub(crate) fn mock_from(rows: &[Rw]) -> Self {
+        Self::from_rws_with_mock_state_roots(rows, 0xcafeu64.into(), 0xdeadbeefu64.into())
     }
 
     pub(crate) fn from_rws_with_mock_state_roots(
@@ -181,7 +192,8 @@ impl MptUpdate {
     pub(crate) fn value_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
         let assign = |x: Word| match self.key {
             Key::Account {
-                field_tag: AccountFieldTag::Nonce | AccountFieldTag::NonExisting,
+                field_tag:
+                    AccountFieldTag::Nonce | AccountFieldTag::NonExisting | AccountFieldTag::CodeSize,
                 ..
             } => x.to_scalar().unwrap(),
             _ => rlc::value(&x.to_le_bytes(), word_randomness),

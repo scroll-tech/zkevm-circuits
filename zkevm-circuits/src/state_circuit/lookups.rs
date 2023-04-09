@@ -87,12 +87,19 @@ impl<F: Field> Chip<F> {
     }
 
     pub fn configure(meta: &mut ConstraintSystem<F>) -> Config {
-        Config {
+        let config = Config {
             u8: meta.fixed_column(),
             u10: meta.fixed_column(),
             u16: meta.fixed_column(),
             call_context_field_tag: meta.fixed_column(),
-        }
+        };
+        meta.annotate_lookup_any_column(config.u8, || "LOOKUP_u8");
+        meta.annotate_lookup_any_column(config.u10, || "LOOKUP_u10");
+        meta.annotate_lookup_any_column(config.u16, || "LOOKUP_u16");
+        meta.annotate_lookup_any_column(config.call_context_field_tag, || {
+            "LOOKUP_call_context_field_tag"
+        });
+        config
     }
 
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {

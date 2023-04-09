@@ -1,21 +1,17 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use crate::operation::AccountOp;
-use crate::operation::MemoryOp;
 use crate::{
-    circuit_input_builder::CircuitInputStateRef,
+    circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
     evm::opcodes::ExecStep,
-    operation::{AccountField, CallContextField, RW},
+    operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
+    state_db::CodeDB,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
+use eth_types::{Bytecode, GethExecStep, ToWord, H256};
 use ethers_core::utils::keccak256;
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
 
-// TODO: rename to indicate this handles REVERT (and maybe STOP)?
 impl Opcode for ReturnRevert {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
@@ -44,14 +40,15 @@ impl Opcode for ReturnRevert {
             call.is_success.to_word(),
         );
 
-        let offset = offset.as_usize();
+        // Get low Uint64 of offset.
+        let offset = offset.low_u64() as usize;
         let length = length.as_usize();
 
         // Case A in the spec.
         if call.is_create() && call.is_success && length > 0 {
             // Note: handle_return updates state.code_db. All we need to do here is push the
             // copy event.
-            let code_hash = handle_create(
+            let code_info = handle_create(
                 state,
                 &mut exec_step,
                 Source {
@@ -73,14 +70,33 @@ impl Opcode for ReturnRevert {
                 state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
             }
 
+            #[cfg(feature = "scroll")]
             state.push_op_reversible(
                 &mut exec_step,
-                RW::WRITE,
+                AccountOp {
+                    address: state.call()?.address,
+                    field: AccountField::KeccakCodeHash,
+                    value: code_info.keccak_hash.to_word(),
+                    value_prev: crate::util::KECCAK_CODE_HASH_ZERO.to_word(),
+                },
+            )?;
+            state.push_op_reversible(
+                &mut exec_step,
                 AccountOp {
                     address: state.call()?.address,
                     field: AccountField::CodeHash,
-                    value: code_hash.to_word(),
-                    value_prev: Word::from_little_endian(&*EMPTY_HASH_LE),
+                    value: code_info.hash.to_word(),
+                    value_prev: CodeDB::empty_code_hash().to_word(),
+                },
+            )?;
+            #[cfg(feature = "scroll")]
+            state.push_op_reversible(
+                &mut exec_step,
+                AccountOp {
+                    address: state.call()?.address,
+                    field: AccountField::CodeSize,
+                    value: code_info.size.to_word(),
+                    value_prev: eth_types::Word::zero(),
                 },
             )?;
         }
@@ -140,27 +156,6 @@ impl Opcode for ReturnRevert {
                     },
                 )?;
             }
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeId,
-                state.call()?.call_id.into(),
-            );
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeReturnDataOffset,
-                offset.into(),
-            );
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeReturnDataLength,
-                length.into(),
-            );
         }
 
         state.handle_return(step)?;
@@ -206,30 +201,40 @@ fn handle_copy(
         );
     }
 
-    state.push_copy(CopyEvent {
-        rw_counter_start,
-        src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(source.id),
-        src_addr: source.offset.try_into().unwrap(),
-        src_addr_end: (source.offset + source.length).try_into().unwrap(),
-        dst_type: CopyDataType::Memory,
-        dst_id: NumberOrHash::Number(destination.id),
-        dst_addr: destination.offset.try_into().unwrap(),
-        log_id: None,
-        bytes,
-    });
+    state.push_copy(
+        step,
+        CopyEvent {
+            rw_counter_start,
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(source.id),
+            src_addr: source.offset.try_into().unwrap(),
+            src_addr_end: (source.offset + source.length).try_into().unwrap(),
+            dst_type: CopyDataType::Memory,
+            dst_id: NumberOrHash::Number(destination.id),
+            dst_addr: destination.offset.try_into().unwrap(),
+            log_id: None,
+            bytes,
+        },
+    );
 
     Ok(())
+}
+
+struct AccountCodeInfo {
+    keccak_hash: H256,
+    hash: H256,
+    size: usize,
 }
 
 fn handle_create(
     state: &mut CircuitInputStateRef,
     step: &mut ExecStep,
     source: Source,
-) -> Result<H256, Error> {
+) -> Result<AccountCodeInfo, Error> {
     let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
-    // FIXME for poseidon code hash
-    let code_hash = H256(keccak256(&values));
+    let keccak_hash = H256(keccak256(&values));
+    let code_hash = CodeDB::hash(&values);
+    let size = values.len();
     let dst_id = NumberOrHash::Hash(code_hash);
     let bytes: Vec<_> = Bytecode::from(values)
         .code
@@ -246,29 +251,37 @@ fn handle_create(
         );
     }
 
-    state.push_copy(CopyEvent {
-        rw_counter_start,
-        src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(source.id),
-        src_addr: source.offset.try_into().unwrap(),
-        src_addr_end: (source.offset + source.length).try_into().unwrap(),
-        dst_type: CopyDataType::Bytecode,
-        dst_id,
-        dst_addr: 0,
-        log_id: None,
-        bytes,
-    });
+    state.push_copy(
+        step,
+        CopyEvent {
+            rw_counter_start,
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(source.id),
+            src_addr: source.offset.try_into().unwrap(),
+            src_addr_end: (source.offset + source.length).try_into().unwrap(),
+            dst_type: CopyDataType::Bytecode,
+            dst_id,
+            dst_addr: 0,
+            log_id: None,
+            bytes,
+        },
+    );
 
-    Ok(code_hash)
+    Ok(AccountCodeInfo {
+        keccak_hash,
+        hash: code_hash,
+        size,
+    })
 }
 
 #[cfg(test)]
 mod return_tests {
     use crate::mock::BlockData;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-    use mock::TestContext;
+    use eth_types::{bytecode, geth_types::GethData, word};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
 
     #[test]
     fn test_ok() {

@@ -73,8 +73,8 @@ pub enum OogError {
     /// Out of Gas for CREATE, RETURN, REVERT, which have dynamic memory
     /// expansion gas cost
     DynamicMemoryExpansion,
-    /// Out of Gas for CALLDATACOPY, CODECOPY, RETURNDATACOPY, which copy a
-    /// specified chunk of memory
+    /// Out of Gas for CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY,
+    /// which copy a specified chunk of memory
     MemoryCopy,
     /// Out of Gas for BALANCE, EXTCODESIZE, EXTCODEHASH, which possibly touch
     /// an extra account
@@ -88,8 +88,6 @@ pub enum OogError {
     Exp,
     /// Out of Gas for SHA3
     Sha3,
-    /// Out of Gas for EXTCODECOPY
-    ExtCodeCopy,
     /// Out of Gas for SLOAD and SSTORE
     SloadSstore,
     /// Out of Gas for CALL, CALLCODE, DELEGATECALL and STATICCALL
@@ -98,6 +96,17 @@ pub enum OogError {
     Create2,
     /// Out of Gas for SELFDESTRUCT
     SelfDestruct,
+}
+
+/// Insufficient balance errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InsufficientBalanceError {
+    /// Insufficient balance during CALL/CALLCODE opcode.
+    Call,
+    /// Insufficient balance during CREATE opcode.
+    Create,
+    /// Insufficient balance during CREATE2 opcode.
+    Create2,
 }
 
 /// EVM Execution Error
@@ -116,8 +125,8 @@ pub enum ExecError {
     WriteProtection,
     /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
     Depth,
-    /// For CALL, CALLCODE
-    InsufficientBalance,
+    /// For CALL, CALLCODE, CREATE, CREATE2
+    InsufficientBalance(InsufficientBalanceError),
     /// For CREATE, CREATE2
     ContractAddressCollision,
     /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
@@ -133,11 +142,18 @@ pub enum ExecError {
     MaxCodeSizeExceeded,
     /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
     PrecompileFailed,
+    /// ..
+    GasUintOverflow,
+    /// ..
+    NonceUintOverflow,
 }
 
 // TODO: Move to impl block.
 pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
-    if error == GETH_ERR_OUT_OF_GAS || error == GETH_ERR_GAS_UINT_OVERFLOW {
+    if error == GETH_ERR_GAS_UINT_OVERFLOW {
+        return ExecError::GasUintOverflow;
+    }
+    if error == GETH_ERR_OUT_OF_GAS {
         // NOTE: We report a GasUintOverflow error as an OutOfGas error
         let oog_err = match op {
             OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {
@@ -146,9 +162,10 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             OpcodeId::CREATE | OpcodeId::RETURN | OpcodeId::REVERT => {
                 OogError::DynamicMemoryExpansion
             }
-            OpcodeId::CALLDATACOPY | OpcodeId::CODECOPY | OpcodeId::RETURNDATACOPY => {
-                OogError::MemoryCopy
-            }
+            OpcodeId::CALLDATACOPY
+            | OpcodeId::CODECOPY
+            | OpcodeId::EXTCODECOPY
+            | OpcodeId::RETURNDATACOPY => OogError::MemoryCopy,
             OpcodeId::BALANCE | OpcodeId::EXTCODESIZE | OpcodeId::EXTCODEHASH => {
                 OogError::AccountAccess
             }
@@ -157,11 +174,10 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             }
             OpcodeId::EXP => OogError::Exp,
             OpcodeId::SHA3 => OogError::Sha3,
-            OpcodeId::EXTCODECOPY => OogError::ExtCodeCopy,
-            OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
             OpcodeId::CALL | OpcodeId::CALLCODE | OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
                 OogError::Call
             }
+            OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
             OpcodeId::CREATE2 => OogError::Create2,
             OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
             _ => OogError::Constant,

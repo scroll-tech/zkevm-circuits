@@ -1,11 +1,13 @@
 use ethers_core::utils::rlp;
-use halo2_proofs::circuit::Value;
-use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
 use strum_macros::EnumIter;
 
-use crate::util::Challenges;
-use crate::witness::rlp_encode::common::handle_u8;
-use crate::{evm_circuit::witness::Transaction, impl_expr, witness::tx::SignedTransaction};
+use crate::{
+    evm_circuit::witness::Transaction,
+    impl_expr,
+    util::Challenges,
+    witness::{rlp_encode::common::handle_u8, tx::SignedTransaction},
+};
 
 use super::{
     common::{handle_address, handle_bytes, handle_prefix, handle_u256, handle_u64},
@@ -360,15 +362,16 @@ impl<F: FieldExt> RlpWitnessGen<F> for SignedTransaction {
 #[cfg(test)]
 mod tests {
     use ethers_core::utils::rlp;
-    use halo2_proofs::circuit::Value;
-    use halo2_proofs::{arithmetic::Field, halo2curves::bn256::Fr};
+    use halo2_proofs::{arithmetic::Field, circuit::Value, halo2curves::bn256::Fr};
     use num::Zero;
 
-    use crate::evm_circuit::{
-        test::rand_bytes,
-        witness::{RlpTxTag, RlpWitnessGen, Transaction},
+    use crate::{
+        evm_circuit::{
+            test::rand_bytes,
+            witness::{RlpTxTag, RlpWitnessGen, Transaction},
+        },
+        util::Challenges,
     };
-    use crate::util::Challenges;
 
     #[test]
     fn tx_rlp_witgen_a() {
@@ -379,7 +382,7 @@ mod tests {
             Value::known(r + Fr::one() + Fr::one()),
         );
 
-        let callee_address = mock::MOCK_ACCOUNTS[0];
+        let callee_address = Some(mock::MOCK_ACCOUNTS[0]);
         let call_data = rand_bytes(55);
         let tx = Transaction {
             nonce: 1,
@@ -475,7 +478,7 @@ mod tests {
         let nonce = 0x123456u64;
         let gas_price = 0x234567u64.into();
         let gas = 0x345678u64;
-        let callee_address = mock::MOCK_ACCOUNTS[1];
+        let callee_address = Some(mock::MOCK_ACCOUNTS[1]);
         let value = 0x456789u64.into();
         let call_data = rand_bytes(2048);
         let tx = Transaction {

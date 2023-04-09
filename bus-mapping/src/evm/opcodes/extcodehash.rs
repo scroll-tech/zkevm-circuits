@@ -2,7 +2,7 @@ use super::Opcode;
 use crate::{
     circuit_input_builder::CircuitInputStateRef,
     evm::opcodes::ExecStep,
-    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
     Error,
 };
 use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256};
@@ -45,7 +45,6 @@ impl Opcode for Extcodehash {
         let is_warm = state.sdb.check_account_in_access_list(&external_address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address: external_address,
@@ -57,19 +56,18 @@ impl Opcode for Extcodehash {
         let account = state.sdb.get_account(&external_address).1;
         let exists = !account.is_empty();
         let code_hash = if exists {
-            account.code_hash
+            account.keccak_code_hash
         } else {
             H256::zero()
         };
-        //log::trace!("extcodehash addr {:?} acc {:?} exists {:?} codehash {:?}",
+        // log::trace!("extcodehash addr {:?} acc {:?} exists {:?} codehash {:?}",
         // external_address, account, exists, code_hash);
         state.account_read(
             &mut exec_step,
             external_address,
-            AccountField::CodeHash,
+            AccountField::KeccakCodeHash,
             code_hash.to_word(),
-            code_hash.to_word(),
-        )?;
+        );
         debug_assert_eq!(steps[1].stack.last()?, code_hash.to_word());
         // Stack write of the result of EXTCODEHASH.
         state.stack_write(&mut exec_step, stack_address, steps[1].stack.last()?)?;
@@ -81,9 +79,11 @@ impl Opcode for Extcodehash {
 #[cfg(test)]
 mod extcodehash_tests {
     use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::mock::BlockData;
-    use crate::operation::{AccountOp, CallContextOp, StackOp};
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{AccountOp, CallContextOp, StackOp, RW},
+    };
     use eth_types::{
         address, bytecode,
         evm_types::{OpcodeId, StackAddress},
@@ -272,7 +272,7 @@ mod extcodehash_tests {
                 RW::READ,
                 &AccountOp {
                     address: external_address,
-                    field: AccountField::CodeHash,
+                    field: AccountField::KeccakCodeHash,
                     value: if exists { code_hash } else { U256::zero() },
                     value_prev: if exists { code_hash } else { U256::zero() },
                 }

@@ -24,7 +24,7 @@ num = "0.4"
 num-bigint = { version = "0.4" }
 strum_macros = "0.24"
 strum = "0.24"
-mpt-circuits = { package = "halo2-mpt-circuits", git = "https://github.com/scroll-tech/mpt-circuit.git", branch = "scroll-dev-0216" }
+poseidon-circuit = { git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0215"}
 [features]
 default = ["warn-unimplemented"]
 warn-unimplemented = []

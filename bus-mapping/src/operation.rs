@@ -1,17 +1,13 @@
 //! Collection of structs and functions used to:
 //! - Define the internals of a [`MemoryOp`], [`StackOp`] and [`StorageOp`].
-//! - Define the actual operation types and a wrapper over them (the
-//!   [`Operation`] enum).
-//! - Define structures that interact with operations such as
-//!   [`OperationContainer`].
+//! - Define the actual operation types and a wrapper over them (the [`Operation`] enum).
+//! - Define structures that interact with operations such as [`OperationContainer`].
 pub(crate) mod container;
 
 pub use container::OperationContainer;
 pub use eth_types::evm_types::{MemoryAddress, StackAddress};
 
-use core::cmp::Ordering;
-use core::fmt;
-use core::fmt::Debug;
+use core::{cmp::Ordering, fmt, fmt::Debug};
 use eth_types::{Address, Word};
 use std::mem::swap;
 
@@ -104,8 +100,6 @@ pub enum Target {
     TxRefund,
     /// Means the target of the operation is the Account.
     Account,
-    /// Means the target of the operation is the AccountDestructed.
-    AccountDestructed,
     /// Means the target of the operation is the CallContext.
     CallContext,
     /// Means the target of the operation is the TxReceipt.
@@ -537,8 +531,12 @@ pub enum AccountField {
     Nonce,
     /// Account Balance
     Balance,
-    /// Account Code Hash
+    /// Poseidon hash of account's code
     CodeHash,
+    /// Keccak hash of account's code
+    KeccakCodeHash,
+    /// Size of account's code, i.e. code length
+    CodeSize,
 }
 
 /// Represents a change in the Account field implied by a `BeginTx`,
@@ -604,55 +602,6 @@ impl Op for AccountOp {
     fn reverse(&self) -> Self {
         let mut rev = self.clone();
         swap(&mut rev.value, &mut rev.value_prev);
-        rev
-    }
-}
-
-/// Represents an Account destruction implied by a `SELFDESTRUCT` step of the
-/// [`ExecStep`](crate::circuit_input_builder::ExecStep).
-#[derive(Clone, PartialEq, Eq)]
-pub struct AccountDestructedOp {
-    /// Transaction ID: Transaction index in the block starting at 1.
-    pub tx_id: usize,
-    /// Account Address
-    pub address: Address,
-    /// Whether the account is destructed.
-    pub is_destructed: bool,
-    /// Whether the account was previously destructed.
-    pub is_destructed_prev: bool,
-}
-
-impl fmt::Debug for AccountDestructedOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AccountDestructedOp { ")?;
-        f.write_fmt(format_args!(
-            "tx_id: {:?}, addr: {:?}, is_destructed_prev: {:?}, is_destructed: {:?}",
-            self.tx_id, self.address, self.is_destructed_prev, self.is_destructed
-        ))?;
-        f.write_str(" }")
-    }
-}
-
-impl PartialOrd for AccountDestructedOp {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for AccountDestructedOp {
-    fn cmp(&self, other: &Self) -> Ordering {
-        (&self.tx_id, &self.address).cmp(&(&other.tx_id, &other.address))
-    }
-}
-
-impl Op for AccountDestructedOp {
-    fn into_enum(self) -> OpEnum {
-        OpEnum::AccountDestructed(self)
-    }
-
-    fn reverse(&self) -> Self {
-        let mut rev = self.clone();
-        swap(&mut rev.is_destructed, &mut rev.is_destructed_prev);
         rev
     }
 }
@@ -793,8 +742,8 @@ pub enum TxLogField {
     Topic,
     /// data of log entry
     Data,
-    /* TODO: Add `TopicLength` and `DataLength`, which will be used for the RLP encoding of the
-     * Tx Receipt */
+    // TODO: Add `TopicLength` and `DataLength`, which will be used for the RLP encoding of the
+    // Tx Receipt
 }
 
 /// Represents TxLog read/write operation.
@@ -971,8 +920,6 @@ pub enum OpEnum {
     TxRefund(TxRefundOp),
     /// Account
     Account(AccountOp),
-    /// AccountDestructed
-    AccountDestructed(AccountDestructedOp),
     /// CallContext
     CallContext(CallContextOp),
     /// TxReceipt
@@ -1063,7 +1010,7 @@ impl<T: Op> Operation<T> {
         &mut self.op
     }
 
-    // /// Matches over an `Operation` returning the [`Target`] of the iternal
+    // /// Matches over an `Operation` returning the [`Target`] of the internal
     // op /// it stores inside.
     // pub const fn target(&self) -> Target {
     //     self.op.target()

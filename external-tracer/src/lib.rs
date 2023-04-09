@@ -71,7 +71,7 @@ pub fn trace(config: &TraceConfig) -> Result<Vec<GethExecTrace>, Error> {
         },
     )?;
 
-    //println!("trace {}",trace_string);
+    log::trace!("trace: {}", trace_string);
 
     let trace = serde_json::from_str(&trace_string).map_err(Error::SerdeError)?;
     Ok(trace)

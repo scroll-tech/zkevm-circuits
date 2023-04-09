@@ -1,19 +1,25 @@
 use super::*;
-use crate::circuit_input_builder::access::gen_state_access_trace;
-use crate::error::{ExecError, OogError};
-use crate::geth_errors::{
-    GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
-    GETH_ERR_STACK_UNDERFLOW,
+use crate::{
+    circuit_input_builder::access::gen_state_access_trace,
+    error::{ExecError, InsufficientBalanceError},
+    geth_errors::{
+        GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
+        GETH_ERR_STACK_UNDERFLOW,
+    },
+    operation::RWCounter,
+    state_db::Account,
 };
-use crate::operation::RWCounter;
-use crate::state_db::Account;
-use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
 use eth_types::{
-    address, bytecode, geth_types::GethData, word, Bytecode, Hash, ToAddress, ToWord, Word,
+    address, bytecode,
+    evm_types::{stack::Stack, Gas, OpcodeId},
+    geth_types::GethData,
+    word, Bytecode, Hash, ToAddress, ToWord, Word,
 };
 use lazy_static::lazy_static;
-use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};
-use mock::MOCK_COINBASE;
+use mock::{
+    test_ctx::{helpers::*, LoggerConfig, TestContext},
+    MOCK_COINBASE,
+};
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 
@@ -38,6 +44,7 @@ impl CircuitInputBuilderTx {
         let tx_ctx = TransactionContext::new(
             &block.eth_block.transactions[0],
             &GethExecTrace {
+                l1_fee: 0,
                 gas: Gas(0),
                 failed: false,
                 return_value: "".to_owned(),
@@ -101,7 +108,32 @@ fn mock_internal_create() -> Call {
     }
 }
 
-//
+fn mock_root_create() -> Call {
+    Call {
+        call_id: 0,
+        caller_id: 0,
+        last_callee_id: 0,
+        kind: CallKind::Create,
+        is_static: false,
+        is_root: true,
+        is_persistent: false,
+        is_success: false,
+        rw_counter_end_of_reversion: 0,
+        caller_address: *ADDR_A,
+        address: *ADDR_B,
+        code_source: CodeSource::Memory,
+        code_hash: Hash::zero(),
+        depth: 1,
+        value: Word::zero(),
+        call_data_offset: 0,
+        call_data_length: 0,
+        return_data_offset: 0,
+        return_data_length: 0,
+        last_callee_return_data_offset: 0,
+        last_callee_return_data_length: 0,
+    }
+}
+
 // Geth Errors ignored
 //
 // These errors happen in a CALL, CALLCODE, DELEGATECALL or STATICCALL, and
@@ -257,7 +289,9 @@ fn tracer_err_insufficient_balance() {
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
-        Some(ExecError::InsufficientBalance)
+        Some(ExecError::InsufficientBalance(
+            InsufficientBalanceError::Call
+        ))
     );
 }
 
@@ -436,22 +470,16 @@ fn tracer_err_address_collision() {
     builder.builder.sdb.set_account(
         &ADDR_B,
         Account {
-            nonce: Word::zero(),
-            balance: Word::from(555u64), /* same value as in
-                                          * `mock::new_tracer_account` */
-            storage: HashMap::new(),
-            code_hash: Hash::zero(),
+            // same value as in
+            // `mock::new_tracer_account`
+            balance: Word::from(555u64),
+            ..Account::zero()
         },
     );
-    builder.builder.sdb.set_account(
-        &create2_address,
-        Account {
-            nonce: Word::zero(),
-            balance: Word::zero(),
-            storage: HashMap::new(),
-            code_hash: Hash::zero(),
-        },
-    );
+    builder
+        .builder
+        .sdb
+        .set_account(&create2_address, Account::zero());
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
         Some(ExecError::ContractAddressCollision)
@@ -557,6 +585,61 @@ fn tracer_err_code_store_out_of_gas() {
     // Set up call context at CREATE
     builder.tx_ctx.call_is_success.push(false);
     builder.state_ref().push_call(mock_internal_create());
+    assert_eq!(
+        builder.state_ref().get_step_err(step, next_step).unwrap(),
+        Some(ExecError::CodeStoreOutOfGas)
+    );
+}
+
+#[test]
+fn tracer_err_code_store_out_of_gas_tx_deploy() {
+    // code_creator outputs an empty array of length 0x100, which will
+    // exhaust the gas to store the code.
+    let code_len = 0x100;
+    let code_creator = bytecode! {
+        PUSH1(Word::zero()) // value
+        PUSH32(code_len) // offset
+        MSTORE
+        PUSH32(code_len) // length
+        PUSH1(0x00) // offset
+        RETURN
+    };
+
+    // Get the execution steps from the external tracer
+    let block: GethData = TestContext::<2, 1>::new_with_logger_config(
+        None,
+        |accs| {
+            accs[0].address(address!("0x0000000000000000000000000000000000000000"));
+            accs[1].address(*ADDR_B).balance(Word::from(1u64 << 30));
+        },
+        |mut txs, accs| {
+            txs[0]
+                .from(accs[1].address)
+                .gas(55000u64.into())
+                .nonce(Word::zero())
+                .input(code_creator.into());
+        },
+        |block, _tx| block.number(0x0264),
+        LoggerConfig::enable_memory(),
+    )
+    .unwrap()
+    .into();
+
+    // get last RETURN
+    let (index, step) = block.geth_traces[0]
+        .struct_logs
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, s)| s.op == OpcodeId::RETURN)
+        .unwrap();
+    let next_step = block.geth_traces[0].struct_logs.get(index + 1);
+    assert!(check_err_code_store_out_of_gas(step, next_step));
+
+    let mut builder = CircuitInputBuilderTx::new(&block, step);
+    // Set up call context at CREATE
+    builder.tx_ctx.call_is_success.push(false);
+    builder.state_ref().push_call(mock_root_create());
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
         Some(ExecError::CodeStoreOutOfGas)
@@ -777,6 +860,61 @@ fn tracer_err_max_code_size_exceeded() {
 }
 
 #[test]
+fn tracer_err_max_code_size_exceeded_tx_deploy() {
+    // code_creator outputs an empty array of length 0x6000 + 1, which will
+    // trigger the max code size limit.
+    let code_len = 0x6000 + 1;
+    let code_creator = bytecode! {
+        PUSH1(Word::zero()) // value
+        PUSH32(code_len) // offset
+        MSTORE
+        PUSH32(code_len) // length
+        PUSH1(0x00) // offset
+        RETURN
+    };
+
+    // Get the execution steps from the external tracer
+    let block: GethData = TestContext::<2, 1>::new_with_logger_config(
+        None,
+        |accs| {
+            accs[0].address(address!("0x0000000000000000000000000000000000000000"));
+            accs[1].address(*ADDR_B).balance(Word::from(1u64 << 30));
+        },
+        |mut txs, accs| {
+            txs[0]
+                .from(accs[1].address)
+                .gas(60000u64.into())
+                .nonce(Word::zero())
+                .input(code_creator.into());
+        },
+        |block, _tx| block.number(0x0264),
+        LoggerConfig::enable_memory(),
+    )
+    .unwrap()
+    .into();
+
+    // get last RETURN
+    let (index, step) = block.geth_traces[0]
+        .struct_logs
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, s)| s.op == OpcodeId::RETURN)
+        .unwrap();
+    let next_step = block.geth_traces[0].struct_logs.get(index + 1);
+    assert!(check_err_max_code_size_exceeded(step, next_step));
+
+    let mut builder = CircuitInputBuilderTx::new(&block, step);
+    // Set up call context at RETURN
+    builder.tx_ctx.call_is_success.push(false);
+    builder.state_ref().push_call(mock_root_create());
+    assert_eq!(
+        builder.state_ref().get_step_err(step, next_step).unwrap(),
+        Some(ExecError::MaxCodeSizeExceeded)
+    );
+}
+
+#[test]
 fn tracer_create_stop() {
     // code_creator doesn't output anything because it stops.
     let code_creator = bytecode! {
@@ -871,7 +1009,6 @@ fn tracer_create_stop() {
     );
 }
 
-//
 // Geth Errors not reported
 //
 // These errors are specific to some opcodes and due to the way the tracing
@@ -1232,7 +1369,6 @@ fn tracer_err_return_data_out_of_bounds() {
     );
 }
 
-//
 // Geth Errors Reported
 //
 // These errors can be found in the trace step error field.
@@ -1275,7 +1411,7 @@ fn tracer_err_gas_uint_overflow() {
     let mut builder = CircuitInputBuilderTx::new(&block, step);
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
-        Some(ExecError::OutOfGas(OogError::StaticMemoryExpansion))
+        Some(ExecError::GasUintOverflow)
     );
 }
 
@@ -1348,7 +1484,7 @@ fn tracer_err_write_protection(is_call: bool) {
         code_b.push(1, Word::zero());
         code_b.push(1, Word::from(0x20));
         code_b.push(1, Word::from(0x10)); // value
-        code_b.push(32, *WORD_ADDR_B); //addr
+        code_b.push(32, *WORD_ADDR_B); // addr
         code_b.push(32, Word::from(0x1000)); // gas
         code_b.write_op(OpcodeId::CALL);
     } else {
@@ -1514,7 +1650,6 @@ fn tracer_err_stack_underflow() {
     );
 }
 
-//
 // Circuit Input Builder tests
 //
 
@@ -1726,9 +1861,7 @@ fn create_address() {
         &ADDR_B,
         Account {
             nonce: Word::from(1),
-            balance: Word::zero(),
-            storage: HashMap::new(),
-            code_hash: Hash::zero(),
+            ..Account::zero()
         },
     );
     let addr = builder.state_ref().create_address().unwrap();

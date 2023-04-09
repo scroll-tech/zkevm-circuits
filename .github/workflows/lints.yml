@@ -4,13 +4,13 @@ name: Lints
 on:
   pull_request:
     types: [synchronize, opened, reopened, ready_for_review]
-    # Ignore when target branch is `main` and source branch is scroll-stable.
-    # It could avoid running twice. Since scroll-stable is set as `push` below.
+    # Ignore when target branch is `main` and source branch is develop.
+    # It could avoid running twice. Since develop is set as `push` below.
     branches-ignore:
       - main
   push:
     branches:
-      - scroll-stable
+      - develop
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: true
@@ -44,11 +44,6 @@ jobs:
         with:
           components: clippy
           override: false
-      # https://github.com/actions/cache/issues/133#issuecomment-599102035
-      - name: Change cached dir owner
-        run: |
-          [ -d ~/go/pkg/mod/ ] && sudo rm -rf ~/go/pkg/mod/*
-          [ -d ~/.cargo/ ] && sudo chown -R $(whoami):$(id -ng) ~/.cargo/
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -63,21 +58,7 @@ jobs:
         env:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
       - name: Cargo cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        # https://github.com/actions/cache/issues/810
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
-      - uses: webfactory/ssh-agent@v0.5.4
-        with:
-          ssh-private-key: ${{ secrets.SECRET_REPO_DEPLOY_KEY }}
+        uses: Swatinem/rust-cache@v2
       - name: Run clippy
         uses: actions-rs/clippy-check@v1
         with:

@@ -7,8 +7,7 @@ use crate::evm_circuit::{
     witness::{Block, Call, ExecStep, Transaction},
 };
 
-use eth_types::Field;
-use eth_types::ToLittleEndian;
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -29,10 +28,10 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         let pops: [Word<F>; N_POP] = [(); N_POP].map(|_| cb.query_word_rlc());
         let pushes: [Word<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word_rlc());
         for _pop in pops.iter() {
-            //cb.stack_pop(pop.expr());
+            // cb.stack_pop(pop.expr());
         }
         for _push in pushes.iter() {
-            //cb.stack_push(push.expr());
+            // cb.stack_push(push.expr());
         }
         Self {
             pops,
@@ -59,7 +58,7 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         // using DummyGadget.
         // See `bus-mapping/src/evm/opcodes.rs`
         if step.rw_indices.len() != N_POP + N_PUSH {
-            //log::warn!("DummyGadget: wrong number of rw indices for {:?}",
+            // log::warn!("DummyGadget: wrong number of rw indices for {:?}",
         }
 
         for i in 0..N_POP {

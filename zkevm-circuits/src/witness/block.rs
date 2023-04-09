@@ -1,24 +1,31 @@
 use ethers_core::types::Signature;
-use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-use crate::{
-    evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
-    table::BlockContextFieldTag,
-};
+#[cfg(any(feature = "test", test))]
+use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
+#[cfg(feature = "test")]
+use crate::tx_circuit::TX_LEN;
+
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 
-use super::MptUpdates;
 use super::{
-    mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap,
-    Transaction,
+    mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep,
+    MptUpdates, RwMap, Transaction,
 };
 use crate::util::{Challenges, DEFAULT_RAND};
+
+/// max range of prev blocks allowed inside BLOCKHASH opcode
+#[cfg(feature = "scroll")]
+pub const NUM_PREV_BLOCK_ALLOWED: u64 = 1;
+/// max range of prev blocks allowed inside BLOCKHASH opcode
+#[cfg(not(feature = "scroll"))]
+pub const NUM_PREV_BLOCK_ALLOWED: u64 = 256;
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -48,11 +55,6 @@ pub struct Block<F> {
     pub copy_events: Vec<CopyEvent>,
     /// Exponentiation traces for the exponentiation circuit's table.
     pub exp_events: Vec<ExpEvent>,
-    // TODO: Rename to `max_evm_rows`, maybe move to CircuitsParams
-    /// Pad evm circuit to make selectors fixed, so vk/pk can be universal.
-    /// When 0, the EVM circuit contains as many rows for all steps + 1 row
-    /// for EndBlock.
-    pub evm_circuit_pad_to: usize,
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
@@ -77,10 +79,6 @@ pub struct BlockContexts {
 }
 
 impl BlockContexts {
-    /// Get the chain ID for the block.
-    pub fn chain_id(&self) -> Word {
-        self.first_or_default().chain_id
-    }
     /// ..
     pub fn first(&self) -> &BlockContext {
         self.ctxs.iter().next().unwrap().1
@@ -138,7 +136,7 @@ impl<F: Field> Block<F> {
             self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
         let num_rows_required_for_tx_table: usize =
-            self.txs.iter().map(|tx| 9 + tx.call_data.len()).sum();
+            TX_LEN * self.circuits_params.max_txs + self.circuits_params.max_calldata;
         let num_rows_required_for_exp_table: usize = self
             .exp_events
             .iter()
@@ -161,7 +159,7 @@ impl<F: Field> Block<F> {
 
         let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
         log::debug!(
-            "num_rows_requred_for rw_table={}, fixed_table={}, bytecode_table={}, \
+            "num_rows_required_for rw_table={}, fixed_table={}, bytecode_table={}, \
             copy_table={}, keccak_table={}, tx_table={}, exp_table={}",
             num_rows_required_for_rw_table,
             num_rows_required_for_fixed_table,
@@ -177,7 +175,7 @@ impl<F: Field> Block<F> {
 }
 
 /// Block context for execution
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct BlockContext {
     /// The address of the miner for the block
     pub coinbase: Address,
@@ -187,7 +185,7 @@ pub struct BlockContext {
     pub number: Word,
     /// The timestamp of the block
     pub timestamp: Word,
-    /// The difficulty of the blcok
+    /// The difficulty of the block
     pub difficulty: Word,
     /// The base fee, the minimum amount of gas fee for a transaction
     pub base_fee: Word,
@@ -229,8 +227,7 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                     Value::known(current_block_number),
-                    randomness
-                        .map(|randomness| rlc::value(&self.difficulty.to_le_bytes(), randomness)),
+                    randomness.map(|rand| rlc::value(&self.difficulty.to_le_bytes(), rand)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
@@ -246,8 +243,7 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                     Value::known(current_block_number),
-                    randomness
-                        .map(|randomness| rlc::value(&self.chain_id.to_le_bytes(), randomness)),
+                    randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),
@@ -260,23 +256,40 @@ impl BlockContext {
                     Value::known(F::from(cum_num_txs as u64)),
                 ],
             ],
-            {
-                let len_history = self.history_hashes.len();
-                self.history_hashes
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, hash)| {
-                        [
-                            Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
-                            Value::known((self.number - len_history + idx).to_scalar().unwrap()),
-                            randomness
-                                .map(|randomness| rlc::value(&hash.to_le_bytes(), randomness)),
-                        ]
-                    })
-                    .collect()
-            },
+            self.block_hash_assignments(randomness),
         ]
         .concat()
+    }
+
+    fn block_hash_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
+        use eth_types::ToWord;
+
+        #[cfg(not(feature = "scroll"))]
+        let history_hashes: &[U256] = &self.history_hashes;
+        #[cfg(feature = "scroll")]
+        let history_hashes: &[U256] = &[self.eth_block.parent_hash.to_word()];
+
+        let len_history = history_hashes.len();
+
+        history_hashes
+            .iter()
+            .enumerate()
+            .map(|(idx, hash)| {
+                let block_number = self
+                    .number
+                    .low_u64()
+                    .checked_sub((len_history - idx) as u64)
+                    .unwrap_or_default();
+                if block_number + 1 == self.number.low_u64() {
+                    debug_assert_eq!(self.eth_block.parent_hash.to_word(), hash.into());
+                }
+                [
+                    Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
+                    Value::known(F::from(block_number)),
+                    randomness.map(|randomness| rlc::value(&hash.to_le_bytes(), randomness)),
+                ]
+            })
+            .collect()
     }
 }
 
@@ -312,6 +325,8 @@ pub fn block_convert<F: Field>(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
+    let rws = RwMap::from(&block.container);
+    rws.check_value();
     let num_txs = block.txs().len();
     let last_block_num = block
         .headers
@@ -321,10 +336,7 @@ pub fn block_convert<F: Field>(
         .map(|(k, _)| *k)
         .unwrap_or_default();
     let chain_id = block.chain_id();
-
-    let rws = RwMap::from(&block.container);
     rws.check_rw_counter_sanity();
-    rws.check_value();
     let end_block_not_last = step_convert(&block.block_steps.end_block_not_last, last_block_num);
     let end_block_last = step_convert(&block.block_steps.end_block_last, last_block_num);
     log::trace!(
@@ -332,6 +344,11 @@ pub fn block_convert<F: Field>(
         end_block_not_last,
         end_block_last
     );
+    let max_rws = if block.circuits_params.max_rws == 0 {
+        end_block_last.rw_counter + end_block_last.rw_indices.len() + 1
+    } else {
+        block.circuits_params.max_rws
+    };
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
@@ -370,8 +387,10 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        circuits_params: block.circuits_params,
-        evm_circuit_pad_to: <usize>::default(),
+        circuits_params: CircuitsParams {
+            max_rws,
+            ..block.circuits_params
+        },
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,

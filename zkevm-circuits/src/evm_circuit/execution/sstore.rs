@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
             common_gadget::{
@@ -9,7 +10,7 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -37,6 +38,8 @@ pub(crate) struct SstoreGadget<F> {
     phase2_original_value: Cell<F>,
     is_warm: Cell<F>,
     tx_refund_prev: Cell<F>,
+    // Constrain for SSTORE reentrancy sentry.
+    sufficient_gas_sentry: LtGadget<F, N_BYTES_GAS>,
     gas_cost: SstoreGasGadget<F>,
     tx_refund: SstoreTxRefundGadget<F>,
 }
@@ -79,6 +82,12 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         );
 
         let is_warm = cb.query_bool();
+        cb.account_storage_access_list_read(
+            tx_id.expr(),
+            callee_address.expr(),
+            phase2_key.expr(),
+            is_warm.expr(),
+        );
         cb.account_storage_access_list_write(
             tx_id.expr(),
             callee_address.expr(),
@@ -86,6 +95,18 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             true.expr(),
             is_warm.expr(),
             Some(&mut reversion_info),
+        );
+
+        // Constrain for SSTORE reentrancy sentry.
+        let sufficient_gas_sentry = LtGadget::construct(
+            cb,
+            GasCost::SSTORE_SENTRY.0.expr(),
+            cb.curr.state.gas_left.expr(),
+        );
+        cb.require_equal(
+            "Gas left must be greater than gas sentry",
+            sufficient_gas_sentry.expr(),
+            1.expr(),
         );
 
         let gas_cost = SstoreGasGadget::construct(
@@ -112,7 +133,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         );
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(10.expr()),
+            rw_counter: Delta(11.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr()),
             reversible_write_counter: Delta(3.expr()),
@@ -133,6 +154,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             phase2_original_value,
             is_warm,
             tx_refund_prev,
+            sufficient_gas_sentry,
             gas_cost,
             tx_refund,
         }
@@ -186,25 +208,25 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[9]].tx_refund_value_pair();
+        let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[10]].tx_refund_value_pair();
         self.tx_refund_prev
             .assign(region, offset, Value::known(F::from(tx_refund_prev)))?;
 
+        self.sufficient_gas_sentry.assign_value(
+            region,
+            offset,
+            Value::known(F::from(GasCost::SSTORE_SENTRY.0)),
+            Value::known(F::from(step.gas_left)),
+        )?;
+
+        self.gas_cost
+            .assign(region, offset, value, value_prev, original_value, is_warm)?;
         debug_assert_eq!(
             cal_sstore_gas_cost_for_assignment(value, value_prev, original_value, is_warm),
             step.gas_cost,
             "invalid gas cost in sstore value {:?} value_prev {:?} original_value {:?} is_warm {:?} contract addr {:?} storage key {:?}",
             value, value_prev, original_value, is_warm, call.callee_address, key
         );
-        self.gas_cost.assign(
-            region,
-            offset,
-            step.gas_cost,
-            value,
-            value_prev,
-            original_value,
-            is_warm,
-        )?;
 
         self.tx_refund.assign(
             region,

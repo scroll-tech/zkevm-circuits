@@ -1,16 +1,21 @@
 #[cfg(test)]
 
 mod chainid_tests {
-    use crate::operation::RW;
-    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{StackOp, RW},
+    };
     use eth_types::{
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
     };
 
-    use mock::test_ctx::{helpers::*, TestContext};
-    use mock::MOCK_CHAIN_ID;
+    use mock::{
+        test_ctx::{helpers::*, TestContext},
+        MOCK_CHAIN_ID,
+    };
     use pretty_assertions::assert_eq;
 
     #[test]

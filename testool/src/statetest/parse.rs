@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
-use crate::abi;
-use crate::Compiler;
+use crate::{abi, Compiler};
 
 use anyhow::{bail, Context, Result};
 use eth_types::{Address, Bytes, H256, U256};

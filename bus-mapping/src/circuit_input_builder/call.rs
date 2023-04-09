@@ -1,7 +1,9 @@
 use super::CodeSource;
 use crate::{exec_trace::OperationRef, Error};
-use eth_types::evm_types::Memory;
-use eth_types::{evm_types::OpcodeId, Address, Hash, Word};
+use eth_types::{
+    evm_types::{Memory, OpcodeId},
+    Address, Hash, Word,
+};
 
 /// Type of a *CALL*/CREATE* Function.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -100,6 +102,11 @@ impl Call {
     /// CREATE2
     pub fn is_create(&self) -> bool {
         self.kind.is_create()
+    }
+
+    /// ..
+    pub fn is_success(&self) -> bool {
+        self.is_success
     }
 
     /// This call is call with op DELEGATECALL

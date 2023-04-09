@@ -1,15 +1,18 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
-use crate::evm_circuit::util::math_gadget::IsZeroGadget;
-use crate::evm_circuit::util::memory_gadget::MemoryAddressGadget;
-use crate::evm_circuit::util::{CachedRegion, Cell, Word};
-use crate::util::Expr;
-use crate::witness::{Block, Call, ExecStep, Transaction};
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        step::ExecutionState,
+        util::{
+            constraint_builder::ConstraintBuilder, math_gadget::IsZeroGadget,
+            memory_gadget::MemoryAddressGadget, CachedRegion, Cell, Word,
+        },
+    },
+    util::Expr,
+    witness::{Block, Call, ExecStep, Transaction},
+};
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, U256};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorPrecompileFailedGadget<F> {

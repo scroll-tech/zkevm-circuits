@@ -10,3 +10,4 @@ eth-types = { path = "../eth-types" }
 geth-utils = { path = "../geth-utils" }
 serde = {version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.66"
+log = "0.4.14"

@@ -1,5 +1,7 @@
-use ethers_core::types::{Bloom, Log};
-use ethers_core::utils::rlp::{Encodable, RlpStream};
+use ethers_core::{
+    types::{Bloom, Log},
+    utils::rlp::{Encodable, RlpStream},
+};
 
 /// EVM log's receipt.
 #[derive(Clone, Debug, Default)]

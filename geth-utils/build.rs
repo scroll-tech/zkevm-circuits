@@ -1,5 +1,7 @@
-use std::env;
-use std::io::{self, Write};
+use std::{
+    env,
+    io::{self, Write},
+};
 
 fn main() {
     let lib_name = "go-geth-utils";

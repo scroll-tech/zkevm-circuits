@@ -221,7 +221,13 @@ impl AggregationConfig {
         let snarks = snarks.into_iter().collect_vec();
         layouter.assign_region(
             || "Aggregate snarks",
-            |region| {
+            |mut region| {
+                // annotate advices columns of `main_gate`. We can't annotate fixed_columns of
+                // `main_gate` bcs there is no methods exported.
+                for (i, col) in self.main_gate_config.advices().iter().enumerate() {
+                    region.name_column(|| format!("ROOT_main_gate_{}", i), *col);
+                }
+
                 let ctx = RegionCtx::new(region, 0);
 
                 let ecc_chip = self.ecc_chip::<M::G1Affine>();
@@ -579,7 +585,7 @@ pub mod test {
     pub struct StandardPlonk<F>(F);
 
     impl<F: FieldExt> StandardPlonk<F> {
-        /// Create a `StandardPlonk` with random instnace.
+        /// Create a `StandardPlonk` with random instance.
         pub fn rand<R: RngCore>(mut rng: R) -> Self {
             Self(F::from(rng.next_u32() as u64))
         }

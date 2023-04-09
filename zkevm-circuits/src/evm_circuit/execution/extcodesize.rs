@@ -1,22 +1,24 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64};
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::SameContextGadget;
-use crate::evm_circuit::util::constraint_builder::Transition::Delta;
-use crate::evm_circuit::util::constraint_builder::{
-    ConstraintBuilder, ReversionInfo, StepStateTransition,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64},
+        step::ExecutionState,
+        util::{
+            common_gadget::SameContextGadget,
+            constraint_builder::{
+                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+            },
+            from_bytes,
+            math_gadget::IsZeroGadget,
+            not, select, CachedRegion, Cell, RandomLinearCombination, Word,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    table::{AccountFieldTag, CallContextFieldTag},
+    util::Expr,
 };
-use crate::evm_circuit::util::math_gadget::IsZeroGadget;
-use crate::evm_circuit::util::{
-    from_bytes, not, select, CachedRegion, Cell, RandomLinearCombination, Word,
-};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::table::{AccountFieldTag, CallContextFieldTag};
-use crate::util::Expr;
-use eth_types::evm_types::GasCost;
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodesizeGadget<F> {
@@ -59,8 +61,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
         let code_size = cb.query_word_rlc();
         cb.condition(exists.expr(), |cb| {
+            #[cfg(feature = "scroll")]
+            cb.account_read(
+                address.expr(),
+                AccountFieldTag::CodeSize,
+                from_bytes::expr(&code_size.cells),
+            );
+            #[cfg(not(feature = "scroll"))]
             cb.bytecode_length(code_hash.expr(), from_bytes::expr(&code_size.cells));
         });
+
         cb.condition(not_exists.expr(), |cb| {
             cb.require_zero("code_size is zero when non_exists", code_size.expr());
         });
@@ -73,8 +83,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         );
 
+        let rw_counter_delta = 7.expr();
+        #[cfg(feature = "scroll")]
+        let rw_counter_delta = rw_counter_delta + exists;
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(7.expr()),
+            rw_counter: Delta(rw_counter_delta),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(0.expr()),
             gas_left: Delta(-gas_cost),
@@ -132,7 +145,14 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         self.not_exists
             .assign_value(region, offset, region.word_rlc(code_hash))?;
 
-        let code_size = block.rws[step.rw_indices[6]].stack_value().as_u64();
+        let rw_offset = 6;
+        #[cfg(feature = "scroll")]
+        let rw_offset = if code_hash.is_zero() {
+            rw_offset
+        } else {
+            rw_offset + 1
+        };
+        let code_size = block.rws[step.rw_indices[rw_offset]].stack_value().as_u64();
         self.code_size
             .assign(region, offset, Some(code_size.to_le_bytes()))?;
 
@@ -142,10 +162,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::CircuitTestBuilder;
-    use eth_types::geth_types::Account;
-    use eth_types::{bytecode, Bytecode, ToWord, Word};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use eth_types::{bytecode, geth_types::Account, Bytecode, ToWord, Word};
     use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
 
     #[test]

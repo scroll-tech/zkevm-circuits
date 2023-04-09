@@ -3,13 +3,13 @@ set -e
 
 ARG_DEFAULT_SUDO=
 ARG_DEFAULT_STEPS="setup gendata tests cleanup"
-ARG_DEFAULT_TESTS="rpc circuit_input_builder circuits:mock_prover"
+ARG_DEFAULT_TESTS="rpc circuit_input_builder circuits::mock_prover"
 
 usage() {
     cat >&2 << EOF
         Usage: $0 [OPTIONS]
         Options:
-          --sudo         Use sudo for docker-compoes commands.
+          --sudo         Use sudo for docker compose commands.
           --steps ARG    Space separated list of steps to do.
                          Default: "${ARG_DEFAULT_STEPS}".
           --tests ARG    Space separated list of tests to run.
@@ -76,9 +76,9 @@ done
 
 docker_compose_cmd() {
     if [ -n "$ARG_SUDO" ]; then
-        sudo docker-compose $@
+        sudo docker compose $@
     else
-        docker-compose $@
+        docker compose $@
     fi
 }
 

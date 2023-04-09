@@ -1,27 +1,29 @@
 //! Table definitions used cross-circuits
 
-use crate::copy_circuit::number_or_hash_to_field;
-use crate::evm_circuit::util::rlc;
-use crate::exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP};
-use crate::impl_expr;
-use crate::util::build_tx_log_address;
-use crate::util::Challenges;
-use crate::witness::{
-    Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw,
-    RwMap, RwRow, SignedTransaction, Transaction,
+use crate::{
+    copy_circuit::number_or_hash_to_field,
+    evm_circuit::util::rlc,
+    exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP},
+    impl_expr,
+    util::{build_tx_log_address, Challenges},
+    witness::{
+        Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw,
+        RwMap, RwRow, SignedTransaction, Transaction,
+    },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
-use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
-use gadgets::util::{split_u256, split_u256_limb64};
-use halo2_proofs::plonk::{Any, Expression, Fixed, VirtualCells};
+use gadgets::{
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    util::{split_u256, split_u256_limb64},
+};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error},
+    circuit::{Layouter, Region, Value},
+    plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    poly::Rotation,
 };
-use halo2_proofs::{circuit::Layouter, poly::Rotation};
 use std::iter::repeat;
 
 #[cfg(feature = "onephase")]
@@ -188,6 +190,7 @@ impl TxTable {
         layouter: &mut impl Layouter<F>,
         txs: &[Transaction],
         max_txs: usize,
+        max_calldata: usize,
         chain_id: u64,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
@@ -197,27 +200,61 @@ impl TxTable {
             txs.len(),
             max_txs
         );
+        let sum_txs_calldata: usize = txs.iter().map(|tx| tx.call_data.len()).sum();
+        assert!(
+            sum_txs_calldata <= max_calldata,
+            "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
+            sum_txs_calldata,
+            max_calldata,
+        );
+
+        fn assign_row<F: Field>(
+            region: &mut Region<'_, F>,
+            offset: usize,
+            advice_columns: &[Column<Advice>],
+            tag: &Column<Fixed>,
+            row: &[Value<F>; 4],
+            msg: &str,
+        ) -> Result<(), Error> {
+            for (index, column) in advice_columns.iter().enumerate() {
+                region.assign_advice(
+                    || format!("tx table {} row {}", msg, offset),
+                    *column,
+                    offset,
+                    || row[if index > 0 { index + 1 } else { index }],
+                )?;
+            }
+            region.assign_fixed(
+                || format!("tx table {} row {}", msg, offset),
+                *tag,
+                offset,
+                || row[1],
+            )?;
+            Ok(())
+        }
+
         layouter.assign_region(
             || "tx table",
             |mut region| {
                 let mut offset = 0;
                 let advice_columns = [self.tx_id, self.index, self.value];
-                for column in advice_columns {
-                    region.assign_advice(
-                        || "tx table all-zero row",
-                        column,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
-                }
-                region.assign_fixed(
-                    || "tx table all-zero row",
-                    self.tag,
+                assign_row(
+                    &mut region,
                     offset,
-                    || Value::known(F::zero()),
+                    &advice_columns,
+                    &self.tag,
+                    &[(); 4].map(|_| Value::known(F::zero())),
+                    "all-zero",
                 )?;
                 offset += 1;
 
+                // Tx Table contains an initial region that has a size parametrized by max_txs
+                // with all the tx data except for calldata, and then a second
+                // region that has a size parametrized by max_calldata with all
+                // the tx calldata.  This is required to achieve a constant fixed column tag
+                // regardless of the number of input txs or the calldata size of each tx.
+                let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
+                // Assign Tx data (all tx fields except for calldata)
                 let padding_txs = (txs.len()..max_txs)
                     .into_iter()
                     .map(|tx_id| {
@@ -229,42 +266,18 @@ impl TxTable {
                     .collect::<Vec<Transaction>>();
                 for (i, tx) in txs.iter().chain(padding_txs.iter()).enumerate() {
                     debug_assert_eq!(i + 1, tx.id);
-                    for row in tx.table_assignments_fixed(*challenges) {
-                        for (index, column) in advice_columns.iter().enumerate() {
-                            region.assign_advice(
-                                || format!("tx table row {}", offset),
-                                *column,
-                                offset,
-                                || row[if index > 0 { index + 1 } else { index }],
-                            )?;
-                        }
-                        region.assign_fixed(
-                            || format!("tx table row {}", offset),
-                            self.tag,
-                            offset,
-                            || row[1],
-                        )?;
+                    let tx_data = tx.table_assignments_fixed(*challenges);
+                    let tx_calldata = tx.table_assignments_dyn(*challenges);
+                    for row in tx_data {
+                        assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;
                     }
+                    calldata_assignments.extend(tx_calldata.iter());
                 }
-                for tx in txs.iter() {
-                    for row in tx.table_assignments_dyn(*challenges) {
-                        for (index, column) in advice_columns.iter().enumerate() {
-                            region.assign_advice(
-                                || format!("tx table row {}", offset),
-                                *column,
-                                offset,
-                                || row[if index > 0 { index + 1 } else { index }],
-                            )?;
-                        }
-                        region.assign_fixed(
-                            || format!("tx table row {}", offset),
-                            self.tag,
-                            offset,
-                            || row[1],
-                        )?;
-                        offset += 1;
-                    }
+                // Assign Tx calldata
+                for row in calldata_assignments.into_iter() {
+                    assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
+                    offset += 1;
                 }
                 Ok(())
             },
@@ -320,8 +333,6 @@ pub enum RwTableTag {
     TxRefund,
     /// Account operation
     Account,
-    /// Account Destructed operation
-    AccountDestructed,
     /// Call Context operation
     CallContext,
     /// Tx Log operation
@@ -341,7 +352,6 @@ impl RwTableTag {
                 | RwTableTag::TxRefund
                 | RwTableTag::Account
                 | RwTableTag::AccountStorage
-                | RwTableTag::AccountDestructed
         )
     }
 }
@@ -355,12 +365,17 @@ impl From<RwTableTag> for usize {
 /// Tag for an AccountField in RwTable
 #[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccountFieldTag {
+    /// Variant representing the poseidon hash of an account's code.
+    CodeHash = 0, /* we need this to match to the field tag of AccountStorage, which is
+                   * always 0 */
     /// Nonce field
-    Nonce = 1,
+    Nonce,
     /// Balance field
     Balance,
-    /// CodeHash field
-    CodeHash,
+    /// Variant representing the keccak hash of an account's code.
+    KeccakCodeHash,
+    /// Variant representing the code size, i.e. length of account's code.
+    CodeSize,
     /// NonExisting field
     NonExisting,
 }
@@ -583,32 +598,36 @@ impl RwTable {
 }
 
 /// The types of proofs in the MPT table
-#[derive(Copy, Clone)]
-pub enum ProofType {
+#[derive(Clone, Copy, Debug)]
+pub enum MPTProofType {
     /// Nonce updated
-    NonceChanged = AccountFieldTag::Nonce as isize,
+    NonceMod = AccountFieldTag::Nonce as isize,
     /// Balance updated
-    BalanceChanged = AccountFieldTag::Balance as isize,
-    /// Code hash exists
-    CodeHashExists = AccountFieldTag::CodeHash as isize,
+    BalanceMod = AccountFieldTag::Balance as isize,
+    /// Keccak Code hash exists
+    KeccakCodeHashExists = AccountFieldTag::KeccakCodeHash as isize,
+    /// Poseidon Code hash exits
+    PoseidonCodeHashExists = AccountFieldTag::CodeHash as isize,
+    /// Code size exists
+    CodeSizeExists = AccountFieldTag::CodeSize as isize,
     /// Account does not exist
-    AccountDoesNotExist = AccountFieldTag::NonExisting as isize,
-    /// Account destroyed
-    AccountDestructed,
+    NonExistingAccountProof = AccountFieldTag::NonExisting as isize,
     /// Storage updated
-    StorageChanged,
+    StorageMod,
     /// Storage does not exist
-    StorageDoesNotExist,
+    NonExistingStorageProof,
 }
-impl_expr!(ProofType);
+impl_expr!(MPTProofType);
 
-impl From<AccountFieldTag> for ProofType {
+impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
         match tag {
-            AccountFieldTag::Nonce => Self::NonceChanged,
-            AccountFieldTag::Balance => Self::BalanceChanged,
-            AccountFieldTag::CodeHash => Self::CodeHashExists,
-            AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
+            AccountFieldTag::Nonce => Self::NonceMod,
+            AccountFieldTag::Balance => Self::BalanceMod,
+            AccountFieldTag::KeccakCodeHash => Self::KeccakCodeHashExists,
+            AccountFieldTag::CodeHash => Self::PoseidonCodeHashExists,
+            AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
+            AccountFieldTag::CodeSize => Self::CodeSizeExists,
         }
     }
 }
@@ -624,13 +643,13 @@ impl<F: Field> LookupTable<F> for MptTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
-            String::from("Address"),
-            String::from("Storage key"),
-            String::from("Proof type"),
-            String::from("New root"),
-            String::from("Old root"),
-            String::from("New value"),
-            String::from("Old value"),
+            String::from("address"),
+            String::from("storage_key"),
+            String::from("proof_type"),
+            String::from("new_root"),
+            String::from("old_root"),
+            String::from("new_value"),
+            String::from("old_value"),
         ]
     }
 }
@@ -899,7 +918,7 @@ impl BytecodeTable {
         }
     }
 
-    /// Assign the `BytecodeTable` from a list of bytecodes, followig the same
+    /// Assign the `BytecodeTable` from a list of bytecodes, following the same
     /// table layout that the Bytecode Circuit uses.
     pub fn load<'a, F: Field>(
         &self,
@@ -966,8 +985,10 @@ impl<F: Field> LookupTable<F> for BytecodeTable {
 
 /// Tag to identify the field in a Block Table row
 // Keep the sequence consistent with OpcodeId for scalar
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 pub enum BlockContextFieldTag {
+    /// Null
+    Null = 0,
     /// Coinbase field
     Coinbase = 1,
     /// Timestamp field
@@ -993,6 +1014,12 @@ pub enum BlockContextFieldTag {
     CumNumTxs,
 }
 impl_expr!(BlockContextFieldTag);
+
+impl From<BlockContextFieldTag> for usize {
+    fn from(value: BlockContextFieldTag) -> Self {
+        value as usize
+    }
+}
 
 /// Table with Block header fields
 #[derive(Clone, Debug)]
@@ -1213,7 +1240,7 @@ impl KeccakTable {
     }
 
     /// returns matchings between the circuit columns passed as parameters and
-    /// the table collumns
+    /// the table columns
     pub fn match_columns(
         &self,
         value_rlc: Column<Advice>,
@@ -1264,7 +1291,7 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 4];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 5];
 
 impl CopyTable {
     /// Construct a new CopyTable
@@ -1289,7 +1316,7 @@ impl CopyTable {
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         let mut assignments = Vec::new();
         // rlc_acc
-        let rlc_acc = if copy_event.dst_type == CopyDataType::RlcAcc {
+        let rlc_acc = {
             let values = copy_event
                 .bytes
                 .iter()
@@ -1298,8 +1325,6 @@ impl CopyTable {
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
-        } else {
-            Value::known(F::zero())
         };
         let mut value_acc = Value::known(F::zero());
         for (step_idx, (is_read_step, copy_step)) in copy_event
@@ -1374,17 +1399,11 @@ impl CopyTable {
             // bytes_left
             let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
             // value
-            let value = if copy_event.dst_type == CopyDataType::RlcAcc {
-                if is_read_step {
-                    Value::known(F::from(copy_step.value as u64))
-                } else {
-                    value_acc = value_acc * challenges.keccak_input()
-                        + Value::known(F::from(copy_step.value as u64));
-                    value_acc
-                }
-            } else {
-                Value::known(F::from(copy_step.value as u64))
-            };
+            let value = Value::known(F::from(copy_step.value as u64));
+            // value_acc
+            if is_read_step {
+                value_acc = value_acc * challenges.keccak_input() + value;
+            }
             // is_pad
             let is_pad = Value::known(F::from(
                 is_read_step && copy_step_addr >= copy_event.src_addr_end,
@@ -1404,7 +1423,14 @@ impl CopyTable {
                         "src_addr_end",
                     ),
                     (Value::known(F::from(bytes_left)), "bytes_left"),
-                    (rlc_acc, "rlc_acc"),
+                    (
+                        match (copy_event.src_type, copy_event.dst_type) {
+                            (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
+                            (_, CopyDataType::RlcAcc) => rlc_acc,
+                            _ => Value::known(F::zero()),
+                        },
+                        "rlc_acc",
+                    ),
                     (
                         Value::known(F::from(copy_event.rw_counter(step_idx))),
                         "rw_counter",
@@ -1417,6 +1443,7 @@ impl CopyTable {
                 [
                     (is_last, "is_last"),
                     (value, "value"),
+                    (value_acc, "value_acc"),
                     (is_pad, "is_pad"),
                     (is_code, "is_code"),
                 ],
@@ -1733,6 +1760,8 @@ pub struct RlpTable {
     /// `TxSign` (transaction data that needs to be signed) or `TxHash`
     /// (signed transaction's data).
     pub data_type: Column<Advice>,
+    /// Denotes if the tag_length is equal to 1
+    pub tag_length_eq_one: Column<Advice>,
 }
 
 impl<F: Field> LookupTable<F> for RlpTable {
@@ -1743,6 +1772,7 @@ impl<F: Field> LookupTable<F> for RlpTable {
             self.tag_rindex.into(),
             self.value_acc.into(),
             self.data_type.into(),
+            self.tag_length_eq_one.into(),
         ]
     }
 
@@ -1753,6 +1783,7 @@ impl<F: Field> LookupTable<F> for RlpTable {
             String::from("tag_rindex"),
             String::from("value_acc"),
             String::from("data_type"),
+            String::from("tag_length_eq_one"),
         ]
     }
 }
@@ -1766,6 +1797,7 @@ impl RlpTable {
             tag_rindex: meta.advice_column(),
             value_acc: meta.advice_column_in(SecondPhase),
             data_type: meta.advice_column(),
+            tag_length_eq_one: meta.advice_column(),
         }
     }
 
@@ -1773,7 +1805,7 @@ impl RlpTable {
     pub fn dev_assignments<F: Field>(
         txs: Vec<SignedTransaction>,
         challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 5]> {
+    ) -> Vec<[Value<F>; 6]> {
         let mut assignments = vec![];
         for signed_tx in txs {
             for row in signed_tx
@@ -1789,6 +1821,7 @@ impl RlpTable {
                     Value::known(F::from(row.tag_rindex as u64)),
                     row.value_acc,
                     Value::known(F::from(row.data_type as u64)),
+                    Value::known(F::from((row.tag_length == 1) as u64)),
                 ]);
             }
         }

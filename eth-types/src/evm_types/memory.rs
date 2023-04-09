@@ -1,8 +1,9 @@
 //! Doc this
-use crate::Error;
-use crate::{DebugByte, ToBigEndian, Word};
-use core::ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Range, Sub, SubAssign};
-use core::str::FromStr;
+use crate::{DebugByte, Error, ToBigEndian, Word};
+use core::{
+    ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Range, Sub, SubAssign},
+    str::FromStr,
+};
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
 use std::fmt;
@@ -324,6 +325,41 @@ impl Memory {
         let memory_size = (minimal_length + 31) / 32 * 32;
         if memory_size > self.0.len() {
             self.0.resize(memory_size, 0);
+        }
+    }
+
+    /// Copy source data to memory. Used in (ext)codecopy/calldatacopy.
+    pub fn copy_from(&mut self, dst_offset: Word, src_offset: Word, length: Word, data: &[u8]) {
+        // Reference go-ethereum `opCallDataCopy` function for defails.
+        // https://github.com/ethereum/go-ethereum/blob/bb4ac2d396de254898a5f44b1ea2086bfe5bd193/core/vm/instructions.go#L299
+
+        // `length` should be checked for overflow during gas cost calculation.
+        // Otherwise should return an out of gas error previously.
+        let length = length.as_usize();
+        if length != 0 {
+            // `dst_offset` should be within range if length is non-zero.
+            // https://github.com/ethereum/go-ethereum/blob/bb4ac2d396de254898a5f44b1ea2086bfe5bd193/core/vm/common.go#L37
+            let dst_offset = dst_offset.as_u64();
+
+            // Reset data offset to the maximum value of Uint64 if overflow.
+            let src_offset = u64::try_from(src_offset).unwrap_or(u64::MAX);
+
+            let minimal_length = dst_offset as usize + length;
+            self.extend_at_least(minimal_length);
+
+            let mem_starts = dst_offset as usize;
+            let mem_ends = mem_starts + length as usize;
+            let dst_slice = &mut self.0[mem_starts..mem_ends];
+            dst_slice.fill(0);
+            let data_starts = src_offset as usize;
+            let actual_length = std::cmp::min(
+                length,
+                data.len().checked_sub(data_starts).unwrap_or_default(),
+            );
+            if actual_length != 0 {
+                let src_slice = &data[data_starts..data_starts + actual_length];
+                dst_slice[..actual_length].copy_from_slice(src_slice);
+            }
         }
     }
 }

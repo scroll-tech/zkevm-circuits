@@ -31,8 +31,8 @@ use strum_macros::EnumIter;
 // lookup for An-Bn.
 
 // We show this with following advice columns and constraints:
-// - first_different_limb: first index where the limbs differ. We use a
-//   BinaryNumberChip here to reduce the degree of the constraints.
+// - first_different_limb: first index where the limbs differ. We use a BinaryNumberChip here to
+//   reduce the degree of the constraints.
 // - limb_difference: the difference between the limbs at first_different_limb.
 // - limb_difference_inverse: the inverse of limb_difference
 
@@ -229,6 +229,21 @@ impl Config {
         )?;
 
         Ok(index)
+    }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        [
+            (self.limb_difference, "LO_limb_difference"),
+            (self.limb_difference_inverse, "LO_limb_difference_inverse"),
+        ]
+        .iter()
+        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+        // fixed column
+        region.name_column(
+            || format!("{}_LO_upper_limb_difference", prefix),
+            self.selector,
+        );
     }
 }
 

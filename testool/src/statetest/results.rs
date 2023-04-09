@@ -1,16 +1,14 @@
 use anyhow::Result;
 use handlebars::Handlebars;
-use prettytable::Row;
-use prettytable::Table;
-use serde::Deserialize;
-use serde::Serialize;
+use prettytable::{Row, Table};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::io::Read;
-use std::io::Write;
-use std::path::PathBuf;
-use std::str::FromStr;
+use std::{
+    collections::{HashMap, HashSet},
+    io::{Read, Write},
+    path::PathBuf,
+    str::FromStr,
+};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, EnumString}; // 0.17.1
 
@@ -131,11 +129,21 @@ impl Report {
         by_result_short.print_tty(false)?;
         let (_, files_diff) = self.diffs.gen_info();
         files_diff.print_tty(false)?;
+        let mut num_succ = 0f32;
+        let mut num_fail = 0f32;
         for (test_id, info) in &self.tests {
+            if info.level == ResultLevel::Success {
+                num_succ += 1.0;
+            }
             if info.level == ResultLevel::Fail || info.level == ResultLevel::Panic {
+                num_fail += 1.0;
                 println!("- {:?} {}", info.level, test_id);
             }
         }
+        log::info!(
+            "success rate: {:.1}%",
+            100f32 * num_succ / (num_succ + num_fail)
+        );
         Ok(())
     }
     pub fn gen_html(&self) -> Result<String> {
@@ -149,11 +157,22 @@ impl Report {
         self.by_result.print_html(&mut by_result)?;
         self.diffs.gen_info().1.print_html(&mut diffs)?;
 
+        let tests: HashMap<String, ResultInfo> = self
+            .tests
+            .clone()
+            .into_iter()
+            .filter(|(_k, v)| {
+                !matches!(
+                    v.level,
+                    crate::ResultLevel::Ignored | crate::ResultLevel::Success
+                )
+            })
+            .collect();
         let data = &json!({
                 "by_folder": String::from_utf8(by_folder)?,
                 "by_result" : String::from_utf8(by_result)? ,
                 "diffs" : String::from_utf8(diffs)?,
-                "all_results" : self.tests
+                "all_results" : tests
         });
 
         let html = reg.render_template(template, data)?;
@@ -161,7 +180,7 @@ impl Report {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Results {
     pub tests: HashMap<String, ResultInfo>,
     pub cache: Option<PathBuf>,
@@ -330,6 +349,27 @@ impl Results {
         self.tests.contains_key(test)
     }
 
+    pub fn write_cache(&self) -> Result<()> {
+        if let Some(path) = &self.cache {
+            let mut file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .append(true)
+                .open(path)?;
+            for (test_id, result) in &self.tests {
+                let entry = format!(
+                    "{:?};{};{}\n",
+                    result.level,
+                    test_id,
+                    urlencoding::encode(&result.details)
+                );
+                file.write_all(entry.as_bytes())?;
+            }
+        }
+        Ok(())
+    }
+
     #[allow(clippy::map_entry)]
     pub fn insert(&mut self, test_id: String, result: ResultInfo) -> Result<()> {
         if !self.tests.contains_key(&test_id) {
@@ -348,21 +388,6 @@ impl Results {
                     test_id,
                     result.details
                 );
-            }
-            let entry = format!(
-                "{:?};{};{}\n",
-                result.level,
-                test_id,
-                urlencoding::encode(&result.details)
-            );
-            if let Some(path) = &self.cache {
-                std::fs::OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .create(true)
-                    .append(true)
-                    .open(path)?
-                    .write_all(entry.as_bytes())?;
             }
             self.tests.insert(test_id, result);
         }

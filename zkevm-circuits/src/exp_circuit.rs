@@ -9,8 +9,8 @@ use gadgets::{
     util::{and, not, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Selector},
+    circuit::{Layouter, Region, Value},
+    plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -20,6 +20,9 @@ use crate::{
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// The number of rows assigned for each step in an exponentiation trace.
 pub const OFFSET_INCREMENT: usize = 7usize;
@@ -276,6 +279,8 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
             ]))
         });
 
+        exp_table.annotate_columns(meta);
+
         Self {
             q_usable,
             exp_table,
@@ -305,6 +310,10 @@ impl<F: Field> ExpCircuitConfig<F> {
         layouter.assign_region(
             || "exponentiation circuit",
             |mut region| {
+                mul_chip.annotate_columns_in_region(&mut region, "EXP_mul");
+                parity_check_chip.annotate_columns_in_region(&mut region, "EXP_parity_check");
+                self.exp_table.annotate_columns_in_region(&mut region);
+
                 let mut offset = 0;
                 for exp_event in exp_events.iter() {
                     self.assign_exp_event(
@@ -520,7 +529,7 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 impl<F: Field> Circuit<F> for ExpCircuit<F> {
     type Config = (ExpCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;

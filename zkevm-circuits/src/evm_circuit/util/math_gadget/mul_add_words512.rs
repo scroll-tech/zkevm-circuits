@@ -22,7 +22,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 ///   t5 = a2 * b3 + a3 * b2,
 ///   t6 = a3 * b3,
 ///
-/// The addend c as well as the the words that form the result d, e are divided
+/// The addend c as well as the words that form the result d, e are divided
 /// in 2 128-bit limbs each: c_lo, c_hi, d_lo, d_hi, e_lo, e_hi.
 ///
 /// so t0 ~ t1 include all contributions to the low 128-bit of product (e_lo),
@@ -194,11 +194,9 @@ impl<F: Field> MulAddWords512Gadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
+    use super::{super::test_util::*, *};
     use eth_types::Word;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// MulAddWords512GadgetContainer: require(a * b + c == d * 2**256 + e)
