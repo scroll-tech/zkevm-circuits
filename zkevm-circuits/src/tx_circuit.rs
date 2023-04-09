@@ -26,6 +26,7 @@ use gadgets::{
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     util::{and, not, select, sum, Expr},
 };
+use halo2_base::AssignedValue;
 #[cfg(feature = "enable-sign-verify")]
 use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{
@@ -1981,7 +1982,7 @@ mod tx_circuit_tests {
     #[test]
     fn tx_circuit_2tx_2max_tx() {
         const NUM_TXS: usize = 2;
-        const MAX_TXS: usize = 32;
+        const MAX_TXS: usize = 4;
         const MAX_CALLDATA: usize = 32;
 
         assert_eq!(
@@ -2008,7 +2009,7 @@ mod tx_circuit_tests {
 
     #[test]
     fn tx_circuit_0tx_1max_tx() {
-        const MAX_TXS: usize = 32;
+        const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
 
         let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
@@ -2017,8 +2018,20 @@ mod tx_circuit_tests {
     }
 
     #[test]
+    fn tx_circuit_1tx_1max_tx() {
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
+
+        let tx: Transaction = mock::CORRECT_MOCK_TXS[0].clone().into();
+
+        assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
+    }
+
+    #[test]
     fn tx_circuit_1tx_2max_tx() {
-        const MAX_TXS: usize = 32;
+        const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;
 
         let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();

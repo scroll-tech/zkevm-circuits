@@ -286,10 +286,10 @@ pub(crate) struct AssignedValueNoTimer<F: Field> {
 impl<'v, F: Field> From<AssignedValue<'v, F>> for AssignedValueNoTimer<F> {
     fn from(input: AssignedValue<'v, F>) -> Self {
         Self {
-            cell: input.cell().clone(),
-            value: input.value.clone(),
-            row_offset: input.row_offset.clone(),
-            context_id: input.context_id.clone(),
+            cell: input.cell(),
+            value: input.value,
+            row_offset: input.row_offset,
+            context_id: input.context_id,
         }
     }
 }
@@ -700,7 +700,7 @@ impl<F: Field> SignVerifyChip<F> {
         ))
     }
 
-    pub(crate) fn assign<'v>(
+    pub(crate) fn assign(
         &self,
         config: &SignVerifyConfig<F>,
         layouter: &mut impl Layouter<F>,

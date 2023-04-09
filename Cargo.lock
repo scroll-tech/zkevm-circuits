@@ -397,7 +397,7 @@ name = "bus-mapping"
 version = "0.1.0"
 dependencies = [
  "ctor",
- "env_logger",
+ "env_logger 0.9.3",
  "eth-types",
  "ethers-core",
  "ethers-providers",
@@ -544,7 +544,7 @@ version = "0.1.0"
 dependencies = [
  "ark-std",
  "bus-mapping",
- "env_logger",
+ "env_logger 0.9.3",
  "eth-types",
  "ethers",
  "ethers-signers",
@@ -859,6 +859,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2801af0d36612ae591caa9568261fddce32ce6e08a7275ea334a06a4ad021a2c"
+dependencies = [
+ "cfg-if 1.0.0",
+ "crossbeam-channel",
+ "crossbeam-deque",
+ "crossbeam-epoch",
+ "crossbeam-queue",
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-channel"
 version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -890,6 +904,16 @@ dependencies = [
  "crossbeam-utils",
  "memoffset",
  "scopeguard",
+]
+
+[[package]]
+name = "crossbeam-queue"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1cfb3ea8a53f37c40dea2c7bedcbd88bdfae54f5e2175d6ecaff1c988353add"
+dependencies = [
+ "cfg-if 1.0.0",
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -1318,6 +1342,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071a31f4ee85403370b58aca746f01041ede6f0da2730960ad001edc2b71b394"
 dependencies = [
  "cfg-if 1.0.0",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a19187fea3ac7e84da7dacf48de0c45d63c6a76f9490dae389aead16c243fce3"
+dependencies = [
+ "atty",
+ "humantime",
+ "log",
+ "regex",
+ "termcolor",
 ]
 
 [[package]]
@@ -2113,7 +2150,7 @@ dependencies = [
 name = "geth-utils"
 version = "0.1.0"
 dependencies = [
- "env_logger",
+ "env_logger 0.9.3",
  "gobuild",
  "log",
 ]
@@ -2193,6 +2230,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
+name = "halo2-base"
+version = "0.2.2"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-snark-verifier-0323#d24871338ade7dd56362de517b718ba14f3e7b90"
+dependencies = [
+ "ff",
+ "halo2_proofs",
+ "itertools",
+ "jemallocator",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand_chacha",
+ "rustc-hash",
+]
+
+[[package]]
+name = "halo2-ecc"
+version = "0.2.2"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-snark-verifier-0323#d24871338ade7dd56362de517b718ba14f3e7b90"
+dependencies = [
+ "ff",
+ "group",
+ "halo2-base",
+ "itertools",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "rand_chacha",
+ "rand_core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
 source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=goerli-0215-dual-hash#ae8acdf37eafbbb5b6dffcb9e977dab465970c83"
@@ -2209,48 +2281,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "halo2_base"
-version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-ecdsa-0129#89cf51f0ac452e4814e028b9a331ec613aafa726"
-dependencies = [
- "ff",
- "halo2_proofs",
- "num-bigint",
- "num-integer",
- "num-traits",
-]
-
-[[package]]
-name = "halo2_ecc"
-version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-ecdsa-0129#89cf51f0ac452e4814e028b9a331ec613aafa726"
-dependencies = [
- "ark-std",
- "ff",
- "group",
- "halo2_base",
- "halo2_proofs",
- "halo2curves 0.3.1 (git+https://github.com/jonathanpwang/halo2curves.git)",
- "num-bigint",
- "num-integer",
- "num-traits",
- "rand",
- "rand_core",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=v0.3#1e51790b0897572c8819da142f763612c633594c"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=v0.4#3d40ae4968759ac4516c5f9c45ad20140e2d35d5"
 dependencies = [
  "ark-std",
  "blake2b_simd",
  "cfg-if 0.1.10",
+ "crossbeam",
+ "env_logger 0.8.4",
  "ff",
  "group",
- "halo2curves 0.3.1 (git+https://github.com/privacy-scaling-explorations/halo2curves.git?tag=0.3.1)",
+ "halo2curves",
  "log",
  "num-bigint",
  "num-integer",
@@ -2266,25 +2308,8 @@ dependencies = [
 
 [[package]]
 name = "halo2curves"
-version = "0.2.1"
-source = "git+https://github.com/privacy-scaling-explorations/halo2curves?tag=0.3.0#83c72d49762343ffc9576ca11a2aa615efe1029b"
-dependencies = [
- "ff",
- "group",
- "lazy_static",
- "num-bigint",
- "num-traits",
- "pasta_curves",
- "rand",
- "rand_core",
- "static_assertions",
- "subtle",
-]
-
-[[package]]
-name = "halo2curves"
 version = "0.3.1"
-source = "git+https://github.com/privacy-scaling-explorations/halo2curves.git?tag=0.3.1#9b67e19bca30a35208b0c1b41c1723771e2c9f49"
+source = "git+https://github.com/scroll-tech/halo2curves.git?branch=0.3.1-derive-serde#c0ac1935e5da2a620204b5b011be2c924b1e0155"
 dependencies = [
  "ff",
  "group",
@@ -2292,25 +2317,10 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "pasta_curves",
+ "paste",
  "rand",
  "rand_core",
- "static_assertions",
- "subtle",
-]
-
-[[package]]
-name = "halo2curves"
-version = "0.3.1"
-source = "git+https://github.com/jonathanpwang/halo2curves.git#a6437dbe92fe3fd347674ab32cc0909c605a4f89"
-dependencies = [
- "ff",
- "group",
- "lazy_static",
- "num-bigint",
- "num-traits",
- "pasta_curves",
- "rand",
- "rand_core",
+ "serde",
  "static_assertions",
  "subtle",
 ]
@@ -2318,7 +2328,7 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=halo2-ecc-snark-verifier-0323#939d679cb16abf0e820bd606248661e400328afa"
 dependencies = [
  "group",
  "halo2_proofs",
@@ -2678,7 +2688,7 @@ name = "integration-tests"
 version = "0.1.0"
 dependencies = [
  "bus-mapping",
- "env_logger",
+ "env_logger 0.9.3",
  "eth-types",
  "ethers",
  "halo2_proofs",
@@ -2744,6 +2754,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "453ad9f582a441959e5f0d088b02ce04cfe8d51a8eaf077f12ac6d3e94164ca6"
 
 [[package]]
+name = "jemalloc-sys"
+version = "0.5.3+5.3.0-patched"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9bd5d616ea7ed58b571b2e209a65759664d7fb021a0819d7a790afc67e47ca1"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "jemallocator"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16c2514137880c52b0b4822b563fadd38257c1f380858addb74a400889696ea6"
+dependencies = [
+ "jemalloc-sys",
+ "libc",
+]
+
+[[package]]
 name = "jpeg-decoder"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2784,7 +2814,7 @@ dependencies = [
 name = "keccak256"
 version = "0.1.0"
 dependencies = [
- "env_logger",
+ "env_logger 0.9.3",
  "eth-types",
  "halo2_proofs",
  "itertools",
@@ -2945,7 +2975,7 @@ dependencies = [
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
+source = "git+https://github.com/scroll-tech/halo2wrong?branch=halo2-ecc-snark-verifier-0323#939d679cb16abf0e820bd606248661e400328afa"
 dependencies = [
  "group",
  "halo2wrong",
@@ -3026,7 +3056,7 @@ name = "mpt-zktrie"
 version = "0.1.0"
 dependencies = [
  "bus-mapping",
- "env_logger",
+ "env_logger 0.9.3",
  "eth-types",
  "halo2-mpt-circuits",
  "halo2_proofs",
@@ -3611,10 +3641,10 @@ dependencies = [
 [[package]]
 name = "poseidon"
 version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations/poseidon.git?tag=v2022_10_22#5d29df01a95e3df6334080d28e983407f56b5da3"
+source = "git+https://github.com/scroll-tech/poseidon.git?branch=scroll-dev-0220#2fb4a2385bada39b50dce12fe50cb80d2fd33476"
 dependencies = [
  "group",
- "halo2curves 0.2.1",
+ "halo2curves",
  "subtle",
 ]
 
@@ -4038,6 +4068,12 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc-hex"
@@ -4469,7 +4505,7 @@ source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?tag
 dependencies = [
  "ecc",
  "halo2_proofs",
- "halo2curves 0.3.1 (git+https://github.com/privacy-scaling-explorations/halo2curves.git?tag=0.3.1)",
+ "halo2curves",
  "hex",
  "itertools",
  "lazy_static",
@@ -4658,7 +4694,7 @@ dependencies = [
  "bus-mapping",
  "clap 3.2.23",
  "ctor",
- "env_logger",
+ "env_logger 0.9.3",
  "eth-types",
  "ethers-core",
  "ethers-signers",
@@ -5406,13 +5442,13 @@ dependencies = [
  "cli-table",
  "criterion",
  "ctor",
- "env_logger",
+ "env_logger 0.9.3",
  "eth-types",
  "ethers-core",
  "ethers-signers",
  "gadgets",
- "halo2_base",
- "halo2_ecc",
+ "halo2-base",
+ "halo2-ecc",
  "halo2_proofs",
  "hex",
  "itertools",

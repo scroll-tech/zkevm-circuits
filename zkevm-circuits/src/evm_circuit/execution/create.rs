@@ -10,7 +10,7 @@ use crate::{
             common_gadget::TransferGadget,
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
-                Transition::{Any, Delta, To},
+                Transition::{Delta, To},
             },
             math_gadget::{
                 ConstantDivisionGadget, ContractCreateGadget, IsZeroGadget, LtWordGadget,

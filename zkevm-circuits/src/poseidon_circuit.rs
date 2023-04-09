@@ -1,7 +1,6 @@
 //! wrapping of mpt-circuit
 use crate::{
     bytecode_circuit::bytecode_unroller::HASHBLOCK_BYTES_IN_FIELD,
-    keccak_circuit::util::extract_field,
     table::PoseidonTable,
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,

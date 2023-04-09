@@ -1,6 +1,5 @@
 //! wrapping of mpt-circuit
 use crate::{
-    keccak_circuit::util::extract_field,
     table::{MptTable, PoseidonTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,

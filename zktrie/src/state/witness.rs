@@ -220,7 +220,7 @@ impl WitnessGenerator {
             if rs.is_err() {
                 log::warn!("invalid update {:?}", rs);
             }
-            
+
             self.accounts.insert(address, account_data_after);
         } else if account_data_before.is_some() {
             log::warn!("trace update try delete account {address:?} trie while we have no SELFDESTRUCT yet");
