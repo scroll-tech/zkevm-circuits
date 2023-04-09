@@ -29,8 +29,8 @@ keccak256 = { path = "../keccak256"}
 log = "0.4"
 env_logger = "0.9"
 
-halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "halo2-ecc-snark-verifier-0323" }
-halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "halo2-ecc-snark-verifier-0323" }
+halo2-base = { git = "https://github.com/scroll-tech/halo2-lib", branch = "halo2-ecc-snark-verifier-0323", default-features=false, features=["halo2-pse","display"] }
+halo2-ecc = { git = "https://github.com/scroll-tech/halo2-lib", branch = "halo2-ecc-snark-verifier-0323", default-features=false, features=["halo2-pse","display"] }
 
 maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_02_02" }
 
