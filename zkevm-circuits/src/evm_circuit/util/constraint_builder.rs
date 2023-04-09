@@ -472,7 +472,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
         if cfg!(feature = "poseidon-codehash") {
             let mut bytes = Vec::from(POSEIDON_CODE_HASH_ZERO.to_word().to_le_bytes());
-            bytes.resize(32, 0);
+            bytes.resize(64, 0);
             Expression::Constant(F::from_bytes_wide(bytes.as_slice().try_into().unwrap()))
         } else {
             self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
