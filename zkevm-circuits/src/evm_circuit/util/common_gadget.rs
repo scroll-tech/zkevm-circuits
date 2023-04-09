@@ -257,7 +257,7 @@ impl<F: Field> RestoreContextGadget<F> {
         }
 
         self.caller_code_hash
-            .assign(region, offset, region.word_rlc(caller_code_hash))?;
+            .assign(region, offset, region.code_hash(caller_code_hash))?;
 
         Ok(())
     }

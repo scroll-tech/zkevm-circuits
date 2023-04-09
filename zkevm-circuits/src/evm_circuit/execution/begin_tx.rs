@@ -648,7 +648,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_fee,
         )?;
         self.phase2_code_hash
-            .assign(region, offset, region.word_rlc(callee_code_hash))?;
+            .assign(region, offset, region.code_hash(callee_code_hash))?;
         let untrimmed_contract_addr = {
             let mut stream = RlpStream::new();
             stream.begin_list(2);
@@ -668,11 +668,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.is_empty_code_hash.assign_value(
             region,
             offset,
-            region.word_rlc(callee_code_hash),
+            region.code_hash(callee_code_hash),
             region.empty_code_hash_rlc(),
         )?;
         self.callee_not_exists
-            .assign_value(region, offset, region.word_rlc(callee_code_hash))?;
+            .assign_value(region, offset, region.code_hash(callee_code_hash))?;
 
         let untrimmed_contract_addr = {
             let mut stream = ethers_core::utils::rlp::RlpStream::new();

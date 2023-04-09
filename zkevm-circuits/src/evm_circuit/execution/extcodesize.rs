@@ -141,9 +141,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
         let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
         self.code_hash
-            .assign(region, offset, region.word_rlc(code_hash))?;
+            .assign(region, offset, region.code_hash(code_hash))?;
         self.not_exists
-            .assign_value(region, offset, region.word_rlc(code_hash))?;
+            .assign_value(region, offset, region.code_hash(code_hash))?;
 
         let rw_offset = 6;
         #[cfg(feature = "scroll")]

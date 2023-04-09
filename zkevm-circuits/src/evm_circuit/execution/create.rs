@@ -532,7 +532,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let code_hash_previous = block.rws
             [step.rw_indices[13 + usize::from(is_create2) + copy_rw_increase]]
             .account_codehash_pair();
-        let code_hash_previous_rlc = region.word_rlc(code_hash_previous.0);
+        let code_hash_previous_rlc = region.code_hash(code_hash_previous.0);
         self.code_hash_previous
             .assign(region, offset, code_hash_previous_rlc)?;
         self.not_address_collision
@@ -634,7 +634,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.keccak_code_hash.assign(
             region,
             offset,
-            region.word_rlc(U256::from_big_endian(&keccak_code_hash)),
+            region.code_hash(U256::from_big_endian(&keccak_code_hash)),
         )?;
 
         Ok(())

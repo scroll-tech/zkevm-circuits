@@ -590,7 +590,7 @@ impl<F: FieldExt> Step<F> {
             .assign(region, offset, Value::known(F::from(step.block_num)))?;
         self.state
             .code_hash
-            .assign(region, offset, region.word_rlc(call.code_hash))?;
+            .assign(region, offset, region.code_hash(call.code_hash))?;
         self.state.program_counter.assign(
             region,
             offset,

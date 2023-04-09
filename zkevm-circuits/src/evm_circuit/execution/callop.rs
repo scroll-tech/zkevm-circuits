@@ -692,7 +692,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_offset,
             rd_length,
             step.memory_word_size(),
-            region.word_rlc(callee_code_hash),
+            region.code_hash(callee_code_hash),
         )?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
