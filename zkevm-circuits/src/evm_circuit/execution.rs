@@ -340,7 +340,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
-    error_gas_uint_overflow: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorGasUintOverflow }>>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -603,7 +602,6 @@ impl<F: Field> ExecutionConfig<F> {
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
             error_precompile_failed: configure_gadget!(),
-            error_gas_uint_overflow: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -1447,9 +1445,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
-            }
-            ExecutionState::ErrorGasUintOverflow => {
-                assign_exec_step!(self.error_gas_uint_overflow)
             }
         }
 

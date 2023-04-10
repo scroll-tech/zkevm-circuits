@@ -13,6 +13,7 @@ use crate::{
             math_gadget::{
                 ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
             },
+            memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             not, or, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -43,7 +44,7 @@ pub(crate) struct CallOpGadget<F> {
     current_caller_address: Cell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
-    call: CommonCallGadget<F, true>,
+    call: CommonCallGadget<F, MemoryAddressGadget<F>, true>,
     current_value: Word<F>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
@@ -99,13 +100,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             )
         });
 
-        let call_gadget = CommonCallGadget::construct(
-            cb,
-            is_call.expr(),
-            is_callcode.expr(),
-            is_delegatecall.expr(),
-            is_staticcall.expr(),
-        );
+        let call_gadget: CommonCallGadget<F, MemoryAddressGadget<F>, true> =
+            CommonCallGadget::construct(
+                cb,
+                is_call.expr(),
+                is_callcode.expr(),
+                is_delegatecall.expr(),
+                is_staticcall.expr(),
+            );
         cb.condition(not::expr(is_call.expr() + is_callcode.expr()), |cb| {
             cb.require_zero(
                 "for non call/call code, value is zero",

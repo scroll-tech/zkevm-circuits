@@ -1,17 +1,17 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
-            and,
             common_gadget::CommonErrorGadget,
             constraint_builder::ConstraintBuilder,
-            math_gadget::{IsZeroGadget, LtGadget},
+            math_gadget::LtGadget,
             memory_gadget::{
-                address_high, address_low, MemoryExpansionGadget, MemoryWordSizeGadget,
+                CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
+                MemoryWordSizeGadget,
             },
-            CachedRegion, Cell, Word,
+            or, CachedRegion, Cell, Word,
         },
     },
     witness::{Block, Call, ExecStep, Transaction},
@@ -24,18 +24,11 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct ErrorOOGCreate2Gadget<F> {
     opcode: Cell<F>,
     value: Word<F>,
-    address: Word<F>,
-    size: Word<F>,
     salt: Word<F>,
-    address_in_range_high: IsZeroGadget<F>,
-    size_in_range_high: IsZeroGadget<F>,
-    expanded_address_in_range: LtGadget<F, { N_BYTES_MEMORY_ADDRESS + 1 }>,
     minimum_word_size: MemoryWordSizeGadget<F>,
-    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_ADDRESS>,
+    memory_address: MemoryExpandedAddressGadget<F>,
+    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
-    // gupeng
-    // rw_counter_end_of_reversion: Cell<F>,
-    // restore_context: RestoreContextGadget<F>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -54,41 +47,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
         );
 
         let value = cb.query_word_rlc();
-        cb.stack_pop(value.expr());
-        let address = cb.query_word_rlc();
-        cb.stack_pop(address.expr());
-        let size = cb.query_word_rlc();
-        cb.stack_pop(size.expr());
         let salt = cb.query_word_rlc();
+
+        let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
+
+        cb.stack_pop(value.expr());
+        cb.stack_pop(memory_address.offset_rlc());
+        cb.stack_pop(memory_address.length_rlc());
         cb.stack_pop(salt.expr());
 
-        let address_high = address_high::expr(&address);
-        let address_in_range_high = IsZeroGadget::construct(cb, address_high);
-        let size_high = address_high::expr(&size);
-        let size_in_range_high = IsZeroGadget::construct(cb, size_high);
-        let address_low = address_low::expr(&address);
-        let size_low = address_low::expr(&size);
-        let expanded_address = address_low.expr() + size_low.expr();
-        let expanded_address_in_range = LtGadget::construct(
-            cb,
-            expanded_address.expr(),
-            (1u64 << (N_BYTES_MEMORY_ADDRESS * 8)).expr(),
-        );
+        let minimum_word_size = MemoryWordSizeGadget::construct(cb, memory_address.length());
 
-        cb.require_equal(
-            "address and size must less than 5 bytes",
-            and::expr([
-                address_in_range_high.expr(),
-                size_in_range_high.expr(),
-                expanded_address_in_range.expr(),
-            ]),
-            true.expr(),
-        );
-
-        let minimum_word_size = MemoryWordSizeGadget::construct(cb, size_low.expr());
-
-        let memory_expansion =
-            MemoryExpansionGadget::construct(cb, [address_low::expr(&address) + size_low.expr()]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
         let insufficient_gas = LtGadget::construct(
             cb,
@@ -99,9 +69,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
         );
 
         cb.require_equal(
-            "gas_left must less than gas_cost",
-            insufficient_gas.expr(),
-            true.expr(),
+            "Memory address is overflow or gas left is less than cost",
+            or::expr([memory_address.overflow(), insufficient_gas.expr()]),
+            1.expr(),
         );
 
         let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 6.expr());
@@ -109,13 +79,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
         Self {
             opcode,
             value,
-            address,
-            size,
             salt,
-            address_in_range_high,
-            size_in_range_high,
-            expanded_address_in_range,
             minimum_word_size,
+            memory_address,
             memory_expansion,
             insufficient_gas,
             common_error_gadget,
@@ -142,11 +108,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
             Some(block.rws[step.rw_indices[0]].stack_value().to_le_bytes()),
         )?;
 
-        let address = block.rws[step.rw_indices[1]].stack_value();
-        let size = block.rws[step.rw_indices[2]].stack_value();
-        self.address
-            .assign(region, offset, Some(address.to_le_bytes()))?;
-        self.size.assign(region, offset, Some(size.to_le_bytes()))?;
+        let memory_offset = block.rws[step.rw_indices[1]].stack_value();
+        let memory_length = block.rws[step.rw_indices[2]].stack_value();
+
+        let memory_address =
+            self.memory_address
+                .assign(region, offset, memory_offset, memory_length)?;
 
         self.salt.assign(
             region,
@@ -154,45 +121,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
             Some(block.rws[step.rw_indices[3]].stack_value().to_le_bytes()),
         )?;
 
-        let address_high = address_high::value::<F>(address.to_le_bytes());
-        assert_eq!(
-            address_high,
-            F::zero(),
-            "address overflow {} bytes",
-            N_BYTES_MEMORY_ADDRESS
-        );
-        self.address_in_range_high
-            .assign(region, offset, address_high)?;
-        let size_high = address_high::value::<F>(size.to_le_bytes());
-        assert_eq!(
-            size_high,
-            F::zero(),
-            "size overflow {} bytes",
-            N_BYTES_MEMORY_ADDRESS
-        );
-        self.size_in_range_high.assign(region, offset, size_high)?;
-
-        let address_value = address_low::value(address.to_le_bytes());
-        let size_value = address_low::value(size.to_le_bytes());
-        let expanded_address = address_value
-            .checked_add(size_value)
-            .expect("address overflow u64");
-        assert!(
-            expanded_address < (1u64 << (N_BYTES_MEMORY_ADDRESS * 8)),
-            "expanded address overflow {} bytes",
-            N_BYTES_MEMORY_ADDRESS
-        );
-        self.expanded_address_in_range.assign(
+        let minimum_word_size = self.minimum_word_size.assign(
             region,
             offset,
-            F::from(expanded_address),
-            F::from(1u64 << (N_BYTES_MEMORY_ADDRESS * 8)),
+            MemoryExpandedAddressGadget::<F>::length_value(memory_offset, memory_length),
         )?;
-
-        let minimum_word_size = self.minimum_word_size.assign(region, offset, size_value)?;
         let memory_expansion_gas = self
             .memory_expansion
-            .assign(region, offset, step.memory_word_size(), [expanded_address])?
+            .assign(region, offset, step.memory_word_size(), [memory_address])?
             .1;
 
         let constant_gas_cost = opcode.constant_gas_cost().0;
@@ -214,11 +150,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCreate2Gadget<F> {
 #[cfg(test)]
 mod tests {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::{bytecode, word, Bytecode, ToWord, Word};
+    use eth_types::{bytecode, word, Bytecode, ToWord, Word, U256};
     use mock::{
         eth,
         test_ctx::{helpers::account_0_code_account_1_no_code, LoggerConfig},
-        TestContext, MOCK_ACCOUNTS,
+        TestContext, MOCK_ACCOUNTS, MOCK_BLOCK_GAS_LIMIT,
     };
 
     struct TestCase {
@@ -227,13 +163,12 @@ mod tests {
     }
 
     #[test]
-    fn test_oog_create2() {
+    fn test_oog_create2_simple() {
         let cases = [
-            // memory expansion
             TestCase {
                 bytecode: bytecode! {
-                    PUSH8(0x0)
-                    PUSH8(0xFF)
+                    PUSH8(0x0) // salt
+                    PUSH8(0xFF) // size
                     PUSH32(word!("0xffffffff")) // offset
                     PUSH8(0x0) // value
                     CREATE2
@@ -241,13 +176,12 @@ mod tests {
                 },
                 gas: word!("0xFFFF"),
             },
-            // simple
             TestCase {
                 bytecode: bytecode! {
-                    PUSH1(2)
-                    PUSH1(4)
-                    PUSH1(0x0)
-                    PUSH1(0x0)
+                    PUSH1(2) // salt
+                    PUSH1(4) // size
+                    PUSH1(0x0) // offset
+                    PUSH1(0x0) // value
                     CREATE2
                 },
                 gas: word!("0x7D0F"),
@@ -258,6 +192,62 @@ mod tests {
             test_root(case);
             test_internal(case);
         }
+    }
+
+    #[test]
+    fn test_oog_create2_max_expanded_address() {
+        // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
+        // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+        let case = TestCase {
+            bytecode: bytecode! {
+                PUSH8(0) // salt
+                PUSH32(0xffffffff0_u64) // size
+                PUSH32(0xffffffff1_u64) // offset
+                PUSH8(0) // value
+                CREATE2
+                STOP
+            },
+            gas: MOCK_BLOCK_GAS_LIMIT.into(),
+        };
+
+        test_root(&case);
+        test_internal(&case);
+    }
+
+    #[test]
+    fn test_oog_create2_max_u64_address() {
+        let case = TestCase {
+            bytecode: bytecode! {
+                PUSH8(0) // salt
+                PUSH32(u64::MAX) // size
+                PUSH32(u64::MAX) // offset
+                PUSH8(0) // value
+                CREATE2
+                STOP
+            },
+            gas: MOCK_BLOCK_GAS_LIMIT.into(),
+        };
+
+        test_root(&case);
+        test_internal(&case);
+    }
+
+    #[test]
+    fn test_oog_create2_max_word_address() {
+        let case = TestCase {
+            bytecode: bytecode! {
+                PUSH8(0) // salt
+                PUSH32(U256::MAX) // size
+                PUSH32(U256::MAX) // offset
+                PUSH8(0) // value
+                CREATE2
+                STOP
+            },
+            gas: MOCK_BLOCK_GAS_LIMIT.into(),
+        };
+
+        test_root(&case);
+        test_internal(&case);
     }
 
     fn test_root(case: &TestCase) {
@@ -278,7 +268,7 @@ mod tests {
         )
         .unwrap();
 
-        println!("{:?}", ctx.geth_traces[0]);
+        log::debug!("{:?}", ctx.geth_traces[0]);
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }

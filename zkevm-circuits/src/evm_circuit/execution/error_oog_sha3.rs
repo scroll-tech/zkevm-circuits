@@ -8,7 +8,8 @@ use crate::{
             constraint_builder::ConstraintBuilder,
             math_gadget::LtGadget,
             memory_gadget::{
-                MemoryCopierGasGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
+                CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpandedAddressGadget,
+                MemoryExpansionGadget,
             },
             or, CachedRegion, Cell,
         },
@@ -47,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
             OpcodeId::SHA3.expr(),
         );
 
-        let memory_address = MemoryExpandedAddressGadget::construct(cb);
+        let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
         cb.stack_pop(memory_address.offset_rlc());
         cb.stack_pop(memory_address.length_rlc());
 
@@ -65,8 +66,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
         );
 
         cb.require_equal(
-            "Offset plus length is greater than maximum expanded address or gas left is less than cost",
-            or::expr([memory_address.address_overflow(), insufficient_gas.expr()]),
+            "Memory address is overflow or gas left is less than cost",
+            or::expr([memory_address.overflow(), insufficient_gas.expr()]),
             1.expr(),
         );
 
@@ -115,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
         let memory_copier_gas = self.memory_copier_gas.assign(
             region,
             offset,
-            memory_length.low_u64(),
+            MemoryExpandedAddressGadget::<F>::length_value(memory_offset, memory_length),
             memory_expansion_cost,
         )?;
         self.insufficient_gas.assign_value(
@@ -143,9 +144,8 @@ mod tests {
     };
     use mock::{
         eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+        MOCK_BLOCK_GAS_LIMIT,
     };
-
-    const BLOCK_GAS_LIMIT: u64 = 10_000_000_000_000_000;
 
     #[test]
     fn test_oog_sha3_less_than_constant_gas() {
@@ -171,7 +171,7 @@ mod tests {
     fn test_oog_sha3_max_expanded_address() {
         // 0xffffffff1 + 0xffffffff0 = 0x1fffffffe1
         // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
-        let testing_data = TestingData::new(0xffffffff1, 0xffffffff0, BLOCK_GAS_LIMIT);
+        let testing_data = TestingData::new(0xffffffff1, 0xffffffff0, MOCK_BLOCK_GAS_LIMIT);
 
         test_root(&testing_data);
         test_internal(&testing_data);
@@ -179,9 +179,7 @@ mod tests {
 
     #[test]
     fn test_oog_sha3_max_u64_address() {
-        // If `offset + length > MAX_U64 - 31`, return ErrGasUintOverflow.
-        // https://github.com/ethereum/go-ethereum/blob/e6b6a8b738069ad0579f6798ee59fde93ed13b43/core/vm/common.go#L68
-        let testing_data = TestingData::new(u64::MAX - 100 - 31, 100, BLOCK_GAS_LIMIT);
+        let testing_data = TestingData::new(u64::MAX, u64::MAX, MOCK_BLOCK_GAS_LIMIT);
 
         test_root(&testing_data);
         test_internal(&testing_data);
@@ -202,9 +200,9 @@ mod tests {
 
             let gas_cost = gas_cost
                 .checked_add(OpcodeId::PUSH32.constant_gas_cost().0 * 2)
-                .unwrap_or(BLOCK_GAS_LIMIT);
-            let gas_cost = if gas_cost > BLOCK_GAS_LIMIT {
-                BLOCK_GAS_LIMIT
+                .unwrap_or(MOCK_BLOCK_GAS_LIMIT);
+            let gas_cost = if gas_cost > MOCK_BLOCK_GAS_LIMIT {
+                MOCK_BLOCK_GAS_LIMIT
             } else {
                 gas_cost
             };
@@ -229,9 +227,9 @@ mod tests {
             .0
             // Decrease expected gas cost (by 1) to trigger out of gas error.
             .checked_add(testing_data.gas_cost - 1)
-            .unwrap_or(BLOCK_GAS_LIMIT);
-        let gas_cost = if gas_cost > BLOCK_GAS_LIMIT {
-            BLOCK_GAS_LIMIT
+            .unwrap_or(MOCK_BLOCK_GAS_LIMIT);
+        let gas_cost = if gas_cost > MOCK_BLOCK_GAS_LIMIT {
+            MOCK_BLOCK_GAS_LIMIT
         } else {
             gas_cost
         };

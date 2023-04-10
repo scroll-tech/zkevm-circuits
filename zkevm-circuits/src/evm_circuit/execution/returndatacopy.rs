@@ -11,7 +11,10 @@ use crate::{
             },
             from_bytes,
             math_gadget::RangeCheckGadget,
-            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
+            memory_gadget::{
+                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
+                MemoryExpansionGadget,
+            },
             CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},

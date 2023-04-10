@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
-ark-std = { version = "0.3", features = ["print-trace"] }
+ark-std = { version = "0.3" }
 zkevm-circuits = { path = "../zkevm-circuits", features = ["test"]}
 keccak256 = { path = "../keccak256" }
 bus-mapping = { path = "../bus-mapping" }

@@ -80,7 +80,6 @@ impl From<&ExecError> for ExecutionState {
                 ExecutionState::ErrorCodeStore
             }
             ExecError::PrecompileFailed => ExecutionState::ErrorPrecompileFailed,
-            ExecError::GasUintOverflow => ExecutionState::ErrorGasUintOverflow,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {

@@ -9,7 +9,10 @@ use crate::{
         util::{
             common_gadget::{SameContextGadget, WordByteCapGadget},
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
-            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
+            memory_gadget::{
+                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
+                MemoryExpansionGadget,
+            },
             not, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},

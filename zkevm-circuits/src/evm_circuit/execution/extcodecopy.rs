@@ -8,7 +8,10 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition,
             },
             from_bytes,
-            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
+            memory_gadget::{
+                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
+                MemoryExpansionGadget,
+            },
             not, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},

@@ -1,43 +1,33 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
-            and,
             common_gadget::RestoreContextGadget,
             constraint_builder::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
-            memory_gadget::{address_high, address_low, MemoryExpansionGadget},
-            not, select, CachedRegion, Cell, Word,
+            math_gadget::{IsEqualGadget, LtGadget},
+            memory_gadget::{
+                CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
+            },
+            not, or, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGStaticMemoryGadget<F> {
     opcode: Cell<F>,
-    address: Word<F>,
-    // Allow memory size to expand to 5 bytes, because memory address could be
-    // at most 2^40 - 1, after constant division by 32, the memory word size
-    // then could be at most 2^35 - 1.
-    // So generic N_BYTES_MEMORY_WORD_SIZE for MemoryExpansionGadget needs to
-    // be larger by 1 than normal usage (to be 5), to be able to contain
-    // number up to 2^35 - 1.
-    address_in_range_high: IsZeroGadget<F>,
-    expanded_address_in_range: LtGadget<F, { N_BYTES_MEMORY_ADDRESS + 1 }>,
-    memory_expansion: MemoryExpansionGadget<F, 1, { N_BYTES_MEMORY_WORD_SIZE + 1 }>,
-    // Even memory size at most could be 2^35 - 1, the qudratic part of memory
-    // expansion gas cost could be at most 2^61 - 2^27, due to the constant
-    // division by 512, which still fits in 8 bytes.
+    memory_address: MemoryExpandedAddressGadget<F>,
+    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     is_mload: IsEqualGadget<F>,
     is_mstore8: IsEqualGadget<F>,
@@ -55,9 +45,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        // Query address by a full word
-        let address = cb.query_word_rlc();
-        cb.stack_pop(address.expr());
+        let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
+        cb.stack_pop(memory_address.offset_rlc());
 
         // Check if this is an MSTORE8
         let is_mload = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MLOAD.expr());
@@ -77,31 +66,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             ),
         );
 
-        // Check if the memory address is too large
-        let address_low = address_low::expr(&address);
-        let address_high = address_high::expr(&address);
-        let size = select::expr(is_mstore8.expr(), 1.expr(), 32.expr());
-        let expanded_address = address_low.expr() + size.expr();
-
-        // sanity check
-        let address_in_range_high = IsZeroGadget::construct(cb, address_high);
-        let expanded_address_in_range = LtGadget::construct(
-            cb,
-            expanded_address.expr(),
-            (1u64 << (N_BYTES_MEMORY_ADDRESS * 8)).expr(),
-        );
-
         cb.require_equal(
-            "address must less than 5 bytes",
-            and::expr([
-                address_in_range_high.expr(),
-                expanded_address_in_range.expr(),
-            ]),
-            true.expr(),
+            "Memory length must be 32 for MLOAD and MSTORE, and 1 for MSTORE8",
+            memory_address.length_rlc(),
+            select::expr(is_mstore8.expr(), 1.expr(), 32.expr()),
         );
 
         // Get the next memory size and the gas cost for this memory access
-        let memory_expansion = MemoryExpansionGadget::construct(cb, [expanded_address]);
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
         // Check if the amount of gas available is less than the amount of gas
         // required
@@ -112,9 +84,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         );
 
         cb.require_equal(
-            "gas_left must less than gas_cost",
-            insufficient_gas.expr(),
-            true.expr(),
+            "Memory address is overflow or gas left is less than cost",
+            or::expr([memory_address.overflow(), insufficient_gas.expr()]),
+            1.expr(),
         );
 
         // Current call must fail.
@@ -150,9 +122,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 
         Self {
             opcode,
-            address,
-            address_in_range_high,
-            expanded_address_in_range,
+            memory_address,
             memory_expansion,
             insufficient_gas,
             is_mload,
@@ -174,9 +144,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         let opcode = step.opcode.unwrap();
 
         // Inputs/Outputs
-        let address = block.rws[step.rw_indices[0]].stack_value();
-        self.address
-            .assign(region, offset, Some(address.to_le_bytes()))?;
+        let memory_offset = block.rws[step.rw_indices[0]].stack_value();
+
+        // Memory lengths are set to default values for MLOAD, MSTORE and
+        // MSTORE8 in go-ethereum.
+        // <https://github.com/ethereum/go-ethereum/blob/4a9fa31450d3cdcea84735b68cd5a0a8450473f8/core/vm/memory_table.go#L39>
+        let memory_length = match opcode {
+            OpcodeId::MLOAD | OpcodeId::MSTORE => 32,
+            OpcodeId::MSTORE8 => 1,
+            _ => unreachable!(),
+        };
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -193,32 +170,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             F::from(OpcodeId::MSTORE8.as_u64()),
         )?;
 
-        // Address in range check
-        let address_high = address_high::value::<F>(address.to_le_bytes());
-        self.address_in_range_high
-            .assign(region, offset, address_high)?;
-
-        let address_value = address_low::value(address.to_le_bytes());
-        let size = if opcode == OpcodeId::MSTORE8 { 1 } else { 32 };
-
-        let expanded_address = address_value
-            .checked_add(size)
-            .expect("address overflow u64");
-        self.expanded_address_in_range.assign(
-            region,
-            offset,
-            F::from(expanded_address),
-            F::from(1u64 << (N_BYTES_MEMORY_ADDRESS * 8)),
-        )?;
-
-        // TODO: sanity check, remove this after fixing #347 missing ErrGasUintOverflow
-        if address_high != F::zero() || expanded_address > (1u64 << (N_BYTES_MEMORY_ADDRESS * 8)) {
-            panic!("address overflow {} bytes", N_BYTES_MEMORY_ADDRESS);
-        }
+        let memory_address =
+            self.memory_address
+                .assign(region, offset, memory_offset, memory_length.into())?;
 
         let memory_expansion_cost = self
             .memory_expansion
-            .assign(region, offset, step.memory_word_size(), [expanded_address])?
+            .assign(region, offset, step.memory_word_size(), [memory_address])?
             .1;
 
         // Gas insufficient check
@@ -245,43 +203,69 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 #[cfg(test)]
 mod tests {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::{bytecode, word, Bytecode, ToWord};
+    use eth_types::{bytecode, word, Bytecode, ToWord, U256};
     use mock::{
         eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
     };
 
     #[test]
-    fn test() {
-        let codes = [
+    fn test_oog_static_memory_simple() {
+        for code in testing_bytecodes(0xffffffff_u64.into()).iter() {
+            test_root(code);
+            test_internal(code);
+        }
+    }
+
+    #[test]
+    fn test_oog_static_memory_max_expanded_address() {
+        // > MAX_EXPANDED_MEMORY_ADDRESS (0x1fffffffe0)
+        for code in testing_bytecodes(0x1fffffffe1_u64.into()).iter() {
+            test_root(code);
+            test_internal(code);
+        }
+    }
+
+    #[test]
+    fn test_oog_static_memory_max_u64_address() {
+        for code in testing_bytecodes(u64::MAX.into()).iter() {
+            test_root(code);
+            test_internal(code);
+        }
+    }
+
+    #[test]
+    fn test_oog_static_memory_max_word_address() {
+        for code in testing_bytecodes(U256::MAX).iter() {
+            test_root(code);
+            test_internal(code);
+        }
+    }
+
+    fn testing_bytecodes(offset: U256) -> Vec<Bytecode> {
+        vec![
             bytecode! {
-                PUSH8(0xFF)
-                PUSH32(word!("0xffffffff")) // offset
+                PUSH8(0xff)
+                PUSH32(offset)
                 MSTORE
                 STOP
             },
             bytecode! {
-                PUSH8(0xFF)
-                PUSH32(word!("0xffffffff")) // offset
+                PUSH8(0xff)
+                PUSH32(offset)
                 MSTORE8
                 STOP
             },
             bytecode! {
-                PUSH32(word!("0xffffffff")) // offset
+                PUSH32(offset)
                 MLOAD
                 STOP
             },
-        ];
-
-        for code in codes.iter() {
-            test_root(code.clone());
-            test_internal(code.clone());
-        }
+        ]
     }
-
-    fn test_root(code: Bytecode) {
+    fn test_root(code: &Bytecode) {
         let ctx = TestContext::<2, 1>::new(
             None,
-            account_0_code_account_1_no_code(code),
+            account_0_code_account_1_no_code(code.clone()),
             |mut txs, accs| {
                 txs[0]
                     .from(accs[1].address)
@@ -295,7 +279,7 @@ mod tests {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn test_internal(code: Bytecode) {
+    fn test_internal(code: &Bytecode) {
         let code_a = bytecode! {
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
@@ -313,7 +297,7 @@ mod tests {
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).code(code_a);
-                accs[1].address(MOCK_ACCOUNTS[1]).code(code);
+                accs[1].address(MOCK_ACCOUNTS[1]).code(code.clone());
                 accs[2].address(MOCK_ACCOUNTS[2]).balance(eth(1));
             },
             |mut txs, accs| {

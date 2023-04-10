@@ -3,8 +3,11 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-            math_gadget::IsEqualGadget, memory_gadget::MemoryAddressGadget, CachedRegion, Cell,
+            common_gadget::CommonErrorGadget,
+            constraint_builder::ConstraintBuilder,
+            math_gadget::IsEqualGadget,
+            memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
