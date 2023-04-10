@@ -132,7 +132,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --verbose --release --all --features scroll --exclude integration-tests --exclude circuit-benchmarks
+          args: --verbose --release --all --features scroll --exclude integration-tests --exclude circuit-benchmarks --exclude testool
 
   build:
     needs: [skip_check]
