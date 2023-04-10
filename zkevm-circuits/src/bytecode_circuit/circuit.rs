@@ -4,8 +4,8 @@ use crate::{
     util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
 };
-use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
-use eth_types::{Field, ToLittleEndian};
+use bus_mapping::{state_db::EMPTY_CODE_HASH_LE, util::POSEIDON_CODE_HASH_ZERO};
+use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -241,10 +241,14 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(length, Rotation::cur()),
             );
 
-            let empty_hash = rlc::expr(
-                &EMPTY_CODE_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
-                challenges.evm_word(),
-            );
+            let empty_hash = if cfg!(feature = "poseidon-codehash") {
+                Expression::Constant(POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap())
+            } else {
+                rlc::expr(
+                    &EMPTY_CODE_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
+                    challenges.evm_word(),
+                )
+            };
 
             cb.require_equal(
                 "assert cur.hash == EMPTY_HASH",
@@ -457,9 +461,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             last_row_offset
         );
 
-        let empty_hash = challenges
-            .evm_word()
-            .map(|challenge| rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge));
+        let empty_hash = challenges.evm_word().map(|challenge| {
+            if cfg!(feature = "poseidon-codehash") {
+                POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap()
+            } else {
+                rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge)
+            }
+        });
 
         let mut is_first_time = true;
         layouter.assign_region(
@@ -529,9 +537,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
         // Code hash with challenge is calculated only using the first row of the
         // bytecode (header row), the rest of the code_hash in other rows are ignored.
-        let code_hash = challenges
-            .evm_word()
-            .map(|challenge| rlc::value(&bytecode.rows[0].code_hash.to_le_bytes(), challenge));
+        let code_hash = challenges.evm_word().map(|challenge| {
+            if cfg!(feature = "poseidon-codehash") {
+                bytecode.rows[0].code_hash.to_scalar().unwrap()
+            } else {
+                rlc::value(&bytecode.rows[0].code_hash.to_le_bytes(), challenge)
+            }
+        });
 
         for (idx, row) in bytecode.rows.iter().enumerate() {
             if fail_fast && *offset > last_row_offset {
@@ -891,11 +903,9 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
             &challenges,
         )?;
         #[cfg(feature = "poseidon-codehash")]
-        config.poseidon_table.dev_load(
-            &mut layouter,
-            self.bytecodes.iter().map(|b| &b.bytes),
-            &challenges,
-        )?;
+        config
+            .poseidon_table
+            .dev_load(&mut layouter, self.bytecodes.iter().map(|b| &b.bytes))?;
         self.synthesize_sub(&config, &challenges, &mut layouter)?;
         Ok(())
     }

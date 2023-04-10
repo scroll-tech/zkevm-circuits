@@ -13,7 +13,7 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
-use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{split_u256, split_u256_limb64},
@@ -792,11 +792,11 @@ impl PoseidonTable {
         &self,
         layouter: &mut impl Layouter<F>,
         inputs: impl IntoIterator<Item = &'a Vec<u8>> + Clone,
-        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         use crate::bytecode_circuit::bytecode_unroller::{
             unroll_to_hash_input_default, HASHBLOCK_BYTES_IN_FIELD,
         };
+        use bus_mapping::state_db::CodeDB;
 
         layouter.assign_region(
             || "poseidon table",
@@ -813,7 +813,8 @@ impl PoseidonTable {
                     )?;
                 }
                 offset += 1;
-                let nil_hash = KeccakTable::assignments(&[], challenges)[0][3];
+                let nil_hash =
+                    Value::known(CodeDB::empty_code_hash().to_word().to_scalar().unwrap());
                 for (column, value) in poseidon_table_columns
                     .iter()
                     .copied()
@@ -831,7 +832,12 @@ impl PoseidonTable {
                 for input in inputs.clone() {
                     let mut control_len = input.len();
                     let mut first_row = true;
-                    let ref_hash = KeccakTable::assignments(input, challenges)[0][3];
+                    let ref_hash = Value::known(
+                        CodeDB::hash(input.as_slice())
+                            .to_word()
+                            .to_scalar()
+                            .unwrap(),
+                    );
                     for row in unroll_to_hash_input_default::<F>(input.iter().copied()) {
                         assert_ne!(
                             control_len,

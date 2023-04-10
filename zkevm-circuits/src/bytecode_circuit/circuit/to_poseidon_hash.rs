@@ -1,10 +1,10 @@
 use crate::{
-    evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select},
+    evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, select},
     table::{BytecodeFieldTag, KeccakTable, PoseidonTable},
     util::{Challenges, Expr, SubCircuitConfig},
 };
-use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
-use eth_types::Field;
+use bus_mapping::util::POSEIDON_CODE_HASH_ZERO;
+use eth_types::{Field, ToScalar, ToWord};
 use gadgets::is_zero::IsZeroChip;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -52,8 +52,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
     ) -> Self {
         let base_conf_cl = base_conf.clone();
         let bytecode_table = base_conf.bytecode_table;
-        // TODO: does this col still used for storing poseidon hash?
-        // let code_hash = bytecode_table.code_hash;
+        let code_hash = bytecode_table.code_hash;
 
         let q_enable = base_conf.q_enable; // from 0 to last avaliable row
 
@@ -287,11 +286,11 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         // ]))
         // });
 
-        let lookup_columns = [/* code_hash, */ field_input, control_length];
+        let lookup_columns = [code_hash, field_input, control_length];
         let pick_hash_tbl_cols = |inp_i: usize| {
             let cols =
                 <PoseidonTable as crate::table::LookupTable<F>>::advice_columns(&poseidon_table);
-            [/* cols[0], */ cols[inp_i + 1], cols[cols.len() - 2]]
+            [cols[0], cols[inp_i + 1], cols[cols.len() - 2]]
         };
 
         // we use a special selection exp for only 2 indexs
@@ -339,7 +338,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
             ]);
             let mut constraints = Vec::new();
             for (l_exp, tbl_col) in [
-                //                meta.query_advice(code_hash, Rotation::cur()),
+                meta.query_advice(code_hash, Rotation::cur()),
                 0.expr(),
                 meta.query_advice(control_length, Rotation::cur()),
             ]
@@ -404,9 +403,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
             last_row_offset
         );
 
-        let empty_hash = challenges
-            .evm_word()
-            .map(|challenge| rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge));
+        let empty_hash = Value::known(POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap());
 
         layouter.assign_region(
             || "assign bytecode with poseidon hash extension",

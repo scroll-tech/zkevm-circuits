@@ -197,16 +197,14 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     }
 
     pub fn code_hash(&self, n: U256) -> Value<F> {
-        self.challenges
-            .evm_word()
-            .map(|r| 
-                if cfg!(feature = "poseidon-codehash") {
-                    // only FieldExt is not enough for ToScalar trait so we have to make workaround
-                    rlc::value(&n.to_le_bytes(), F::from(256u64))
-                } else {
-                    rlc::value(&n.to_le_bytes(), r)
-                }
-            )
+        self.challenges.evm_word().map(|r| {
+            if cfg!(feature = "poseidon-codehash") {
+                // only FieldExt is not enough for ToScalar trait so we have to make workaround
+                rlc::value(&n.to_le_bytes(), F::from(256u64))
+            } else {
+                rlc::value(&n.to_le_bytes(), r)
+            }
+        })
     }
 
     pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
