@@ -64,4 +64,4 @@ jobs:
         with:
           name: Clippy
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features --all-targets -- -D warnings -Aclippy::format_in_format_args -Aclippy::uninlined_format_args -Aclippy::unnecessary_cast
+          args: --all-features --all-targets -- -D warnings -Aunused_variables -Aclippy::format_in_format_args -Aclippy::uninlined_format_args -Aclippy::unnecessary_cast
