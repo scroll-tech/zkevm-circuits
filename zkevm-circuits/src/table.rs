@@ -797,6 +797,7 @@ impl PoseidonTable {
             unroll_to_hash_input_default, HASHBLOCK_BYTES_IN_FIELD,
         };
         use bus_mapping::state_db::CodeDB;
+        use mpt_zktrie::hash::HASHABLE_DOMAIN_SPEC;
 
         layouter.assign_region(
             || "poseidon table",
@@ -846,11 +847,13 @@ impl PoseidonTable {
                             input.len()
                         );
                         let block_size = HASHBLOCK_BYTES_IN_FIELD * row.len();
+                        let control_len_as_flag =
+                            F::from_u128(HASHABLE_DOMAIN_SPEC * control_len as u128);
 
                         for (column, value) in poseidon_table_columns.iter().zip_eq(
                             once(ref_hash)
                                 .chain(row.map(Value::known))
-                                .chain(once(Value::known(F::from(control_len as u64))))
+                                .chain(once(Value::known(control_len_as_flag)))
                                 .chain(once(Value::known(if first_row {
                                     F::one()
                                 } else {
