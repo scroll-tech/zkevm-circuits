@@ -40,6 +40,7 @@ use halo2_proofs::{
 };
 
 /// Encode the type `NumberOrHash` into a field element
+#[allow(clippy::needless_return)]
 pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) -> Value<F> {
     match v {
         NumberOrHash::Number(n) => Value::known(F::from(*n as u64)),
