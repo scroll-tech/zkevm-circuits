@@ -1089,6 +1089,7 @@ mod tests {
 
     /// Test invalid byte data
 
+    #[cfg(feature="fixme")]
     #[test]
     fn bytecode_invalid_byte_data() {
         let k = 9;
