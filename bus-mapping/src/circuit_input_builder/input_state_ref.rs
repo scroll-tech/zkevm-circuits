@@ -6,7 +6,7 @@ use super::{
     TransactionContext,
 };
 use crate::{
-    error::{get_step_reported_error, ExecError, InsufficientBalanceError},
+    error::{get_step_reported_error, ExecError, InsufficientBalanceError, NonceUintOverflowError},
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
@@ -1390,20 +1390,23 @@ impl<'a> CircuitInputStateRef<'a> {
                 return Err(Error::AccountNotFound(sender));
             }
             if account.balance < value {
-                return Ok(Some(match step.op {
-                    OpcodeId::CALL | OpcodeId::CALLCODE => {
-                        ExecError::InsufficientBalance(InsufficientBalanceError::Call)
-                    }
-                    OpcodeId::CREATE => {
-                        ExecError::InsufficientBalance(InsufficientBalanceError::Create)
-                    }
-                    OpcodeId::CREATE2 => {
-                        ExecError::InsufficientBalance(InsufficientBalanceError::Create2)
-                    }
+                return Ok(Some(ExecError::InsufficientBalance(match step.op {
+                    OpcodeId::CALL | OpcodeId::CALLCODE => InsufficientBalanceError::Call,
+                    OpcodeId::CREATE => InsufficientBalanceError::Create,
+                    OpcodeId::CREATE2 => InsufficientBalanceError::Create2,
                     op => {
                         unreachable!("insufficient balance error unexpected for opcode: {:?}", op)
                     }
-                }));
+                })));
+            }
+
+            //  Nonce Uint overflow
+            if account.nonce >= u64::MAX.into() {
+                return Ok(Some(ExecError::NonceUintOverflow(match step.op {
+                    OpcodeId::CREATE => NonceUintOverflowError::Create,
+                    OpcodeId::CREATE2 => NonceUintOverflowError::Create2,
+                    op => unreachable!("Nonce Uint overflow error unexpected for opcode: {:?}", op),
+                })));
             }
 
             // Address collision
@@ -1439,15 +1442,6 @@ impl<'a> CircuitInputStateRef<'a> {
                         step.gas.0,
                     );
                     return Ok(Some(ExecError::PrecompileFailed));
-                }
-            }
-
-            if matches!(step.op, OpcodeId::CREATE | OpcodeId::CREATE2) {
-                let addr = call.address;
-                let acc = self.sdb.get_account(&addr).1;
-                let max_nonce = (-1i64 as u64).into();
-                if acc.nonce == max_nonce {
-                    return Ok(Some(ExecError::NonceUintOverflow));
                 }
             }
 

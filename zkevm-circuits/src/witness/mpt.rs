@@ -192,6 +192,16 @@ impl MptUpdate {
     pub(crate) fn value_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
         let assign = |x: Word| match self.key {
             Key::Account {
+                field_tag: AccountFieldTag::CodeHash,
+                ..
+            } => {
+                if cfg!(feature = "poseidon-codehash") {
+                    x.to_scalar().unwrap()
+                } else {
+                    rlc::value(&x.to_le_bytes(), word_randomness)
+                }
+            }
+            Key::Account {
                 field_tag:
                     AccountFieldTag::Nonce | AccountFieldTag::NonExisting | AccountFieldTag::CodeSize,
                 ..

@@ -109,6 +109,15 @@ pub enum InsufficientBalanceError {
     Create2,
 }
 
+/// Nonce uint overflow errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NonceUintOverflowError {
+    /// Nonce uint overflow during CREATE opcode.
+    Create,
+    /// Nonce uint overflow during CREATE2 opcode.
+    Create2,
+}
+
 /// EVM Execution Error
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExecError {
@@ -142,8 +151,8 @@ pub enum ExecError {
     MaxCodeSizeExceeded,
     /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
     PrecompileFailed,
-    /// ..
-    NonceUintOverflow,
+    /// For CREATE, CREATE2
+    NonceUintOverflow(NonceUintOverflowError),
 }
 
 // TODO: Move to impl block.

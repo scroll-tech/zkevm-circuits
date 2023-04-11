@@ -196,6 +196,17 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
 
+    pub fn code_hash(&self, n: U256) -> Value<F> {
+        self.challenges.evm_word().map(|r| {
+            if cfg!(feature = "poseidon-codehash") {
+                // only FieldExt is not enough for ToScalar trait so we have to make workaround
+                rlc::value(&n.to_le_bytes(), F::from(256u64))
+            } else {
+                rlc::value(&n.to_le_bytes(), r)
+            }
+        })
+    }
+
     pub fn keccak_rlc(&self, le_bytes: &[u8]) -> Value<F> {
         self.challenges
             .keccak_input()
@@ -203,7 +214,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     }
 
     pub fn empty_code_hash_rlc(&self) -> Value<F> {
-        self.word_rlc(CodeDB::empty_code_hash().to_word())
+        self.code_hash(CodeDB::empty_code_hash().to_word())
     }
 
     /// Constrains a cell to have a constant value.

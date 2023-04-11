@@ -11,8 +11,11 @@ use crate::{
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };
-use bus_mapping::{state_db::EMPTY_CODE_HASH_LE, util::KECCAK_CODE_HASH_ZERO};
-use eth_types::{Field, ToLittleEndian, ToWord};
+use bus_mapping::{
+    state_db::EMPTY_CODE_HASH_LE,
+    util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
+};
+use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
 use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
@@ -470,7 +473,11 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
-        self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
+        if cfg!(feature = "poseidon-codehash") {
+            Expression::Constant(POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap())
+        } else {
+            self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
+        }
     }
 
     // Common

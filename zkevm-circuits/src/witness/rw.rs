@@ -593,19 +593,31 @@ impl Rw {
             } => {
                 match field_tag {
                     // Only these two tags have values that may not fit into a scalar, so we need to
-                    // RLC.
-                    CallContextFieldTag::CodeHash | CallContextFieldTag::Value => {
-                        rlc::value(&value.to_le_bytes(), randomness)
+                    // RLC. (for poseidon hash feature, CodeHash not need rlc)
+                    CallContextFieldTag::CodeHash => {
+                        if cfg!(feature = "poseidon-codehash") {
+                            value.to_scalar().unwrap()
+                        } else {
+                            rlc::value(&value.to_le_bytes(), randomness)
+                        }
                     }
+                    CallContextFieldTag::Value => rlc::value(&value.to_le_bytes(), randomness),
                     _ => value.to_scalar().unwrap(),
                 }
             }
             Self::Account {
                 value, field_tag, ..
             } => match field_tag {
-                AccountFieldTag::KeccakCodeHash
-                | AccountFieldTag::Balance
-                | AccountFieldTag::CodeHash => rlc::value(&value.to_le_bytes(), randomness),
+                AccountFieldTag::KeccakCodeHash | AccountFieldTag::Balance => {
+                    rlc::value(&value.to_le_bytes(), randomness)
+                }
+                AccountFieldTag::CodeHash => {
+                    if cfg!(feature = "poseidon-codehash") {
+                        value.to_scalar().unwrap()
+                    } else {
+                        rlc::value(&value.to_le_bytes(), randomness)
+                    }
+                }
                 AccountFieldTag::Nonce
                 | AccountFieldTag::NonExisting
                 | AccountFieldTag::CodeSize => value.to_scalar().unwrap(),
@@ -635,9 +647,16 @@ impl Rw {
                 field_tag,
                 ..
             } => Some(match field_tag {
-                AccountFieldTag::KeccakCodeHash
-                | AccountFieldTag::Balance
-                | AccountFieldTag::CodeHash => rlc::value(&value_prev.to_le_bytes(), randomness),
+                AccountFieldTag::KeccakCodeHash | AccountFieldTag::Balance => {
+                    rlc::value(&value_prev.to_le_bytes(), randomness)
+                }
+                AccountFieldTag::CodeHash => {
+                    if cfg!(feature = "poseidon-codehash") {
+                        value_prev.to_scalar().unwrap()
+                    } else {
+                        rlc::value(&value_prev.to_le_bytes(), randomness)
+                    }
+                }
                 AccountFieldTag::Nonce
                 | AccountFieldTag::NonExisting
                 | AccountFieldTag::CodeSize => value_prev.to_scalar().unwrap(),

@@ -116,21 +116,21 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        challenges: &Challenges<Value<F>>,
+        _challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         // for single codehash we sitll use keccak256(nil)
-        use crate::evm_circuit::util::rlc;
-        let empty_hash = challenges
-            .evm_word()
-            .map(|challenge| rlc::value(CodeDB::empty_code_hash().as_ref(), challenge));
+        use eth_types::{ToScalar, ToWord};
+        // Note the Option(nil_hash) in construct has different meanings as the returning of
+        // `to_scalar` so we should not use the returning option here
+        let empty_hash = CodeDB::empty_code_hash().to_word().to_scalar().unwrap();
 
         let chip = PoseidonHashChip::<_, HASH_BLOCK_STEP_SIZE>::construct(
             config.0.clone(),
             &self.0,
             self.1,
             false,
-            crate::test_util::escape_value(empty_hash),
+            Some(empty_hash),
         );
 
         chip.load(layouter)

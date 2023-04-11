@@ -3,7 +3,7 @@ use crate::{
         execution::ExecutionGadget,
         param::{
             N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE,
-            N_BYTES_WORD,
+            N_BYTES_U64, N_BYTES_WORD,
         },
         step::ExecutionState,
         util::{
@@ -13,7 +13,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                ConstantDivisionGadget, ContractCreateGadget, IsZeroGadget, LtWordGadget,
+                ConstantDivisionGadget, ContractCreateGadget, IsZeroGadget, LtGadget, LtWordGadget,
             },
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
@@ -52,7 +52,9 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
     create: ContractCreateGadget<F, IS_CREATE2>,
     caller_balance: Word<F>,
+    is_depth_in_range: LtGadget<F, N_BYTES_U64>,
     is_insufficient_balance: LtWordGadget<F>,
+    is_nonce_in_range: LtGadget<F, N_BYTES_U64>,
     keccak_code_hash: Cell<F>,
     keccak_output: Word<F>,
     // prevous code hash befor creating
@@ -160,6 +162,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Some(&mut reversion_info),
         );
 
+        let depth = cb.call_context(None, CallContextFieldTag::Depth);
+        let is_depth_in_range = LtGadget::construct(cb, depth.expr(), 1025.expr());
+
         cb.call_context_lookup(
             0.expr(),
             None,
@@ -167,13 +172,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             create.caller_address(),
         );
 
-        cb.account_write(
-            create.caller_address(),
-            AccountFieldTag::Nonce,
-            create.caller_nonce() + 1.expr(),
-            create.caller_nonce(),
-            Some(&mut reversion_info),
-        );
         let caller_balance = cb.query_word_rlc();
         cb.account_read(
             create.caller_address(),
@@ -182,11 +180,51 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         );
         let is_insufficient_balance = LtWordGadget::construct(cb, &caller_balance, &value);
 
+        let caller_nonce = create.caller_nonce();
+        cb.account_read(
+            create.caller_address(),
+            AccountFieldTag::Nonce,
+            caller_nonce.expr(),
+        );
+        let is_nonce_in_range = LtGadget::construct(cb, caller_nonce.expr(), u64::MAX.expr());
+
+        cb.condition(is_insufficient_balance.expr(), |cb| {
+            cb.require_equal(
+                "Depth must be in range if caller balance is insufficient",
+                is_depth_in_range.expr(),
+                1.expr(),
+            );
+        });
+
+        cb.condition(not::expr(is_nonce_in_range.expr()), |cb| {
+            cb.require_equal(
+                "Depth must be in range and caller balance must be sufficient if nonce is overflow",
+                and::expr([
+                    is_depth_in_range.expr(),
+                    not::expr(is_insufficient_balance.expr()),
+                ]),
+                1.expr(),
+            );
+        });
+
+        let is_precheck_ok = and::expr([
+            is_depth_in_range.expr(),
+            not::expr(is_insufficient_balance.expr()),
+            is_nonce_in_range.expr(),
+        ]);
+
+        cb.condition(is_precheck_ok.expr(), |cb| {
+            cb.account_write(
+                create.caller_address(),
+                AccountFieldTag::Nonce,
+                caller_nonce.expr() + 1.expr(),
+                caller_nonce,
+                Some(&mut reversion_info),
+            );
+        });
+
         cb.condition(
-            and::expr([
-                init_code.has_length(),
-                not::expr(is_insufficient_balance.expr()),
-            ]),
+            and::expr([is_precheck_ok.expr(), init_code.has_length()]),
             |cb| {
                 cb.keccak_table_lookup(
                     init_code_rlc.expr(),
@@ -228,10 +266,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         // conditional transfer for address collision case
         let transfer = cb.condition(
-            and::expr([
-                not_address_collision.expr(),
-                not::expr(is_insufficient_balance.expr()),
-            ]),
+            and::expr([is_precheck_ok.expr(), not_address_collision.expr()]),
             |cb| {
                 let tansfer_gadget = TransferGadget::construct(
                     cb,
@@ -290,10 +325,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             cb.call_context_lookup(true.expr(), None, field_tag, value);
         }
 
-        let depth = cb.call_context(None, CallContextFieldTag::Depth);
-
-        // handle the case where caller balance was insufficient.
-        cb.condition(is_insufficient_balance.expr(), |cb| {
+        // Handle the case where an error of ErrDepth, ErrInsufficientBalance or
+        // ErrNonceUintOverflow occurred.
+        cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
@@ -309,15 +343,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 stack_pointer: Delta(2.expr() + IS_CREATE2.expr()),
                 memory_word_size: To(memory_expansion.next_memory_word_size()),
                 // - (Reversible) Write TxAccessListAccount (Contract Address)
-                // - (Reversible) Write Account (Caller) Nonce
-                reversible_write_counter: Delta(2.expr()),
+                reversible_write_counter: Delta(1.expr()),
                 gas_left: Delta(-gas_cost.expr()),
                 ..StepStateTransition::default()
             });
         });
 
-        // proceed to handle the case where caller balance was sufficient.
-        cb.condition(not::expr(is_insufficient_balance.expr()), |cb| {
+        // Proceed to handle the case where precheck is OK.
+        cb.condition(is_precheck_ok, |cb| {
             for (field_tag, value) in [
                 (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
                 (CallContextFieldTag::IsSuccess, callee_is_success.expr()),
@@ -426,7 +459,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             init_code_word_size,
             create,
             caller_balance,
+            is_depth_in_range,
             is_insufficient_balance,
+            is_nonce_in_range,
             keccak_code_hash,
             keccak_output,
             code_hash_previous,
@@ -504,19 +539,27 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             ),
         )?;
 
-        let caller_nonce = block.rws
-            [step.rw_indices[9 + usize::from(is_create2) + copy_rw_increase]]
-            .account_nonce_pair()
-            .1
-            .low_u64();
         let caller_balance = block.rws
             [step.rw_indices[10 + usize::from(is_create2) + copy_rw_increase]]
             .account_balance_pair()
             .1;
-        let is_insufficient_balance = caller_balance < value;
 
-        let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [11, 12].map(|i| {
-            let rw = block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]];
+        let caller_nonce = block.rws
+            [step.rw_indices[11 + usize::from(is_create2) + copy_rw_increase]]
+            .account_nonce_pair()
+            .1
+            .low_u64();
+
+        let is_precheck_ok =
+            if call.depth < 1025 && caller_balance >= value && caller_nonce < u64::MAX {
+                1
+            } else {
+                0
+            };
+
+        let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [12, 13].map(|i| {
+            let rw = block.rws
+                [step.rw_indices[i + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]];
             rw.call_context_value()
         });
 
@@ -532,9 +575,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         // retrieve code_hash for creating address
         let code_hash_previous = block.rws
-            [step.rw_indices[13 + usize::from(is_create2) + copy_rw_increase]]
+            [step.rw_indices[14 + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]]
             .account_codehash_pair();
-        let code_hash_previous_rlc = region.word_rlc(code_hash_previous.0);
+        let code_hash_previous_rlc = region.code_hash(code_hash_previous.0);
         self.code_hash_previous
             .assign(region, offset, code_hash_previous_rlc)?;
         self.not_address_collision
@@ -542,11 +585,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let is_address_collision = !code_hash_previous.0.is_zero();
 
         let mut rw_offset = 0;
-        if !is_address_collision && !is_insufficient_balance {
+        if is_precheck_ok == 1 && !is_address_collision {
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
                 rw_offset += 2;
-                [15, 16].map(|i| {
-                    block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]]
+                [16, 17].map(|i| {
+                    block.rws[step.rw_indices
+                        [i + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]]
                         .account_balance_pair()
                 })
             } else {
@@ -588,11 +632,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.callee_is_success.assign(
             region,
             offset,
-            Value::known(if is_address_collision || is_insufficient_balance {
+            Value::known(if is_precheck_ok == 0 || is_address_collision {
                 F::zero()
             } else {
-                block.rws
-                    [step.rw_indices[23 + rw_offset + usize::from(is_create2) + copy_rw_increase]]
+                block.rws[step.rw_indices
+                    [23 + rw_offset + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
@@ -633,6 +677,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;
 
+        self.is_depth_in_range
+            .assign(region, offset, F::from(call.depth as u64), F::from(1025))?;
+        self.is_nonce_in_range
+            .assign(region, offset, F::from(caller_nonce), F::from(u64::MAX))?;
+
         self.keccak_code_hash.assign(
             region,
             offset,
@@ -645,16 +694,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
 #[cfg(test)]
 mod test {
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, Word,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, Bytecode, Word,
     };
-
     use itertools::Itertools;
     use lazy_static::lazy_static;
     use mock::{eth, TestContext};
-
-    use crate::test_util::CircuitTestBuilder;
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     lazy_static! {
@@ -664,7 +711,7 @@ mod test {
     fn run_test_circuits(ctx: TestContext<2, 1>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
-                max_rws: 4500,
+                max_rws: 300000,
                 ..Default::default()
             })
             .run();
@@ -772,7 +819,7 @@ mod test {
                 txs[0]
                     .from(accs[0].address)
                     .to(accs[1].address)
-                    .gas(100000u64.into());
+                    .gas(word!("0x2386F26FC10000"));
             },
             |block, _| block,
         )
@@ -866,6 +913,31 @@ mod test {
         run_test_circuits(test_context(caller));
     }
 
+    // Ignore this test case. It could run successfully but slow for CI.
+    #[ignore]
+    #[test]
+    fn test_create_error_depth() {
+        let code = bytecode! {
+            PUSH1(0x20)
+            PUSH1(0x0)
+            PUSH1(0x0)
+            CODECOPY
+            PUSH1(0x20)
+            PUSH1(0x0)
+            PUSH1(0x0)
+            CREATE
+        }
+        .into();
+        let caller = Account {
+            address: *CALLER_ADDRESS,
+            code,
+            nonce: Word::one(),
+            balance: eth(10),
+            ..Default::default()
+        };
+        run_test_circuits(test_context(caller));
+    }
+
     #[test]
     fn test_create_insufficient_balance() {
         let value = 23414.into();
@@ -880,5 +952,50 @@ mod test {
             };
             run_test_circuits(test_context(caller));
         }
+    }
+
+    #[test]
+    fn test_create_nonce_uint_overflow() {
+        // TRICKY:
+        // Caller nonce could not be set to `u64::MAX` directly. Since geth
+        // [preCheck](https://github.com/ethereum/go-ethereum/blob/4a9fa31450d3cdcea84735b68cd5a0a8450473f8/core/state_transition.go#L262)
+        // function has a check for nonce uint overflow. So there are two nested
+        // CREATE (or CREATE2) in bytecode, which could increase nonce from
+        // `u64::MAX - 1` to `u64::MAX` in the internal loop.
+        let bytecodes = [
+            bytecode! {
+                PUSH1(2) // size
+                PUSH1(0) // offset
+                PUSH1(1) // value
+                CREATE
+                PUSH1(2) // size
+                PUSH1(2) // offset
+                PUSH1(1) // value
+                CREATE
+            },
+            bytecode! {
+                PUSH1(0) // salt
+                PUSH1(2) // size
+                PUSH1(0) // offset
+                PUSH1(1) // value
+                CREATE2
+                PUSH1(0) // salt
+                PUSH1(2) // size
+                PUSH1(2) // offset
+                PUSH1(1) // value
+                CREATE2
+            },
+        ];
+
+        bytecodes.into_iter().for_each(|code| {
+            let caller = Account {
+                address: *CALLER_ADDRESS,
+                code: code.into(),
+                nonce: (u64::MAX - 1).into(),
+                balance: eth(10),
+                ..Default::default()
+            };
+            run_test_circuits(test_context(caller));
+        });
     }
 }

@@ -355,7 +355,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             self.code_hash.assign(
                 region,
                 offset,
-                region.word_rlc(U256::from_little_endian(&code_hash)),
+                region.code_hash(U256::from_little_endian(&code_hash)),
             )?;
 
             // code size.

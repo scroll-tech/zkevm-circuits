@@ -85,6 +85,14 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         state.reversion_info_read(&mut exec_step, &caller);
         state.tx_access_list_write(&mut exec_step, address)?;
 
+        let depth = caller.depth;
+        state.call_context_read(
+            &mut exec_step,
+            caller.call_id,
+            CallContextField::Depth,
+            depth.to_word(),
+        );
+
         state.call_context_read(
             &mut exec_step,
             caller.call_id,
@@ -92,17 +100,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             caller.address.to_word(),
         );
 
-        // Increase caller's nonce
-        let caller_nonce = state.sdb.get_nonce(&caller.address);
-        state.push_op_reversible(
-            &mut exec_step,
-            AccountOp {
-                address: caller.address,
-                field: AccountField::Nonce,
-                value: (caller_nonce + 1).into(),
-                value_prev: caller_nonce.into(),
-            },
-        )?;
         let caller_balance = state.sdb.get_balance(&callee.caller_address);
         state.account_read(
             &mut exec_step,
@@ -110,7 +107,32 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             AccountField::Balance,
             caller_balance,
         );
-        let insufficient_balance = callee.value > caller_balance;
+
+        let caller_nonce = state.sdb.get_nonce(&caller.address);
+        state.account_read(
+            &mut exec_step,
+            callee.caller_address,
+            AccountField::Nonce,
+            caller_nonce.into(),
+        );
+
+        // Check if an error of ErrDepth, ErrInsufficientBalance or
+        // ErrNonceUintOverflow occurred.
+        let is_precheck_ok =
+            depth < 1025 && caller_balance >= callee.value && caller_nonce < u64::MAX;
+
+        if is_precheck_ok {
+            // Increase caller's nonce
+            state.push_op_reversible(
+                &mut exec_step,
+                AccountOp {
+                    address: caller.address,
+                    field: AccountField::Nonce,
+                    value: (caller_nonce + 1).into(),
+                    value_prev: caller_nonce.into(),
+                },
+            )?;
+        }
 
         // TODO: look into when this can be pushed. Could it be done in parse call?
         state.push_call(callee.clone());
@@ -134,9 +156,11 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         // operation happens in evm create() method before checking
         // ErrContractAddressCollision
         let code_hash_previous = if callee_exists {
-            // only create2 possibly cause address collision error.
-            assert_eq!(geth_step.op, OpcodeId::CREATE2);
-            exec_step.error = Some(ExecError::ContractAddressCollision);
+            if is_precheck_ok {
+                // only create2 possibly cause address collision error.
+                assert_eq!(geth_step.op, OpcodeId::CREATE2);
+                exec_step.error = Some(ExecError::ContractAddressCollision);
+            }
             callee_account.code_hash
         } else {
             H256::zero()
@@ -150,7 +174,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             code_hash_previous.to_word(),
         );
 
-        if !callee_exists && !insufficient_balance {
+        if is_precheck_ok && !callee_exists {
             state.transfer(
                 &mut exec_step,
                 callee.caller_address,
@@ -193,14 +217,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.call_context_write(&mut exec_step, caller.call_id, field, value);
         }
 
-        state.call_context_read(
-            &mut exec_step,
-            caller.call_id,
-            CallContextField::Depth,
-            caller.depth.to_word(),
-        );
-
-        if insufficient_balance {
+        if !is_precheck_ok {
             for (field, value) in [
                 (CallContextField::LastCalleeId, 0.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),

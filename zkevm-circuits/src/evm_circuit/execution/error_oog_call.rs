@@ -171,7 +171,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             rd_offset,
             rd_length,
             step.memory_word_size(),
-            region.word_rlc(callee_code_hash),
+            region.code_hash(callee_code_hash),
         )?;
 
         self.opcode

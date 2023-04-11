@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    error::{ExecError, InsufficientBalanceError, OogError},
+    error::{ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
@@ -332,11 +332,13 @@ fn fn_gen_error_state_associated_ops(
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
         // only create2 may cause ContractAddressCollision error, so use Create::<true>.
         ExecError::ContractAddressCollision => Some(Create::<true>::gen_associated_ops),
-        ExecError::NonceUintOverflow => match geth_step.op {
-            OpcodeId::CREATE => Some(StackOnlyOpcode::<3, 1>::gen_associated_ops),
-            OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 1>::gen_associated_ops),
-            _ => unreachable!(),
-        },
+        // create & create2 can encounter nonce uint overflow.
+        ExecError::NonceUintOverflow(NonceUintOverflowError::Create) => {
+            Some(Create::<false>::gen_associated_ops)
+        }
+        ExecError::NonceUintOverflow(NonceUintOverflowError::Create2) => {
+            Some(Create::<true>::gen_associated_ops)
+        }
         ExecError::InvalidCreationCode => Some(ErrorCreationCode::gen_associated_ops),
         // more future errors place here
         _ => {

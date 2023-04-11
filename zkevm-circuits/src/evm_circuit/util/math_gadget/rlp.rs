@@ -269,7 +269,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         self.code_hash_rlc.assign(
             region,
             offset,
-            region.word_rlc(code_hash.unwrap_or_default()),
+            region.code_hash(code_hash.unwrap_or_default()),
         )?;
         for (c, v) in self
             .salt
