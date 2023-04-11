@@ -169,12 +169,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             LtWordGadget::construct(cb, &caller_balance_word, &call_gadget.value);
         // depth < 1025
         let is_depth_ok = LtGadget::construct(cb, depth.expr(), 1025.expr());
-        let is_error_depth = not::expr(is_depth_ok.expr());
-        let is_insufficient_balance_or_error_depth =
-            or::expr(&[is_insufficient_balance.expr(), is_error_depth.expr()]);
+
+        let is_precheck_ok = and::expr([
+            is_depth_ok.expr(),
+            not::expr(is_insufficient_balance.expr()),
+        ]);
 
         // stack write is zero when is_insufficient_balance is true
-        cb.condition(is_insufficient_balance_or_error_depth.expr(), |cb| {
+        cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             cb.require_zero(
                 "stack write result is zero when is_insufficient_balance is true",
                 call_gadget.is_success.expr(),
@@ -193,26 +195,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
-        let transfer = cb.condition(
-            and::expr(&[
-                is_call.expr(),
-                not::expr(is_insufficient_balance_or_error_depth.expr()),
-            ]),
-            |cb| {
-                TransferGadget::construct(
-                    cb,
-                    caller_address.expr(),
-                    callee_address.expr(),
-                    or::expr([
-                        not::expr(call_gadget.callee_not_exists.expr()),
-                        is_precompile.expr(),
-                    ]),
-                    0.expr(),
-                    call_gadget.value.clone(),
-                    &mut callee_reversion_info,
-                )
-            },
-        );
+        let transfer = cb.condition(and::expr(&[is_call.expr(), is_precheck_ok.expr()]), |cb| {
+            TransferGadget::construct(
+                cb,
+                caller_address.expr(),
+                callee_address.expr(),
+                or::expr([
+                    not::expr(call_gadget.callee_not_exists.expr()),
+                    is_precompile.expr(),
+                ]),
+                0.expr(),
+                call_gadget.value.clone(),
+                &mut callee_reversion_info,
+            )
+        });
 
         // For CALLCODE opcode, verify caller balance is greater than or equal to stack
         // `value` in successful case. that is `is_insufficient_balance` is false.
@@ -263,7 +259,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             and::expr([
                 no_callee_code.expr(),
                 not::expr(is_precompile.expr()),
-                not::expr(is_insufficient_balance_or_error_depth.expr()),
+                is_precheck_ok.expr(),
             ]),
             |cb| {
                 // Save caller's call state
@@ -277,10 +273,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             },
         );
         cb.condition(
-            and::expr([
-                is_precompile.expr(),
-                not::expr(is_insufficient_balance_or_error_depth.expr()),
-            ]),
+            and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
             |cb| {
                 // Save caller's call state
                 for (field_tag, value) in [
@@ -297,10 +290,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
 
         cb.condition(
-            and::expr([
-                call_gadget.is_empty_code_hash.expr(),
-                not::expr(is_insufficient_balance_or_error_depth.expr()),
-            ]),
+            and::expr([call_gadget.is_empty_code_hash.expr(), is_precheck_ok.expr()]),
             |cb| {
                 // For CALLCODE opcode, it has an extra stack pop `value` and one account read
                 // for caller balance (+2).
@@ -332,8 +322,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             },
         );
 
-        // handle is_insufficient_balance step transition
-        cb.condition(is_insufficient_balance_or_error_depth.expr(), |cb| {
+        // handle ErrDepth or ErrInsufficientBalance step transition
+        cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
@@ -358,10 +348,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         cb.condition(
-            and::expr(&[
-                not::expr(no_callee_code.expr()),
-                not::expr(is_insufficient_balance_or_error_depth.expr()),
-            ]),
+            and::expr(&[not::expr(no_callee_code.expr()), is_precheck_ok]),
             |cb| {
                 // Save caller's call state
                 for (field_tag, value) in [
@@ -527,7 +514,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         ]
         .map(|idx| block.rws[idx].call_context_value());
 
-        let error_depth = depth.low_u64() > 1024;
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
 
@@ -587,11 +573,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;
 
-        let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
+        let is_precheck_ok =
+            depth.low_u64() < 1025 && (!(is_call || is_callcode) || caller_balance >= value);
 
         // only call opcode do transfer in sucessful case.
         let (caller_balance_pair, callee_balance_pair) =
-            if is_call && !is_insufficient && !error_depth && !value.is_zero() {
+            if is_call && is_precheck_ok && !value.is_zero() {
                 if !callee_exists {
                     rw_offset += 1;
                 }
@@ -707,7 +694,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_is_persistent.low_u64() != 0,
         )?;
         // conditionally assign
-        if !is_insufficient && !error_depth && !value.is_zero() {
+        if is_precheck_ok && !value.is_zero() {
             self.transfer.assign(
                 region,
                 offset,

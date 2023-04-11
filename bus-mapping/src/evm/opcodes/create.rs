@@ -118,10 +118,10 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         // Check if an error of ErrDepth, ErrInsufficientBalance or
         // ErrNonceUintOverflow occurred.
-        let precheck_is_ok =
+        let is_precheck_ok =
             depth < 1025 && caller_balance >= callee.value && caller_nonce < u64::MAX;
 
-        if precheck_is_ok {
+        if is_precheck_ok {
             // Increase caller's nonce
             state.push_op_reversible(
                 &mut exec_step,
@@ -156,7 +156,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         // operation happens in evm create() method before checking
         // ErrContractAddressCollision
         let code_hash_previous = if callee_exists {
-            if precheck_is_ok {
+            if is_precheck_ok {
                 // only create2 possibly cause address collision error.
                 assert_eq!(geth_step.op, OpcodeId::CREATE2);
                 exec_step.error = Some(ExecError::ContractAddressCollision);
@@ -174,7 +174,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             code_hash_previous.to_word(),
         );
 
-        if precheck_is_ok && !callee_exists {
+        if is_precheck_ok && !callee_exists {
             state.transfer(
                 &mut exec_step,
                 callee.caller_address,
@@ -217,7 +217,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.call_context_write(&mut exec_step, caller.call_id, field, value);
         }
 
-        if !precheck_is_ok {
+        if !is_precheck_ok {
             for (field, value) in [
                 (CallContextField::LastCalleeId, 0.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),

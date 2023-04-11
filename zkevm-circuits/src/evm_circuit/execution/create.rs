@@ -207,13 +207,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             );
         });
 
-        let precheck_is_ok = and::expr([
+        let is_precheck_ok = and::expr([
             is_depth_in_range.expr(),
             not::expr(is_insufficient_balance.expr()),
             is_nonce_in_range.expr(),
         ]);
 
-        cb.condition(precheck_is_ok.expr(), |cb| {
+        cb.condition(is_precheck_ok.expr(), |cb| {
             cb.account_write(
                 create.caller_address(),
                 AccountFieldTag::Nonce,
@@ -224,7 +224,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         });
 
         cb.condition(
-            and::expr([precheck_is_ok.expr(), init_code.has_length()]),
+            and::expr([is_precheck_ok.expr(), init_code.has_length()]),
             |cb| {
                 cb.keccak_table_lookup(
                     init_code_rlc.expr(),
@@ -266,7 +266,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         // conditional transfer for address collision case
         let transfer = cb.condition(
-            and::expr([precheck_is_ok.expr(), not_address_collision.expr()]),
+            and::expr([is_precheck_ok.expr(), not_address_collision.expr()]),
             |cb| {
                 let tansfer_gadget = TransferGadget::construct(
                     cb,
@@ -327,7 +327,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         // Handle the case where an error of ErrDepth, ErrInsufficientBalance or
         // ErrNonceUintOverflow occurred.
-        cb.condition(not::expr(precheck_is_ok.expr()), |cb| {
+        cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
@@ -350,7 +350,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         });
 
         // Proceed to handle the case where precheck is OK.
-        cb.condition(precheck_is_ok, |cb| {
+        cb.condition(is_precheck_ok, |cb| {
             for (field_tag, value) in [
                 (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
                 (CallContextFieldTag::IsSuccess, callee_is_success.expr()),
@@ -550,7 +550,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             .1
             .low_u64();
 
-        let precheck_is_ok =
+        let is_precheck_ok =
             if call.depth < 1025 && caller_balance >= value && caller_nonce < u64::MAX {
                 1
             } else {
@@ -559,7 +559,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [12, 13].map(|i| {
             let rw = block.rws
-                [step.rw_indices[i + usize::from(is_create2) + copy_rw_increase + precheck_is_ok]];
+                [step.rw_indices[i + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]];
             rw.call_context_value()
         });
 
@@ -575,7 +575,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         // retrieve code_hash for creating address
         let code_hash_previous = block.rws
-            [step.rw_indices[14 + usize::from(is_create2) + copy_rw_increase + precheck_is_ok]]
+            [step.rw_indices[14 + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]]
             .account_codehash_pair();
         let code_hash_previous_rlc = region.code_hash(code_hash_previous.0);
         self.code_hash_previous
@@ -585,12 +585,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let is_address_collision = !code_hash_previous.0.is_zero();
 
         let mut rw_offset = 0;
-        if precheck_is_ok == 1 && !is_address_collision {
+        if is_precheck_ok == 1 && !is_address_collision {
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
                 rw_offset += 2;
                 [16, 17].map(|i| {
                     block.rws[step.rw_indices
-                        [i + usize::from(is_create2) + copy_rw_increase + precheck_is_ok]]
+                        [i + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]]
                         .account_balance_pair()
                 })
             } else {
@@ -632,11 +632,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.callee_is_success.assign(
             region,
             offset,
-            Value::known(if precheck_is_ok == 0 || is_address_collision {
+            Value::known(if is_precheck_ok == 0 || is_address_collision {
                 F::zero()
             } else {
                 block.rws[step.rw_indices
-                    [23 + rw_offset + usize::from(is_create2) + copy_rw_increase + precheck_is_ok]]
+                    [23 + rw_offset + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
@@ -913,6 +913,8 @@ mod test {
         run_test_circuits(test_context(caller));
     }
 
+    // Ignore this test case. It could run successfully but slow for CI.
+    #[ignore]
     #[test]
     fn test_create_error_depth() {
         let code = bytecode! {

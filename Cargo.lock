@@ -5532,7 +5532,3 @@ source = "git+https://github.com/scroll-tech/zktrie.git?branch=scroll-dev-0226#1
 dependencies = [
  "gobuild",
 ]
-
-[[patch.unused]]
-name = "windows-sys"
-version = "0.36.1"

@@ -144,12 +144,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
         let caller_balance = sender_account.balance;
         let is_call_or_callcode = call.kind == CallKind::Call || call.kind == CallKind::CallCode;
-        let insufficient_balance = call.value > caller_balance && is_call_or_callcode;
-        let is_depth_ok = geth_step.depth < 1025;
+
+        // Precheck is OK when depth is in range and caller balance is sufficient.
+        let is_precheck_ok =
+            geth_step.depth < 1025 && (!is_call_or_callcode || caller_balance >= call.value);
 
         // log::debug!(
-        //    "insufficient_balance: {}, call type: {:?}, sender_account: {:?} ",
-        //    insufficient_balance,
+        //    "is_precheck_ok: {}, call type: {:?}, sender_account: {:?} ",
+        //    is_precheck_ok,
         //    call.kind,
         //    call.caller_address
         //);
@@ -170,8 +172,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             .map(|ref addr| is_precompiled(addr))
             .unwrap_or(false);
         // TODO: What about transfer for CALLCODE?
-        // Transfer value only for CALL opcode, insufficient_balance = false.
-        if call.kind == CallKind::Call && !insufficient_balance && is_depth_ok {
+        // Transfer value only for CALL opcode, is_precheck_ok = true.
+        if call.kind == CallKind::Call && is_precheck_ok {
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
@@ -252,11 +254,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             );
         }
 
-        match (
-            insufficient_balance || !is_depth_ok,
-            is_precompile,
-            is_empty_code_hash,
-        ) {
+        match (!is_precheck_ok, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
             (false, true, _) => {
                 assert!(call.is_success, "call to precompile should not fail");
