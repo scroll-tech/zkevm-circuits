@@ -21,16 +21,16 @@ impl Bytecode {
     ) -> Vec<[Value<F>; 5]> {
         let n = 1 + self.bytes.len();
         let mut rows = Vec::with_capacity(n);
-        let hash =if cfg!(feature = "poseidon-codehash") {
+        let hash = if cfg!(feature = "poseidon-codehash") {
             challenges
-            .evm_word()
-            .map(|_challenge| rlc::value(&self.hash.to_le_bytes(), F::from(256u64)))
+                .evm_word()
+                .map(|_challenge| rlc::value(&self.hash.to_le_bytes(), F::from(256u64)))
             //Value::known(rlc::value(&self.hash.to_le_bytes(), F::from(256u64)))
-         } else {
+        } else {
             challenges
-            .evm_word()
-            .map(|challenge| rlc::value(&self.hash.to_le_bytes(), challenge))
-         };
+                .evm_word()
+                .map(|challenge| rlc::value(&self.hash.to_le_bytes(), challenge))
+        };
 
         rows.push([
             hash,

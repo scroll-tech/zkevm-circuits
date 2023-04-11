@@ -52,7 +52,15 @@ pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) 
                 b.reverse();
                 b
             };
-            challenge.map(|challenge| rlc::value(&le_bytes, challenge))
+            #[cfg(feature = "scroll")]
+            {
+                // use poseidon codehash fr
+                return challenge.map(|_challenge| rlc::value(&le_bytes, 0x100u64.into()));
+            }
+            #[cfg(not(feature = "scroll"))]
+            {
+                return challenge.map(|challenge| rlc::value(&le_bytes, challenge));
+            }
         }
     }
 }
