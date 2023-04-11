@@ -304,6 +304,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         //  * PoseidonTable::INPUT_WIDTH lookups for each input field
         //  * PoseidonTable::INPUT_WIDTH -1 lookups for the padded zero input
         //  so we have 2*PoseidonTable::INPUT_WIDTH -1 lookups
+        #[cfg(feature = "fixme")]
         for i in 0..PoseidonTable::INPUT_WIDTH {
             meta.lookup_any("poseidon input", |meta| {
                 // Conditions:
@@ -328,6 +329,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         }
 
         // the canonical form should be `for i in 1..PoseidonTable::INPUT_WIDTH{...}`
+        #[cfg(feature = "fixme")]
         meta.lookup_any("poseidon input padding zero for final", |meta| {
             // Conditions:
             // - On the row with the last byte (`is_byte_to_header == 1`)

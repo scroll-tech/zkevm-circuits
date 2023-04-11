@@ -567,7 +567,7 @@ impl<F: Field> CopyCircuitConfig<F> {
 
                 let mut offset = 0;
                 for (ev_idx, copy_event) in copy_events.iter().enumerate() {
-                    log::debug!(
+                    log::trace!(
                         "offset is {} before {}th copy event(bytes len: {}): {:?}",
                         offset,
                         ev_idx,
@@ -586,7 +586,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                         challenges,
                         copy_event,
                     )?;
-                    log::debug!("offset after {}th copy event: {}", ev_idx, offset);
+                    log::trace!("offset after {}th copy event: {}", ev_idx, offset);
                 }
 
                 for _ in 0..max_copy_rows - copy_rows_needed - 2 {
