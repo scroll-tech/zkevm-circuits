@@ -636,7 +636,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.keccak_code_hash.assign(
             region,
             offset,
-            region.code_hash(U256::from_big_endian(&keccak_code_hash)),
+            region.word_rlc(U256::from_big_endian(&keccak_code_hash)),
         )?;
 
         Ok(())
