@@ -216,11 +216,7 @@ impl Block {
 
     /// Return the chain id.
     pub fn chain_id(&self) -> U256 {
-        self.headers
-            .iter()
-            .next()
-            .map(|(_, h)| h.chain_id)
-            .unwrap_or(self.chain_id)
+        self.chain_id
     }
 
     /// ..

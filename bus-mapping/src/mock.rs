@@ -46,6 +46,7 @@ impl BlockData {
         // FIXME: better fetch a real state root instead of a mock one
         block.prev_state_root = MOCK_OLD_STATE_ROOT.into();
         block.circuits_params = self.circuits_params;
+        block.chain_id = self.chain_id;
         CircuitInputBuilder::new(self.sdb.clone(), self.code_db.clone(), &block)
     }
     /// Create a new block from the given Geth data.
