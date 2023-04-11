@@ -2264,7 +2264,7 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=goerli-0215-dual-hash#ae8acdf37eafbbb5b6dffcb9e977dab465970c83"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0411#fd2b324272f0d5cf272c6ca282e3c817a2f23bb0"
 dependencies = [
  "halo2_proofs",
  "hex",
@@ -3635,7 +3635,7 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0215#b5e9b1440de088648a8661ccefbd28f7ebb3f252"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0408#5c8ca0004ffe13aa48e86316bfb41af789c914d5"
 dependencies = [
  "bitvec 1.0.1",
  "halo2_proofs",
@@ -5532,3 +5532,7 @@ source = "git+https://github.com/scroll-tech/zktrie.git?branch=scroll-dev-0226#1
 dependencies = [
  "gobuild",
 ]
+
+[[patch.unused]]
+name = "windows-sys"
+version = "0.36.1"
