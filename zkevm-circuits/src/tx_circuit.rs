@@ -14,6 +14,7 @@ use crate::tx_circuit::sign_verify::pub_key_hash_to_address;
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::TxCircuit as TestTxCircuit;
+use itertools::Itertools;
 
 use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
@@ -1213,13 +1214,14 @@ impl<F: Field> TxCircuitConfig<F> {
             ]);
 
             vec![
-                1.expr(),                                            // is_enabled
+                1.expr(),                                            // q_enable
+                1.expr(),                                            // is_final
                 meta.query_advice(tx_table.value, Rotation::next()), // input_rlc
                 meta.query_advice(tx_table.value, Rotation::cur()),  // input_len
                 meta.query_advice(tx_table.value, Rotation(2)),      // output_rlc
             ]
             .into_iter()
-            .zip(keccak_table.table_exprs(meta).into_iter())
+            .zip_eq(keccak_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
