@@ -28,3 +28,4 @@ poseidon-circuit = { git = "https://github.com/scroll-tech/poseidon-circuit.git"
 [features]
 default = ["warn-unimplemented"]
 warn-unimplemented = []
+scroll = []

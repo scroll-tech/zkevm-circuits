@@ -304,6 +304,7 @@ pub(crate) struct ExecutionConfig<F> {
     returndatacopy_gadget: Box<ReturnDataCopyGadget<F>>,
     create_gadget: Box<CreateGadget<F, false, { ExecutionState::CREATE }>>,
     create2_gadget: Box<CreateGadget<F, true, { ExecutionState::CREATE2 }>>,
+    #[cfg(not(feature = "scroll"))]
     selfdestruct_gadget: Box<DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>>,
     signed_comparator_gadget: Box<SignedComparatorGadget<F>>,
     signextend_gadget: Box<SignextendGadget<F>>,
@@ -566,6 +567,7 @@ impl<F: Field> ExecutionConfig<F> {
             returndatacopy_gadget: configure_gadget!(),
             create_gadget: configure_gadget!(),
             create2_gadget: configure_gadget!(),
+            #[cfg(not(feature = "scroll"))]
             selfdestruct_gadget: configure_gadget!(),
             shl_shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
@@ -1363,7 +1365,10 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
             // dummy gadgets
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
-            ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
+            ExecutionState::SELFDESTRUCT => {
+                #[cfg(not(feature = "scroll"))]
+                assign_exec_step!(self.selfdestruct_gadget)
+            }
             // end of dummy gadgets
             ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::SHL_SHR => assign_exec_step!(self.shl_shr_gadget),
