@@ -221,17 +221,18 @@ impl<F: Field> SignVerifyConfig<F> {
 
             let input = [
                 is_enable.clone(),
+                is_enable.clone(),
                 is_enable.clone() * meta.query_advice(rlc_column, Rotation(1)),
                 is_enable.clone() * 64usize.expr(),
                 is_enable * meta.query_advice(rlc_column, Rotation(2)),
             ];
             let table = [
-                keccak_table.is_enabled,
-                keccak_table.input_rlc,
-                keccak_table.input_len,
-                keccak_table.output_rlc,
-            ]
-            .map(|column| meta.query_advice(column, Rotation::cur()));
+                meta.query_fixed(keccak_table.q_enable, Rotation::cur()),
+                meta.query_advice(keccak_table.is_final, Rotation::cur()),
+                meta.query_advice(keccak_table.input_rlc, Rotation::cur()),
+                meta.query_advice(keccak_table.input_len, Rotation::cur()),
+                meta.query_advice(keccak_table.output_rlc, Rotation::cur()),
+            ];
 
             input.into_iter().zip(table).collect()
         });

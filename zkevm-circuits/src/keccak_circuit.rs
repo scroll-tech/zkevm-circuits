@@ -77,7 +77,8 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             get_num_rows_per_round() > NUM_BYTES_PER_WORD,
             "KeccakCircuit requires KECCAK_ROWS>=9"
         );
-        let q_enable = meta.fixed_column();
+        let q_enable = keccak_table.q_enable;
+
         let q_first = meta.fixed_column();
         let q_round = meta.fixed_column();
         let q_absorb = meta.fixed_column();
@@ -86,7 +87,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         let q_padding_last = meta.fixed_column();
         let round_cst = meta.fixed_column();
 
-        let is_final = keccak_table.is_enabled;
+        let is_final = keccak_table.is_final;
         let length = keccak_table.input_len;
         let data_rlc = keccak_table.input_rlc;
         let hash_rlc = keccak_table.output_rlc;
@@ -958,7 +959,7 @@ impl<F: Field> KeccakCircuitConfig<F> {
     }
 
     fn annotate_circuit(&self, region: &mut Region<F>) {
-        region.name_column(|| "KECCAK_q_enable", self.q_enable);
+        //region.name_column(|| "KECCAK_q_enable", self.q_enable);
         region.name_column(|| "KECCAK_q_first", self.q_first);
         region.name_column(|| "KECCAK_q_round", self.q_round);
         region.name_column(|| "KECCAK_q_absorb", self.q_absorb);

@@ -384,11 +384,12 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                     not::expr(meta.query_fixed(q_last, Rotation::cur())),
                     is_byte_to_header(meta),
                 ]);
+                let keccak_enable = and::expr(vec![
+                    meta.query_fixed(keccak_table.q_enable, Rotation::cur()),
+                    meta.query_advice(keccak_table.is_final, Rotation::cur()),
+                ]);
 
-                let mut constraints = vec![(
-                    enable.clone(),
-                    meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
-                )];
+                let mut constraints = vec![(enable.clone(), keccak_enable)];
 
                 for (circuit_column, table_column) in
                     keccak_table.match_columns(value_rlc, length, bytecode_table.code_hash)

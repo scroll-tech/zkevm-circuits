@@ -386,7 +386,8 @@ impl<F: Field> Lookup<F> {
                 input_len,
                 output_rlc,
             } => vec![
-                1.expr(), // is_enabled
+                1.expr(), // q_enable
+                1.expr(), // is_final
                 input_rlc.clone(),
                 input_len.clone(),
                 output_rlc.clone(),
