@@ -340,6 +340,7 @@ impl<F: Field> Lookup<F> {
                 value,
             } => {
                 vec![
+                    1.expr(), // q_enable
                     hash.clone(),
                     tag.clone(),
                     index.clone(),

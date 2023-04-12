@@ -67,7 +67,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
             challenge_values.evm_word(),
         )?;
 
-        config.0.bytecode_table.load(
+        config.0.bytecode_table.dev_load(
             &mut layouter,
             self.external_data.bytecodes.values(),
             &challenge_values,

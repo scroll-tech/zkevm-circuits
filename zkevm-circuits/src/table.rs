@@ -901,6 +901,8 @@ impl_expr!(BytecodeFieldTag);
 /// Table with Bytecode indexed by its Code Hash
 #[derive(Clone, Debug)]
 pub struct BytecodeTable {
+    /// Is Enabled
+    pub q_enable: Column<Fixed>,
     /// Code Hash
     pub code_hash: Column<Advice>,
     /// Tag
@@ -919,6 +921,7 @@ impl BytecodeTable {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
         let code_hash = meta.advice_column_in(SecondPhase);
         Self {
+            q_enable: meta.fixed_column(),
             code_hash,
             tag,
             index,
@@ -929,7 +932,7 @@ impl BytecodeTable {
 
     /// Assign the `BytecodeTable` from a list of bytecodes, following the same
     /// table layout that the Bytecode Circuit uses.
-    pub fn load<'a, F: Field>(
+    pub fn dev_load<'a, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
@@ -939,6 +942,13 @@ impl BytecodeTable {
             || "bytecode table",
             |mut region| {
                 let mut offset = 0;
+
+                region.assign_fixed(
+                    || "bytecode table all-zero row",
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for column in <BytecodeTable as LookupTable<F>>::advice_columns(self) {
                     region.assign_advice(
                         || "bytecode table all-zero row",
@@ -953,6 +963,12 @@ impl BytecodeTable {
                     <BytecodeTable as LookupTable<F>>::advice_columns(self);
                 for bytecode in bytecodes.clone() {
                     for row in bytecode.table_assignments(challenges) {
+                        region.assign_fixed(
+                            || format!("bytecode table row {}", offset),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
                         for (&column, value) in bytecode_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("bytecode table row {}", offset),
@@ -973,6 +989,7 @@ impl BytecodeTable {
 impl<F: Field> LookupTable<F> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.code_hash.into(),
             self.tag.into(),
             self.index.into(),
@@ -983,6 +1000,7 @@ impl<F: Field> LookupTable<F> for BytecodeTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("code_hash"),
             String::from("tag"),
             String::from("index"),

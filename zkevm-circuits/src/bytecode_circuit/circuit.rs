@@ -77,7 +77,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let q_enable = meta.fixed_column();
+        let q_enable = bytecode_table.q_enable;
         let q_first = meta.fixed_column();
         let q_last = meta.fixed_column();
         let value = bytecode_table.value;
