@@ -1,7 +1,6 @@
 use super::{
     lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
-    random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
-    N_LIMBS_RW_COUNTER,
+    param::*, random_linear_combination::Queries as RlcQueries,
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::not},

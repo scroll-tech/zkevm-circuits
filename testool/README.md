@@ -107,6 +107,8 @@ NOTE: if you do not execute with `--report` the tool will exit the process with 
 
 Usually we have to debug and run the tests manually to check if everything works ok. We provide a set of command line parameters to help with this.
 
-- `testool [--suite xxx] --cache <cache_file>` to execute all tests, and keeping the results (cache) CSV file. If you delete entries from the cache file, and re-run the tool again, only the deleted tests will be executed again
+- `testool [--suite xxx] --cache <cache_file>` to execute all tests, and by default skipping Ignored tests in cache, and keeping the results (cache) CSV file. If you delete entries from the cache file, and re-run the tool again, only the deleted tests will be executed again
+
+- `testool [--suite xxx] --cache <cache_file> --levels fail,panic` to execute all tests but skipping the tests in cache which status (i.g. result level) is NOT Fail or Panic. Notice levels is case insensitive.
 
 - `testool [--suite xxx] --inspect <test_id>` only executed the selected test (even if cached, or ignored). Use `RUST_BACKTRACE=1` here to check if anything fails. Also gives a dump of the test as also to the geth steps executed.

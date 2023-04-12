@@ -25,7 +25,7 @@ mod tests {
     use std::env::var;
     use zkevm_circuits::bytecode_circuit::bytecode_unroller::{unroll, UnrolledBytecode};
 
-    use zkevm_circuits::bytecode_circuit::circuit::BytecodeCircuit;
+    use zkevm_circuits::bytecode_circuit::TestBytecodeCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -51,7 +51,7 @@ mod tests {
         let bytecodes_num: usize = max_bytecode_row_num / bytecode_len;
 
         // Create the circuit
-        let bytecode_circuit = BytecodeCircuit::<Fr>::new(
+        let bytecode_circuit = TestBytecodeCircuit::<Fr>::new(
             fillup_codebytes(bytecodes_num, bytecode_len),
             2usize.pow(degree),
         );
@@ -88,7 +88,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            BytecodeCircuit<Fr>,
+            TestBytecodeCircuit<Fr>,
         >(
             &general_params,
             &pk,

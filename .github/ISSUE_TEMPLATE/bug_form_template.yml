@@ -19,5 +19,5 @@ body:
           required: true
     - type: textarea
       attributes:
-        label: Concrete steps to reproduce the bug
+        label: Concrete steps to reproduce the bug. If it's able reproduce via testool, please share `test_id` from jenkins report 
         description: Leave empty if not relevant

@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::evm_circuit::step::ExecutionState;
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, ExecState},
@@ -104,6 +106,14 @@ pub(crate) fn bytecode_prefix_op_big_rws(opcode: OpcodeId) -> Bytecode {
     }
 }
 
+struct Row {
+    state: ExecutionState,
+    opcode: OpcodeId,
+    height: usize,
+    gas_cost: u64,
+    height_per_gas: f64,
+}
+
 /// This function prints to stdout a table with all the implemented states
 /// and their responsible opcodes with the following stats:
 /// - height: number of rows in a circuit used by the execution state
@@ -152,6 +162,7 @@ pub(crate) fn print_circuit_stats_by_states(
     };
 
     let mut table = DisplayTable::new(["state", "opcode", "h", "g", "h/g"].map(|s| s.into()));
+    let mut rows = vec![];
     for state in implemented_states {
         if !fn_filter(state) {
             continue;
@@ -228,21 +239,37 @@ pub(crate) fn print_circuit_stats_by_states(
                 .find(|(_, s)| s.call_index == 1 && s.pc.0 == opcode_pc)
                 .unwrap();
             assert_eq!(ExecState::Op(opcode), step.exec_state);
-            let h = fn_height(&builder.block, state, step_index);
+            let height = fn_height(&builder.block, state, step_index);
 
             // Substract 1 to step_index to remove the `BeginTx` step, which doesn't appear
             // in the geth trace.
             let geth_step = &block.geth_traces[0].struct_logs[step_index - 1];
             assert_eq!(opcode, geth_step.op);
             let gas_cost = geth_step.gas_cost.0;
-            table.push_row([
-                format!("{:?}", state),
-                format!("{:?}", opcode),
-                format!("{}", h),
-                format!("{}", gas_cost),
-                format!("{:1.3}", h as f64 / gas_cost as f64),
-            ]);
+            rows.push(Row {
+                state,
+                opcode,
+                height,
+                gas_cost,
+                height_per_gas: height as f64 / gas_cost as f64,
+            });
         }
+    }
+    rows.sort_by(|a, b| {
+        b.height_per_gas
+            .partial_cmp(&a.height_per_gas)
+            .unwrap_or(Ordering::Greater)
+    });
+
+    for row in rows.iter() {
+        let row = [
+            format!("{:?}", row.state),
+            format!("{:?}", row.opcode),
+            format!("{}", row.height),
+            format!("{}", row.gas_cost),
+            format!("{:1.3}", row.height_per_gas),
+        ];
+        table.push_row(row);
     }
 
     table.print();

@@ -11,7 +11,7 @@ halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.gi
 ark-std = { version = "0.3" }
 zkevm-circuits = { path = "../zkevm-circuits", features = ["test"]}
 keccak256 = { path = "../keccak256" }
-bus-mapping = { path = "../bus-mapping" }
+bus-mapping = { path = "../bus-mapping",  features = ["test"] }
 rand_xorshift = "0.3"
 rand = "0.8"
 itertools = "0.10"

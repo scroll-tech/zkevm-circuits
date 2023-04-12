@@ -110,7 +110,7 @@ impl<F: Field> Block<F> {
 }
 
 #[cfg(feature = "test")]
-use crate::exp_circuit::OFFSET_INCREMENT;
+use crate::exp_circuit::param::OFFSET_INCREMENT;
 #[cfg(feature = "test")]
 use crate::util::log2_ceil;
 

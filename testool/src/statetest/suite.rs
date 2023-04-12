@@ -78,19 +78,17 @@ pub fn run_statetests_suite(
     // for each test
     let test_count = tcs.len();
     tcs.into_par_iter().for_each(|ref tc| {
-        let full_id = format!("{}#{}", tc.id, tc.path);
-
-        if !suite.allowed(&tc.id) {
+        let (test_id, path) = (tc.id.clone(), tc.path.clone());
+        if !suite.allowed(&test_id) {
             results
                 .write()
                 .unwrap()
-                .insert(
-                    full_id,
-                    ResultInfo {
-                        level: ResultLevel::Ignored,
-                        details: "Ignored in config file".to_string(),
-                    },
-                )
+                .insert(ResultInfo {
+                    test_id,
+                    level: ResultLevel::Ignored,
+                    details: "Ignored in config file".to_string(),
+                    path,
+                })
                 .unwrap();
             return;
         }
@@ -99,10 +97,11 @@ pub fn run_statetests_suite(
 
         log::debug!(
             target : "testool",
-            "🐕 running test (done {}/{}) {}...",
+            "🐕 running test (done {}/{}) {}#{}...",
             1 + results.read().unwrap().tests.len(),
             test_count,
-            full_id
+            test_id,
+            path,
         );
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             run_test(tc.clone(), suite.clone(), circuits_config.clone())
@@ -130,13 +129,12 @@ pub fn run_statetests_suite(
                 results
                     .write()
                     .unwrap()
-                    .insert(
-                        full_id,
-                        ResultInfo {
-                            level,
-                            details: panic_err,
-                        },
-                    )
+                    .insert(ResultInfo {
+                        test_id,
+                        level,
+                        details: panic_err,
+                        path,
+                    })
                     .unwrap();
                 return;
             }
@@ -147,17 +145,16 @@ pub fn run_statetests_suite(
             results
                 .write()
                 .unwrap()
-                .insert(
-                    full_id,
-                    ResultInfo {
-                        level: if err.is_skip() {
-                            ResultLevel::Ignored
-                        } else {
-                            ResultLevel::Fail
-                        },
-                        details: err.to_string(),
+                .insert(ResultInfo {
+                    test_id,
+                    level: if err.is_skip() {
+                        ResultLevel::Ignored
+                    } else {
+                        ResultLevel::Fail
                     },
-                )
+                    details: err.to_string(),
+                    path,
+                })
                 .unwrap();
             return;
         }
@@ -165,13 +162,12 @@ pub fn run_statetests_suite(
         results
             .write()
             .unwrap()
-            .insert(
-                full_id,
-                ResultInfo {
-                    level: ResultLevel::Success,
-                    details: String::default(),
-                },
-            )
+            .insert(ResultInfo {
+                test_id,
+                level: ResultLevel::Success,
+                details: String::default(),
+                path,
+            })
             .unwrap();
     });
 

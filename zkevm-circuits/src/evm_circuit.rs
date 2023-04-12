@@ -9,9 +9,13 @@ use halo2_proofs::{
 mod execution;
 pub mod param;
 pub(crate) mod step;
+pub mod table;
 pub(crate) mod util;
 
-pub mod table;
+#[cfg(any(feature = "test", test))]
+pub(crate) mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use self::EvmCircuit as TestEvmCircuit;
 
 pub use crate::witness;
 use crate::{
@@ -442,45 +446,6 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config.exp_table.load(&mut layouter, block)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
-    }
-}
-
-#[cfg(any(feature = "test", test))]
-pub mod test {
-    use super::*;
-    use crate::evm_circuit::witness::Block;
-
-    use eth_types::{Field, Word};
-    use rand::{
-        distributions::uniform::{SampleRange, SampleUniform},
-        random, thread_rng, Rng,
-    };
-
-    pub(crate) fn rand_range<T, R>(range: R) -> T
-    where
-        T: SampleUniform,
-        R: SampleRange<T>,
-    {
-        thread_rng().gen_range(range)
-    }
-
-    pub(crate) fn rand_bytes(n: usize) -> Vec<u8> {
-        (0..n).map(|_| random()).collect()
-    }
-
-    pub(crate) fn rand_bytes_array<const N: usize>() -> [u8; N] {
-        [(); N].map(|_| random())
-    }
-
-    pub(crate) fn rand_word() -> Word {
-        Word::from_big_endian(&rand_bytes_array::<32>())
-    }
-
-    impl<F: Field> EvmCircuit<F> {
-        pub fn get_test_cicuit_from_block(block: Block<F>) -> Self {
-            let fixed_table_tags = detect_fixed_table_tags(&block);
-            EvmCircuit::<F>::new_dev(block, fixed_table_tags)
-        }
     }
 }
 

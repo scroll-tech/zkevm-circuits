@@ -1,9 +1,9 @@
 //! Table definitions used cross-circuits
 
 use crate::{
-    copy_circuit::number_or_hash_to_field,
+    copy_circuit::util::number_or_hash_to_field,
     evm_circuit::util::rlc,
-    exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP},
+    exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
     util::{build_tx_log_address, Challenges},
     witness::{

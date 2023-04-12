@@ -16,16 +16,22 @@ const MAX_DETAILS_LEN: usize = 128;
 
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, EnumIter, EnumString, Serialize, Deserialize)]
 pub enum ResultLevel {
+    #[strum(ascii_case_insensitive)]
     Success,
+    #[strum(ascii_case_insensitive)]
     Ignored,
+    #[strum(ascii_case_insensitive)]
     Fail,
+    #[strum(ascii_case_insensitive)]
     Panic,
 }
 
 #[derive(Eq, PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct ResultInfo {
+    pub test_id: String,
     pub level: ResultLevel,
     pub details: String,
+    pub path: String,
 }
 
 impl ResultLevel {
@@ -40,6 +46,7 @@ impl ResultLevel {
         .to_string()
     }
 }
+
 pub struct DiffEntry {
     id: String,
     prev: Option<ResultInfo>,
@@ -146,7 +153,7 @@ impl Report {
         );
         Ok(())
     }
-    pub fn gen_html(&self) -> Result<String> {
+    pub fn gen_html(&self, githash: String) -> Result<String> {
         let template = include_str!("report.handlebars");
         let reg = Handlebars::new();
         let mut by_folder = Vec::new();
@@ -157,22 +164,24 @@ impl Report {
         self.by_result.print_html(&mut by_result)?;
         self.diffs.gen_info().1.print_html(&mut diffs)?;
 
-        let tests: HashMap<String, ResultInfo> = self
-            .tests
-            .clone()
-            .into_iter()
-            .filter(|(_k, v)| {
-                !matches!(
-                    v.level,
-                    crate::ResultLevel::Ignored | crate::ResultLevel::Success
-                )
-            })
-            .collect();
+        // strip_prefix `tests/` for rendering purpose. It helps to generate hyperlink
+        let leading_tests_path = "tests/";
+        let mut tests_for_render = self.tests.clone();
+        for (_, result) in tests_for_render.iter_mut() {
+            assert!(result.path.starts_with(leading_tests_path));
+            result.path = result
+                .path
+                .strip_prefix(leading_tests_path)
+                .unwrap()
+                .to_string();
+        }
+
         let data = &json!({
                 "by_folder": String::from_utf8(by_folder)?,
                 "by_result" : String::from_utf8(by_result)? ,
                 "diffs" : String::from_utf8(diffs)?,
-                "all_results" : tests
+                "all_results" : tests_for_render,
+                "githash": githash,
         });
 
         let html = reg.render_template(template, data)?;
@@ -193,14 +202,29 @@ impl Results {
         file.read_to_string(&mut buf)?;
         let mut tests = HashMap::new();
         for line in buf.lines().filter(|l| l.len() > 1) {
-            let mut split = line.splitn(3, ';');
+            let split: Vec<&str> = line.splitn(4, ';').collect();
+            if split.len() != 4 {
+                log::warn!("un-supported line {:?}", line);
+                return Ok(Self { cache: None, tests });
+            }
+            let mut split = split.iter();
             let level = split.next().unwrap();
             let level = ResultLevel::from_str(level).unwrap();
-            let id = split.next().unwrap().to_string();
+            let test_id = split.next().unwrap().to_string();
             let details = urlencoding::decode(split.next().unwrap())
                 .expect("should be urldecodeable")
                 .to_string();
-            tests.insert(id, ResultInfo { level, details });
+            let path = split.next().unwrap().to_string();
+            let id = format!("{}#{}", test_id, path);
+            tests.insert(
+                id,
+                ResultInfo {
+                    test_id,
+                    level,
+                    details,
+                    path,
+                },
+            );
         }
         Ok(Self { cache: None, tests })
     }
@@ -349,7 +373,7 @@ impl Results {
         self.tests.contains_key(test)
     }
 
-    pub fn write_cache(&self) -> Result<()> {
+    pub fn _write_cache(&self) -> Result<()> {
         if let Some(path) = &self.cache {
             let mut file = std::fs::OpenOptions::new()
                 .read(true)
@@ -371,25 +395,44 @@ impl Results {
     }
 
     #[allow(clippy::map_entry)]
-    pub fn insert(&mut self, test_id: String, result: ResultInfo) -> Result<()> {
-        if !self.tests.contains_key(&test_id) {
+    pub fn insert(&mut self, result: ResultInfo) -> Result<()> {
+        if !self.tests.contains_key(&result.test_id) {
             if result.level == ResultLevel::Ignored {
                 log::debug!(
                     target : "testool",
-                    "{} {} {}",
+                    "{} {} {} {}",
                     result.level.display_string(),
-                    test_id,
-                    result.details
+                    result.test_id,
+                    result.details,
+                    result.path,
                 );
             } else {
                 log::info!(
-                    "{} {} {}",
+                    "{} {} {} {}",
                     result.level.display_string(),
-                    test_id,
-                    result.details
+                    result.test_id,
+                    result.details,
+                    result.path,
                 );
             }
-            self.tests.insert(test_id, result);
+            let entry = format!(
+                "{:?};{};{};{}\n",
+                result.level,
+                result.test_id,
+                urlencoding::encode(&result.details),
+                result.path,
+            );
+            if let Some(path) = &self.cache {
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .append(true)
+                    .open(path)?
+                    .write_all(entry.as_bytes())?;
+            }
+            let id = format!("{}#{}", result.test_id, result.path);
+            self.tests.insert(id, result);
         }
 
         Ok(())

@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use eth_types::{bytecode::OpcodeWithData, Bytecode, GethExecTrace, U256};
 use log::{error, info};
 use prettytable::Table;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
@@ -152,6 +152,22 @@ pub fn current_git_commit() -> Result<String> {
     let git_hash = String::from_utf8(output.stdout).unwrap();
     let git_hash = git_hash[..7].to_string();
     Ok(git_hash)
+}
+
+pub fn current_submodule_git_commit() -> Result<String> {
+    let git_cmd = Command::new("git")
+        .args(["ls-tree", "HEAD"])
+        .stdout(Stdio::piped())
+        .output()?;
+
+    match String::from_utf8(git_cmd.stdout)?
+        .lines()
+        .filter_map(|l| l.strip_suffix("\ttests").and_then(|l| l.split(' ').nth(2)))
+        .next()
+    {
+        Some(git_hash) => Ok(git_hash.to_string()),
+        None => bail!("unknown submodule hash"),
+    }
 }
 
 pub fn bytecode_of(code: &str) -> anyhow::Result<Bytecode> {

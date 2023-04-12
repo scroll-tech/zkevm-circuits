@@ -1,6 +1,12 @@
-use crate::keccak_circuit::KeccakCircuit;
+#![allow(unused_imports)]
+use super::*;
 use eth_types::Field;
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use halo2_proofs::{
+    circuit::{Layouter, SimpleFloorPlanner},
+    dev::MockProver,
+    halo2curves::bn256::Fr,
+    plonk::{Circuit, ConstraintSystem, Error},
+};
 use log::error;
 use std::iter::zip;
 
