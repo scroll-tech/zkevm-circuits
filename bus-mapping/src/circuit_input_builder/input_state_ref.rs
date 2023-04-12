@@ -1242,12 +1242,12 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &GethExecStep,
         next_step: Option<&GethExecStep>,
     ) -> Result<Option<ExecError>, Error> {
-        if let Some(error) = &step.error {
-            return Ok(Some(get_step_reported_error(&step.op, error)));
-        }
-
         if matches!(step.op, OpcodeId::INVALID(_)) {
             return Ok(Some(ExecError::InvalidOpcode));
+        }
+
+        if let Some(error) = &step.error {
+            return Ok(Some(get_step_reported_error(&step.op, error)));
         }
 
         let call = self.call()?;

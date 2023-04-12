@@ -60,7 +60,7 @@ serde_json = "1.0.78"
 [features]
 default = ["test", "test-circuits", "enable-sign-verify"]
 test = ["ethers-signers", "mock", "bus-mapping/test"]
-scroll = ["bus-mapping/scroll", "zktrie", "enable-sign-verify", "reject-eip2718", "poseidon-codehash"]
+scroll = ["bus-mapping/scroll", "eth-types/scroll", "zktrie", "enable-sign-verify", "reject-eip2718", "poseidon-codehash"]
 test-circuits = []
 warn-unimplemented = ["eth-types/warn-unimplemented"]
 onephase = [] # debug only

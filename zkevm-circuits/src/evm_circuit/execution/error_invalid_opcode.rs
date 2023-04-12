@@ -55,8 +55,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = F::from(step.opcode.unwrap().as_u64());
-        self.opcode.assign(region, offset, Value::known(opcode))?;
+        let opcode = step.opcode.unwrap().as_u64();
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode)))?;
+
+        log::debug!("ErrorInvalidOpcode - opcode = {}", opcode);
 
         self.common_error_gadget
             .assign(region, offset, block, call, step, 2)?;
@@ -96,6 +99,14 @@ mod test {
         for invalid_code in TESTING_INVALID_CODES.iter() {
             test_internal_ok(0x20, 0x00, invalid_code);
         }
+    }
+
+    #[cfg(feature = "scroll")]
+    #[test]
+    fn invalid_opcode_selfdestruct_for_scroll() {
+        let selfdestruct_opcode = 0xff_u8;
+        test_root_ok(&[selfdestruct_opcode]);
+        test_internal_ok(0x20, 0x00, &[selfdestruct_opcode]);
     }
 
     fn test_root_ok(invalid_code: &[u8]) {

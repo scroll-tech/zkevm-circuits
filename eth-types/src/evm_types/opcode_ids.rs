@@ -1048,6 +1048,7 @@ impl From<u8> for OpcodeId {
             0xf2u8 => OpcodeId::CALLCODE,
             0xf4u8 => OpcodeId::DELEGATECALL,
             0xfau8 => OpcodeId::STATICCALL,
+            #[cfg(not(feature = "scroll"))]
             0xffu8 => OpcodeId::SELFDESTRUCT,
             b => OpcodeId::INVALID(b),
         }
@@ -1200,6 +1201,9 @@ impl FromStr for OpcodeId {
             "CALLCODE" => OpcodeId::CALLCODE,
             "DELEGATECALL" => OpcodeId::DELEGATECALL,
             "STATICCALL" => OpcodeId::STATICCALL,
+            #[cfg(feature = "scroll")]
+            "SELFDESTRUCT" => OpcodeId::INVALID(0xffu8),
+            #[cfg(not(feature = "scroll"))]
             "SELFDESTRUCT" => OpcodeId::SELFDESTRUCT,
             "CHAINID" => OpcodeId::CHAINID,
             "BASEFEE" => OpcodeId::BASEFEE,
