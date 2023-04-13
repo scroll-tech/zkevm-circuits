@@ -14,6 +14,7 @@ members = [
     "testool"
 ]
 
+
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v0.4" }
 [patch."https://github.com/privacy-scaling-explorations/poseidon.git"]
