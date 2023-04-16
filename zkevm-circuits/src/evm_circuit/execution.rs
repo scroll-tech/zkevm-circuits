@@ -72,6 +72,7 @@ mod codecopy;
 mod codesize;
 mod comparator;
 mod create;
+#[cfg(not(feature = "scroll"))]
 mod dummy;
 mod dup;
 mod end_block;
@@ -153,6 +154,7 @@ use codecopy::CodeCopyGadget;
 use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
 use create::CreateGadget;
+#[cfg(not(feature = "scroll"))]
 use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
@@ -331,11 +333,11 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_sha3: Box<ErrorOOGSha3Gadget<F>>,
     error_oog_create2: Box<ErrorOOGCreate2Gadget<F>>,
     error_code_store: Box<ErrorCodeStoreGadget<F>>,
+    #[cfg(not(feature = "scroll"))]
     error_oog_self_destruct:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>>,
     error_invalid_jump: Box<ErrorInvalidJumpGadget<F>>,
     error_invalid_opcode: Box<ErrorInvalidOpcodeGadget<F>>,
-    error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
@@ -592,12 +594,12 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_sha3: configure_gadget!(),
             error_oog_exp: configure_gadget!(),
             error_oog_create2: configure_gadget!(),
+            #[cfg(not(feature = "scroll"))]
             error_oog_self_destruct: configure_gadget!(),
             error_code_store: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
             error_invalid_opcode: configure_gadget!(),
             error_write_protection: configure_gadget!(),
-            error_depth: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
             error_precompile_failed: configure_gadget!(),
@@ -1412,9 +1414,9 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_oog_create2)
             }
             ExecutionState::ErrorOutOfGasSELFDESTRUCT => {
+                #[cfg(not(feature = "scroll"))]
                 assign_exec_step!(self.error_oog_self_destruct)
             }
-
             ExecutionState::ErrorCodeStore => {
                 assign_exec_step!(self.error_code_store)
             }
@@ -1429,9 +1431,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorWriteProtection => {
                 assign_exec_step!(self.error_write_protection)
-            }
-            ExecutionState::ErrorDepth => {
-                assign_exec_step!(self.error_depth)
             }
             ExecutionState::ErrorContractAddressCollision => {
                 assign_exec_step!(self.create_gadget)

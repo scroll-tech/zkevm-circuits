@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    error::{ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
+    error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
@@ -281,11 +281,17 @@ fn fn_gen_error_state_associated_ops(
     match error {
         ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
         ExecError::InvalidOpcode => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
-        ExecError::Depth => {
-            let op = geth_step.op;
-            assert!(op.is_call());
-            Some(fn_gen_associated_ops(&op))
-        }
+        // Depth error could occur in CALL, CALLCODE, DELEGATECALL and STATICCALL.
+        ExecError::Depth(DepthError::Call) => match geth_step.op {
+            OpcodeId::CALL | OpcodeId::CALLCODE => Some(CallOpcode::<7>::gen_associated_ops),
+            OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
+                Some(CallOpcode::<6>::gen_associated_ops)
+            }
+            op => unreachable!("ErrDepth cannot occur in {op}"),
+        },
+        // Depth error could occur in CREATE and CREATE2.
+        ExecError::Depth(DepthError::Create) => Some(Create::<false>::gen_associated_ops),
+        ExecError::Depth(DepthError::Create2) => Some(Create::<true>::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::Constant) => {
             Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops)
