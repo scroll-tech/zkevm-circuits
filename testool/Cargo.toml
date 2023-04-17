@@ -40,3 +40,4 @@ ctor = "0.1.22"
 [features]
 default = ["ignore-test-docker"]
 ignore-test-docker = []
+skip-self-destruct = []
