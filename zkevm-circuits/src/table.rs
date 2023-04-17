@@ -294,7 +294,12 @@ impl TxTable {
                     calldata_assignments.extend(tx_calldata.iter());
                 }
                 // Assign Tx calldata
-                for row in calldata_assignments.into_iter() {
+                let dummy_row = [Value::known(F::zero()); 4];
+                for row in calldata_assignments
+                    .into_iter()
+                    .chain(repeat(dummy_row))
+                    .take(max_calldata)
+                {
                     assign_row(
                         &mut region,
                         offset,

@@ -711,13 +711,6 @@ impl<F: Field> TxCircuitConfig<F> {
         is_padding_tx: bool,
         cum_num_txs: usize,
     ) -> Result<(), Error> {
-        region.assign_fixed(
-            || "q_enable",
-            self.q_enable,
-            *offset,
-            || Value::known(F::one()),
-        )?;
-
         let tag_chip = BinaryNumberChip::construct(self.tag);
         tag_chip.assign(region, *offset, &tag)?;
 
@@ -909,12 +902,6 @@ impl<F: Field> TxCircuitConfig<F> {
 
         for offset in start..end {
             region.assign_fixed(
-                || "q_enable",
-                self.q_enable,
-                offset,
-                || Value::known(F::one()),
-            )?;
-            region.assign_fixed(
                 || "rlp_tag",
                 self.rlp_tag,
                 offset,
@@ -971,12 +958,6 @@ impl<F: Field> TxCircuitConfig<F> {
         end: usize,
     ) -> Result<(), Error> {
         for offset in start..end {
-            region.assign_fixed(
-                || "q_enable",
-                self.q_enable,
-                offset,
-                || Value::known(F::zero()),
-            )?;
             region.assign_fixed(
                 || "tag",
                 self.tx_table.tag,
@@ -1390,7 +1371,7 @@ impl<F: Field> TxCircuit<F> {
         padding_txs: &[Transaction],
     ) -> Result<(), Error> {
         let last_off = layouter.assign_region(
-            || "tx table",
+            || "tx table aux",
             |mut region| {
                 let mut offset = 0;
                 #[cfg(feature = "enable-sign-verify")]
