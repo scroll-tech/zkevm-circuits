@@ -347,6 +347,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 * tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()));
             vec![
+                1.expr(),
                 meta.query_advice(rw_counter, Rotation::cur()),
                 not::expr(meta.query_selector(q_step)),
                 RwTableTag::Memory.expr(),
@@ -369,6 +370,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta);
             vec![
+                1.expr(),
                 meta.query_advice(rw_counter, Rotation::cur()),
                 1.expr(),
                 RwTableTag::TxLog.expr(),
@@ -455,6 +457,13 @@ impl<F: Field> CopyCircuitConfig<F> {
                 .enumerate()
         {
             let is_read = step_idx % 2 == 0;
+
+            region.assign_fixed(
+                || format!("q_enable at row: {}", offset),
+                self.q_enable,
+                *offset,
+                || Value::known(F::one()),
+            )?;
 
             // Copy table assignments
             for (&column, &(value, label)) in

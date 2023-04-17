@@ -1412,6 +1412,8 @@ impl KeccakTable {
 /// TxLogs and TxCallData.
 #[derive(Clone, Copy, Debug)]
 pub struct CopyTable {
+    /// Is enable
+    pub q_enable: Column<Fixed>,
     /// Whether the row is the first read-write pair for a copy event.
     pub is_first: Column<Advice>,
     /// The relevant ID for the read-write row, represented as a random linear
@@ -1450,6 +1452,7 @@ impl CopyTable {
     /// Construct a new CopyTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
+            q_enable,
             is_first: meta.advice_column(),
             id: meta.advice_column_in(SecondPhase),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
@@ -1606,7 +1609,7 @@ impl CopyTable {
     }
 
     /// Assign the `CopyTable` from a `Block`.
-    pub fn load<F: Field>(
+    pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
@@ -1616,6 +1619,12 @@ impl CopyTable {
             || "copy table",
             |mut region| {
                 let mut offset = 0;
+                region.assign_fixed(
+                    || "copy table all-zero row",
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for column in <CopyTable as LookupTable<F>>::advice_columns(self) {
                     region.assign_advice(
                         || "copy table all-zero row",
@@ -1630,6 +1639,12 @@ impl CopyTable {
                 let copy_table_columns = <CopyTable as LookupTable<F>>::advice_columns(self);
                 for copy_event in block.copy_events.iter() {
                     for (tag, row, _) in Self::assignments(copy_event, *challenges) {
+                        region.assign_fixed(
+                            || format!("q_enable at row: {}", offset),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
                         for (&column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("{} at row: {}", label, offset),
@@ -1652,6 +1667,7 @@ impl CopyTable {
 impl<F: Field> LookupTable<F> for CopyTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.is_first.into(),
             self.id.into(),
             self.addr.into(),
@@ -1665,6 +1681,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("is_first"),
             String::from("id"),
             String::from("addr"),
@@ -1678,6 +1695,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
+            meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_advice(self.is_first, Rotation::cur()),
             meta.query_advice(self.id, Rotation::cur()), // src_id
             self.tag.value(Rotation::cur())(meta),       // src_tag

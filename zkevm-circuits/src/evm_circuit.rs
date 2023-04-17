@@ -439,7 +439,9 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config
             .block_table
             .load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
-        config.copy_table.load(&mut layouter, block, &challenges)?;
+        config
+            .copy_table
+            .dev_load(&mut layouter, block, &challenges)?;
         config
             .keccak_table
             .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;

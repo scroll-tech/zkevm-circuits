@@ -370,6 +370,7 @@ impl<F: Field> Lookup<F> {
                 rw_counter,
                 rwc_inc,
             } => vec![
+                1.expr(),
                 is_first.clone(),
                 src_id.clone(),
                 src_tag.clone(),
