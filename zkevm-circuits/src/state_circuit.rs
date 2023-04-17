@@ -107,7 +107,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let selector = meta.fixed_column();
+        let selector = rw_table.q_enable;
         log::debug!("state circuit selector {:?}", selector);
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness: [Expression<F>; 31] = challenges.evm_word_powers_of_randomness();

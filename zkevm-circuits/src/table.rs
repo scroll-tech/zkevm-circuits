@@ -467,6 +467,8 @@ impl_expr!(CallContextFieldTag);
 /// traces of the EVM state operations.
 #[derive(Clone, Copy, Debug)]
 pub struct RwTable {
+    /// Is enable
+    pub q_enable: Column<Fixed>,
     /// Read Write Counter
     pub rw_counter: Column<Advice>,
     /// Is Write
@@ -494,6 +496,7 @@ pub struct RwTable {
 impl<F: Field> LookupTable<F> for RwTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.rw_counter.into(),
             self.is_write.into(),
             self.tag.into(),
@@ -510,6 +513,7 @@ impl<F: Field> LookupTable<F> for RwTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("rw_counter"),
             String::from("is_write"),
             String::from("tag"),
@@ -528,6 +532,7 @@ impl RwTable {
     /// Construct a new RwTable
     pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            q_enable: meta.fixed_column(),
             rw_counter: meta.advice_column(),
             is_write: meta.advice_column(),
             tag: meta.advice_column(),
@@ -549,6 +554,12 @@ impl RwTable {
         offset: usize,
         row: &RwRow<Value<F>>,
     ) -> Result<(), Error> {
+        region.assign_fixed(
+            || "assign rw row on rw table",
+            self.q_enable,
+            offset,
+            || Value::known(F::one()),
+        )?;
         for (column, value) in [
             (self.rw_counter, row.rw_counter),
             (self.is_write, row.is_write),

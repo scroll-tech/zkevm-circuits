@@ -319,6 +319,7 @@ impl<F: Field> Lookup<F> {
                 values,
             } => {
                 vec![
+                    1.expr(),
                     counter.clone(),
                     is_write.clone(),
                     tag.clone(),
