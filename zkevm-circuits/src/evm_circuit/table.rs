@@ -402,6 +402,7 @@ impl<F: Field> Lookup<F> {
                 exponent_lo_hi,
                 exponentiation_lo_hi,
             } => vec![
+                1.expr(), // q_enable
                 1.expr(), // is_step
                 identifier.clone(),
                 is_last.clone(),

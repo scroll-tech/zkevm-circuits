@@ -1715,6 +1715,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
 /// Lookup table within the Exponentiation circuit.
 #[derive(Clone, Copy, Debug)]
 pub struct ExpTable {
+    /// Whether the row is enabled.
+    pub q_enable: Column<Fixed>,
     /// Whether the row is the start of a step.
     pub is_step: Column<Fixed>,
     /// An identifier for every exponentiation trace, at the moment this is the
@@ -1736,6 +1738,7 @@ impl ExpTable {
     /// Construct the Exponentiation table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            q_enable: meta.fixed_column(),
             is_step: meta.fixed_column(),
             identifier: meta.advice_column(),
             is_last: meta.advice_column(),
@@ -1819,7 +1822,7 @@ impl ExpTable {
     }
 
     /// Assign witness data from a block to the exponentiation table.
-    pub fn load<F: Field>(
+    pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
@@ -1831,6 +1834,11 @@ impl ExpTable {
                 let exp_table_columns = <ExpTable as LookupTable<F>>::advice_columns(self);
                 for exp_event in block.exp_events.iter() {
                     for row in Self::assignments::<F>(exp_event) {
+                        region.assign_fixed(|| format!("exponentiation table row {}", offset), 
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+            )?;
                         for (&column, value) in exp_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("exponentiation table row {}", offset),
@@ -1856,6 +1864,11 @@ impl ExpTable {
 
                 // pad an empty row
                 let row = [F::from_u128(0); 5];
+                region.assign_fixed(|| format!("exponentiation table row {}", offset), 
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+            )?;
                 for (column, value) in exp_table_columns.iter().zip_eq(row) {
                     region.assign_advice(
                         || format!("exponentiation table row {}", offset),

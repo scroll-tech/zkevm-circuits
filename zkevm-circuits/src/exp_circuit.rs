@@ -22,7 +22,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{ConstraintSystem, Error, Selector},
+    plonk::{ConstraintSystem, Error, Column, Fixed},
     poly::Rotation,
 };
 use param::*;
@@ -32,7 +32,7 @@ use std::{marker::PhantomData, ops::Add};
 #[derive(Clone, Debug)]
 pub struct ExpCircuitConfig<F> {
     /// Whether the row is enabled.
-    pub q_usable: Selector,
+    pub q_enable: Column<Fixed>,
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
     /// Multiplication gadget for verification of each step.
@@ -46,16 +46,16 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
 
     /// Return a new ExpCircuitConfig
     fn new(meta: &mut ConstraintSystem<F>, exp_table: Self::ConfigArgs) -> Self {
-        let q_usable = meta.complex_selector();
+        let q_enable = exp_table.q_enable;
         let mul_gadget = MulAddChip::configure(meta, |meta| {
             and::expr([
-                meta.query_selector(q_usable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_fixed(exp_table.is_step, Rotation::cur()),
             ])
         });
         let parity_check = MulAddChip::configure(meta, |meta| {
             and::expr([
-                meta.query_selector(q_usable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_fixed(exp_table.is_step, Rotation::cur()),
             ])
         });
@@ -105,7 +105,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
             );
 
             cb.gate(and::expr([
-                meta.query_selector(q_usable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_fixed(exp_table.is_step, Rotation::cur()),
                 not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())),
             ]))
@@ -126,7 +126,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                 meta.query_advice(exp_table.is_last, Rotation::cur()),
             );
 
-            cb.gate(meta.query_selector(q_usable))
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
         meta.create_gate("verify all steps", |meta| {
@@ -267,7 +267,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
             });
 
             cb.gate(and::expr([
-                meta.query_selector(q_usable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_fixed(exp_table.is_step, Rotation::cur()),
             ]))
         });
@@ -275,7 +275,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         exp_table.annotate_columns(meta);
 
         Self {
-            q_usable,
+            q_enable,
             exp_table,
             mul_gadget,
             parity_check,
@@ -411,7 +411,7 @@ impl<F: Field> ExpCircuitConfig<F> {
         let (exponent_div2, remainder) = exponent.div_mod(two);
 
         for i in 0..OFFSET_INCREMENT {
-            self.q_usable.enable(region, offset + i)?;
+            region.assign_fixed(|| "assign q_enable", self.q_enable, offset + i, || Value::known(F::one()))?;
         }
         mul_chip.assign(region, offset, [step.a, step.b, U256::zero(), step.d])?;
         parity_check_chip.assign(region, offset, [two, exponent_div2, remainder, *exponent])?;
