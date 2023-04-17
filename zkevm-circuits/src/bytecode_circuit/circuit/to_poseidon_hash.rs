@@ -11,6 +11,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
+use itertools::Itertools;
 use log::trace;
 use mpt_zktrie::hash::HASHABLE_DOMAIN_SPEC;
 use std::vec;
@@ -287,10 +288,21 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         // ]))
         // });
 
-        let pick_hash_tbl_cols = |inp_i: usize| {
-            let cols =
-                <PoseidonTable as crate::table::LookupTable<F>>::advice_columns(&poseidon_table);
-            [cols[0], cols[inp_i + 1], cols[cols.len() - 2]]
+        let pick_hash_tbl_cols = |meta: &mut VirtualCells<F>, inp_i: usize| {
+            debug_assert_eq!(PoseidonTable::INPUT_WIDTH, 2);
+            [
+                meta.query_fixed(poseidon_table.q_enable, Rotation::cur()),
+                meta.query_advice(poseidon_table.hash_id, Rotation::cur()),
+                meta.query_advice(
+                    match inp_i {
+                        0 => poseidon_table.input0,
+                        1 => poseidon_table.input1,
+                        _ => unreachable!("valid poseidon input index"),
+                    },
+                    Rotation::cur(),
+                ),
+                meta.query_advice(poseidon_table.control, Rotation::cur()),
+            ]
         };
 
         // we use a special selection exp for only 2 indexs
@@ -314,20 +326,20 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                     meta.query_advice(is_field_border, Rotation::cur()),
                     field_selector(meta)[i].clone(),
                 ]);
-                let mut constraints = Vec::new(); // vec![(
-                                                  // enable.clone(),
-                                                  // meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
-                                                  // )];
-                let lookup_columns = [
+                let mut constraints = Vec::new();
+
+                let lookup_inputs = [
+                    1.expr(),
                     meta.query_advice(code_hash, Rotation::cur()),
                     meta.query_advice(field_input, Rotation::cur()),
                     meta.query_advice(control_length, Rotation::cur()) * domain_spec_factor.clone(),
                 ];
-                for (l_col, tbl_col) in lookup_columns.into_iter().zip(pick_hash_tbl_cols(i)) {
-                    constraints.push((
-                        enable.clone() * l_col,
-                        meta.query_advice(tbl_col, Rotation::cur()),
-                    ))
+
+                for (input_expr, table_expr) in lookup_inputs
+                    .into_iter()
+                    .zip_eq(pick_hash_tbl_cols(meta, i))
+                {
+                    constraints.push((enable.clone() * input_expr, table_expr))
                 }
                 constraints
             });
@@ -344,18 +356,16 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 2.expr() - meta.query_advice(field_index, Rotation::cur()),
             ]);
             let mut constraints = Vec::new();
-            for (l_exp, tbl_col) in [
+            let lookup_inputs = [
+                1.expr(),
                 meta.query_advice(code_hash, Rotation::cur()),
                 0.expr(),
                 meta.query_advice(control_length, Rotation::cur()) * domain_spec_factor,
-            ]
-            .into_iter()
-            .zip(pick_hash_tbl_cols(1))
+            ];
+            for (input_expr, table_expr) in
+                lookup_inputs.into_iter().zip_eq(pick_hash_tbl_cols(meta, 1))
             {
-                constraints.push((
-                    enable.clone() * l_exp,
-                    meta.query_advice(tbl_col, Rotation::cur()),
-                ))
+                constraints.push((enable.clone() * input_expr, table_expr))
             }
             constraints
         });
