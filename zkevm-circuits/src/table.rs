@@ -710,15 +710,36 @@ impl MptTable {
 /// the 5 cols represent [index(final hash of inputs), input0, input1, control,
 /// heading mark]
 #[derive(Clone, Copy, Debug)]
-pub struct PoseidonTable(pub [Column<Advice>; 5]);
+pub struct PoseidonTable {
+    /// Is Enabled
+    pub q_enable: Column<Fixed>,
+    /// Hash id
+    pub hash_id: Column<Advice>,
+    /// input0
+    pub input0: Column<Advice>,
+    /// input1
+    pub input1: Column<Advice>,
+    /// control
+    pub control: Column<Advice>,
+    /// heading_mark
+    pub heading_mark: Column<Advice>,
+}
 
 impl<F: Field> LookupTable<F> for PoseidonTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        self.0.iter().map(|c| Column::<Any>::from(*c)).collect()
+        vec![
+            self.q_enable.into(),
+            self.hash_id.into(),
+            self.input0.into(),
+            self.input1.into(),
+            self.control.into(),
+            self.heading_mark.into(),
+        ]
     }
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("hash_id"),
             String::from("input0"),
             String::from("input1"),
@@ -737,18 +758,26 @@ impl PoseidonTable {
 
     /// Construct a new PoseidonTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self([
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column(),
-            meta.advice_column(),
-            meta.advice_column(),
-            meta.advice_column(),
-        ])
+        Self {
+            q_enable: meta.fixed_column(),
+            hash_id: meta.advice_column_in(SecondPhase),
+            input0: meta.advice_column(),
+            input1: meta.advice_column(),
+            control: meta.advice_column(),
+            heading_mark: meta.advice_column(),
+        }
     }
 
     /// Construct a new PoseidonTable for dev (no secondphase, mpt only)
     pub(crate) fn dev_construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self([0; 5].map(|_| meta.advice_column()))
+        Self {
+            q_enable: meta.fixed_column(),
+            hash_id: meta.advice_column(),
+            input0: meta.advice_column(),
+            input1: meta.advice_column(),
+            control: meta.advice_column(),
+            heading_mark: meta.advice_column(),
+        }
     }
 
     pub(crate) fn assign<F: Field>(
@@ -757,19 +786,32 @@ impl PoseidonTable {
         offset: usize,
         row: &[Value<F>],
     ) -> Result<(), Error> {
-        for (column, value) in self.0.iter().zip_eq(row) {
-            region.assign_advice(|| "assign mpt table row value", *column, offset, || *value)?;
+        region.assign_fixed(
+            || "assign poseidon table row value",
+            self.q_enable,
+            offset,
+            || Value::known(F::one()),
+        )?;
+        let poseidon_table_columns = <PoseidonTable as LookupTable<F>>::advice_columns(self);
+        for (column, value) in poseidon_table_columns.iter().zip_eq(row) {
+            region.assign_advice(
+                || "assign poseidon table row value",
+                *column,
+                offset,
+                || *value,
+            )?;
         }
         Ok(())
     }
 
+    // Is this method used anyhwhere?
     pub(crate) fn load<'d, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         hashes: impl Iterator<Item = &'d [Value<F>]> + Clone,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "mpt table",
+            || "poseidon table",
             |mut region| self.load_with_region(&mut region, hashes.clone()),
         )
     }
@@ -779,7 +821,7 @@ impl PoseidonTable {
         region: &mut Region<'_, F>,
         hashes: impl Iterator<Item = &'d [Value<F>]>,
     ) -> Result<(), Error> {
-        self.assign(region, 0, [Value::known(F::zero()); 7].as_slice())?;
+        self.assign(region, 0, [Value::known(F::zero()); 5].as_slice())?;
         for (offset, row) in hashes.enumerate() {
             self.assign(region, offset + 1, row)?;
         }
@@ -805,6 +847,13 @@ impl PoseidonTable {
                 let mut offset = 0;
                 let poseidon_table_columns =
                     <PoseidonTable as LookupTable<F>>::advice_columns(self);
+
+                region.assign_fixed(
+                    || "poseidon table all-zero row",
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for column in poseidon_table_columns.iter().copied() {
                     region.assign_advice(
                         || "poseidon table all-zero row",
@@ -816,6 +865,12 @@ impl PoseidonTable {
                 offset += 1;
                 let nil_hash =
                     Value::known(CodeDB::empty_code_hash().to_word().to_scalar().unwrap());
+                region.assign_fixed(
+                    || "poseidon table nil input row",
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for (column, value) in poseidon_table_columns
                     .iter()
                     .copied()
@@ -850,6 +905,12 @@ impl PoseidonTable {
                         let control_len_as_flag =
                             F::from_u128(HASHABLE_DOMAIN_SPEC * control_len as u128);
 
+                        region.assign_fixed(
+                            || format!("poseidon table row {}", offset),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
                         for (column, value) in poseidon_table_columns.iter().zip_eq(
                             once(ref_hash)
                                 .chain(row.map(Value::known))

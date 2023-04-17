@@ -40,12 +40,19 @@ impl<F: Field> SubCircuitConfig<F> for MptCircuitConfig {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let conf = EthTrieConfig::configure_sub(
-            meta,
-            mpt_table.0,
-            poseidon_table.0,
-            challenges.evm_word(),
+        let poseidon_table = (
+            poseidon_table.q_enable,
+            [
+                poseidon_table.hash_id,
+                poseidon_table.input0,
+                poseidon_table.input1,
+                poseidon_table.control,
+                poseidon_table.heading_mark,
+            ],
         );
+
+        let conf =
+            EthTrieConfig::configure_sub(meta, mpt_table.0, poseidon_table, challenges.evm_word());
         Self(conf)
     }
 }
