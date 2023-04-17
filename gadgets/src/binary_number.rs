@@ -6,7 +6,7 @@ use crate::util::{and, not, Expr};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells, Any},
+    plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use std::{collections::BTreeSet, marker::PhantomData};

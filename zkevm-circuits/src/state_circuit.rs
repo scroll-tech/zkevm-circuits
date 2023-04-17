@@ -113,8 +113,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         let power_of_randomness: [Expression<F>; 31] = challenges.evm_word_powers_of_randomness();
 
         let rw_counter = MpiChip::configure(meta, selector, rw_table.rw_counter, lookups);
-        let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag.into()
-        ));
+        let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag.into()));
         let id = MpiChip::configure(meta, selector, rw_table.id, lookups);
         let address = MpiChip::configure(meta, selector, rw_table.address, lookups);
 

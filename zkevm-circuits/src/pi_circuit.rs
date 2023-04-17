@@ -302,7 +302,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
         let q_block_tag = meta.fixed_column();
         let cum_num_txs = meta.advice_column();
-        let block_tag_bits = BinaryNumberChip::configure(meta, q_block_tag, Some(block_table.tag.into()));
+        let block_tag_bits =
+            BinaryNumberChip::configure(meta, q_block_tag, Some(block_table.tag.into()));
 
         meta.enable_equality(constant);
         meta.enable_equality(rpi_bytes);
