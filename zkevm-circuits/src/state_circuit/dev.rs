@@ -48,9 +48,12 @@ where
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&layouter);
-        config
-            .mpt_table
-            .load(&mut layouter, &self.updates, challenges.evm_word())?;
+        config.mpt_table.load(
+            &mut layouter,
+            &self.updates,
+            self.n_rows,
+            challenges.evm_word(),
+        )?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

@@ -591,6 +591,7 @@ impl<
         config.mpt_table.load(
             &mut layouter,
             &self.state_circuit.updates,
+            block.circuits_params.max_mpt_rows,
             challenges.evm_word(),
         )?;
 

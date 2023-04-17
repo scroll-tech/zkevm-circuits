@@ -177,10 +177,12 @@ pub struct TxTable {
 impl TxTable {
     /// Construct a new TxTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        let q_enable = meta.fixed_column();
+        let tag = meta.fixed_column();
         Self {
-            q_enable: meta.fixed_column(),
+            q_enable,
             tx_id: meta.advice_column(),
-            tag: meta.fixed_column(),
+            tag,
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
         }
@@ -294,11 +296,7 @@ impl TxTable {
                     calldata_assignments.extend(tx_calldata.iter());
                 }
                 // Assign Tx calldata
-                let dummy_row = [Value::known(F::zero()); 4];
-                for row in calldata_assignments
-                    .into_iter()
-                    .chain(repeat(dummy_row))
-                    .take(max_calldata)
+                for row in calldata_assignments.into_iter()
                 {
                     assign_row(
                         &mut region,
@@ -765,11 +763,12 @@ impl MptTable {
         &self,
         layouter: &mut impl Layouter<F>,
         updates: &MptUpdates,
+        max_mpt_rows: usize,
         randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "mpt table zkevm",
-            |mut region| self.load_with_region(&mut region, updates, randomness),
+            |mut region| self.load_with_region(&mut region, updates, max_mpt_rows, randomness),
         )
     }
 
@@ -777,10 +776,18 @@ impl MptTable {
         &self,
         region: &mut Region<'_, F>,
         updates: &MptUpdates,
+        max_mpt_rows: usize,
         randomness: Value<F>,
     ) -> Result<(), Error> {
-        for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
-            self.assign(region, offset, row)?;
+        let dummy_row = MptUpdateRow([Value::known(F::zero()); 7]);
+        for (offset, row) in updates
+            .table_assignments(randomness)
+            .into_iter()
+            .chain(repeat(dummy_row))
+            .take(max_mpt_rows)
+            .enumerate()
+        {
+            self.assign(region, offset, &row)?;
         }
         Ok(())
     }

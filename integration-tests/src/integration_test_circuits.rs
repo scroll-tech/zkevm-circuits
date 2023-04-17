@@ -66,6 +66,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
     max_calldata: MAX_CALLDATA,
+    max_mpt_rows: MAX_CALLDATA,
     max_inner_blocks: 64,
     max_bytecode: MAX_BYTECODE,
     max_copy_rows: MAX_COPY_ROWS,

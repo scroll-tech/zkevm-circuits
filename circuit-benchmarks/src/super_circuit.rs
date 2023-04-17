@@ -88,6 +88,7 @@ mod tests {
             max_rws: 256,
             max_copy_rows: 256,
             max_exp_steps: 256,
+            max_mpt_rows: 512,
             max_bytecode: 512,
             max_evm_rows: 0,
             max_inner_blocks: MAX_INNER_BLOCKS,

@@ -907,6 +907,12 @@ impl<F: Field> TxCircuitConfig<F> {
                 offset,
                 || Value::known(rlp_data),
             )?;
+            region.assign_fixed(
+                || "q_enable",
+                self.q_enable,
+                offset,
+                || Value::known(F::one()),
+            )?;
             region.assign_fixed(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
             tag_chip.assign(region, offset, &CallData)?;
             // no need to assign tx_id_is_zero_chip for real prover as tx_id = 0

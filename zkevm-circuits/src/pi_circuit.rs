@@ -124,11 +124,13 @@ impl PublicData {
                     .filter(|tx| tx.block_number == *block_num)
                     .count() as u16;
                 let parent_hash = block.eth_block.parent_hash;
-                log::debug!(
-                    "block.history_hashes.len() = {}, parent_hash = {}",
-                    block.history_hashes.len(),
-                    parent_hash
-                );
+                if !block.history_hashes.is_empty() || !parent_hash.is_zero() {
+                    log::debug!(
+                        "block.history_hashes.len() = {}, parent_hash = {}",
+                        block.history_hashes.len(),
+                        parent_hash
+                    );
+                }
                 // TODO: use reasonable method to get this data
                 let num_l1_msgs = 0_u16; // 0 for now
 

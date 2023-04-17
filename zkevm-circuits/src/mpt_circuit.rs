@@ -86,7 +86,7 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
             (
                 // notice we do not use the accompanied hash circuit so just assign any size
                 100usize,
-                Some(block.circuits_params.max_rws),
+                Some(block.circuits_params.max_mpt_rows),
             ),
             &block.mpt_updates.proof_types,
         );

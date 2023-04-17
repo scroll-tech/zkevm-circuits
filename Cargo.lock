@@ -2264,7 +2264,7 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0411#37e10502b371b51b948a5cc816f77a79d02d4be6"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0411#da63fcc93077a43f44eadb2e1eff20d66b693d8c"
 dependencies = [
  "halo2_proofs",
  "hex",
