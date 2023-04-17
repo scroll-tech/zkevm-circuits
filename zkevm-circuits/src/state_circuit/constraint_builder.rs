@@ -32,6 +32,7 @@ pub struct RwTableQueries<F: Field> {
 
 #[derive(Clone)]
 pub struct MptUpdateTableQueries<F: Field> {
+    pub q_enable: Expression<F>,
     pub address: Expression<F>,
     pub storage_key: Expression<F>,
     pub proof_type: Expression<F>,
@@ -306,6 +307,7 @@ impl<F: Field> ConstraintBuilder<F> {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for AccountStorage last access",
                 vec![
+                    (1.expr(), q.mpt_update_table.q_enable.clone()),
                     (
                         q.rw_table.address.clone(),
                         q.mpt_update_table.address.clone(),

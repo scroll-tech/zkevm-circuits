@@ -362,8 +362,9 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 0.expr(),
                 meta.query_advice(control_length, Rotation::cur()) * domain_spec_factor,
             ];
-            for (input_expr, table_expr) in
-                lookup_inputs.into_iter().zip_eq(pick_hash_tbl_cols(meta, 1))
+            for (input_expr, table_expr) in lookup_inputs
+                .into_iter()
+                .zip_eq(pick_hash_tbl_cols(meta, 1))
             {
                 constraints.push((enable.clone() * input_expr, table_expr))
             }

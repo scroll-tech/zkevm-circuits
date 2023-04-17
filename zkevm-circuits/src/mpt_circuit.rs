@@ -50,9 +50,21 @@ impl<F: Field> SubCircuitConfig<F> for MptCircuitConfig {
                 poseidon_table.heading_mark,
             ],
         );
+        let mpt_table = (
+            mpt_table.q_enable,
+            [
+                mpt_table.address,
+                mpt_table.storage_key,
+                mpt_table.proof_type,
+                mpt_table.new_root,
+                mpt_table.old_root,
+                mpt_table.new_value,
+                mpt_table.old_value,
+            ],
+        );
 
         let conf =
-            EthTrieConfig::configure_sub(meta, mpt_table.0, poseidon_table, challenges.evm_word());
+            EthTrieConfig::configure_sub(meta, mpt_table, poseidon_table, challenges.evm_word());
         Self(conf)
     }
 }

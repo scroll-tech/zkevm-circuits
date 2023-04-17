@@ -634,15 +634,42 @@ impl From<AccountFieldTag> for MPTProofType {
 
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
-pub struct MptTable(pub [Column<Advice>; 7]);
+pub struct MptTable {
+    /// q_enable
+    pub q_enable: Column<Fixed>,
+    /// Address
+    pub address: Column<Advice>,
+    /// Storage key
+    pub storage_key: Column<Advice>,
+    /// Proof type
+    pub proof_type: Column<Advice>,
+    /// New root
+    pub new_root: Column<Advice>,
+    /// Old root
+    pub old_root: Column<Advice>,
+    /// New value
+    pub new_value: Column<Advice>,
+    /// Old value
+    pub old_value: Column<Advice>,
+}
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        self.0.iter().map(|&col| col.into()).collect()
+        vec![
+            self.q_enable.into(),
+            self.address.into(),
+            self.storage_key.into(),
+            self.proof_type.into(),
+            self.new_root.into(),
+            self.old_root.into(),
+            self.new_value.into(),
+            self.old_value.into(),
+        ]
     }
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("address"),
             String::from("storage_key"),
             String::from("proof_type"),
@@ -657,15 +684,16 @@ impl<F: Field> LookupTable<F> for MptTable {
 impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self([
-            meta.advice_column(),               // Address
-            meta.advice_column_in(SecondPhase), // Storage key
-            meta.advice_column(),               // Proof type
-            meta.advice_column_in(SecondPhase), // New root
-            meta.advice_column_in(SecondPhase), // Old root
-            meta.advice_column_in(SecondPhase), // New value
-            meta.advice_column_in(SecondPhase), // Old value
-        ])
+        Self {
+            q_enable: meta.fixed_column(),
+            address: meta.advice_column(),
+            storage_key: meta.advice_column_in(SecondPhase),
+            proof_type: meta.advice_column(),
+            new_root: meta.advice_column_in(SecondPhase),
+            old_root: meta.advice_column_in(SecondPhase),
+            new_value: meta.advice_column_in(SecondPhase),
+            old_value: meta.advice_column_in(SecondPhase),
+        }
     }
 
     pub(crate) fn assign<F: Field>(
@@ -674,7 +702,14 @@ impl MptTable {
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {
-        for (column, value) in self.0.iter().zip_eq(row.values()) {
+        region.assign_fixed(
+            || "assign mpt table row value",
+            self.q_enable,
+            offset,
+            || Value::known(F::one()),
+        )?;
+        let mpt_table_columns = <MptTable as LookupTable<F>>::advice_columns(self);
+        for (column, value) in mpt_table_columns.iter().zip_eq(row.values()) {
             region.assign_advice(|| "assign mpt table row value", *column, offset, || *value)?;
         }
         Ok(())
