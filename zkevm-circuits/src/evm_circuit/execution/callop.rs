@@ -1190,7 +1190,7 @@ mod test {
     }
 
     #[test]
-    fn test_depth() {
+    fn callop_error_depth() {
         let callee_code = bytecode! {
             PUSH1(0x00)
             PUSH1(0x00)

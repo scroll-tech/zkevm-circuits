@@ -6,7 +6,10 @@ use super::{
     TransactionContext,
 };
 use crate::{
-    error::{get_step_reported_error, ExecError, InsufficientBalanceError, NonceUintOverflowError},
+    error::{
+        get_step_reported_error, DepthError, ExecError, InsufficientBalanceError,
+        NonceUintOverflowError,
+    },
     exec_trace::OperationRef,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
@@ -1417,7 +1420,15 @@ impl<'a> CircuitInputStateRef<'a> {
             && next_pc != 0
         {
             if step.depth == 1025 {
-                return Ok(Some(ExecError::Depth));
+                return Ok(Some(ExecError::Depth(match step.op {
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::DELEGATECALL
+                    | OpcodeId::STATICCALL => DepthError::Call,
+                    OpcodeId::CREATE => DepthError::Create,
+                    OpcodeId::CREATE2 => DepthError::Create2,
+                    op => unreachable!("ErrDepth cannot occur in {op}"),
+                })));
             }
 
             let sender = self.call()?.address;

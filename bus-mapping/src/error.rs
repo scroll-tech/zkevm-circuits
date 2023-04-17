@@ -98,6 +98,17 @@ pub enum OogError {
     SelfDestruct,
 }
 
+/// Depth above limit errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DepthError {
+    /// Depth above limit during CALL/CALLCODE/DELEGATECALL/STATICCALL opcode.
+    Call,
+    /// Depth above limit during CREATE opcode.
+    Create,
+    /// Depth above limit during CREATE2 opcode.
+    Create2,
+}
+
 /// Insufficient balance errors by opcode/state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InsufficientBalanceError {
@@ -133,7 +144,7 @@ pub enum ExecError {
     /// SELFDESTRUCT
     WriteProtection,
     /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
-    Depth,
+    Depth(DepthError),
     /// For CALL, CALLCODE, CREATE, CREATE2
     InsufficientBalance(InsufficientBalanceError),
     /// For CREATE, CREATE2
