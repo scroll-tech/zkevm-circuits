@@ -98,6 +98,15 @@ pub enum OogError {
     SelfDestruct,
 }
 
+/// Contract address collision errors by opcode/state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ContractAddressCollisionError {
+    /// Contract address collision during CREATE opcode.
+    Create,
+    /// Contract address collision during CREATE2 opcode.
+    Create2,
+}
+
 /// Depth above limit errors by opcode/state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DepthError {
@@ -148,7 +157,7 @@ pub enum ExecError {
     /// For CALL, CALLCODE, CREATE, CREATE2
     InsufficientBalance(InsufficientBalanceError),
     /// For CREATE, CREATE2
-    ContractAddressCollision,
+    ContractAddressCollision(ContractAddressCollisionError),
     /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
     /// (EOF)
     InvalidCreationCode,

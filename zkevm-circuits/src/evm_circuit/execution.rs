@@ -1432,9 +1432,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorWriteProtection => {
                 assign_exec_step!(self.error_write_protection)
             }
-            ExecutionState::ErrorContractAddressCollision => {
-                assign_exec_step!(self.create_gadget)
-            }
             ExecutionState::ErrorInvalidCreationCode => {
                 assign_exec_step!(self.error_invalid_creation_code)
             }

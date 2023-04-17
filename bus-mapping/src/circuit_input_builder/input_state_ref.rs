@@ -7,8 +7,8 @@ use super::{
 };
 use crate::{
     error::{
-        get_step_reported_error, DepthError, ExecError, InsufficientBalanceError,
-        NonceUintOverflowError,
+        get_step_reported_error, ContractAddressCollisionError, DepthError, ExecError,
+        InsufficientBalanceError, NonceUintOverflowError,
     },
     exec_trace::OperationRef,
     operation::{
@@ -1458,9 +1458,15 @@ impl<'a> CircuitInputStateRef<'a> {
 
             // Address collision
             if matches!(step.op, OpcodeId::CREATE | OpcodeId::CREATE2) {
-                let address = match step.op {
-                    OpcodeId::CREATE => self.create_address()?,
-                    OpcodeId::CREATE2 => self.create2_address(step)?,
+                let (address, contract_addr_collision_err) = match step.op {
+                    OpcodeId::CREATE => (
+                        self.create_address()?,
+                        ContractAddressCollisionError::Create,
+                    ),
+                    OpcodeId::CREATE2 => (
+                        self.create2_address(step)?,
+                        ContractAddressCollisionError::Create2,
+                    ),
                     _ => unreachable!(),
                 };
                 let (found, _) = self.sdb.get_account(&address);
@@ -1471,7 +1477,9 @@ impl<'a> CircuitInputStateRef<'a> {
                         step,
                         next_step
                     );
-                    return Ok(Some(ExecError::ContractAddressCollision));
+                    return Ok(Some(ExecError::ContractAddressCollision(
+                        contract_addr_collision_err,
+                    )));
                 }
             }
 

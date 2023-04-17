@@ -75,7 +75,7 @@ fn check_post(
         }
 
         if expected.nonce.map(|v| v == actual.nonce) == Some(false) {
-            log::trace!(
+            log::error!(
                 "nonce mismatch, expected {:?} actual {:?}",
                 expected,
                 actual
@@ -146,7 +146,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
         let address = Address::from(addr_bytes);
         let acc = eth_types::geth_types::Account {
             // balance: 1.into(),
-            nonce: 1.into(),
+            // nonce: 1.into(),
             address,
             ..Default::default()
         };

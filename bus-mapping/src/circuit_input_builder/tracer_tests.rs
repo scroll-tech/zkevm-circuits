@@ -1,7 +1,9 @@
 use super::*;
 use crate::{
     circuit_input_builder::access::gen_state_access_trace,
-    error::{DepthError, ExecError, InsufficientBalanceError, OogError},
+    error::{
+        ContractAddressCollisionError, DepthError, ExecError, InsufficientBalanceError, OogError,
+    },
     geth_errors::{
         GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
         GETH_ERR_STACK_UNDERFLOW,
@@ -478,7 +480,9 @@ fn tracer_err_address_collision() {
         .set_account(&create2_address, Account::zero());
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
-        Some(ExecError::ContractAddressCollision)
+        Some(ExecError::ContractAddressCollision(
+            ContractAddressCollisionError::Create2
+        ))
     );
 }
 

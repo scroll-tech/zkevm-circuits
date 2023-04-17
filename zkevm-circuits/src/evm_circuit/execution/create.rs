@@ -256,6 +256,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         );
 
         let not_address_collision = IsZeroGadget::construct(cb, code_hash_previous.expr());
+        /*
+        // CREATE2 may cause address collision error. And for a tricky
+        // case of CREATE, it could also cause this error. e.g. the `to`
+        // field of transaction is set to the calculated contract
+        // address (reference testool case
+        // `RevertDepthCreateAddressCollision_d0_g0_v0` for details).
         cb.condition(not::expr(not_address_collision.expr()), |cb| {
             cb.require_equal(
                 "op code is create2 for address collision",
@@ -263,6 +269,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 OpcodeId::CREATE2.expr(),
             );
         });
+        */
 
         // conditional transfer for address collision case
         let transfer = cb.condition(
@@ -434,7 +441,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(cb.rw_counter_offset()),
                     program_counter: Delta(1.expr()),
-                    stack_pointer: Delta(3.expr()),
+                    stack_pointer: Delta(2.expr() + IS_CREATE2.expr()),
                     gas_left: To(gas_left.quotient()),
                     reversible_write_counter: Delta(2.expr()),
                     ..Default::default()
