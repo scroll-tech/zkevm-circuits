@@ -14,6 +14,8 @@ use strum_macros::{EnumIter, EnumString}; // 0.17.1
 
 const MAX_DETAILS_LEN: usize = 128;
 
+const OUTPUT_ALL_RESULT_LEVELS: [ResultLevel; 2] = [ResultLevel::Fail, ResultLevel::Panic];
+
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, EnumIter, EnumString, Serialize, Deserialize)]
 pub enum ResultLevel {
     #[strum(ascii_case_insensitive)]
@@ -166,7 +168,17 @@ impl Report {
 
         // strip_prefix `tests/` for rendering purpose. It helps to generate hyperlink
         let leading_tests_path = "tests/";
-        let mut tests_for_render = self.tests.clone();
+        let mut tests_for_render: HashMap<_, _> = self
+            .tests
+            .iter()
+            .filter_map(|(id, result)| {
+                if OUTPUT_ALL_RESULT_LEVELS.contains(&result.level) {
+                    Some((id.clone(), result.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
         for (_, result) in tests_for_render.iter_mut() {
             assert!(result.path.starts_with(leading_tests_path));
             result.path = result
