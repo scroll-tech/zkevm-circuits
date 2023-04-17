@@ -302,7 +302,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
         let q_block_tag = meta.fixed_column();
         let cum_num_txs = meta.advice_column();
-        let block_tag_bits = BinaryNumberChip::configure(meta, q_block_tag, Some(block_table.tag));
+        let block_tag_bits = BinaryNumberChip::configure(meta, q_block_tag, Some(block_table.tag.into()));
 
         meta.enable_equality(constant);
         meta.enable_equality(rpi_bytes);
@@ -463,7 +463,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                 let cum_num_txs_cur = meta.query_advice(cum_num_txs, Rotation::cur());
                 let cum_num_txs_next = meta.query_advice(cum_num_txs, Rotation::next());
                 let is_num_txs_field = block_tag_bits.value_equals(BlockContextFieldTag::NumTxs, Rotation::cur())(meta);
-                let block_tag = meta.query_advice(block_table.tag, Rotation::cur());
+                let block_tag = meta.query_fixed(block_table.tag, Rotation::cur());
                 let tag_bits = block_tag_bits.value(Rotation::cur())(meta);
 
                 let num_txs = select::expr(
@@ -1166,12 +1166,18 @@ impl<F: Field> PiCircuitConfig<F> {
                 .into_iter()
                 .zip(tag.iter())
             {
-                for (column, value) in block_table_columns.iter().zip_eq(row) {
+                region.assign_fixed(
+                    || format!("block table row {}", offset),
+                    self.block_table.tag,
+                    offset,
+                    || row[0],
+                )?;
+                for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                     let cell = region.assign_advice(
                         || format!("block table row {}", offset),
                         *column,
                         offset,
-                        || value,
+                        || *value,
                     )?;
                     if *column == self.block_table.value {
                         block_value_cells.push(cell);

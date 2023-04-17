@@ -147,7 +147,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         let is_simple_tag = meta.advice_column();
         let is_prefix_tag = meta.advice_column();
         let is_dp_tag = meta.advice_column();
-        let tag_bits = BinaryNumberChip::configure(meta, q_usable, Some(rlp_table.tag));
+        let tag_bits = BinaryNumberChip::configure(meta, q_usable, Some(rlp_table.tag.into()));
         let tag_rom = RlpTagROM {
             tag: meta.fixed_column(),
             tag_next: meta.fixed_column(),

@@ -1337,7 +1337,7 @@ impl<F: Field> TxCircuit<F> {
                     }))
                     .enumerate()
                 {
-                    region.assign_advice(
+                    region.assign_fixed(
                         || "block_table.tag",
                         config.block_table.tag,
                         offset,

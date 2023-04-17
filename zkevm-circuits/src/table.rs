@@ -1194,7 +1194,7 @@ impl From<BlockContextFieldTag> for usize {
 #[derive(Clone, Debug)]
 pub struct BlockTable {
     /// Tag
-    pub tag: Column<Advice>,
+    pub tag: Column<Fixed>,
     /// Index
     pub index: Column<Advice>,
     /// Value
@@ -1205,14 +1205,14 @@ impl BlockTable {
     /// Construct a new BlockTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            tag: meta.advice_column(),
+            tag: meta.fixed_column(),
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
         }
     }
 
     /// Assign the `BlockTable` from a `BlockContext`.
-    pub fn load<F: Field>(
+    pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         block_ctxs: &BlockContexts,
@@ -1247,12 +1247,18 @@ impl BlockTable {
                         .count();
                     cum_num_txs += num_txs;
                     for row in block_ctx.table_assignments(num_txs, cum_num_txs, challenges) {
-                        for (column, value) in block_table_columns.iter().zip_eq(row) {
+                        region.assign_fixed(
+                            || format!("block table row {}", offset),
+                            self.tag,
+                            offset,
+                            || row[0],
+                        )?;
+                        for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                             region.assign_advice(
                                 || format!("block table row {}", offset),
                                 *column,
                                 offset,
-                                || value,
+                                || *value,
                             )?;
                         }
                         offset += 1;
