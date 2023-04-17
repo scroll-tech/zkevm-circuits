@@ -162,6 +162,8 @@ pub type TxContextFieldTag = TxFieldTag;
 /// Table that contains the fields of all Transactions in a block
 #[derive(Clone, Debug)]
 pub struct TxTable {
+    /// q_enable
+    pub q_enable: Column<Fixed>,
     /// Tx ID
     pub tx_id: Column<Advice>,
     /// Tag (TxContextFieldTag)
@@ -176,6 +178,7 @@ impl TxTable {
     /// Construct a new TxTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            q_enable: meta.fixed_column(),
             tx_id: meta.advice_column(),
             tag: meta.fixed_column(),
             index: meta.advice_column(),
@@ -211,6 +214,7 @@ impl TxTable {
         fn assign_row<F: Field>(
             region: &mut Region<'_, F>,
             offset: usize,
+            q_enable: Column<Fixed>,
             advice_columns: &[Column<Advice>],
             tag: &Column<Fixed>,
             row: &[Value<F>; 4],
@@ -224,6 +228,12 @@ impl TxTable {
                     || row[if index > 0 { index + 1 } else { index }],
                 )?;
             }
+            region.assign_fixed(
+                || format!("tx table q_enable row {}", offset),
+                q_enable,
+                offset,
+                || Value::known(F::one()),
+            )?;
             region.assign_fixed(
                 || format!("tx table {} row {}", msg, offset),
                 *tag,
@@ -241,6 +251,7 @@ impl TxTable {
                 assign_row(
                     &mut region,
                     offset,
+                    self.q_enable,
                     &advice_columns,
                     &self.tag,
                     &[(); 4].map(|_| Value::known(F::zero())),
@@ -269,14 +280,30 @@ impl TxTable {
                     let tx_data = tx.table_assignments_fixed(*challenges);
                     let tx_calldata = tx.table_assignments_dyn(*challenges);
                     for row in tx_data {
-                        assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
+                        assign_row(
+                            &mut region,
+                            offset,
+                            self.q_enable,
+                            &advice_columns,
+                            &self.tag,
+                            &row,
+                            "",
+                        )?;
                         offset += 1;
                     }
                     calldata_assignments.extend(tx_calldata.iter());
                 }
                 // Assign Tx calldata
                 for row in calldata_assignments.into_iter() {
-                    assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
+                    assign_row(
+                        &mut region,
+                        offset,
+                        self.q_enable,
+                        &advice_columns,
+                        &self.tag,
+                        &row,
+                        "",
+                    )?;
                     offset += 1;
                 }
                 Ok(())
@@ -288,6 +315,7 @@ impl TxTable {
 impl<F: Field> LookupTable<F> for TxTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.tx_id.into(),
             self.tag.into(),
             self.index.into(),
@@ -297,6 +325,7 @@ impl<F: Field> LookupTable<F> for TxTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("tx_id"),
             String::from("tag"),
             String::from("index"),
@@ -306,6 +335,7 @@ impl<F: Field> LookupTable<F> for TxTable {
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
+            meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_advice(self.tx_id, Rotation::cur()),
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),

@@ -311,7 +311,13 @@ impl<F: Field> Lookup<F> {
                 field_tag,
                 index,
                 value,
-            } => vec![id.clone(), field_tag.clone(), index.clone(), value.clone()],
+            } => vec![
+                1.expr(),
+                id.clone(),
+                field_tag.clone(),
+                index.clone(),
+                value.clone(),
+            ],
             Self::Rw {
                 counter,
                 is_write,

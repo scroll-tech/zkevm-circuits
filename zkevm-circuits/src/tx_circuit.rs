@@ -14,7 +14,6 @@ use crate::tx_circuit::sign_verify::pub_key_hash_to_address;
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::TxCircuit as TestTxCircuit;
-use itertools::Itertools;
 
 use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
@@ -183,7 +182,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
-        let q_enable = meta.fixed_column();
+        let q_enable = tx_table.q_enable;
         let tag = BinaryNumberChip::configure(meta, q_enable, None);
         let rlp_tag = meta.fixed_column();
         let u16_table = meta.lookup_table_column();
@@ -1105,7 +1104,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 RlpDataType::TxSign.expr(),
             ]
             .into_iter()
-            .zip_eq(rlp_table.table_exprs(meta).into_iter()) // tag_length_eq_one is the 6th column in rlp table
+            .zip(rlp_table.table_exprs(meta).into_iter()) // tag_length_eq_one is the 6th column in rlp table
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1130,7 +1129,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 RlpDataType::TxHash.expr(),
             ]
             .into_iter()
-            .zip_eq(rlp_table.table_exprs(meta).into_iter())
+            .zip(rlp_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1174,7 +1173,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 RlpDataType::TxSign.expr(),
             ]
             .into_iter()
-            .zip_eq(rlp_table.table_exprs(meta).into_iter())
+            .zip(rlp_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1198,7 +1197,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 RlpDataType::TxHash.expr(),
             ]
             .into_iter()
-            .zip_eq(rlp_table.table_exprs(meta).into_iter())
+            .zip(rlp_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1223,7 +1222,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_table.value, Rotation(2)),      // output_rlc
             ]
             .into_iter()
-            .zip_eq(keccak_table.table_exprs(meta).into_iter())
+            .zip(keccak_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });

@@ -412,6 +412,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 * tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()));
             vec![
+                1.expr(),
                 meta.query_advice(id, Rotation::cur()),
                 TxContextFieldTag::CallData.expr(),
                 meta.query_advice(addr, Rotation::cur()),
