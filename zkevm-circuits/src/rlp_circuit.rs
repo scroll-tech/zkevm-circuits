@@ -129,7 +129,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         rlp_table: &RlpTable,
         challenges: &Challenges<Expression<F>>,
     ) -> Self {
-        let q_usable = meta.fixed_column();
+        let q_usable = rlp_table.q_enable;
         let is_first = meta.advice_column();
         let is_last = meta.advice_column();
         let index = meta.advice_column();

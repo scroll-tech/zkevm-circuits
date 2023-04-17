@@ -22,7 +22,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{ConstraintSystem, Error, Column, Fixed},
+    plonk::{Column, ConstraintSystem, Error, Fixed},
     poly::Rotation,
 };
 use param::*;
@@ -411,7 +411,12 @@ impl<F: Field> ExpCircuitConfig<F> {
         let (exponent_div2, remainder) = exponent.div_mod(two);
 
         for i in 0..OFFSET_INCREMENT {
-            region.assign_fixed(|| "assign q_enable", self.q_enable, offset + i, || Value::known(F::one()))?;
+            region.assign_fixed(
+                || "assign q_enable",
+                self.q_enable,
+                offset + i,
+                || Value::known(F::one()),
+            )?;
         }
         mul_chip.assign(region, offset, [step.a, step.b, U256::zero(), step.d])?;
         parity_check_chip.assign(region, offset, [two, exponent_div2, remainder, *exponent])?;

@@ -585,28 +585,26 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(is_create, Rotation::cur()),
                 ]);
-
-                vec![
+                let lookup_inputs = [
+                    1.expr(),
                     meta.query_advice(tx_table.tx_id, Rotation::cur()),
                     RlpTxTag::To.expr(),
                     1.expr(), // tag_rindex == 1
                     RlpDataType::TxHash.expr(),
                     meta.query_advice(tx_table.value, Rotation::cur()), // tag_length == 1
-                ]
-                .into_iter()
-                .zip(
-                    vec![
-                        rlp_table.tx_id,
-                        rlp_table.tag,
-                        rlp_table.tag_rindex,
-                        rlp_table.data_type,
-                        rlp_table.tag_length_eq_one,
-                    ]
-                    .into_iter()
-                    .map(|column| meta.query_advice(column, Rotation::cur())),
-                )
-                .map(|(arg, table)| (enable.clone() * arg, table))
-                .collect()
+                ];
+                let lookup_table = [
+                    meta.query_fixed(rlp_table.q_enable, Rotation::cur()),
+                    meta.query_advice(rlp_table.tx_id, Rotation::cur()),
+                    meta.query_advice(rlp_table.tag, Rotation::cur()),
+                    meta.query_advice(rlp_table.tag_rindex, Rotation::cur()),
+                    meta.query_advice(rlp_table.data_type, Rotation::cur()),
+                    meta.query_advice(rlp_table.tag_length_eq_one, Rotation::cur()),
+                ];
+                lookup_inputs
+                    .zip(lookup_table)
+                    .map(|(arg, table)| (enable.clone() * arg, table))
+                    .into()
             },
         );
         #[cfg(feature = "reject-eip2718")]
@@ -1099,6 +1097,7 @@ impl<F: Field> TxCircuitConfig<F> {
             let rlp_tag = meta.query_fixed(rlp_tag, Rotation::cur());
 
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 rlp_tag,
                 1.expr(), // tag_rindex == 1
@@ -1106,7 +1105,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 RlpDataType::TxSign.expr(),
             ]
             .into_iter()
-            .zip(rlp_table.table_exprs(meta).into_iter()) // tag_length_eq_one is the 6th column in rlp table
+            .zip_eq(rlp_table.table_exprs(meta).into_iter()) // tag_length_eq_one is the 6th column in rlp table
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1123,6 +1122,7 @@ impl<F: Field> TxCircuitConfig<F> {
             ]);
 
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 rlp_tag,
                 1.expr(), // tag_rindex == 1
@@ -1130,7 +1130,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 RlpDataType::TxHash.expr(),
             ]
             .into_iter()
-            .zip(rlp_table.table_exprs(meta).into_iter())
+            .zip_eq(rlp_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1165,6 +1165,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 ),
             ]);
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 RlpTxTag::Data.expr(),
                 meta.query_advice(calldata_length, Rotation::cur())
@@ -1173,7 +1174,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 RlpDataType::TxSign.expr(),
             ]
             .into_iter()
-            .zip(rlp_table.table_exprs(meta).into_iter())
+            .zip_eq(rlp_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1188,6 +1189,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 ),
             ]);
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 RlpTxTag::Data.expr(),
                 meta.query_advice(calldata_length, Rotation::cur())
@@ -1196,7 +1198,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 RlpDataType::TxHash.expr(),
             ]
             .into_iter()
-            .zip(rlp_table.table_exprs(meta).into_iter())
+            .zip_eq(rlp_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });

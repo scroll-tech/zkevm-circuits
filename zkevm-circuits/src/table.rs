@@ -1834,11 +1834,12 @@ impl ExpTable {
                 let exp_table_columns = <ExpTable as LookupTable<F>>::advice_columns(self);
                 for exp_event in block.exp_events.iter() {
                     for row in Self::assignments::<F>(exp_event) {
-                        region.assign_fixed(|| format!("exponentiation table row {}", offset), 
-                    self.q_enable,
-                    offset,
-                    || Value::known(F::one()),
-            )?;
+                        region.assign_fixed(
+                            || format!("exponentiation table row {}", offset),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
                         for (&column, value) in exp_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("exponentiation table row {}", offset),
@@ -1864,11 +1865,12 @@ impl ExpTable {
 
                 // pad an empty row
                 let row = [F::from_u128(0); 5];
-                region.assign_fixed(|| format!("exponentiation table row {}", offset), 
+                region.assign_fixed(
+                    || format!("exponentiation table row {}", offset),
                     self.q_enable,
                     offset,
                     || Value::known(F::one()),
-            )?;
+                )?;
                 for (column, value) in exp_table_columns.iter().zip_eq(row) {
                     region.assign_advice(
                         || format!("exponentiation table row {}", offset),
@@ -1927,6 +1929,8 @@ impl<F: Field> LookupTable<F> for ExpTable {
 /// Lookup table embedded in the RLP circuit.
 #[derive(Clone, Copy, Debug)]
 pub struct RlpTable {
+    /// Is enabled
+    pub q_enable: Column<Fixed>,
     /// Transaction ID of the transaction. This is not the transaction hash, but
     /// an incremental ID starting from 1 to indicate the position of the
     /// transaction within the L2 block.
@@ -1951,6 +1955,7 @@ pub struct RlpTable {
 impl<F: Field> LookupTable<F> for RlpTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.tx_id.into(),
             self.tag.into(),
             self.tag_rindex.into(),
@@ -1962,6 +1967,7 @@ impl<F: Field> LookupTable<F> for RlpTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("tx_id"),
             String::from("tag"),
             String::from("tag_rindex"),
@@ -1976,6 +1982,7 @@ impl RlpTable {
     /// Construct the RLP table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            q_enable: meta.fixed_column(),
             tx_id: meta.advice_column(),
             tag: meta.advice_column(),
             tag_rindex: meta.advice_column(),
@@ -2025,6 +2032,12 @@ impl RlpTable {
             || "rlp table",
             |mut region| {
                 let mut offset = 0;
+                region.assign_fixed(
+                    || format!("empty row: {}", offset),
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for column in <RlpTable as LookupTable<F>>::advice_columns(self) {
                     region.assign_advice(
                         || format!("empty row: {}", offset),
@@ -2036,6 +2049,12 @@ impl RlpTable {
 
                 for row in Self::dev_assignments(txs.clone(), challenges) {
                     offset += 1;
+                    region.assign_fixed(
+                        || format!("row: {}", offset),
+                        self.q_enable,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
                     for (column, value) in <RlpTable as LookupTable<F>>::advice_columns(self)
                         .iter()
                         .zip(row)
