@@ -1889,6 +1889,7 @@ impl ExpTable {
 impl<F: Field> LookupTable<F> for ExpTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.is_step.into(),
             self.identifier.into(),
             self.is_last.into(),
@@ -1900,6 +1901,7 @@ impl<F: Field> LookupTable<F> for ExpTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("is_step"),
             String::from("identifier"),
             String::from("is_last"),
@@ -1911,6 +1913,7 @@ impl<F: Field> LookupTable<F> for ExpTable {
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
+            meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_fixed(self.is_step, Rotation::cur()),
             meta.query_advice(self.identifier, Rotation::cur()),
             meta.query_advice(self.is_last, Rotation::cur()),
