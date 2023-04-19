@@ -153,7 +153,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
         let address = Address::from(addr_bytes);
         accounts
             .entry(address)
-            .or_insert_with(|| eth_types::geth_types::Account {
+            .or_insert(eth_types::geth_types::Account {
                 // balance: 1.into(),
                 // nonce: 1.into(),
                 address,
