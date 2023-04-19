@@ -151,13 +151,14 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
         let mut addr_bytes = [0u8; 20];
         addr_bytes[19] = i as u8;
         let address = Address::from(addr_bytes);
-        let acc = eth_types::geth_types::Account {
-            // balance: 1.into(),
-            // nonce: 1.into(),
-            address,
-            ..Default::default()
-        };
-        accounts.insert(address, acc);
+        accounts
+            .entry(address)
+            .or_insert_with(|| eth_types::geth_types::Account {
+                // balance: 1.into(),
+                // nonce: 1.into(),
+                address,
+                ..Default::default()
+            });
     }
 
     (
