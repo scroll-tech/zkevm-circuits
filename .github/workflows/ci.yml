@@ -42,12 +42,10 @@ jobs:
     name: Test Default
     needs: [runner]
     runs-on: ${{ matrix.os }}
-    concurrency: ${{ needs.runner.outputs.concurrency-group1 }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group2 }}
     strategy:
       matrix:
-        # We don't need to test across multiple platforms yet
-        # os: [ubuntu-latest, windows-latest, macOS-latest]
-        os: ${{ fromJSON(needs.runner.outputs.runner-matrix1) }}
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
 
     steps:
       - uses: actions/checkout@v2
@@ -93,12 +91,10 @@ jobs:
     name: Test Scroll
     needs: [runner]
     runs-on: ${{ matrix.os }}
-    concurrency: ${{ needs.runner.outputs.concurrency-group2 }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group1 }}
     strategy:
       matrix:
-        # We don't need to test across multiple platforms yet
-        # os: [ubuntu-latest, windows-latest, macOS-latest]
-        os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix1) }}
 
     steps:
       - uses: actions/checkout@v2
