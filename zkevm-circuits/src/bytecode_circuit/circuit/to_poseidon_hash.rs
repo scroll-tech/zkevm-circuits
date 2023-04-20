@@ -8,13 +8,18 @@ use eth_types::{Field, ToScalar, ToWord};
 use gadgets::is_zero::IsZeroChip;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, VirtualCells},
     poly::Rotation,
 };
-use itertools::Itertools;
 use log::trace;
-use mpt_zktrie::hash::HASHABLE_DOMAIN_SPEC;
 use std::vec;
+
+#[cfg(feature = "l2-traces")]
+use halo2_proofs::plonk::Expression;
+#[cfg(feature = "l2-traces")]
+use itertools::Itertools;
+#[cfg(feature = "l2-traces")]
+use mpt_zktrie::hash::HASHABLE_DOMAIN_SPEC;
 
 use super::{
     super::bytecode_unroller::{BytecodeRow, UnrolledBytecode},
@@ -54,6 +59,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
     ) -> Self {
         let base_conf_cl = base_conf.clone();
         let bytecode_table = base_conf.bytecode_table;
+        #[cfg(feature = "l2-traces")]
         let code_hash = bytecode_table.code_hash;
 
         let q_enable = base_conf.q_enable; // from 0 to last avaliable row
@@ -288,6 +294,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         // ]))
         // });
 
+        #[cfg(feature = "l2-traces")]
         let pick_hash_tbl_cols = |meta: &mut VirtualCells<F>, inp_i: usize| {
             debug_assert_eq!(PoseidonTable::INPUT_WIDTH, 2);
             [
@@ -306,11 +313,13 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         };
 
         // we use a special selection exp for only 2 indexs
+        #[cfg(feature = "l2-traces")]
         let field_selector = |meta: &mut VirtualCells<F>| {
             let field_index = meta.query_advice(field_index, Rotation::cur()) - 1.expr();
             [1.expr() - field_index.clone(), field_index]
         };
 
+        #[cfg(feature = "l2-traces")]
         let domain_spec_factor = Expression::Constant(F::from_u128(HASHABLE_DOMAIN_SPEC));
 
         // poseidon lookup:
