@@ -192,7 +192,7 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 fn serial_test_super_circuit_1tx_1max_tx() {
     let block = block_1tx();
     const MAX_TXS: usize = 1;
-    const MAX_CALLDATA: usize = 32;
+    const MAX_CALLDATA: usize = 256;
     const MAX_INNER_BLOCKS: usize = 1;
     let circuits_params = CircuitsParams {
         max_txs: MAX_TXS,
@@ -218,7 +218,7 @@ fn serial_test_super_circuit_1tx_1max_tx() {
 fn serial_test_super_circuit_1tx_deploy_2max_tx() {
     let block = block_1tx_deploy();
     const MAX_TXS: usize = 2;
-    const MAX_CALLDATA: usize = 32;
+    const MAX_CALLDATA: usize = 256;
     const MAX_INNER_BLOCKS: usize = 1;
     const MAX_RWS: usize = 256;
     const MAX_COPY_ROWS: usize = 256;
@@ -246,7 +246,7 @@ fn serial_test_super_circuit_1tx_deploy_2max_tx() {
 fn serial_test_super_circuit_1tx_2max_tx() {
     let block = block_1tx();
     const MAX_TXS: usize = 2;
-    const MAX_CALLDATA: usize = 32;
+    const MAX_CALLDATA: usize = 256;
     const MAX_INNER_BLOCKS: usize = 1;
     let circuits_params = CircuitsParams {
         max_txs: MAX_TXS,
@@ -300,7 +300,7 @@ fn serial_test_super_circuit_2tx_4max_tx() {
 fn serial_test_super_circuit_2tx_2max_tx() {
     let block = block_2tx();
     const MAX_TXS: usize = 2;
-    const MAX_CALLDATA: usize = 32;
+    const MAX_CALLDATA: usize = 256;
     const MAX_INNER_BLOCKS: usize = 1;
     let circuits_params = CircuitsParams {
         max_txs: MAX_TXS,
