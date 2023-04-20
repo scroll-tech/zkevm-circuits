@@ -790,18 +790,18 @@ mod test {
         };
 
         let call6 = bytecode! {
-            PUSH1(0x20)
-            PUSH1(0x20)
-            PUSH1(0x20)
+            PUSH1(0x10)
+            PUSH1(0x10)
+            PUSH1(0x10)
             PUSH1(0x00)
             PUSH1(0x04)
             PUSH1(0xFF)
         };
 
         let call7 = bytecode! {
-            PUSH1(0x20)
-            PUSH1(0x20)
-            PUSH1(0x20)
+            PUSH1(0x10)
+            PUSH1(0x10)
+            PUSH1(0x10)
             PUSH1(0x00)
             PUSH1(0x00)
             PUSH1(0x04)
@@ -809,7 +809,7 @@ mod test {
         };
 
         let tail = bytecode! {
-            PUSH1(0x20)
+            PUSH1(0x10)
             MLOAD
         };
 

@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep},
-    operation::{AccountField, CallContextField, MemoryOp, TxAccessListAccountOp, RW},
+    operation::{AccountField, CallContextField, MemoryWordOp, TxAccessListAccountOp, RW},
     precompile::{execute_precompiled, is_precompiled},
     state_db::CodeDB,
     Error,
@@ -13,7 +13,6 @@ use eth_types::{
     },
     GethExecStep, ToWord, Word,
 };
-use std::cmp::min;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL`, `OpcodeId::CALLCODE`,
@@ -275,12 +274,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     contract_gas_cost
                 );
                 caller_ctx.return_data = result.clone();
-                let length = min(result.len(), ret_length);
-                if length != 0 {
-                    caller_ctx.memory.extend_at_least(ret_offset + length);
-                }
-                caller_ctx.memory.0[ret_offset..ret_offset + length]
-                    .copy_from_slice(&result[..length]);
+
                 for (field, value) in [
                     (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
@@ -291,20 +285,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                for (i, value) in result.iter().enumerate() {
-                    state.push_op(
-                        &mut exec_step,
-                        RW::WRITE,
-                        MemoryOp::new(call.call_id, (i).into(), *value),
-                    );
-                }
-                for (i, value) in result[..length].iter().enumerate() {
-                    state.push_op(
-                        &mut exec_step,
-                        RW::WRITE,
-                        MemoryOp::new(call.caller_id, (ret_offset + i).into(), *value),
-                    );
-                }
+
+                let length = ret_length.min(result.len());
+                write_memory_words(state, &mut exec_step, &result, 0, length, false)?;
+                write_memory_words(state, &mut exec_step, &result, ret_offset, length, true)?;
 
                 state.handle_return(geth_step)?;
 
@@ -433,6 +417,47 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             } //
         }
     }
+}
+
+fn write_memory_words(
+    state: &mut CircuitInputStateRef,
+    exec_step: &mut ExecStep,
+    data: &[u8],
+    offset: usize,
+    length: usize,
+    is_caller: bool,
+) -> Result<(), Error> {
+    let (call_id, memory) = if is_caller {
+        (state.call()?.caller_id, &mut state.caller_ctx_mut()?.memory)
+    } else {
+        (state.call()?.call_id, &mut state.call_ctx_mut()?.memory)
+    };
+
+    // Copy data to memory (special for current code of precompile).
+    memory.extend_at_least(offset + length);
+    memory.0[offset..offset + length].copy_from_slice(&data[..length]);
+
+    // Generate aligned slot bytes for MemoryWordOp.
+    let begin_slot = offset - offset % 32;
+    let end_slot = offset + length - (offset + length) % 32 + 32;
+    let mut slot_bytes = vec![0; end_slot - begin_slot];
+    let end_copy = end_slot.min(memory.len());
+    slot_bytes[..end_copy - begin_slot].copy_from_slice(&memory[begin_slot..end_copy]);
+
+    // Add memory word write ops.
+    for (i, chunk) in slot_bytes.chunks(32).enumerate() {
+        state.push_op(
+            exec_step,
+            RW::WRITE,
+            MemoryWordOp::new(
+                call_id,
+                (begin_slot + 32 * i).into(),
+                Word::from_big_endian(chunk),
+            ),
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
