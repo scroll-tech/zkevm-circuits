@@ -781,9 +781,7 @@ impl<F: Field> SignVerifyChip<F> {
                         &e.sig_is_valid,
                     )?;
                     assigned_sig_verifs.push(assigned_sig_verif);
-                    deferred_keccak_check.push(
-                        to_be_keccak_checked
-                    );
+                    deferred_keccak_check.push(to_be_keccak_checked);
                 }
 
                 // ================================================
@@ -796,9 +794,9 @@ impl<F: Field> SignVerifyChip<F> {
                         config,
                         &mut ctx,
                         &mut offset,
-                        &is_address_zero,
-                        &pk_rlc,
-                        &pk_hash_rlc,
+                        is_address_zero,
+                        pk_rlc,
+                        pk_hash_rlc,
                     )?;
                 }
 
