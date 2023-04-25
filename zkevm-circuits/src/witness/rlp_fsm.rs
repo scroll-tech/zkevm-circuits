@@ -27,7 +27,8 @@ pub enum Tag {
     Data,
     // EIP-155
     ChainId,
-    Zero,
+    Zero1,
+    Zero2,
     SigV,
     SigR,
     SigS,
@@ -190,8 +191,8 @@ pub struct StateMachine<F: FieldExt> {
 /// Represents the witness in a single row of the RLP circuit.
 #[derive(Clone, Debug)]
 pub struct RlpFsmWitnessRow<F: FieldExt> {
-    rlp_table: RlpTable<F>,
-    state_machine: StateMachine<F>,
+    pub rlp_table: RlpTable<F>,
+    pub state_machine: StateMachine<F>,
 }
 
 /// The RlpFsmWitnessGen trait is implemented by data types who's RLP encoding can

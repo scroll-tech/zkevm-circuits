@@ -9,17 +9,19 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
+        VirtualCells,
+    },
     poly::Rotation,
 };
 
 use crate::{
     evm_circuit::{param::N_BYTES_U64, util::constraint_builder::BaseConstraintBuilder},
-    table::{LookupTable, RlpFsmDataTable, RlpFsmRlpTable, RlpFsmRomTable},
+    table::{LookupTable, RlpFsmDataTable, RlpFsmRlpTable, RlpFsmRomTable, RlpTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{Block, GenericSignedTransaction, RlpFsmWitnessGen, RlpTag, State, Tag},
 };
-use crate::table::RlpTable;
 
 struct Range256Table(Column<Fixed>);
 
@@ -53,7 +55,7 @@ pub struct RlpCircuitConfig<F> {
     tag: Column<Advice>,
     /// A utility gadget to compare/query what tag we are at.
     tag_bits: BinaryNumberConfig<Tag, 4>,
-    /// The tag that follows the tag on the current row.
+    /// The tag that will be decoded next after the current tag is done decoding.
     tag_next: Column<Advice>,
     /// The incremental index of this specific byte in the RLP-encoded bytes.
     byte_idx: Column<Advice>,
@@ -86,27 +88,28 @@ pub struct RlpCircuitConfig<F> {
     format_check: IsEqualConfig<F>,
 
     /// Check for byte_value >= 0
-    byte_value_gte_0x00: ComparatorConfig<F, N_BYTES_U64>,
+    byte_value_gte_0x00: ComparatorConfig<F, 1>,
     /// Check for byte_value <= 0x80
-    byte_value_lte_0x80: ComparatorConfig<F, N_BYTES_U64>,
+    byte_value_lte_0x80: ComparatorConfig<F, 1>,
     /// Check for byte_value >= 0x80
-    byte_value_gte_0x80: ComparatorConfig<F, N_BYTES_U64>,
+    byte_value_gte_0x80: ComparatorConfig<F, 1>,
     /// Check for byte_value <= 0xb8
-    byte_value_lte_0xb8: ComparatorConfig<F, N_BYTES_U64>,
+    byte_value_lte_0xb8: ComparatorConfig<F, 1>,
     /// Check for byte_value >= 0xb8
-    byte_value_gte_0xb8: ComparatorConfig<F, N_BYTES_U64>,
+    byte_value_gte_0xb8: ComparatorConfig<F, 1>,
     /// Check for byte_value <= 0xc0
-    byte_value_lte_0xc0: ComparatorConfig<F, N_BYTES_U64>,
+    byte_value_lte_0xc0: ComparatorConfig<F, 1>,
     /// Check for byte_value >= 0xc0
-    byte_value_gte_0xc0: ComparatorConfig<F, N_BYTES_U64>,
+    byte_value_gte_0xc0: ComparatorConfig<F, 1>,
     /// Check for byte_value <= 0xf8
-    byte_value_lte_0xf8: ComparatorConfig<F, N_BYTES_U64>,
+    byte_value_lte_0xf8: ComparatorConfig<F, 1>,
     /// Check for byte_value >= 0xf8
-    byte_value_gte_0xf8: ComparatorConfig<F, N_BYTES_U64>,
+    byte_value_gte_0xf8: ComparatorConfig<F, 1>,
     /// Check for tag_idx <= tag_length
+    /// TODO(rohit): 4 bytes is not sufficient, since len(tx.data) < 2^24.
     tidx_lte_tlength: ComparatorConfig<F, 4>,
     /// Check for tag_length <= 32
-    tlength_lte_0x20: ComparatorConfig<F, N_BYTES_U64>,
+    tlength_lte_0x20: ComparatorConfig<F, 1>,
     /// Check for depth == 0
     depth_check: IsEqualConfig<F>,
 }
@@ -128,7 +131,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             byte_idx,
             byte_rev_idx,
             byte_value,
-            bytes_rlc,
             tag,
             tag_next,
             tag_idx,
@@ -136,6 +138,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             is_list,
             max_length,
             depth,
+            bytes_rlc,
         ) = (
             meta.fixed_column(),
             meta.advice_column(),
@@ -150,7 +153,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
-            meta.advice_column(),
+            meta.advice_column_in(SecondPhase),
         );
         let padding = IsEqualChip::configure(
             meta,
@@ -482,8 +485,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                     "q_lookup_data = true",
                     $meta.query_advice(q_lookup_data, Rotation::cur()),
                     true.expr(),
-               );
-            }
+                );
+            };
         }
 
         macro_rules! do_not_read_data {
@@ -492,8 +495,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                     "q_lookup_data = false",
                     $meta.query_advice(q_lookup_data, Rotation::cur()),
                     false.expr(),
-               );
-            }
+                );
+            };
         }
 
         macro_rules! emit_rlp_tag {
@@ -502,7 +505,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     "is_output = true",
                     $meta.query_advice(rlp_table.is_output, Rotation::cur()),
                     true.expr(),
-               );
+                );
                 $cb.require_equal(
                     "rlp_tag = tag",
                     $meta.query_advice(rlp_table.rlp_tag, Rotation::cur()),
@@ -513,7 +516,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     $meta.query_advice(rlp_table.is_none, Rotation::cur()),
                     $is_none.expr(),
                 );
-            }
+            };
         }
 
         let tag_expr = |meta: &mut VirtualCells<F>| meta.query_advice(tag, Rotation::cur());
