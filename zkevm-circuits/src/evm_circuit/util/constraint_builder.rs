@@ -439,6 +439,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.query_cell_with_type(CellType::StoragePermutation)
     }
 
+    pub(crate) fn query_copy_cell_phase2(&mut self) -> Cell<F> {
+        self.query_cell_with_type(CellType::StoragePermutationPhase2)
+    }
+
     pub(crate) fn query_cell_with_type(&mut self, cell_type: CellType) -> Cell<F> {
         self.query_cells(cell_type, 1).first().unwrap().clone()
     }

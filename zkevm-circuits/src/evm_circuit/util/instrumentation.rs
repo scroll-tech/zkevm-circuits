@@ -73,6 +73,9 @@ impl Instrument {
                     CellType::StoragePermutation => {
                         report.storage_perm = data_entry;
                     }
+                    CellType::StoragePermutationPhase2 => {
+                        report.storage_perm_2 = data_entry;
+                    }                    
                     CellType::LookupByte => {
                         report.byte_lookup = data_entry;
                     }
@@ -116,6 +119,7 @@ pub(crate) struct ExecStateReport {
     pub(crate) storage_1: StateReportRow,
     pub(crate) storage_2: StateReportRow,
     pub(crate) storage_perm: StateReportRow,
+    pub(crate) storage_perm_2: StateReportRow,
     pub(crate) byte_lookup: StateReportRow,
     pub(crate) fixed_table: StateReportRow,
     pub(crate) tx_table: StateReportRow,

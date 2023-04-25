@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         param::{
-            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
+            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS, N_PHASE2_COPY_COLUMNS,
         },
         table::Table,
     },
@@ -289,6 +289,7 @@ pub(crate) enum CellType {
     StoragePhase1,
     StoragePhase2,
     StoragePermutation,
+    StoragePermutationPhase2,
     LookupByte,
     Lookup(Table),
 }
@@ -378,8 +379,15 @@ impl<F: FieldExt> CellManager<F> {
             }
         }
 
+        // Mark columns used for copy constraints on phase2
+        for _ in 0..N_PHASE2_COPY_COLUMNS {
+            meta.enable_equality(advices[column_idx]);
+            columns[column_idx].cell_type = CellType::StoragePermutationPhase2;
+            column_idx += 1;
+        }
+
         // Mark columns used for Phase2 constraints
-        for _ in 0..N_PHASE2_COLUMNS {
+        for _ in N_PHASE2_COPY_COLUMNS..N_PHASE2_COLUMNS {
             columns[column_idx].cell_type = CellType::StoragePhase2;
             column_idx += 1;
         }
@@ -430,7 +438,7 @@ impl<F: FieldExt> CellManager<F> {
                 best_height = column.height;
             }
         }
-        // Replace a CellType::Storage by CellType::StoragePermutation if the later has
+        // Replace a CellType::Storage by CellType::StoragePermutation (phase 1 or phase 2) if the later has
         // better height
         if cell_type == CellType::StoragePhase1 {
             for column in self.columns.iter() {
@@ -439,7 +447,15 @@ impl<F: FieldExt> CellManager<F> {
                     best_height = column.height;
                 }
             }
+        }else if cell_type == CellType::StoragePhase2 {
+            for column in self.columns.iter() {
+                if column.cell_type == CellType::StoragePermutationPhase2 && column.height < best_height {
+                    best_index = Some(column.index);
+                    best_height = column.height;
+                }
+            }
         }
+
         match best_index {
             Some(index) => index,
             // If we reach this case, it means that all the columns of cell_type have assignments

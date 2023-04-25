@@ -456,7 +456,7 @@ mod evm_circuit_stats {
     use crate::{
         evm_circuit::{
             param::{
-                LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
+                LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS, N_PHASE2_COPY_COLUMNS,
             },
             step::ExecutionState,
             EvmCircuit,
@@ -598,6 +598,8 @@ mod evm_circuit_stats {
             N_PHASE2_COLUMNS,
             storage_perm,
             N_COPY_COLUMNS,
+            storage_perm_2,
+            N_PHASE2_COPY_COLUMNS,
             byte_lookup,
             N_BYTE_LOOKUPS,
             fixed_table,

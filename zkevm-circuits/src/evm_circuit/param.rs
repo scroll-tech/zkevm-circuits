@@ -24,6 +24,8 @@ pub(crate) const N_PHASE1_COLUMNS: usize =
 
 // Number of copy columns
 pub(crate) const N_COPY_COLUMNS: usize = 2;
+// Number of copy columns for phase2
+pub(crate) const N_PHASE2_COPY_COLUMNS: usize = 1;
 
 pub(crate) const N_BYTE_LOOKUPS: usize = 24;
 
