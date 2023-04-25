@@ -19,6 +19,7 @@ use crate::{
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{Block, GenericSignedTransaction, RlpFsmWitnessGen, RlpTag, State, Tag},
 };
+use crate::table::RlpTable;
 
 struct Range256Table(Column<Fixed>);
 
@@ -46,6 +47,8 @@ pub struct RlpCircuitConfig<F> {
     state: Column<Advice>,
     /// A utility gadget to compare/query what state we are at.
     state_bits: BinaryNumberConfig<State, 3>,
+    /// The Rlp table which can be accessed by other circuits.
+    rlp_table: RlpFsmRlpTable,
     /// The tag, i.e. what field is being decoded at the current row.
     tag: Column<Advice>,
     /// A utility gadget to compare/query what tag we are at.
@@ -451,7 +454,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         );
 
         macro_rules! constrain_unchanged_fields {
-            ( $meta:ident, $cb:ident; $($field:ident),+ ) => {
+            ( $meta:ident, $cb:ident; $($field:expr),+ ) => {
                 $(
                     $cb.require_equal(
                         "equate fields",
@@ -473,11 +476,54 @@ impl<F: Field> RlpCircuitConfig<F> {
             }
         }
 
+        macro_rules! read_data {
+            ( $meta:ident, $cb:ident) => {
+                $cb.require_equal(
+                    "q_lookup_data = true",
+                    $meta.query_advice(q_lookup_data, Rotation::cur()),
+                    true.expr(),
+               );
+            }
+        }
+
+        macro_rules! do_not_read_data {
+            ( $meta:ident, $cb:ident) => {
+                $cb.require_equal(
+                    "q_lookup_data = false",
+                    $meta.query_advice(q_lookup_data, Rotation::cur()),
+                    false.expr(),
+               );
+            }
+        }
+
+        macro_rules! emit_rlp_tag {
+            ( $meta:ident, $cb:ident, $tag:expr, $is_none:expr) => {
+                $cb.require_equal(
+                    "is_output = true",
+                    $meta.query_advice(rlp_table.is_output, Rotation::cur()),
+                    true.expr(),
+               );
+                $cb.require_equal(
+                    "rlp_tag = tag",
+                    $meta.query_advice(rlp_table.rlp_tag, Rotation::cur()),
+                    $tag.expr(),
+                );
+                $cb.require_equal(
+                    "is_none",
+                    $meta.query_advice(rlp_table.is_none, Rotation::cur()),
+                    $is_none.expr(),
+                );
+            }
+        }
+
+        let tag_expr = |meta: &mut VirtualCells<F>| meta.query_advice(tag, Rotation::cur());
+
         // DecodeTagStart => DecodeTagStart
         meta.create_gate(
             "state transition: DecodeTagStart => DecodeTagStart",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
+                let tag_expr = tag_expr(meta);
 
                 let (bv_gt_0x00, bv_eq_0x00) = byte_value_gte_0x00.expr(meta, None);
                 let (bv_lt_0x80, bv_eq_0x80) = byte_value_lte_0x80.expr(meta, None);
@@ -494,30 +540,18 @@ impl<F: Field> RlpCircuitConfig<F> {
                 ]);
                 cb.condition(case_1.expr(), |cb| {
                     // assertions.
-                    cb.require_equal(
-                        "is_output == true",
-                        meta.query_advice(rlp_table.is_output, Rotation::cur()),
-                        true.expr(),
-                    );
+                    emit_rlp_tag!(meta, cb, tag_expr, true);
+                    read_data!(meta, cb);
+
                     cb.require_equal(
                         "is_list == false",
                         meta.query_advice(is_list, Rotation::cur()),
                         false.expr(),
                     );
                     cb.require_equal(
-                        "q_lookup_data == true",
-                        meta.query_advice(q_lookup_data, Rotation::cur()),
-                        true.expr(),
-                    );
-                    cb.require_equal(
                         "tag_value_acc == byte_value",
                         meta.query_advice(rlp_table.tag_value_acc, Rotation::cur()),
                         meta.query_advice(byte_value, Rotation::cur()),
-                    );
-                    cb.require_equal(
-                        "rlp_tag == tag",
-                        meta.query_advice(rlp_table.rlp_tag, Rotation::cur()),
-                        meta.query_advice(tag, Rotation::cur()),
                     );
 
                     // state transitions.
@@ -537,7 +571,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                         meta.query_advice(byte_rev_idx, Rotation::cur()),
                     );
 
-                    constrain_unchanged_fields!(meta, cb; depth);
+                    constrain_unchanged_fields!(meta, cb; depth, rlp_table.tx_id, rlp_table.format);
                 });
 
                 // case 2: byte_value == 0x80
@@ -1308,6 +1342,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             q_lookup_data,
             state,
             state_bits,
+            rlp_table: rlp_table.clone(),
             tag,
             tag_bits,
             tag_next,

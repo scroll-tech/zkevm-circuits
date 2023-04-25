@@ -2282,6 +2282,19 @@ pub struct RlpFsmRlpTable {
     pub is_none: Column<Advice>,
 }
 
+impl RlpFsmRlpTable {
+    fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            tx_id: meta.advice_column(),
+            format: meta.advice_column(),
+            rlp_tag: meta.advice_column(),
+            tag_value_acc: meta.advice_column_in(SecondPhase),
+            is_output: meta.advice_column(),
+            is_none: meta.advice_column(),
+        }
+    }
+}
+
 impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
