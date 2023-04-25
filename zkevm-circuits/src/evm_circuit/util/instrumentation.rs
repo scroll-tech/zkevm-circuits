@@ -75,7 +75,7 @@ impl Instrument {
                     }
                     CellType::StoragePermutationPhase2 => {
                         report.storage_perm_2 = data_entry;
-                    }                    
+                    }
                     CellType::LookupByte => {
                         report.byte_lookup = data_entry;
                     }
