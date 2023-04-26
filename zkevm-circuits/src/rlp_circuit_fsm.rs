@@ -581,6 +581,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         let byte_idx_expr = |meta: &mut VirtualCells<F>| meta.query_advice(byte_idx, Rotation::cur());
         let byte_rev_idx_expr = |meta: &mut VirtualCells<F>| meta.query_advice(byte_rev_idx, Rotation::cur());
         let byte_value_expr = |meta: &mut VirtualCells<F>| meta.query_advice(byte_value, Rotation::cur());
+        let bytes_rlc_expr = |meta: &mut VirtualCells<F>| meta.query_advice(bytes_rlc, Rotation::cur());
         let is_tag_begin_expr = |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_begin, Rotation::cur());
         let is_tag_end_expr = |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_end, Rotation::cur());
 
@@ -663,7 +664,9 @@ impl<F: Field> RlpCircuitConfig<F> {
                     |cb| {
                         emit_rlp_tag!(meta, cb, RlpTag::Len, false);
                         constrain_eq!(meta, cb, rlp_table.tag_value_acc,
-                            byte_idx_expr(meta) + byte_value_expr - 0xc0.expr());
+                            byte_idx_expr(meta) + byte_value_expr.expr() - 0xc0.expr());
+                        constrain_eq!(meta, cb, byte_rev_idx,
+                            byte_value_expr.expr() - 0xc0.expr() + 1.expr());
                     },
                 );
                 cb.condition(
@@ -677,38 +680,21 @@ impl<F: Field> RlpCircuitConfig<F> {
                 );
 
                 // case 4: tag in [EndList, EndVector]
-                let case_4 = or::expr([is_tag_end_list(meta), is_tag_end_vector(meta)]);
+                let case_4 = is_tag_end_expr(meta);
                 cb.condition(case_4.expr(), |cb| {
-                    cb.require_equal(
-                        "q_lookup_data == false",
-                        meta.query_advice(q_lookup_data, Rotation::cur()),
-                        false.expr(),
-                    );
+                    // assertions
+                    do_not_read_data!(meta, cb);
+
+                    // state transitions
+                    update_state!(meta, cb, depth, depth_expr(meta) - 1.expr());
                 });
                 cb.condition(
                     and::expr([case_4.expr(), depth_check.is_equal_expression.expr()]),
                     |cb| {
                         // assertions.
-                        cb.require_equal(
-                            "rlp_tag == RlpTag::Rlc",
-                            meta.query_advice(rlp_table.rlp_tag, Rotation::cur()),
-                            RlpTag::Rlp.expr(),
-                        );
-                        cb.require_equal(
-                            "is_output == true",
-                            meta.query_advice(rlp_table.is_output, Rotation::cur()),
-                            true.expr(),
-                        );
-                        cb.require_equal(
-                            "tag_value_acc == bytes_rlc",
-                            meta.query_advice(rlp_table.tag_value_acc, Rotation::cur()),
-                            meta.query_advice(bytes_rlc, Rotation::cur()),
-                        );
-                        cb.require_equal(
-                            "byte_rev_idx == 1",
-                            meta.query_advice(byte_rev_idx, Rotation::cur()),
-                            1.expr(),
-                        );
+                        emit_rlp_tag!(meta, cb, RlpTag::RLC, false);
+                        constrain_eq!(meta, cb, rlp_table.tag_value_acc, bytes_rlc_expr(meta));
+                        constrain_eq!(meta, cb, byte_rev_idx, 1);
 
                         // state transition.
                         // TODO(rohit): do this only if the next state is not State::End.
@@ -719,13 +705,13 @@ impl<F: Field> RlpCircuitConfig<F> {
                         );
                     },
                 );
-                cb.condition(and::expr([case_4.expr(), is_tag_end_vector(meta)]), |cb| {
-                    cb.require_equal(
-                        "depth' == depth - 1",
-                        meta.query_advice(depth, Rotation::next()) + 1.expr(),
-                        meta.query_advice(depth, Rotation::cur()),
-                    );
-                });
+                cb.condition(
+                    and::expr([case_4.expr(), not::expr(depth_check.is_equal_expression.expr())]),
+                    |cb| {
+                        // TODO(kunxian): check if this is complete.
+                        constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format);
+                    },
+                );
 
                 // one of the cases is true, and only one case is true.
                 cb.require_equal(
@@ -738,7 +724,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                     meta.query_fixed(q_enabled, Rotation::cur()),
                     is_not_padding.expr(),
                     is_decode_tag_start(meta),
-                    is_next_decode_tag_start(meta),
                 ]))
             },
         );

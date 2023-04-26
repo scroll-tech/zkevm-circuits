@@ -63,14 +63,14 @@ impl Tag {
 #[derive(Clone, Copy, Debug)]
 pub enum RlpTag {
     Len,
-    Rlp,
+    RLC,
     Tag(Tag),
 }
 
 impl RlpTag {
     pub fn is_output(&self) -> bool {
         match &self {
-            Self::Rlp => true,
+            Self::RLC => true,
             _ => false,
         }
     }
@@ -80,7 +80,7 @@ impl From<RlpTag> for usize {
     fn from(value: RlpTag) -> Self {
         match value {
             RlpTag::Len => 0,
-            RlpTag::Rlp => 1,
+            RlpTag::RLC => 1,
             RlpTag::Tag(tag) => usize::from(tag),
         }
     }
