@@ -89,8 +89,10 @@ pub struct RlpCircuitConfig<F> {
     /// Check equality between format' and format in the data table.
     format_check: IsEqualConfig<F>,
 
-    /// Check for byte_value >= 0
-    byte_value_gte_0x00: ComparatorConfig<F, 1>,
+    /// Booleans to reduce the circuit's degree as tag_bits's degree is 4.
+    is_tag_end: Column<Advice>,
+    is_tag_begin: Column<Advice>,
+
     /// Check for byte_value <= 0x80
     byte_value_lte_0x80: ComparatorConfig<F, 1>,
     /// Check for byte_value >= 0x80
@@ -141,6 +143,8 @@ impl<F: Field> RlpCircuitConfig<F> {
             max_length,
             depth,
             bytes_rlc,
+            is_tag_begin,
+            is_tag_end,
         ) = (
             meta.fixed_column(),
             meta.advice_column(),
@@ -156,6 +160,8 @@ impl<F: Field> RlpCircuitConfig<F> {
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column_in(SecondPhase),
+            meta.advice_column(),
+            meta.advice_column(),
         );
         let padding = IsEqualChip::configure(
             meta,
@@ -401,6 +407,24 @@ impl<F: Field> RlpCircuitConfig<F> {
         is_tag!(is_tag_end_list, EndList);
         is_tag!(is_tag_end_vector, EndVector);
 
+        meta.create_gate("is_tag_end", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            // use sum instead of or because is_tag_* cannot be true at the same time
+            cb.require_equal(
+                "is_tag_end = is_tag_end_list || is_tag_end_vector",
+                meta.query_advice(is_tag_end, Rotation::cur()),
+                sum::expr([is_tag_end_list(meta), is_tag_end_vector(meta)]),
+            );
+            cb.require_equal(
+                "is_tag_begin = is_tag_begin_list || is_tag_begin_vector",
+                meta.query_advice(is_tag_begin, Rotation::cur()),
+                sum::expr([is_tag_begin_list(meta), is_tag_begin_vector(meta)]),
+            );
+
+            cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
+        });
+
         // construct the comparators.
         let cmp_enabled = |meta: &mut VirtualCells<F>| {
             and::expr([
@@ -429,7 +453,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             };
         }
 
-        byte_value_gte!(byte_value_gte_0x00, 0x00);
         byte_value_lte!(byte_value_lte_0x80, 0x80);
         byte_value_gte!(byte_value_gte_0x80, 0x80);
         byte_value_lte!(byte_value_lte_0xb8, 0xb8);
@@ -558,6 +581,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         let byte_idx_expr = |meta: &mut VirtualCells<F>| meta.query_advice(byte_idx, Rotation::cur());
         let byte_rev_idx_expr = |meta: &mut VirtualCells<F>| meta.query_advice(byte_rev_idx, Rotation::cur());
         let byte_value_expr = |meta: &mut VirtualCells<F>| meta.query_advice(byte_value, Rotation::cur());
+        let is_tag_begin_expr = |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_begin, Rotation::cur());
+        let is_tag_end_expr = |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_end, Rotation::cur());
 
         // DecodeTagStart => DecodeTagStart
         meta.create_gate(
@@ -567,18 +592,14 @@ impl<F: Field> RlpCircuitConfig<F> {
                 let tag_expr = tag_expr(meta);
                 let byte_value_expr = byte_value_expr(meta);
 
-                let (bv_gt_0x00, bv_eq_0x00) = byte_value_gte_0x00.expr(meta, None);
                 let (bv_lt_0x80, bv_eq_0x80) = byte_value_lte_0x80.expr(meta, None);
                 let (bv_gt_0xc0, bv_eq_0xc0) = byte_value_gte_0xc0.expr(meta, None);
                 let (bv_lt_0xf8, bv_eq_0xf8) = byte_value_lte_0xf8.expr(meta, None);
 
                 // case 1: 0x00 <= byte_value < 0x80
                 let case_1 = and::expr([
-                    or::expr([bv_gt_0x00, bv_eq_0x00]),
                     bv_lt_0x80,
-                    not::expr(bv_eq_0x80.expr()),
-                    not::expr(is_tag_end_list(meta)),
-                    not::expr(is_tag_end_vector(meta)),
+                    not::expr(is_tag_end_expr(meta)),
                 ]);
                 cb.condition(case_1.expr(), |cb| {
                     // assertions.
@@ -600,8 +621,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 // case 2: byte_value == 0x80
                 let case_2 = and::expr([
                     bv_eq_0x80,
-                    not::expr(is_tag_end_list(meta)),
-                    not::expr(is_tag_end_vector(meta)),
+                    not::expr(is_tag_end_expr(meta)),
                 ]);
                 cb.condition(case_2.expr(), |cb| {
                     // assertions.
@@ -621,11 +641,9 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 // case 3: 0xc0 <= byte_value < 0xf8
                 let case_3 = and::expr([
-                    or::expr([bv_gt_0xc0, bv_eq_0xc0]),
+                    sum::expr([bv_gt_0xc0, bv_eq_0xc0]),
                     bv_lt_0xf8,
-                    not::expr(bv_eq_0xf8),
-                    not::expr(is_tag_end_list(meta)),
-                    not::expr(is_tag_end_vector(meta)),
+                    not::expr(is_tag_end_expr(meta)),
                 ]);
                 cb.condition(case_3.expr(), |cb| {
                     // assertions
@@ -1295,8 +1313,10 @@ impl<F: Field> RlpCircuitConfig<F> {
             tx_id_check,
             format_check,
 
+            is_tag_begin,
+            is_tag_end,
+
             // comparators
-            byte_value_gte_0x00,
             byte_value_lte_0x80,
             byte_value_gte_0x80,
             byte_value_lte_0xb8,
