@@ -132,11 +132,11 @@ impl Default for MockCallBytecodeParams {
 /// Generate mock EVM bytecode that performs a contract call
 pub fn generate_mock_call_bytecode(params: MockCallBytecodeParams) -> Bytecode {
     bytecode! {
-        .mstore(
+        .op_mstore(
             0u64,
             Word::from_big_endian(&params.pushdata)
         )
-        .call(
+        .op_call(
             params.gas,
             params.address,
             0u64,

@@ -9,7 +9,7 @@ use crate::{
                 cal_sload_gas_cost_for_assignment, cal_sstore_gas_cost_for_assignment,
                 CommonErrorGadget, SloadGasGadget, SstoreGasGadget,
             },
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{LtGadget, PairSelectGadget},
             or, select, CachedRegion, Cell,
         },
@@ -50,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasSloadSstore;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let is_sstore = PairSelectGadget::construct(

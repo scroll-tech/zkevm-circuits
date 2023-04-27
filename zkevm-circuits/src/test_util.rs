@@ -234,9 +234,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 .iter()
                 .filter(|rw| !matches!(rw, Rw::Start { .. }))
                 .count();
-            let rows = (params.max_rws - non_start_rows_len..params.max_rws)
-                .into_iter()
-                .collect();
+            let rows = (params.max_rws - non_start_rows_len..params.max_rws).collect();
 
             self.state_checks.as_ref()(prover, &rows, &rows);
         }

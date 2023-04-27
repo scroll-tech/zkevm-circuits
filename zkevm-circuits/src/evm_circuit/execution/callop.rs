@@ -7,7 +7,7 @@ use crate::{
             and,
             common_gadget::{CommonCallGadget, TransferGadget},
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             math_gadget::{
@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALL_OP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());

@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes, CachedRegion, RandomLinearCombination,
@@ -29,7 +29,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let destination = cb.query_word_rlc();
 
         // Pop the value from the stack

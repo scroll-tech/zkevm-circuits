@@ -192,7 +192,7 @@ pub(crate) fn print_circuit_stats_by_states(
             code.write_op(opcode);
             let opcode_pc = code.code.len() - 1;
             // let opcode_step_index = (proxy_code.num_opcodes - 1 + code.num_opcodes) - 1;
-            code.write_op(OpcodeId::STOP);
+            code.op_stop();
             let block: GethData = TestContext::<10, 1>::new(
                 None,
                 |accs| {

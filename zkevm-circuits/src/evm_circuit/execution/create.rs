@@ -9,7 +9,7 @@ use crate::{
         util::{
             common_gadget::TransferGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             math_gadget::{
@@ -70,7 +70,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
     const EXECUTION_STATE: ExecutionState = S;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
         let code_hash_previous = cb.query_cell();

@@ -17,9 +17,20 @@ pub use dev::KeccakCircuit as TestKeccakCircuit;
 use std::marker::PhantomData;
 pub use KeccakCircuitConfig as KeccakConfig;
 
-use self::{cell_manager::*, keccak_packed_multi::*, param::*, table::*, util::*};
+use self::{
+    cell_manager::*,
+    keccak_packed_multi::{keccak_unusable_rows, multi_keccak, KeccakRow},
+    param::*,
+    table::*,
+    util::*,
+};
 use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    keccak_circuit::keccak_packed_multi::{
+        decode, get_num_bits_per_absorb_lookup, get_num_bits_per_base_chi_lookup,
+        get_num_bits_per_rho_pi_lookup, get_num_bits_per_theta_c_lookup, get_num_rows_per_round,
+        split, split_uniform, transform, transform_to, Part,
+    },
     table::{KeccakTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
@@ -978,6 +989,10 @@ pub struct KeccakCircuit<F: Field> {
 
 impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     type Config = KeccakCircuitConfig<F>;
+
+    fn unusable_rows() -> usize {
+        keccak_unusable_rows()
+    }
 
     /// The `block.circuits_params.keccak_padding` parmeter, when enabled, sets
     /// up the circuit to support a fixed number of permutations/keccak_f's,

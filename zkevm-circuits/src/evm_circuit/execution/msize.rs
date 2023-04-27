@@ -5,7 +5,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             from_bytes, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -27,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MSIZE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let value = cb.query_word_rlc();
 
         // memory_size is limited to 64 bits so we only consider 8 bytes
@@ -67,11 +70,8 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        self.value.assign(
-            region,
-            offset,
-            Some((step.memory_size as u64).to_le_bytes()),
-        )?;
+        self.value
+            .assign(region, offset, Some((step.memory_size).to_le_bytes()))?;
 
         Ok(())
     }

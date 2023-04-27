@@ -27,7 +27,11 @@ use halo2_proofs::{
 // use crate::evm_circuit::table::FixedTableTag;
 use crate::{
     evm_circuit::{
-        util::{and, constraint_builder::BaseConstraintBuilder, not, or},
+        util::{
+            and,
+            constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+            not, or,
+        },
         witness::{RlpTxTag, RlpWitnessGen},
     },
     table::RlpTable,

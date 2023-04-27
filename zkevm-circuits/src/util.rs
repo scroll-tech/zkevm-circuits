@@ -5,7 +5,7 @@ use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Value},
-    plonk::{Challenge, ConstraintSystem, Error, Expression, FirstPhase, VirtualCells},
+    plonk::{Challenge, Circuit, ConstraintSystem, Error, Expression, FirstPhase, VirtualCells},
 };
 use keccak256::plain::Keccak;
 
@@ -207,6 +207,12 @@ pub trait SubCircuit<F: Field> {
     /// Configuration of the SubCircuit.
     type Config: SubCircuitConfig<F>;
 
+    /// Returns number of unusable rows of the SubCircuit, which should be
+    /// `meta.blinding_factors() + 1`.
+    fn unusable_rows() -> usize {
+        256
+    }
+
     /// Create a new SubCircuit from a witness Block
     fn new_from_block(block: &witness::Block<F>) -> Self;
 
@@ -312,4 +318,23 @@ pub(crate) fn circuit_stats<F: Field>(meta: &ConstraintSystem<F>) -> CircuitStat
         // TODO: add permutation related ecmuls
         num_verification_ecmul: meta.num_advice_columns + 3 * meta.lookups.len() + rotations.len(),
     }
+}
+
+/// Returns number of unusable rows of the Circuit.
+/// The minimum unusable rows of a circuit is currently 6, where
+/// - 3 comes from minimum number of distinct queries to permutation argument witness column
+/// - 1 comes from queries at x_3 during multiopen
+/// - 1 comes as slight defense against off-by-one errors
+/// - 1 comes from reservation for last row for grand-product boundray check, hence not copy-able or
+///   lookup-able. Note this 1 is not considered in [`ConstraintSystem::blinding_factors`], so below
+///   we need to add an extra 1.
+///
+/// For circuit with column queried at more than 3 distinct rotation, we can
+/// calculate the unusable rows as (x - 3) + 6 where x is the number of distinct
+/// rotation.
+pub(crate) fn unusable_rows<F: Field, C: Circuit<F>>() -> usize {
+    let mut cs = ConstraintSystem::default();
+    C::configure(&mut cs);
+
+    cs.blinding_factors() + 1
 }

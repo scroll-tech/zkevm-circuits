@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
@@ -60,7 +60,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::RETURNDATACOPY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let dest_offset = cb.query_cell_phase2();
@@ -287,8 +287,8 @@ mod test {
         let return_offset =
             std::cmp::max((return_data_offset + return_data_size) as i64 - 32, 0) as usize;
         let code_b = bytecode! {
-            .mstore(return_offset, Word::from_big_endian(&rand_bytes(32)))
-            .return_bytecode(return_data_offset, return_data_size)
+            .op_mstore(return_offset, Word::from_big_endian(&rand_bytes(32)))
+            .op_return(return_data_offset, return_data_size)
             STOP
         };
 

@@ -3,6 +3,7 @@
 use crate::{
     copy_circuit::*,
     evm_circuit::{test::rand_bytes, witness::block_convert},
+    util::unusable_rows,
     witness::Block,
 };
 use bus_mapping::{
@@ -16,6 +17,14 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
 };
 use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS};
+
+#[test]
+fn copy_circuit_unusable_rows() {
+    assert_eq!(
+        CopyCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, CopyCircuit::<Fr>>(),
+    )
+}
 
 /// Test copy circuit from copy events and test data
 pub fn test_copy_circuit<F: Field>(

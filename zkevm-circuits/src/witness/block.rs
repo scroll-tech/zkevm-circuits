@@ -1,12 +1,12 @@
 use ethers_core::types::Signature;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 #[cfg(any(feature = "test", test))]
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 #[cfg(feature = "test")]
 use crate::tx_circuit::TX_LEN;
 
-use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
@@ -46,7 +46,7 @@ pub struct Block<F> {
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
-    pub bytecodes: HashMap<Word, Bytecode>,
+    pub bytecodes: BTreeMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContexts,
     /// The init state of mpt
@@ -143,8 +143,6 @@ impl<F: Field> Block<F> {
             .map(|e| e.steps.len() * OFFSET_INCREMENT)
             .sum();
 
-        const NUM_BLINDING_ROWS: usize = 64;
-
         let rows_needed: usize = itertools::max([
             num_rows_required_for_execution_steps,
             num_rows_required_for_rw_table,
@@ -157,7 +155,7 @@ impl<F: Field> Block<F> {
         ])
         .unwrap();
 
-        let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
+        let k = log2_ceil(EvmCircuit::<F>::unusable_rows() + rows_needed);
         log::debug!(
             "num_rows_required_for rw_table={}, fixed_table={}, bytecode_table={}, \
             copy_table={}, keccak_table={}, tx_table={}, exp_table={}",

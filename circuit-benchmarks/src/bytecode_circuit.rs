@@ -23,9 +23,13 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::bytecode_circuit::bytecode_unroller::{unroll, UnrolledBytecode};
-
-    use zkevm_circuits::bytecode_circuit::TestBytecodeCircuit;
+    use zkevm_circuits::{
+        bytecode_circuit::{
+            bytecode_unroller::{unroll, UnrolledBytecode},
+            TestBytecodeCircuit,
+        },
+        util::SubCircuit,
+    };
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -45,8 +49,7 @@ mod tests {
         const MAX_BYTECODE_LEN: usize = 24576;
 
         let num_rows = 1 << degree;
-        const NUM_BLINDING_ROWS: usize = 7 - 1;
-        let max_bytecode_row_num = num_rows - NUM_BLINDING_ROWS;
+        let max_bytecode_row_num = num_rows - TestBytecodeCircuit::<Fr>::unusable_rows();
         let bytecode_len = std::cmp::min(MAX_BYTECODE_LEN, max_bytecode_row_num);
         let bytecodes_num: usize = max_bytecode_row_num / bytecode_len;
 

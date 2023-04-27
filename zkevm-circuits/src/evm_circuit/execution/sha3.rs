@@ -8,7 +8,9 @@ use crate::evm_circuit::{
     step::ExecutionState,
     util::{
         common_gadget::SameContextGadget,
-        constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+        constraint_builder::{
+            ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
+        },
         memory_gadget::{
             CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
             MemoryExpansionGadget,
@@ -36,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
     const NAME: &'static str = "SHA3";
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let offset = cb.query_cell_phase2();
@@ -149,12 +151,8 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             step.memory_word_size(),
             [memory_address],
         )?;
-        self.memory_copier_gas.assign(
-            region,
-            offset,
-            size.as_u64(),
-            memory_expansion_gas_cost as u64,
-        )?;
+        self.memory_copier_gas
+            .assign(region, offset, size.as_u64(), memory_expansion_gas_cost)?;
 
         Ok(())
     }

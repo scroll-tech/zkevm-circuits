@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{ByteSizeGadget, LtGadget},
             CachedRegion, Cell, Word,
         },
@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasEXP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         cb.require_equal(

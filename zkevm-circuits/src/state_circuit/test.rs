@@ -2,7 +2,7 @@
 pub use super::{dev::*, *};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::SubCircuit,
+    util::{unusable_rows, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -27,6 +27,14 @@ use std::collections::{BTreeSet, HashMap};
 use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
+
+#[test]
+fn state_circuit_unusable_rows() {
+    assert_eq!(
+        StateCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, StateCircuit::<Fr>>(),
+    )
+}
 
 fn test_state_circuit_ok(
     memory_ops: Vec<Operation<MemoryOp>>,

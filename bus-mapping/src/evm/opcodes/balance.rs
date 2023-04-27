@@ -130,12 +130,12 @@ mod balance_tests {
         let mut code = Bytecode::default();
         if is_warm {
             code.append(&bytecode! {
-                .balance(address)
+                .op_balance(address)
                 POP
             });
         }
         code.append(&bytecode! {
-            .balance(address)
+            .op_balance(address)
             STOP
         });
 

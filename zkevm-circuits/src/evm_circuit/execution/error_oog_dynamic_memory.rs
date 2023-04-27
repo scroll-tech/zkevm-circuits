@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
             math_gadget::{IsEqualGadget, LtGadget},
@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasDynamicMemoryExpansion;
 
     // Support other OOG due to pure memory including CREATE, RETURN and REVERT
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 

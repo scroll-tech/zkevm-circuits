@@ -8,7 +8,9 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::{SameContextGadget, WordByteCapGadget},
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
+            },
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
                 MemoryExpansionGadget,
@@ -49,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CODECOPY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let code_size = cb.query_cell();

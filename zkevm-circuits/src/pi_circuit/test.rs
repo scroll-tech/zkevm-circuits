@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
 use super::{dev::*, *};
+use crate::util::unusable_rows;
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
@@ -7,6 +8,16 @@ use halo2_proofs::{
 use mock::{CORRECT_MOCK_TXS, MOCK_CHAIN_ID};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+
+#[test]
+fn pi_circuit_unusable_rows() {
+    const MAX_TXS: usize = 2;
+    const MAX_CALLDATA: usize = 8;
+    assert_eq!(
+        PiCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>>(),
+    )
+}
 
 fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
     k: u32,

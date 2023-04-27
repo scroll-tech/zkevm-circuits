@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::UpdateBalanceGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
             math_gadget::{
@@ -51,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndTx;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
 

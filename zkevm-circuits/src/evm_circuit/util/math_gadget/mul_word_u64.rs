@@ -1,7 +1,8 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two_expr, split_u256,
-        CachedRegion,
+        self,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        from_bytes, pow_of_two_expr, split_u256, CachedRegion,
     },
     util::Expr,
 };
@@ -22,7 +23,7 @@ pub(crate) struct MulWordByU64Gadget<F> {
 
 impl<F: Field> MulWordByU64Gadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         multiplicand: util::Word<F>,
         multiplier: Expression<F>,
     ) -> Self {
@@ -106,7 +107,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulWordByU64TestContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_word_rlc();
             let b = cb.query_cell();
             let product = cb.query_word_rlc();

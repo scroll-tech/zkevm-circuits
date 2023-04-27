@@ -5,7 +5,10 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
-use crate::evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell};
+use crate::evm_circuit::util::{
+    constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+    CachedRegion, Cell,
+};
 
 #[derive(Clone, Debug)]
 pub struct BinaryNumberGadget<F, const N: usize> {
@@ -13,7 +16,7 @@ pub struct BinaryNumberGadget<F, const N: usize> {
 }
 
 impl<F: Field, const N: usize> BinaryNumberGadget<F, N> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, value: Expression<F>) -> Self {
         let bits = array_init::array_init(|_| cb.query_bool());
 
         // the binary representation of value must be correct.

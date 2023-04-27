@@ -1,5 +1,9 @@
 use crate::{
-    evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, select},
+    evm_circuit::util::{
+        and,
+        constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+        not, or, select,
+    },
     table::{BytecodeFieldTag, KeccakTable, PoseidonTable},
     util::{Challenges, Expr, SubCircuitConfig},
 };

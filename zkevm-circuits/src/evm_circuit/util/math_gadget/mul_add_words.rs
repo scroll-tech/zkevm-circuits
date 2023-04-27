@@ -1,7 +1,8 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two_expr, split_u256,
-        split_u256_limb64, CachedRegion, Cell,
+        self,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell,
     },
     util::Expr,
 };
@@ -49,7 +50,7 @@ pub(crate) struct MulAddWordsGadget<F> {
 }
 
 impl<F: Field> MulAddWordsGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 4]) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&util::Word<F>; 4]) -> Self {
         let (a, b, c, d) = (words[0], words[1], words[2], words[3]);
         let carry_lo = cb.query_bytes();
         let carry_hi = cb.query_bytes();
@@ -165,7 +166,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulAddGadgetContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_word_rlc();
             let b = cb.query_word_rlc();
             let c = cb.query_word_rlc();

@@ -19,6 +19,7 @@ pub use self::EvmCircuit as TestEvmCircuit;
 
 pub use crate::witness;
 use crate::{
+    evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
     },
@@ -245,6 +246,12 @@ impl<F: Field> EvmCircuit<F> {
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     type Config = EvmCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        // Most columns are queried at MAX_STEP_HEIGHT + STEP_STATE_HEIGHT distinct rotations, so
+        // returns (MAX_STEP_HEIGHT + STEP_STATE_HEIGHT + 3) unusable rows.
+        MAX_STEP_HEIGHT + STEP_STATE_HEIGHT + 3
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         Self::new(block.clone())
     }
@@ -457,12 +464,14 @@ mod evm_circuit_stats {
         evm_circuit::{
             param::{
                 LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
+                N_PHASE2_COPY_COLUMNS,
             },
             step::ExecutionState,
             EvmCircuit,
         },
         stats::print_circuit_stats_by_states,
         test_util::CircuitTestBuilder,
+        util::{unusable_rows, SubCircuit},
         witness::block_convert,
     };
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
@@ -481,6 +490,14 @@ mod evm_circuit_stats {
         },
         MOCK_ACCOUNTS,
     };
+
+    #[test]
+    fn evm_circuit_unusable_rows() {
+        assert_eq!(
+            EvmCircuit::<Fr>::unusable_rows(),
+            unusable_rows::<Fr, EvmCircuit::<Fr>>(),
+        )
+    }
 
     #[test]
     pub fn empty_evm_circuit_no_padding() {
@@ -598,6 +615,8 @@ mod evm_circuit_stats {
             N_PHASE2_COLUMNS,
             storage_perm,
             N_COPY_COLUMNS,
+            storage_perm_2,
+            N_PHASE2_COPY_COLUMNS,
             byte_lookup,
             N_BYTE_LOOKUPS,
             fixed_table,

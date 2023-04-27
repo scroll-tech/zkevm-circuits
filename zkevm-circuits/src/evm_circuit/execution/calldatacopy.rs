@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::{SameContextGadget, WordByteCapGadget},
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             memory_gadget::{
@@ -44,7 +44,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLDATACOPY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let src_id = cb.query_cell();
@@ -247,7 +247,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             region,
             offset,
             length.as_u64(),
-            memory_expansion_gas_cost as u64,
+            memory_expansion_gas_cost,
         )?;
 
         Ok(())
@@ -314,7 +314,7 @@ mod test {
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = bytecode! {
-            .calldatacopy(dst_offset, data_offset, length)
+            .op_calldatacopy(dst_offset, data_offset, length)
             STOP
         };
 

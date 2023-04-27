@@ -8,7 +8,8 @@ use crate::{
                 cal_sstore_gas_cost_for_assignment, SameContextGadget, SstoreGasGadget,
             },
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition::Delta,
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             not, CachedRegion, Cell,
@@ -49,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SSTORE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -258,7 +259,7 @@ pub(crate) struct SstoreTxRefundGadget<F> {
 
 impl<F: Field> SstoreTxRefundGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         tx_refund_old: Cell<F>,
         value: Cell<F>,
         value_prev: Cell<F>,

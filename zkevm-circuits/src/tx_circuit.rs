@@ -16,7 +16,7 @@ mod test;
 pub use dev::TxCircuit as TestTxCircuit;
 
 use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{BlockTable, KeccakTable, LookupTable, RlpTable, TxFieldTag, TxTable},
     util::{keccak, random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig},
     witness,
@@ -1717,6 +1717,10 @@ impl<F: Field> TxCircuit<F> {
 
 impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     type Config = TxCircuitConfig<F>;
+
+    fn unusable_rows() -> usize {
+        7
+    }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         for tx in &block.txs {

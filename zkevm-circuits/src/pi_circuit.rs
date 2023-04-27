@@ -2,7 +2,10 @@
 
 use std::{iter, marker::PhantomData};
 
-use crate::table::{BlockContextFieldTag, KeccakTable};
+use crate::{
+    evm_circuit::util::constraint_builder::ConstrainBuilderCommon,
+    table::{BlockContextFieldTag, KeccakTable},
+};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{Address, Field, Hash, ToBigEndian, Word, H256};
 use ethers_core::utils::keccak256;

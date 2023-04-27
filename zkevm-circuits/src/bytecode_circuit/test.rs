@@ -2,12 +2,20 @@
 use crate::{
     bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
     table::BytecodeFieldTag,
-    util::{is_push, keccak, Challenges, SubCircuit},
+    util::{is_push, keccak, unusable_rows, Challenges, SubCircuit},
 };
 use bus_mapping::{evm::OpcodeId, state_db::CodeDB};
 use eth_types::{Bytecode, Field, ToWord, Word};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
+
+#[test]
+fn bytecode_circuit_unusable_rows() {
+    assert_eq!(
+        BytecodeCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, BytecodeCircuit::<Fr>>(),
+    )
+}
 
 impl<F: Field> BytecodeCircuit<F> {
     /// Verify that the selected bytecode fulfills the circuit

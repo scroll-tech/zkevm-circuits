@@ -1,6 +1,10 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, CachedRegion,
+        self,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        from_bytes,
+        math_gadget::*,
+        CachedRegion,
     },
     util::Expr,
 };
@@ -23,7 +27,7 @@ pub(crate) struct AbsWordGadget<F> {
 }
 
 impl<F: Field> AbsWordGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let x = cb.query_word_rlc();
         let x_abs = cb.query_word_rlc();
         let sum = cb.query_word_rlc();
@@ -100,6 +104,7 @@ impl<F: Field> AbsWordGadget<F> {
 #[cfg(test)]
 mod tests {
     use super::{super::test_util::*, *};
+    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
     use eth_types::{Word, U256};
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
@@ -110,7 +115,7 @@ mod tests {
     }
 
     impl<F: Field, const IS_NEG: bool> MathGadgetContainer<F> for AbsWordGadgetContainer<F, IS_NEG> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let absword_gadget = AbsWordGadget::<F>::construct(cb);
             cb.require_equal(
                 "is_neg is correct",

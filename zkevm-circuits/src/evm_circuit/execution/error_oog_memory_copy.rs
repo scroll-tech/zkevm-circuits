@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
             math_gadget::{IsZeroGadget, LtGadget},
             memory_gadget::{
@@ -52,7 +52,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasMemoryCopy;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.require_in_set(
             "ErrorOutOfGasMemoryCopy opcode must be CALLDATACOPY, CODECOPY, EXTCODECOPY or RETURNDATACOPY",

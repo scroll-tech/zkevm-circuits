@@ -17,6 +17,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> SubCircuit<F>
 {
     type Config = PiCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        PiCircuit::<F>::unusable_rows()
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);

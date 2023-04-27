@@ -3,8 +3,10 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-            math_gadget::IsZeroGadget, CachedRegion, Cell, Word as RLCWord,
+            common_gadget::CommonErrorGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::IsZeroGadget,
+            CachedRegion, Cell, Word as RLCWord,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -30,7 +32,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorWriteProtection;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
         let gas_word = cb.query_word_rlc();

@@ -587,7 +587,7 @@ impl<F: FieldExt> Step<F> {
         self.state.program_counter.assign(
             region,
             offset,
-            Value::known(F::from(step.program_counter as u64)),
+            Value::known(F::from(step.program_counter)),
         )?;
         self.state.stack_pointer.assign(
             region,

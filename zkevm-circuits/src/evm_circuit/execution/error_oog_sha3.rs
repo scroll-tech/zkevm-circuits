@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::LtGadget,
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryCopierGasGadget, MemoryExpandedAddressGadget,
@@ -40,7 +40,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSha3Gadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasSHA3;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.require_equal(
             "ErrorOutOfGasSHA3 opcode must be SHA3",

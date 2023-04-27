@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
             math_gadget::LtGadget,
@@ -34,7 +34,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::STOP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let code_length = cb.query_cell();
         cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
         let is_within_range =

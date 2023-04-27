@@ -64,7 +64,7 @@ mod tests {
         // Bench setup generation
         let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(degree as u32, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 

@@ -28,12 +28,12 @@ pub enum Error {
     /// Code not found in the CodeDB
     CodeNotFound(H256),
     /// Unable to figure out error at a [`GethExecStep`]
-    UnexpectedExecStepError(&'static str, GethExecStep),
+    UnexpectedExecStepError(&'static str, Box<GethExecStep>),
     /// Invalid [`eth_types::GethExecTrace`] due to an invalid/unexpected value
     /// in it.
     InvalidGethExecTrace(&'static str),
     /// Invalid [`GethExecStep`] due to an invalid/unexpected value in it.
-    InvalidGethExecStep(&'static str, GethExecStep),
+    InvalidGethExecStep(&'static str, Box<GethExecStep>),
     /// Eth type related error.
     EthTypeError(eth_types::Error),
     /// EVM Execution error

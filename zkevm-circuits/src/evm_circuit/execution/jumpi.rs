@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::{SameContextGadget, WordByteRangeGadget},
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             math_gadget::IsZeroGadget,
@@ -32,7 +32,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMPI;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let dest_word = WordByteRangeGadget::construct(cb);
         let phase2_condition = cb.query_cell_phase2();
 

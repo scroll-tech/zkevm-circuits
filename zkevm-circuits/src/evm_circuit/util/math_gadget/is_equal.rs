@@ -1,5 +1,5 @@
 use crate::evm_circuit::util::{
-    constraint_builder::ConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
+    constraint_builder::EVMConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -15,7 +15,7 @@ pub struct IsEqualGadget<F> {
 
 impl<F: Field> IsEqualGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -55,7 +55,9 @@ impl<F: Field> IsEqualGadget<F> {
 #[cfg(test)]
 mod tests {
     use super::{test_util::*, *};
-    use crate::evm_circuit::util::{CachedRegion, Cell};
+    use crate::evm_circuit::util::{
+        constraint_builder::ConstrainBuilderCommon, CachedRegion, Cell,
+    };
     use eth_types::*;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
@@ -68,7 +70,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for IsEqualGadgetTestContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let b = cb.query_cell();
             let eq_gadget = IsEqualGadget::<F>::construct(cb, a.expr(), b.expr());

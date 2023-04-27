@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MEMORY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // In successful case the address must be in 5 bytes

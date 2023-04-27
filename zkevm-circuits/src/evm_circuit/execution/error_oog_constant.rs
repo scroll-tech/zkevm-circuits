@@ -4,8 +4,10 @@ use crate::{
         param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-            math_gadget::LtGadget, CachedRegion, Cell,
+            common_gadget::CommonErrorGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::LtGadget,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -28,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasConstant;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let gas_required = cb.query_cell();
@@ -96,7 +98,8 @@ mod test {
     };
 
     use mock::{
-        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, MockTransaction,
+        TestContext, MOCK_ACCOUNTS,
     };
 
     fn gas(call_data: &[u8]) -> Word {
@@ -144,19 +147,19 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    // TODO: Use `mock` crate
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
         let from = MOCK_ACCOUNTS[1];
         let to = MOCK_ACCOUNTS[0];
-        eth_types::Transaction {
-            from,
-            to: Some(to),
-            value,
-            gas: gas(&calldata),
-            gas_price: Some(gas_price),
-            input: calldata.into(),
-            ..Default::default()
-        }
+
+        let mock_transaction = MockTransaction::default()
+            .from(from)
+            .to(to)
+            .value(value)
+            .gas(gas(&calldata))
+            .gas_price(gas_price)
+            .input(calldata.into())
+            .build();
+        eth_types::Transaction::from(mock_transaction)
     }
 
     #[test]

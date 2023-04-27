@@ -1,5 +1,9 @@
 use crate::{
-    evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select},
+    evm_circuit::util::{
+        and,
+        constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+        not, or, rlc, select,
+    },
     table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
     util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
@@ -681,7 +685,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     push_data_left,
                     value_rlc,
                     length,
-                    F::from(push_data_size as u64),
+                    F::from(push_data_size),
                 )?;
                 /*
                 trace!(
@@ -932,15 +936,14 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     #[cfg(not(feature = "poseidon-codehash"))]
     type Config = BytecodeCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
+        6
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        // TODO: Find a nicer way to add the extra `128`.  Is this to account for
-        // unusable rows? Then it could be calculated like this:
-        // fn unusable_rows<F: Field, C: Circuit<F>>() -> usize {
-        //     let mut cs = ConstraintSystem::default();
-        //     C::configure(&mut cs);
-        //     cs.blinding_factors()
-        // }
-        let bytecode_size = block.circuits_params.max_bytecode + 128;
+        let bytecode_size = block.circuits_params.max_bytecode;
         Self::new_from_block_sized(block, bytecode_size)
     }
 

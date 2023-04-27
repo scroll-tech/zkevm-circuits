@@ -1,7 +1,8 @@
 use crate::{
     evm_circuit::util::{
-        constraint_builder::ConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
-        Cell, CellType,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        math_gadget::*,
+        transpose_val_ret, CachedRegion, Cell, CellType,
     },
     util::Expr,
 };
@@ -26,7 +27,7 @@ pub struct ConstantDivisionGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         numerator: Expression<F>,
         denominator: u64,
     ) -> Self {
@@ -125,7 +126,7 @@ mod tests {
         > MathGadgetContainer<F>
         for ConstantDivisionTestContainer<F, N_BYTES, DENOMINATOR, QUOTIENT, REMAINDER>
     {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let constdiv_gadget =
                 ConstantDivisionGadget::<F, N_BYTES>::construct(cb, a.expr(), DENOMINATOR);

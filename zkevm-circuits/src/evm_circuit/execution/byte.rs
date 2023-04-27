@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
             sum, CachedRegion, Word,
         },
@@ -31,7 +31,7 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BYTE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let index = cb.query_word_rlc();
         let value = cb.query_word_rlc();
 

@@ -1354,7 +1354,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     _ => {
                         return Err(Error::UnexpectedExecStepError(
                             "call failure without return",
-                            step.clone(),
+                            Box::new(step.clone()),
                         ));
                     }
                 });
@@ -1375,13 +1375,13 @@ impl<'a> CircuitInputStateRef<'a> {
                     } else {
                         return Err(Error::UnexpectedExecStepError(
                             "failure in RETURN from {CREATE, CREATE2}",
-                            step.clone(),
+                            Box::new(step.clone()),
                         ));
                     }
                 } else {
                     return Err(Error::UnexpectedExecStepError(
                         "failure in RETURN",
-                        step.clone(),
+                        Box::new(step.clone()),
                     ));
                 }
             }
@@ -1401,7 +1401,7 @@ impl<'a> CircuitInputStateRef<'a> {
         {
             return Err(Error::UnexpectedExecStepError(
                 "success result without {RETURN, STOP, SELFDESTRUCT}",
-                step.clone(),
+                Box::new(step.clone()),
             ));
         }
 
@@ -1502,7 +1502,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
             return Err(Error::UnexpectedExecStepError(
                 "*CALL*/CREATE* code not executed",
-                step.clone(),
+                Box::new(step.clone()),
             ));
         }
 

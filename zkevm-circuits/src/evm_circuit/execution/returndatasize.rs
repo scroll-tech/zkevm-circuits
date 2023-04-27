@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::RETURNDATASIZE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // Add lookup constraint in the call context for the returndatasize field.
@@ -94,8 +94,8 @@ mod test {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         let code_b = bytecode! {
-            .mstore(0, Word::from_big_endian(&rand_bytes(32)))
-            .return_bytecode(return_data_offset, return_data_size)
+            .op_mstore(0, Word::from_big_endian(&rand_bytes(32)))
+            .op_return(return_data_offset, return_data_size)
             STOP
         };
 

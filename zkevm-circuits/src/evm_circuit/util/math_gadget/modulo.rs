@@ -1,6 +1,9 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, math_gadget::*, sum, CachedRegion,
+        self,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        math_gadget::*,
+        sum, CachedRegion,
     },
     util::Expr,
 };
@@ -27,7 +30,7 @@ pub(crate) struct ModGadget<F> {
     lt: LtWordGadget<F>,
 }
 impl<F: Field> ModGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
         let k = cb.query_word_rlc();
         let a_or_zero = cb.query_word_rlc();
@@ -113,7 +116,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_word_rlc();
             let n = cb.query_word_rlc();
             let r = cb.query_word_rlc();

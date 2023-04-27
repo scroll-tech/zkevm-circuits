@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::LtGadget,
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasLOG;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
