@@ -426,12 +426,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         });
 
         // construct the comparators.
-        let cmp_enabled = |meta: &mut VirtualCells<F>| {
-            and::expr([
-                meta.query_fixed(q_enabled, Rotation::cur()),
-                is_not_padding.expr(),
-            ])
-        };
+        let cmp_enabled = |meta: &mut VirtualCells<F>| meta.query_fixed(q_enabled, Rotation::cur());
         macro_rules! byte_value_lte {
             ($var:ident, $value:expr) => {
                 let $var = ComparatorChip::configure(
@@ -479,6 +474,12 @@ impl<F: Field> RlpCircuitConfig<F> {
             cmp_enabled,
             |meta| meta.query_advice(depth, Rotation::cur()),
             |_meta| 0.expr(),
+        );
+        let depth_eq_one = IsEqualChip::configure(
+            meta,
+            cmp_enabled,
+            |meta| meta.query_advice(depth, Rotation::cur()),
+            |_| 1.expr(),
         );
 
         macro_rules! constrain_unchanged_fields {
@@ -589,6 +590,16 @@ impl<F: Field> RlpCircuitConfig<F> {
         let is_tag_begin_expr = |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_begin, Rotation::cur());
         let is_tag_end_expr = |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_end, Rotation::cur());
 
+        meta.create_gate("state == End if is_padding = true", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.condition(is_padding.expr(), |cb| {
+                constrain_eq!(meta, cb, state, State::End);
+            });
+
+            cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
+        });
+
         // DecodeTagStart => DecodeTagStart
         meta.create_gate(
             "state transition: DecodeTagStart => DecodeTagStart",
@@ -693,7 +704,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     update_state!(meta, cb, depth, depth_expr(meta) - 1.expr());
                 });
                 cb.condition(
-                    and::expr([case_4.expr(), depth_check.is_equal_expression.expr()]),
+                    and::expr([case_4.expr(), depth_eq_one.is_equal_expression.expr()]),
                     |cb| {
                         // assertions.
                         emit_rlp_tag!(meta, cb, RlpTag::RLC, false);
@@ -710,7 +721,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     },
                 );
                 cb.condition(
-                    and::expr([case_4.expr(), not::expr(depth_check.is_equal_expression.expr())]),
+                    and::expr([case_4.expr(), not::expr(depth_eq_one.is_equal_expression.expr())]),
                     |cb| {
                         // TODO(kunxian): check if this is complete.
                         constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format);
@@ -726,7 +737,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enabled, Rotation::cur()),
-                    is_not_padding.expr(),
                     is_decode_tag_start(meta),
                 ]))
             },
@@ -750,7 +760,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     // state transitions
                     update_state!(meta, cb, tag_idx, 1);
                     update_state!(meta, cb, tag_length, byte_value_expr(meta) - 0x80.expr());
-                    update_state!(meta, cb, rlp_table.tag_value_acc, byte_value_next);
+                    update_state!(meta, cb, rlp_table.tag_value_acc, byte_value_next_expr(meta));
                     update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
                     update_state!(meta, cb, state, State::Bytes);
 
@@ -763,7 +773,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
-                is_not_padding.expr(),
                 is_decode_tag_start(meta),
             ]))
         });
@@ -815,7 +824,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
-                is_not_padding.expr(),
                 is_bytes(meta),
             ]))
         });
@@ -841,7 +849,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 update_state!(meta, cb, tag_length, byte_value_expr(meta) - 0xb7.expr());
                 update_state!(meta, cb, tag_idx, 1);
                 update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
-                update_state!(meta, cb, byte_value_next_expr(meta));
+                update_state!(meta, cb, rlp_table.tag_value_acc, byte_value_next_expr(meta));
                 update_state!(meta, cb, state, State::LongBytes);
 
                 // depth is unchanged.
@@ -850,7 +858,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
-                is_not_padding.expr(),
                 is_decode_tag_start(meta),
             ]))
         });
@@ -898,7 +905,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
-                is_not_padding.expr(),
                 is_long_bytes(meta),
             ]))
         });
@@ -946,7 +952,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
-                is_not_padding.expr(),
                 is_decode_tag_start(meta),
             ]))
         });
@@ -997,7 +1002,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
-                is_not_padding.expr(),
                 is_long_list(meta),
             ]))
         });
@@ -1024,7 +1028,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
-                is_not_padding.expr(),
                 is_decode_tag_start(meta),
             ]))
         });
