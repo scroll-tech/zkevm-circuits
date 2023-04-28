@@ -116,6 +116,8 @@ pub struct RlpCircuitConfig<F> {
     tlength_lte_0x20: ComparatorConfig<F, 1>,
     /// Check for depth == 0
     depth_check: IsEqualConfig<F>,
+    /// Check for depth == 1
+    depth_eq_one: IsEqualConfig<F>,
 }
 
 impl<F: Field> RlpCircuitConfig<F> {
@@ -1089,6 +1091,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             tidx_lte_tlength,
             tlength_lte_0x20,
             depth_check,
+            depth_eq_one,
         }
     }
 

@@ -12,36 +12,67 @@ mod eip2930;
 mod l1_msg;
 mod pre_eip155;
 
+/// RLP tags
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum Tag {
+    /// Tag that marks the beginning of a list
+    /// whose value gives the length of bytes of this list.
     BeginList = 2,
+    /// Tag that marks the ending of a list and
+    /// it does not consume any byte.
     EndList,
+    /// Special case of BeginList in which each item's key is
+    /// an increasing integer starting from 1.
     BeginVector,
+    /// Special case of EndList
     EndVector,
+
     // Pre EIP-155
+    /// Nonce
     Nonce,
+    /// Gas price
     GasPrice,
+    /// Gas limit
     Gas,
+    /// To
     To,
+    /// Value
     Value,
+    /// Data
     Data,
     // EIP-155
+    /// Chain ID
     ChainId,
+    /// One byte whose value is zero
     Zero1,
+    /// One byte whose value is zero
     Zero2,
+    /// Signature v
     SigV,
+    /// Signature r
     SigR,
+    /// Signature s
     SigS,
+
     // EIP-2718
+    /// Tx type
     TxType,
     // EIP-2930
+    /// Address in access_list
     AccessListAddress,
+    /// Storage key in access_list
     AccessListStorageKey,
+
     // EIP-1559
+    /// Max priority fee per gas
     MaxPriorityFeePerGas,
+    /// Max fee per gas
     MaxFeePerGas,
+
     // L1MsgHash
+    /// Gas limit
     GasLimit,
+    /// Sender
     Sender,
 }
 
@@ -52,6 +83,7 @@ impl From<Tag> for usize {
 }
 
 impl Tag {
+    /// If the tag is related to list
     pub fn is_list(&self) -> bool {
         match &self {
             Self::BeginList | Self::BeginVector | Self::EndList | Self::EndVector => true,
@@ -60,14 +92,19 @@ impl Tag {
     }
 }
 
+/// RLP tags
 #[derive(Clone, Copy, Debug)]
 pub enum RlpTag {
+    /// Length of RLP bytes
     Len,
+    /// RLC of RLP bytes
     RLC,
+    /// Tag
     Tag(Tag),
 }
 
 impl RlpTag {
+    /// If this tag is for output
     pub fn is_output(&self) -> bool {
         match &self {
             Self::RLC => true,
@@ -100,12 +137,18 @@ impl<F: FieldExt> From<(Tag, Tag, usize, Format)> for RomTableRow<F> {
     }
 }
 
+/// Format that we are able to decode
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum Format {
+    /// Sign for EIP155 tx
     TxSignEip155 = 0,
+    /// Hash for EIP155 tx
     TxHashEip155,
+    /// Sign for Pre-EIP155 tx
     TxSignPreEip155,
+    /// Hash for Pre-EIP155 tx
     TxHashPreEip155,
+    /// L1 Msg
     L1MsgHash,
 }
 
@@ -116,6 +159,7 @@ impl From<Format> for usize {
 }
 
 impl Format {
+    /// The ROM table for format
     pub fn rom_table_rows<F: FieldExt>(&self) -> Vec<RomTableRow<F>> {
         match self {
             Self::TxSignEip155 => eip155::tx_sign_rom_table_rows(),
@@ -127,12 +171,18 @@ impl Format {
     }
 }
 
+/// All possible states of RLP decoding state machine
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum State {
+    /// Start
     DecodeTagStart = 0,
+    /// Bytes
     Bytes,
+    /// Long bytes
     LongBytes,
+    /// Long list
     LongList,
+    /// End
     End,
 }
 
@@ -145,6 +195,7 @@ impl From<State> for usize {
 impl_expr!(Tag);
 impl_expr!(Format);
 impl_expr!(State);
+
 impl<F: FieldExt> Expr<F> for RlpTag {
     fn expr(&self) -> Expression<F> {
         match self {
@@ -154,37 +205,61 @@ impl<F: FieldExt> Expr<F> for RlpTag {
     }
 }
 
+/// Data table holds the raw RLP bytes
 #[derive(Clone, Copy, Debug)]
 pub struct DataTable<F: FieldExt> {
+    /// The index of tx to be decoded
     pub tx_id: u64,
+    /// The format of format to be decoded
     pub format: Format,
+    /// The index of raw RLP bytes (starting from 1)
     pub byte_idx: usize,
+    /// The reverse index of raw RLP bytes (ends at 1)
     pub byte_rev_idx: usize,
+    /// The byte value
     pub byte_value: u8,
+    /// RLC of raw RLP bytes up to `byte_idx`
     pub bytes_rlc: Value<F>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct RlpTable<F: FieldExt> {
+    /// The index of tx we decoded
     pub tx_id: u64,
+    /// The format of format we decoded
     pub format: Format,
+    /// The RLP tag we decoded
     pub rlp_tag: RlpTag,
+    /// The tag's accumulated value
     pub tag_value_acc: Value<F>,
+    /// If current row is for output
     pub is_output: bool,
+    /// If current tag's value is None.
     pub is_none: bool,
 }
 
+/// State Machine
 #[derive(Clone, Copy, Debug)]
 pub struct StateMachine<F: FieldExt> {
+    /// Current state
     pub state: State,
+    /// Current tag to be decoded
     pub tag: Tag,
+    /// Next tag to be decoded
     pub tag_next: Tag,
+    /// The index of current byte we are reading
     pub byte_idx: usize,
+    /// The reverse index of current byte we are reading
     pub byte_rev_idx: usize,
+    /// The value of current byte we are reading
     pub byte_value: u8,
+    /// The index of the actual bytes of tag
     pub tag_idx: usize,
+    /// The length of the actual bytes of tag
     pub tag_length: usize,
+    /// The depth
     pub depth: usize,
+    /// The RLC of bytes up to `byte_idx`
     pub bytes_rlc: Value<F>,
 }
 
