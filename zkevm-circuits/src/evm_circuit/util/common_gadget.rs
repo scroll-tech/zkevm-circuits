@@ -1105,8 +1105,8 @@ impl<F: Field> CommonErrorGadget<F> {
     }
 }
 
-/// Check if the passed in word is within the specified byte range and less than
-/// a maximum cap.
+/// Check if the passed in word is within the specified byte range
+/// (not overflow) and less than a maximum cap.
 #[derive(Clone, Debug)]
 pub(crate) struct WordByteCapGadget<F, const VALID_BYTES: usize> {
     word: WordByteRangeGadget<F, VALID_BYTES>,
@@ -1116,14 +1116,14 @@ pub(crate) struct WordByteCapGadget<F, const VALID_BYTES: usize> {
 impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, cap: Expression<F>) -> Self {
         let word = WordByteRangeGadget::construct(cb);
-        let value = select::expr(word.within_range(), word.valid_value(), cap.expr());
+        let value = select::expr(word.overflow(), cap.expr(), word.valid_value());
         let lt_cap = LtGadget::construct(cb, value, cap);
 
         Self { word, lt_cap }
     }
 
-    /// Return true if within the specified byte range, false if overflow. No
-    /// matter whether it is less than the cap.
+    /// Return true if within the specified byte range (not overflow), false if
+    /// overflow. No matter whether it is less than the cap.
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -1131,9 +1131,9 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         original: U256,
         cap: F,
     ) -> Result<bool, Error> {
-        let within_range = self.word.assign(region, offset, original)?;
+        let not_overflow = self.word.assign(region, offset, original)?;
 
-        let value = if within_range {
+        let value = if not_overflow {
             let mut bytes = [0; 32];
             bytes[0..VALID_BYTES].copy_from_slice(&original.to_le_bytes()[0..VALID_BYTES]);
             F::from_repr(bytes).unwrap()
@@ -1143,7 +1143,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
 
         self.lt_cap.assign(region, offset, value, cap)?;
 
-        Ok(within_range)
+        Ok(not_overflow)
     }
 
     pub(crate) fn lt_cap(&self) -> Expression<F> {
@@ -1162,16 +1162,16 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         self.word.valid_value()
     }
 
-    pub(crate) fn within_range(&self) -> Expression<F> {
-        self.word.within_range()
+    pub(crate) fn not_overflow(&self) -> Expression<F> {
+        self.word.not_overflow()
     }
 }
 
-/// Check if the passed in word is within the specified byte range.
+/// Check if the passed in word is within the specified byte range (not overflow).
 #[derive(Clone, Debug)]
 pub(crate) struct WordByteRangeGadget<F, const VALID_BYTES: usize> {
     original: Word<F>,
-    within_range: IsZeroGadget<F>,
+    not_overflow: IsZeroGadget<F>,
 }
 
 impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
@@ -1179,11 +1179,11 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         debug_assert!(VALID_BYTES < 32);
 
         let original = cb.query_word_rlc();
-        let within_range = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
+        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
 
         Self {
             original,
-            within_range,
+            not_overflow,
         }
     }
 
@@ -1194,15 +1194,13 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         offset: usize,
         original: U256,
     ) -> Result<bool, Error> {
-        debug_assert!(VALID_BYTES < 32);
-
         self.original
             .assign(region, offset, Some(original.to_le_bytes()))?;
 
         let overflow_hi = original.to_le_bytes()[VALID_BYTES..]
             .iter()
             .fold(0, |acc, val| acc + u64::from(*val));
-        self.within_range
+        self.not_overflow
             .assign(region, offset, F::from(overflow_hi))?;
 
         Ok(overflow_hi == 0)
@@ -1213,16 +1211,14 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
     }
 
     pub(crate) fn overflow(&self) -> Expression<F> {
-        not::expr(self.within_range())
+        not::expr(self.not_overflow())
     }
 
     pub(crate) fn valid_value(&self) -> Expression<F> {
-        debug_assert!(VALID_BYTES < 32);
-
         from_bytes::expr(&self.original.cells[..VALID_BYTES])
     }
 
-    pub(crate) fn within_range(&self) -> Expression<F> {
-        self.within_range.expr()
+    pub(crate) fn not_overflow(&self) -> Expression<F> {
+        self.not_overflow.expr()
     }
 }

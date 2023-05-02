@@ -204,12 +204,12 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
+                    OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
                     OpcodeId::CREATE => ExecutionState::CREATE,
                     OpcodeId::CREATE2 => ExecutionState::CREATE2,
-                    OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
                     // dummy ops
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     _ => unimplemented!("unimplemented opcode {:?}", op),
