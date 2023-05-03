@@ -7,7 +7,7 @@ use crate::{
     impl_expr,
     util::{build_tx_log_address, Challenges},
     witness::{
-        Block, BlockContext, BlockContexts, Bytecode, Format, MptUpdateRow, MptUpdates,
+        Block, BlockContext, BlockContexts, Bytecode, DataTable, Format, MptUpdateRow, MptUpdates,
         RlpFsmWitnessGen, RlpWitnessGen, RomTableRow, Rw, RwMap, RwRow, SignedTransaction,
         Transaction,
     },
@@ -2276,10 +2276,27 @@ impl RlpFsmDataTable {
 
     /// Assignments to the data table.
     pub fn assignments<F: Field, RLP: RlpFsmWitnessGen<F>>(
-        inputs: Vec<RLP>,
+        inputs: &[RLP],
         challenges: &Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 6]> {
-        unimplemented!("RlpFsmDataTable::assignments")
+        let data_rows: Vec<DataTable<F>> = inputs
+            .iter()
+            .map(|input| input.gen_data_table(challenges))
+            .concat();
+
+        data_rows
+            .iter()
+            .map(|data_row| {
+                [
+                    Value::known(F::from(data_row.tx_id)),
+                    Value::known(F::from(usize::from(data_row.format) as u64)),
+                    Value::known(F::from(data_row.byte_idx as u64)),
+                    Value::known(F::from(data_row.byte_rev_idx as u64)),
+                    Value::known(F::from(data_row.byte_value as u64)),
+                    data_row.bytes_rlc,
+                ]
+            })
+            .collect()
     }
 
     /// Load the data table.
@@ -2289,7 +2306,26 @@ impl RlpFsmDataTable {
         inputs: Vec<RLP>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        unimplemented!("RlpFsmDataTable::load")
+        layouter.assign_region(
+            || "rlp Data table",
+            |mut region| {
+                for (offset, row) in Self::assignments(&inputs, challenges).iter().enumerate() {
+                    for (&column, &value) in <Self as LookupTable<F>>::advice_columns(self)
+                        .iter()
+                        .zip(row)
+                    {
+                        region.assign_advice(
+                            || format!("rlp Data table row: offset = {}", offset),
+                            column,
+                            offset,
+                            || value,
+                        )?;
+                    }
+                }
+
+                Ok(())
+            },
+        )
     }
 }
 

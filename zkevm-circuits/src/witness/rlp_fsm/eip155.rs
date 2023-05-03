@@ -1,3 +1,4 @@
+use ethers_core::utils::rlp;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Value};
 
 use crate::{
@@ -23,7 +24,27 @@ impl<F: FieldExt> RlpFsmWitnessGen<F> for TxEip155 {
     }
 
     fn gen_data_table(&self, challenges: &Challenges<Value<F>>) -> Vec<DataTable<F>> {
-        unimplemented!()
+        let tx_id = self.0.id as u64;
+        let rlp_encoding = rlp::encode(self);
+        let n = rlp_encoding.len();
+        let r = challenges.keccak_input();
+        let mut bytes_rlc = Value::known(F::zero());
+        rlp_encoding
+            .as_ref()
+            .iter()
+            .enumerate()
+            .map(|(i, &byte_value)| {
+                bytes_rlc = bytes_rlc * r + Value::known(F::from(byte_value as u64));
+                DataTable {
+                    tx_id,
+                    format: TxSignEip155,
+                    byte_idx: i + 1,
+                    byte_rev_idx: n - i,
+                    byte_value,
+                    bytes_rlc,
+                }
+            })
+            .collect()
     }
 }
 
@@ -36,7 +57,27 @@ impl<F: FieldExt> RlpFsmWitnessGen<F> for SignedTxEip155 {
     }
 
     fn gen_data_table(&self, challenges: &Challenges<Value<F>>) -> Vec<super::DataTable<F>> {
-        unimplemented!()
+        let tx_id = self.0.tx.id as u64;
+        let rlp_encoding = rlp::encode(self);
+        let n = rlp_encoding.len();
+        let r = challenges.keccak_input();
+        let mut bytes_rlc = Value::known(F::zero());
+        rlp_encoding
+            .as_ref()
+            .iter()
+            .enumerate()
+            .map(|(i, &byte_value)| {
+                bytes_rlc = bytes_rlc * r + Value::known(F::from(byte_value as u64));
+                DataTable {
+                    tx_id,
+                    format: TxHashEip155,
+                    byte_idx: i + 1,
+                    byte_rev_idx: n - i,
+                    byte_value,
+                    bytes_rlc,
+                }
+            })
+            .collect()
     }
 }
 
