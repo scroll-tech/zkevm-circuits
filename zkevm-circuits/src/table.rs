@@ -2135,12 +2135,20 @@ impl RlpTable {
     }
 }
 
+/// Read-only Memory table for the new RLP circuit design based on state machine. This table allows
+/// us a lookup argument from the RLP circuit to check if a given row can occur depending on the tx
+/// format, current and next tag.
 #[derive(Clone, Copy, Debug)]
 pub struct RlpFsmRomTable {
+    /// Tag of the current field being decoded.
     pub tag: Column<Fixed>,
+    /// Tag of the following field when the current field is finished decoding.
     pub tag_next: Column<Fixed>,
+    /// The maximum length in terms of number of bytes that the current tag can take up.
     pub max_length: Column<Fixed>,
+    /// Whether the current tag is a list or not.
     pub is_list: Column<Fixed>,
+    /// The format of the current witness. This represents the type of tx we are decoding.
     pub format: Column<Fixed>,
 }
 
@@ -2167,6 +2175,7 @@ impl<F: Field> LookupTable<F> for RlpFsmRomTable {
 }
 
 impl RlpFsmRomTable {
+    /// Construct the ROM table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             tag: meta.fixed_column(),
@@ -2177,6 +2186,7 @@ impl RlpFsmRomTable {
         }
     }
 
+    /// Load the ROM table.
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -2209,13 +2219,21 @@ impl RlpFsmRomTable {
     }
 }
 
+/// Data table allows us a lookup argument from the RLP circuit to check the byte value at an index
+/// while decoding a tx of a given format.
 #[derive(Clone, Copy, Debug)]
 pub struct RlpFsmDataTable {
+    /// Transaction index in the batch of txs.
     pub tx_id: Column<Advice>,
+    /// Format of the tx being decoded.
     pub format: Column<Advice>,
+    /// The index of the current byte.
     pub byte_idx: Column<Advice>,
+    /// The reverse index at this byte.
     pub byte_rev_idx: Column<Advice>,
+    /// The byte value at this index.
     pub byte_value: Column<Advice>,
+    /// The accumulated Random Linear Combination up until (including) the current byte.
     pub bytes_rlc: Column<Advice>,
 }
 
@@ -2244,6 +2262,7 @@ impl<F: Field> LookupTable<F> for RlpFsmDataTable {
 }
 
 impl RlpFsmDataTable {
+    /// Construct the data table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             tx_id: meta.advice_column(),
@@ -2255,6 +2274,7 @@ impl RlpFsmDataTable {
         }
     }
 
+    /// Assignments to the data table.
     pub fn assignments<F: Field, RLP: RlpFsmWitnessGen<F>>(
         inputs: Vec<RLP>,
         challenges: &Challenges<Value<F>>,
@@ -2262,6 +2282,7 @@ impl RlpFsmDataTable {
         unimplemented!("RlpFsmDataTable::assignments")
     }
 
+    /// Load the data table.
     pub fn load<F: Field, RLP: RlpFsmWitnessGen<F>>(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -2272,43 +2293,21 @@ impl RlpFsmDataTable {
     }
 }
 
+/// The RLP table connected to the RLP state machine circuit.
 #[derive(Clone, Copy, Debug)]
 pub struct RlpFsmRlpTable {
+    /// The transaction's index in the batch.
     pub tx_id: Column<Advice>,
+    /// The format of the tx being decoded.
     pub format: Column<Advice>,
+    /// The RLP-Tag assigned at the current row.
     pub rlp_tag: Column<Advice>,
+    /// The accumulated value of the current tag being decoded.
     pub tag_value_acc: Column<Advice>,
+    /// Whether or not the row emits an output value.
     pub is_output: Column<Advice>,
+    /// Whether or not the current tag's value was nil.
     pub is_none: Column<Advice>,
-}
-
-impl RlpFsmRlpTable {
-    fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            tx_id: meta.advice_column(),
-            format: meta.advice_column(),
-            rlp_tag: meta.advice_column(),
-            tag_value_acc: meta.advice_column_in(SecondPhase),
-            is_output: meta.advice_column(),
-            is_none: meta.advice_column(),
-        }
-    }
-
-    pub fn assignments<F: Field, RLP: RlpFsmWitnessGen<F>>(
-        inputs: Vec<RLP>,
-        challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 6]> {
-        unimplemented!("RlpFsmRlpTable::assignments")
-    }
-
-    pub fn load<F: Field, RLP: RlpFsmWitnessGen<F>>(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        inputs: Vec<RLP>,
-        challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
-        unimplemented!("RlpFsmRlpTable::load")
-    }
 }
 
 impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
@@ -2332,5 +2331,37 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
             String::from("is_output"),
             String::from("is_none"),
         ]
+    }
+}
+
+impl RlpFsmRlpTable {
+    /// Construct the RLP table.
+    fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            tx_id: meta.advice_column(),
+            format: meta.advice_column(),
+            rlp_tag: meta.advice_column(),
+            tag_value_acc: meta.advice_column_in(SecondPhase),
+            is_output: meta.advice_column(),
+            is_none: meta.advice_column(),
+        }
+    }
+
+    /// Get assignments to the RLP table.
+    pub fn assignments<F: Field, RLP: RlpFsmWitnessGen<F>>(
+        inputs: Vec<RLP>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Vec<[Value<F>; 6]> {
+        unimplemented!("RlpFsmRlpTable::assignments")
+    }
+
+    /// Load the RLP table.
+    pub fn load<F: Field, RLP: RlpFsmWitnessGen<F>>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        inputs: Vec<RLP>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        unimplemented!("RlpFsmRlpTable::load")
     }
 }

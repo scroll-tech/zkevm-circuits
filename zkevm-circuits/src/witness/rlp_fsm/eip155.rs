@@ -13,21 +13,29 @@ use crate::{
     },
 };
 
-use super::{RlpFsmWitnessGen, RlpFsmWitnessRow, RomTableRow};
+use super::{DataTable, RlpFsmWitnessGen, RlpFsmWitnessRow, RomTableRow};
 
 impl<F: FieldExt> RlpFsmWitnessGen<F> for TxEip155 {
-    fn gen_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>> {
+    fn gen_sm_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>> {
         let transaction = self.0.clone();
 
+        unimplemented!()
+    }
+
+    fn gen_data_table(&self, challenges: &Challenges<Value<F>>) -> Vec<DataTable<F>> {
         unimplemented!()
     }
 }
 
 impl<F: FieldExt> RlpFsmWitnessGen<F> for SignedTxEip155 {
-    fn gen_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>> {
+    fn gen_sm_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>> {
         let transaction = self.0.tx.clone();
         let signature = self.0.signature.clone();
 
+        unimplemented!()
+    }
+
+    fn gen_data_table(&self, challenges: &Challenges<Value<F>>) -> Vec<super::DataTable<F>> {
         unimplemented!()
     }
 }

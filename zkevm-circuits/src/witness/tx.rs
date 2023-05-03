@@ -40,19 +40,31 @@ pub use eip2930::{SignedTxEip2930, TxEip2930};
 pub use l1_msg::L1MsgTx;
 pub use pre_eip155::{SignedTxPreEip155, TxPreEip155};
 
+/// Transaction with variants for different types of txs.
 pub enum GenericTransaction {
+    /// Variant representing an EIP-155 compliant tx.
     Eip155(TxEip155),
+    /// Variant representing a tx before EIP-155 was adopted.
     PreEip155(TxPreEip155),
+    /// Variant representing a Layer-1 message (Scroll specific).
     L1Msg(L1MsgTx),
+    /// Variant representing an EIP-2930 typed tx.
     Eip2930(TxEip2930),
+    /// Variant representing an EIP-1559 tx.
     Eip1559(TxEip1559),
 }
 
+/// Signed transaction with variants for different types of txs.
 pub enum GenericSignedTransaction {
+    /// Variant representing an EIP-155 compliant tx.
     Eip155(SignedTxEip155),
+    /// Variant representing a tx before EIP-155 was adopted.
     PreEip155(SignedTxPreEip155),
+    /// Variant representing a Layer-1 message (Scroll specific).
     L1Msg(L1MsgTx),
+    /// Variant representing an EIP-2930 typed tx.
     Eip2930(SignedTxEip2930),
+    /// Variant representing an EIP-1559 tx.
     Eip1559(SignedTxEip1559),
 }
 

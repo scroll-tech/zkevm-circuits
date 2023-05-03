@@ -123,6 +123,7 @@ impl From<RlpTag> for usize {
     }
 }
 
+/// Read-only Memory table row.
 pub struct RomTableRow<F>(pub [Value<F>; 5]);
 
 impl<F: FieldExt> From<(Tag, Tag, usize, Format)> for RomTableRow<F> {
@@ -222,6 +223,7 @@ pub struct DataTable<F: FieldExt> {
     pub bytes_rlc: Value<F>,
 }
 
+/// RLP table that is connected to the state machine in the RLP circuit.
 #[derive(Clone, Copy, Debug)]
 pub struct RlpTable<F: FieldExt> {
     /// The index of tx we decoded
@@ -266,14 +268,18 @@ pub struct StateMachine<F: FieldExt> {
 /// Represents the witness in a single row of the RLP circuit.
 #[derive(Clone, Debug)]
 pub struct RlpFsmWitnessRow<F: FieldExt> {
+    /// Witness to the RLP table.
     pub rlp_table: RlpTable<F>,
+    /// The state machine witness.
     pub state_machine: StateMachine<F>,
 }
 
 /// The RlpFsmWitnessGen trait is implemented by data types who's RLP encoding can
 /// be verified by the RLP-encoding circuit.
 pub trait RlpFsmWitnessGen<F: FieldExt>: Encodable + Sized {
-    /// Generate witness to the RLP-encoding verifier circuit, as a vector of
-    /// RlpFsmWitnessRow.
-    fn gen_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>>;
+    /// Generate witness to the RLP state machine, as a vector of RlpFsmWitnessRow.
+    fn gen_sm_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>>;
+
+    /// Generate witness to the Data table that RLP circuit does lookup into.
+    fn gen_data_table(&self, challenges: &Challenges<Value<F>>) -> Vec<DataTable<F>>;
 }

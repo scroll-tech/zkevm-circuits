@@ -1,3 +1,5 @@
+//! Circuit implementation for verifying assignments to the RLP finite state machine.
+
 use std::marker::PhantomData;
 
 use eth_types::Field;
@@ -11,21 +13,26 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{
         Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        VirtualCells,
+        VirtualCell, VirtualCells,
     },
     poly::Rotation,
 };
-use halo2_proofs::plonk::VirtualCell;
 
 use crate::{
-    evm_circuit::{param::N_BYTES_U64, util::constraint_builder::BaseConstraintBuilder},
+    evm_circuit::{
+        param::N_BYTES_U64,
+        util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    },
     table::{LookupTable, RlpFsmDataTable, RlpFsmRlpTable, RlpFsmRomTable, RlpTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::{Block, GenericSignedTransaction, RlpFsmWitnessGen, RlpTag, State, Tag},
+    witness::{
+        Block, GenericSignedTransaction, RlpFsmWitnessGen, RlpTag, State, State::DecodeTagStart,
+        Tag,
+    },
 };
-use crate::witness::State::DecodeTagStart;
 
-struct Range256Table(Column<Fixed>);
+/// Fixed table to check if a value is a byte, i.e. 0 <= value < 256.
+pub struct Range256Table(Column<Fixed>);
 
 impl<F: Field> LookupTable<F> for Range256Table {
     fn columns(&self) -> Vec<Column<halo2_proofs::plonk::Any>> {
@@ -121,6 +128,7 @@ pub struct RlpCircuitConfig<F> {
 }
 
 impl<F: Field> RlpCircuitConfig<F> {
+    /// Configure the RLP circuit.
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         rom_table: &RlpFsmRomTable,
@@ -515,7 +523,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     $meta.query_advice($field, Rotation::cur()),
                     $value.expr(),
                 );
-            }
+            };
         }
 
         macro_rules! read_data {
@@ -565,7 +573,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     $meta.query_advice(rlp_table.is_output, Rotation::cur()),
                     false.expr(),
                 );
-            }
+            };
         }
 
         macro_rules! update_state {
@@ -575,22 +583,33 @@ impl<F: Field> RlpCircuitConfig<F> {
                     $meta.query_advice($tag, Rotation::next()),
                     $to.expr(),
                 );
-            }
+            };
         }
 
         let tag_expr = |meta: &mut VirtualCells<F>| meta.query_advice(tag, Rotation::cur());
-        let tag_next_expr = |meta: &mut VirtualCells<F>| meta.query_advice(tag_next, Rotation::cur());
+        let tag_next_expr =
+            |meta: &mut VirtualCells<F>| meta.query_advice(tag_next, Rotation::cur());
         let depth_expr = |meta: &mut VirtualCells<F>| meta.query_advice(depth, Rotation::cur());
-        let byte_idx_expr = |meta: &mut VirtualCells<F>| meta.query_advice(byte_idx, Rotation::cur());
-        let byte_rev_idx_expr = |meta: &mut VirtualCells<F>| meta.query_advice(byte_rev_idx, Rotation::cur());
-        let byte_value_expr = |meta: &mut VirtualCells<F>| meta.query_advice(byte_value, Rotation::cur());
-        let byte_value_next_expr = |meta: &mut VirtualCells<F>| meta.query_advice(byte_value, Rotation::next());
-        let bytes_rlc_expr = |meta: &mut VirtualCells<F>| meta.query_advice(bytes_rlc, Rotation::cur());
+        let byte_idx_expr =
+            |meta: &mut VirtualCells<F>| meta.query_advice(byte_idx, Rotation::cur());
+        let byte_rev_idx_expr =
+            |meta: &mut VirtualCells<F>| meta.query_advice(byte_rev_idx, Rotation::cur());
+        let byte_value_expr =
+            |meta: &mut VirtualCells<F>| meta.query_advice(byte_value, Rotation::cur());
+        let byte_value_next_expr =
+            |meta: &mut VirtualCells<F>| meta.query_advice(byte_value, Rotation::next());
+        let bytes_rlc_expr =
+            |meta: &mut VirtualCells<F>| meta.query_advice(bytes_rlc, Rotation::cur());
         let tag_idx_expr = |meta: &mut VirtualCells<F>| meta.query_advice(tag_idx, Rotation::cur());
-        let tag_length_expr = |meta: &mut VirtualCells<F>| meta.query_advice(tag_length, Rotation::cur());
-        let tag_value_acc_expr = |meta: &mut VirtualCells<F>| meta.query_advice(rlp_table.tag_value_acc, Rotation::cur());
-        let is_tag_begin_expr = |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_begin, Rotation::cur());
-        let is_tag_end_expr = |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_end, Rotation::cur());
+        let tag_length_expr =
+            |meta: &mut VirtualCells<F>| meta.query_advice(tag_length, Rotation::cur());
+        let tag_value_acc_expr = |meta: &mut VirtualCells<F>| {
+            meta.query_advice(rlp_table.tag_value_acc, Rotation::cur())
+        };
+        let is_tag_begin_expr =
+            |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_begin, Rotation::cur());
+        let is_tag_end_expr =
+            |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_end, Rotation::cur());
 
         meta.create_gate("state == End if is_padding = true", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -615,10 +634,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 let (bv_lt_0xf8, bv_eq_0xf8) = byte_value_lte_0xf8.expr(meta, None);
 
                 // case 1: 0x00 <= byte_value < 0x80
-                let case_1 = and::expr([
-                    bv_lt_0x80,
-                    not::expr(is_tag_end_expr(meta)),
-                ]);
+                let case_1 = and::expr([bv_lt_0x80, not::expr(is_tag_end_expr(meta))]);
                 cb.condition(case_1.expr(), |cb| {
                     // assertions.
                     emit_rlp_tag!(meta, cb, tag_expr, false);
@@ -637,10 +653,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 });
 
                 // case 2: byte_value == 0x80
-                let case_2 = and::expr([
-                    bv_eq_0x80,
-                    not::expr(is_tag_end_expr(meta)),
-                ]);
+                let case_2 = and::expr([bv_eq_0x80, not::expr(is_tag_end_expr(meta))]);
                 cb.condition(case_2.expr(), |cb| {
                     // assertions.
                     emit_rlp_tag!(meta, cb, tag_expr, true);
@@ -680,10 +693,18 @@ impl<F: Field> RlpCircuitConfig<F> {
                     and::expr([case_3.expr(), depth_check.is_equal_expression.expr()]),
                     |cb| {
                         emit_rlp_tag!(meta, cb, RlpTag::Len, false);
-                        constrain_eq!(meta, cb, rlp_table.tag_value_acc,
-                            byte_idx_expr(meta) + byte_value_expr.expr() - 0xc0.expr());
-                        constrain_eq!(meta, cb, byte_rev_idx,
-                            byte_value_expr.expr() - 0xc0.expr() + 1.expr());
+                        constrain_eq!(
+                            meta,
+                            cb,
+                            rlp_table.tag_value_acc,
+                            byte_idx_expr(meta) + byte_value_expr.expr() - 0xc0.expr()
+                        );
+                        constrain_eq!(
+                            meta,
+                            cb,
+                            byte_rev_idx,
+                            byte_value_expr.expr() - 0xc0.expr() + 1.expr()
+                        );
                     },
                 );
                 cb.condition(
@@ -723,7 +744,10 @@ impl<F: Field> RlpCircuitConfig<F> {
                     },
                 );
                 cb.condition(
-                    and::expr([case_4.expr(), not::expr(depth_eq_one.is_equal_expression.expr())]),
+                    and::expr([
+                        case_4.expr(),
+                        not::expr(depth_eq_one.is_equal_expression.expr()),
+                    ]),
                     |cb| {
                         // TODO(kunxian): check if this is complete.
                         constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format);
@@ -974,8 +998,12 @@ impl<F: Field> RlpCircuitConfig<F> {
                 // state transitions
                 update_state!(meta, cb, tag_idx, tag_idx_expr(meta) + 1.expr());
                 update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
-                update_state!(meta, cb, rlp_table.tag_value_acc,
-                    tag_value_acc_expr(meta) * 256.expr() + byte_value_next_expr(meta));
+                update_state!(
+                    meta,
+                    cb,
+                    rlp_table.tag_value_acc,
+                    tag_value_acc_expr(meta) * 256.expr() + byte_value_next_expr(meta)
+                );
                 update_state!(meta, cb, state, State::LongList);
 
                 constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format,
@@ -995,12 +1023,20 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format, depth);
             });
-            cb.condition(and::expr([tidx_eq_tlen, depth_check.is_equal_expression.expr()]), |cb| {
-                // assertions (depth == 0)
+            cb.condition(
+                and::expr([tidx_eq_tlen, depth_check.is_equal_expression.expr()]),
+                |cb| {
+                    // assertions (depth == 0)
 
-                // byte_rev_idx ends with 1.
-                constrain_eq!(meta, cb, rlp_table.tag_value_acc, byte_rev_idx_expr(meta) - 1.expr());
-            });
+                    // byte_rev_idx ends with 1.
+                    constrain_eq!(
+                        meta,
+                        cb,
+                        rlp_table.tag_value_acc,
+                        byte_rev_idx_expr(meta) - 1.expr()
+                    );
+                },
+            );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
@@ -1095,6 +1131,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         }
     }
 
+    /// Assign witness to the RLP circuit.
     pub(crate) fn assign<RLP: RlpFsmWitnessGen<F>>(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -1105,11 +1142,18 @@ impl<F: Field> RlpCircuitConfig<F> {
     }
 }
 
+/// Arguments to configure the RLP circuit.
 pub struct RlpCircuitConfigArgs<F: Field> {
+    /// Read-only memory table.
     pub rom_table: RlpFsmRomTable,
+    /// Data table that holds byte indices and values of instances being assigned to the RLP
+    /// circuit.
     pub data_table: RlpFsmDataTable,
+    /// RLP table.
     pub rlp_table: RlpFsmRlpTable,
+    /// Fixed table to verify that the value is a single byte.
     pub range256_table: Range256Table,
+    /// Challenge API.
     pub challenges: Challenges<Expression<F>>,
 }
 
@@ -1128,10 +1172,14 @@ impl<F: Field> SubCircuitConfig<F> for RlpCircuitConfig<F> {
     }
 }
 
+/// RLP finite state machine circuit.
 #[derive(Clone, Debug)]
 pub struct RlpCircuit<F, RLP> {
+    /// Inputs to the RLP circuit.
     pub inputs: Vec<RLP>,
+    /// Maximum number of txs supported.
     pub max_txs: usize,
+    /// Size of the RLP circuit.
     pub size: usize,
     _marker: PhantomData<F>,
 }
