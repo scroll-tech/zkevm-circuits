@@ -2372,7 +2372,7 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
 
 impl RlpFsmRlpTable {
     /// Construct the RLP table.
-    fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             tx_id: meta.advice_column(),
             format: meta.advice_column(),

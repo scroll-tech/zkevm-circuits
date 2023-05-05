@@ -90,6 +90,20 @@ impl Tag {
             _ => false,
         }
     }
+
+    pub fn is_begin(&self) -> bool {
+        match &self {
+            Self::BeginList | Self::BeginVector => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_end(&self) -> bool {
+        match &self {
+            Self::EndList | Self::EndVector => true,
+            _ => false,
+        }
+    }
 }
 
 /// RLP tags

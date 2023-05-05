@@ -7,29 +7,31 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig},
     is_equal::{IsEqualChip, IsEqualConfig},
-    util::{and, not, or, select, sum, Expr},
+    util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        VirtualCell, VirtualCells,
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
     },
     poly::Rotation,
 };
+use halo2_proofs::circuit::Region;
+use gadgets::comparator::ComparatorInstruction;
+use gadgets::is_equal::IsEqualInstruction;
 
 use crate::{
     evm_circuit::{
-        param::N_BYTES_U64,
         util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     },
-    table::{LookupTable, RlpFsmDataTable, RlpFsmRlpTable, RlpFsmRomTable, RlpTable},
+    table::{LookupTable, RlpFsmDataTable, RlpFsmRlpTable, RlpFsmRomTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
         Block, GenericSignedTransaction, RlpFsmWitnessGen, RlpTag, State, State::DecodeTagStart,
         Tag,
     },
 };
+use crate::witness::RlpFsmWitnessRow;
 
 /// Fixed table to check if a value is a byte, i.e. 0 <= value < 256.
 pub struct Range256Table(Column<Fixed>);
@@ -41,6 +43,12 @@ impl<F: Field> LookupTable<F> for Range256Table {
 
     fn annotations(&self) -> Vec<String> {
         vec![String::from("byte_value")]
+    }
+}
+
+impl Range256Table {
+    pub(crate) fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self(meta.fixed_column())
     }
 }
 
@@ -1131,14 +1139,218 @@ impl<F: Field> RlpCircuitConfig<F> {
         }
     }
 
+    fn assign_sm_row(
+        &self,
+        region: &mut Region<'_, F>,
+        row: usize,
+        witness: &RlpFsmWitnessRow<F>
+    ) -> Result<(), Error> {
+        // assign to selector
+        region.assign_fixed(
+            || "q_enabled",
+            self.q_enabled,
+            row,
+            || Value::known(F::one()),
+        )?;
+        // assign to rlp_table
+        region.assign_advice(
+            || "rlp_table.tx_id",
+            self.rlp_table.tx_id,
+            row,
+            || Value::known(F::from(witness.rlp_table.tx_id)),
+        )?;
+        region.assign_advice(
+            || "rlp_table.format",
+            self.rlp_table.format,
+            row,
+            || Value::known(F::from(witness.rlp_table.format as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_table.rlp_tag",
+            self.rlp_table.rlp_tag,
+            row,
+            || Value::known(F::from(<RlpTag as Into<usize>>::into(witness.rlp_table.rlp_tag) as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_table.tag_value_acc",
+            self.rlp_table.tag_value_acc,
+            row,
+            || witness.rlp_table.tag_value_acc,
+        )?;
+        region.assign_advice(
+            || "rlp_table.is_output",
+            self.rlp_table.is_output,
+            row,
+            || Value::known(F::from(witness.rlp_table.is_output as u64)),
+        )?;
+        region.assign_advice(
+            || "rlp_table.is_none",
+            self.rlp_table.is_none,
+            row,
+            || Value::known(F::from(witness.rlp_table.is_none as u64)),
+        )?;
+
+        // assign to sm
+        region.assign_advice(
+            || "sm.state",
+            self.state,
+            row,
+            || Value::known(F::from(witness.state_machine.state as u64)),
+        )?;
+        region.assign_advice(
+            || "sm.tag",
+            self.tag,
+            row,
+            || Value::known(F::from(witness.state_machine.tag as u64)),
+        )?;
+        region.assign_advice(
+            || "sm.tag_next",
+            self.tag_next,
+            row,
+            || Value::known(F::from(witness.state_machine.tag_next as u64)),
+        )?;
+        region.assign_advice(
+            || "sm.tag_idx",
+            self.tag_idx,
+            row,
+            || Value::known(F::from(witness.state_machine.tag_idx as u64)),
+        )?;
+        region.assign_advice(
+            || "sm.tag_length",
+            self.tag_length,
+            row,
+            || Value::known(F::from(witness.state_machine.tag_length as u64)),
+        )?;
+        region.assign_advice(
+            || "sm.depth",
+            self.depth,
+            row,
+            || Value::known(F::from(witness.state_machine.depth as u64)),
+        )?;
+        // region.assign_advice(
+        //     || "sm.q_lookup_data",
+        //     self.q_lookup_data,
+        //     row,
+        //     || Value::known(F::from(witness.state_machine)),
+        // )?;
+        region.assign_advice(
+            || "sm.byte_idx",
+            self.byte_idx,
+            row,
+            || Value::known(F::from(witness.state_machine.byte_idx as u64)),
+        )?;
+        region.assign_advice(
+            || "byte_rev_idx",
+            self.byte_rev_idx,
+            row,
+            || Value::known(F::from(witness.state_machine.byte_rev_idx as u64)),
+        )?;
+        region.assign_advice(
+            || "byte_value",
+            self.byte_value,
+            row,
+            || Value::known(F::from(witness.state_machine.byte_value as u64)),
+        )?;
+        region.assign_advice(
+            || "bytes_rlc",
+            self.bytes_rlc,
+            row,
+            || witness.state_machine.bytes_rlc,
+        )?;
+
+        // assign to intermediates
+        // TODO: assign to max_length
+        region.assign_advice(
+            || "is_list",
+            self.is_list,
+            row,
+            || Value::known(F::from(witness.state_machine.tag.is_list() as u64)),
+        )?;
+        region.assign_advice(
+            || "is_tag_begin",
+            self.is_tag_begin,
+            row,
+            || Value::known(F::from(witness.state_machine.tag.is_begin() as u64)),
+        )?;
+        region.assign_advice(
+            || "is_tag_end",
+            self.is_tag_end,
+            row,
+            || Value::known(F::from(witness.state_machine.tag.is_end() as u64)),
+        )?;
+
+        let padding_chip = IsEqualChip::construct(self.padding.clone());
+        padding_chip.assign(
+            region, row,
+            Value::known(F::from(witness.rlp_table.tx_id as u64)),
+            Value::known(F::zero())
+        )?;
+
+        let tag_chip = BinaryNumberChip::construct(self.tag_bits.clone());
+        tag_chip.assign(region, row, &witness.state_machine.tag)?;
+
+        let state_chip = BinaryNumberChip::construct(self.state_bits.clone());
+        state_chip.assign(region, row, &witness.state_machine.state)?;
+
+        let byte_value = F::from(witness.state_machine.byte_value as u64);
+        let byte_0x80 = F::from(0x80_u64);
+        let byte_0xb8 = F::from(0xb8_u64);
+        let byte_0xc0 = F::from(0xc0_u64);
+        let byte_0xf8 = F::from(0xf8_u64);
+        let byte_value_lte_0x80 = ComparatorChip::construct(self.byte_value_lte_0xf8.clone());
+        let byte_value_gte_0x80 = ComparatorChip::construct(self.byte_value_gte_0x80.clone());
+        let byte_value_lte_0xb8 = ComparatorChip::construct(self.byte_value_lte_0xb8.clone());
+        let byte_value_gte_0xb8 = ComparatorChip::construct(self.byte_value_gte_0xb8.clone());
+        let byte_value_lte_0xc0 = ComparatorChip::construct(self.byte_value_lte_0xc0.clone());
+        let byte_value_gte_0xc0 = ComparatorChip::construct(self.byte_value_gte_0xc0.clone());
+        let byte_value_lte_0xf8 = ComparatorChip::construct(self.byte_value_lte_0xf8.clone());
+        let byte_value_gte_0xf8 = ComparatorChip::construct(self.byte_value_gte_0xf8.clone());
+        let byte_value_checks = vec![
+            (byte_value_lte_0x80, byte_value, byte_0x80),
+            (byte_value_gte_0x80, byte_0x80, byte_value),
+            (byte_value_lte_0xb8, byte_value, byte_0xb8),
+            (byte_value_gte_0xb8, byte_0xb8, byte_value),
+            (byte_value_lte_0xc0, byte_value, byte_0xc0),
+            (byte_value_gte_0xc0, byte_0xc0, byte_value),
+            (byte_value_lte_0xf8, byte_value, byte_0xf8),
+            (byte_value_gte_0xf8, byte_0xf8, byte_value),
+        ];
+        for (chip, lhs, rhs) in byte_value_checks {
+            chip.assign(region, row, lhs, rhs)?;
+        }
+
+        Ok(())
+    }
+
     /// Assign witness to the RLP circuit.
     pub(crate) fn assign<RLP: RlpFsmWitnessGen<F>>(
         &self,
         layouter: &mut impl Layouter<F>,
-        inputs: Vec<RLP>,
+        inputs: &[RLP],
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        unimplemented!("RlpCircuitConfig::assign")
+        let sm_rows = inputs
+            .iter()
+            .flat_map(|input| {
+                input.gen_sm_witness(&challenges)
+            })
+            .collect::<Vec<_>>();
+
+        layouter.assign_region(|| "RLP sm region",
+            |mut region| {
+                for (i, sm_row) in sm_rows.iter().enumerate() {
+                    self.assign_sm_row(
+                        &mut region,
+                        i,
+                        sm_row,
+                    )?;
+                }
+
+                Ok(())
+            }
+        )?;
+
+        Ok(())
     }
 }
 
@@ -1211,7 +1423,11 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, GenericSignedTransaction> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        unimplemented!("RlpCircuit::synthesize_sub")
+        config.assign(
+            layouter,
+            &self.inputs,
+            challenges,
+        )
     }
 
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
@@ -1228,7 +1444,15 @@ impl<F: Field> Circuit<F> for RlpCircuit<F, GenericSignedTransaction> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        unimplemented!("RlpCircuit::configure")
+        let data_table = RlpFsmDataTable::construct(meta);
+        let rlp_table = RlpFsmRlpTable::construct(meta);
+        let rom_table = RlpFsmRomTable::construct(meta);
+        let u8_table = Range256Table::construct(meta);
+        let challenges = Challenges::construct(meta);
+        let config = RlpCircuitConfig::configure(meta, &rom_table, &data_table, &rlp_table, &u8_table,
+                                                 &challenges.exprs(meta));
+
+        (config, challenges)
     }
 
     fn synthesize(&self, config: Self::Config, layouter: impl Layouter<F>) -> Result<(), Error> {
@@ -1237,4 +1461,42 @@ impl<F: Field> Circuit<F> for RlpCircuit<F, GenericSignedTransaction> {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use ethers_core::types::TransactionRequest;
+    use ethers_signers::Wallet;
+    use rand::rngs::OsRng;
+    use eth_types::{Address, word};
+    use mock::eth;
+    use crate::rlp_circuit_fsm::RlpCircuit;
+    use crate::witness::SignedTransaction;
+
+    #[test]
+    fn test_eip_155_tx() {
+
+    }
+
+    #[test]
+    fn test_pre_eip_155_tx() {
+        let rng = &mut OsRng;
+        let from = Wallet::new(rng);
+        let tx = TransactionRequest::new()
+            .to(Address::random())
+            .value(eth(10))
+            .data(Vec::new())
+            .gas_price(word!("0x4321"))
+            .gas(word!("0x77320"))
+            .nonce(word!("0x7f"));
+        let sig = from.sign_transaction_sync(&tx.into());
+
+        let signed_tx = SignedTransaction::from(
+
+        );
+        let rlp_circuit = RlpCircuit {
+            inputs: vec![],
+            max_txs: 0,
+            size: 0,
+            _marker: Default::default(),
+        };
+
+    }
+}
