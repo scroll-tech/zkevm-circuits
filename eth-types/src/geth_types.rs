@@ -5,7 +5,7 @@ use crate::{
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
     Word, U64,
 };
-use ethers_core::types::{NameOrAddress, TransactionRequest, H256};
+use ethers_core::types::{NameOrAddress, TransactionRequest, H256, Eip1559TransactionRequest, Eip2930TransactionRequest};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
@@ -14,6 +14,69 @@ use serde::{Serialize, Serializer};
 use serde_with::serde_as;
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
+
+/// Tx types
+#[derive(Default, Debug, Copy, Clone)]
+pub enum TxTypes {
+    /// EIP 155 tx
+    #[default]
+    Eip155 = 0,
+    /// Pre EIP 155 tx
+    PreEip155,
+    /// EIP 1559 tx
+    Eip1559,
+    /// EIP 2930 tx
+    Eip2930,
+    // L1Msg,
+}
+
+impl From<TxTypes> for usize {
+    fn from(value: TxTypes) -> Self {
+        value as usize
+    }
+}
+
+impl TxTypes {
+    /// Get the type of transaction
+    pub fn get_tx_type(tx: &crate::Transaction) -> Self {
+        match tx.transaction_type {
+            Some(x) if x == U64::from(1) => {
+                Self::Eip2930
+            }
+            Some(x) if x == U64::from(2) => {
+                Self::Eip2930
+            }
+            _ => {
+                match tx.v.as_u64() {
+                    0 | 1 | 27 | 28 => Self::PreEip155,
+                    _ => Self::Eip155,
+                }
+            }
+        }
+    }
+}
+
+/// Get the RLP bytes for signing
+pub fn get_rlp_unsigned(tx: &crate::Transaction) -> Vec<u8> {
+    match TxTypes::get_tx_type(tx) {
+        TxTypes::Eip155 => {
+            let tx: TransactionRequest = tx.into();
+            tx.rlp().to_vec()
+        },
+        TxTypes::PreEip155 => {
+            let tx: TransactionRequest = tx.into();
+            tx.rlp_unsigned().to_vec()
+        },
+        TxTypes::Eip1559 => {
+            let tx: Eip1559TransactionRequest = tx.into();
+            tx.rlp().to_vec()
+        }
+        TxTypes::Eip2930 => {
+            let tx: Eip2930TransactionRequest = tx.into();
+            tx.rlp().to_vec()
+        }
+    }
+}
 
 /// Definition of all of the data related to an account.
 #[serde_as]
@@ -140,6 +203,11 @@ pub struct Transaction {
     /// "s" value of the transaction signature
     pub s: Word,
 
+    /// RLP bytes
+    pub rlp_bytes: Vec<u8>,
+    /// RLP unsigned bytes
+    pub rlp_unsigned_bytes: Vec<u8>,
+
     /// Transaction hash
     pub hash: H256,
 }
@@ -182,6 +250,8 @@ impl From<&crate::Transaction> for Transaction {
             v: tx.v.as_u64(),
             r: tx.r,
             s: tx.s,
+            rlp_bytes: tx.rlp().to_vec(),
+            rlp_unsigned_bytes: get_rlp_unsigned(tx),
             hash: tx.hash,
         }
     }
