@@ -1,16 +1,10 @@
+use eth_types::Field;
 use ethers_core::utils::rlp::Encodable;
 use gadgets::{impl_expr, util::Expr};
 use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
 use strum_macros::EnumIter;
 
 use crate::util::Challenges;
-
-mod common;
-mod eip155;
-mod eip1559;
-mod eip2930;
-mod l1_msg;
-mod pre_eip155;
 
 /// RLP tags
 #[derive(Clone, Copy, Debug, EnumIter)]
@@ -137,6 +131,80 @@ impl From<RlpTag> for usize {
     }
 }
 
+use crate::{
+    evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
+    witness::{
+        l1_msg,
+        Format::{TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
+        Tag::{
+            BeginList, ChainId, Data, EndList, Gas, GasPrice, Nonce, SigR, SigS, SigV, To,
+            Value as TxValue, Zero1, Zero2,
+        },
+    },
+};
+use eth_types::geth_types::TxTypes;
+
+fn eip155_tx_sign_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
+    vec![
+        (BeginList, Nonce, N_BYTES_U64, TxSignEip155).into(),
+        (Nonce, GasPrice, N_BYTES_U64, TxSignEip155).into(),
+        (GasPrice, Gas, N_BYTES_WORD, TxSignEip155).into(),
+        (Gas, To, N_BYTES_U64, TxSignEip155).into(),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, TxSignEip155).into(),
+        (TxValue, Data, N_BYTES_WORD, TxSignEip155).into(),
+        (Data, ChainId, 2usize.pow(24), TxSignEip155).into(),
+        (ChainId, Zero1, N_BYTES_U64, TxSignEip155).into(),
+        (Zero1, Zero2, 1, TxSignEip155).into(),
+        (Zero2, EndList, 1, TxSignEip155).into(),
+        (EndList, BeginList, 0, TxSignEip155).into(),
+    ]
+}
+
+fn eip155_tx_hash_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
+    vec![
+        (BeginList, Nonce, N_BYTES_U64, TxHashEip155).into(),
+        (Nonce, GasPrice, N_BYTES_U64, TxHashEip155).into(),
+        (GasPrice, Gas, N_BYTES_WORD, TxHashEip155).into(),
+        (Gas, To, N_BYTES_U64, TxHashEip155).into(),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, TxHashEip155).into(),
+        (TxValue, Data, N_BYTES_WORD, TxHashEip155).into(),
+        (Data, SigV, 2usize.pow(24), TxHashEip155).into(),
+        (SigV, SigR, N_BYTES_U64, TxHashEip155).into(),
+        (SigR, SigS, N_BYTES_WORD, TxHashEip155).into(),
+        (SigS, EndList, N_BYTES_WORD, TxHashEip155).into(),
+        (EndList, BeginList, 0, TxHashEip155).into(),
+    ]
+}
+
+pub fn pre_eip155_tx_sign_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
+    vec![
+        (BeginList, Nonce, N_BYTES_U64, TxSignPreEip155).into(),
+        (Nonce, GasPrice, N_BYTES_U64, TxSignPreEip155).into(),
+        (GasPrice, Gas, N_BYTES_WORD, TxSignPreEip155).into(),
+        (Gas, To, N_BYTES_U64, TxSignPreEip155).into(),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, TxSignPreEip155).into(),
+        (TxValue, Data, N_BYTES_WORD, TxSignPreEip155).into(),
+        (Data, EndList, 2usize.pow(24), TxSignPreEip155).into(),
+        (EndList, BeginList, 0, TxSignPreEip155).into(),
+    ]
+}
+
+pub fn pre_eip155_tx_hash_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
+    vec![
+        (BeginList, Nonce, N_BYTES_U64, TxHashPreEip155).into(),
+        (Nonce, GasPrice, N_BYTES_U64, TxHashPreEip155).into(),
+        (GasPrice, Gas, N_BYTES_WORD, TxHashPreEip155).into(),
+        (Gas, To, N_BYTES_U64, TxHashPreEip155).into(),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, TxHashPreEip155).into(),
+        (TxValue, Data, N_BYTES_WORD, TxHashPreEip155).into(),
+        (Data, SigV, 2usize.pow(24), TxHashPreEip155).into(),
+        (SigV, SigR, N_BYTES_U64, TxHashPreEip155).into(),
+        (SigR, SigS, N_BYTES_WORD, TxHashPreEip155).into(),
+        (SigS, EndList, N_BYTES_WORD, TxHashPreEip155).into(),
+        (EndList, BeginList, 0, TxHashPreEip155).into(),
+    ]
+}
+
 /// Read-only Memory table row.
 pub struct RomTableRow<F>(pub [Value<F>; 5]);
 
@@ -177,10 +245,10 @@ impl Format {
     /// The ROM table for format
     pub fn rom_table_rows<F: FieldExt>(&self) -> Vec<RomTableRow<F>> {
         match self {
-            Self::TxSignEip155 => eip155::tx_sign_rom_table_rows(),
-            Self::TxHashEip155 => eip155::tx_hash_rom_table_rows(),
-            Self::TxSignPreEip155 => pre_eip155::tx_sign_rom_table_rows(),
-            Self::TxHashPreEip155 => pre_eip155::tx_hash_rom_table_rows(),
+            Self::TxSignEip155 => eip155_tx_sign_rom_table_rows(),
+            Self::TxHashEip155 => eip155_tx_hash_rom_table_rows(),
+            Self::TxSignPreEip155 => pre_eip155_tx_sign_rom_table_rows(),
+            Self::TxHashPreEip155 => pre_eip155_tx_hash_rom_table_rows(),
             Self::L1MsgHash => l1_msg::rom_table_rows(),
         }
     }
@@ -290,7 +358,7 @@ pub struct RlpFsmWitnessRow<F: FieldExt> {
 
 /// The RlpFsmWitnessGen trait is implemented by data types who's RLP encoding can
 /// be verified by the RLP-encoding circuit.
-pub trait RlpFsmWitnessGen<F: FieldExt>: Encodable + Sized {
+pub trait RlpFsmWitnessGen<F: FieldExt>: Sized {
     /// Generate witness to the RLP state machine, as a vector of RlpFsmWitnessRow.
     fn gen_sm_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>>;
 

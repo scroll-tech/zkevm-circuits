@@ -5,33 +5,28 @@ use std::marker::PhantomData;
 use eth_types::Field;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    comparator::{ComparatorChip, ComparatorConfig},
-    is_equal::{IsEqualChip, IsEqualConfig},
+    comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
+    is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
+        VirtualCells,
     },
     poly::Rotation,
 };
-use halo2_proofs::circuit::Region;
-use gadgets::comparator::ComparatorInstruction;
-use gadgets::is_equal::IsEqualInstruction;
 
 use crate::{
-    evm_circuit::{
-        util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    },
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{LookupTable, RlpFsmDataTable, RlpFsmRlpTable, RlpFsmRomTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
-        Block, GenericSignedTransaction, RlpFsmWitnessGen, RlpTag, State, State::DecodeTagStart,
-        Tag,
+        Block, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, SignedTransaction, State,
+        State::DecodeTagStart, Tag,
     },
 };
-use crate::witness::RlpFsmWitnessRow;
 
 /// Fixed table to check if a value is a byte, i.e. 0 <= value < 256.
 pub struct Range256Table(Column<Fixed>);
@@ -1143,7 +1138,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         row: usize,
-        witness: &RlpFsmWitnessRow<F>
+        witness: &RlpFsmWitnessRow<F>,
     ) -> Result<(), Error> {
         // assign to selector
         region.assign_fixed(
@@ -1169,7 +1164,11 @@ impl<F: Field> RlpCircuitConfig<F> {
             || "rlp_table.rlp_tag",
             self.rlp_table.rlp_tag,
             row,
-            || Value::known(F::from(<RlpTag as Into<usize>>::into(witness.rlp_table.rlp_tag) as u64)),
+            || {
+                Value::known(F::from(
+                    <RlpTag as Into<usize>>::into(witness.rlp_table.rlp_tag) as u64,
+                ))
+            },
         )?;
         region.assign_advice(
             || "rlp_table.tag_value_acc",
@@ -1281,9 +1280,10 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         let padding_chip = IsEqualChip::construct(self.padding.clone());
         padding_chip.assign(
-            region, row,
+            region,
+            row,
             Value::known(F::from(witness.rlp_table.tx_id as u64)),
-            Value::known(F::zero())
+            Value::known(F::zero()),
         )?;
 
         let tag_chip = BinaryNumberChip::construct(self.tag_bits.clone());
@@ -1331,23 +1331,18 @@ impl<F: Field> RlpCircuitConfig<F> {
     ) -> Result<(), Error> {
         let sm_rows = inputs
             .iter()
-            .flat_map(|input| {
-                input.gen_sm_witness(&challenges)
-            })
+            .flat_map(|input| input.gen_sm_witness(&challenges))
             .collect::<Vec<_>>();
 
-        layouter.assign_region(|| "RLP sm region",
+        layouter.assign_region(
+            || "RLP sm region",
             |mut region| {
                 for (i, sm_row) in sm_rows.iter().enumerate() {
-                    self.assign_sm_row(
-                        &mut region,
-                        i,
-                        sm_row,
-                    )?;
+                    self.assign_sm_row(&mut region, i, sm_row)?;
                 }
 
                 Ok(())
-            }
+            },
         )?;
 
         Ok(())
@@ -1407,7 +1402,7 @@ impl<F: Field, RLP> Default for RlpCircuit<F, RLP> {
     }
 }
 
-impl<F: Field> SubCircuit<F> for RlpCircuit<F, GenericSignedTransaction> {
+impl<F: Field, RLP: RlpFsmWitnessGen<F>> SubCircuit<F> for RlpCircuit<F, RLP> {
     type Config = RlpCircuitConfig<F>;
 
     fn new_from_block(block: &Block<F>) -> Self {
@@ -1423,11 +1418,7 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, GenericSignedTransaction> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.assign(
-            layouter,
-            &self.inputs,
-            challenges,
-        )
+        config.assign(layouter, &self.inputs, challenges)
     }
 
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
@@ -1435,7 +1426,7 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, GenericSignedTransaction> {
     }
 }
 
-impl<F: Field> Circuit<F> for RlpCircuit<F, GenericSignedTransaction> {
+impl<F: Field, RLP: RlpFsmWitnessGen<F>> Circuit<F> for RlpCircuit<F, RLP> {
     type Config = (RlpCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -1449,8 +1440,14 @@ impl<F: Field> Circuit<F> for RlpCircuit<F, GenericSignedTransaction> {
         let rom_table = RlpFsmRomTable::construct(meta);
         let u8_table = Range256Table::construct(meta);
         let challenges = Challenges::construct(meta);
-        let config = RlpCircuitConfig::configure(meta, &rom_table, &data_table, &rlp_table, &u8_table,
-                                                 &challenges.exprs(meta));
+        let config = RlpCircuitConfig::configure(
+            meta,
+            &rom_table,
+            &data_table,
+            &rlp_table,
+            &u8_table,
+            &challenges.exprs(meta),
+        );
 
         (config, challenges)
     }
@@ -1462,18 +1459,15 @@ impl<F: Field> Circuit<F> for RlpCircuit<F, GenericSignedTransaction> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{rlp_circuit_fsm::RlpCircuit, witness::SignedTransaction};
+    use eth_types::{word, Address};
     use ethers_core::types::TransactionRequest;
     use ethers_signers::Wallet;
-    use rand::rngs::OsRng;
-    use eth_types::{Address, word};
     use mock::eth;
-    use crate::rlp_circuit_fsm::RlpCircuit;
-    use crate::witness::SignedTransaction;
+    use rand::rngs::OsRng;
 
     #[test]
-    fn test_eip_155_tx() {
-
-    }
+    fn test_eip_155_tx() {}
 
     #[test]
     fn test_pre_eip_155_tx() {
@@ -1488,15 +1482,12 @@ mod tests {
             .nonce(word!("0x7f"));
         let sig = from.sign_transaction_sync(&tx.into());
 
-        let signed_tx = SignedTransaction::from(
-
-        );
+        let signed_tx = SignedTransaction::from();
         let rlp_circuit = RlpCircuit {
             inputs: vec![],
             max_txs: 0,
             size: 0,
             _marker: Default::default(),
         };
-
     }
 }

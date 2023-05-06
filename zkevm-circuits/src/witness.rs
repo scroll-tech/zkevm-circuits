@@ -35,5 +35,7 @@ pub use rw::{Rw, RwMap, RwRow};
 mod step;
 pub use step::ExecStep;
 
+mod l1_msg;
 mod tx;
-pub use tx::{GenericSignedTransaction, GenericTransaction, SignedTransaction, Transaction};
+
+pub use tx::{SignedTransaction, Transaction};

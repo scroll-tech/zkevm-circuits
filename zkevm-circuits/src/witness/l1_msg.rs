@@ -1,23 +1,19 @@
-use halo2_proofs::{arithmetic::FieldExt, circuit::Value};
-
 use crate::{
     evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
-    util::Challenges,
     witness::{
-        tx::L1MsgTx,
         Format::L1MsgHash,
+        RomTableRow,
         Tag::{BeginList, Data, EndList, GasLimit, Nonce, Sender, To, TxType, Value as TxValue},
     },
 };
+use ethers_core::utils::rlp::Encodable;
+use halo2_proofs::arithmetic::FieldExt;
 
-use super::{RlpFsmWitnessGen, RomTableRow};
+#[derive(Clone, Debug)]
+pub struct L1MsgTx;
 
-impl<F: FieldExt> RlpFsmWitnessGen<F> for L1MsgTx {
-    fn gen_sm_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<super::RlpFsmWitnessRow<F>> {
-        unimplemented!()
-    }
-
-    fn gen_data_table(&self, challenges: &Challenges<Value<F>>) -> Vec<super::DataTable<F>> {
+impl Encodable for L1MsgTx {
+    fn rlp_append(&self, s: &mut ethers_core::utils::rlp::RlpStream) {
         unimplemented!()
     }
 }

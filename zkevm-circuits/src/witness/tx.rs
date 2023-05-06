@@ -2,12 +2,14 @@ use crate::{
     evm_circuit::{step::ExecutionState, util::rlc},
     table::TxContextFieldTag,
     util::{rlc_be_bytes, Challenges},
+    witness::{DataTable, Format::TxSignEip155, RlpFsmWitnessGen, RlpFsmWitnessRow},
 };
 use bus_mapping::{
     circuit_input_builder,
     circuit_input_builder::{get_dummy_tx, get_dummy_tx_hash},
 };
 use eth_types::{
+    geth_types::TxTypes,
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
 };
@@ -28,84 +30,6 @@ use num_bigint::BigUint;
 
 use super::{step::step_convert, Call, ExecStep};
 
-mod eip155;
-mod eip1559;
-mod eip2930;
-mod l1_msg;
-mod pre_eip155;
-
-pub use eip155::{SignedTxEip155, TxEip155};
-pub use eip1559::{SignedTxEip1559, TxEip1559};
-pub use eip2930::{SignedTxEip2930, TxEip2930};
-pub use l1_msg::L1MsgTx;
-pub use pre_eip155::{SignedTxPreEip155, TxPreEip155};
-
-/// Transaction with variants for different types of txs.
-pub enum GenericTransaction {
-    /// Variant representing an EIP-155 compliant tx.
-    Eip155(TxEip155),
-    /// Variant representing a tx before EIP-155 was adopted.
-    PreEip155(TxPreEip155),
-    /// Variant representing a Layer-1 message (Scroll specific).
-    L1Msg(L1MsgTx),
-    /// Variant representing an EIP-2930 typed tx.
-    Eip2930(TxEip2930),
-    /// Variant representing an EIP-1559 tx.
-    Eip1559(TxEip1559),
-}
-
-/// Signed transaction with variants for different types of txs.
-pub enum GenericSignedTransaction {
-    /// Variant representing an EIP-155 compliant tx.
-    Eip155(SignedTxEip155),
-    /// Variant representing a tx before EIP-155 was adopted.
-    PreEip155(SignedTxPreEip155),
-    /// Variant representing a Layer-1 message (Scroll specific).
-    L1Msg(L1MsgTx),
-    /// Variant representing an EIP-2930 typed tx.
-    Eip2930(SignedTxEip2930),
-    /// Variant representing an EIP-1559 tx.
-    Eip1559(SignedTxEip1559),
-}
-
-impl Encodable for GenericTransaction {
-    fn rlp_append(&self, s: &mut RlpStream) {
-        match self {
-            Self::Eip155(tx) => tx.rlp_append(s),
-            Self::PreEip155(tx) => tx.rlp_append(s),
-            Self::L1Msg(tx) => tx.rlp_append(s),
-            Self::Eip2930(tx) => tx.rlp_append(s),
-            Self::Eip1559(tx) => tx.rlp_append(s),
-        }
-    }
-}
-
-impl Encodable for GenericSignedTransaction {
-    fn rlp_append(&self, s: &mut RlpStream) {
-        match self {
-            Self::Eip155(signed_tx) => signed_tx.rlp_append(s),
-            Self::PreEip155(signed_tx) => signed_tx.rlp_append(s),
-            Self::L1Msg(signed_tx) => signed_tx.rlp_append(s),
-            Self::Eip2930(signed_tx) => signed_tx.rlp_append(s),
-            Self::Eip1559(signed_tx) => signed_tx.rlp_append(s),
-        }
-    }
-}
-
-pub struct NewTransaction {
-    // fields specific to zkevm witness.
-    block_number: u64,
-    id: usize,
-    hash: H256,
-    is_create: bool,
-    call_data_length: usize,
-    call_data_gas_cost: u64,
-    calls: Vec<Call>,
-    steps: Vec<ExecStep>,
-    // eth tx fields.
-    tx: GenericSignedTransaction,
-}
-
 /// Transaction in a witness block
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Transaction {
@@ -115,6 +39,8 @@ pub struct Transaction {
     pub id: usize,
     /// The hash of the transaction
     pub hash: H256,
+    /// The type of the transaction
+    pub tx_type: TxTypes,
     /// The sender account nonce of the transaction
     pub nonce: u64,
     /// The gas limit of the transaction
@@ -377,22 +303,33 @@ impl Transaction {
     }
 }
 
-impl Encodable for Transaction {
-    fn rlp_append(&self, s: &mut RlpStream) {
-        s.begin_list(9);
-        s.append(&Word::from(self.nonce));
-        s.append(&self.gas_price);
-        s.append(&Word::from(self.gas));
-        if let Some(addr) = self.callee_address {
-            s.append(&addr);
-        } else {
-            s.append(&"");
-        }
-        s.append(&self.value);
-        s.append(&self.call_data);
-        s.append(&Word::from(self.chain_id));
-        s.append(&Word::zero());
-        s.append(&Word::zero());
+impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
+    fn gen_sm_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>> {
+        todo!()
+    }
+
+    fn gen_data_table(&self, challenges: &Challenges<Value<F>>) -> Vec<DataTable<F>> {
+        let tx_id = self.0.id as u64;
+        let rlp_encoding = &self.rlp_signed;
+        let n = rlp_encoding.len();
+        let r = challenges.keccak_input();
+        let mut bytes_rlc = Value::known(F::zero());
+        rlp_encoding
+            .as_ref()
+            .iter()
+            .enumerate()
+            .map(|(i, &byte_value)| {
+                bytes_rlc = bytes_rlc * r + Value::known(F::from(byte_value as u64));
+                DataTable {
+                    tx_id,
+                    format: TxSignEip155,
+                    byte_idx: i + 1,
+                    byte_rev_idx: n - i,
+                    byte_value,
+                    bytes_rlc,
+                }
+            })
+            .collect()
     }
 }
 
@@ -403,25 +340,6 @@ pub struct SignedTransaction {
     pub tx: Transaction,
     /// ECDSA signature on the transaction.
     pub signature: Signature,
-}
-
-impl Encodable for SignedTransaction {
-    fn rlp_append(&self, s: &mut RlpStream) {
-        s.begin_list(9);
-        s.append(&Word::from(self.tx.nonce));
-        s.append(&self.tx.gas_price);
-        s.append(&Word::from(self.tx.gas));
-        if let Some(addr) = self.tx.callee_address {
-            s.append(&addr);
-        } else {
-            s.append(&"");
-        }
-        s.append(&self.tx.value);
-        s.append(&self.tx.call_data);
-        s.append(&self.signature.v);
-        s.append(&self.signature.r);
-        s.append(&self.signature.s);
-    }
 }
 
 impl From<MockTransaction> for Transaction {
@@ -496,25 +414,6 @@ pub(super) fn tx_convert(
         "block.chain_id = {}, tx.chain_id = {}",
         chain_id, tx.chain_id
     );
-    let (rlp_unsigned, rlp_signed) = {
-        let mut legacy_tx = TransactionRequest::new()
-            .from(tx.from)
-            .nonce(tx.nonce)
-            .gas_price(tx.gas_price)
-            .gas(tx.gas)
-            .value(tx.value)
-            .data(tx.input.clone())
-            .chain_id(chain_id);
-        if !tx.is_create() {
-            legacy_tx = legacy_tx.to(tx.to);
-        }
-
-        let unsigned = legacy_tx.rlp().to_vec();
-        let signed = legacy_tx.rlp_signed(&tx.signature).to_vec();
-
-        (unsigned, signed)
-    };
-
     let callee_address = if tx.is_create() { None } else { Some(tx.to) };
 
     Transaction {
@@ -522,6 +421,7 @@ pub(super) fn tx_convert(
         id,
         hash: tx.hash, // NOTE that if tx is not of legacy type, then tx.hash does not equal to
         // keccak(rlp_signed)
+        tx_type: tx.tx_type,
         nonce: tx.nonce,
         gas: tx.gas,
         gas_price: tx.gas_price,
@@ -536,8 +436,8 @@ pub(super) fn tx_convert(
             .iter()
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
         chain_id,
-        rlp_unsigned,
-        rlp_signed,
+        rlp_unsigned: tx.rlp_unsigned_bytes.clone(),
+        rlp_signed: tx.rlp_bytes.clone(),
         v: tx.signature.v,
         r: tx.signature.r,
         s: tx.signature.s,
