@@ -497,8 +497,21 @@ pub fn gen_begin_tx_ops(
         nonce_prev,
     )?;
 
-    // Add caller and callee into access list
-    for address in [call.caller_address, call.address] {
+    // Add caller, callee and coinbase (only for Shanghai) to access list.
+    #[cfg(feature = "shanghai")]
+    let accessed_addresses = [
+        call.caller_address,
+        call.address,
+        state
+            .block
+            .headers
+            .get(&state.tx.block_num)
+            .unwrap()
+            .coinbase,
+    ];
+    #[cfg(not(feature = "shanghai"))]
+    let accessed_addresses = [call.caller_address, call.address];
+    for address in accessed_addresses {
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
         state.tx_accesslist_account_write(
             &mut exec_step,
