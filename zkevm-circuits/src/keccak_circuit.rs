@@ -982,6 +982,8 @@ impl<F: Field> KeccakCircuitConfig<F> {
 /// KeccakCircuit
 #[derive(Default, Clone, Debug)]
 pub struct KeccakCircuit<F: Field> {
+    // The input is a two dimensional vector
+    // Each input
     inputs: Vec<Vec<u8>>,
     num_rows: usize,
     _marker: PhantomData<F>,
@@ -994,7 +996,7 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
         keccak_unusable_rows()
     }
 
-    /// The `block.circuits_params.keccak_padding` parmeter, when enabled, sets
+    /// The `block.circuits_params.keccak_padding` parameter, when enabled, sets
     /// up the circuit to support a fixed number of permutations/keccak_f's,
     /// independently of the permutations required by `inputs`.
     fn new_from_block(block: &witness::Block<F>) -> Self {

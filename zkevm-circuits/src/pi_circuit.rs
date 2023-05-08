@@ -176,7 +176,7 @@ impl PublicData {
         result
     }
 
-    fn get_pi(&self, max_txs: usize) -> H256 {
+    pub(crate) fn get_pi(&self, max_txs: usize) -> H256 {
         let rpi_bytes = self.raw_public_input_bytes(max_txs);
         let rpi_keccak = keccak256(rpi_bytes);
         H256(rpi_keccak)
