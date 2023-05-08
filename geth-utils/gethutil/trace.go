@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/imdario/mergo"
 )
 
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.ExecutionResult
@@ -122,6 +123,7 @@ type TraceConfig struct {
 	Accounts      map[common.Address]Account `json:"accounts"`
 	Transactions  []Transaction              `json:"transactions"`
 	LoggerConfig  *logger.Config             `json:"logger_config"`
+	ChainConfig   *params.ChainConfig        `json:"chain_config"`
 }
 
 func newUint64(val uint64) *uint64 { return &val }
@@ -143,9 +145,10 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
-		TerminalTotalDifficulty:       big.NewInt(0),
-		TerminalTotalDifficultyPassed: true,
-		ShanghaiTime:                  newUint64(0),
+	}
+
+	if config.ChainConfig != nil {
+		mergo.Merge(&chainConfig, config.ChainConfig, mergo.WithOverride)
 	}
 
 	var txsGasLimit uint64
