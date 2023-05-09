@@ -151,6 +151,9 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		mergo.Merge(&chainConfig, config.ChainConfig, mergo.WithOverride)
 	}
 
+	// Debug for Shanghai
+	// fmt.Printf("geth-utils: ShanghaiTime = %d\n", *chainConfig.ShanghaiTime)
+
 	var txsGasLimit uint64
 	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
 	messages := make([]core.Message, len(config.Transactions))
