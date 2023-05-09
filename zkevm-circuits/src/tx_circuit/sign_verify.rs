@@ -62,7 +62,7 @@ fn calc_required_advices(num_verif: usize) -> usize {
     let total_cells = num_verif * CELLS_PER_SIG;
     while num_adv < 150 {
         if num_adv << TOTAL_NUM_ROWS > total_cells {
-            log::info!(
+            log::debug!(
                 "ecdsa chip uses {} advice columns for {} signatures",
                 num_adv,
                 num_verif
@@ -116,7 +116,7 @@ impl<F: Field> SignVerifyChip<F> {
                 CELLS_PER_SIG
             )
         } else {
-            log::info!(
+            log::debug!(
                 "ecdsa chip: rows: {}, advice {}, num of sigs {}, cells per sig {}",
                 TOTAL_NUM_ROWS,
                 calc_required_advices(num_verif),
@@ -164,9 +164,9 @@ impl<F: Field> SignVerifyConfig<F> {
         let num_advice = [calc_required_advices(MAX_NUM_SIG), 1];
 
         #[cfg(feature = "onephase")]
-        log::info!("configuring ECDSA chip with single phase");
+        log::debug!("configuring ECDSA chip with single phase");
         #[cfg(not(feature = "onephase"))]
-        log::info!("configuring ECDSA chip with multiple phases");
+        log::debug!("configuring ECDSA chip with multiple phases");
 
         // halo2-ecc's ECDSA config
         //
@@ -754,7 +754,7 @@ impl<F: Field> SignVerifyChip<F> {
                 }
 
                 // IMPORTANT: Move to Phase2 before RLC
-                log::info!("before proceeding to the next phase");
+                log::debug!("before proceeding to the next phase");
                 ctx.print_stats(&["Range"]);
 
                 #[cfg(not(feature = "onephase"))]
@@ -805,7 +805,7 @@ impl<F: Field> SignVerifyChip<F> {
                 // check lookups
                 // This is not optional.
                 let lookup_cells = ecdsa_chip.finalize(&mut ctx);
-                log::info!("total number of lookup cells: {}", lookup_cells);
+                log::debug!("total number of lookup cells: {}", lookup_cells);
 
                 ctx.print_stats(&["Range"]);
                 Ok(assigned_sig_verifs)
@@ -1104,7 +1104,7 @@ mod sign_verify_tests {
         let mut rng = XorShiftRng::seed_from_u64(1);
         let max_sigs = [4];
         for max_sig in max_sigs.iter() {
-            log::info!("testing for {} signatures", max_sig);
+            log::debug!("testing for {} signatures", max_sig);
             let mut signatures = Vec::new();
             for _ in 0..*max_sig {
                 let (sk, pk) = gen_key_pair(&mut rng);
@@ -1127,7 +1127,7 @@ mod sign_verify_tests {
             let k = TOTAL_NUM_ROWS as u32;
             run::<Fr>(k, *max_sig, signatures);
 
-            log::info!("end of testing for {} signatures", max_sig);
+            log::debug!("end of testing for {} signatures", max_sig);
         }
     }
 }
