@@ -242,13 +242,12 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
         // Run copy circuit test
         {
-            let rows_needed = CopyCircuit::<Fr>::min_num_rows_block(&block).1;
-            let k = log2_ceil(rows_needed);
+            let active_rows = CopyCircuit::<Fr>::min_num_rows_block(&block).0;
+            let k = log2_ceil(active_rows);
             let copy_circuit = CopyCircuit::<Fr>::new(block.copy_events, params.max_copy_rows);
             let instance = copy_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &copy_circuit, instance).unwrap();
-            let copy_events_len = copy_circuit.copy_events.len();
-            let rows = (params.max_copy_rows - copy_events_len..params.max_copy_rows).collect();
+            let rows = (0..active_rows).collect();
 
             self.state_checks.as_ref()(prover, &rows, &rows);
         }
