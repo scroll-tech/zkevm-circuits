@@ -186,6 +186,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		return nil, fmt.Errorf("txs total gas: %d Exceeds block gas limit: %d", txsGasLimit, blockGasLimit)
 	}
 
+	// For opcode PREVRANDAO
 	randao := common.BigToHash(toBigInt(config.Block.Difficulty)) // TODO: fix
 
 	blockCtx := vm.BlockContext{
