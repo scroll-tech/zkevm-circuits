@@ -2,7 +2,15 @@ use crate::{
     evm_circuit::{step::ExecutionState, util::rlc},
     table::TxContextFieldTag,
     util::{rlc_be_bytes, Challenges},
-    witness::{DataTable, Format::TxSignEip155, RlpFsmWitnessGen, RlpFsmWitnessRow},
+    witness::{
+        rlp_fsm::SmState,
+        DataTable, Format,
+        Format::{TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
+        RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTable, RlpTag, State,
+        State::DecodeTagStart,
+        StateMachine, Tag,
+        Tag::EndList,
+    },
 };
 use bus_mapping::{
     circuit_input_builder,
@@ -305,31 +313,267 @@ impl Transaction {
 
 impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
     fn gen_sm_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>> {
-        todo!()
+        let (hash_format, sign_format) = match self.tx_type {
+            TxTypes::Eip155 => (TxHashEip155, TxSignEip155),
+            TxTypes::PreEip155 => (TxHashPreEip155, TxSignPreEip155),
+            TxTypes::Eip1559 => {
+                unimplemented!("eip1559 not supported now")
+            }
+            TxTypes::Eip2930 => {
+                unimplemented!("eip1559 not supported now")
+            }
+        };
+
+        let gen_witness = |tx_id: u64,
+                           format: Format,
+                           rlp_bytes: &[u8],
+                           challenges: &Challenges<Value<F>>|
+         -> Vec<RlpFsmWitnessRow<F>> {
+            let mut witness = vec![];
+            let rom_table = format.rom_table_rows();
+            let keccak_rand = challenges.keccak_input();
+            let word_rand = challenges.evm_word();
+            let rlp_bytes_rlc = rlp_bytes
+                .iter()
+                .scan(Value::known(F::zero()), |rlc, &byte| {
+                    *rlc = *rlc * keccak_rand + Value::known(F::from(byte as u64));
+
+                    Some(*rlc)
+                })
+                .collect::<Vec<_>>();
+            let mut cur = SmState {
+                tag: rom_table[0].tag,
+                tag_next: rom_table[0].tag_next,
+                state: DecodeTagStart,
+                tag_idx: 0,
+                tag_length: 0,
+                tag_value_acc: Value::known(F::zero()),
+                byte_idx: 0,
+                depth: 0,
+            };
+            let mut is_output;
+            let mut is_none;
+            let mut rlp_tag;
+            let mut lb_len = 0;
+
+            while cur.tag != EndList && cur.depth != 0 {
+                // default behavior
+                is_none = false;
+                is_output = false;
+                rlp_tag = RlpTag::Tag(cur.tag);
+
+                let mut next = cur.clone();
+                match cur.state {
+                    DecodeTagStart => {
+                        if cur.tag.is_end() {
+                            if cur.depth == 1 {
+                                assert_eq!(cur.byte_idx, rlp_bytes.len() - 1);
+                                rlp_tag = RlpTag::RLC;
+                                is_output = true;
+                                cur.tag_value_acc = rlp_bytes_rlc[cur.byte_idx];
+                            }
+                            next.depth = cur.depth - 1;
+                        } else {
+                            let byte_value = rlp_bytes[cur.byte_idx];
+                            if byte_value < 0x80 {
+                                assert!(!cur.tag.is_list());
+
+                                is_output = true;
+                                cur.tag_value_acc = Value::known(F::from(byte_value as u64));
+
+                                next.tag = cur.tag_next;
+                                // todo: next.tag_next = ?
+                                next.byte_idx = cur.byte_idx + 1;
+                                next.state = DecodeTagStart;
+                            } else if byte_value == 0x80 {
+                                assert!(!cur.tag.is_list());
+
+                                is_output = true;
+                                is_none = true;
+                                cur.tag_value_acc = Value::known(F::zero());
+
+                                next.state = DecodeTagStart;
+                                next.tag = cur.tag_next;
+                                // todo: next_tag = ?
+                                next.byte_idx = cur.byte_idx + 1;
+                            } else if byte_value < 0xb8 {
+                                assert!(!cur.tag.is_list());
+
+                                next.tag_idx = 1;
+                                next.tag_length = (byte_value - 0x80) as usize;
+                                next.byte_idx = cur.byte_idx + 1;
+                                next.tag_value_acc =
+                                    Value::known(F::from(rlp_bytes[next.byte_idx] as u64));
+                                next.state = State::Bytes;
+                            } else if byte_value < 0xc0 {
+                                assert!(!cur.tag.is_list());
+
+                                next.tag_idx = 1;
+                                next.tag_length = (byte_value - 0xb7) as usize;
+                                next.byte_idx = cur.byte_idx + 1;
+                                next.tag_value_acc =
+                                    Value::known(F::from(rlp_bytes[next.byte_idx] as u64));
+                                lb_len = rlp_bytes[next.byte_idx] as usize;
+                                next.state = State::LongBytes;
+                            } else if byte_value < 0xf8 {
+                                assert!(cur.tag.is_begin());
+                                if cur.depth == 0 {
+                                    is_output = true;
+                                    rlp_tag = RlpTag::Len;
+                                    cur.tag_value_acc = Value::known(F::from(
+                                        (cur.byte_idx + 1 + usize::from(byte_value - 0xc0)) as u64,
+                                    ));
+                                }
+
+                                next.tag = cur.tag_next;
+                                // todo: next_tag = ?
+                                next.byte_idx = cur.byte_idx + 1;
+                                next.depth = cur.depth + 1;
+                                next.state = DecodeTagStart;
+                            } else {
+                                assert!(cur.tag.is_begin());
+
+                                next.tag_idx = 1;
+                                next.tag_length = (byte_value - 0xf7) as usize;
+                                next.byte_idx = cur.byte_idx + 1;
+                                next.tag_value_acc =
+                                    Value::known(F::from(rlp_bytes[next.byte_idx] as u64));
+                                lb_len = rlp_bytes[next.byte_idx] as usize;
+                                next.depth = cur.depth + 1;
+                                next.state = State::LongList;
+                            }
+                        }
+                    }
+                    State::Bytes => {
+                        if cur.tag_idx < cur.tag_length {
+                            let b = if cur.tag_length < 32 {
+                                Value::known(F::from(256_u64))
+                            } else if cur.tag_length == 32 {
+                                word_rand
+                            } else {
+                                keccak_rand
+                            };
+                            next.tag_idx = cur.tag_idx + 1;
+                            next.byte_idx = cur.tag_idx + 1;
+                            next.tag_value_acc = cur.tag_value_acc * b
+                                + Value::known(F::from(rlp_bytes[next.byte_idx] as u64));
+                        } else {
+                            is_output = true;
+
+                            next.tag = cur.tag_next;
+                            next.byte_idx = cur.tag_idx + 1;
+                            next.state = DecodeTagStart;
+                        }
+                    }
+                    State::LongBytes => {
+                        if cur.tag_idx < cur.tag_length {
+                            next.tag_idx = cur.tag_idx + 1;
+                            next.byte_idx = cur.byte_idx + 1;
+                            next.tag_value_acc = cur.tag_value_acc * Value::known(F::from(256_u64))
+                                + Value::known(F::from(rlp_bytes[next.byte_idx] as u64));
+                            lb_len = lb_len * 256 + usize::from(rlp_bytes[next.byte_idx]);
+                        } else {
+                            // case cur.tag_idx == cur.tag_length
+                            next.tag_length = lb_len;
+                            next.tag_idx = 1;
+                            next.byte_idx = cur.byte_idx + 1;
+                            next.state = State::Bytes;
+                        }
+                    }
+                    State::LongList => {
+                        if cur.tag_idx < cur.tag_length {
+                            next.tag_idx = cur.tag_idx + 1;
+                            next.byte_idx = cur.byte_idx + 1;
+                            next.tag_value_acc = cur.tag_value_acc * Value::known(F::from(256_u64))
+                                + Value::known(F::from(rlp_bytes[next.byte_idx] as u64));
+                            lb_len = lb_len * 256 + usize::from(rlp_bytes[next.byte_idx]);
+                        } else {
+                            if cur.depth == 1 {
+                                assert_eq!(lb_len + 1, rlp_bytes.len() - cur.byte_idx);
+                            }
+                            next.tag = cur.tag_next;
+                            next.byte_idx = cur.byte_idx + 1;
+                            next.state = DecodeTagStart;
+                        }
+                    }
+                    State::End => {
+                        unreachable!()
+                    }
+                }
+
+                witness.push(RlpFsmWitnessRow {
+                    rlp_table: RlpTable {
+                        tx_id,
+                        format,
+                        rlp_tag,
+                        tag_value_acc: cur.tag_value_acc,
+                        is_output,
+                        is_none,
+                    },
+                    state_machine: StateMachine {
+                        state: cur.state,
+                        tag: cur.tag,
+                        tag_next: cur.tag_next,
+                        byte_idx: cur.byte_idx,
+                        byte_rev_idx: rlp_bytes.len() - cur.byte_idx,
+                        byte_value: rlp_bytes[cur.byte_idx],
+                        tag_idx: cur.tag_idx,
+                        tag_length: cur.tag_length,
+                        depth: cur.depth,
+                        bytes_rlc: rlp_bytes_rlc[cur.byte_idx],
+                    },
+                });
+
+                cur = next;
+            }
+
+            witness
+        };
+
+        let hash_wit = gen_witness(self.id as u64, hash_format, &self.rlp_signed, challenges);
+        let sign_wit = gen_witness(self.id as u64, sign_format, &self.rlp_unsigned, challenges);
+
+        [hash_wit, sign_wit].concat()
     }
 
     fn gen_data_table(&self, challenges: &Challenges<Value<F>>) -> Vec<DataTable<F>> {
-        let tx_id = self.0.id as u64;
-        let rlp_encoding = &self.rlp_signed;
-        let n = rlp_encoding.len();
+        let tx_id = self.id as u64;
         let r = challenges.keccak_input();
-        let mut bytes_rlc = Value::known(F::zero());
-        rlp_encoding
-            .as_ref()
-            .iter()
-            .enumerate()
-            .map(|(i, &byte_value)| {
-                bytes_rlc = bytes_rlc * r + Value::known(F::from(byte_value as u64));
-                DataTable {
-                    tx_id,
-                    format: TxSignEip155,
-                    byte_idx: i + 1,
-                    byte_rev_idx: n - i,
-                    byte_value,
-                    bytes_rlc,
-                }
-            })
-            .collect()
+
+        let (hash_format, sign_format) = match self.tx_type {
+            TxTypes::Eip155 => (TxHashEip155, TxSignEip155),
+            TxTypes::PreEip155 => (TxHashPreEip155, TxSignPreEip155),
+            TxTypes::Eip1559 => {
+                unimplemented!("eip1559 not supported now")
+            }
+            TxTypes::Eip2930 => {
+                unimplemented!("eip1559 not supported now")
+            }
+        };
+
+        let get_table = |rlp_bytes: &Vec<u8>, format: Format| {
+            let n = rlp_bytes.len();
+            rlp_bytes
+                .into_iter()
+                .enumerate()
+                .scan(Value::known(F::zero()), |rlc, (i, &byte_value)| {
+                    *rlc = *rlc * r + Value::known(F::from(byte_value as u64));
+                    Some(DataTable {
+                        tx_id,
+                        format,
+                        byte_idx: i + 1,
+                        byte_rev_idx: n - i,
+                        byte_value,
+                        bytes_rlc: *rlc,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let hash_table = get_table(&self.rlp_signed, hash_format);
+        let sign_table = get_table(&self.rlp_unsigned, sign_format);
+
+        [hash_table, sign_table].concat()
     }
 }
 
@@ -340,6 +584,17 @@ pub struct SignedTransaction {
     pub tx: Transaction,
     /// ECDSA signature on the transaction.
     pub signature: Signature,
+}
+impl Encodable for SignedTransaction {
+    fn rlp_append(&self, s: &mut RlpStream) {
+        todo!()
+    }
+}
+
+impl Encodable for Transaction {
+    fn rlp_append(&self, s: &mut RlpStream) {
+        todo!()
+    }
 }
 
 impl From<MockTransaction> for Transaction {
@@ -373,6 +628,7 @@ impl From<MockTransaction> for Transaction {
             block_number: 1,
             id: mock_tx.transaction_index.as_usize(),
             hash: mock_tx.hash.unwrap_or_default(),
+            tx_type: TxTypes::Eip155,
             nonce: mock_tx.nonce.as_u64(),
             gas: mock_tx.gas.as_u64(),
             gas_price: mock_tx.gas_price,
@@ -496,5 +752,12 @@ impl From<&Transaction> for SignedTransaction {
                 s: tx.s,
             },
         }
+    }
+}
+
+mod tests {
+    #[test]
+    fn test_rlp() {
+        // get eip155
     }
 }

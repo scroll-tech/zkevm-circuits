@@ -16,7 +16,7 @@ use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
 /// Tx types
-#[derive(Default, Debug, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TxTypes {
     /// EIP 155 tx
     #[default]

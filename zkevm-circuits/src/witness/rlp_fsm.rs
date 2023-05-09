@@ -1,5 +1,4 @@
 use eth_types::Field;
-use ethers_core::utils::rlp::Encodable;
 use gadgets::{impl_expr, util::Expr};
 use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
 use strum_macros::EnumIter;
@@ -7,7 +6,7 @@ use strum_macros::EnumIter;
 use crate::util::Challenges;
 
 /// RLP tags
-#[derive(Clone, Copy, Debug, EnumIter)]
+#[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq)]
 pub enum Tag {
     /// Tag that marks the beginning of a list
     /// whose value gives the length of bytes of this list.
@@ -85,6 +84,7 @@ impl Tag {
         }
     }
 
+    /// If the tag is BeginList or BeginVector
     pub fn is_begin(&self) -> bool {
         match &self {
             Self::BeginList | Self::BeginVector => true,
@@ -92,6 +92,7 @@ impl Tag {
         }
     }
 
+    /// If the tag is EndList or EndVector
     pub fn is_end(&self) -> bool {
         match &self {
             Self::EndList | Self::EndVector => true,
@@ -142,9 +143,8 @@ use crate::{
         },
     },
 };
-use eth_types::geth_types::TxTypes;
 
-fn eip155_tx_sign_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
+fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     vec![
         (BeginList, Nonce, N_BYTES_U64, TxSignEip155).into(),
         (Nonce, GasPrice, N_BYTES_U64, TxSignEip155).into(),
@@ -160,7 +160,7 @@ fn eip155_tx_sign_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
     ]
 }
 
-fn eip155_tx_hash_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
+fn eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     vec![
         (BeginList, Nonce, N_BYTES_U64, TxHashEip155).into(),
         (Nonce, GasPrice, N_BYTES_U64, TxHashEip155).into(),
@@ -176,7 +176,7 @@ fn eip155_tx_hash_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
     ]
 }
 
-pub fn pre_eip155_tx_sign_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
+pub fn pre_eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     vec![
         (BeginList, Nonce, N_BYTES_U64, TxSignPreEip155).into(),
         (Nonce, GasPrice, N_BYTES_U64, TxSignPreEip155).into(),
@@ -189,7 +189,7 @@ pub fn pre_eip155_tx_sign_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
     ]
 }
 
-pub fn pre_eip155_tx_hash_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
+pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     vec![
         (BeginList, Nonce, N_BYTES_U64, TxHashPreEip155).into(),
         (Nonce, GasPrice, N_BYTES_U64, TxHashPreEip155).into(),
@@ -206,17 +206,35 @@ pub fn pre_eip155_tx_hash_rom_table_rows<F: Field>() -> Vec<RomTableRow<F>> {
 }
 
 /// Read-only Memory table row.
-pub struct RomTableRow<F>(pub [Value<F>; 5]);
+pub struct RomTableRow {
+    pub(crate) tag: Tag,
+    pub(crate) tag_next: Tag,
+    pub(crate) max_length: usize,
+    pub(crate) is_list: bool,
+    pub(crate) format: Format,
+}
 
-impl<F: FieldExt> From<(Tag, Tag, usize, Format)> for RomTableRow<F> {
+impl From<(Tag, Tag, usize, Format)> for RomTableRow {
     fn from(value: (Tag, Tag, usize, Format)) -> Self {
-        Self([
-            Value::known(F::from(usize::from(value.0) as u64)),
-            Value::known(F::from(usize::from(value.1) as u64)),
-            Value::known(F::from(value.2 as u64)),
-            Value::known(F::from(u64::from(value.0.is_list()))),
-            Value::known(F::from(usize::from(value.3) as u64)),
-        ])
+        Self {
+            tag: value.0,
+            tag_next: value.1,
+            max_length: value.2,
+            is_list: value.0.is_list(),
+            format: value.3,
+        }
+    }
+}
+
+impl RomTableRow {
+    pub(crate) fn values<F: Field>(&self) -> Vec<Value<F>> {
+        vec![
+            Value::known(F::from(usize::from(self.tag) as u64)),
+            Value::known(F::from(usize::from(self.tag_next) as u64)),
+            Value::known(F::from(self.max_length as u64)),
+            Value::known(F::from(self.is_list as u64)),
+            Value::known(F::from(usize::from(self.format) as u64)),
+        ]
     }
 }
 
@@ -243,12 +261,12 @@ impl From<Format> for usize {
 
 impl Format {
     /// The ROM table for format
-    pub fn rom_table_rows<F: FieldExt>(&self) -> Vec<RomTableRow<F>> {
+    pub fn rom_table_rows(&self) -> Vec<RomTableRow> {
         match self {
-            Self::TxSignEip155 => eip155_tx_sign_rom_table_rows(),
-            Self::TxHashEip155 => eip155_tx_hash_rom_table_rows(),
-            Self::TxSignPreEip155 => pre_eip155_tx_sign_rom_table_rows(),
-            Self::TxHashPreEip155 => pre_eip155_tx_hash_rom_table_rows(),
+            TxSignEip155 => eip155_tx_sign_rom_table_rows(),
+            TxHashEip155 => eip155_tx_hash_rom_table_rows(),
+            TxSignPreEip155 => pre_eip155_tx_sign_rom_table_rows(),
+            TxHashPreEip155 => pre_eip155_tx_hash_rom_table_rows(),
             Self::L1MsgHash => l1_msg::rom_table_rows(),
         }
     }
@@ -364,4 +382,16 @@ pub trait RlpFsmWitnessGen<F: FieldExt>: Sized {
 
     /// Generate witness to the Data table that RLP circuit does lookup into.
     fn gen_data_table(&self, challenges: &Challenges<Value<F>>) -> Vec<DataTable<F>>;
+}
+
+#[derive(Clone)]
+pub(crate) struct SmState<F: Field> {
+    pub(crate) tag: Tag,
+    pub(crate) tag_next: Tag,
+    pub(crate) state: State,
+    pub(crate) byte_idx: usize,
+    pub(crate) depth: usize,
+    pub(crate) tag_idx: usize,
+    pub(crate) tag_length: usize,
+    pub(crate) tag_value_acc: Value<F>,
 }

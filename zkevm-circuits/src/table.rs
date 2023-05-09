@@ -2195,14 +2195,14 @@ impl RlpFsmRomTable {
         layouter.assign_region(
             || "rlp ROM table",
             |mut region| {
-                let rows: Vec<RomTableRow<F>> = Format::iter()
+                let rows: Vec<RomTableRow> = Format::iter()
                     .map(|format| format.rom_table_rows())
                     .concat();
 
                 for (offset, row) in rows.iter().enumerate() {
                     for (&column, value) in <RlpFsmRomTable as LookupTable<F>>::fixed_columns(self)
                         .iter()
-                        .zip(row.0)
+                        .zip(row.values::<F>().into_iter())
                     {
                         region.assign_fixed(
                             || format!("rom table row: offset = {}", offset),

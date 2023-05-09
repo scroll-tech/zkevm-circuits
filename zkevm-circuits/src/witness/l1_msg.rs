@@ -7,7 +7,6 @@ use crate::{
     },
 };
 use ethers_core::utils::rlp::Encodable;
-use halo2_proofs::arithmetic::FieldExt;
 
 #[derive(Clone, Debug)]
 pub struct L1MsgTx;
@@ -18,7 +17,7 @@ impl Encodable for L1MsgTx {
     }
 }
 
-pub fn rom_table_rows<F: FieldExt>() -> Vec<RomTableRow<F>> {
+pub fn rom_table_rows() -> Vec<RomTableRow> {
     vec![
         (TxType, BeginList, 1, L1MsgHash).into(),
         (BeginList, Sender, 0, L1MsgHash).into(),

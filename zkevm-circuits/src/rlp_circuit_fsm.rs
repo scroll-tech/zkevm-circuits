@@ -23,8 +23,7 @@ use crate::{
     table::{LookupTable, RlpFsmDataTable, RlpFsmRlpTable, RlpFsmRomTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
-        Block, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, SignedTransaction, State,
-        State::DecodeTagStart, Tag,
+        Block, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, State, State::DecodeTagStart, Tag,
     },
 };
 
@@ -1440,13 +1439,14 @@ impl<F: Field, RLP: RlpFsmWitnessGen<F>> Circuit<F> for RlpCircuit<F, RLP> {
         let rom_table = RlpFsmRomTable::construct(meta);
         let u8_table = Range256Table::construct(meta);
         let challenges = Challenges::construct(meta);
+        let challenge_exprs = challenges.exprs(meta);
         let config = RlpCircuitConfig::configure(
             meta,
             &rom_table,
             &data_table,
             &rlp_table,
             &u8_table,
-            &challenges.exprs(meta),
+            &challenge_exprs,
         );
 
         (config, challenges)
