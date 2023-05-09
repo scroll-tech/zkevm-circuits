@@ -81,6 +81,7 @@ pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     block: Option<Block<Fr>>,
     evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
+    copy_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
 }
 
@@ -98,6 +99,12 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 ), Ok(()));
             }),
             state_checks: Box::new(|prover, gate_rows, lookup_rows| {
+                assert_eq!(prover.verify_at_rows_par(
+                    gate_rows.iter().cloned(),
+                    lookup_rows.iter().cloned(),
+                ), Ok(()));
+            }),
+            copy_checks: Box::new(|prover, gate_rows, lookup_rows| {
                 assert_eq!(prover.verify_at_rows_par(
                     gate_rows.iter().cloned(),
                     lookup_rows.iter().cloned(),
@@ -249,7 +256,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let prover = MockProver::<Fr>::run(k, &copy_circuit, instance).unwrap();
             let rows = (0..active_rows).collect();
 
-            self.state_checks.as_ref()(prover, &rows, &rows);
+            self.copy_checks.as_ref()(prover, &rows, &rows);
         }
     }
 }
