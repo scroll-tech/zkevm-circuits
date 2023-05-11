@@ -393,10 +393,11 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
                                 0
                             );
                             if cur.depth == 1 {
-                                assert_eq!(cur.byte_idx, rlp_bytes.len() - 1);
+                                // cur.byte_idx is +1 larger than the end
+                                assert_eq!(cur.byte_idx, rlp_bytes.len());
                                 is_output = true;
                                 rlp_tag = RlpTag::RLC;
-                                cur.tag_value_acc = rlp_bytes_rlc[cur.byte_idx];
+                                cur.tag_value_acc = rlp_bytes_rlc[cur.byte_idx-1];
                             }
 
                             // state transitions
@@ -454,6 +455,9 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
                                     cur.tag_value_acc = Value::known(F::from(
                                         (cur.byte_idx + 1 + usize::from(byte_value - 0xc0)) as u64,
                                     )); // +1 because byte_idx starts from 0.
+                                } else {
+                                    cur.tag_value_acc =
+                                        Value::known(F::from(u64::from(byte_value - 0xc0)));
                                 }
 
                                 // state transitions
@@ -468,6 +472,7 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
                                 assert!(cur.tag.is_begin());
                                 // TODO: assert first leading byte is non-zero
 
+                                // state transitions
                                 next.tag_idx = 1;
                                 next.tag_length = (byte_value - 0xf7) as usize;
                                 lb_len = rlp_bytes[next.byte_idx] as usize;
@@ -530,12 +535,15 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
                             *rem = *rem - 1;
                         }
                         if cur.tag_idx < cur.tag_length {
+                            // state transitions
                             next.tag_idx = cur.tag_idx + 1;
                             lb_len = lb_len * 256 + usize::from(rlp_bytes[next.byte_idx]);
                             next.tag_value_acc = Value::known(F::from(lb_len as u64));
                         } else {
+                            // assertions
                             if cur.depth == 0 {
                                 assert_eq!(lb_len + 1, rlp_bytes.len() - cur.byte_idx);
+                                is_output = true;
                             }
                             if let Some(rem) = remaining_bytes.last_mut() {
                                 *rem = *rem - lb_len;
@@ -551,10 +559,6 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
                 }
 
                 if next.state == DecodeTagStart {
-                    println!(
-                        "tag: {:?} {:?} {:?} {}",
-                        cur.tag, cur.tag_value_acc, cur_rom_row, cur.byte_idx
-                    );
                     // we finished parsing current tag
                     let row = if cur_rom_row.len() == 1 {
                         cur_rom_row[0]
@@ -581,6 +585,12 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
                     cur_rom_row = rom_table[row].tag_next_idx.clone();
                 }
 
+                let (byte_value, bytes_rlc) = if cur.byte_idx < rlp_bytes.len() {
+                    (rlp_bytes[cur.byte_idx], rlp_bytes_rlc[cur.byte_idx])
+                } else {
+                    // the value here does not matter as we do not read it from rlp_bytes
+                    (0, Value::known(F::zero()))
+                };
                 witness.push(RlpFsmWitnessRow {
                     rlp_table: RlpTable {
                         tx_id,
@@ -596,16 +606,16 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
                         tag_next: Default::default(),
                         byte_idx: cur.byte_idx,
                         byte_rev_idx: rlp_bytes.len() - cur.byte_idx,
-                        byte_value: rlp_bytes[cur.byte_idx],
+                        byte_value,
                         tag_idx: cur.tag_idx,
                         tag_length: cur.tag_length,
                         depth: cur.depth,
-                        bytes_rlc: rlp_bytes_rlc[cur.byte_idx],
+                        bytes_rlc,
                     },
                 });
                 witness_table_idx += 1;
 
-                if cur.tag == EndList && next.depth == 1 {
+                if cur.tag == EndList && next.depth == 0 {
                     break;
                 }
                 cur = next;
@@ -855,17 +865,26 @@ mod tests {
         witness::{tx::tx_convert, RlpFsmWitnessGen, Transaction},
     };
     use eth_types::geth_types::TxTypes;
+    use ethers_core::types::Transaction as EthTransaction;
     use ethers_core::utils::rlp::{Decodable, Rlp};
-    use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
+    use halo2_proofs::{circuit::Value, dev::unwrap_value, halo2curves::bn256::Fr};
+    use eth_types::{ToBigEndian, ToLittleEndian, ToScalar};
 
     #[test]
-    fn test_rlp() {
-        // get eip155
+    fn test_rlp_pre_eip155() {
+        // the tx is downloaded from https://etherscan.io/getRawTx?tx=0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060
+        let raw_tx_rlp_bytes = hex::decode("f86780862d79883d2000825208945df9b87991262f6ba471f09758cde1c0fc1de734827a69801ca088ff6cf0fefd94db46111149ae4bfc179e9b94721fffd821d38d16464b3f71d0a045e0aff800961cfce805daef7016b9b675c137a6a41a548f7b60a3484c06a33a")
+            .expect("decode tx's hex shall not fail");
+
+        // TODO: the decode method in ethers#0.17.0 is buggy
+        let eth_tx = EthTransaction::decode(&Rlp::new(&raw_tx_rlp_bytes))
+            .expect("decode tx's rlp bytes shall not fail");
+
+        let tx = Transaction::new_from_rlp_bytes(TxTypes::PreEip155, raw_tx_rlp_bytes);
     }
 
     #[test]
     fn test_rlp_eip1559() {
-        use ethers_core::types::Transaction as EthTransaction;
         // the tx is downloaded from https://etherscan.io/getRawTx?tx=0x1c5bd618bdbc575f71bfe0a54f09bca2997bbf6d90d4f371a509b05e2b3124e3
         let raw_tx_rlp_bytes = hex::decode("02f901e901833c3139842b27f14d86012309ce540083055ca8945f65f7b609678448494de4c87521cdf6cef1e93280b8e4fa558b7100000000000000000000000095ad61b0a150d79219dcf64e1e6cc01f0b64c4ce000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000000100000000000000000000000016a217dedfacdf9c23edb84b57154f26a15848e60000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000028cad80bb7cf17e27c4c8f893f7945f65f7b609678448494de4c87521cdf6cef1e932e1a0d2dc2a0881b05440a4908cf506b4871b1f7eaa46ea0c5dfdcda5f52bc17164a4f8599495ad61b0a150d79219dcf64e1e6cc01f0b64c4cef842a0ba03decd934aae936605e9d437c401439ec4cefbad5795e0965100f929fe339ca0b36e2afa1a25492257090107ad99d079032e543c8dd1ffcd44cf14a96d3015ac80a0821193127789b107351f670025dd3b862f5836e5155f627a29741a251e8d28e8a07ea1e82b1bf6f29c5d0f1e4024acdb698086ac40c353704d7d5e301fb916f2e3")
             .expect("decode tx's hex shall not fail");
@@ -874,11 +893,60 @@ mod tests {
             .expect("decode tx's rlp bytes shall not fail");
 
         let tx = Transaction::new_from_rlp_bytes(TxTypes::Eip1559, raw_tx_rlp_bytes);
+        let evm_word = Fr::from(0x100);
+        let keccak_input = Fr::from(0x10000);
         let mock_challenges = Challenges::mock(
-            Value::known(Fr::from(0x100)),
-            Value::known(Fr::from(0x100)),
+            Value::known(evm_word),
+            Value::known(keccak_input),
             Value::known(Fr::from(0x100)),
         );
         let witness_table = tx.gen_sm_witness(&mock_challenges);
+
+        let rlp_table = witness_table
+            .iter()
+            .filter(|row| {
+                row.rlp_table.is_output
+            })
+            .map(|row| row.rlp_table)
+            .collect::<Vec<_>>();
+
+        let rlc = |be_bytes: &[u8], rand: Fr| {
+            be_bytes.iter()
+                .fold(Fr::zero(), |acc, &byte| {
+                    acc * rand + Fr::from(byte as u64)
+                })
+        };
+        let mut tx_table = vec![
+            Fr::from(eth_tx.transaction_type.unwrap().as_u64()),
+            Fr::from(eth_tx.chain_id.unwrap().as_u64()),
+            rlc(&eth_tx.nonce.to_be_bytes(), evm_word),
+            rlc(&eth_tx.max_priority_fee_per_gas.unwrap().to_be_bytes(), evm_word),
+            rlc(&eth_tx.max_fee_per_gas.unwrap().to_be_bytes(), evm_word),
+            Fr::from(eth_tx.gas.as_u64()),
+            eth_tx.to.unwrap().to_scalar().unwrap(),
+            rlc(&eth_tx.value.to_be_bytes(), evm_word),
+            rlc(&eth_tx.input.to_vec(), keccak_input),
+        ];
+        if let Some(access_list) = eth_tx.access_list {
+            for item in access_list.0.iter() {
+                tx_table.push(
+                    item.address.to_scalar().unwrap(),
+                );
+                for &key in item.storage_keys.iter() {
+                    tx_table.push(rlc(&key.to_fixed_bytes(), evm_word));
+                }
+            }
+        }
+        tx_table.extend(vec![
+            Fr::from(eth_tx.v.as_u64()),
+            rlc(&eth_tx.r.to_be_bytes(), evm_word),
+            rlc(&eth_tx.s.to_be_bytes(), evm_word),
+        ]);
+
+        assert_eq!(unwrap_value(rlp_table[0].tag_value_acc), tx_table[0]);
+        assert_eq!(tx_table.len() + 2, rlp_table.len()); // +2 for Len and RLC
+        for i in 1..tx_table.len() {
+            assert_eq!(unwrap_value(rlp_table[i+1].tag_value_acc), tx_table[i]);
+        }
     }
 }

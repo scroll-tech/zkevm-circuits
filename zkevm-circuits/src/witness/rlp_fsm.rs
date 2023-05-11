@@ -295,7 +295,10 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (EndVector, EndList, 0, TxHashEip1559, vec![19, 20]).into(),
         (EndList, EndVector, 0, TxHashEip1559, vec![21]).into(), // finished parsing access_list
         (EndList, BeginList, 0, TxHashEip1559, vec![12]).into(), // parse another access_list entry
-        (EndVector, EndList, 0, TxHashEip1559, vec![22]).into(),
+        (EndVector, SigV, 0, TxHashEip1559, vec![22]).into(),
+        (SigV, SigR, N_BYTES_U64, TxHashEip1559, vec![23]).into(),
+        (SigR, SigS, N_BYTES_WORD, TxHashEip1559, vec![24]).into(),
+        (SigS, EndList, N_BYTES_WORD, TxHashEip1559, vec![25]).into(),
         (EndList, BeginList, 0, TxHashEip1559, vec![]).into(),
     ]
 }
