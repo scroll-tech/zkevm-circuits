@@ -4,7 +4,7 @@
 mod tests {
     use ark_std::{end_timer, start_timer};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::Field;
+    use eth_types::{evm_types::MAX_CODE_SIZE, Field};
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
         plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
@@ -45,12 +45,11 @@ mod tests {
         // Unique string used by bench results module for parsing the result
         const BENCHMARK_ID: &str = "Bytecode Circuit";
 
-        // Contract code size exceeds 24576 bytes may not be deployable on Mainnet.
-        const MAX_BYTECODE_LEN: usize = 24576;
-
         let num_rows = 1 << degree;
         let max_bytecode_row_num = num_rows - TestBytecodeCircuit::<Fr>::unusable_rows();
-        let bytecode_len = std::cmp::min(MAX_BYTECODE_LEN, max_bytecode_row_num);
+
+        // Contract code size exceeds 24576 bytes may not be deployable on Mainnet.
+        let bytecode_len = std::cmp::min(MAX_CODE_SIZE as usize, max_bytecode_row_num);
         let bytecodes_num: usize = max_bytecode_row_num / bytecode_len;
 
         // Create the circuit

@@ -60,6 +60,12 @@ impl fmt::Debug for Gas {
     }
 }
 
+/// Gas per word of the init code when creating a contract.
+pub const INIT_CODE_WORD_GAS: u64 = 2;
+/// Maximum bytecode size to permit for a contract.
+pub const MAX_CODE_SIZE: u64 = 24576;
+/// Maximum initcode size to permit in a creation transaction and create instructions.
+pub const MAX_INIT_CODE_SIZE: u64 = 2 * MAX_CODE_SIZE;
 /// This constant ((2^32 - 1) * 32) is the highest number that can be used without overflowing the
 /// square operation of gas calculation.
 /// <https://github.com/ethereum/go-ethereum/blob/e6b6a8b738069ad0579f6798ee59fde93ed13b43/core/vm/gas_table.go#L38>
