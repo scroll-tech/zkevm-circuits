@@ -6,8 +6,9 @@ use strum_macros::EnumIter;
 use crate::util::Challenges;
 
 /// RLP tags
-#[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, EnumIter, PartialEq, Eq)]
 pub enum Tag {
+    #[default]
     /// Tag that marks the beginning of a list
     /// whose value gives the length of bytes of this list.
     BeginList = 2,
@@ -36,6 +37,7 @@ pub enum Tag {
     // EIP-155
     /// Chain ID
     ChainId,
+    // TODO: merge zero1 and zero2 into one tag
     /// One byte whose value is zero
     Zero1,
     /// One byte whose value is zero
@@ -136,89 +138,185 @@ use crate::{
     evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
     witness::{
         l1_msg,
-        Format::{TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
+        Format::{TxHashEip155, TxHashEip1559, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
         Tag::{
-            BeginList, ChainId, Data, EndList, Gas, GasPrice, Nonce, SigR, SigS, SigV, To,
-            Value as TxValue, Zero1, Zero2,
+            AccessListAddress, AccessListStorageKey, BeginList, BeginVector, ChainId, Data,
+            EndList, EndVector, Gas, GasPrice, MaxFeePerGas, MaxPriorityFeePerGas, Nonce, SigR,
+            SigS, SigV, To, TxType, Value as TxValue, Zero1, Zero2,
         },
     },
 };
 
 fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     vec![
-        (BeginList, Nonce, N_BYTES_U64, TxSignEip155).into(),
-        (Nonce, GasPrice, N_BYTES_U64, TxSignEip155).into(),
-        (GasPrice, Gas, N_BYTES_WORD, TxSignEip155).into(),
-        (Gas, To, N_BYTES_U64, TxSignEip155).into(),
-        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, TxSignEip155).into(),
-        (TxValue, Data, N_BYTES_WORD, TxSignEip155).into(),
-        (Data, ChainId, 2usize.pow(24), TxSignEip155).into(),
-        (ChainId, Zero1, N_BYTES_U64, TxSignEip155).into(),
-        (Zero1, Zero2, 1, TxSignEip155).into(),
-        (Zero2, EndList, 1, TxSignEip155).into(),
-        (EndList, BeginList, 0, TxSignEip155).into(),
+        (BeginList, Nonce, N_BYTES_U64, TxSignEip155, vec![1]).into(),
+        (Nonce, GasPrice, N_BYTES_U64, TxSignEip155, vec![2]).into(),
+        (GasPrice, Gas, N_BYTES_WORD, TxSignEip155, vec![3]).into(),
+        (Gas, To, N_BYTES_U64, TxSignEip155, vec![4]).into(),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, TxSignEip155, vec![5]).into(),
+        (TxValue, Data, N_BYTES_WORD, TxSignEip155, vec![6]).into(),
+        (Data, ChainId, 2usize.pow(24), TxSignEip155, vec![7]).into(),
+        (ChainId, Zero1, N_BYTES_U64, TxSignEip155, vec![8]).into(),
+        (Zero1, Zero2, 1, TxSignEip155, vec![9]).into(),
+        (Zero2, EndList, 1, TxSignEip155, vec![10]).into(),
+        (EndList, BeginList, 0, TxSignEip155, vec![]).into(),
     ]
 }
 
 fn eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     vec![
-        (BeginList, Nonce, N_BYTES_U64, TxHashEip155).into(),
-        (Nonce, GasPrice, N_BYTES_U64, TxHashEip155).into(),
-        (GasPrice, Gas, N_BYTES_WORD, TxHashEip155).into(),
-        (Gas, To, N_BYTES_U64, TxHashEip155).into(),
-        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, TxHashEip155).into(),
-        (TxValue, Data, N_BYTES_WORD, TxHashEip155).into(),
-        (Data, SigV, 2usize.pow(24), TxHashEip155).into(),
-        (SigV, SigR, N_BYTES_U64, TxHashEip155).into(),
-        (SigR, SigS, N_BYTES_WORD, TxHashEip155).into(),
-        (SigS, EndList, N_BYTES_WORD, TxHashEip155).into(),
-        (EndList, BeginList, 0, TxHashEip155).into(),
+        (BeginList, Nonce, N_BYTES_U64, TxHashEip155, vec![1]).into(),
+        (Nonce, GasPrice, N_BYTES_U64, TxHashEip155, vec![2]).into(),
+        (GasPrice, Gas, N_BYTES_WORD, TxHashEip155, vec![3]).into(),
+        (Gas, To, N_BYTES_U64, TxHashEip155, vec![4]).into(),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, TxHashEip155, vec![5]).into(),
+        (TxValue, Data, N_BYTES_WORD, TxHashEip155, vec![6]).into(),
+        (Data, SigV, 2usize.pow(24), TxHashEip155, vec![7]).into(),
+        (SigV, SigR, N_BYTES_U64, TxHashEip155, vec![8]).into(),
+        (SigR, SigS, N_BYTES_WORD, TxHashEip155, vec![9]).into(),
+        (SigS, EndList, N_BYTES_WORD, TxHashEip155, vec![10]).into(),
+        (EndList, BeginList, 0, TxHashEip155, vec![]).into(),
     ]
 }
 
 pub fn pre_eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     vec![
-        (BeginList, Nonce, N_BYTES_U64, TxSignPreEip155).into(),
-        (Nonce, GasPrice, N_BYTES_U64, TxSignPreEip155).into(),
-        (GasPrice, Gas, N_BYTES_WORD, TxSignPreEip155).into(),
-        (Gas, To, N_BYTES_U64, TxSignPreEip155).into(),
-        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, TxSignPreEip155).into(),
-        (TxValue, Data, N_BYTES_WORD, TxSignPreEip155).into(),
-        (Data, EndList, 2usize.pow(24), TxSignPreEip155).into(),
-        (EndList, BeginList, 0, TxSignPreEip155).into(),
+        (BeginList, Nonce, N_BYTES_U64, TxSignPreEip155, vec![1]).into(),
+        (Nonce, GasPrice, N_BYTES_U64, TxSignPreEip155, vec![2]).into(),
+        (GasPrice, Gas, N_BYTES_WORD, TxSignPreEip155, vec![3]).into(),
+        (Gas, To, N_BYTES_U64, TxSignPreEip155, vec![4]).into(),
+        (
+            To,
+            TxValue,
+            N_BYTES_ACCOUNT_ADDRESS,
+            TxSignPreEip155,
+            vec![5],
+        )
+            .into(),
+        (TxValue, Data, N_BYTES_WORD, TxSignPreEip155, vec![6]).into(),
+        (Data, EndList, 2usize.pow(24), TxSignPreEip155, vec![7]).into(),
+        (EndList, BeginList, 0, TxSignPreEip155, vec![]).into(),
     ]
 }
 
 pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     vec![
-        (BeginList, Nonce, N_BYTES_U64, TxHashPreEip155).into(),
-        (Nonce, GasPrice, N_BYTES_U64, TxHashPreEip155).into(),
-        (GasPrice, Gas, N_BYTES_WORD, TxHashPreEip155).into(),
-        (Gas, To, N_BYTES_U64, TxHashPreEip155).into(),
-        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, TxHashPreEip155).into(),
-        (TxValue, Data, N_BYTES_WORD, TxHashPreEip155).into(),
-        (Data, SigV, 2usize.pow(24), TxHashPreEip155).into(),
-        (SigV, SigR, N_BYTES_U64, TxHashPreEip155).into(),
-        (SigR, SigS, N_BYTES_WORD, TxHashPreEip155).into(),
-        (SigS, EndList, N_BYTES_WORD, TxHashPreEip155).into(),
-        (EndList, BeginList, 0, TxHashPreEip155).into(),
+        (BeginList, Nonce, N_BYTES_U64, TxHashPreEip155, vec![1]).into(),
+        (Nonce, GasPrice, N_BYTES_U64, TxHashPreEip155, vec![2]).into(),
+        (GasPrice, Gas, N_BYTES_WORD, TxHashPreEip155, vec![3]).into(),
+        (Gas, To, N_BYTES_U64, TxHashPreEip155, vec![4]).into(),
+        (
+            To,
+            TxValue,
+            N_BYTES_ACCOUNT_ADDRESS,
+            TxHashPreEip155,
+            vec![5],
+        )
+            .into(),
+        (TxValue, Data, N_BYTES_WORD, TxHashPreEip155, vec![6]).into(),
+        (Data, SigV, 2usize.pow(24), TxHashPreEip155, vec![7]).into(),
+        (SigV, SigR, N_BYTES_U64, TxHashPreEip155, vec![8]).into(),
+        (SigR, SigS, N_BYTES_WORD, TxHashPreEip155, vec![9]).into(),
+        (SigS, EndList, N_BYTES_WORD, TxHashPreEip155, vec![10]).into(),
+        (EndList, BeginList, 0, TxHashPreEip155, vec![]).into(),
+    ]
+}
+
+pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
+    vec![
+        (TxType, BeginList, 1, TxHashEip1559, vec![1]).into(),
+        (BeginList, ChainId, 8, TxHashEip1559, vec![2]).into(),
+        (ChainId, Nonce, N_BYTES_U64, TxHashEip1559, vec![3]).into(),
+        (
+            Nonce,
+            MaxPriorityFeePerGas,
+            N_BYTES_U64,
+            TxHashEip1559,
+            vec![4],
+        )
+            .into(),
+        (
+            MaxPriorityFeePerGas,
+            MaxFeePerGas,
+            N_BYTES_WORD,
+            TxHashEip1559,
+            vec![5],
+        )
+            .into(),
+        (MaxFeePerGas, Gas, N_BYTES_WORD, TxHashEip1559, vec![6]).into(),
+        (Gas, To, N_BYTES_U64, TxHashEip1559, vec![7]).into(),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, TxHashEip1559, vec![8]).into(),
+        (TxValue, Data, N_BYTES_WORD, TxHashEip1559, vec![9]).into(),
+        (
+            Data,
+            BeginVector,
+            2usize.pow(24),
+            TxHashEip1559,
+            vec![10, 11],
+        )
+            .into(),
+        (BeginVector, EndVector, 8, TxHashEip1559, vec![21]).into(), // access_list is none
+        (BeginVector, BeginList, 8, TxHashEip1559, vec![12]).into(),
+        (BeginList, AccessListAddress, 8, TxHashEip1559, vec![13]).into(),
+        (
+            AccessListAddress,
+            BeginVector,
+            N_BYTES_ACCOUNT_ADDRESS,
+            TxHashEip1559,
+            vec![14, 15],
+        )
+            .into(),
+        (BeginVector, EndVector, 8, TxHashEip1559, vec![18]).into(), /* access_list.storage_keys
+                                                                      * is none */
+        (
+            BeginVector,
+            AccessListStorageKey,
+            8,
+            TxHashEip1559,
+            vec![16, 17],
+        )
+            .into(),
+        (
+            AccessListStorageKey,
+            EndVector,
+            N_BYTES_WORD,
+            TxHashEip1559,
+            vec![18],
+        )
+            .into(), // finished parsing storage keys
+        (
+            AccessListStorageKey,
+            AccessListStorageKey,
+            N_BYTES_WORD,
+            TxHashEip1559,
+            vec![16, 17],
+        )
+            .into(), // keep parsing storage_keys
+        (EndVector, EndList, 0, TxHashEip1559, vec![19, 20]).into(),
+        (EndList, EndVector, 0, TxHashEip1559, vec![21]).into(), // finished parsing access_list
+        (EndList, BeginList, 0, TxHashEip1559, vec![12]).into(), // parse another access_list entry
+        (EndVector, EndList, 0, TxHashEip1559, vec![22]).into(),
+        (EndList, BeginList, 0, TxHashEip1559, vec![]).into(),
     ]
 }
 
 /// Read-only Memory table row.
+#[derive(Debug, Clone)]
 pub struct RomTableRow {
     pub(crate) tag: Tag,
     pub(crate) tag_next: Tag,
+    pub(crate) tag_next_idx: Vec<usize>,
     pub(crate) max_length: usize,
     pub(crate) is_list: bool,
     pub(crate) format: Format,
 }
 
-impl From<(Tag, Tag, usize, Format)> for RomTableRow {
-    fn from(value: (Tag, Tag, usize, Format)) -> Self {
+impl From<(Tag, Tag, usize, Format, Vec<usize>)> for RomTableRow {
+    fn from(value: (Tag, Tag, usize, Format, Vec<usize>)) -> Self {
         Self {
             tag: value.0,
             tag_next: value.1,
+            tag_next_idx: value.4,
             max_length: value.2,
             is_list: value.0.is_list(),
             format: value.3,
@@ -249,6 +347,10 @@ pub enum Format {
     TxSignPreEip155,
     /// Hash for Pre-EIP155 tx
     TxHashPreEip155,
+    /// Sign for EIP1559 tx
+    TxSignEip1559,
+    /// Hash for EIP1559 tx
+    TxHashEip1559,
     /// L1 Msg
     L1MsgHash,
 }
@@ -267,13 +369,15 @@ impl Format {
             TxHashEip155 => eip155_tx_hash_rom_table_rows(),
             TxSignPreEip155 => pre_eip155_tx_sign_rom_table_rows(),
             TxHashPreEip155 => pre_eip155_tx_hash_rom_table_rows(),
+            TxHashEip1559 => eip1559_tx_hash_rom_table_rows(),
+            TxSignEip1559 => unimplemented!(),
             Self::L1MsgHash => l1_msg::rom_table_rows(),
         }
     }
 }
 
 /// All possible states of RLP decoding state machine
-#[derive(Clone, Copy, Debug, EnumIter)]
+#[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq)]
 pub enum State {
     /// Start
     DecodeTagStart = 0,
@@ -387,7 +491,6 @@ pub trait RlpFsmWitnessGen<F: FieldExt>: Sized {
 #[derive(Clone)]
 pub(crate) struct SmState<F: Field> {
     pub(crate) tag: Tag,
-    pub(crate) tag_next: Tag,
     pub(crate) state: State,
     pub(crate) byte_idx: usize,
     pub(crate) depth: usize,

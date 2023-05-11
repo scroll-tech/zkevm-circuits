@@ -1482,12 +1482,12 @@ mod tests {
             .nonce(word!("0x7f"));
         let sig = from.sign_transaction_sync(&tx.into());
 
-        let signed_tx = SignedTransaction::from();
-        let rlp_circuit = RlpCircuit {
-            inputs: vec![],
-            max_txs: 0,
-            size: 0,
-            _marker: Default::default(),
-        };
+        // let signed_tx = SignedTransaction::from();
+        // let rlp_circuit = RlpCircuit {
+        //     inputs: vec![],
+        //     max_txs: 0,
+        //     size: 0,
+        //     _marker: Default::default(),
+        // };
     }
 }
