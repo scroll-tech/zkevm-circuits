@@ -41,3 +41,4 @@ ctor = "0.1.22"
 default = ["ignore-test-docker", "skip-self-destruct"]
 ignore-test-docker = []
 skip-self-destruct = []
+shanghai = []
