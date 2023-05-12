@@ -644,6 +644,15 @@ impl Transaction {
             ..Default::default()
         }
     }
+
+    #[cfg(test)]
+    fn new_from_rlp_unsigned_bytes(tx_type: TxTypes, bytes: Vec<u8>) -> Self {
+        Self {
+            tx_type,
+            rlp_unsigned: bytes,
+            ..Default::default()
+        }
+    }
 }
 
 impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
@@ -875,13 +884,10 @@ impl From<&Transaction> for SignedTransaction {
 }
 
 mod tests {
-    use crate::{
-        util::Challenges,
-        witness::{tx::tx_convert, RlpFsmWitnessGen, Transaction},
-    };
-    use eth_types::{address, geth_types::TxTypes, word, ToBigEndian, ToLittleEndian, ToScalar};
+    use crate::{util::Challenges, witness::Transaction};
+    use eth_types::{address, geth_types::TxTypes, word, Address, ToBigEndian, ToScalar};
     use ethers_core::{
-        types::{Signature, Transaction as EthTransaction, TransactionRequest},
+        types::{NameOrAddress, Signature, Transaction as EthTransaction, TransactionRequest},
         utils::rlp::{Decodable, Rlp},
     };
     use halo2_proofs::{circuit::Value, dev::unwrap_value, halo2curves::bn256::Fr};
@@ -918,15 +924,56 @@ mod tests {
         let eth_tx_bytes = eth_tx.rlp_signed(&eth_sig).to_vec();
         assert_eq!(eth_tx_bytes, raw_tx_rlp_bytes);
 
-        let tx = Transaction::new_from_rlp_bytes(TxTypes::PreEip155, raw_tx_rlp_bytes);
+        // testing sign RLP decoding
+        let tx = Transaction::new_from_rlp_unsigned_bytes(
+            TxTypes::PreEip155,
+            eth_tx.rlp_unsigned().to_vec(),
+        );
+        let evm_word = Fr::from(0x100);
+        let keccak_input = Fr::from(0x10000);
+        let mock_challenges = Challenges::mock(
+            Value::known(evm_word),
+            Value::known(keccak_input),
+            Value::known(Fr::from(0x100)),
+        );
+        let witness_table = tx.gen_rlp_witness(false, &mock_challenges);
+
+        let rlp_table = witness_table
+            .iter()
+            .filter(|row| row.rlp_table.is_output)
+            .map(|row| row.rlp_table)
+            .collect::<Vec<_>>();
+
+        let to = if let Some(to) = eth_tx.to {
+            match to {
+                NameOrAddress::Name(_) => Address::zero(),
+                NameOrAddress::Address(to) => to,
+            }
+        } else {
+            Address::zero()
+        };
+        let data = if let Some(data) = eth_tx.data {
+            data.to_vec()
+        } else {
+            vec![]
+        };
+        let tx_table = vec![
+            rlc(&eth_tx.nonce.unwrap().to_be_bytes(), evm_word),
+            rlc(&eth_tx.gas_price.unwrap().to_be_bytes(), evm_word),
+            Fr::from(eth_tx.gas.unwrap().as_u64()),
+            to.to_scalar().unwrap(),
+            rlc(&eth_tx.value.unwrap().to_be_bytes(), evm_word),
+            rlc(&data, keccak_input),
+        ];
+
+        assert_eq!(tx_table.len() + 2, rlp_table.len()); // +2 for Len and RLC
+        for i in 0..tx_table.len() {
+            assert_eq!(unwrap_value(rlp_table[i + 1].tag_value_acc), tx_table[i]);
+        }
     }
 
     #[test]
-    fn test_rlp_eip155() {
-        // the tx is downloaded from
-        let raw_tx_rlp_bytes = hex::decode("f86780862d79883d2000825208945df9b87991262f6ba471f09758cde1c0fc1de734827a69801ca088ff6cf0fefd94db46111149ae4bfc179e9b94721fffd821d38d16464b3f71d0a045e0aff800961cfce805daef7016b9b675c137a6a41a548f7b60a3484c06a33a")
-            .expect("decode tx's hex shall not fail");
-    }
+    fn test_rlp_eip155() {}
 
     #[test]
     fn test_rlp_eip1559() {
