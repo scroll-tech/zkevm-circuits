@@ -636,8 +636,23 @@ impl Transaction {
 
         witness
     }
+
     #[cfg(test)]
-    fn new_from_rlp_bytes(tx_type: TxTypes, bytes: Vec<u8>) -> Self {
+    pub(crate) fn new_from_rlp_bytes(
+        tx_type: TxTypes,
+        signed_bytes: Vec<u8>,
+        unsigned_bytes: Vec<u8>,
+    ) -> Self {
+        Self {
+            tx_type,
+            rlp_signed: signed_bytes,
+            rlp_unsigned: unsigned_bytes,
+            ..Default::default()
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_from_rlp_signed_bytes(tx_type: TxTypes, bytes: Vec<u8>) -> Self {
         Self {
             tx_type,
             rlp_signed: bytes,
@@ -646,7 +661,7 @@ impl Transaction {
     }
 
     #[cfg(test)]
-    fn new_from_rlp_unsigned_bytes(tx_type: TxTypes, bytes: Vec<u8>) -> Self {
+    pub(crate) fn new_from_rlp_unsigned_bytes(tx_type: TxTypes, bytes: Vec<u8>) -> Self {
         Self {
             tx_type,
             rlp_unsigned: bytes,
@@ -984,7 +999,7 @@ mod tests {
         let eth_tx = EthTransaction::decode(&Rlp::new(&raw_tx_rlp_bytes))
             .expect("decode tx's rlp bytes shall not fail");
 
-        let tx = Transaction::new_from_rlp_bytes(TxTypes::Eip1559, raw_tx_rlp_bytes);
+        let tx = Transaction::new_from_rlp_signed_bytes(TxTypes::Eip1559, raw_tx_rlp_bytes);
         let evm_word = Fr::from(0x100);
         let keccak_input = Fr::from(0x10000);
         let mock_challenges = Challenges::mock(

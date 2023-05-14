@@ -1382,7 +1382,7 @@ impl<F: Field> SubCircuitConfig<F> for RlpCircuitConfig<F> {
 #[derive(Clone, Debug)]
 pub struct RlpCircuit<F, RLP> {
     /// Inputs to the RLP circuit.
-    pub inputs: Vec<RLP>,
+    pub txs: Vec<RLP>,
     /// Maximum number of txs supported.
     pub max_txs: usize,
     /// Size of the RLP circuit.
@@ -1393,7 +1393,7 @@ pub struct RlpCircuit<F, RLP> {
 impl<F: Field, RLP> Default for RlpCircuit<F, RLP> {
     fn default() -> Self {
         Self {
-            inputs: vec![],
+            txs: vec![],
             max_txs: 0,
             size: 0,
             _marker: PhantomData,
@@ -1417,7 +1417,7 @@ impl<F: Field, RLP: RlpFsmWitnessGen<F>> SubCircuit<F> for RlpCircuit<F, RLP> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.assign(layouter, &self.inputs, challenges)
+        config.assign(layouter, &self.txs, challenges)
     }
 
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
@@ -1452,17 +1452,30 @@ impl<F: Field, RLP: RlpFsmWitnessGen<F>> Circuit<F> for RlpCircuit<F, RLP> {
         (config, challenges)
     }
 
-    fn synthesize(&self, config: Self::Config, layouter: impl Layouter<F>) -> Result<(), Error> {
-        unimplemented!("RlpCircuit::synthesize")
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let challenges = &config.1.values(&mut layouter);
+
+        self.synthesize_sub(&config.0, challenges, &mut layouter)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{rlp_circuit_fsm::RlpCircuit, witness::SignedTransaction};
-    use eth_types::{word, Address};
-    use ethers_core::types::TransactionRequest;
+    use crate::{
+        rlp_circuit_fsm::RlpCircuit,
+        witness::{SignedTransaction, Transaction},
+    };
+    use eth_types::{geth_types::TxTypes, word, Address, H256, U64};
+    use ethers_core::{
+        types::{transaction::eip2718::TypedTransaction, TransactionRequest},
+        utils::keccak256,
+    };
     use ethers_signers::Wallet;
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
     use mock::eth;
     use rand::rngs::OsRng;
 
@@ -1470,7 +1483,7 @@ mod tests {
     fn test_eip_155_tx() {}
 
     #[test]
-    fn test_pre_eip_155_tx() {
+    fn test_pre_eip155_tx() {
         let rng = &mut OsRng;
         let from = Wallet::new(rng);
         let tx = TransactionRequest::new()
@@ -1480,14 +1493,22 @@ mod tests {
             .gas_price(word!("0x4321"))
             .gas(word!("0x77320"))
             .nonce(word!("0x7f"));
-        let sig = from.sign_transaction_sync(&tx.into());
+        let unsigned_bytes = tx.rlp_unsigned().to_vec();
+        let tx: TypedTransaction = tx.into();
+        let sig = from.sign_transaction_sync(&tx);
 
-        // let signed_tx = SignedTransaction::from();
-        // let rlp_circuit = RlpCircuit {
-        //     inputs: vec![],
-        //     max_txs: 0,
-        //     size: 0,
-        //     _marker: Default::default(),
-        // };
+        let tx = Transaction::new_from_rlp_bytes(
+            TxTypes::PreEip155,
+            tx.rlp_signed(&sig).to_vec(),
+            unsigned_bytes,
+        );
+        let rlp_circuit = RlpCircuit::<Fr, Transaction> {
+            txs: vec![tx],
+            max_txs: 10,
+            size: 0,
+            _marker: Default::default(),
+        };
+        let mock_prover = MockProver::run(16, &rlp_circuit, vec![]);
+        assert_eq!(mock_prover.is_ok(), true);
     }
 }

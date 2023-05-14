@@ -2,9 +2,13 @@
 
 use std::collections::BTreeMap;
 
-use eth_types::{evm_types::Memory, geth_types, Address, GethExecTrace, Signature, Word, H256};
+use eth_types::{
+    evm_types::Memory,
+    geth_types,
+    geth_types::{get_rlp_unsigned, TxTypes},
+    Address, GethExecTrace, Signature, Word, H256,
+};
 use ethers_core::utils::get_contract_address;
-use eth_types::geth_types::{get_rlp_unsigned, TxTypes};
 
 use crate::{
     state_db::{CodeDB, StateDB},
@@ -185,7 +189,7 @@ impl TransactionContext {
 pub struct Transaction {
     /// ..
     pub block_num: u64,
-    /// Typ
+    /// Type
     pub tx_type: TxTypes,
     /// Nonce
     pub nonce: u64,
