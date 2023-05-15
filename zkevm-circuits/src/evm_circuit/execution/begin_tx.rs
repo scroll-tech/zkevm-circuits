@@ -88,7 +88,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let call_id = cb.curr.state.rw_counter.clone();
 
         let tx_id = cb.query_cell();
-        let tx_l1_fee = TxL1FeeGadget::construct(cb, tx_id.expr());
+
+        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost] =
+            [
+                TxContextFieldTag::Nonce,
+                TxContextFieldTag::Gas,
+                TxContextFieldTag::CallerAddress,
+                TxContextFieldTag::CalleeAddress,
+                TxContextFieldTag::IsCreate,
+                TxContextFieldTag::CallDataLength,
+                TxContextFieldTag::CallDataGasCost,
+                TxContextFieldTag::TxDataGasCost,
+            ]
+            .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
+
+        let tx_l1_fee = TxL1FeeGadget::construct(cb, tx_id.expr(), tx_data_gas_cost.expr());
 
         cb.call_context_lookup(
             1.expr(),
@@ -104,19 +118,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             CallContextFieldTag::IsSuccess,
             is_persistent.expr(),
         ); // rwc_delta += 1
-
-        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_data_gas_cost] =
-            [
-                TxContextFieldTag::Nonce,
-                TxContextFieldTag::Gas,
-                TxContextFieldTag::CallerAddress,
-                TxContextFieldTag::CalleeAddress,
-                TxContextFieldTag::IsCreate,
-                TxContextFieldTag::CallDataLength,
-                TxContextFieldTag::CallDataGasCost,
-                TxContextFieldTag::TxDataGasCost,
-            ]
-            .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
         let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
         cb.require_equal(
@@ -168,7 +169,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee",
-            tx_l1_fee.tx_l1_fee(tx_data_gas_cost.expr()) + mul_gas_fee_by_gas.product().expr(),
+            tx_l1_fee.tx_l1_fee() + mul_gas_fee_by_gas.product().expr(),
             tx_fee.expr(),
         );
 
@@ -786,8 +787,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.is_coinbase_warm
             .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
 
-        self.tx_l1_fee
-            .assign(region, offset, tx.l1_fee, tx.l1_fee_committed)
+        self.tx_l1_fee.assign(
+            region,
+            offset,
+            tx.l1_fee,
+            tx.l1_fee_committed,
+            tx.tx_data_gas_cost,
+        )
     }
 }
 

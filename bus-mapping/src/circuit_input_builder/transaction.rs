@@ -16,6 +16,9 @@ use crate::{
 
 use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
 
+/// Precision of transaction L1 fee
+pub const TX_L1_FEE_PRECISION: u64 = 1_000_000_000;
+
 #[derive(Debug, Default)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
 pub struct TransactionContext {
@@ -419,9 +422,7 @@ impl Transaction {
         let tx_data_gas_cost =
             tx_data_gas_cost(&Into::<TransactionRequest>::into(self).rlp_unsigned());
 
-        // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
-        let tx_l1_gas = tx_data_gas_cost + 1088 + self.l1_fee.fee_overhead;
-        self.l1_fee.fee_scalar * 1_000_000_000 * self.l1_fee.base_fee * tx_l1_gas
+        self.l1_fee.tx_l1_fee(tx_data_gas_cost).0
     }
 }
 
@@ -437,6 +438,18 @@ pub struct TxL1Fee {
 }
 
 impl TxL1Fee {
+    /// Calculate L1 fee and remainder of transaction.
+    pub fn tx_l1_fee(&self, tx_data_gas_cost: u64) -> (u64, u64) {
+        // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
+        let tx_l1_gas = tx_data_gas_cost + 1088 + self.fee_overhead;
+        let tx_l1_fee = self.fee_scalar * self.base_fee * tx_l1_gas;
+
+        (
+            tx_l1_fee / TX_L1_FEE_PRECISION,
+            tx_l1_fee % TX_L1_FEE_PRECISION,
+        )
+    }
+
     fn get_current_values_from_state_db(sdb: &StateDB) -> Self {
         let [base_fee, fee_overhead, fee_scalar] = [
             &l1_gas_price_oracle::BASE_FEE_SLOT,
