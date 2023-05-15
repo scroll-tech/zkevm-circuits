@@ -357,6 +357,8 @@ impl Transaction {
         let mut cur = SmState {
             tag: rom_table[0].tag,
             state: DecodeTagStart,
+            q_lookup_data: true,
+            max_length: rom_table[0].max_length,
             tag_idx: 0,
             tag_length: 0,
             tag_value_acc: Value::known(F::zero()),
@@ -397,6 +399,7 @@ impl Transaction {
                                 .expect("remaining_bytes shall not be empty"),
                             0
                         );
+                        cur.q_lookup_data = false;
                         if cur.depth == 1 {
                             // cur.byte_idx is +1 larger than the end
                             assert_eq!(cur.byte_idx, rlp_bytes.len());
@@ -409,6 +412,7 @@ impl Transaction {
                         next.depth = cur.depth - 1;
                     } else {
                         let byte_value = rlp_bytes[cur.byte_idx];
+                        cur.q_lookup_data = true;
                         next.byte_idx = cur.byte_idx + 1;
                         if let Some(rem) = remaining_bytes.last_mut() {
                             // read one more byte
@@ -487,6 +491,7 @@ impl Transaction {
                     }
                 }
                 State::Bytes => {
+                    cur.q_lookup_data = true;
                     next.byte_idx = cur.byte_idx + 1;
                     if let Some(rem) = remaining_bytes.last_mut() {
                         *rem = *rem - 1;
@@ -512,6 +517,7 @@ impl Transaction {
                     }
                 }
                 State::LongBytes => {
+                    cur.q_lookup_data = true;
                     next.byte_idx = cur.byte_idx + 1;
                     if let Some(rem) = remaining_bytes.last_mut() {
                         *rem = *rem - 1;
@@ -534,6 +540,7 @@ impl Transaction {
                     }
                 }
                 State::LongList => {
+                    cur.q_lookup_data = true;
                     next.byte_idx = cur.byte_idx + 1;
                     if let Some(rem) = remaining_bytes.last_mut() {
                         // read one more byte
@@ -585,6 +592,7 @@ impl Transaction {
 
                 assert_eq!(cur.tag, rom_table[row].tag);
 
+                cur.max_length = rom_table[row].max_length;
                 tag_rom_row_map.insert(witness_table_idx, row);
                 next.tag = rom_table[row].tag_next;
                 cur_rom_row = rom_table[row].tag_next_idx.clone();
@@ -608,8 +616,10 @@ impl Transaction {
                 state_machine: StateMachine {
                     state: cur.state,
                     tag: cur.tag,
-                    tag_next: Default::default(),
-                    byte_idx: cur.byte_idx,
+                    q_lookup_data: cur.q_lookup_data,
+                    max_length: 0,                // will be filled up later
+                    tag_next: Default::default(), // will be filled up later
+                    byte_idx: cur.byte_idx + 1,
                     byte_rev_idx: rlp_bytes.len() - cur.byte_idx,
                     byte_value,
                     tag_idx: cur.tag_idx,
@@ -630,6 +640,7 @@ impl Transaction {
         for (witness_idx, rom_table_row) in tag_rom_row_map {
             while idx <= witness_idx {
                 witness[idx].state_machine.tag_next = rom_table[rom_table_row].tag_next;
+                witness[idx].state_machine.max_length = rom_table[rom_table_row].max_length;
                 idx = idx + 1;
             }
         }
@@ -644,6 +655,7 @@ impl Transaction {
         unsigned_bytes: Vec<u8>,
     ) -> Self {
         Self {
+            id: 1,
             tx_type,
             rlp_signed: signed_bytes,
             rlp_unsigned: unsigned_bytes,
@@ -654,6 +666,7 @@ impl Transaction {
     #[cfg(test)]
     pub(crate) fn new_from_rlp_signed_bytes(tx_type: TxTypes, bytes: Vec<u8>) -> Self {
         Self {
+            id: 1,
             tx_type,
             rlp_signed: bytes,
             ..Default::default()
@@ -663,6 +676,7 @@ impl Transaction {
     #[cfg(test)]
     pub(crate) fn new_from_rlp_unsigned_bytes(tx_type: TxTypes, bytes: Vec<u8>) -> Self {
         Self {
+            id: 1,
             tx_type,
             rlp_unsigned: bytes,
             ..Default::default()
@@ -675,7 +689,7 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
         let hash_wit = self.gen_rlp_witness(true, challenges);
         let sign_wit = self.gen_rlp_witness(false, &challenges);
 
-        [hash_wit, sign_wit].concat()
+        [sign_wit, hash_wit].concat()
     }
 
     fn gen_data_table(&self, challenges: &Challenges<Value<F>>) -> Vec<DataTable<F>> {
@@ -715,7 +729,7 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
         let hash_table = get_table(&self.rlp_signed, hash_format);
         let sign_table = get_table(&self.rlp_unsigned, sign_format);
 
-        [hash_table, sign_table].concat()
+        [sign_table, hash_table].concat()
     }
 }
 

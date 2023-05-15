@@ -353,9 +353,10 @@ impl RomTableRow {
 }
 
 /// Format that we are able to decode
-#[derive(Clone, Copy, Debug, EnumIter)]
+#[derive(Clone, Copy, Default, Debug, EnumIter)]
 pub enum Format {
     /// Sign for EIP155 tx
+    #[default]
     TxSignEip155 = 0,
     /// Hash for EIP155 tx
     TxHashEip155,
@@ -443,6 +444,19 @@ pub struct DataTable<F: FieldExt> {
     pub bytes_rlc: Value<F>,
 }
 
+impl<F: FieldExt> DataTable<F> {
+    pub fn values(&self) -> Vec<Value<F>> {
+        vec![
+            Value::known(F::from(self.tx_id)),
+            Value::known(F::from(usize::from(self.format) as u64)),
+            Value::known(F::from(self.byte_idx as u64)),
+            Value::known(F::from(self.byte_rev_idx as u64)),
+            Value::known(F::from(self.byte_value as u64)),
+            self.bytes_rlc,
+        ]
+    }
+}
+
 /// RLP table that is connected to the state machine in the RLP circuit.
 #[derive(Clone, Copy, Debug)]
 pub struct RlpTable<F: FieldExt> {
@@ -469,6 +483,10 @@ pub struct StateMachine<F: FieldExt> {
     pub tag: Tag,
     /// Next tag to be decoded
     pub tag_next: Tag,
+    /// Flag used to mark if we want to read from data table
+    pub q_lookup_data: bool,
+    /// Max length of bytes of current tag
+    pub max_length: usize,
     /// The index of current byte we are reading
     pub byte_idx: usize,
     /// The reverse index of current byte we are reading
@@ -508,6 +526,8 @@ pub trait RlpFsmWitnessGen<F: FieldExt>: Sized {
 pub(crate) struct SmState<F: Field> {
     pub(crate) tag: Tag,
     pub(crate) state: State,
+    pub(crate) q_lookup_data: bool,
+    pub(crate) max_length: usize,
     pub(crate) byte_idx: usize,
     pub(crate) depth: usize,
     pub(crate) tag_idx: usize,

@@ -2266,7 +2266,7 @@ impl RlpFsmDataTable {
             byte_idx: meta.advice_column(),
             byte_rev_idx: meta.advice_column(),
             byte_value: meta.advice_column(),
-            bytes_rlc: meta.advice_column(),
+            bytes_rlc: meta.advice_column_in(SecondPhase),
         }
     }
 
@@ -2274,25 +2274,13 @@ impl RlpFsmDataTable {
     pub fn assignments<F: Field, RLP: RlpFsmWitnessGen<F>>(
         inputs: &[RLP],
         challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 6]> {
+    ) -> Vec<Vec<Value<F>>> {
         let data_rows: Vec<DataTable<F>> = inputs
             .iter()
             .map(|input| input.gen_data_table(challenges))
             .concat();
 
-        data_rows
-            .iter()
-            .map(|data_row| {
-                [
-                    Value::known(F::from(data_row.tx_id)),
-                    Value::known(F::from(usize::from(data_row.format) as u64)),
-                    Value::known(F::from(data_row.byte_idx as u64)),
-                    Value::known(F::from(data_row.byte_rev_idx as u64)),
-                    Value::known(F::from(data_row.byte_value as u64)),
-                    data_row.bytes_rlc,
-                ]
-            })
-            .collect()
+        data_rows.iter().map(|data_row| data_row.values()).collect()
     }
 
     /// Load the data table.
@@ -2303,7 +2291,7 @@ impl RlpFsmDataTable {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "rlp Data table",
+            || "RLP data table",
             |mut region| {
                 for (offset, row) in Self::assignments(inputs, challenges).iter().enumerate() {
                     for (&column, &value) in <Self as LookupTable<F>>::advice_columns(self)
@@ -2311,7 +2299,7 @@ impl RlpFsmDataTable {
                         .zip(row)
                     {
                         region.assign_advice(
-                            || format!("rlp Data table row: offset = {}", offset),
+                            || format!("RLP data table row: offset = {}", offset),
                             column,
                             offset,
                             || value,
