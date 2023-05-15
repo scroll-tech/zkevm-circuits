@@ -175,7 +175,7 @@ mod tests {
         )
         .params(CircuitsParams {
             max_rws: 5500,
-            max_copy_rows: 1750,
+            max_copy_rows: 3000,
             ..Default::default()
         })
         .run();
