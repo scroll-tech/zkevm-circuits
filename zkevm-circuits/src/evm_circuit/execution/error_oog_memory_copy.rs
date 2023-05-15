@@ -463,7 +463,12 @@ mod tests {
         )
         .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_copy_rows: 1750,
+                ..Default::default()
+            })
+            .run();
     }
 
     fn test_for_edge_memory_size(dst_offset: u64, copy_size: u64) {
