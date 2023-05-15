@@ -2187,13 +2187,9 @@ impl RlpFsmRomTable {
     }
 
     /// Load the ROM table.
-    pub fn load<F: Field>(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        formats: Vec<Format>,
-    ) -> Result<(), Error> {
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
-            || "rlp ROM table",
+            || "RLP ROM table",
             |mut region| {
                 let rows: Vec<RomTableRow> = Format::iter()
                     .map(|format| format.rom_table_rows())
@@ -2303,13 +2299,13 @@ impl RlpFsmDataTable {
     pub fn load<F: Field, RLP: RlpFsmWitnessGen<F>>(
         &self,
         layouter: &mut impl Layouter<F>,
-        inputs: Vec<RLP>,
+        inputs: &[RLP],
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "rlp Data table",
             |mut region| {
-                for (offset, row) in Self::assignments(&inputs, challenges).iter().enumerate() {
+                for (offset, row) in Self::assignments(inputs, challenges).iter().enumerate() {
                     for (&column, &value) in <Self as LookupTable<F>>::advice_columns(self)
                         .iter()
                         .zip(row)

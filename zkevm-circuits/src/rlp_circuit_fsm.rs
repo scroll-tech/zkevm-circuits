@@ -23,11 +23,19 @@ use crate::{
     table::{LookupTable, RlpFsmDataTable, RlpFsmRlpTable, RlpFsmRomTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
-        Block, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, State, State::DecodeTagStart, Tag,
+        Block,
+        Format::{
+            TxHashEip155, TxHashEip1559, TxHashPreEip155, TxSignEip155, TxSignEip1559,
+            TxSignPreEip155,
+        },
+        RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, State,
+        State::DecodeTagStart,
+        Tag,
     },
 };
 
 /// Fixed table to check if a value is a byte, i.e. 0 <= value < 256.
+#[derive(Clone, Debug)]
 pub struct Range256Table(Column<Fixed>);
 
 impl<F: Field> LookupTable<F> for Range256Table {
@@ -127,6 +135,14 @@ pub struct RlpCircuitConfig<F> {
     depth_check: IsEqualConfig<F>,
     /// Check for depth == 1
     depth_eq_one: IsEqualConfig<F>,
+
+    /// Internal tables
+    /// Data table
+    data_table: RlpFsmDataTable,
+    /// ROM table
+    rom_table: RlpFsmRomTable,
+    /// Range256 table
+    range256_table: Range256Table,
 }
 
 impl<F: Field> RlpCircuitConfig<F> {
@@ -633,7 +649,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 let (bv_lt_0x80, bv_eq_0x80) = byte_value_lte_0x80.expr(meta, None);
                 let (bv_gt_0xc0, bv_eq_0xc0) = byte_value_gte_0xc0.expr(meta, None);
-                let (bv_lt_0xf8, bv_eq_0xf8) = byte_value_lte_0xf8.expr(meta, None);
+                let (bv_lt_0xf8, _) = byte_value_lte_0xf8.expr(meta, None);
 
                 // case 1: 0x00 <= byte_value < 0x80
                 let case_1 = and::expr([bv_lt_0x80, not::expr(is_tag_end_expr(meta))]);
@@ -774,8 +790,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta.create_gate("state transition: DecodeTagStart => Bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let (bv_gt_0x80, bv_eq_0x80) = byte_value_gte_0x80.expr(meta, None);
-            let (bv_lt_0xb8, bv_eq_0xb8) = byte_value_lte_0xb8.expr(meta, None);
+            let (bv_gt_0x80, _) = byte_value_gte_0x80.expr(meta, None);
+            let (bv_lt_0xb8, _) = byte_value_lte_0xb8.expr(meta, None);
 
             // condition.
             cb.condition(and::expr([bv_gt_0x80, bv_lt_0xb8]),
@@ -861,7 +877,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             let (bv_gt_0xb8, bv_eq_0xb8) = byte_value_gte_0xb8.expr(meta, None);
-            let (bv_lt_0xc0, bv_eq_0xc0) = byte_value_lte_0xc0.expr(meta, None);
+            let (bv_lt_0xc0, _) = byte_value_lte_0xc0.expr(meta, None);
 
             // condition: "0xb8 <= byte_value < 0xc0"
             cb.condition(and::expr([
@@ -1130,6 +1146,11 @@ impl<F: Field> RlpCircuitConfig<F> {
             tlength_lte_0x20,
             depth_check,
             depth_eq_one,
+
+            // internal tables
+            data_table: data_table.clone(),
+            rom_table: rom_table.clone(),
+            range256_table: range256_table.clone(),
         }
     }
 
@@ -1333,6 +1354,11 @@ impl<F: Field> RlpCircuitConfig<F> {
             .flat_map(|input| input.gen_sm_witness(&challenges))
             .collect::<Vec<_>>();
 
+        self.rom_table.load(layouter)?;
+        self.data_table.load(layouter, inputs, challenges)?;
+
+        log::debug!("num_sm_rows: {}", sm_rows.len());
+
         layouter.assign_region(
             || "RLP sm region",
             |mut region| {
@@ -1497,6 +1523,8 @@ mod tests {
         let tx: TypedTransaction = tx.into();
         let sig = from.sign_transaction_sync(&tx);
 
+        log::debug!("num_unsigned_bytes: {}", unsigned_bytes.len());
+        log::debug!("num_signed_bytes: {}", tx.rlp_signed(&sig).to_vec().len());
         let tx = Transaction::new_from_rlp_bytes(
             TxTypes::PreEip155,
             tx.rlp_signed(&sig).to_vec(),

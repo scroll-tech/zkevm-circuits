@@ -138,7 +138,10 @@ use crate::{
     evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
     witness::{
         l1_msg,
-        Format::{TxHashEip155, TxHashEip1559, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
+        Format::{
+            TxHashEip155, TxHashEip1559, TxHashPreEip155, TxSignEip155, TxSignEip1559,
+            TxSignPreEip155,
+        },
         Tag::{
             AccessListAddress, AccessListStorageKey, BeginList, BeginVector, ChainId, Data,
             EndList, EndVector, Gas, GasPrice, MaxFeePerGas, MaxPriorityFeePerGas, Nonce, SigR,
@@ -270,6 +273,49 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         .collect()
 }
 
+pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
+    let rows = vec![
+        (TxType, BeginList, 1, vec![1]),
+        (BeginList, ChainId, 8, vec![2]),
+        (ChainId, Nonce, N_BYTES_U64, vec![3]),
+        (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![4]),
+        (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![5]),
+        (MaxFeePerGas, Gas, N_BYTES_WORD, vec![6]),
+        (Gas, To, N_BYTES_U64, vec![7]),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![8]),
+        (TxValue, Data, N_BYTES_WORD, vec![9]),
+        (Data, BeginVector, 2usize.pow(24), vec![10, 11]),
+        (BeginVector, EndVector, 8, vec![21]), // access_list is none
+        (BeginVector, BeginList, 8, vec![12]),
+        (BeginList, AccessListAddress, 8, vec![13]),
+        (
+            AccessListAddress,
+            BeginVector,
+            N_BYTES_ACCOUNT_ADDRESS,
+            vec![14, 15],
+        ),
+        (BeginVector, EndVector, 8, vec![18]), /* access_list.storage_keys
+                                                * is none */
+        (BeginVector, AccessListStorageKey, 8, vec![16, 17]),
+        (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![18]), // finished parsing storage keys
+        (
+            AccessListStorageKey,
+            AccessListStorageKey,
+            N_BYTES_WORD,
+            vec![16, 17],
+        ), // keep parsing storage_keys
+        (EndVector, EndList, 0, vec![19, 20]),
+        (EndList, EndVector, 0, vec![21]), // finished parsing access_list
+        (EndList, BeginList, 0, vec![12]), // parse another access_list entry
+        (EndVector, EndList, 0, vec![22]),
+        (EndList, BeginList, 0, vec![]).into(),
+    ];
+
+    rows.into_iter()
+        .map(|row| (row.0, row.1, row.2, TxHashEip1559, row.3).into())
+        .collect()
+}
+
 /// Read-only Memory table row.
 #[derive(Debug, Clone)]
 pub struct RomTableRow {
@@ -340,7 +386,7 @@ impl Format {
             TxSignPreEip155 => pre_eip155_tx_sign_rom_table_rows(),
             TxHashPreEip155 => pre_eip155_tx_hash_rom_table_rows(),
             TxHashEip1559 => eip1559_tx_hash_rom_table_rows(),
-            TxSignEip1559 => unimplemented!(),
+            TxSignEip1559 => eip1559_tx_sign_rom_table_rows(),
             Self::L1MsgHash => l1_msg::rom_table_rows(),
         }
     }
