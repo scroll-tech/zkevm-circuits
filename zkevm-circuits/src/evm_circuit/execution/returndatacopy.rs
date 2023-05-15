@@ -326,6 +326,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
                 max_rws: 2048,
+                max_copy_rows: 1750,
                 ..Default::default()
             })
             .run();
