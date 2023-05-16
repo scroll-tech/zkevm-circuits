@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
             math_gadget::{AddWordsGadget, IsZeroGadget, LtGadget},
             not, or, sum, CachedRegion, Cell,
@@ -38,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorReturnDataOutOfBound;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let memory_offset = cb.query_cell();
         let data_offset = cb.query_word_rlc();
@@ -204,9 +204,7 @@ mod test {
 
         if is_root {
             code_b.append(&bytecode! {
-                PUSH32(return_data_size)
-                PUSH32(return_data_offset)
-                RETURN
+                .op_return(return_data_offset, return_data_size)
                 STOP
             });
         } else {
@@ -216,9 +214,7 @@ mod test {
                 PUSH32(dest_offset) // memory offset
                 RETURNDATACOPY
                 // end for internal
-                PUSH32(return_data_size)
-                PUSH32(return_data_offset)
-                RETURN
+                .op_return(return_data_offset, return_data_size)
                 STOP
             });
         }
@@ -246,9 +242,7 @@ mod test {
             });
         } else {
             code_a.append(&bytecode! {
-                PUSH32(return_data_size)
-                PUSH32(return_data_offset)
-                RETURN
+                .op_return(return_data_offset, return_data_size)
             });
         }
 

@@ -4,7 +4,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -27,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::PUSH;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let value = cb.query_word_rlc();
@@ -157,7 +160,7 @@ mod test {
         for b in bytes {
             bytecode.write(*b, false);
         }
-        bytecode.write_op(OpcodeId::STOP);
+        bytecode.op_stop();
 
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),

@@ -10,7 +10,7 @@ on:
 
       matrices:
         description: 'The matrix at index 0 is intended for not running on the self-hosted runner'
-        default: '[["ubuntu-latest"], ["jenkins"]]'
+        default: '[["ubuntu-latest"], ["jenkins1"], ["jenkins2"]]'
         required: false
         type: string
 
@@ -20,10 +20,14 @@ on:
         type: string
 
     outputs:
-      runner-matrix:
-        value: ${{ jobs.select.outputs.matrix }}
-      concurrency-group:
-        value: ${{ jobs.select.outputs.matrix }}
+      runner-matrix1:
+        value: ${{ jobs.select.outputs.matrix1 }}
+      concurrency-group1:
+        value: ${{ jobs.select.outputs.matrix1 }}
+      runner-matrix2:
+        value: ${{ jobs.select.outputs.matrix2 }}
+      concurrency-group2:
+        value: ${{ jobs.select.outputs.matrix2 }}
 
 jobs:
   select:
@@ -32,14 +36,15 @@ jobs:
     steps:
       - run: true
     outputs:
-      matrix: ${{ toJSON( fromJSON(inputs.matrices)[inputs.enabled] ) }}
+      matrix1: ${{ toJSON( fromJSON(inputs.matrices)[1] ) }}
+      matrix2: ${{ toJSON( fromJSON(inputs.matrices)[2] ) }}
 
   wakeup:
     name: Wake up self-hosted runner
     if: ${{ inputs.enabled }}
     needs: [select]
     runs-on: ${{ inputs.bastion-host }}
-    concurrency: ${{ needs.select.outputs.matrix }}
+    concurrency: ${{ needs.select.outputs.matrix1 }}
     steps:
       - uses: actions/checkout@v2
       - run: .github/ciChecksScripts/wakeUpRunner.sh

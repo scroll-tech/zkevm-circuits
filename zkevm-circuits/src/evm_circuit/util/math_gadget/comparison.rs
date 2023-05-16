@@ -1,5 +1,5 @@
 use crate::evm_circuit::util::{
-    constraint_builder::ConstraintBuilder, math_gadget::*, sum, CachedRegion,
+    constraint_builder::EVMConstraintBuilder, math_gadget::*, sum, CachedRegion,
 };
 use eth_types::Field;
 use halo2_proofs::plonk::{Error, Expression};
@@ -17,7 +17,7 @@ pub struct ComparisonGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> ComparisonGadget<F, N_BYTES> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -51,7 +51,7 @@ impl<F: Field, const N_BYTES: usize> ComparisonGadget<F, N_BYTES> {
 #[cfg(test)]
 mod tests {
     use super::{test_util::*, *};
-    use crate::evm_circuit::util::Cell;
+    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell};
     use eth_types::*;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
@@ -66,7 +66,7 @@ mod tests {
     impl<F: Field, const N: usize, const CHECK_EQ: bool> MathGadgetContainer<F>
         for ComparisonTestContainer<F, N, CHECK_EQ>
     {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let b = cb.query_cell();
             let cmp_gadget = ComparisonGadget::<F, N>::construct(cb, a.expr(), b.expr());

@@ -27,7 +27,7 @@ mod tests {
     use std::env::var;
     use zkevm_circuits::{
         evm_circuit::witness::{block_convert, Block},
-        exp_circuit::ExpCircuit,
+        exp_circuit::TestExpCircuit,
     };
 
     #[cfg_attr(not(feature = "benches"), ignore)]
@@ -50,7 +50,7 @@ mod tests {
         let base = Word::from(132);
         let exponent = Word::from(27);
         let block = generate_full_events_block(degree, base, exponent);
-        let circuit = ExpCircuit::<Fr>::new(
+        let circuit = TestExpCircuit::<Fr>::new(
             block.exp_events.clone(),
             block.circuits_params.max_exp_steps,
         );
@@ -64,7 +64,7 @@ mod tests {
         // Bench setup generation
         let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(degree as u32, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
@@ -86,7 +86,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            ExpCircuit<Fr>,
+            TestExpCircuit<Fr>,
         >(
             &general_params,
             &pk,

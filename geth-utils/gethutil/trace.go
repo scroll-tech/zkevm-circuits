@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/imdario/mergo"
 )
 
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.ExecutionResult
@@ -122,7 +123,10 @@ type TraceConfig struct {
 	Accounts      map[common.Address]Account `json:"accounts"`
 	Transactions  []Transaction              `json:"transactions"`
 	LoggerConfig  *logger.Config             `json:"logger_config"`
+	ChainConfig   *params.ChainConfig        `json:"chain_config"`
 }
+
+func newUint64(val uint64) *uint64 { return &val }
 
 func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	chainConfig := params.ChainConfig{
@@ -143,9 +147,16 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		LondonBlock:         big.NewInt(0),
 	}
 
+	if config.ChainConfig != nil {
+		mergo.Merge(&chainConfig, config.ChainConfig, mergo.WithOverride)
+	}
+
+	// Debug for Shanghai
+	// fmt.Printf("geth-utils: ShanghaiTime = %d\n", *chainConfig.ShanghaiTime)
+
 	var txsGasLimit uint64
 	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
-	messages := make([]types.Message, len(config.Transactions))
+	messages := make([]core.Message, len(config.Transactions))
 	for i, tx := range config.Transactions {
 		// If gas price is specified directly, the tx is treated as legacy type.
 		if tx.GasPrice != nil {
@@ -158,25 +169,28 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 			txAccessList[i].Address = accessList.Address
 			txAccessList[i].StorageKeys = accessList.StorageKeys
 		}
-		messages[i] = types.NewMessage(
-			tx.From,
-			tx.To,
-			uint64(tx.Nonce),
-			toBigInt(tx.Value),
-			uint64(tx.GasLimit),
-			toBigInt(tx.GasPrice),
-			toBigInt(tx.GasFeeCap),
-			toBigInt(tx.GasTipCap),
-			tx.CallData,
-			txAccessList,
-			false,
-		)
+		messages[i] = core.Message{
+			From: tx.From,
+			To: tx.To,
+			Nonce: uint64(tx.Nonce),
+			Value: toBigInt(tx.Value),
+			GasLimit: uint64(tx.GasLimit),
+			GasPrice: toBigInt(tx.GasPrice),
+			GasFeeCap: toBigInt(tx.GasFeeCap),
+			GasTipCap: toBigInt(tx.GasTipCap),
+			Data: tx.CallData,
+			AccessList: txAccessList,
+			SkipAccountChecks: false,
+		}
 
 		txsGasLimit += uint64(tx.GasLimit)
 	}
 	if txsGasLimit > blockGasLimit {
 		return nil, fmt.Errorf("txs total gas: %d Exceeds block gas limit: %d", txsGasLimit, blockGasLimit)
 	}
+
+	// For opcode PREVRANDAO
+	randao := common.BigToHash(toBigInt(config.Block.Difficulty)) // TODO: fix
 
 	blockCtx := vm.BlockContext{
 		CanTransfer: core.CanTransfer,
@@ -191,8 +205,9 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		},
 		Coinbase:    config.Block.Coinbase,
 		BlockNumber: toBigInt(config.Block.Number),
-		Time:        toBigInt(config.Block.Timestamp),
+		Time:        toBigInt(config.Block.Timestamp).Uint64(),
 		Difficulty:  toBigInt(config.Block.Difficulty),
+		Random:      &randao,
 		BaseFee:     toBigInt(config.Block.BaseFee),
 		GasLimit:    blockGasLimit,
 	}
@@ -215,9 +230,9 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	executionResults := make([]*ExecutionResult, len(config.Transactions))
 	for i, message := range messages {
 		tracer := logger.NewStructLogger(config.LoggerConfig)
-		evm := vm.NewEVM(blockCtx, core.NewEVMTxContext(message), stateDB, &chainConfig, vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
+		evm := vm.NewEVM(blockCtx, core.NewEVMTxContext(&message), stateDB, &chainConfig, vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
 
-		result, err := core.ApplyMessage(evm, message, new(core.GasPool).AddGas(message.Gas()))
+		result, err := core.ApplyMessage(evm, &message, new(core.GasPool).AddGas(message.GasLimit))
 		if err != nil {
 			return nil, fmt.Errorf("Failed to apply config.Transactions[%d]: %w", i, err)
 		}

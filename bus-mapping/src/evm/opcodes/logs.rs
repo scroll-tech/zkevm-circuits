@@ -224,7 +224,7 @@ mod log_tests {
         code.push(32, Word::from(msize));
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
-        code.write_op(OpcodeId::STOP);
+        code.op_stop();
 
         // prepare memory data
         let pushdata = hex::decode("1234567890abcdef1234567890abcdef").unwrap();

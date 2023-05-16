@@ -1,19 +1,27 @@
-use super::CachedRegion;
+use super::{constraint_builder::ConstrainBuilderCommon, CachedRegion};
 use crate::{
     evm_circuit::{
-        param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         util::{
-            constraint_builder::ConstraintBuilder,
+            and,
+            constraint_builder::EVMConstraintBuilder,
             from_bytes,
-            math_gadget::{ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, RangeCheckGadget},
-            select, sum, Cell, CellType, MemoryAddress,
+            math_gadget::{
+                AddWordsGadget, ConstantDivisionGadget, IsZeroGadget, LtGadget, MinMaxGadget,
+                RangeCheckGadget,
+            },
+            not, or, select, sum, Cell, CellType, MemoryAddress,
         },
     },
     util::Expr,
 };
 use array_init::array_init;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};
+use eth_types::{
+    evm_types::{GasCost, MAX_EXPANDED_MEMORY_ADDRESS},
+    Field, ToLittleEndian, U256,
+};
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Error, Expression},
 };
@@ -57,6 +65,32 @@ pub(crate) mod address_high {
     }
 }
 
+/// Memory address trait to adapt for right and Uint overflow cases.
+pub(crate) trait CommonMemoryAddressGadget<F: FieldExt> {
+    fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self;
+
+    /// Return the memory address (offset + length).
+    fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        memory_offset: U256,
+        memory_length: U256,
+    ) -> Result<u64, Error>;
+
+    /// Return original word of memory offset.
+    fn offset_rlc(&self) -> Expression<F>;
+
+    /// Return original word of memory length.
+    fn length_rlc(&self) -> Expression<F>;
+
+    /// Return valid memory length of Uint64.
+    fn length(&self) -> Expression<F>;
+
+    /// Return valid memory offset plus length.
+    fn address(&self) -> Expression<F>;
+}
+
 /// Convert the dynamic memory offset and length from random linear combination
 /// to integer. It handles the "no expansion" feature by setting the
 /// `memory_offset_bytes` to zero when `memory_length` is zero. In this case,
@@ -69,43 +103,14 @@ pub(crate) struct MemoryAddressGadget<F> {
     memory_length_is_zero: IsZeroGadget<F>,
 }
 
-impl<F: Field> MemoryAddressGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        memory_offset: Cell<F>,
-        memory_length: MemoryAddress<F>,
-    ) -> Self {
-        debug_assert_eq!(
-            CellType::StoragePhase2,
-            cb.curr.cell_manager.columns()[memory_offset.cell_column_index].cell_type
-        );
-        let memory_length_is_zero = IsZeroGadget::construct(cb, sum::expr(&memory_length.cells));
-        let memory_offset_bytes = cb.query_word_rlc();
-
-        let has_length = 1.expr() - memory_length_is_zero.expr();
-        cb.condition(has_length, |cb| {
-            cb.require_equal(
-                "Offset decomposition into 5 bytes",
-                memory_offset_bytes.expr(),
-                memory_offset.expr(),
-            );
-        });
-
-        Self {
-            memory_offset,
-            memory_offset_bytes,
-            memory_length,
-            memory_length_is_zero,
-        }
-    }
-
-    pub(crate) fn construct_2(cb: &mut ConstraintBuilder<F>) -> Self {
+impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
+    fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
         Self::construct(cb, offset, length)
     }
 
-    pub(crate) fn assign(
+    fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
@@ -149,6 +154,53 @@ impl<F: Field> MemoryAddressGadget<F> {
         })
     }
 
+    fn offset_rlc(&self) -> Expression<F> {
+        self.memory_offset.expr()
+    }
+
+    fn length_rlc(&self) -> Expression<F> {
+        self.memory_length.expr()
+    }
+
+    fn length(&self) -> Expression<F> {
+        from_bytes::expr(&self.memory_length.cells)
+    }
+
+    fn address(&self) -> Expression<F> {
+        self.offset() + self.length()
+    }
+}
+
+impl<F: Field> MemoryAddressGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        memory_offset: Cell<F>,
+        memory_length: MemoryAddress<F>,
+    ) -> Self {
+        debug_assert_eq!(
+            CellType::StoragePhase2,
+            cb.curr.cell_manager.columns()[memory_offset.cell_column_index].cell_type
+        );
+        let memory_length_is_zero = IsZeroGadget::construct(cb, sum::expr(&memory_length.cells));
+        let memory_offset_bytes = cb.query_word_rlc();
+
+        let has_length = 1.expr() - memory_length_is_zero.expr();
+        cb.condition(has_length, |cb| {
+            cb.require_equal(
+                "Offset decomposition into 5 bytes",
+                memory_offset_bytes.expr(),
+                memory_offset.expr(),
+            );
+        });
+
+        Self {
+            memory_offset,
+            memory_offset_bytes,
+            memory_length,
+            memory_length_is_zero,
+        }
+    }
+
     pub(crate) fn has_length(&self) -> Expression<F> {
         1.expr() - self.memory_length_is_zero.expr()
     }
@@ -156,21 +208,160 @@ impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn offset(&self) -> Expression<F> {
         self.has_length() * from_bytes::expr(&self.memory_offset_bytes.cells)
     }
+}
 
-    pub(crate) fn offset_rlc(&self) -> Expression<F> {
-        self.memory_offset.expr()
+/// Check if memory offset plus length is within range or Uint overflow.
+/// The sum of memory offset and length should also be less than or equal to
+/// `0x1FFFFFFFE0` (which is less than `u64::MAX - 31`).
+/// Reference go-ethereum code as:
+/// . [calcMemSize64WithUint](https://github.com/ethereum/go-ethereum/blob/db18293c32f6dc5d6886e5e68ab8bfd12e33cad6/core/vm/common.go#L37)
+/// . [memoryGasCost](https://github.com/ethereum/go-ethereum/blob/db18293c32f6dc5d6886e5e68ab8bfd12e33cad6/core/vm/gas_table.go#L38)
+/// . [toWordSize](https://github.com/ethereum/go-ethereum/blob/db18293c32f6dc5d6886e5e68ab8bfd12e33cad6/core/vm/common.go#L67)
+#[derive(Clone, Debug)]
+pub(crate) struct MemoryExpandedAddressGadget<F> {
+    length_is_zero: IsZeroGadget<F>,
+    offset_length_sum: AddWordsGadget<F, 2, false>,
+    sum_lt_cap: LtGadget<F, N_BYTES_U64>,
+    sum_within_u64: IsZeroGadget<F>,
+}
+
+impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
+    fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        let offset = cb.query_word_rlc();
+        let length = cb.query_word_rlc();
+        let sum = cb.query_word_rlc();
+
+        let sum_lt_cap = LtGadget::construct(
+            cb,
+            from_bytes::expr(&sum.cells[..N_BYTES_U64]),
+            (MAX_EXPANDED_MEMORY_ADDRESS + 1).expr(),
+        );
+
+        let sum_overflow_hi = sum::expr(&sum.cells[N_BYTES_U64..]);
+        let sum_within_u64 = IsZeroGadget::construct(cb, sum_overflow_hi);
+
+        let length_is_zero = IsZeroGadget::construct(cb, sum::expr(&length.cells));
+        let offset_length_sum = AddWordsGadget::construct(cb, [offset, length], sum);
+
+        Self {
+            length_is_zero,
+            offset_length_sum,
+            sum_lt_cap,
+            sum_within_u64,
+        }
     }
 
-    pub(crate) fn length_rlc(&self) -> Expression<F> {
-        self.memory_length.expr()
+    fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        memory_offset: U256,
+        memory_length: U256,
+    ) -> Result<u64, Error> {
+        let length_bytes = memory_length
+            .to_le_bytes()
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
+        self.length_is_zero
+            .assign(region, offset, F::from(length_bytes))?;
+
+        let (sum, sum_word_overflow) = memory_offset.overflowing_add(memory_length);
+        self.offset_length_sum
+            .assign(region, offset, [memory_offset, memory_length], sum)?;
+
+        self.sum_lt_cap.assign(
+            region,
+            offset,
+            F::from(sum.low_u64()),
+            F::from(MAX_EXPANDED_MEMORY_ADDRESS + 1),
+        )?;
+
+        let sum_overflow_hi_bytes = sum.to_le_bytes()[N_BYTES_U64..]
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
+        self.sum_within_u64
+            .assign(region, offset, F::from(sum_overflow_hi_bytes))?;
+
+        let address = if length_bytes == 0
+            || sum_overflow_hi_bytes != 0
+            || sum_word_overflow
+            || sum.low_u64() > MAX_EXPANDED_MEMORY_ADDRESS
+        {
+            0
+        } else {
+            sum.low_u64()
+        };
+
+        Ok(address)
     }
 
-    pub(crate) fn length(&self) -> Expression<F> {
-        from_bytes::expr(&self.memory_length.cells)
+    fn offset_rlc(&self) -> Expression<F> {
+        let addends = self.offset_length_sum.addends();
+        addends[0].expr()
     }
 
-    pub(crate) fn address(&self) -> Expression<F> {
-        self.offset() + self.length()
+    fn length_rlc(&self) -> Expression<F> {
+        let addends = self.offset_length_sum.addends();
+        addends[1].expr()
+    }
+
+    fn length(&self) -> Expression<F> {
+        let addends = self.offset_length_sum.addends();
+        select::expr(
+            self.within_range(),
+            from_bytes::expr(&addends[1].cells[..N_BYTES_U64]),
+            0.expr(),
+        )
+    }
+
+    /// Return expanded address if within range, otherwise return 0.
+    fn address(&self) -> Expression<F> {
+        select::expr(
+            self.length_is_zero.expr(),
+            0.expr(),
+            select::expr(
+                self.within_range(),
+                from_bytes::expr(&self.offset_length_sum.sum().cells[..N_BYTES_U64]),
+                0.expr(),
+            ),
+        )
+    }
+}
+
+impl<F: Field> MemoryExpandedAddressGadget<F> {
+    /// Return the valid length value corresponding to function `length`
+    /// (which returns an Expression).
+    pub(crate) fn length_value(memory_offset: U256, memory_length: U256) -> u64 {
+        if memory_length.is_zero() {
+            return 0;
+        }
+
+        memory_offset
+            .checked_add(memory_length)
+            .map_or(0, |address| {
+                if address > MAX_EXPANDED_MEMORY_ADDRESS.into() {
+                    0
+                } else {
+                    memory_length.as_u64()
+                }
+            })
+    }
+
+    /// Check if overflow.
+    pub(crate) fn overflow(&self) -> Expression<F> {
+        not::expr(self.within_range())
+    }
+
+    /// Check if within range.
+    pub(crate) fn within_range(&self) -> Expression<F> {
+        or::expr([
+            self.length_is_zero.expr(),
+            and::expr([
+                self.sum_lt_cap.expr(),
+                self.sum_within_u64.expr(),
+                not::expr(self.offset_length_sum.carry().as_ref().unwrap()),
+            ]),
+        ])
     }
 }
 
@@ -183,7 +374,7 @@ pub(crate) struct MemoryWordSizeGadget<F> {
 }
 
 impl<F: Field> MemoryWordSizeGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, address: Expression<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, address: Expression<F>) -> Self {
         let memory_word_size = ConstantDivisionGadget::construct(cb, address + 31.expr(), 32);
 
         Self { memory_word_size }
@@ -230,7 +421,10 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
     /// Output ranges:
     /// - `next_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, addresses: [Expression<F>; N]) -> Self {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        addresses: [Expression<F>; N],
+    ) -> Self {
         // Calculate the memory size of the memory access
         // `address_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
         let memory_word_sizes =
@@ -309,7 +503,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
             .collect::<Result<Vec<_>, _>>()?;
 
         // Calculate the next memory size
-        let mut next_memory_word_size = curr_memory_word_size as u64;
+        let mut next_memory_word_size = curr_memory_word_size;
         for (max_memory_word_sizes, memory_word_size) in self
             .max_memory_word_sizes
             .iter()
@@ -318,7 +512,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
             let (_, max) = max_memory_word_sizes.assign(
                 region,
                 offset,
-                F::from(next_memory_word_size as u64),
+                F::from(next_memory_word_size),
                 F::from(*memory_word_size),
             )?;
             next_memory_word_size = max.get_lower_128() as u64;
@@ -338,7 +532,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
 
         // Calculate the gas cost for the expansian
         let memory_cost = GasCost::MEMORY_EXPANSION_LINEAR_COEFF.as_u64()
-            * (next_memory_word_size - curr_memory_word_size as u64)
+            * (next_memory_word_size - curr_memory_word_size)
             + (next_quad_memory_cost - curr_quad_memory_cost) as u64;
 
         // Return the new memory size and the memory expansion gas cost
@@ -367,7 +561,7 @@ impl<F: Field, const GAS_COPY: GasCost> MemoryCopierGasGadget<F, GAS_COPY> {
     /// - `next_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         num_bytes: Expression<F>,
         memory_expansion_gas_cost: Expression<F>,
     ) -> Self {
@@ -428,7 +622,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
     BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
 {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         addr_start: Expression<F>,
         addr_end: Expression<F>,
     ) -> Self {

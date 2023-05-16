@@ -5,10 +5,14 @@ use crate::{
         util::{
             common_gadget::{SameContextGadget, WordByteCapGadget},
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition,
             },
             from_bytes,
-            memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
+            memory_gadget::{
+                CommonMemoryAddressGadget, MemoryAddressGadget, MemoryCopierGasGadget,
+                MemoryExpansionGadget,
+            },
             not, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -43,7 +47,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODECOPY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let external_address_word = cb.query_word_rlc();
@@ -188,7 +192,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
         let code_hash = block.rws[step.rw_indices[8]].account_value_pair().0;
         self.code_hash
-            .assign(region, offset, region.word_rlc(code_hash))?;
+            .assign(region, offset, region.code_hash(code_hash))?;
 
         let code_size = if code_hash.is_zero() {
             0
@@ -227,7 +231,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             region,
             offset,
             memory_length.as_u64(),
-            memory_expansion_gas_cost as u64,
+            memory_expansion_gas_cost,
         )?;
 
         Ok(())
@@ -237,6 +241,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes_array, test_util::CircuitTestBuilder};
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
         address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word,
     };
@@ -306,7 +311,12 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_copy_rows: 1750,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]

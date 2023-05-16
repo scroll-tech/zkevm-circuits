@@ -6,10 +6,17 @@
 
 pub mod sign_verify;
 
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
 #[cfg(not(feature = "enable-sign-verify"))]
 use crate::tx_circuit::sign_verify::pub_key_hash_to_address;
+#[cfg(any(feature = "test", test))]
+mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use dev::TxCircuit as TestTxCircuit;
+
 use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{BlockTable, KeccakTable, LookupTable, RlpTable, TxFieldTag, TxTable},
     util::{keccak, random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig},
     witness,
@@ -26,6 +33,7 @@ use gadgets::{
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     util::{and, not, select, sum, Expr},
 };
+use halo2_base::AssignedValue;
 #[cfg(feature = "enable-sign-verify")]
 use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{
@@ -48,28 +56,15 @@ use crate::table::TxFieldTag::{
     TxSignRLC,
 };
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
-pub use halo2_proofs::halo2curves::{
-    group::{
-        ff::{Field as GroupField, PrimeField},
-        prime::PrimeCurveAffine,
-        Curve, Group, GroupEncoding,
-    },
-    secp256k1::{self, Secp256k1Affine, Secp256k1Compressed},
-};
-use halo2_proofs::plonk::{Fixed, TableColumn};
-
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
+use halo2_proofs::plonk::{Fixed, TableColumn};
 
 use crate::table::BlockContextFieldTag::CumNumTxs;
 use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
 use halo2_proofs::circuit::Chip;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
-
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 19;
 /// Offset of TxHash tag in the tx table
@@ -187,7 +182,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
-        let q_enable = meta.fixed_column();
+        let q_enable = tx_table.q_enable;
         let tag = BinaryNumberChip::configure(meta, q_enable, None);
         let rlp_tag = meta.fixed_column();
         let u16_table = meta.lookup_table_column();
@@ -589,28 +584,26 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(is_create, Rotation::cur()),
                 ]);
-
-                vec![
+                let lookup_inputs = [
+                    1.expr(),
                     meta.query_advice(tx_table.tx_id, Rotation::cur()),
                     RlpTxTag::To.expr(),
                     1.expr(), // tag_rindex == 1
                     RlpDataType::TxHash.expr(),
                     meta.query_advice(tx_table.value, Rotation::cur()), // tag_length == 1
-                ]
-                .into_iter()
-                .zip(
-                    vec![
-                        rlp_table.tx_id,
-                        rlp_table.tag,
-                        rlp_table.tag_rindex,
-                        rlp_table.data_type,
-                        rlp_table.tag_length_eq_one,
-                    ]
-                    .into_iter()
-                    .map(|column| meta.query_advice(column, Rotation::cur())),
-                )
-                .map(|(arg, table)| (enable.clone() * arg, table))
-                .collect()
+                ];
+                let lookup_table = [
+                    meta.query_fixed(rlp_table.q_enable, Rotation::cur()),
+                    meta.query_advice(rlp_table.tx_id, Rotation::cur()),
+                    meta.query_advice(rlp_table.tag, Rotation::cur()),
+                    meta.query_advice(rlp_table.tag_rindex, Rotation::cur()),
+                    meta.query_advice(rlp_table.data_type, Rotation::cur()),
+                    meta.query_advice(rlp_table.tag_length_eq_one, Rotation::cur()),
+                ];
+                lookup_inputs
+                    .zip(lookup_table)
+                    .map(|(arg, table)| (enable.clone() * arg, table))
+                    .into()
             },
         );
         #[cfg(feature = "reject-eip2718")]
@@ -718,13 +711,6 @@ impl<F: Field> TxCircuitConfig<F> {
         is_padding_tx: bool,
         cum_num_txs: usize,
     ) -> Result<(), Error> {
-        region.assign_fixed(
-            || "q_enable",
-            self.q_enable,
-            *offset,
-            || Value::known(F::one()),
-        )?;
-
         let tag_chip = BinaryNumberChip::construct(self.tag);
         tag_chip.assign(region, *offset, &tag)?;
 
@@ -916,16 +902,16 @@ impl<F: Field> TxCircuitConfig<F> {
 
         for offset in start..end {
             region.assign_fixed(
-                || "q_enable",
-                self.q_enable,
-                offset,
-                || Value::known(F::one()),
-            )?;
-            region.assign_fixed(
                 || "rlp_tag",
                 self.rlp_tag,
                 offset,
                 || Value::known(rlp_data),
+            )?;
+            region.assign_fixed(
+                || "q_enable",
+                self.q_enable,
+                offset,
+                || Value::known(F::one()),
             )?;
             region.assign_fixed(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
             tag_chip.assign(region, offset, &CallData)?;
@@ -978,12 +964,6 @@ impl<F: Field> TxCircuitConfig<F> {
         end: usize,
     ) -> Result<(), Error> {
         for offset in start..end {
-            region.assign_fixed(
-                || "q_enable",
-                self.q_enable,
-                offset,
-                || Value::known(F::zero()),
-            )?;
             region.assign_fixed(
                 || "tag",
                 self.tx_table.tag,
@@ -1103,6 +1083,7 @@ impl<F: Field> TxCircuitConfig<F> {
             let rlp_tag = meta.query_fixed(rlp_tag, Rotation::cur());
 
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 rlp_tag,
                 1.expr(), // tag_rindex == 1
@@ -1127,6 +1108,7 @@ impl<F: Field> TxCircuitConfig<F> {
             ]);
 
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 rlp_tag,
                 1.expr(), // tag_rindex == 1
@@ -1169,6 +1151,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 ),
             ]);
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 RlpTxTag::Data.expr(),
                 meta.query_advice(calldata_length, Rotation::cur())
@@ -1192,6 +1175,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 ),
             ]);
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 RlpTxTag::Data.expr(),
                 meta.query_advice(calldata_length, Rotation::cur())
@@ -1218,7 +1202,8 @@ impl<F: Field> TxCircuitConfig<F> {
             ]);
 
             vec![
-                1.expr(),                                            // is_enabled
+                1.expr(),                                            // q_enable
+                1.expr(),                                            // is_final
                 meta.query_advice(tx_table.value, Rotation::next()), // input_rlc
                 meta.query_advice(tx_table.value, Rotation::cur()),  // input_len
                 meta.query_advice(tx_table.value, Rotation(2)),      // output_rlc
@@ -1358,7 +1343,7 @@ impl<F: Field> TxCircuit<F> {
                     }))
                     .enumerate()
                 {
-                    region.assign_advice(
+                    region.assign_fixed(
                         || "block_table.tag",
                         config.block_table.tag,
                         offset,
@@ -1392,7 +1377,7 @@ impl<F: Field> TxCircuit<F> {
         padding_txs: &[Transaction],
     ) -> Result<(), Error> {
         let last_off = layouter.assign_region(
-            || "tx table",
+            || "tx table aux",
             |mut region| {
                 let mut offset = 0;
                 #[cfg(feature = "enable-sign-verify")]
@@ -1443,7 +1428,7 @@ impl<F: Field> TxCircuit<F> {
                     }
 
                     #[cfg(feature = "enable-sign-verify")]
-                    let tx_sign_hash = assigned_sig_verif.msg_hash_rlc.value().copied();
+                    let tx_sign_hash = assigned_sig_verif.msg_hash_rlc.value;
                     #[cfg(not(feature = "enable-sign-verify"))]
                     let tx_sign_hash = {
                         challenges.evm_word().map(|rand| {
@@ -1603,12 +1588,9 @@ impl<F: Field> TxCircuit<F> {
                             CallerAddress => {
                                 #[cfg(feature = "enable-sign-verify")]
                                 {
-                                    assigned_sig_verif.address.copy_advice(
-                                        || "sv_address == SignVerify.address",
-                                        &mut region,
-                                        config.sv_address,
-                                        offset - 1,
-                                    )?;
+                                    let address: AssignedValue<_> =
+                                        assigned_sig_verif.address.clone().into();
+                                    address.copy_advice(&mut region, config.sv_address, offset - 1);
                                 }
                                 #[cfg(not(feature = "enable-sign-verify"))]
                                 {
@@ -1629,7 +1611,7 @@ impl<F: Field> TxCircuit<F> {
                                 #[cfg(feature = "enable-sign-verify")]
                                 {
                                     region.constrain_equal(
-                                        assigned_sig_verif.msg_hash_rlc.cell(),
+                                        assigned_sig_verif.msg_hash_rlc.clone().cell,
                                         Cell {
                                             // FIXME
                                             region_index: RegionIndex(1),
@@ -1736,8 +1718,11 @@ impl<F: Field> TxCircuit<F> {
 impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     type Config = TxCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        7
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        debug_assert_eq!(block.chain_id, block.context.chain_id());
         for tx in &block.txs {
             if tx.chain_id != block.chain_id.as_u64() {
                 panic!(
@@ -1749,7 +1734,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         Self::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            block.context.chain_id().as_u64(),
+            block.chain_id.as_u64(),
             block.txs.clone(),
         )
     }
@@ -1863,218 +1848,5 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         // The maingate expects an instance column, but we don't use it, so we return an
         // "empty" instance column
         vec![vec![]]
-    }
-}
-
-#[cfg(not(feature = "onephase"))]
-use crate::util::Challenges;
-#[cfg(feature = "onephase")]
-use crate::util::MockChallenges as Challenges;
-
-impl<F: Field> Circuit<F> for TxCircuit<F> {
-    type Config = (TxCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let block_table = BlockTable::construct(meta);
-        let tx_table = TxTable::construct(meta);
-        let keccak_table = KeccakTable::construct(meta);
-        let rlp_table = RlpTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-
-        let config = {
-            let challenges = challenges.exprs(meta);
-            TxCircuitConfig::new(
-                meta,
-                TxCircuitConfigArgs {
-                    block_table,
-                    tx_table,
-                    keccak_table,
-                    rlp_table,
-                    challenges,
-                },
-            )
-        };
-
-        (config, challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&layouter);
-
-        let padding_txs = (self.txs.len()..self.max_txs)
-            .into_iter()
-            .map(|i| {
-                let mut tx = Transaction::dummy(self.chain_id);
-                tx.id = i + 1;
-                tx
-            })
-            .collect::<Vec<Transaction>>();
-
-        config
-            .keccak_table
-            .dev_load(&mut layouter, &self.keccak_inputs()?, &challenges)?;
-        config.tx_table.load(
-            &mut layouter,
-            &self.txs,
-            self.max_txs,
-            self.max_calldata,
-            self.chain_id,
-            &challenges,
-        )?;
-        config.rlp_table.dev_load(
-            &mut layouter,
-            self.txs
-                .iter()
-                .chain(padding_txs.iter())
-                .map(|tx| tx.into())
-                .collect(),
-            &challenges,
-        )?;
-        self.assign_dev_block_table(config.clone(), &mut layouter)?;
-        self.synthesize_sub(&config, &challenges, &mut layouter)
-    }
-}
-
-#[cfg(test)]
-mod tx_circuit_tests {
-    use super::*;
-    use crate::util::log2_ceil;
-    #[cfg(feature = "reject-eip2718")]
-    use eth_types::address;
-    use eth_types::U64;
-    use halo2_proofs::{
-        dev::{MockProver, VerifyFailure},
-        halo2curves::bn256::Fr,
-    };
-    #[cfg(feature = "reject-eip2718")]
-    use mock::AddrOrWallet;
-    use pretty_assertions::assert_eq;
-    use std::cmp::max;
-
-    const NUM_BLINDING_ROWS: usize = 64;
-
-    fn run<F: Field>(
-        txs: Vec<Transaction>,
-        chain_id: u64,
-        max_txs: usize,
-        max_calldata: usize,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        let k = max(
-            18,
-            log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)),
-        );
-        // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        let circuit = TxCircuit::<F>::new(max_txs, max_calldata, chain_id, txs);
-
-        let prover = match MockProver::run(k, &circuit, vec![vec![]]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        prover.verify()
-    }
-
-    #[test]
-    fn tx_circuit_2tx_2max_tx() {
-        const NUM_TXS: usize = 2;
-        const MAX_TXS: usize = 4;
-        const MAX_CALLDATA: usize = 32;
-
-        assert_eq!(
-            run::<Fr>(
-                [
-                    mock::CORRECT_MOCK_TXS[1].clone(),
-                    mock::CORRECT_MOCK_TXS[3].clone()
-                ]
-                .iter()
-                .enumerate()
-                .map(|(i, tx)| {
-                    let mut mock_tx = tx.clone();
-                    mock_tx.transaction_idx((i + 1) as u64);
-                    mock_tx.into()
-                })
-                .collect(),
-                mock::MOCK_CHAIN_ID.as_u64(),
-                MAX_TXS,
-                MAX_CALLDATA
-            ),
-            Ok(())
-        );
-    }
-
-    #[test]
-    fn tx_circuit_0tx_1max_tx() {
-        const MAX_TXS: usize = 1;
-        const MAX_CALLDATA: usize = 32;
-
-        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
-
-        assert_eq!(run::<Fr>(vec![], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
-    }
-
-    #[test]
-    fn tx_circuit_1tx_1max_tx() {
-        const MAX_TXS: usize = 1;
-        const MAX_CALLDATA: usize = 32;
-
-        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
-
-        let tx: Transaction = mock::CORRECT_MOCK_TXS[0].clone().into();
-
-        assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
-    }
-
-    #[test]
-    fn tx_circuit_1tx_2max_tx() {
-        const MAX_TXS: usize = 2;
-        const MAX_CALLDATA: usize = 32;
-
-        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
-
-        let tx: Transaction = mock::CORRECT_MOCK_TXS[0].clone().into();
-
-        assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
-    }
-
-    #[cfg(feature = "reject-eip2718")]
-    #[test]
-    fn tx_circuit_bad_address() {
-        const MAX_TXS: usize = 1;
-        const MAX_CALLDATA: usize = 32;
-
-        let mut tx = mock::CORRECT_MOCK_TXS[0].clone();
-        // This address doesn't correspond to the account that signed this tx.
-        tx.from = AddrOrWallet::from(address!("0x1230000000000000000000000000000000000456"));
-
-        assert!(run::<Fr>(
-            vec![tx.into()],
-            mock::MOCK_CHAIN_ID.as_u64(),
-            MAX_TXS,
-            MAX_CALLDATA
-        )
-        .is_err(),);
-    }
-
-    #[test]
-    fn tx_circuit_to_is_zero() {
-        const MAX_TXS: usize = 1;
-        const MAX_CALLDATA: usize = 32;
-
-        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
-        let mut tx = mock::CORRECT_MOCK_TXS[5].clone();
-        tx.transaction_index = U64::from(1);
-
-        assert_eq!(
-            run::<Fr>(vec![tx.into()], chain_id, MAX_TXS, MAX_CALLDATA),
-            Ok(())
-        );
     }
 }

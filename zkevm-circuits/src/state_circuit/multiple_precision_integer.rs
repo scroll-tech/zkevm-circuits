@@ -1,4 +1,4 @@
-use super::{lookups, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_RW_COUNTER};
+use super::{lookups, param::*};
 use crate::util::Expr;
 use eth_types::{Address, Field};
 use halo2_proofs::{

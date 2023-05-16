@@ -1,6 +1,10 @@
 <HTML>
 <HEAD>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/skeleton-framework/1.1.1/skeleton.css">
+<style>
+table#table tr th:first-child { display: none; }
+table#table tr td:first-child { display: none; }
+</style>
 </HEAD>
 <BODY>
 
@@ -23,9 +27,10 @@ This file contains:<br>
 {{{ by_result }}}
 
 <H2 id="all">All results</H2>
-<table>
+<table id="table">
 <tr>
     <th>id</th>
+    <th>test_id</th>
     <th>level</th>
     <th>details</th>
     <th>path</th>
@@ -35,6 +40,9 @@ This file contains:<br>
             <td>
                 {{@key}}
             </td>
+            <td id="{{@key}}">
+                {{this.test_id}}
+            </td>
             <td>
                 {{this.level}}
             </td>
@@ -42,7 +50,9 @@ This file contains:<br>
                 {{this.details}}
             </td>
             <td>
-                {{this.path}}
+                <a href='https://github.com/ethereum/tests/blob/{{@root.githash}}/{{this.path}}' target="_blank">
+                    https://github.com/ethereum/tests/blob/{{@root.githash}}/{{this.path}}
+                </a>
             </td>
         </tr>
 {{/each}}

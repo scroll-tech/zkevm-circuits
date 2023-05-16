@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -25,7 +25,7 @@ impl<F: Field> ExecutionGadget<F> for JumpdestGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMPDEST;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // State transition
         let step_state_transition = StepStateTransition {
             program_counter: Delta(1.expr()),

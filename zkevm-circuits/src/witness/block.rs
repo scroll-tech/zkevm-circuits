@@ -1,17 +1,17 @@
 use ethers_core::types::Signature;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 #[cfg(any(feature = "test", test))]
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 #[cfg(feature = "test")]
 use crate::tx_circuit::TX_LEN;
 
-use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 
 use super::{
@@ -19,6 +19,13 @@ use super::{
     MptUpdates, RwMap, Transaction,
 };
 use crate::util::{Challenges, DEFAULT_RAND};
+
+/// max range of prev blocks allowed inside BLOCKHASH opcode
+#[cfg(feature = "scroll")]
+pub const NUM_PREV_BLOCK_ALLOWED: u64 = 1;
+/// max range of prev blocks allowed inside BLOCKHASH opcode
+#[cfg(not(feature = "scroll"))]
+pub const NUM_PREV_BLOCK_ALLOWED: u64 = 256;
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -39,11 +46,9 @@ pub struct Block<F> {
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
-    pub bytecodes: HashMap<Word, Bytecode>,
+    pub bytecodes: BTreeMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContexts,
-    /// The init state of mpt
-    pub mpt_state: Option<MptState>,
     /// Copy events for the copy circuit's table.
     pub copy_events: Vec<CopyEvent>,
     /// Exponentiation traces for the exponentiation circuit's table.
@@ -56,6 +61,10 @@ pub struct Block<F> {
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
+    /// Withdraw root
+    pub withdraw_root: Word,
+    /// Withdraw roof of the previous block
+    pub prev_withdraw_root: Word,
     /// Keccak inputs
     pub keccak_inputs: Vec<Vec<u8>>,
     /// Mpt updates
@@ -72,10 +81,6 @@ pub struct BlockContexts {
 }
 
 impl BlockContexts {
-    /// Get the chain ID for the block.
-    pub fn chain_id(&self) -> Word {
-        self.first_or_default().chain_id
-    }
     /// ..
     pub fn first(&self) -> &BlockContext {
         self.ctxs.iter().next().unwrap().1
@@ -107,7 +112,7 @@ impl<F: Field> Block<F> {
 }
 
 #[cfg(feature = "test")]
-use crate::exp_circuit::OFFSET_INCREMENT;
+use crate::exp_circuit::param::OFFSET_INCREMENT;
 #[cfg(feature = "test")]
 use crate::util::log2_ceil;
 
@@ -140,8 +145,6 @@ impl<F: Field> Block<F> {
             .map(|e| e.steps.len() * OFFSET_INCREMENT)
             .sum();
 
-        const NUM_BLINDING_ROWS: usize = 64;
-
         let rows_needed: usize = itertools::max([
             num_rows_required_for_execution_steps,
             num_rows_required_for_rw_table,
@@ -154,7 +157,7 @@ impl<F: Field> Block<F> {
         ])
         .unwrap();
 
-        let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
+        let k = log2_ceil(EvmCircuit::<F>::unusable_rows() + rows_needed);
         log::debug!(
             "num_rows_required_for rw_table={}, fixed_table={}, bytecode_table={}, \
             copy_table={}, keccak_table={}, tx_table={}, exp_table={}",
@@ -204,71 +207,89 @@ impl BlockContext {
     ) -> Vec<[Value<F>; 3]> {
         let current_block_number = self.number.to_scalar().unwrap();
         let randomness = challenges.evm_word();
-        let parent_block_num = if self.number.as_u64() < 1 {
-            0
-        } else {
-            self.number.as_u64() - 1
-        };
-        let parent_hash_rlc = randomness.map(|rand| {
-            self.eth_block
-                .parent_hash
-                .to_fixed_bytes()
-                .into_iter()
-                .fold(F::zero(), |acc, byte| acc * rand + F::from(byte as u64))
-        });
-        [vec![
-            [
-                Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
-                Value::known(current_block_number),
-                Value::known(self.coinbase.to_scalar().unwrap()),
+        [
+            vec![
+                [
+                    Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
+                    Value::known(current_block_number),
+                    Value::known(self.coinbase.to_scalar().unwrap()),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
+                    Value::known(current_block_number),
+                    Value::known(self.timestamp.to_scalar().unwrap()),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::Number as u64)),
+                    Value::known(current_block_number),
+                    Value::known(current_block_number),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
+                    Value::known(current_block_number),
+                    randomness.map(|rand| rlc::value(&self.difficulty.to_le_bytes(), rand)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(self.gas_limit)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
+                    Value::known(current_block_number),
+                    randomness
+                        .map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
+                    Value::known(current_block_number),
+                    randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(num_txs as u64)),
+                ],
+                [
+                    Value::known(F::from(BlockContextFieldTag::CumNumTxs as u64)),
+                    Value::known(current_block_number),
+                    Value::known(F::from(cum_num_txs as u64)),
+                ],
             ],
-            [
-                Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
-                Value::known(current_block_number),
-                Value::known(self.timestamp.to_scalar().unwrap()),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::Number as u64)),
-                Value::known(current_block_number),
-                Value::known(current_block_number),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
-                Value::known(current_block_number),
-                randomness.map(|rand| rlc::value(&self.difficulty.to_le_bytes(), rand)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
-                Value::known(current_block_number),
-                Value::known(F::from(self.gas_limit)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
-                Value::known(current_block_number),
-                randomness.map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
-                Value::known(current_block_number),
-                randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),
-                Value::known(current_block_number),
-                Value::known(F::from(num_txs as u64)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::CumNumTxs as u64)),
-                Value::known(current_block_number),
-                Value::known(F::from(cum_num_txs as u64)),
-            ],
-            [
-                Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
-                Value::known(parent_block_num.to_scalar().unwrap()),
-                parent_hash_rlc,
-            ],
-        ]]
+            self.block_hash_assignments(randomness),
+        ]
         .concat()
+    }
+
+    fn block_hash_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
+        use eth_types::ToWord;
+
+        #[cfg(not(feature = "scroll"))]
+        let history_hashes: &[U256] = &self.history_hashes;
+        #[cfg(feature = "scroll")]
+        let history_hashes: &[U256] = &[self.eth_block.parent_hash.to_word()];
+
+        let len_history = history_hashes.len();
+
+        history_hashes
+            .iter()
+            .enumerate()
+            .map(|(idx, hash)| {
+                let block_number = self
+                    .number
+                    .low_u64()
+                    .checked_sub((len_history - idx) as u64)
+                    .unwrap_or_default();
+                if block_number + 1 == self.number.low_u64() {
+                    debug_assert_eq!(self.eth_block.parent_hash.to_word(), hash.into());
+                }
+                [
+                    Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
+                    Value::known(F::from(block_number)),
+                    randomness.map(|randomness| rlc::value(&hash.to_le_bytes(), randomness)),
+                ]
+            })
+            .collect()
     }
 }
 
@@ -305,6 +326,7 @@ pub fn block_convert<F: Field>(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
     let rws = RwMap::from(&block.container);
+    #[cfg(debug_assertions)]
     rws.check_value();
     let num_txs = block.txs().len();
     let last_block_num = block
@@ -328,11 +350,46 @@ pub fn block_convert<F: Field>(
     } else {
         block.circuits_params.max_rws
     };
+    let mpt_updates = MptUpdates::from_rws_with_mock_state_roots(
+        &rws.table_assignments(),
+        block.prev_state_root,
+        block.end_state_root(),
+    );
+
+    let _withdraw_root_check_rw = if end_block_last.rw_counter == 0 {
+        0
+    } else {
+        end_block_last.rw_counter + 1
+    };
+    let total_tx_as_txid = num_txs;
+    let withdraw_root_entry = mpt_updates.get(&super::rw::Rw::AccountStorage {
+        tx_id: total_tx_as_txid,
+        account_address: *bus_mapping::l2_predeployed::message_queue::ADDRESS,
+        storage_key: *bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT,
+        // following field is not used in Mpt::Key so we just fill them arbitrarily
+        rw_counter: 0,
+        is_write: false,
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        committed_value: U256::zero(),
+    });
+    if let Some(entry) = withdraw_root_entry {
+        let (withdraw_root, _) = entry.values();
+        if block.withdraw_root != withdraw_root {
+            log::error!(
+                "new withdraw root non consistent ({:#x}, vs ,{:#x})",
+                block.withdraw_root,
+                withdraw_root,
+            );
+        }
+    } else {
+        log::error!("withdraw root is not avaliable");
+    }
+
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
-        mpt_state: None,
-        rws: rws.clone(),
+        rws,
         txs: block
             .txs()
             .iter()
@@ -372,18 +429,15 @@ pub fn block_convert<F: Field>(
         },
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
+        withdraw_root: block.withdraw_root,
+        prev_withdraw_root: block.prev_withdraw_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
-        mpt_updates: MptUpdates::from_rws_with_mock_state_roots(
-            &rws.table_assignments(),
-            block.prev_state_root,
-            block.end_state_root(),
-        ),
+        mpt_updates,
         chain_id,
     })
 }
 
 /// Attach witness block with mpt states
-pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: MptState) {
-    block.mpt_updates.fill_state_roots(&mpt_state);
-    block.mpt_state.replace(mpt_state);
+pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: &MptState) {
+    block.mpt_updates.fill_state_roots(mpt_state);
 }

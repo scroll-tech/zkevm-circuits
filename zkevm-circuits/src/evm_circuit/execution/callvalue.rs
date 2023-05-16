@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -29,7 +29,7 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLVALUE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let call_value = cb.query_cell_phase2();
 
         // Lookup rw_table -> call_context with call value

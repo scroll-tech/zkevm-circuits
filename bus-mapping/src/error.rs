@@ -28,12 +28,12 @@ pub enum Error {
     /// Code not found in the CodeDB
     CodeNotFound(H256),
     /// Unable to figure out error at a [`GethExecStep`]
-    UnexpectedExecStepError(&'static str, GethExecStep),
+    UnexpectedExecStepError(&'static str, Box<GethExecStep>),
     /// Invalid [`eth_types::GethExecTrace`] due to an invalid/unexpected value
     /// in it.
     InvalidGethExecTrace(&'static str),
     /// Invalid [`GethExecStep`] due to an invalid/unexpected value in it.
-    InvalidGethExecStep(&'static str, GethExecStep),
+    InvalidGethExecStep(&'static str, Box<GethExecStep>),
     /// Eth type related error.
     EthTypeError(eth_types::Error),
     /// EVM Execution error
@@ -98,6 +98,46 @@ pub enum OogError {
     SelfDestruct,
 }
 
+/// Contract address collision errors by opcode/state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ContractAddressCollisionError {
+    /// Contract address collision during CREATE opcode.
+    Create,
+    /// Contract address collision during CREATE2 opcode.
+    Create2,
+}
+
+/// Depth above limit errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DepthError {
+    /// Depth above limit during CALL/CALLCODE/DELEGATECALL/STATICCALL opcode.
+    Call,
+    /// Depth above limit during CREATE opcode.
+    Create,
+    /// Depth above limit during CREATE2 opcode.
+    Create2,
+}
+
+/// Insufficient balance errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InsufficientBalanceError {
+    /// Insufficient balance during CALL/CALLCODE opcode.
+    Call,
+    /// Insufficient balance during CREATE opcode.
+    Create,
+    /// Insufficient balance during CREATE2 opcode.
+    Create2,
+}
+
+/// Nonce uint overflow errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NonceUintOverflowError {
+    /// Nonce uint overflow during CREATE opcode.
+    Create,
+    /// Nonce uint overflow during CREATE2 opcode.
+    Create2,
+}
+
 /// EVM Execution Error
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExecError {
@@ -113,11 +153,11 @@ pub enum ExecError {
     /// SELFDESTRUCT
     WriteProtection,
     /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
-    Depth,
-    /// For CALL, CALLCODE
-    InsufficientBalance,
+    Depth(DepthError),
+    /// For CALL, CALLCODE, CREATE, CREATE2
+    InsufficientBalance(InsufficientBalanceError),
     /// For CREATE, CREATE2
-    ContractAddressCollision,
+    ContractAddressCollision(ContractAddressCollisionError),
     /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
     /// (EOF)
     InvalidCreationCode,
@@ -131,18 +171,13 @@ pub enum ExecError {
     MaxCodeSizeExceeded,
     /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
     PrecompileFailed,
-    /// ..
-    GasUintOverflow,
-    /// ..
-    NonceUintOverflow,
+    /// For CREATE, CREATE2
+    NonceUintOverflow(NonceUintOverflowError),
 }
 
 // TODO: Move to impl block.
 pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
-    if error == GETH_ERR_GAS_UINT_OVERFLOW {
-        return ExecError::GasUintOverflow;
-    }
-    if error == GETH_ERR_OUT_OF_GAS {
+    if [GETH_ERR_OUT_OF_GAS, GETH_ERR_GAS_UINT_OVERFLOW].contains(&error) {
         // NOTE: We report a GasUintOverflow error as an OutOfGas error
         let oog_err = match op {
             OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {

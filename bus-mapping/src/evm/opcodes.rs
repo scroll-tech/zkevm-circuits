@@ -1,7 +1,10 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    error::{ExecError, OogError},
+    error::{
+        ContractAddressCollisionError, DepthError, ExecError, InsufficientBalanceError,
+        NonceUintOverflowError, OogError,
+    },
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
@@ -58,17 +61,16 @@ mod swap;
 
 mod error_codestore;
 mod error_contract_address_collision;
+mod error_invalid_creation_code;
 mod error_invalid_jump;
+mod error_oog_account_access;
 mod error_oog_call;
 mod error_oog_dynamic_memory;
-mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
 mod error_oog_sload_sstore;
-mod error_oog_static_memory;
 mod error_precompile_failed;
 mod error_return_data_outofbound;
-mod error_simple;
 mod error_write_protection;
 
 #[cfg(test)]
@@ -89,18 +91,16 @@ use codesize::Codesize;
 use create::Create;
 use dup::Dup;
 use error_codestore::ErrorCodeStore;
-use error_contract_address_collision::ContractAddressCollision;
+use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
+use error_oog_account_access::ErrorOOGAccountAccess;
 use error_oog_call::OOGCall;
 use error_oog_dynamic_memory::OOGDynamicMemory;
-use error_oog_exp::OOGExp;
 use error_oog_log::ErrorOOGLog;
 use error_oog_memory_copy::OOGMemoryCopy;
 use error_oog_sload_sstore::OOGSloadSstore;
-use error_oog_static_memory::OOGStaticMemory;
 use error_precompile_failed::PrecompileFailed;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
-use error_simple::ErrorSimple;
 use error_write_protection::ErrorWriteProtection;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
@@ -283,50 +283,77 @@ fn fn_gen_error_state_associated_ops(
 ) -> Option<FnGenAssociatedOps> {
     match error {
         ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
-        ExecError::InvalidOpcode => Some(ErrorSimple::gen_associated_ops),
-        ExecError::Depth => {
-            let op = geth_step.op;
-            assert!(op.is_call());
-            Some(fn_gen_associated_ops(&op))
-        }
+        ExecError::InvalidOpcode => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
+        // Depth error could occur in CALL, CALLCODE, DELEGATECALL and STATICCALL.
+        ExecError::Depth(DepthError::Call) => match geth_step.op {
+            OpcodeId::CALL | OpcodeId::CALLCODE => Some(CallOpcode::<7>::gen_associated_ops),
+            OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => {
+                Some(CallOpcode::<6>::gen_associated_ops)
+            }
+            op => unreachable!("ErrDepth cannot occur in {op}"),
+        },
+        // Depth error could occur in CREATE and CREATE2.
+        ExecError::Depth(DepthError::Create) => Some(Create::<false>::gen_associated_ops),
+        ExecError::Depth(DepthError::Create2) => Some(Create::<true>::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
-        ExecError::OutOfGas(OogError::Constant) => Some(ErrorSimple::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Constant) => {
+            Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops)
+        }
+        ExecError::OutOfGas(OogError::Create2) => {
+            Some(StackOnlyOpcode::<4, 0, true>::gen_associated_ops)
+        }
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::DynamicMemoryExpansion) => {
             Some(OOGDynamicMemory::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::StaticMemoryExpansion) => {
-            Some(OOGStaticMemory::gen_associated_ops)
+            Some(StackOnlyOpcode::<1, 0, true>::gen_associated_ops)
         }
-        ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Exp) => {
+            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+        }
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Sha3) => {
+            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
+        }
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
+        ExecError::OutOfGas(OogError::AccountAccess) => {
+            Some(ErrorOOGAccountAccess::gen_associated_ops)
+        }
         // ExecError::
-        ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
-        ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
+        ExecError::StackOverflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
+        ExecError::StackUnderflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
         ExecError::CodeStoreOutOfGas => Some(ErrorCodeStore::gen_associated_ops),
         ExecError::MaxCodeSizeExceeded => Some(ErrorCodeStore::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
-        ExecError::InsufficientBalance => {
-            if geth_step.op.is_create() {
-                unimplemented!("insufficient balance for create");
-            }
+        ExecError::InsufficientBalance(InsufficientBalanceError::Call) => {
             Some(CallOpcode::<7>::gen_associated_ops)
+        }
+        // create & create2 can encounter insufficient balance.
+        ExecError::InsufficientBalance(InsufficientBalanceError::Create) => {
+            Some(Create::<false>::gen_associated_ops)
+        }
+        ExecError::InsufficientBalance(InsufficientBalanceError::Create2) => {
+            Some(Create::<true>::gen_associated_ops)
         }
         ExecError::PrecompileFailed => Some(PrecompileFailed::gen_associated_ops),
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
-        ExecError::ContractAddressCollision => match geth_step.op {
-            OpcodeId::CREATE => Some(ContractAddressCollision::<false>::gen_associated_ops),
-            OpcodeId::CREATE2 => Some(ContractAddressCollision::<true>::gen_associated_ops),
-            _ => unreachable!(),
-        },
-        ExecError::NonceUintOverflow => match geth_step.op {
-            OpcodeId::CREATE => Some(StackOnlyOpcode::<3, 1>::gen_associated_ops),
-            OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 1>::gen_associated_ops),
-            _ => unreachable!(),
-        },
-        ExecError::GasUintOverflow => Some(ErrorSimple::gen_associated_ops),
+        // create & create2 can encounter contract address collision.
+        ExecError::ContractAddressCollision(ContractAddressCollisionError::Create) => {
+            Some(Create::<false>::gen_associated_ops)
+        }
+        ExecError::ContractAddressCollision(ContractAddressCollisionError::Create2) => {
+            Some(Create::<true>::gen_associated_ops)
+        }
+        // create & create2 can encounter nonce uint overflow.
+        ExecError::NonceUintOverflow(NonceUintOverflowError::Create) => {
+            Some(Create::<false>::gen_associated_ops)
+        }
+        ExecError::NonceUintOverflow(NonceUintOverflowError::Create2) => {
+            Some(Create::<true>::gen_associated_ops)
+        }
+        ExecError::InvalidCreationCode => Some(ErrorCreationCode::gen_associated_ops),
         // more future errors place here
         _ => {
             evm_unimplemented!("TODO: error state {:?} not implemented", error);
@@ -409,6 +436,10 @@ pub fn gen_associated_ops(
             steps[0].error = Some(exec_error.clone());
             return Ok(steps);
         } else {
+            // For exceptions that fail to enter next call context, we need
+            // to restore call context of current caller
+            let mut need_restore = true;
+
             // For exceptions that already enter next call context, but fail immediately
             // (e.g. Depth, InsufficientBalance), we still need to parse the call.
             if geth_step.op.is_call_or_create()
@@ -416,12 +447,10 @@ pub fn gen_associated_ops(
             {
                 let call = state.parse_call(geth_step)?;
                 state.push_call(call);
-            // For exceptions that fail to enter next call context, we need
-            // to restore call context of current caller
-            } else {
-                state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+                need_restore = false;
             }
-            state.handle_return(geth_step)?;
+
+            state.handle_return(&mut exec_step, geth_steps, need_restore)?;
             return Ok(vec![exec_step]);
         }
     }
@@ -468,8 +497,21 @@ pub fn gen_begin_tx_ops(
         nonce_prev,
     )?;
 
-    // Add caller and callee into access list
-    for address in [call.caller_address, call.address] {
+    // Add caller, callee and coinbase (only for Shanghai) to access list.
+    #[cfg(feature = "shanghai")]
+    let accessed_addresses = [
+        call.caller_address,
+        call.address,
+        state
+            .block
+            .headers
+            .get(&state.tx.block_num)
+            .unwrap()
+            .coinbase,
+    ];
+    #[cfg(not(feature = "shanghai"))]
+    let accessed_addresses = [call.caller_address, call.address];
+    for address in accessed_addresses {
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
         state.tx_accesslist_account_write(
             &mut exec_step,
@@ -535,6 +577,7 @@ pub fn gen_begin_tx_ops(
     }
 
     // Transfer with fee
+    let fee = state.tx.gas_price * state.tx.gas + state.tx_ctx.l1_fee;
     state.transfer_with_fee(
         &mut exec_step,
         call.caller_address,
@@ -542,7 +585,7 @@ pub fn gen_begin_tx_ops(
         callee_exists,
         call.is_create(),
         call.value,
-        Some(state.tx.gas_price * state.tx.gas),
+        Some(fee),
     )?;
 
     // In case of contract creation we wish to verify the correctness of the
@@ -716,7 +759,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         .clone();
     let effective_tip = state.tx.gas_price - block_info.base_fee;
     let gas_cost = state.tx.gas - exec_step.gas_left.0 - effective_refund;
-    let coinbase_reward = effective_tip * gas_cost;
+    let coinbase_reward = effective_tip * gas_cost + state.tx_ctx.l1_fee;
     log::trace!(
         "coinbase reward = ({} - {}) * ({} - {} - {}) = {}",
         state.tx.gas_price,
@@ -881,6 +924,6 @@ fn dummy_gen_selfdestruct_ops(
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(geth_step)?;
+    state.handle_return(&mut exec_step, geth_steps, false)?;
     Ok(vec![exec_step])
 }

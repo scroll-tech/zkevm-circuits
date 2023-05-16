@@ -1,7 +1,8 @@
-use super::{StateCircuit, StateCircuitConfig};
+#![allow(unused_imports)]
+pub use super::{dev::*, *};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::SubCircuit,
+    util::{unusable_rows, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -15,6 +16,7 @@ use eth_types::{
 use gadgets::binary_number::AsBits;
 use halo2_proofs::{
     arithmetic::Field as Halo2Field,
+    circuit::SimpleFloorPlanner,
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::{Bn256, Fr},
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
@@ -26,67 +28,12 @@ use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
 
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub enum AdviceColumn {
-    IsWrite,
-    Address,
-    AddressLimb0,
-    AddressLimb1,
-    StorageKey,
-    StorageKeyByte0,
-    StorageKeyByte1,
-    Value,
-    ValuePrev,
-    RwCounter,
-    RwCounterLimb0,
-    RwCounterLimb1,
-    Tag,
-    TagBit0,
-    TagBit1,
-    TagBit2,
-    TagBit3,
-    LimbIndexBit0, // most significant bit
-    LimbIndexBit1,
-    LimbIndexBit2,
-    LimbIndexBit3,
-    LimbIndexBit4, // least significant bit
-    InitialValue,
-    IsZero, // committed_value and value are 0
-    // NonEmptyWitness is the BatchedIsZero chip witness that contains the
-    // inverse of the non-zero value if any in [committed_value, value]
-    NonEmptyWitness,
-}
-
-impl AdviceColumn {
-    pub fn value<F: Field>(&self, config: &StateCircuitConfig<F>) -> Column<Advice> {
-        match self {
-            Self::IsWrite => config.rw_table.is_write,
-            Self::Address => config.rw_table.address,
-            Self::AddressLimb0 => config.sort_keys.address.limbs[0],
-            Self::AddressLimb1 => config.sort_keys.address.limbs[1],
-            Self::StorageKey => config.rw_table.storage_key,
-            Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
-            Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
-            Self::Value => config.rw_table.value,
-            Self::ValuePrev => config.rw_table.value_prev,
-            Self::RwCounter => config.rw_table.rw_counter,
-            Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
-            Self::RwCounterLimb1 => config.sort_keys.rw_counter.limbs[1],
-            Self::Tag => config.rw_table.tag,
-            Self::TagBit0 => config.sort_keys.tag.bits[0],
-            Self::TagBit1 => config.sort_keys.tag.bits[1],
-            Self::TagBit2 => config.sort_keys.tag.bits[2],
-            Self::TagBit3 => config.sort_keys.tag.bits[3],
-            Self::LimbIndexBit0 => config.lexicographic_ordering.first_different_limb.bits[0],
-            Self::LimbIndexBit1 => config.lexicographic_ordering.first_different_limb.bits[1],
-            Self::LimbIndexBit2 => config.lexicographic_ordering.first_different_limb.bits[2],
-            Self::LimbIndexBit3 => config.lexicographic_ordering.first_different_limb.bits[3],
-            Self::LimbIndexBit4 => config.lexicographic_ordering.first_different_limb.bits[4],
-            Self::InitialValue => config.initial_value,
-            Self::IsZero => config.is_non_exist.is_zero,
-            Self::NonEmptyWitness => config.is_non_exist.nonempty_witness,
-        }
-    }
+#[test]
+fn state_circuit_unusable_rows() {
+    assert_eq!(
+        StateCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, StateCircuit::<Fr>>(),
+    )
 }
 
 fn test_state_circuit_ok(
@@ -181,7 +128,7 @@ fn state_circuit_simple_2() {
     );
 
     let storage_op_0 = Operation::new(
-        RWCounter::from(1),
+        RWCounter::from(0),
         RW::WRITE,
         StorageOp::new(
             U256::from(100).to_address(),
@@ -494,7 +441,7 @@ fn storage_key_byte_out_of_range() {
         committed_value: U256::from(500),
     }];
     let overrides = HashMap::from([
-        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0x1000)),
+        ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0xcafeu64)),
         ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
     ]);
 
@@ -531,7 +478,7 @@ fn nonlexicographic_order_tag() {
         is_write: true,
         call_id: 1,
         memory_address: 10,
-        byte: 0,
+        byte: 12,
     };
     let second = Rw::CallContext {
         rw_counter: 2,
@@ -603,7 +550,7 @@ fn nonlexicographic_order_address() {
         account_address: address!("0x2000000000000000000000000000000000000000"),
         field_tag: AccountFieldTag::CodeHash,
         value: U256::one(),
-        value_prev: U256::zero(),
+        value_prev: U256::one(),
     };
 
     assert_eq!(verify(vec![first, second]), Ok(()));
@@ -721,7 +668,6 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
     );
 }
 
-#[ignore]
 #[test]
 fn read_inconsistency() {
     let rows = vec![
@@ -1010,8 +956,7 @@ fn variadic_size_check() {
         },
     ];
 
-    let updates =
-        MptUpdates::from_rws_with_mock_state_roots(&rows, 0xcafeu64.into(), 0xdeadbeefu64.into());
+    let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows: rows.clone(),
         updates,
@@ -1040,8 +985,7 @@ fn variadic_size_check() {
         },
     ]);
 
-    let updates =
-        MptUpdates::from_rws_with_mock_state_roots(&rows, 0xcafeu64.into(), 0xdeadbeefu64.into());
+    let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows,
         updates,
@@ -1079,9 +1023,8 @@ fn bad_initial_tx_receipt_value() {
     );
 }
 
-fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
-    let updates =
-        MptUpdates::from_rws_with_mock_state_roots(&rows, 0xcafeu64.into(), 0xdeadbeefu64.into());
+fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<'static, Fr> {
+    let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows,
         updates,

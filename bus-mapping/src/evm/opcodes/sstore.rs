@@ -5,6 +5,7 @@ use crate::{
     Error,
 };
 
+use crate::operation::RW;
 use eth_types::{GethExecStep, ToWord, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -86,6 +87,17 @@ impl Opcode for Sstore {
             ),
         )?;
 
+        state.push_op(
+            &mut exec_step,
+            RW::READ,
+            TxAccessListAccountStorageOp {
+                tx_id: state.tx_ctx.id(),
+                address: state.call()?.address,
+                key,
+                is_warm,
+                is_warm_prev: is_warm,
+            },
+        );
         state.push_op_reversible(
             &mut exec_step,
             TxAccessListAccountStorageOp {
@@ -250,7 +262,8 @@ mod sstore_tests {
                 )
             )
         );
-        let refund_op = &builder.block.container.tx_refund[step.bus_mapping_instance[9].as_usize()];
+        let refund_op =
+            &builder.block.container.tx_refund[step.bus_mapping_instance[10].as_usize()];
         assert_eq!(
             (refund_op.rw(), refund_op.op()),
             (

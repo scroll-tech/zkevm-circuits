@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::util::{
-        constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, transpose_val_ret,
-        CachedRegion, Cell,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        from_bytes, pow_of_two, transpose_val_ret, CachedRegion, Cell,
     },
     util::Expr,
 };
@@ -30,7 +30,7 @@ pub struct LtGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -115,7 +115,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for LtGadgetTestContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let b = cb.query_cell();
             let lt_gadget = LtGadget::<F, N>::construct(cb, a.expr(), b.expr());

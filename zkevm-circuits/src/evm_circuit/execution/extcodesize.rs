@@ -6,7 +6,8 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition::Delta,
             },
             from_bytes,
             math_gadget::IsZeroGadget,
@@ -37,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODESIZE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let address_word = cb.query_word_rlc();
         let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
         cb.stack_pop(address_word.expr());
@@ -61,8 +62,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
         let code_size = cb.query_word_rlc();
         cb.condition(exists.expr(), |cb| {
+            #[cfg(feature = "scroll")]
+            cb.account_read(
+                address.expr(),
+                AccountFieldTag::CodeSize,
+                from_bytes::expr(&code_size.cells),
+            );
+            #[cfg(not(feature = "scroll"))]
             cb.bytecode_length(code_hash.expr(), from_bytes::expr(&code_size.cells));
         });
+
         cb.condition(not_exists.expr(), |cb| {
             cb.require_zero("code_size is zero when non_exists", code_size.expr());
         });
@@ -75,8 +84,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         );
 
+        let rw_counter_delta = 7.expr();
+        #[cfg(feature = "scroll")]
+        let rw_counter_delta = rw_counter_delta + exists;
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(7.expr()),
+            rw_counter: Delta(rw_counter_delta),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(0.expr()),
             gas_left: Delta(-gas_cost),
@@ -130,11 +142,18 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
         let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
         self.code_hash
-            .assign(region, offset, region.word_rlc(code_hash))?;
+            .assign(region, offset, region.code_hash(code_hash))?;
         self.not_exists
-            .assign_value(region, offset, region.word_rlc(code_hash))?;
+            .assign_value(region, offset, region.code_hash(code_hash))?;
 
-        let code_size = block.rws[step.rw_indices[6]].stack_value().as_u64();
+        let rw_offset = 6;
+        #[cfg(feature = "scroll")]
+        let rw_offset = if code_hash.is_zero() {
+            rw_offset
+        } else {
+            rw_offset + 1
+        };
+        let code_size = block.rws[step.rw_indices[rw_offset]].stack_value().as_u64();
         self.code_size
             .assign(region, offset, Some(code_size.to_le_bytes()))?;
 
@@ -145,8 +164,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::{bytecode, geth_types::Account, Bytecode, ToWord, Word};
-    use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
+    use eth_types::{bytecode, geth_types::Account, Bytecode, ToWord};
+    use mock::{
+        generate_mock_call_bytecode, MockCallBytecodeParams, TestContext, MOCK_1_ETH,
+        MOCK_ACCOUNTS, MOCK_CODES,
+    };
 
     #[test]
     fn test_extcodesize_gadget_simple() {
@@ -199,29 +221,19 @@ mod test {
         });
 
         // code A calls code B.
-        let pushdata = rand_bytes(8);
-        let bytecode_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(0xff) // argsLength
-            PUSH32(0x1010) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata: rand_bytes(32),
+            call_data_length: 0xffusize,
+            call_data_offset: 0x1010usize,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<4, 1>::new(
             None,
             |accs| {
                 accs[0].address(addr_b).code(bytecode_b);
-                accs[1].address(addr_a).code(bytecode_a);
+                accs[1].address(addr_a).code(code_a);
                 // Set code if account exists.
                 if account_exists {
                     accs[2].address(account.address).code(account.code.clone());

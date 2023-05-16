@@ -3,8 +3,10 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::ConstraintBuilder, math_gadget::IsZeroGadget,
-            memory_gadget::MemoryAddressGadget, CachedRegion, Cell, Word,
+            constraint_builder::EVMConstraintBuilder,
+            math_gadget::IsZeroGadget,
+            memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
+            CachedRegion, Cell, Word,
         },
     },
     util::Expr,
@@ -33,7 +35,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorPrecompileFailed;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 

@@ -1,6 +1,9 @@
 use bus_mapping::{
     circuit_input_builder,
-    error::{ExecError, OogError},
+    error::{
+        ContractAddressCollisionError, DepthError, ExecError, InsufficientBalanceError,
+        NonceUintOverflowError, OogError,
+    },
     evm::OpcodeId,
     operation,
 };
@@ -65,10 +68,26 @@ impl From<&ExecError> for ExecutionState {
             ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
             ExecError::StackOverflow | ExecError::StackUnderflow => ExecutionState::ErrorStack,
             ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
-            ExecError::Depth => ExecutionState::ErrorDepth,
-            ExecError::InsufficientBalance => ExecutionState::ErrorInsufficientBalance,
-            ExecError::ContractAddressCollision => ExecutionState::ErrorContractAddressCollision,
-            ExecError::NonceUintOverflow => ExecutionState::ErrorNonceUintOverflow,
+            ExecError::Depth(depth_err) => match depth_err {
+                DepthError::Call => ExecutionState::CALL_OP,
+                DepthError::Create => ExecutionState::CREATE,
+                DepthError::Create2 => ExecutionState::CREATE2,
+            },
+            ExecError::InsufficientBalance(insuff_balance_err) => match insuff_balance_err {
+                InsufficientBalanceError::Call => ExecutionState::CALL_OP,
+                InsufficientBalanceError::Create => ExecutionState::CREATE,
+                InsufficientBalanceError::Create2 => ExecutionState::CREATE2,
+            },
+            ExecError::ContractAddressCollision(contract_addr_collision_err) => {
+                match contract_addr_collision_err {
+                    ContractAddressCollisionError::Create => ExecutionState::CREATE,
+                    ContractAddressCollisionError::Create2 => ExecutionState::CREATE2,
+                }
+            }
+            ExecError::NonceUintOverflow(nonce_overflow_err) => match nonce_overflow_err {
+                NonceUintOverflowError::Create => ExecutionState::CREATE,
+                NonceUintOverflowError::Create2 => ExecutionState::CREATE2,
+            },
             ExecError::InvalidCreationCode => ExecutionState::ErrorInvalidCreationCode,
             ExecError::InvalidJump => ExecutionState::ErrorInvalidJump,
             ExecError::ReturnDataOutOfBounds => ExecutionState::ErrorReturnDataOutOfBound,
@@ -76,7 +95,6 @@ impl From<&ExecError> for ExecutionState {
                 ExecutionState::ErrorCodeStore
             }
             ExecError::PrecompileFailed => ExecutionState::ErrorPrecompileFailed,
-            ExecError::GasUintOverflow => ExecutionState::ErrorGasUintOverflow,
             ExecError::OutOfGas(oog_error) => match oog_error {
                 OogError::Constant => ExecutionState::ErrorOutOfGasConstant,
                 OogError::StaticMemoryExpansion => {
@@ -186,14 +204,14 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
+                    OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
-                    OpcodeId::CREATE | OpcodeId::CREATE2 => ExecutionState::CREATE,
-                    OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
+                    OpcodeId::CREATE => ExecutionState::CREATE,
+                    OpcodeId::CREATE2 => ExecutionState::CREATE2,
                     // dummy ops
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
-                    OpcodeId::INVALID(_) => ExecutionState::ErrorInvalidOpcode,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }

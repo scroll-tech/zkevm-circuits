@@ -36,7 +36,17 @@ impl<F: Field> SubCircuitConfig<F> for PoseidonCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs { poseidon_table }: Self::ConfigArgs,
     ) -> Self {
-        let conf = PoseidonHashConfig::configure_sub(meta, poseidon_table.0, HASH_BLOCK_STEP_SIZE);
+        let poseidon_table = (
+            poseidon_table.q_enable,
+            [
+                poseidon_table.hash_id,
+                poseidon_table.input0,
+                poseidon_table.input1,
+                poseidon_table.control,
+                poseidon_table.heading_mark,
+            ],
+        );
+        let conf = PoseidonHashConfig::configure_sub(meta, poseidon_table, HASH_BLOCK_STEP_SIZE);
         Self(conf)
     }
 }
@@ -116,21 +126,21 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        challenges: &Challenges<Value<F>>,
+        _challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         // for single codehash we sitll use keccak256(nil)
-        use crate::evm_circuit::util::rlc;
-        let empty_hash = challenges
-            .evm_word()
-            .map(|challenge| rlc::value(CodeDB::empty_code_hash().as_ref(), challenge));
+        use eth_types::{ToScalar, ToWord};
+        // Note the Option(nil_hash) in construct has different meanings as the returning of
+        // `to_scalar` so we should not use the returning option here
+        let empty_hash = CodeDB::empty_code_hash().to_word().to_scalar().unwrap();
 
         let chip = PoseidonHashChip::<_, HASH_BLOCK_STEP_SIZE>::construct(
             config.0.clone(),
             &self.0,
             self.1,
             false,
-            crate::test_util::escape_value(empty_hash),
+            Some(empty_hash),
         );
 
         chip.load(layouter)

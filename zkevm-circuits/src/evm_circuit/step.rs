@@ -76,11 +76,12 @@ pub enum ExecutionState {
     MSIZE,
     GAS,
     JUMPDEST,
-    PUSH,          // PUSH1, PUSH2, ..., PUSH32
-    DUP,           // DUP1, DUP2, ..., DUP16
-    SWAP,          // SWAP1, SWAP2, ..., SWAP16
-    LOG,           // LOG0, LOG1, ..., LOG4
-    CREATE,        // CREATE, CREATE2
+    PUSH, // PUSH1, PUSH2, ..., PUSH32
+    DUP,  // DUP1, DUP2, ..., DUP16
+    SWAP, // SWAP1, SWAP2, ..., SWAP16
+    LOG,  // LOG0, LOG1, ..., LOG4
+    CREATE,
+    CREATE2,
     CALL_OP,       // CALL, CALLCODE, DELEGATECALL, STATICCALL
     RETURN_REVERT, // RETURN, REVERT
     SELFDESTRUCT,
@@ -88,10 +89,6 @@ pub enum ExecutionState {
     ErrorInvalidOpcode,
     ErrorStack,
     ErrorWriteProtection,
-    ErrorDepth,
-    ErrorInsufficientBalance,
-    ErrorNonceUintOverflow,
-    ErrorContractAddressCollision,
     ErrorInvalidCreationCode,
     ErrorInvalidJump,
     ErrorReturnDataOutOfBound,
@@ -106,12 +103,10 @@ pub enum ExecutionState {
     ErrorOutOfGasLOG,
     ErrorOutOfGasEXP,
     ErrorOutOfGasSHA3,
-    ErrorOutOfGasEXTCODECOPY,
     ErrorOutOfGasCall,
     ErrorOutOfGasSloadSstore,
     ErrorOutOfGasCREATE2,
     ErrorOutOfGasSELFDESTRUCT,
-    ErrorGasUintOverflow,
 }
 
 impl Default for ExecutionState {
@@ -141,13 +136,9 @@ impl ExecutionState {
             Self::ErrorInvalidOpcode
                 | Self::ErrorStack
                 | Self::ErrorWriteProtection
-                | Self::ErrorDepth
-                | Self::ErrorInsufficientBalance
-                | Self::ErrorContractAddressCollision
                 | Self::ErrorInvalidCreationCode
                 | Self::ErrorInvalidJump
                 | Self::ErrorReturnDataOutOfBound
-                | Self::ErrorGasUintOverflow
                 | Self::ErrorOutOfGasConstant
                 | Self::ErrorOutOfGasStaticMemoryExpansion
                 | Self::ErrorOutOfGasDynamicMemoryExpansion
@@ -157,7 +148,6 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasLOG
                 | Self::ErrorOutOfGasEXP
                 | Self::ErrorOutOfGasSHA3
-                | Self::ErrorOutOfGasEXTCODECOPY
                 | Self::ErrorOutOfGasCall
                 | Self::ErrorOutOfGasSloadSstore
                 | Self::ErrorOutOfGasCREATE2
@@ -593,11 +583,11 @@ impl<F: FieldExt> Step<F> {
             .assign(region, offset, Value::known(F::from(step.block_num)))?;
         self.state
             .code_hash
-            .assign(region, offset, region.word_rlc(call.code_hash))?;
+            .assign(region, offset, region.code_hash(call.code_hash))?;
         self.state.program_counter.assign(
             region,
             offset,
-            Value::known(F::from(step.program_counter as u64)),
+            Value::known(F::from(step.program_counter)),
         )?;
         self.state.stack_pointer.assign(
             region,

@@ -27,7 +27,11 @@ use halo2_proofs::{
 // use crate::evm_circuit::table::FixedTableTag;
 use crate::{
     evm_circuit::{
-        util::{and, constraint_builder::BaseConstraintBuilder, not, or},
+        util::{
+            and,
+            constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+            not, or,
+        },
         witness::{RlpTxTag, RlpWitnessGen},
     },
     table::RlpTable,
@@ -129,7 +133,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         rlp_table: &RlpTable,
         challenges: &Challenges<Expression<F>>,
     ) -> Self {
-        let q_usable = meta.fixed_column();
+        let q_usable = rlp_table.q_enable;
         let is_first = meta.advice_column();
         let is_last = meta.advice_column();
         let index = meta.advice_column();
@@ -147,7 +151,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         let is_simple_tag = meta.advice_column();
         let is_prefix_tag = meta.advice_column();
         let is_dp_tag = meta.advice_column();
-        let tag_bits = BinaryNumberChip::configure(meta, q_usable, Some(rlp_table.tag));
+        let tag_bits = BinaryNumberChip::configure(meta, q_usable, Some(rlp_table.tag.into()));
         let tag_rom = RlpTagROM {
             tag: meta.fixed_column(),
             tag_next: meta.fixed_column(),
@@ -1723,7 +1727,7 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, SignedTransaction> {
                 signature: *sig,
             })
             .chain((block.txs.len()..max_txs).into_iter().map(|tx_id| {
-                let mut padding_tx = Transaction::dummy(block.context.chain_id().as_u64());
+                let mut padding_tx = Transaction::dummy(block.chain_id.as_u64());
                 padding_tx.id = tx_id + 1;
 
                 (&padding_tx).into()
@@ -1762,7 +1766,7 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, SignedTransaction> {
                 len += rlp::encode(&signed_tx).len() + 1; // 1 for DataPrefix placeholder
                 len
             })
-            .count();
+            .sum();
         (rows, std::cmp::max(1 << 18, rows))
     }
 }

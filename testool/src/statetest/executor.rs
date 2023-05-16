@@ -40,15 +40,22 @@ pub enum StateTestError {
     SkipTestMaxGasLimit(u64),
     #[error("SkipTestMaxSteps({0})")]
     SkipTestMaxSteps(usize),
+    #[error("SkipTestSelfDestruct")]
+    SkipTestSelfDestruct,
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
     Exception { expected: bool, found: String },
 }
 
 impl StateTestError {
     pub fn is_skip(&self) -> bool {
+        // Avoid lint `variant is never constructed` if no feature skip-self-destruct.
+        let _ = StateTestError::SkipTestSelfDestruct;
+
         matches!(
             self,
-            StateTestError::SkipTestMaxSteps(_) | StateTestError::SkipTestMaxGasLimit(_)
+            StateTestError::SkipTestMaxSteps(_)
+                | StateTestError::SkipTestMaxGasLimit(_)
+                | StateTestError::SkipTestSelfDestruct
         )
     }
 }
@@ -75,7 +82,7 @@ fn check_post(
         }
 
         if expected.nonce.map(|v| v == actual.nonce) == Some(false) {
-            log::trace!(
+            log::error!(
                 "nonce mismatch, expected {:?} actual {:?}",
                 expected,
                 actual
@@ -144,13 +151,14 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
         let mut addr_bytes = [0u8; 20];
         addr_bytes[19] = i as u8;
         let address = Address::from(addr_bytes);
-        let acc = eth_types::geth_types::Account {
-            // balance: 1.into(),
-            nonce: 1.into(),
-            address,
-            ..Default::default()
-        };
-        accounts.insert(address, acc);
+        accounts
+            .entry(address)
+            .or_insert(eth_types::geth_types::Account {
+                // balance: 1.into(),
+                // nonce: 1.into(),
+                address,
+                ..Default::default()
+            });
     }
 
     (
@@ -188,6 +196,10 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 enable_memory: *bus_mapping::util::CHECK_MEM_STRICT,
                 ..Default::default()
             },
+            #[cfg(feature = "shanghai")]
+            chain_config: Some(external_tracer::ChainConfig::shanghai()),
+            #[cfg(not(feature = "shanghai"))]
+            chain_config: None,
         },
         st.result,
     )
@@ -230,6 +242,15 @@ pub fn run_test(
         }
     };
 
+    #[cfg(feature = "skip-self-destruct")]
+    if geth_traces.iter().any(|gt| {
+        gt.struct_logs
+            .iter()
+            .any(|sl| sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT)
+    }) {
+        return Err(StateTestError::SkipTestSelfDestruct);
+    }
+
     if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
         return Err(StateTestError::SkipTestMaxSteps(
             geth_traces[0].struct_logs.len(),
@@ -271,6 +292,7 @@ pub fn run_test(
         gas_limit: trace_config.block_constants.gas_limit,
         base_fee_per_gas: Some(trace_config.block_constants.base_fee),
         transactions,
+        parent_hash: st.env.previous_hash,
         ..eth_types::Block::default()
     };
 
@@ -298,6 +320,7 @@ pub fn run_test(
             max_rws: 0,
             max_calldata: 5000,
             max_bytecode: 5000,
+            max_mpt_rows: 5000,
             max_copy_rows: 55000,
             max_evm_rows: 0,
             max_exp_steps: 5000,
@@ -324,6 +347,7 @@ pub fn run_test(
             max_calldata: MAX_CALLDATA,
             max_rws: 256,
             max_copy_rows: 256,
+            max_mpt_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
             max_evm_rows: 0,

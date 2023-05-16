@@ -3,6 +3,7 @@
 use anyhow::{bail, Context, Result};
 use eth_types::{bytecode, Bytecode, Bytes, H256};
 use keccak256::plain::Keccak;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     io::{Read, Write},
@@ -63,6 +64,139 @@ impl Cache {
         hash.update(src.as_bytes());
         H256::from_slice(&hash.digest())
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CompilerInput {
+    language: Language,
+    settings: CompilerSettings,
+    sources: HashMap<String, Source>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+enum Language {
+    Solidity,
+    Yul,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompilerSettings {
+    optimizer: Optimizer,
+    output_selection: HashMap<String, HashMap<String, Vec<String>>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Optimizer {
+    enabled: bool,
+    details: HashMap<String, bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Source {
+    content: String,
+}
+
+impl CompilerInput {
+    pub fn new_default(language: Language, src: &str) -> Self {
+        let mut sources = HashMap::new();
+        sources.insert(
+            "stdin".to_string(),
+            Source {
+                content: src.to_string(),
+            },
+        );
+        CompilerInput {
+            language,
+            settings: Default::default(),
+            sources,
+        }
+    }
+}
+
+impl Default for CompilerSettings {
+    fn default() -> Self {
+        let mut output_selection = HashMap::new();
+        let mut selection = HashMap::new();
+        selection.insert("*".to_string(), vec!["evm.bytecode".to_string()]);
+        output_selection.insert("*".to_string(), selection);
+        CompilerSettings {
+            optimizer: Default::default(),
+            output_selection,
+        }
+    }
+}
+
+impl Default for Optimizer {
+    fn default() -> Self {
+        let mut details = HashMap::new();
+        details.insert("peephole".to_string(), false);
+        details.insert("inliner".to_string(), false);
+        details.insert("jumpdestRemover".to_string(), false);
+        Optimizer {
+            enabled: false,
+            details,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompilationResult {
+    contracts: HashMap<String, HashMap<String, Contract>>,
+    errors: Vec<CompilationError>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Contract {
+    evm: Evm,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Evm {
+    bytecode: BytecodeResult,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BytecodeResult {
+    object: String,
+    opcodes: String,
+    source_map: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompilationError {
+    component: String,
+    error_code: String,
+    formatted_message: String,
+    message: String,
+    severity: Severity,
+    #[serde(rename = "type")]
+    error_type: String,
+    source_location: Option<SourceLocation>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum Severity {
+    Error,
+    Warning,
+    Info,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceLocation {
+    end: i32,
+    file: String,
+    start: i32,
 }
 
 #[derive(Default)]
@@ -142,64 +276,42 @@ impl Compiler {
 
     /// compiles YUL code
     pub fn yul(&mut self, src: &str) -> Result<Bytes> {
-        if let Some(bytecode) = self.cache.as_mut().and_then(|c| c.get(src)) {
-            return Ok(bytecode.clone());
-        }
-        if !self.compile {
-            bail!("No way to compile Yul for '{}'", src)
-        }
-
-        let stdout = Self::exec(
-            &["run", "-i", "--rm", "solc", "--strict-assembly", "-"],
-            src,
-        )?;
-        let placeholder = "Binary representation:\n";
-        let from_pos = stdout.find(placeholder);
-        let len = from_pos.and_then(|pos| stdout[pos + placeholder.len()..].find('\n'));
-        let bytecode = if let (Some(from_pos), Some(len)) = (from_pos, len) {
-            let hex = &stdout[from_pos + placeholder.len()..from_pos + placeholder.len() + len];
-            Bytes::from(hex::decode(hex)?)
-        } else {
-            bail!("Unable to compile: {}", src);
-        };
-        if let Some(cache) = &mut self.cache {
-            cache.insert(src, bytecode.clone())?;
-        }
-
-        Ok(bytecode)
+        self.solc(Language::Yul, src)
     }
+
     /// compiles Solidity code
     pub fn solidity(&mut self, src: &str) -> Result<Bytes> {
+        self.solc(Language::Solidity, src)
+    }
+
+    fn solc(&mut self, language: Language, src: &str) -> Result<Bytes> {
         if let Some(bytecode) = self.cache.as_mut().and_then(|c| c.get(src)) {
             return Ok(bytecode.clone());
         }
         if !self.compile {
-            bail!("No way to compile Solidity for '{}'", src)
+            bail!("No way to compile {:?} for '{}'", language, src)
         }
+        let compiler_input = CompilerInput::new_default(language, src);
 
         let stdout = Self::exec(
-            &[
-                "run",
-                "-i",
-                "--rm",
-                "solc",
-                "--bin",
-                "--optimize",
-                "--metadata-hash",
-                "none",
-                "-",
-            ],
-            src,
+            &["run", "-i", "--rm", "solc", "--standard-json", "-"],
+            serde_json::to_string(&compiler_input).unwrap().as_str(),
         )?;
-        let placeholder = "Binary:\n";
-        let from_pos = stdout.find(placeholder);
-        let len = from_pos.and_then(|pos| stdout[pos + placeholder.len()..].find('\n'));
-        let bytecode = if let (Some(from_pos), Some(len)) = (from_pos, len) {
-            let hex = &stdout[from_pos + placeholder.len()..from_pos + placeholder.len() + len];
-            Bytes::from(hex::decode(hex)?)
-        } else {
-            bail!("Unable to compile: {}", src);
-        };
+        let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)?;
+        let bytecode = compilation_result
+            .contracts
+            .remove("stdin")
+            .expect("should have stdin")
+            .into_iter()
+            .next()
+            .expect("should have one contract")
+            .1
+            .evm
+            .bytecode
+            .object;
+
+        let bytecode = Bytes::from(hex::decode(bytecode)?);
+
         if let Some(cache) = &mut self.cache {
             cache.insert(src, bytecode.clone())?;
         }

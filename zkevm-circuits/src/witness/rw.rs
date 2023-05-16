@@ -298,7 +298,7 @@ impl Rw {
                 is_warm_prev,
                 ..
             } => (*is_warm, *is_warm_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -307,7 +307,7 @@ impl Rw {
             Self::TxRefund {
                 value, value_prev, ..
             } => (*value, *value_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -316,7 +316,7 @@ impl Rw {
             Self::Account {
                 value, value_prev, ..
             } => (*value, *value_prev),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -344,7 +344,7 @@ impl Rw {
                 debug_assert_eq!(*field_tag, required_field_tag, "invalid rw {:?}", &self);
                 (*value, *value_prev)
             }
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -355,7 +355,7 @@ impl Rw {
                 committed_value,
                 ..
             } => (*tx_id, *committed_value),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -368,42 +368,42 @@ impl Rw {
                 committed_value,
                 ..
             } => (*value, *value_prev, *tx_id, *committed_value),
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn call_context_value(&self) -> Word {
         match self {
             Self::CallContext { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn stack_value(&self) -> Word {
         match self {
             Self::Stack { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn log_value(&self) -> Word {
         match self {
             Self::TxLog { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn receipt_value(&self) -> u64 {
         match self {
             Self::TxReceipt { value, .. } => *value,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
     pub fn memory_value(&self) -> u8 {
         match self {
             Self::Memory { byte, .. } => *byte,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", self),
         }
     }
 
@@ -416,7 +416,7 @@ impl Rw {
             tag: F::from(self.tag() as u64),
             id: F::from(self.id().unwrap_or_default() as u64),
             address: self.address().unwrap_or_default().to_scalar().unwrap(),
-            field_tag: F::from(self.field_tag().unwrap_or_default() as u64),
+            field_tag: F::from(self.field_tag().unwrap_or_default()),
             storage_key: rlc::value(
                 &self.storage_key().unwrap_or_default().to_le_bytes(),
                 randomness,
@@ -437,7 +437,7 @@ impl Rw {
             tag: Value::known(F::from(self.tag() as u64)),
             id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
             address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
-            field_tag: Value::known(F::from(self.field_tag().unwrap_or_default() as u64)),
+            field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
             storage_key: randomness.map(|randomness| {
                 rlc::value(
                     &self.storage_key().unwrap_or_default().to_le_bytes(),
@@ -593,20 +593,34 @@ impl Rw {
             } => {
                 match field_tag {
                     // Only these two tags have values that may not fit into a scalar, so we need to
-                    // RLC.
-                    CallContextFieldTag::CodeHash | CallContextFieldTag::Value => {
-                        rlc::value(&value.to_le_bytes(), randomness)
+                    // RLC. (for poseidon hash feature, CodeHash not need rlc)
+                    CallContextFieldTag::CodeHash => {
+                        if cfg!(feature = "poseidon-codehash") {
+                            value.to_scalar().unwrap()
+                        } else {
+                            rlc::value(&value.to_le_bytes(), randomness)
+                        }
                     }
+                    CallContextFieldTag::Value => rlc::value(&value.to_le_bytes(), randomness),
                     _ => value.to_scalar().unwrap(),
                 }
             }
             Self::Account {
                 value, field_tag, ..
             } => match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
+                AccountFieldTag::KeccakCodeHash | AccountFieldTag::Balance => {
                     rlc::value(&value.to_le_bytes(), randomness)
                 }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => value.to_scalar().unwrap(),
+                AccountFieldTag::CodeHash => {
+                    if cfg!(feature = "poseidon-codehash") {
+                        value.to_scalar().unwrap()
+                    } else {
+                        rlc::value(&value.to_le_bytes(), randomness)
+                    }
+                }
+                AccountFieldTag::Nonce
+                | AccountFieldTag::NonExisting
+                | AccountFieldTag::CodeSize => value.to_scalar().unwrap(),
             },
             Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
                 rlc::value(&value.to_le_bytes(), randomness)
@@ -633,12 +647,19 @@ impl Rw {
                 field_tag,
                 ..
             } => Some(match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
+                AccountFieldTag::KeccakCodeHash | AccountFieldTag::Balance => {
                     rlc::value(&value_prev.to_le_bytes(), randomness)
                 }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => {
-                    value_prev.to_scalar().unwrap()
+                AccountFieldTag::CodeHash => {
+                    if cfg!(feature = "poseidon-codehash") {
+                        value_prev.to_scalar().unwrap()
+                    } else {
+                        rlc::value(&value_prev.to_le_bytes(), randomness)
+                    }
                 }
+                AccountFieldTag::Nonce
+                | AccountFieldTag::NonExisting
+                | AccountFieldTag::CodeSize => value_prev.to_scalar().unwrap(),
             }),
             Self::AccountStorage { value_prev, .. } => {
                 Some(rlc::value(&value_prev.to_le_bytes(), randomness))
@@ -739,6 +760,8 @@ impl From<&operation::OperationContainer> for RwMap {
                         AccountField::Nonce => AccountFieldTag::Nonce,
                         AccountField::Balance => AccountFieldTag::Balance,
                         AccountField::CodeHash => AccountFieldTag::CodeHash,
+                        AccountField::KeccakCodeHash => AccountFieldTag::KeccakCodeHash,
+                        AccountField::CodeSize => AccountFieldTag::CodeSize,
                     },
                     value: op.op().value,
                     value_prev: op.op().value_prev,

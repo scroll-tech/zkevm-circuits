@@ -11,13 +11,15 @@ use std::collections::BTreeMap;
 pub use state::ZktrieState;
 
 /// An MPT update whose validity is proved by the MptCircuit
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct MptUpdate {
     key: Key,
     old_value: Word,
     new_value: Word,
     old_root: Word,
     new_root: Word,
+    // for debugging
+    original_rws: Vec<Rw>,
 }
 
 impl MptUpdate {
@@ -59,7 +61,12 @@ impl MptUpdates {
     }
 
     pub(crate) fn get(&self, row: &Rw) -> Option<MptUpdate> {
-        key(row).map(|key| *self.updates.get(&key).expect("missing key in mpt updates"))
+        key(row).map(|key| {
+            self.updates
+                .get(&key)
+                .expect("missing key in mpt updates")
+                .clone()
+        })
     }
 
     pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) {
@@ -72,7 +79,7 @@ impl MptUpdates {
         self.proof_types = Vec::new();
 
         for (key, update) in &mut self.updates {
-            log::trace!("apply update {:?} {:?}", key, update);
+            log::trace!("apply update {:?} {:#?}", key, update);
             let proof_tip = state::as_proof_type(update.proof_type() as i32);
             let smt_trace = wit_gen.handle_new_state(
                 proof_tip,
@@ -98,14 +105,25 @@ impl MptUpdates {
             self.proof_types.push(proof_tip);
         }
         log::debug!(
-            "mpt update roots (after zktrie) {:?} {:?}",
+            "mpt update roots (after zktrie) {:#x} {:#x}",
             self.old_root,
             self.new_root
         );
         let root_pair2 = (self.old_root, self.new_root);
         if root_pair2 != root_pair {
-            log::error!("roots non consistent {:?} vs {:?}", root_pair, root_pair2);
+            log::error!(
+                "roots non consistent ({:#x},{:#x}) vs ({:#x},{:#x})",
+                root_pair.0,
+                root_pair.1,
+                root_pair2.0,
+                root_pair2.1
+            );
+            wit_gen.dump();
         }
+    }
+
+    pub(crate) fn mock_from(rows: &[Rw]) -> Self {
+        Self::from_rws_with_mock_state_roots(rows, 0xcafeu64.into(), 0xdeadbeefu64.into())
     }
 
     pub(crate) fn from_rws_with_mock_state_roots(
@@ -121,9 +139,10 @@ impl MptUpdates {
             .into_iter()
             .filter_map(|(key, rows)| key.map(|key| (key, rows)))
             .enumerate()
-            .map(|(i, (key, mut rows))| {
-                let first = rows.next().unwrap();
-                let last = rows.last().unwrap_or(first);
+            .map(|(i, (key, rows))| {
+                let rows: Vec<Rw> = rows.copied().collect_vec();
+                let first = &rows[0];
+                let last = rows.iter().last().unwrap_or(first);
                 let key_exists = key;
                 let key = key.set_non_exists(value_prev(first), value(last));
                 (
@@ -138,6 +157,7 @@ impl MptUpdates {
                         },
                         old_value: value_prev(first),
                         new_value: value(last),
+                        original_rws: rows,
                     },
                 )
             })
@@ -178,10 +198,25 @@ impl MptUpdates {
 }
 
 impl MptUpdate {
+    pub(crate) fn values(&self) -> (Word, Word) {
+        (self.new_value, self.old_value)
+    }
+
     pub(crate) fn value_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
         let assign = |x: Word| match self.key {
             Key::Account {
-                field_tag: AccountFieldTag::Nonce | AccountFieldTag::NonExisting,
+                field_tag: AccountFieldTag::CodeHash,
+                ..
+            } => {
+                if cfg!(feature = "poseidon-codehash") {
+                    x.to_scalar().unwrap()
+                } else {
+                    rlc::value(&x.to_le_bytes(), word_randomness)
+                }
+            }
+            Key::Account {
+                field_tag:
+                    AccountFieldTag::Nonce | AccountFieldTag::NonExisting | AccountFieldTag::CodeSize,
                 ..
             } => x.to_scalar().unwrap(),
             _ => rlc::value(&x.to_le_bytes(), word_randomness),

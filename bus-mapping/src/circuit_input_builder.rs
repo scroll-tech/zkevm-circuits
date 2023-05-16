@@ -15,7 +15,7 @@ pub use self::block::BlockHead;
 use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops},
-    operation::{self, CallContextField, Operation, RWCounter, StartOp, RW},
+    operation::{self, CallContextField, Operation, RWCounter, StartOp, StorageOp, RW},
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
 };
@@ -77,6 +77,8 @@ pub struct CircuitsParams {
     /// In this case it will contain as many rows for all steps + 1 row
     /// for EndBlock.
     pub max_evm_rows: usize,
+    /// Max amount of rows that the CopyCircuit can have.
+    pub max_mpt_rows: usize,
     /// Pad the keccak circuit with this number of invocations to a static
     /// capacity.  Number of keccak_f that the Keccak circuit will support.
     /// When 0, the Keccak circuit number of rows will be dynamically
@@ -96,6 +98,7 @@ impl Default for CircuitsParams {
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
             max_copy_rows: 1000,
+            max_mpt_rows: 1000,
             max_exp_steps: 1000,
             max_bytecode: 512,
             max_evm_rows: 0,
@@ -240,7 +243,11 @@ impl<'a> CircuitInputBuilder {
         check_last_tx: bool,
     ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
-        log::info!("handling block {:?}", eth_block.number);
+        log::info!(
+            "handling block {:?}, tx num {}",
+            eth_block.number,
+            eth_block.transactions.len()
+        );
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             let batch_tx_idx = self.block.txs.len();
             if self.block.txs.len() >= self.block.circuits_params.max_txs {
@@ -351,6 +358,19 @@ impl<'a> CircuitInputBuilder {
 
     /// ..
     pub fn set_end_block(&mut self) -> Result<(), Error> {
+        use crate::l2_predeployed::message_queue::{
+            ADDRESS as MESSAGE_QUEUE, WITHDRAW_TRIE_ROOT_SLOT,
+        };
+
+        let withdraw_root = *self
+            .sdb
+            .get_storage(&MESSAGE_QUEUE, &WITHDRAW_TRIE_ROOT_SLOT)
+            .1;
+        let withdraw_root_before = *self
+            .sdb
+            .get_committed_storage(&MESSAGE_QUEUE, &WITHDRAW_TRIE_ROOT_SLOT)
+            .1;
+
         let max_rws = self.block.circuits_params.max_rws;
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
@@ -361,14 +381,29 @@ impl<'a> CircuitInputBuilder {
         let mut dummy_tx_ctx = TransactionContext::default();
         let mut state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
 
+        let dummy_tx_id = state.block.txs.len();
         if let Some(call_id) = state.block.txs.last().map(|tx| tx.calls[0].call_id) {
             state.call_context_read(
                 &mut end_block_last,
                 call_id,
                 CallContextField::TxId,
-                Word::from(state.block.txs.len() as u64),
+                Word::from(dummy_tx_id as u64),
             );
         }
+
+        // increase the total rwc by 1
+        state.push_op(
+            &mut end_block_last,
+            RW::READ,
+            StorageOp::new(
+                *MESSAGE_QUEUE,
+                *WITHDRAW_TRIE_ROOT_SLOT,
+                withdraw_root,
+                withdraw_root,
+                dummy_tx_id,
+                withdraw_root_before,
+            ),
+        );
 
         let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
             let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
@@ -397,6 +432,8 @@ impl<'a> CircuitInputBuilder {
             StartOp {},
         );
 
+        self.block.withdraw_root = withdraw_root;
+        self.block.prev_withdraw_root = withdraw_root_before;
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
         Ok(())
@@ -545,6 +582,7 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     keccak_inputs.push(keccak_inputs_pi_circuit(
         block.chain_id().as_u64(),
         block.prev_state_root,
+        block.withdraw_root,
         &block.headers,
         block.txs(),
         block.circuits_params.max_txs,
@@ -631,13 +669,12 @@ pub fn get_dummy_tx_hash(chain_id: u64) -> H256 {
 fn keccak_inputs_pi_circuit(
     chain_id: u64,
     prev_state_root: Word,
+    withdraw_trie_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
     max_txs: usize,
 ) -> Vec<u8> {
     let dummy_tx_hash = get_dummy_tx_hash(chain_id);
-    // TODO: use real-world withdraw trie root
-    let withdraw_trie_root = Word::zero(); // zero for now
 
     let result = iter::empty()
         // state roots
@@ -833,6 +870,8 @@ pub fn build_state_code_db(
                 balance: proof.balance,
                 storage,
                 code_hash: proof.code_hash,
+                keccak_code_hash: proof.keccak_code_hash,
+                code_size: proof.code_size,
             },
         )
     }

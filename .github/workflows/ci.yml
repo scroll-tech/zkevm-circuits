@@ -3,13 +3,13 @@ name: CI checks
 on:
   pull_request:
     types: [synchronize, opened, reopened, ready_for_review]
-    # Ignore when target branch is `main` and source branch is scroll-stable.
-    # It could avoid running twice. Since scroll-stable is set as `push` below.
+    # Ignore when target branch is `main` and source branch is develop.
+    # It could avoid running twice. Since develop is set as `push` below.
     branches-ignore:
       - main
   push:
     branches:
-      - scroll-stable
+      - develop
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: true
@@ -38,16 +38,14 @@ jobs:
       (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
     uses: ./.github/workflows/select-runner.yml
 
-  test:
-    name: Test
+  test-default:
+    name: Test Default
     needs: [runner]
     runs-on: ${{ matrix.os }}
-    concurrency: ${{ needs.runner.outputs.concurrency-group }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group2 }}
     strategy:
       matrix:
-        # We don't need to test across multiple platforms yet
-        # os: [ubuntu-latest, windows-latest, macOS-latest]
-        os: ${{ fromJSON(needs.runner.outputs.runner-matrix) }}
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
 
     steps:
       - uses: actions/checkout@v2
@@ -61,7 +59,7 @@ jobs:
         uses: actions/setup-go@v3
         with:
           cache: false
-          go-version: ~1.18
+          go-version: ~1.19
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -88,6 +86,55 @@ jobs:
         with:
           command: test
           args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
+
+  test-scroll:
+    name: Test Scroll
+    needs: [runner]
+    runs-on: ${{ matrix.os }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group1 }}
+    strategy:
+      matrix:
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix1) }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: set HOME env
+        run: |
+          echo "HOME=/home/CI" >> $GITHUB_ENV
+      - uses: actions-rs/toolchain@v1
+        with:
+          override: false
+      - name: Setup golang
+        uses: actions/setup-go@v3
+        with:
+          cache: false
+          go-version: ~1.19
+      # Go cache for building geth-utils
+      - name: Go cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+        # https://github.com/actions/cache/issues/810
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+      - name: Run light tests # light tests are run in parallel
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --verbose --release --all --features scroll --exclude integration-tests --exclude circuit-benchmarks --exclude testool
+      - name: Run heavy tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --verbose --release --features scroll --all --exclude integration-tests --exclude circuit-benchmarks serial_  -- --ignored
+
 
   build:
     needs: [skip_check]

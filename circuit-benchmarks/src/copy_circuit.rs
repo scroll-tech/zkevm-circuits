@@ -25,7 +25,7 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use std::env::var;
     use zkevm_circuits::{
-        copy_circuit::CopyCircuit,
+        copy_circuit::TestCopyCircuit,
         evm_circuit::witness::{block_convert, Block},
         util::SubCircuit,
     };
@@ -52,7 +52,7 @@ mod tests {
 
         // Create the circuit
         let block = generate_full_events_block(degree);
-        let circuit = CopyCircuit::<Fr>::new_from_block(&block);
+        let circuit = TestCopyCircuit::<Fr>::new_from_block(&block);
 
         // Bench setup generation
         let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
@@ -79,7 +79,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            CopyCircuit<Fr>,
+            TestCopyCircuit<Fr>,
         >(&general_params, &pk, &[circuit], &[], rng, &mut transcript)
         .expect("proof generation should not fail");
         let proof = transcript.finalize();

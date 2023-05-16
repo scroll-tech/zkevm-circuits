@@ -15,7 +15,13 @@ members = [
 ]
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0220" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v0.4" }
+[patch."https://github.com/privacy-scaling-explorations/poseidon.git"]
+poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "scroll-dev-0220" }
+[patch."https://github.com/privacy-scaling-explorations/halo2curves.git"]
+halo2curves = { git = "https://github.com/scroll-tech/halo2curves.git", branch = "0.3.1-derive-serde" }
+[patch."https://github.com/privacy-scaling-explorations/halo2wrong.git"]
+maingate = { git = "https://github.com/scroll-tech/halo2wrong", branch = "halo2-ecc-snark-verifier-0323" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]
@@ -25,8 +31,7 @@ debug-assertions = false
 overflow-checks = false
 rpath = false
 lto = "thin"
-incremental = false
-codegen-units = 1
+incremental = true
 
 [profile.release]
 opt-level = 3

@@ -6,13 +6,13 @@ on:
     - cron: '50 1 * * SUN'
   pull_request:
     types: [synchronize, labeled]
-    # Ignore when target branch is `main` and source branch is scroll-stable.
-    # It could avoid running twice. Since scroll-stable is set as `push` below.
+    # Ignore when target branch is `main` and source branch is develop.
+    # It could avoid running twice. Since develop is set as `push` below.
     branches-ignore:
       - main
   push:
     branches:
-      - scroll-stable
+      - develop
   workflow_dispatch:    
     inputs:
       provertype:
@@ -65,7 +65,7 @@ jobs:
       - name: Setup golang
         uses: actions/setup-go@v3
         with:
-          go-version: ~1.18
+          go-version: ~1.19
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
