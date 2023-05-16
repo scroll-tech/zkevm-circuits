@@ -131,8 +131,8 @@ impl<F: Field> TxL1FeeGadget<F> {
         3.expr()
     }
 
-    pub(crate) fn tx_l1_fee(&self) -> Expression<F> {
-        self.tx_l1_fee_word.expr()
+    pub(crate) fn tx_l1_fee(&self) -> &U64Word<F> {
+        &self.tx_l1_fee_word
     }
 
     fn raw_construct(cb: &mut EVMConstraintBuilder<F>, tx_data_gas_cost: Expression<F>) -> Self {
@@ -238,7 +238,7 @@ mod tests {
 
             cb.require_equal(
                 "tx_l1_fee must be correct",
-                gadget.tx_l1_fee(),
+                from_bytes::expr(&gadget.tx_l1_fee().cells[..]),
                 expected_tx_l1_fee.expr(),
             );
 

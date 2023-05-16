@@ -428,7 +428,7 @@ pub(super) fn tx_convert(
         "block.chain_id = {}, tx.chain_id = {}",
         chain_id, tx.chain_id
     );
-    let (rlp_unsigned, rlp_signed) = {
+    let (rlp_unsigned, rlp_signed, prune_unsigned) = {
         let mut legacy_tx = TransactionRequest::new()
             .from(tx.from)
             .nonce(tx.nonce)
@@ -442,9 +442,10 @@ pub(super) fn tx_convert(
         }
 
         let unsigned = legacy_tx.rlp().to_vec();
+        let prune_unsigned = legacy_tx.rlp().to_vec();
         let signed = legacy_tx.rlp_signed(&tx.signature).to_vec();
 
-        (unsigned, signed)
+        (unsigned, signed, prune_unsigned)
     };
 
     let callee_address = if tx.is_create() { None } else { Some(tx.to) };
@@ -464,7 +465,7 @@ pub(super) fn tx_convert(
         call_data: tx.input.clone(),
         call_data_length: tx.input.len(),
         call_data_gas_cost: tx_data_gas_cost(&tx.input),
-        tx_data_gas_cost: tx_data_gas_cost(&rlp_unsigned),
+        tx_data_gas_cost: tx_data_gas_cost(&prune_unsigned),
         chain_id,
         rlp_unsigned,
         rlp_signed,
