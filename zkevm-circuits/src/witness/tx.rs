@@ -1060,6 +1060,8 @@ mod tests {
         ]);
 
         assert_eq!(rlp_table[1].rlp_tag, RlpTag::Len);
+
+        assert_eq!(unwrap_value(rlp_table[1].tag_value_acc), Fr::from(tx.rlp_signed.len() as u64));
         assert_eq!(unwrap_value(rlp_table[0].tag_value_acc), tx_table[0]);
         assert_eq!(tx_table.len() + 2, rlp_table.len()); // +2 for Len and RLC
         for i in 1..tx_table.len() {
