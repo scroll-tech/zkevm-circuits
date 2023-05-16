@@ -442,7 +442,7 @@ pub(super) fn tx_convert(
         }
 
         let unsigned = legacy_tx.rlp().to_vec();
-        let prune_unsigned = legacy_tx.rlp().to_vec();
+        let prune_unsigned = legacy_tx.rlp_unsigned().to_vec();
         let signed = legacy_tx.rlp_signed(&tx.signature).to_vec();
 
         (unsigned, signed, prune_unsigned)
