@@ -556,6 +556,7 @@ impl Transaction {
                         if cur.depth == 0 {
                             assert_eq!(lb_len + 1, rlp_bytes.len() - cur.byte_idx);
                             is_output = true;
+                            rlp_tag = RlpTag::Len;
                         }
                         if let Some(rem) = remaining_bytes.last_mut() {
                             *rem = *rem - lb_len;
@@ -920,6 +921,7 @@ mod tests {
         utils::rlp::{Decodable, Rlp},
     };
     use halo2_proofs::{circuit::Value, dev::unwrap_value, halo2curves::bn256::Fr};
+    use crate::witness::RlpTag;
 
     fn rlc(be_bytes: &[u8], rand: Fr) -> Fr {
         be_bytes
@@ -1057,6 +1059,7 @@ mod tests {
             rlc(&eth_tx.s.to_be_bytes(), evm_word),
         ]);
 
+        assert_eq!(rlp_table[1].rlp_tag, RlpTag::Len);
         assert_eq!(unwrap_value(rlp_table[0].tag_value_acc), tx_table[0]);
         assert_eq!(tx_table.len() + 2, rlp_table.len()); // +2 for Len and RLC
         for i in 1..tx_table.len() {

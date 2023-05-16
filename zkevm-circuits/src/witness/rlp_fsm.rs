@@ -104,7 +104,7 @@ impl Tag {
 }
 
 /// RLP tags
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RlpTag {
     /// Length of RLP bytes
     Len,
