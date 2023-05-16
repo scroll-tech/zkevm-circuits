@@ -17,4 +17,4 @@ rand = "0.8"
 
 [features]
 default = []
-shanghai = []
+shanghai = ["eth-types/shanghai"]

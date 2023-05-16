@@ -65,7 +65,6 @@ mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_oog_account_access;
 mod error_oog_call;
-mod error_oog_dynamic_memory;
 mod error_oog_log;
 mod error_oog_memory_copy;
 mod error_oog_sload_sstore;
@@ -95,7 +94,6 @@ use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
 use error_oog_account_access::ErrorOOGAccountAccess;
 use error_oog_call::OOGCall;
-use error_oog_dynamic_memory::OOGDynamicMemory;
 use error_oog_log::ErrorOOGLog;
 use error_oog_memory_copy::OOGMemoryCopy;
 use error_oog_sload_sstore::OOGSloadSstore;
@@ -299,12 +297,14 @@ fn fn_gen_error_state_associated_ops(
         ExecError::OutOfGas(OogError::Constant) => {
             Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops)
         }
-        ExecError::OutOfGas(OogError::Create2) => {
-            Some(StackOnlyOpcode::<4, 0, true>::gen_associated_ops)
-        }
+        ExecError::OutOfGas(OogError::Create) => match geth_step.op {
+            OpcodeId::CREATE => Some(StackOnlyOpcode::<3, 0, true>::gen_associated_ops),
+            OpcodeId::CREATE2 => Some(StackOnlyOpcode::<4, 0, true>::gen_associated_ops),
+            op => unreachable!("OOG Create cannot occur in {op}"),
+        },
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::DynamicMemoryExpansion) => {
-            Some(OOGDynamicMemory::gen_associated_ops)
+            Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::StaticMemoryExpansion) => {
             Some(StackOnlyOpcode::<1, 0, true>::gen_associated_ops)
@@ -443,7 +443,7 @@ pub fn gen_associated_ops(
             // For exceptions that already enter next call context, but fail immediately
             // (e.g. Depth, InsufficientBalance), we still need to parse the call.
             if geth_step.op.is_call_or_create()
-                && !matches!(exec_error, ExecError::OutOfGas(OogError::Create2))
+                && !matches!(exec_error, ExecError::OutOfGas(OogError::Create))
             {
                 let call = state.parse_call(geth_step)?;
                 state.push_call(call);

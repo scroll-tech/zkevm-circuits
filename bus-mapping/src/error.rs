@@ -70,8 +70,8 @@ pub enum OogError {
     /// Out of Gas for MLOAD, MSTORE, MSTORE8, which have static memory
     /// expansion gas cost
     StaticMemoryExpansion,
-    /// Out of Gas for CREATE, RETURN, REVERT, which have dynamic memory
-    /// expansion gas cost
+    /// Out of Gas for RETURN, REVERT, which have dynamic memory expansion gas
+    /// cost
     DynamicMemoryExpansion,
     /// Out of Gas for CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY,
     /// which copy a specified chunk of memory
@@ -92,8 +92,8 @@ pub enum OogError {
     SloadSstore,
     /// Out of Gas for CALL, CALLCODE, DELEGATECALL and STATICCALL
     Call,
-    /// Out of Gas for CREATE2
-    Create2,
+    /// Out of Gas for CREATE and CREATE2
+    Create,
     /// Out of Gas for SELFDESTRUCT
     SelfDestruct,
 }
@@ -183,9 +183,7 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {
                 OogError::StaticMemoryExpansion
             }
-            OpcodeId::CREATE | OpcodeId::RETURN | OpcodeId::REVERT => {
-                OogError::DynamicMemoryExpansion
-            }
+            OpcodeId::RETURN | OpcodeId::REVERT => OogError::DynamicMemoryExpansion,
             OpcodeId::CALLDATACOPY
             | OpcodeId::CODECOPY
             | OpcodeId::EXTCODECOPY
@@ -202,7 +200,7 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
                 OogError::Call
             }
             OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
-            OpcodeId::CREATE2 => OogError::Create2,
+            OpcodeId::CREATE | OpcodeId::CREATE2 => OogError::Create,
             OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
             _ => OogError::Constant,
         };

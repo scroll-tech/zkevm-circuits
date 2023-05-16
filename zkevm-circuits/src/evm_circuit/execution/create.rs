@@ -26,30 +26,15 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
-use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
+use eth_types::{
+    evm_types::{GasCost, CREATE2_GAS_PER_CODE_WORD, CREATE_GAS_PER_CODE_WORD, MAX_INIT_CODE_SIZE},
+    Field, ToBigEndian, ToLittleEndian, ToScalar, U256,
+};
 use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use std::iter::once;
-
-#[cfg(feature = "shanghai")]
-mod constants {
-    use eth_types::evm_types::GasCost;
-    pub use eth_types::evm_types::{
-        INIT_CODE_WORD_GAS as CREATE_GAS_PER_CODE_WORD, MAX_INIT_CODE_SIZE,
-    };
-    pub const CREATE2_GAS_PER_CODE_WORD: u64 = CREATE_GAS_PER_CODE_WORD + GasCost::COPY_SHA3.0;
-}
-#[cfg(not(feature = "shanghai"))]
-mod constants {
-    use crate::evm_circuit::param::N_BYTES_MEMORY_ADDRESS;
-    use eth_types::evm_types::GasCost;
-
-    pub const MAX_INIT_CODE_SIZE: u64 = 2_u64.pow(N_BYTES_MEMORY_ADDRESS as u32 * 8);
-    pub const CREATE_GAS_PER_CODE_WORD: u64 = 0;
-    pub const CREATE2_GAS_PER_CODE_WORD: u64 = GasCost::COPY_SHA3.0;
-}
 
 /// Gadget for CREATE and CREATE2 opcodes
 #[derive(Clone, Debug)]
@@ -65,9 +50,10 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     transfer: TransferGadget<F>,
     init_code: MemoryAddressGadget<F>,
     init_code_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_ADDRESS>,
-    // Init code size must be less than 49152 if Shanghai, otherwise should be
-    // less than 2^40 (maximum value for N_BYTES_MEMORY_ADDRESS bytes).
-    init_code_size_not_overflow: LtGadget<F, { N_BYTES_MEMORY_ADDRESS + 1 }>,
+    // Init code size must be less than or equal to 49152
+    // (maximum init code size) if Shanghai, otherwise should be less than or
+    // equal to 0x1FFFFFFFE0 (maximum value of offset + size).
+    init_code_size_not_overflow: LtGadget<F, { N_BYTES_MEMORY_ADDRESS }>,
     init_code_rlc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
@@ -115,11 +101,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let init_code_length = cb.query_word_rlc();
         let init_code =
             MemoryAddressGadget::construct(cb, init_code_memory_offset, init_code_length);
-        let init_code_size_not_overflow = LtGadget::construct(
-            cb,
-            init_code.length(),
-            constants::MAX_INIT_CODE_SIZE.expr() + 1.expr(),
-        );
+        let init_code_size_not_overflow =
+            LtGadget::construct(cb, init_code.length(), MAX_INIT_CODE_SIZE.expr() + 1.expr());
 
         // Init code size overflow is checked before ErrDepth, ErrInsufficientBalance,
         // ErrNonceUintOverflow and ErrContractAddressCollision.
@@ -340,9 +323,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         );
         let keccak_gas_cost = init_code_word_size.quotient()
             * if IS_CREATE2 {
-                constants::CREATE2_GAS_PER_CODE_WORD
+                CREATE2_GAS_PER_CODE_WORD
             } else {
-                constants::CREATE_GAS_PER_CODE_WORD
+                CREATE_GAS_PER_CODE_WORD
             }
             .expr();
 
@@ -561,7 +544,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             region,
             offset,
             F::from(init_code_length.as_u64()),
-            F::from(constants::MAX_INIT_CODE_SIZE + 1),
+            F::from(MAX_INIT_CODE_SIZE + 1),
         )?;
 
         self.tx_id
@@ -675,9 +658,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         let keccak_gas_cost = u64::try_from(init_code_word_size).unwrap()
             * if IS_CREATE2 {
-                constants::CREATE2_GAS_PER_CODE_WORD
+                CREATE2_GAS_PER_CODE_WORD
             } else {
-                constants::CREATE_GAS_PER_CODE_WORD
+                CREATE_GAS_PER_CODE_WORD
             };
         let gas_left =
             step.gas_left - GasCost::CREATE.as_u64() - memory_expansion_gas_cost - keccak_gas_cost;

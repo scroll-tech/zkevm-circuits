@@ -45,4 +45,4 @@ default = ["test"]
 test = ["mock", "rand"]
 scroll = ["eth-types/scroll"]
 # Enable shanghai feature of mock only if mock is enabled (by test).
-shanghai = ["mock?/shanghai"]
+shanghai = ["eth-types/shanghai", "mock?/shanghai"]
