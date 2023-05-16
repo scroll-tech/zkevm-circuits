@@ -243,7 +243,11 @@ impl<'a> CircuitInputBuilder {
         check_last_tx: bool,
     ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
-        log::info!("handling block {:?}", eth_block.number);
+        log::info!(
+            "handling block {:?}, tx num {}",
+            eth_block.number,
+            eth_block.transactions.len()
+        );
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
             if self.block.txs.len() >= self.block.circuits_params.max_txs {
                 log::warn!(

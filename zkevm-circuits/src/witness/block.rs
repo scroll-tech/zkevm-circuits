@@ -49,8 +49,6 @@ pub struct Block<F> {
     pub bytecodes: BTreeMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContexts,
-    /// The init state of mpt
-    pub mpt_state: Option<MptState>,
     /// Copy events for the copy circuit's table.
     pub copy_events: Vec<CopyEvent>,
     /// Exponentiation traces for the exponentiation circuit's table.
@@ -328,6 +326,7 @@ pub fn block_convert<F: Field>(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
     let rws = RwMap::from(&block.container);
+    #[cfg(debug_assertions)]
     rws.check_value();
     let num_txs = block.txs().len();
     let last_block_num = block
@@ -390,7 +389,6 @@ pub fn block_convert<F: Field>(
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
-        mpt_state: None,
         rws,
         txs: block
             .txs()
@@ -440,7 +438,6 @@ pub fn block_convert<F: Field>(
 }
 
 /// Attach witness block with mpt states
-pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: MptState) {
-    block.mpt_updates.fill_state_roots(&mpt_state);
-    block.mpt_state.replace(mpt_state);
+pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: &MptState) {
+    block.mpt_updates.fill_state_roots(mpt_state);
 }
