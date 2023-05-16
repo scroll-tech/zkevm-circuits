@@ -1617,41 +1617,71 @@ mod tests {
     use ethers_core::types::{transaction::eip2718::TypedTransaction, TransactionRequest};
     use ethers_signers::Wallet;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    use mock::eth;
+    use mock::{eth, MOCK_CHAIN_ID};
     use rand::rngs::OsRng;
 
-    #[test]
-    fn test_eip_155_tx() {}
-
-    #[test]
-    fn test_pre_eip155_tx() {
+    fn get_tx(is_eip155: bool) -> Transaction {
         let rng = &mut OsRng;
         let from = Wallet::new(rng);
-        let tx = TransactionRequest::new()
+        let mut tx = TransactionRequest::new()
             .to(Address::random())
             .value(eth(10))
             .data(Vec::new())
             .gas_price(word!("0x4321"))
             .gas(word!("0x77320"))
             .nonce(word!("0x7f"));
-        let unsigned_bytes = tx.rlp_unsigned().to_vec();
-        let tx: TypedTransaction = tx.into();
-        let sig = from.sign_transaction_sync(&tx);
-        let signed_bytes = tx.rlp_signed(&sig).to_vec();
+        if is_eip155 {
+            tx = tx.chain_id(MOCK_CHAIN_ID.as_u64());
+        }
+        let (tx_type, unsigned_bytes) = if is_eip155 {
+            (TxTypes::Eip155, tx.rlp().to_vec())
+        } else {
+            (TxTypes::PreEip155, tx.rlp_unsigned().to_vec())
+        };
+        let typed_tx: TypedTransaction = tx.into();
+        let sig = from.sign_transaction_sync(&typed_tx);
+        let signed_bytes = typed_tx.rlp_signed(&sig).to_vec();
 
         log::debug!("num_unsigned_bytes: {}", unsigned_bytes.len());
         log::debug!("num_signed_bytes: {}", signed_bytes.len());
-        let tx = Transaction::new_from_rlp_bytes(
-            TxTypes::PreEip155,
+
+        Transaction::new_from_rlp_bytes(
+            tx_type,
             signed_bytes,
             unsigned_bytes,
-        );
+        )
+    }
+
+    #[test]
+    fn test_eip_155_tx() {
+        let tx = get_tx(true);
         let rlp_circuit = RlpCircuit::<Fr, Transaction> {
             txs: vec![tx],
             max_txs: 10,
             size: 0,
             _marker: Default::default(),
         };
+
+        let mock_prover = MockProver::run(14, &rlp_circuit, vec![]);
+        assert_eq!(mock_prover.is_ok(), true);
+        let mock_prover = mock_prover.unwrap();
+        if let Err(errors) = mock_prover.verify_par() {
+            log::debug!("errors.len() = {}", errors.len());
+        }
+
+        mock_prover.assert_satisfied_par();
+    }
+
+    #[test]
+    fn test_pre_eip155_tx() {
+        let tx = get_tx(false);
+        let rlp_circuit = RlpCircuit::<Fr, Transaction> {
+            txs: vec![tx],
+            max_txs: 10,
+            size: 0,
+            _marker: Default::default(),
+        };
+
         let mock_prover = MockProver::run(16, &rlp_circuit, vec![]);
         assert_eq!(mock_prover.is_ok(), true);
         let mock_prover = mock_prover.unwrap();
@@ -1660,6 +1690,5 @@ mod tests {
         }
 
         mock_prover.assert_satisfied_par();
-        assert_eq!(mock_prover.verify_par().is_ok(), true);
     }
 }
