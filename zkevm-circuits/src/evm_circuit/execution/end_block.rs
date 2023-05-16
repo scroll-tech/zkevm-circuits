@@ -14,8 +14,14 @@ use crate::{
     table::{CallContextFieldTag, TxContextFieldTag},
     util::Expr,
 };
-use eth_types::Field;
-use halo2_proofs::{circuit::Value, plonk::Error};
+use bus_mapping::l2_predeployed::message_queue::{
+    ADDRESS as MESSAGE_QUEUE, WITHDRAW_TRIE_ROOT_SLOT,
+};
+use eth_types::{Field, ToScalar};
+use halo2_proofs::{
+    circuit::{Cell as AssignedCell, Value},
+    plonk::{Error, Expression},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct EndBlockGadget<F> {
@@ -24,6 +30,9 @@ pub(crate) struct EndBlockGadget<F> {
     is_empty_block: IsZeroGadget<F>,
     max_rws: Cell<F>,
     max_txs: Cell<F>,
+    phase2_withdraw_root: Cell<F>,
+    phase2_withdraw_root_prev: Cell<F>,
+    pub withdraw_root_assigned: std::cell::RefCell<Option<AssignedCell>>,
 }
 
 const EMPTY_BLOCK_N_RWS: u64 = 0;
@@ -38,13 +47,17 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();
         let total_txs_is_max_txs = IsEqualGadget::construct(cb, total_txs.expr(), max_txs.expr());
+        let phase2_withdraw_root = cb.query_copy_cell_phase2();
+        let phase2_withdraw_root_prev = cb.query_cell_phase2();
         // Note that rw_counter starts at 1
         let is_empty_block =
             IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
         // If the block is empty, we do 0 rw_table lookups
         // If the block is not empty, we will do 1 call_context lookup
+        // and add 1 withdraw_root lookup
         let total_rws = not::expr(is_empty_block.expr())
-            * (cb.curr.state.rw_counter.clone().expr() - 1.expr() + 1.expr());
+            * (cb.curr.state.rw_counter.clone().expr() - 1.expr() + 1.expr())
+            + 1.expr();
 
         // 1. Constraint total_rws and total_txs witness values depending on the empty
         // block case.
@@ -56,6 +69,20 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             // 1b. total_txs matches the tx_id that corresponds to the final step.
             cb.call_context_lookup(0.expr(), None, CallContextFieldTag::TxId, total_txs.expr());
         });
+
+        let mut withdraw_trie_root_slot_le = [0u8; 32];
+        WITHDRAW_TRIE_ROOT_SLOT.to_little_endian(withdraw_trie_root_slot_le.as_mut_slice());
+
+        // 1.1 constraint withdraw_root
+        cb.account_storage_read(
+            Expression::Constant(MESSAGE_QUEUE.to_scalar().expect(
+                "unexpected Address for message_queue precompile -> Scalar conversion failure",
+            )),
+            cb.word_rlc(withdraw_trie_root_slot_le.map(|byte| byte.expr())),
+            phase2_withdraw_root.expr(),
+            total_txs.expr(),
+            phase2_withdraw_root_prev.expr(),
+        );
 
         // 2. If total_txs == max_txs, we know we have covered all txs from the
         // tx_table. If not, we need to check that the rest of txs in the
@@ -104,9 +131,12 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         Self {
             max_txs,
             max_rws,
+            phase2_withdraw_root,
+            phase2_withdraw_root_prev,
             total_txs,
             total_txs_is_max_txs,
             is_empty_block,
+            withdraw_root_assigned: Default::default(),
         }
     }
 
@@ -131,6 +161,27 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         self.total_txs_is_max_txs
             .assign(region, offset, total_txs, max_txs)?;
         let max_txs_assigned = self.max_txs.assign(region, offset, Value::known(max_txs))?;
+
+        let withdraw_root = self.phase2_withdraw_root.assign(
+            region,
+            offset,
+            region.word_rlc(block.withdraw_root),
+        )?;
+        let _withdraw_root_prev = self.phase2_withdraw_root_prev.assign(
+            region,
+            offset,
+            region.word_rlc(block.prev_withdraw_root),
+        )?;
+
+        self.withdraw_root_assigned
+            .borrow_mut()
+            .replace(withdraw_root.cell());
+        // TODO: now we do not export withdraw_root_prev for we have only one
+        // phase2 cell which is enabled for copy constraint
+        // self.withdraw_root_prev_assigned
+        //     .borrow_mut()
+        //     .replace(withdraw_root_prev.cell());
+
         // When rw_indices is not empty, we're at the last row (at a fixed offset),
         // where we need to access the max_rws and max_txs constant.
         if !step.rw_indices.is_empty() {

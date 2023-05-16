@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/imdario/mergo"
 )
 
 // Copied from github.com/ethereum/go-ethereum/internal/ethapi.ExecutionResult
@@ -122,6 +123,7 @@ type TraceConfig struct {
 	Accounts      map[common.Address]Account `json:"accounts"`
 	Transactions  []Transaction              `json:"transactions"`
 	LoggerConfig  *logger.Config             `json:"logger_config"`
+	ChainConfig   *params.ChainConfig        `json:"chain_config"`
 }
 
 func newUint64(val uint64) *uint64 { return &val }
@@ -144,6 +146,13 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
 	}
+
+	if config.ChainConfig != nil {
+		mergo.Merge(&chainConfig, config.ChainConfig, mergo.WithOverride)
+	}
+
+	// Debug for Shanghai
+	// fmt.Printf("geth-utils: ShanghaiTime = %d\n", *chainConfig.ShanghaiTime)
 
 	var txsGasLimit uint64
 	blockGasLimit := toBigInt(config.Block.GasLimit).Uint64()
@@ -180,6 +189,9 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		return nil, fmt.Errorf("txs total gas: %d Exceeds block gas limit: %d", txsGasLimit, blockGasLimit)
 	}
 
+	// For opcode PREVRANDAO
+	randao := common.BigToHash(toBigInt(config.Block.Difficulty)) // TODO: fix
+
 	blockCtx := vm.BlockContext{
 		CanTransfer: core.CanTransfer,
 		Transfer:    core.Transfer,
@@ -195,6 +207,7 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 		BlockNumber: toBigInt(config.Block.Number),
 		Time:        toBigInt(config.Block.Timestamp).Uint64(),
 		Difficulty:  toBigInt(config.Block.Difficulty),
+		Random:      &randao,
 		BaseFee:     toBigInt(config.Block.BaseFee),
 		GasLimit:    blockGasLimit,
 	}

@@ -196,6 +196,10 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 enable_memory: *bus_mapping::util::CHECK_MEM_STRICT,
                 ..Default::default()
             },
+            #[cfg(feature = "shanghai")]
+            chain_config: Some(external_tracer::ChainConfig::shanghai()),
+            #[cfg(not(feature = "shanghai"))]
+            chain_config: None,
         },
         st.result,
     )
