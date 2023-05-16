@@ -4,13 +4,13 @@ use crate::{
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_WORD},
         step::ExecutionState,
         util::{
-            and,from_bytes,
+            and,
             common_gadget::{TransferWithGasFeeGadget, TxL1FeeGadget},
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            is_precompiled,
+            from_bytes, is_precompiled,
             math_gadget::{
                 ContractCreateGadget, IsEqualGadget, IsZeroGadget, LtGadget, MulWordByU64Gadget,
                 RangeCheckGadget,
@@ -170,7 +170,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         cb.require_equal(
             "tx_fee == l1_fee + l2_fee",
             from_bytes::expr(&tx_l1_fee.tx_l1_fee().cells[..])
-            + from_bytes::expr(&mul_gas_fee_by_gas.product().cells[..16]),
+                + from_bytes::expr(&mul_gas_fee_by_gas.product().cells[..16]),
             from_bytes::expr(&tx_fee.cells[..16]),
         );
 
@@ -713,7 +713,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_fee = caller_balance_sub_fee_pair.1 - caller_balance_sub_fee_pair.0;
         self.tx_fee
             .assign(region, offset, Some(tx_fee.to_le_bytes()))?;
-        log::info!("tx_fee assigned {:?}, gas price {:?}, gas {}", tx_fee, tx.gas_price, tx.gas);
+        log::info!(
+            "tx_fee assigned {:?}, gas price {:?}, gas {}",
+            tx_fee,
+            tx.gas_price,
+            tx.gas
+        );
         self.transfer_with_gas_fee.assign(
             region,
             offset,
