@@ -389,7 +389,7 @@ pub fn block_convert<F: Field>(
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
-        rws: rws.clone(),
+        rws,
         txs: block
             .txs()
             .iter()
