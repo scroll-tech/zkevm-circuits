@@ -787,6 +787,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.is_coinbase_warm
             .assign(region, offset, Value::known(F::from(is_coinbase_warm)))?;
 
+        let tx_l1_fee = tx.l1_fee.tx_l1_fee(tx.tx_data_gas_cost).0;
+        let tx_l2_fee = tx.gas_price * tx.gas;
+        if tx_fee != tx_l2_fee + tx_l1_fee {
+            log::error!(
+                "begin_tx assign: tx_fee ({}) != tx_l1_fee ({}) + tx_l2_fee ({})",
+                tx_fee,
+                tx_l1_fee,
+                tx_l2_fee
+            );
+        }
+
         self.tx_l1_fee.assign(
             region,
             offset,
