@@ -63,6 +63,10 @@ pub struct Block<F> {
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
+    /// Withdraw root
+    pub withdraw_root: Word,
+    /// Withdraw roof of the previous block
+    pub prev_withdraw_root: Word,
     /// Keccak inputs
     pub keccak_inputs: Vec<Vec<u8>>,
     /// Mpt updates
@@ -347,11 +351,47 @@ pub fn block_convert<F: Field>(
     } else {
         block.circuits_params.max_rws
     };
+    let mpt_updates = MptUpdates::from_rws_with_mock_state_roots(
+        &rws.table_assignments(),
+        block.prev_state_root,
+        block.end_state_root(),
+    );
+
+    let _withdraw_root_check_rw = if end_block_last.rw_counter == 0 {
+        0
+    } else {
+        end_block_last.rw_counter + 1
+    };
+    let total_tx_as_txid = num_txs;
+    let withdraw_root_entry = mpt_updates.get(&super::rw::Rw::AccountStorage {
+        tx_id: total_tx_as_txid,
+        account_address: *bus_mapping::l2_predeployed::message_queue::ADDRESS,
+        storage_key: *bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT,
+        // following field is not used in Mpt::Key so we just fill them arbitrarily
+        rw_counter: 0,
+        is_write: false,
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        committed_value: U256::zero(),
+    });
+    if let Some(entry) = withdraw_root_entry {
+        let (withdraw_root, _) = entry.values();
+        if block.withdraw_root != withdraw_root {
+            log::error!(
+                "new withdraw root non consistent ({:#x}, vs ,{:#x})",
+                block.withdraw_root,
+                withdraw_root,
+            );
+        }
+    } else {
+        log::error!("withdraw root is not avaliable");
+    }
+
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
         mpt_state: None,
-        rws: rws.clone(),
+        rws,
         txs: block
             .txs()
             .iter()
@@ -391,12 +431,10 @@ pub fn block_convert<F: Field>(
         },
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
+        withdraw_root: block.withdraw_root,
+        prev_withdraw_root: block.prev_withdraw_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
-        mpt_updates: MptUpdates::from_rws_with_mock_state_roots(
-            &rws.table_assignments(),
-            block.prev_state_root,
-            block.end_state_root(),
-        ),
+        mpt_updates,
         chain_id,
     })
 }

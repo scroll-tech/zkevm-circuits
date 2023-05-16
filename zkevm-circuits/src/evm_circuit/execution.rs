@@ -5,6 +5,7 @@ use super::{
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
+    EvmCircuitExports,
 };
 use crate::{
     evm_circuit::{
@@ -23,13 +24,13 @@ use crate::{
     util::{query_expression, Challenges, Expr},
 };
 use bus_mapping::util::read_env_var;
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian};
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
+        Advice, Assigned, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
         VirtualCells,
     },
     poly::Rotation,
@@ -976,7 +977,7 @@ impl<F: Field> ExecutionConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
+    ) -> Result<EvmCircuitExports<Assigned<F>>, Error> {
         let mut is_first_time = true;
 
         layouter.assign_region(
@@ -1159,8 +1160,28 @@ impl<F: Field> ExecutionConfig<F> {
                 Ok(())
             },
         )?;
+
         log::debug!("assign_block done");
-        Ok(())
+
+        let final_withdraw_root_cell = self
+            .end_block_gadget
+            .withdraw_root_assigned
+            .borrow()
+            .expect("withdraw_root cell should has been assigned");
+
+        // sanity check
+        let evm_rows = block.circuits_params.max_evm_rows;
+        if evm_rows >= 2 {
+            assert_eq!(final_withdraw_root_cell.row_offset, evm_rows - 2);
+        }
+
+        let withdraw_root_rlc = challenges
+            .evm_word()
+            .map(|r| rlc::value(&block.withdraw_root.to_le_bytes(), r));
+
+        Ok(EvmCircuitExports {
+            withdraw_root: (final_withdraw_root_cell, withdraw_root_rlc.into()),
+        })
     }
 
     fn annotate_circuit(&self, region: &mut Region<F>) {

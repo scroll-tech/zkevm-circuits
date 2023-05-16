@@ -189,6 +189,10 @@ impl MptUpdates {
 }
 
 impl MptUpdate {
+    pub(crate) fn values(&self) -> (Word, Word) {
+        (self.new_value, self.old_value)
+    }
+
     pub(crate) fn value_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
         let assign = |x: Word| match self.key {
             Key::Account {

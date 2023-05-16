@@ -527,12 +527,16 @@ impl<
         self.evm_circuit
             .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
 
-        // TODO: enable this after zktrie deletion deployed inside l2geth and
-        // test data regenerated.
-        // config.pi_circuit.state_roots =
-        // self.state_circuit.exports.borrow().clone();
         self.pi_circuit
             .synthesize_sub(&config.pi_circuit, challenges, layouter)?;
+
+        self.pi_circuit.connect_export(
+            layouter,
+            // TODO: enable this after zktrie deletion deployed inside l2geth and
+            // test data regenerated.
+            None,
+            self.evm_circuit.exports.borrow().as_ref(),
+        )?;
 
         self.rlp_circuit
             .synthesize_sub(&config.rlp_circuit, challenges, layouter)?;

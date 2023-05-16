@@ -2,7 +2,7 @@
 
 #![allow(missing_docs)]
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     plonk::*,
 };
 
@@ -67,6 +67,13 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub keccak_table: KeccakTable,
     /// ExpTable
     pub exp_table: ExpTable,
+}
+
+/// Circuit exported cells after synthesis, used for subcircuit
+#[derive(Clone, Debug)]
+pub struct EvmCircuitExports<V> {
+    /// withdraw root
+    pub withdraw_root: (Cell, Value<V>),
 }
 
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
@@ -180,6 +187,7 @@ pub struct EvmCircuit<F: Field> {
     /// Block
     pub block: Option<Block<F>>,
     fixed_table_tags: Vec<FixedTableTag>,
+    pub(crate) exports: std::cell::RefCell<Option<EvmCircuitExports<Assigned<F>>>>,
 }
 
 impl<F: Field> EvmCircuit<F> {
@@ -188,6 +196,7 @@ impl<F: Field> EvmCircuit<F> {
         Self {
             block: Some(block),
             fixed_table_tags: FixedTableTag::iter().collect(),
+            ..Default::default()
         }
     }
 
@@ -195,6 +204,7 @@ impl<F: Field> EvmCircuit<F> {
         Self {
             block: Some(block),
             fixed_table_tags,
+            ..Default::default()
         }
     }
 
@@ -287,7 +297,9 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
         config.load_byte_table(layouter)?;
-        config.execution.assign_block(layouter, block, challenges)
+        let export = config.execution.assign_block(layouter, block, challenges)?;
+        self.exports.borrow_mut().replace(export);
+        Ok(())
     }
 }
 
