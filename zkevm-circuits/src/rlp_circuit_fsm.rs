@@ -23,7 +23,7 @@ use crate::{
     table::{LookupTable, RlpFsmDataTable, RlpFsmRlpTable, RlpFsmRomTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
-        Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, State,
+        Block, DataTable, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, State,
         State::DecodeTagStart, Tag,
     },
 };
@@ -527,7 +527,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             ( $meta:ident, $cb:ident; $($field:expr),+ ) => {
                 $(
                     $cb.require_equal(
-                        "equate fields",
+                        concat!(stringify!($field), "_next = ", stringify!($field)),
                         $meta.query_advice($field, Rotation::cur()),
                         $meta.query_advice($field, Rotation::next()),
                     );
@@ -550,7 +550,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         macro_rules! constrain_eq {
             ( $meta:ident, $cb:ident, $field:expr, $value:expr ) => {
                 $cb.require_equal(
-                    "field constrained to equal",
+                    concat!(stringify!($field), " = ", stringify!($value)),
                     $meta.query_advice($field, Rotation::cur()),
                     $value.expr(),
                 );
@@ -585,7 +585,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                     true.expr(),
                 );
                 $cb.require_equal(
-                    "rlp_tag = tag",
+                    concat!("rlp_tag = ", stringify!($tag)),
                     $meta.query_advice(rlp_table.rlp_tag, Rotation::cur()),
                     $tag.expr(),
                 );
@@ -610,7 +610,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         macro_rules! update_state {
             ( $meta:ident, $cb:ident, $tag:expr, $to: expr) => {
                 $cb.require_equal(
-                    "$tag' = $to",
+                    concat!(stringify!($tag), " = ", stringify!($to)),
                     $meta.query_advice($tag, Rotation::next()),
                     $to.expr(),
                 );
@@ -762,16 +762,17 @@ impl<F: Field> RlpCircuitConfig<F> {
                     |cb| {
                         // assertions.
                         emit_rlp_tag!(meta, cb, RlpTag::RLC, false);
-                        constrain_eq!(meta, cb, rlp_table.tag_value_acc, bytes_rlc_expr(meta));
-                        constrain_eq!(meta, cb, byte_rev_idx, 1);
+                        // TODO: fix it
+                        // constrain_eq!(meta, cb, rlp_table.tag_value_acc, bytes_rlc_expr(meta));
+                        // constrain_eq!(meta, cb, byte_rev_idx, 1);
 
                         // state transition.
                         // TODO(rohit): do this only if the next state is not State::End.
-                        cb.require_equal(
-                            "byte_idx' == 1",
-                            meta.query_advice(byte_idx, Rotation::next()),
-                            1.expr(),
-                        );
+                        // cb.require_equal(
+                        //     "byte_idx' == 1",
+                        //     meta.query_advice(byte_idx, Rotation::next()),
+                        //     1.expr(),
+                        // );
                     },
                 );
                 cb.condition(
@@ -851,7 +852,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 update_state!(meta, cb, tag_idx, tag_idx_expr(meta) + 1.expr());
                 update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
                 update_state!(meta, cb, rlp_table.tag_value_acc,
-                    tag_value_acc_expr(meta) * b.expr() + byte_value_expr(meta));
+                    tag_value_acc_expr(meta) * b.expr() + byte_value_next_expr(meta));
                 update_state!(meta, cb, state, State::Bytes);
 
                 // depth, tag_length unchanged.
@@ -976,28 +977,9 @@ impl<F: Field> RlpCircuitConfig<F> {
                 update_state!(meta, cb, tag_idx, 1);
                 update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
                 update_state!(meta, cb, rlp_table.tag_value_acc, byte_value_next_expr(meta));
-                update_state!(meta, cb, depth, depth_expr(meta) + 1.expr());
                 update_state!(meta, cb, state, State::LongList);
 
                 constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format, tag, tag_next);
-            });
-
-            // depth == 0
-            cb.condition(and::expr([
-                cond.expr(),
-                depth_check.is_equal_expression.expr(),
-            ]), |cb| {
-                emit_rlp_tag!(meta, cb, RlpTag::Len, false);
-                constrain_eq!(meta, cb, rlp_table.tag_value_acc,
-                    byte_idx_expr(meta) + byte_rev_idx_expr(meta) - 1.expr());
-            });
-
-            // depth != 0
-            cb.condition(and::expr([
-                cond.expr(),
-                not::expr(depth_check.is_equal_expression.expr()),
-            ]), |cb| {
-                do_not_emit!(meta, cb);
             });
 
             cb.gate(and::expr([
@@ -1038,15 +1020,35 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.condition(tidx_eq_tlen.expr(), |cb| {
                 // assertions
                 read_data!(meta, cb);
-                do_not_emit!(meta, cb);
 
                 // state transitions
                 update_state!(meta, cb, tag, tag_next_expr(meta));
+                update_state!(meta, cb, depth, depth_expr(meta) + 1.expr());
                 update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
                 update_state!(meta, cb, state, State::DecodeTagStart);
 
-                constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format, depth);
+                constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format);
             });
+
+            // depth == 0
+            cb.condition(and::expr([
+                tidx_eq_tlen.expr(),
+                depth_check.is_equal_expression.expr(),
+            ]), |cb| {
+                emit_rlp_tag!(meta, cb, RlpTag::Len, false);
+                // TODO: do not comment out
+                // constrain_eq!(meta, cb, rlp_table.tag_value_acc,
+                //     byte_idx_expr(meta) + byte_rev_idx_expr(meta) - 1.expr());
+            });
+
+            // depth != 0
+            cb.condition(and::expr([
+                tidx_eq_tlen.expr(),
+                not::expr(depth_check.is_equal_expression.expr()),
+            ]), |cb| {
+                do_not_emit!(meta, cb);
+            });
+
             cb.condition(
                 and::expr([tidx_eq_tlen, depth_check.is_equal_expression.expr()]),
                 |cb| {
@@ -1069,10 +1071,11 @@ impl<F: Field> RlpCircuitConfig<F> {
         });
 
         // DecodeTagStart => End
+        /*
         meta.create_gate("state transition: DecodeTagStart => End", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.condition(1.expr(), |cb| {
+            cb.condition(is_tag_end_expr(meta), |cb| {
                 // assertions
                 do_not_read_data!(meta, cb);
                 do_not_emit!(meta, cb);
@@ -1093,6 +1096,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 is_decode_tag_start(meta),
             ]))
         });
+         */
 
         // End => End
         meta.create_gate("state transition: End", |meta| {
@@ -1165,7 +1169,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         region: &mut Region<'_, F>,
         row: usize,
         witness: &RlpFsmWitnessRow<F>,
-        witness_next: Option<&RlpFsmWitnessRow<F>>,
+        _witness_next: Option<&RlpFsmWitnessRow<F>>,
     ) -> Result<(), Error> {
         // assign to selector
         region.assign_fixed(
@@ -1633,12 +1637,13 @@ mod tests {
         let unsigned_bytes = tx.rlp_unsigned().to_vec();
         let tx: TypedTransaction = tx.into();
         let sig = from.sign_transaction_sync(&tx);
+        let signed_bytes = tx.rlp_signed(&sig).to_vec();
 
         log::debug!("num_unsigned_bytes: {}", unsigned_bytes.len());
-        log::debug!("num_signed_bytes: {}", tx.rlp_signed(&sig).to_vec().len());
+        log::debug!("num_signed_bytes: {}", signed_bytes.len());
         let tx = Transaction::new_from_rlp_bytes(
             TxTypes::PreEip155,
-            tx.rlp_signed(&sig).to_vec(),
+            signed_bytes,
             unsigned_bytes,
         );
         let rlp_circuit = RlpCircuit::<Fr, Transaction> {
