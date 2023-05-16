@@ -442,11 +442,11 @@ impl TxL1Fee {
     pub fn tx_l1_fee(&self, tx_data_gas_cost: u64) -> (u64, u64) {
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
         let tx_l1_gas = tx_data_gas_cost + 1088 + self.fee_overhead;
-        let tx_l1_fee = self.fee_scalar * self.base_fee * tx_l1_gas;
+        let tx_l1_fee = self.fee_scalar as u128 * self.base_fee as u128 * tx_l1_gas as u128;
 
         (
-            tx_l1_fee / TX_L1_FEE_PRECISION,
-            tx_l1_fee % TX_L1_FEE_PRECISION,
+            (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
+            (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
         )
     }
 
