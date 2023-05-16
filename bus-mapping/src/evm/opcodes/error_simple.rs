@@ -1,6 +1,8 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::Opcode;
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::Opcode,
+    Error,
+};
 use eth_types::GethExecStep;
 
 #[derive(Debug, Copy, Clone)]

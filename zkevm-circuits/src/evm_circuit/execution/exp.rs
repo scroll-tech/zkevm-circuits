@@ -1,6 +1,5 @@
 use bus_mapping::evm::OpcodeId;
-use eth_types::evm_types::GasCost;
-use eth_types::{Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{and, not, split_u256, sum, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 

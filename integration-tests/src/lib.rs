@@ -8,18 +8,19 @@ use env_logger::Env;
 use eth_types::Address;
 use ethers::{
     abi,
-    core::k256::ecdsa::SigningKey,
-    core::types::Bytes,
+    core::{k256::ecdsa::SigningKey, types::Bytes},
     providers::{Http, Provider},
     signers::{coins_bip39::English, MnemonicBuilder, Signer, Wallet},
 };
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::env::{self, VarError};
-use std::fs::File;
-use std::sync::Once;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    env::{self, VarError},
+    fs::File,
+    sync::Once,
+    time::Duration,
+};
 use url::Url;
 
 /// Geth dev chain ID

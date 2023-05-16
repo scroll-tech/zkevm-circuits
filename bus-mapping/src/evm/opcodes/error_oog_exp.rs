@@ -1,7 +1,9 @@
 use super::{Opcode, OpcodeId};
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::error::{ExecError, OogError};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::{ExecError, OogError},
+    Error,
+};
 use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it

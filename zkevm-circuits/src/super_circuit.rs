@@ -1,10 +1,9 @@
 //! The Super Circuit is a circuit that contains all the circuits of the
 //! zkEVM in order to achieve two things:
-//! - Check the correct integration between circuits via the shared lookup
-//!   tables, to verify that the table layouts match.
-//! - Allow having a single circuit setup for which a proof can be generated
-//!   that would be verified under a single aggregation circuit for the first
-//!   milestone.
+//! - Check the correct integration between circuits via the shared lookup tables, to verify that
+//!   the table layouts match.
+//! - Allow having a single circuit setup for which a proof can be generated that would be verified
+//!   under a single aggregation circuit for the first milestone.
 //!
 //! The current implementation contains the following circuits:
 //!
@@ -57,12 +56,17 @@ use crate::bytecode_circuit::circuit::to_poseidon_hash::{
 };
 #[cfg(not(feature = "poseidon-codehash"))]
 use crate::bytecode_circuit::circuit::BytecodeCircuitConfig;
-use crate::bytecode_circuit::circuit::{BytecodeCircuit, BytecodeCircuitConfigArgs};
-use crate::copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs};
-use crate::evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs};
-use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
-use crate::keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs};
-use crate::poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs};
+use crate::{
+    bytecode_circuit::circuit::{BytecodeCircuit, BytecodeCircuitConfigArgs},
+    copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
+    evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
+    exp_circuit::{ExpCircuit, ExpCircuitConfig},
+    keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
+    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
+    util::{log2_ceil, SubCircuit, SubCircuitConfig},
+    witness::{block_convert, Block},
+};
 
 #[cfg(feature = "zktrie")]
 use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
@@ -72,28 +76,29 @@ use crate::util::Challenges;
 #[cfg(feature = "onephase")]
 use crate::util::MockChallenges as Challenges;
 
-use crate::state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs};
-use crate::table::{
-    BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, PoseidonTable, RlpTable,
-    RwTable, TxTable,
+use crate::{
+    state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
+    table::{
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, PoseidonTable,
+        RlpTable, RwTable, TxTable,
+    },
 };
 
-use crate::util::{circuit_stats, log2_ceil, SubCircuit, SubCircuitConfig};
-use crate::witness::{block_convert, Block, SignedTransaction};
-use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
-use bus_mapping::mock::BlockData;
-use eth_types::geth_types::GethData;
-use eth_types::Field;
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Expression;
+use crate::{util::circuit_stats, witness::SignedTransaction};
+use bus_mapping::{
+    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    mock::BlockData,
+};
+use eth_types::{geth_types::GethData, Field};
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
-    plonk::{Circuit, ConstraintSystem, Error},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
+    plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
 
-use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
-use crate::rlp_circuit::{RlpCircuit, RlpCircuitConfig};
-use crate::tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs};
+use crate::{
+    pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
+    rlp_circuit::{RlpCircuit, RlpCircuitConfig},
+};
 
 /// Configuration of the Super Circuit
 #[derive(Clone)]
@@ -210,6 +215,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         let tx_circuit = TxCircuitConfig::new(
             meta,
             TxCircuitConfigArgs {
+                block_table: block_table.clone(),
                 tx_table: tx_table.clone(),
                 keccak_table: keccak_table.clone(),
                 rlp_table,
@@ -502,7 +508,7 @@ impl<
 
         // TODO: enable this after zktrie deletion deployed inside l2geth and
         // test data regenerated.
-        //config.pi_circuit.state_roots =
+        // config.pi_circuit.state_roots =
         // self.state_circuit.exports.borrow().clone();
         self.pi_circuit
             .synthesize_sub(&config.pi_circuit, challenges, layouter)?;
@@ -566,14 +572,6 @@ impl<
         // their load() functions which however do not emit the cells.
         // To set up copy constraints between pi cells and block/tx table cells,
         // we need to construct them manually.
-        config.block_table.load(
-            &mut layouter,
-            &block.context,
-            &block.txs,
-            block.circuits_params.max_inner_blocks,
-            &challenges,
-        )?;
-
         config.tx_table.load(
             &mut layouter,
             &block.txs,
@@ -662,16 +660,14 @@ impl<
 pub(crate) mod super_circuit_tests {
     use super::*;
     use ethers_signers::{LocalWallet, Signer};
-    use halo2_proofs::dev::MockProver;
-    use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
     use log::error;
-    use mock::{eth, TestContext, MOCK_CHAIN_ID};
+    use mock::{eth, TestContext, MOCK_CHAIN_ID, MOCK_DIFFICULTY};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
-    use std::collections::HashMap;
+    use std::{collections::HashMap, env::set_var};
 
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::{address, bytecode, geth_types::GethData, Bytecode, Word};
+    use eth_types::{address, bytecode, evm_types::OpcodeId, geth_types::GethData, Bytecode, Word};
 
     #[test]
     fn super_circuit_degree() {
@@ -691,6 +687,13 @@ pub(crate) mod super_circuit_tests {
         block: GethData,
         circuits_params: CircuitsParams,
     ) {
+        let mut difficulty_be_bytes = [0u8; 32];
+        let mut chain_id_be_bytes = [0u8; 32];
+        MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
+        MOCK_CHAIN_ID.to_big_endian(&mut chain_id_be_bytes);
+        set_var("CHAIN_ID", hex::encode(chain_id_be_bytes));
+        set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
+
         let (k, circuit, instance, _) =
             SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>::build(
                 block,

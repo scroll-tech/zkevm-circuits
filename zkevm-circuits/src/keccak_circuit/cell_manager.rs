@@ -1,11 +1,9 @@
-use crate::keccak_circuit::util::extract_field;
-use crate::keccak_circuit::KeccakRegion;
+use crate::keccak_circuit::{util::extract_field, KeccakRegion};
 use gadgets::util::Expr;
-use halo2_proofs::arithmetic::FieldExt;
-use halo2_proofs::plonk::VirtualCells;
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::Value,
-    plonk::{Advice, Column, ConstraintSystem, Expression},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
 

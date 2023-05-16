@@ -1,8 +1,11 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use crate::operation::CallContextField;
-use crate::Error;
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
+    operation::CallContextField,
+    Error,
+};
 use eth_types::GethExecStep;
 
 #[derive(Clone, Copy, Debug)]

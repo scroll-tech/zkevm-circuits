@@ -4,6 +4,7 @@ use crate::{
     util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
 };
+use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::{Field, ToLittleEndian};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
@@ -11,7 +12,6 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use keccak256::EMPTY_HASH_LE;
 use std::vec;
 
 use super::{
@@ -37,10 +37,10 @@ use super::circuit::to_poseidon_hash::{
 #[cfg(feature = "poseidon-codehash")]
 use crate::table::PoseidonTable;
 #[cfg(feature = "poseidon-codehash")]
-///alias for circuit config
+/// alias for circuit config
 pub type CircuitConfig<F> = ToHashBlockCircuitConfig<F, HASHBLOCK_BYTES_IN_FIELD>;
 #[cfg(not(feature = "poseidon-codehash"))]
-///alias for circuit config
+/// alias for circuit config
 pub type CircuitConfig<F> = BytecodeCircuitConfig<F>;
 
 #[derive(Clone, Debug)]
@@ -242,7 +242,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             );
 
             let empty_hash = rlc::expr(
-                &EMPTY_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
+                &EMPTY_CODE_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
                 challenges.evm_word(),
             );
 
@@ -459,7 +459,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
         let empty_hash = challenges
             .evm_word()
-            .map(|challenge| rlc::value(EMPTY_HASH_LE.as_ref(), challenge));
+            .map(|challenge| rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge));
 
         let mut is_first_time = true;
         layouter.assign_region(
@@ -578,22 +578,20 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     F::from(push_data_size as u64),
                 )?;
 
-                /*
-                trace!(
-                    "bytecode.set_row({}): last:{} h:{:?} t:{:?} i:{:?} c:{:?} v:{:?} pdl:{} rlc:{:?} l:{:?} pds:{:?}",
-                    offset,
-                    *offset == last_row_offset,
-                    code_hash,
-                    row.tag.get_lower_32(),
-                    row.index.get_lower_32(),
-                    row.is_code.get_lower_32(),
-                    row.value.get_lower_32(),
-                    push_data_left,
-                    value_rlc,
-                    length.get_lower_32(),
-                    push_data_size
-                );
-                */
+                // trace!(
+                // "bytecode.set_row({}): last:{} h:{:?} t:{:?} i:{:?} c:{:?} v:{:?} pdl:{} rlc:{:?}
+                // l:{:?} pds:{:?}", offset,
+                // offset == last_row_offset,
+                // code_hash,
+                // row.tag.get_lower_32(),
+                // row.index.get_lower_32(),
+                // row.is_code.get_lower_32(),
+                // row.value.get_lower_32(),
+                // push_data_left,
+                // value_rlc,
+                // length.get_lower_32(),
+                // push_data_size
+                // );
 
                 *offset += 1;
                 push_data_left = next_push_data_left

@@ -1,14 +1,16 @@
-use crate::evm_circuit::{
-    execution::ExecutionGadget,
-    param::N_BYTES_GAS,
-    step::ExecutionState,
-    util::{
-        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-        math_gadget::LtGadget, CachedRegion, Cell,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::N_BYTES_GAS,
+        step::ExecutionState,
+        util::{
+            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
+            math_gadget::LtGadget, CachedRegion, Cell,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    util::Expr,
 };
-use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 

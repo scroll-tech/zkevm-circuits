@@ -1,8 +1,9 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::Error;
-use eth_types::evm_types::MemoryAddress;
-use eth_types::{GethExecStep, ToBigEndian};
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    Error,
+};
+use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
@@ -19,7 +20,6 @@ impl Opcode for Mload {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        //
         // First stack read
         //
         let stack_value_read = geth_step.stack.last()?;
@@ -34,12 +34,10 @@ impl Opcode for Mload {
         // 0.
         let mem_read_value = geth_steps[1].stack.last()?;
 
-        //
         // First stack write
         //
         state.stack_write(&mut exec_step, stack_position, mem_read_value)?;
 
-        //
         // First mem read -> 32 MemoryOp generated.
         //
         for byte in mem_read_value.to_be_bytes() {

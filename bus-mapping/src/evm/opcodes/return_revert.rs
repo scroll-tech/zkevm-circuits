@@ -1,16 +1,12 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use crate::operation::AccountOp;
-use crate::operation::MemoryOp;
 use crate::{
-    circuit_input_builder::CircuitInputStateRef,
+    circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
     evm::opcodes::ExecStep,
-    operation::{AccountField, CallContextField, RW},
+    operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
+    state_db::CodeDB,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
-use ethers_core::utils::keccak256;
-use keccak256::EMPTY_HASH_LE;
+use eth_types::{Bytecode, GethExecStep, ToWord, H256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
@@ -79,7 +75,7 @@ impl Opcode for ReturnRevert {
                     address: state.call()?.address,
                     field: AccountField::CodeHash,
                     value: code_hash.to_word(),
-                    value_prev: Word::from_little_endian(&*EMPTY_HASH_LE),
+                    value_prev: CodeDB::empty_code_hash().to_word(),
                 },
             )?;
         }
@@ -209,8 +205,7 @@ fn handle_create(
     source: Source,
 ) -> Result<H256, Error> {
     let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
-    // FIXME for poseidon code hash
-    let code_hash = H256(keccak256(&values));
+    let code_hash = CodeDB::hash(&values);
     let dst_id = NumberOrHash::Hash(code_hash);
     let bytes: Vec<_> = Bytecode::from(values)
         .code
@@ -249,10 +244,11 @@ fn handle_create(
 #[cfg(test)]
 mod return_tests {
     use crate::mock::BlockData;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-    use mock::TestContext;
+    use eth_types::{bytecode, geth_types::GethData, word};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
 
     #[test]
     fn test_ok() {

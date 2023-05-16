@@ -229,8 +229,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
     /// - `address < 32 * 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// Output ranges:
     /// - `next_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
-    /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES +
-    ///   256**MAX_QUAD_COST_IN_BYTES`
+    /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, addresses: [Expression<F>; N]) -> Self {
         // Calculate the memory size of the memory access
         // `address_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
@@ -366,8 +365,7 @@ impl<F: Field, const GAS_COPY: GasCost> MemoryCopierGasGadget<F, GAS_COPY> {
     /// - `address < 32 * 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// Output ranges:
     /// - `next_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
-    /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES +
-    ///   256**MAX_QUAD_COST_IN_BYTES`
+    /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         num_bytes: Expression<F>,

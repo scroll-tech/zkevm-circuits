@@ -339,8 +339,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
 
 #[cfg(test)]
 mod test {
-    use super::super::test_util::*;
-    use super::ContractCreateGadget;
+    use super::{super::test_util::*, ContractCreateGadget};
     use eth_types::{Field, ToAddress, ToLittleEndian, ToWord, Word};
     use gadgets::util::{not, Expr};
     use halo2_proofs::halo2curves::bn256::Fr;

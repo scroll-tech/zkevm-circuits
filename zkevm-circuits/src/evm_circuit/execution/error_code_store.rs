@@ -131,7 +131,7 @@ mod test {
         Address,
         Bytecode,
         Word,
-        //word,
+        // word,
     };
 
     use lazy_static::lazy_static;
@@ -178,7 +178,7 @@ mod test {
         let initialization_bytes = initialization_bytecode.code();
         let mut code = Bytecode::default();
 
-        //construct maxcodesize + 1 memory bytes
+        // construct maxcodesize + 1 memory bytes
         let code_creator: Vec<u8> = initialization_bytes
             .to_vec()
             .iter()

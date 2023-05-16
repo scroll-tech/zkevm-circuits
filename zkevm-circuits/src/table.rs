@@ -1,27 +1,29 @@
 //! Table definitions used cross-circuits
 
-use crate::copy_circuit::number_or_hash_to_field;
-use crate::evm_circuit::util::rlc;
-use crate::exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP};
-use crate::impl_expr;
-use crate::util::build_tx_log_address;
-use crate::util::Challenges;
-use crate::witness::{
-    Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw,
-    RwMap, RwRow, SignedTransaction, Transaction,
+use crate::{
+    copy_circuit::number_or_hash_to_field,
+    evm_circuit::util::rlc,
+    exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP},
+    impl_expr,
+    util::{build_tx_log_address, Challenges},
+    witness::{
+        Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw,
+        RwMap, RwRow, SignedTransaction, Transaction,
+    },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
-use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
-use gadgets::util::{split_u256, split_u256_limb64};
-use halo2_proofs::plonk::{Any, Expression, Fixed, VirtualCells};
+use gadgets::{
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    util::{split_u256, split_u256_limb64},
+};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error},
+    circuit::{Layouter, Region, Value},
+    plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    poly::Rotation,
 };
-use halo2_proofs::{circuit::Layouter, poly::Rotation};
 use std::iter::repeat;
 
 #[cfg(feature = "onephase")]
@@ -198,7 +200,7 @@ impl TxTable {
             txs.len(),
             max_txs
         );
-        let sum_txs_calldata = txs.iter().map(|tx| tx.call_data.len()).sum();
+        let sum_txs_calldata: usize = txs.iter().map(|tx| tx.call_data.len()).sum();
         assert!(
             sum_txs_calldata <= max_calldata,
             "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
@@ -273,15 +275,7 @@ impl TxTable {
                     calldata_assignments.extend(tx_calldata.iter());
                 }
                 // Assign Tx calldata
-                let padding_calldata = (sum_txs_calldata..max_calldata).map(|_| {
-                    [
-                        Value::known(F::zero()),
-                        Value::known(F::from(TxContextFieldTag::CallData as u64)),
-                        Value::known(F::zero()),
-                        Value::known(F::zero()),
-                    ]
-                });
-                for row in calldata_assignments.into_iter().chain(padding_calldata) {
+                for row in calldata_assignments.into_iter() {
                     assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                     offset += 1;
                 }
@@ -600,29 +594,29 @@ impl RwTable {
 
 /// The types of proofs in the MPT table
 #[derive(Clone, Copy, Debug)]
-pub enum ProofType {
+pub enum MPTProofType {
     /// Nonce updated
-    NonceChanged = AccountFieldTag::Nonce as isize,
+    NonceMod = AccountFieldTag::Nonce as isize,
     /// Balance updated
-    BalanceChanged = AccountFieldTag::Balance as isize,
+    BalanceMod = AccountFieldTag::Balance as isize,
     /// Code hash exists
-    CodeHashExists = AccountFieldTag::CodeHash as isize,
+    CodeHashMod = AccountFieldTag::CodeHash as isize,
     /// Account does not exist
-    AccountDoesNotExist = AccountFieldTag::NonExisting as isize,
+    NonExistingAccountProof = AccountFieldTag::NonExisting as isize,
     /// Storage updated
-    StorageChanged,
+    StorageMod,
     /// Storage does not exist
-    StorageDoesNotExist,
+    NonExistingStorageProof,
 }
-impl_expr!(ProofType);
+impl_expr!(MPTProofType);
 
-impl From<AccountFieldTag> for ProofType {
+impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
         match tag {
-            AccountFieldTag::Nonce => Self::NonceChanged,
-            AccountFieldTag::Balance => Self::BalanceChanged,
-            AccountFieldTag::CodeHash => Self::CodeHashExists,
-            AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
+            AccountFieldTag::Nonce => Self::NonceMod,
+            AccountFieldTag::Balance => Self::BalanceMod,
+            AccountFieldTag::CodeHash => Self::CodeHashMod,
+            AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
         }
     }
 }
@@ -980,8 +974,10 @@ impl<F: Field> LookupTable<F> for BytecodeTable {
 
 /// Tag to identify the field in a Block Table row
 // Keep the sequence consistent with OpcodeId for scalar
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 pub enum BlockContextFieldTag {
+    /// Null
+    Null = 0,
     /// Coinbase field
     Coinbase = 1,
     /// Timestamp field
@@ -1007,6 +1003,12 @@ pub enum BlockContextFieldTag {
     CumNumTxs,
 }
 impl_expr!(BlockContextFieldTag);
+
+impl From<BlockContextFieldTag> for usize {
+    fn from(value: BlockContextFieldTag) -> Self {
+        value as usize
+    }
+}
 
 /// Table with Block header fields
 #[derive(Clone, Debug)]

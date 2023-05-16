@@ -1,23 +1,27 @@
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::rlc;
-use crate::table::TxContextFieldTag;
-use crate::util::{rlc_be_bytes, Challenges};
-use bus_mapping::circuit_input_builder;
-use bus_mapping::circuit_input_builder::{get_dummy_tx, get_dummy_tx_hash};
-use eth_types::sign_types::{
-    biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q,
+use crate::{
+    evm_circuit::{step::ExecutionState, util::rlc},
+    table::TxContextFieldTag,
+    util::{rlc_be_bytes, Challenges},
+};
+use bus_mapping::{
+    circuit_input_builder,
+    circuit_input_builder::{get_dummy_tx, get_dummy_tx_hash},
 };
 use eth_types::{
+    sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
 };
-use ethers_core::types::TransactionRequest;
-use ethers_core::utils::{
-    keccak256,
-    rlp::{Encodable, RlpStream},
+use ethers_core::{
+    types::TransactionRequest,
+    utils::{
+        keccak256,
+        rlp::{Encodable, RlpStream},
+    },
 };
-use halo2_proofs::circuit::Value;
-use halo2_proofs::halo2curves::group::ff::PrimeField;
-use halo2_proofs::halo2curves::secp256k1;
+use halo2_proofs::{
+    circuit::Value,
+    halo2curves::{group::ff::PrimeField, secp256k1},
+};
 use mock::MockTransaction;
 use num::Integer;
 use num_bigint::BigUint;

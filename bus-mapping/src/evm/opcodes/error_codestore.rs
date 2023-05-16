@@ -56,7 +56,7 @@ impl Opcode for ErrorCodeStore {
         // refer to return_revert Case C
         state.handle_restore_context(geth_steps, &mut exec_step)?;
 
-        //state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        // state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         state.handle_return(geth_step)?;
         Ok(vec![exec_step])
     }

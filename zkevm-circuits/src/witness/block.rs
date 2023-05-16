@@ -1,6 +1,5 @@
 use ethers_core::types::Signature;
-use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[cfg(any(feature = "test", test))]
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
@@ -15,10 +14,9 @@ use bus_mapping::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
-use super::MptUpdates;
 use super::{
-    mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap,
-    Transaction,
+    mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep,
+    MptUpdates, RwMap, Transaction,
 };
 use crate::util::{Challenges, DEFAULT_RAND};
 
@@ -174,7 +172,7 @@ impl<F: Field> Block<F> {
 }
 
 /// Block context for execution
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct BlockContext {
     /// The address of the miner for the block
     pub coinbase: Address,
@@ -237,7 +235,7 @@ impl BlockContext {
             [
                 Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                 Value::known(current_block_number),
-                randomness.map(|randomness| rlc::value(&self.difficulty.to_le_bytes(), randomness)),
+                randomness.map(|rand| rlc::value(&self.difficulty.to_le_bytes(), rand)),
             ],
             [
                 Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
@@ -252,7 +250,7 @@ impl BlockContext {
             [
                 Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                 Value::known(current_block_number),
-                randomness.map(|randomness| rlc::value(&self.chain_id.to_le_bytes(), randomness)),
+                randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
             ],
             [
                 Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),

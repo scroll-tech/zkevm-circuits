@@ -1,10 +1,7 @@
 use ethers_core::utils::rlp::Encodable;
-use halo2_proofs::circuit::Value;
-use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+use halo2_proofs::{arithmetic::FieldExt, circuit::Value, plonk::Expression};
 
-use crate::impl_expr;
-use crate::util::Challenges;
-use crate::witness::RlpTxTag;
+use crate::{impl_expr, util::Challenges, witness::RlpTxTag};
 
 /// Data types that are supported by the RLP circuit.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

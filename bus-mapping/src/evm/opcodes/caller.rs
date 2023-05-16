@@ -1,7 +1,9 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::CallContextField;
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    operation::CallContextField,
+    Error,
+};
 use eth_types::GethExecStep;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -41,8 +43,9 @@ impl Opcode for Caller {
 mod caller_tests {
     use super::*;
     use crate::{
-        circuit_input_builder::ExecState, mock::BlockData, operation::CallContextOp,
-        operation::StackOp, operation::RW,
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{CallContextOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,

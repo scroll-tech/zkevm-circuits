@@ -1,9 +1,10 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
-use crate::Error;
-use eth_types::evm_types::OpcodeId;
-use eth_types::{GethExecStep, ToAddress, ToWord, Word};
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
+    Error,
+};
+use eth_types::{evm_types::OpcodeId, GethExecStep, ToAddress, ToWord, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the out of gas errors for [`OpcodeId::CALL`],

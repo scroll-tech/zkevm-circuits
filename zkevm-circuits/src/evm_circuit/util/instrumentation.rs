@@ -1,7 +1,8 @@
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::table::Table;
-use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
-use crate::evm_circuit::util::CellType;
+use crate::evm_circuit::{
+    step::ExecutionState,
+    table::Table,
+    util::{constraint_builder::ConstraintBuilder, CellType},
+};
 use halo2_proofs::arithmetic::FieldExt;
 use itertools::Itertools;
 

@@ -1,22 +1,24 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64};
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::SameContextGadget;
-use crate::evm_circuit::util::constraint_builder::Transition::Delta;
-use crate::evm_circuit::util::constraint_builder::{
-    ConstraintBuilder, ReversionInfo, StepStateTransition,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64},
+        step::ExecutionState,
+        util::{
+            common_gadget::SameContextGadget,
+            constraint_builder::{
+                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+            },
+            from_bytes,
+            math_gadget::IsZeroGadget,
+            not, select, CachedRegion, Cell, RandomLinearCombination, Word,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    table::{AccountFieldTag, CallContextFieldTag},
+    util::Expr,
 };
-use crate::evm_circuit::util::math_gadget::IsZeroGadget;
-use crate::evm_circuit::util::{
-    from_bytes, not, select, CachedRegion, Cell, RandomLinearCombination, Word,
-};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::table::{AccountFieldTag, CallContextFieldTag};
-use crate::util::Expr;
-use eth_types::evm_types::GasCost;
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodesizeGadget<F> {
@@ -142,10 +144,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::CircuitTestBuilder;
-    use eth_types::geth_types::Account;
-    use eth_types::{bytecode, Bytecode, ToWord, Word};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use eth_types::{bytecode, geth_types::Account, Bytecode, ToWord, Word};
     use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
 
     #[test]

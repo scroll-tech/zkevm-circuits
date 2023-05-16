@@ -1,8 +1,7 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::CallContextField;
 use crate::{
-    operation::{StorageOp, TxAccessListAccountStorageOp, RW},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
 };
 use eth_types::{GethExecStep, ToWord, Word};

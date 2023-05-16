@@ -99,11 +99,9 @@ impl<F: Field> AbsWordGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
+    use super::{super::test_util::*, *};
     use eth_types::{Word, U256};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// AbsWordGadgetContainer: require(abs(a) == -a if IS_NEG else a)

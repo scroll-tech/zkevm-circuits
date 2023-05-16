@@ -11,8 +11,7 @@ use crate::{
 };
 use eth_types::Field;
 use gadgets::util::{not, Expr};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 use std::marker::PhantomData;
 

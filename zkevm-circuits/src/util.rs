@@ -14,8 +14,7 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
-use crate::witness;
-use crate::{evm_circuit::util::rlc, table::TxLogFieldTag};
+use crate::{evm_circuit::util::rlc, table::TxLogFieldTag, witness};
 use eth_types::{Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
@@ -308,7 +307,12 @@ pub(crate) fn circuit_stats<F: Field>(meta: &ConstraintSystem<F>) -> CircuitStat
         num_rotation: rotations.len(),
         min_rotation: rotations.first().cloned().unwrap_or_default(),
         max_rotation: rotations.last().cloned().unwrap_or_default(),
-        // TODO: add permutation related ecmuls
-        num_verification_ecmul: meta.num_advice_columns + 3 * meta.lookups.len() + rotations.len(),
+        num_verification_ecmul: meta.num_advice_columns
+            + meta.num_instance_columns
+            + meta.permutation.columns.len()
+            + meta.num_selectors
+            + meta.num_fixed_columns
+            + 3 * meta.lookups.len()
+            + rotations.len(),
     }
 }

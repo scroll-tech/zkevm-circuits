@@ -1,8 +1,9 @@
 use super::table::Table;
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::EvmCircuit;
-use halo2_proofs::halo2curves::bn256::Fr;
-use halo2_proofs::plonk::{Circuit, ConstraintSystem};
+use crate::evm_circuit::{step::ExecutionState, EvmCircuit};
+use halo2_proofs::{
+    halo2curves::bn256::Fr,
+    plonk::{Circuit, ConstraintSystem},
+};
 use std::collections::HashMap;
 
 // Step dimension

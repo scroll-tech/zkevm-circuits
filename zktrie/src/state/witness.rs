@@ -1,6 +1,8 @@
 //! witness generator
-use super::builder::{extend_address_to_h256, AccountData, BytesArray, CanRead, TrieProof};
-use super::{MPTProofType, ZktrieState};
+use super::{
+    builder::{extend_address_to_h256, AccountData, BytesArray, CanRead, TrieProof},
+    MPTProofType, ZktrieState,
+};
 use bus_mapping::state_db::CodeDB;
 use eth_types::{Address, Hash, Word, H256, U256};
 use halo2_proofs::halo2curves::group::ff::PrimeField;
@@ -274,8 +276,7 @@ fn smt_hash_from_bytes(bt: &[u8]) -> SMTHash {
 }
 
 fn hash_zktrie_key(key_buf: &[u8; 32]) -> Word {
-    use halo2_proofs::arithmetic::FieldExt;
-    use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::{arithmetic::FieldExt, halo2curves::bn256::Fr};
     use mpt_circuits::hash::Hashable;
 
     let first_16bytes: [u8; 16] = key_buf[..16].try_into().expect("expect first 16 bytes");

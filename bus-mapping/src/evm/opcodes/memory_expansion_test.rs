@@ -1,8 +1,11 @@
-use eth_types::geth_types::GethData;
-use eth_types::{bytecode, word, Bytecode, GethExecStep};
-use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-use mock::test_ctx::LoggerConfig;
-use mock::TestContext;
+use eth_types::{bytecode, geth_types::GethData, word, Bytecode, GethExecStep};
+use mock::{
+    test_ctx::{
+        helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        LoggerConfig,
+    },
+    TestContext,
+};
 
 fn might_neg_index(index: isize, len: usize) -> usize {
     if index < 0 {

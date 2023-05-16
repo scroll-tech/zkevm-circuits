@@ -1,15 +1,15 @@
 #![allow(clippy::map_entry)]
 
 use anyhow::{bail, Context, Result};
-use eth_types::{bytecode, Bytecode};
-use eth_types::{Bytes, H256};
+use eth_types::{bytecode, Bytecode, Bytes, H256};
 use keccak256::plain::Keccak;
-use std::collections::HashMap;
-use std::io::Read;
-use std::io::Write;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::str::FromStr;
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+    path::PathBuf,
+    process::{Command, Stdio},
+    str::FromStr,
+};
 
 struct Cache {
     entries: HashMap<H256, Bytes>,

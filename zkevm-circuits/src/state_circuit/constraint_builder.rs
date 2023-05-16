@@ -3,13 +3,13 @@ use super::{
     random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
     N_LIMBS_RW_COUNTER,
 };
-use crate::util::Expr;
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
         util::{math_gadget::generate_lagrange_base_polynomial, not},
     },
-    table::{AccountFieldTag, ProofType, RwTableTag},
+    table::{AccountFieldTag, MPTProofType, RwTableTag},
+    util::Expr,
 };
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
@@ -30,7 +30,7 @@ pub struct RwTableQueries<F: Field> {
     pub storage_key: Expression<F>,
     pub value: Expression<F>,
     pub value_prev: Expression<F>, // meta.query(value, Rotation::prev())
-    pub value_prev_column: Expression<F>, /*meta.query(prev_value, Rotation::cur())
+    pub value_prev_column: Expression<F>, /* meta.query(prev_value, Rotation::cur())
                                     * TODO: aux1 and aux2 */
 }
 
@@ -160,13 +160,11 @@ impl<F: Field> ConstraintBuilder<F> {
             );
             // FIXME
             // https://github.com/scroll-tech/zkevm-circuits/issues/343
-            /*
-                        cb.require_equal(
-                            "value_prev column is initial_value for first access",
-                            q.value_prev_column(),
-                            q.initial_value.clone(),
-                        );
-            */
+            // cb.require_equal(
+            // "value_prev column is initial_value for first access",
+            // q.value_prev_column(),
+            // q.initial_value.clone(),
+            // );
         });
 
         // When all the keys in the current row and previous row are equal.
@@ -202,69 +200,70 @@ impl<F: Field> ConstraintBuilder<F> {
         // constraints It should be aux2/committed_value.
         // We should fix this after the committed_value field of Rw::Account in
         // both bus-mapping and evm-circuits are implemented.
-        /*
-        self.condition(q.first_access(), |cb| {
-            cb.require_equal(
-                "prev value when first access",
-                q.value_prev_col.clone(),
-                (q.tag_matches(RwTableTag::TxAccessListAccount)
-                    + q.tag_matches(RwTableTag::TxAccessListAccountStorage)
-                    + q.tag_matches(RwTableTag::AccountDestructed)
-                    + q.tag_matches(RwTableTag::TxRefund))
-                    * 0u64.expr()
-                    + q.tag_matches(RwTableTag::Account)
-                          *  q.value_prev_col.clone()
-                    + q.tag_matches(RwTableTag::AccountStorage)
-                       *     q.aux2.clone(), // committed value
-            );
-        });
-        self.condition(q.not_first_access(), |cb| {
-            cb.require_equal(
-                "prev value when not first acccess",
-                q.value_prev_col.clone(),
-                (q.tag_matches(RwTableTag::TxAccessListAccount)
-                    + q.tag_matches(RwTableTag::TxAccessListAccountStorage)
-                    + q.tag_matches(RwTableTag::AccountDestructed)
-                    + q.tag_matches(RwTableTag::TxRefund))
-                    * q.value_prev.clone()
-                    + q.tag_matches(RwTableTag::Account) * q.value_prev_col.clone()
-                    + q.tag_matches(RwTableTag::AccountStorage) * q.value_prev.clone(),
-            );
-        });
-        */
-        /*
-        self.require_equal("rw table rlc", q.rw_rlc.clone(), {
-            rlc::expr(
-                &[
-                    q.rw_counter.value.clone(),
-                    q.is_write.clone(),
-                    q.tag.clone(),
-                    q.id.value.clone(),
-                    q.address.value.clone(),
-                    q.field_tag.clone(),
-                    q.storage_key.encoded.clone(),
-                    q.value.clone(),
-                    q.value_prev_col.clone(),
-                    0u64.expr(), //q.aux1,
-                    q.aux2.clone(),
-                ],
-                &q.power_of_randomness,
-            )
-        })
-        */
+        // self.condition(q.first_access(), |cb| {
+        // cb.require_equal(
+        // "prev value when first access",
+        // q.value_prev_col.clone(),
+        // (q.tag_matches(RwTableTag::TxAccessListAccount)
+        // + q.tag_matches(RwTableTag::TxAccessListAccountStorage)
+        // + q.tag_matches(RwTableTag::AccountDestructed)
+        // + q.tag_matches(RwTableTag::TxRefund))
+        // 0u64.expr()
+        // + q.tag_matches(RwTableTag::Account)
+        //  q.value_prev_col.clone()
+        // + q.tag_matches(RwTableTag::AccountStorage)
+        //     q.aux2.clone(), // committed value
+        // );
+        // });
+        // self.condition(q.not_first_access(), |cb| {
+        // cb.require_equal(
+        // "prev value when not first acccess",
+        // q.value_prev_col.clone(),
+        // (q.tag_matches(RwTableTag::TxAccessListAccount)
+        // + q.tag_matches(RwTableTag::TxAccessListAccountStorage)
+        // + q.tag_matches(RwTableTag::AccountDestructed)
+        // + q.tag_matches(RwTableTag::TxRefund))
+        // q.value_prev.clone()
+        // + q.tag_matches(RwTableTag::Account) * q.value_prev_col.clone()
+        // + q.tag_matches(RwTableTag::AccountStorage) * q.value_prev.clone(),
+        // );
+        // });
+        // self.require_equal("rw table rlc", q.rw_rlc.clone(), {
+        // rlc::expr(
+        // &[
+        // q.rw_counter.value.clone(),
+        // q.is_write.clone(),
+        // q.tag.clone(),
+        // q.id.value.clone(),
+        // q.address.value.clone(),
+        // q.field_tag.clone(),
+        // q.storage_key.encoded.clone(),
+        // q.value.clone(),
+        // q.value_prev_col.clone(),
+        // 0u64.expr(), //q.aux1,
+        // q.aux2.clone(),
+        // ],
+        // &q.power_of_randomness,
+        // )
+        // })
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {
+        // 1.0. Unused keys are 0
         self.require_zero("field_tag is 0 for Start", q.field_tag());
         self.require_zero("address is 0 for Start", q.rw_table.address.clone());
         self.require_zero("id is 0 for Start", q.id());
         self.require_zero("storage_key is 0 for Start", q.rw_table.storage_key.clone());
+        // 1.1. rw_counter increases by 1 for every non-first row
         self.require_zero(
             "rw_counter increases by 1 for every non-first row",
             q.lexicographic_ordering_selector.clone() * (q.rw_counter_change() - 1.expr()),
         );
+        // 1.2. Start value is 0
         self.require_zero("Start value is 0", q.value());
+        // 1.3. Start initial value is 0
         self.require_zero("Start initial_value is 0", q.initial_value());
+        // 1.4. state_root is unchanged for every non-first row
         self.condition(q.lexicographic_ordering_selector.clone(), |cb| {
             cb.require_equal(
                 "state_root is unchanged for Start",
@@ -276,22 +275,31 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
+        // 2.0. Unused keys are 0
         self.require_zero("field_tag is 0 for Memory", q.field_tag());
         self.require_zero(
             "storage_key is 0 for Memory",
             q.rw_table.storage_key.clone(),
         );
+        // 2.1. First access for a set of all keys are 0 if READ
+        self.require_zero(
+            "first access for a set of all keys are 0 if READ",
+            q.first_access() * q.is_read() * q.value(),
+        );
         // could do this more efficiently by just asserting address = limb0 + 2^16 *
         // limb1?
+        // 2.2. mem_addr in range
         for limb in &q.address.limbs[2..] {
             self.require_zero("memory address fits into 2 limbs", limb.clone());
         }
+        // 2.3. value is a byte
         self.add_lookup(
             "memory value is a byte",
             vec![(q.rw_table.value.clone(), q.lookups.u8.clone())],
         );
+        // 2.4. Start initial value is 0
         self.require_zero("initial Memory value is 0", q.initial_value());
-
+        // 2.5. state root does not change
         self.require_equal(
             "state_root is unchanged for Memory",
             q.state_root(),
@@ -305,25 +313,29 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_stack_constraints(&mut self, q: &Queries<F>) {
+        // 3.0. Unused keys are 0
         self.require_zero("field_tag is 0 for Stack", q.field_tag());
         self.require_zero("storage_key is 0 for Stack", q.rw_table.storage_key.clone());
+        // 3.1. First access for a set of all keys
         self.require_zero(
             "first access to new stack address is a write",
             q.first_access() * (1.expr() - q.is_write()),
         );
+        // 3.2. stack_ptr in range
         self.add_lookup(
             "stack address fits into 10 bits",
             vec![(q.rw_table.address.clone(), q.lookups.u10.clone())],
         );
+        // 3.3. stack_ptr only increases by 0 or 1
         self.condition(q.is_tag_and_id_unchanged.clone(), |cb| {
             cb.require_boolean(
                 "if previous row is also Stack with unchanged call id, address change is 0 or 1",
                 q.address_change(),
             )
         });
-
+        // 3.4. Stack initial value is 0
         self.require_zero("initial Stack value is 0", q.initial_value.clone());
-
+        // 3.5 state root does not change
         self.require_equal(
             "state_root is unchanged for Stack",
             q.state_root(),
@@ -345,10 +357,10 @@ impl<F: Field> ConstraintBuilder<F> {
         // non-existing proof.
         let is_non_exist = q.is_non_exist();
         self.require_equal(
-            "mpt_proof_type is field_tag or StorageDoesNotExist",
+            "mpt_proof_type is field_tag or NonExistingStorageProof",
             q.mpt_proof_type(),
-            is_non_exist.expr() * ProofType::StorageDoesNotExist.expr()
-                + (1.expr() - is_non_exist) * ProofType::StorageChanged.expr(),
+            is_non_exist.expr() * MPTProofType::NonExistingStorageProof.expr()
+                + (1.expr() - is_non_exist) * MPTProofType::StorageMod.expr(),
         );
 
         // ref. spec 4.1. MPT lookup for last access to (address, storage_key)
@@ -497,10 +509,10 @@ impl<F: Field> ConstraintBuilder<F> {
                 .map(|t| *t as usize),
             );
         self.require_equal(
-            "mpt_proof_type is field_tag or AccountDoesNotExists",
+            "mpt_proof_type is field_tag or NonExistingAccountProofs",
             q.mpt_proof_type(),
             // degree = max(4, 4 + 1) = 5
-            is_non_exist.expr() * ProofType::AccountDoesNotExist.expr()
+            is_non_exist.expr() * MPTProofType::NonExistingAccountProof.expr()
                 + (1.expr() - is_non_exist) * q.field_tag(),
         );
 

@@ -7,7 +7,8 @@ use crate::{
             and,
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition, Transition::Delta, Transition::Same,
+                ConstraintBuilder, StepStateTransition,
+                Transition::{Delta, Same},
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
@@ -19,8 +20,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGStaticMemoryGadget<F> {
@@ -248,8 +248,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 mod tests {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, word, Bytecode, ToWord};
-    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::{eth, TestContext, MOCK_ACCOUNTS};
+    use mock::{
+        eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+    };
 
     #[test]
     fn test() {

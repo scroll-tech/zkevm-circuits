@@ -1,5 +1,4 @@
-use super::param::*;
-use super::util::*;
+use super::{param::*, util::*};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, Value},
@@ -131,10 +130,12 @@ pub(crate) fn load_lookup_table<F: Field>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2_proofs::circuit::SimpleFloorPlanner;
-    use halo2_proofs::dev::{CellValue, MockProver};
-    use halo2_proofs::halo2curves::bn256::Fr as F;
-    use halo2_proofs::plonk::{Circuit, ConstraintSystem};
+    use halo2_proofs::{
+        circuit::SimpleFloorPlanner,
+        dev::{CellValue, MockProver},
+        halo2curves::bn256::Fr as F,
+        plonk::{Circuit, ConstraintSystem},
+    };
     use itertools::Itertools;
     use std::iter::zip;
 

@@ -91,12 +91,10 @@ impl<F: Field> MulWordByU64Gadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
+    use super::{super::test_util::*, *};
     use crate::evm_circuit::util::Cell;
     use eth_types::Word;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// MulWordByU64TestContainer: require(product = a*(b as u64))

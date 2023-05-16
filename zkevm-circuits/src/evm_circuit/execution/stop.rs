@@ -41,11 +41,9 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
             code_length.expr() - cb.curr.state.program_counter.expr(),
         );
         let opcode = cb.query_cell();
-        /*
-        cb.condition(1.expr() - is_out_of_range.expr(), |cb| {
-            cb.opcode_lookup(opcode.expr(), 1.expr());
-        });
-        */
+        // cb.condition(1.expr() - is_out_of_range.expr(), |cb| {
+        // cb.opcode_lookup(opcode.expr(), 1.expr());
+        // });
 
         // We do the responsible opcode check explicitly here because we're not using
         // the `SameContextGadget` for `STOP`.

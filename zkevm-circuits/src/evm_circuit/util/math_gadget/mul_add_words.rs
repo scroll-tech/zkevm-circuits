@@ -149,11 +149,9 @@ impl<F: Field> MulAddWordsGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
+    use super::{super::test_util::*, *};
     use eth_types::{ToScalar, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// MulAddGadgetContainer: require(a*b + c == d + carry*(2**256))

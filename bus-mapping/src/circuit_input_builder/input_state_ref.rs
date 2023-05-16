@@ -5,7 +5,6 @@ use super::{
     CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
     TransactionContext,
 };
-use crate::precompile::is_precompiled;
 use crate::{
     error::{get_step_reported_error, ExecError},
     exec_trace::OperationRef,
@@ -14,6 +13,7 @@ use crate::{
         StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
         RW,
     },
+    precompile::is_precompiled,
     state_db::{CodeDB, StateDB},
     Error,
 };
@@ -24,8 +24,6 @@ use eth_types::{
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
-use keccak256::EMPTY_HASH;
-use keccak256::EMPTY_HASH_LE;
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -556,7 +554,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 AccountOp {
                     address: receiver,
                     field: AccountField::CodeHash,
-                    value: Word::from_little_endian(&*EMPTY_HASH_LE),
+                    value: CodeDB::empty_code_hash().to_word(),
                     value_prev: Word::zero(),
                 },
             )?;
@@ -803,11 +801,11 @@ impl<'a> CircuitInputStateRef<'a> {
                     _ => address,
                 };
                 if is_precompiled(&code_address) {
-                    (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
+                    (CodeSource::Address(code_address), CodeDB::empty_code_hash())
                 } else {
                     let (found, account) = self.sdb.get_account(&code_address);
                     if !found {
-                        (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
+                        (CodeSource::Address(code_address), CodeDB::empty_code_hash())
                     } else {
                         (CodeSource::Address(code_address), account.code_hash)
                     }
@@ -939,7 +937,7 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Handle a reversion group
-    fn handle_reversion(&mut self) {
+    pub fn handle_reversion(&mut self) {
         let reversion_group = self
             .tx_ctx
             .reversion_groups
@@ -1031,9 +1029,11 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;
+        let call_success_create: bool =
+            call.is_create() && call.is_success && step.op == OpcodeId::RETURN;
 
         // Store deployed code if it's a successful create
-        if call.is_create() && call.is_success && step.op == OpcodeId::RETURN {
+        if call_success_create {
             let offset = step.stack.nth_last(0)?;
             let length = step.stack.nth_last(1)?;
             let code = call_ctx
@@ -1056,7 +1056,7 @@ impl<'a> CircuitInputStateRef<'a> {
         if let Ok(caller) = self.caller_mut() {
             caller.last_callee_id = call.call_id;
             // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
-            if step.op == OpcodeId::RETURN && call.is_create() && call.is_success {
+            if call_success_create {
                 caller.last_callee_return_data_length = 0u64;
                 caller.last_callee_return_data_offset = 0u64;
             } else {
@@ -1066,9 +1066,9 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // If current call has caller_ctx (has caller)
-        // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
         if let Ok(caller_ctx) = self.caller_ctx_mut() {
-            if step.op == OpcodeId::RETURN && call.is_create() && call.is_success {
+            // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+            if call_success_create {
                 caller_ctx.return_data.truncate(0);
             }
         }
@@ -1463,8 +1463,8 @@ impl<'a> CircuitInputStateRef<'a> {
                 0u64.into(),
             );
 
-            //Even call.rw_counter_end_of_reversion is zero for now, it will set in
-            //set_value_ops_call_context_rwc_eor later
+            // Even call.rw_counter_end_of_reversion is zero for now, it will set in
+            // set_value_ops_call_context_rwc_eor later
             // if call fails, no matter root or internal, read RwCounterEndOfReversion for
             // circuit constraint.
             self.call_context_read(

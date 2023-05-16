@@ -1,18 +1,21 @@
 use crate::{get_client, GenDataOutput};
-use bus_mapping::circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams};
-use bus_mapping::mock::BlockData;
-use eth_types::geth_types::GethData;
-use halo2_proofs::dev::CellValue;
-use halo2_proofs::plonk::{
-    create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey,
+use bus_mapping::{
+    circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams},
+    mock::BlockData,
 };
-use halo2_proofs::poly::commitment::ParamsProver;
-use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
-use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
-use halo2_proofs::poly::kzg::strategy::SingleStrategy;
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use eth_types::geth_types::GethData;
 use halo2_proofs::{
-    halo2curves::bn256::{Bn256, G1Affine},
+    dev::{CellValue, MockProver},
+    halo2curves::bn256::{Bn256, Fr, G1Affine},
+    plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey},
+    poly::{
+        commitment::ParamsProver,
+        kzg::{
+            commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG},
+            multiopen::{ProverSHPLONK, VerifierSHPLONK},
+            strategy::SingleStrategy,
+        },
+    },
     transcript::{
         Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
@@ -22,19 +25,20 @@ use mock::TestContext;
 use rand_chacha::rand_core::SeedableRng;
 use rand_core::RngCore;
 use rand_xorshift::XorShiftRng;
-use std::collections::HashMap;
-use std::marker::PhantomData;
-use std::sync::Mutex;
+use std::{collections::HashMap, marker::PhantomData, sync::Mutex};
 use tokio::sync::Mutex as TokioMutex;
-use zkevm_circuits::bytecode_circuit::circuit::BytecodeCircuit;
-use zkevm_circuits::copy_circuit::CopyCircuit;
-use zkevm_circuits::evm_circuit::EvmCircuit;
-use zkevm_circuits::keccak_circuit::KeccakCircuit;
-use zkevm_circuits::state_circuit::StateCircuit;
-use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::tx_circuit::TxCircuit;
-use zkevm_circuits::util::SubCircuit;
-use zkevm_circuits::witness::{block_convert, Block};
+use zkevm_circuits::{
+    bytecode_circuit::circuit::BytecodeCircuit,
+    copy_circuit::CopyCircuit,
+    evm_circuit::EvmCircuit,
+    exp_circuit::ExpCircuit,
+    keccak_circuit::KeccakCircuit,
+    state_circuit::StateCircuit,
+    super_circuit::SuperCircuit,
+    tx_circuit::TxCircuit,
+    util::SubCircuit,
+    witness::{block_convert, Block},
+};
 
 /// TEST_MOCK_RANDOMNESS
 const TEST_MOCK_RANDOMNESS: u64 = 0x100;
@@ -70,20 +74,14 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_keccak_rows: MAX_KECCAK_ROWS,
 };
 
-/// EVM Circuit degree
 const EVM_CIRCUIT_DEGREE: u32 = 18;
-/// State Circuit degree
 const STATE_CIRCUIT_DEGREE: u32 = 17;
-/// Tx Circuit degree
 const TX_CIRCUIT_DEGREE: u32 = 20;
-/// Bytecode Circuit degree
 const BYTECODE_CIRCUIT_DEGREE: u32 = 16;
-/// Copy Circuit degree
 const COPY_CIRCUIT_DEGREE: u32 = 16;
-
 const KECCAK_CIRCUIT_DEGREE: u32 = 16;
-/// Super Circuit degree
 const SUPER_CIRCUIT_DEGREE: u32 = 20;
+const EXP_CIRCUIT_DEGREE: u32 = 16;
 
 lazy_static! {
     /// Data generation.
@@ -126,6 +124,10 @@ lazy_static! {
     /// Integration test for Copy circuit
     pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>>> =
     TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE));
+
+     /// Integration test for Exp circuit
+     pub static ref EXP_CIRCUIT_TEST: TokioMutex<IntegrationTest<ExpCircuit::<Fr>>> =
+     TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE));
 }
 
 /// Generic implementation for integration tests

@@ -3,8 +3,7 @@
 //! etc.
 
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use eth_types::Field;
-use eth_types::Word;
+use eth_types::{Field, Word};
 use gadgets::{
     binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
@@ -16,10 +15,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::collections::HashMap;
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
-use crate::witness::{Bytecode, RwMap, Transaction};
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
@@ -32,6 +29,7 @@ use crate::{
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
+    witness::{Bytecode, RwMap, Transaction},
 };
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
@@ -501,7 +499,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 )?;
             }
 
-            //tag
+            // tag
             tag_chip.assign(region, *offset, tag)?;
 
             // lt chip
@@ -876,8 +874,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
 /// Dev helpers
 #[cfg(any(feature = "test", test))]
 pub mod dev {
-    use crate::copy_circuit::*;
-    use crate::witness::Block;
+    use crate::{copy_circuit::*, witness::Block};
     use halo2_proofs::dev::{MockProver, VerifyFailure};
 
     /// Test copy circuit from copy events and test data
@@ -918,19 +915,21 @@ pub mod dev {
 #[cfg(test)]
 mod tests {
     use super::dev::test_copy_circuit_from_block;
-    use crate::copy_circuit::CopyCircuit;
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::evm_circuit::witness::block_convert;
-    use bus_mapping::evm::{gen_sha3_code, MemoryKind};
+    use crate::{
+        copy_circuit::CopyCircuit,
+        evm_circuit::{test::rand_bytes, witness::block_convert},
+    };
     use bus_mapping::{
         circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+        evm::{gen_sha3_code, MemoryKind},
         mock::BlockData,
     };
     use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
-    use halo2_proofs::dev::{MockProver, VerifyFailure};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::{TestContext, MOCK_ACCOUNTS};
+    use halo2_proofs::{
+        dev::{MockProver, VerifyFailure},
+        halo2curves::bn256::Fr,
+    };
+    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS};
     use pretty_assertions::assert_eq;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
@@ -1232,8 +1231,10 @@ mod tests {
 
 #[cfg(test)]
 mod copy_circuit_stats {
-    use crate::evm_circuit::step::ExecutionState;
-    use crate::stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states};
+    use crate::{
+        evm_circuit::step::ExecutionState,
+        stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
+    };
 
     /// Prints the stats of Copy circuit per execution state.  See
     /// `print_circuit_stats_by_states` for more details.

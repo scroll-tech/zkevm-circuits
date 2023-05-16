@@ -1,10 +1,12 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep};
-use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use crate::operation::{CallContextField, TxLogField};
-use crate::Error;
-use eth_types::Word;
-use eth_types::{GethExecStep, ToWord};
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
+    },
+    operation::{CallContextField, TxLogField},
+    Error,
+};
+use eth_types::{GethExecStep, ToWord, Word};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Log;

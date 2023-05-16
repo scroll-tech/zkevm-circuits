@@ -5,6 +5,7 @@ use crate::{
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
+use bus_mapping::state_db::CodeDB;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -120,10 +121,9 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
     ) -> Result<(), Error> {
         // for single codehash we sitll use keccak256(nil)
         use crate::evm_circuit::util::rlc;
-        use keccak256::EMPTY_HASH_LE;
         let empty_hash = challenges
             .evm_word()
-            .map(|challenge| rlc::value(EMPTY_HASH_LE.as_ref(), challenge));
+            .map(|challenge| rlc::value(CodeDB::empty_code_hash().as_ref(), challenge));
 
         let chip = PoseidonHashChip::<_, HASH_BLOCK_STEP_SIZE>::construct(
             config.0.clone(),

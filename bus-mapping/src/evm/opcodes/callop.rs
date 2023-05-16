@@ -1,14 +1,18 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep};
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp};
-use crate::operation::{MemoryOp, RW};
-use crate::precompile::{execute_precompiled, is_precompiled};
-use crate::Error;
-use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
-use eth_types::evm_types::GasCost;
-use eth_types::evm_types::OpcodeId;
-use eth_types::{GethExecStep, ToWord, Word};
-use keccak256::EMPTY_HASH;
+use crate::{
+    circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep},
+    operation::{AccountField, CallContextField, MemoryOp, TxAccessListAccountOp, RW},
+    precompile::{execute_precompiled, is_precompiled},
+    state_db::CodeDB,
+    Error,
+};
+use eth_types::{
+    evm_types::{
+        gas_utils::{eip150_gas, memory_expansion_gas_cost},
+        GasCost, OpcodeId,
+    },
+    GethExecStep, ToWord, Word,
+};
 use std::cmp::min;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -99,7 +103,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
             (
                 callee_code_hash.to_word(),
-                callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+                callee_code_hash == CodeDB::empty_code_hash(),
             )
         } else {
             (Word::zero(), true)
@@ -141,8 +145,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let caller_balance = sender_account.balance;
         let is_call_or_callcode = call.kind == CallKind::Call || call.kind == CallKind::CallCode;
         let insufficient_balance = call.value > caller_balance && is_call_or_callcode;
+        let is_depth_ok = geth_step.depth < 1025;
 
-        //log::debug!(
+        // log::debug!(
         //    "insufficient_balance: {}, call type: {:?}, sender_account: {:?} ",
         //    insufficient_balance,
         //    call.kind,
@@ -166,7 +171,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             .unwrap_or(false);
         // TODO: What about transfer for CALLCODE?
         // Transfer value only for CALL opcode, insufficient_balance = false.
-        if call.kind == CallKind::Call && !insufficient_balance {
+        if call.kind == CallKind::Call && !insufficient_balance && is_depth_ok {
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
@@ -247,7 +252,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             );
         }
 
-        match (insufficient_balance, is_precompile, is_empty_code_hash) {
+        match (
+            insufficient_balance || !is_depth_ok,
+            is_precompile,
+            is_empty_code_hash,
+        ) {
             // 1. Call to precompiled.
             (false, true, _) => {
                 assert!(call.is_success, "call to precompile should not fail");
@@ -302,7 +311,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 state.handle_return(geth_step)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
-                //debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
+                // debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
                 if real_cost != exec_step.gas_cost.0 {
                     log::warn!(
                         "precompile gas fixed from {} to {}, step {:?}",
@@ -432,11 +441,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 #[cfg(test)]
 mod call_tests {
     use crate::mock::BlockData;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-    use mock::test_ctx::LoggerConfig;
-    use mock::TestContext;
+    use eth_types::{bytecode, geth_types::GethData, word};
+    use mock::{
+        test_ctx::{
+            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+            LoggerConfig,
+        },
+        TestContext,
+    };
 
     #[test]
     fn test_precompiled_call_callcode() {

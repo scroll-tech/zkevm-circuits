@@ -1,5 +1,4 @@
 //! Circuit to verify multiple ECDSA secp256k1 signatures.
-//
 // This module uses two different types of chip configurations
 // - halo2-ecc's ecdsa chip, which is used
 //    - to prove the correctness of secp signatures
@@ -17,27 +16,28 @@ use crate::{
     table::KeccakTable,
     util::{Challenges, Expr},
 };
-use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
-use eth_types::{self, Field};
+use eth_types::{
+    self,
+    sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
+    Field,
+};
 use halo2_base::{
     gates::{range::RangeConfig, GateInstructions, RangeInstructions as Halo2Range},
-    AssignedValue, Context, QuantumCell,
-};
-use halo2_base::{utils::modulus, ContextParams};
-use halo2_ecc::{
-    bigint::CRTInteger,
-    fields::fp::{FpConfig, FpStrategy},
+    utils::modulus,
+    AssignedValue, Context, ContextParams, QuantumCell,
 };
 use halo2_ecc::{
-    bigint::OverflowInteger,
-    ecc::{ecdsa_verify_no_pubkey_check, EccPoint},
-    fields::FieldChip,
+    bigint::{CRTInteger, OverflowInteger},
+    ecc::{ecdsa_verify_no_pubkey_check, EccChip, EccPoint},
+    fields::{
+        fp::{FpConfig, FpStrategy},
+        fp_overflow::FpOverflowChip,
+        FieldChip,
+    },
 };
-use halo2_ecc::{ecc::EccChip, fields::fp_overflow::FpOverflowChip};
 use halo2_proofs::{
     circuit::{Layouter, Value},
-    halo2curves::secp256k1::Secp256k1Affine,
-    halo2curves::secp256k1::{Fp, Fq},
+    halo2curves::secp256k1::{Fp, Fq, Secp256k1Affine},
     plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
@@ -852,12 +852,11 @@ mod sign_verify_tests {
 
     use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
     use eth_types::sign_types::sign;
-    use halo2_proofs::arithmetic::Field as HaloField;
-    use halo2_proofs::halo2curves::secp256k1;
     use halo2_proofs::{
+        arithmetic::Field as HaloField,
         circuit::SimpleFloorPlanner,
         dev::MockProver,
-        halo2curves::{bn256::Fr, group::Curve},
+        halo2curves::{bn256::Fr, group::Curve, secp256k1},
         plonk::Circuit,
     };
     use pretty_assertions::assert_eq;

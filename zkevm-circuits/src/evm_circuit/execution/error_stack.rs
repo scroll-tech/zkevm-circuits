@@ -1,13 +1,16 @@
-use crate::evm_circuit::{
-    execution::ExecutionGadget,
-    step::ExecutionState,
-    table::{FixedTableTag, Lookup},
-    util::{
-        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, CachedRegion, Cell,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        step::ExecutionState,
+        table::{FixedTableTag, Lookup},
+        util::{
+            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, CachedRegion,
+            Cell,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    util::Expr,
 };
-use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -69,8 +72,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 mod test {
 
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::circuit_input_builder::CircuitsParams;
-    use bus_mapping::evm::OpcodeId;
+    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId};
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word,
     };

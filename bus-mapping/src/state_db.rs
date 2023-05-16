@@ -9,8 +9,13 @@ use std::collections::{HashMap, HashSet};
 
 lazy_static! {
     static ref ACCOUNT_ZERO: Account = Account::zero();
-    static ref VALUE_ZERO: Word = Word::zero();
-    static ref CODE_HASH_ZERO: Hash = H256(keccak256([]));
+    static ref EMPTY_CODE_HASH: Hash = CodeDB::hash(&[]);
+    /// bytes of empty code hash, in little endian order.
+    pub static ref EMPTY_CODE_HASH_LE: [u8; 32] = {
+        let mut bytes = EMPTY_CODE_HASH.to_fixed_bytes();
+        bytes.reverse();
+        bytes
+    };
 }
 
 /// Define any object can encode the code to a 32 bytes hash
@@ -33,6 +38,8 @@ where
         Box::new(self.clone())
     }
 }
+
+const VALUE_ZERO: Word = Word::zero();
 
 /// Memory storage for contract code by code hash.
 #[derive(Debug)]
@@ -71,11 +78,8 @@ impl CodeDB {
     /// Insert code indexed by code hash, and return the code hash. Notice we
     /// always return Self::empty_code_hash() for empty code
     pub fn insert(&mut self, code: Vec<u8>) -> Hash {
-        let hash = if code.is_empty() {
-            Self::empty_code_hash()
-        } else {
-            self.1.hash_code(&code)
-        };
+        let hash = Self::hash(&code);
+
         self.0.insert(hash, code);
         hash
     }
@@ -83,7 +87,12 @@ impl CodeDB {
     /// between different methods because many contract use this magic hash
     /// for distinguishing accounts without contracts
     pub fn empty_code_hash() -> Hash {
-        *CODE_HASH_ZERO
+        *EMPTY_CODE_HASH
+    }
+
+    /// Compute hash of given code.
+    pub fn hash(code: &[u8]) -> Hash {
+        H256(keccak256(code))
     }
 }
 
@@ -108,13 +117,13 @@ impl Account {
             nonce: Word::zero(),
             balance: Word::zero(),
             storage: HashMap::new(),
-            code_hash: *CODE_HASH_ZERO,
+            code_hash: *EMPTY_CODE_HASH,
         }
     }
 
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        self.nonce.is_zero() && self.balance.is_zero() && self.code_hash.eq(&CODE_HASH_ZERO)
+        self.nonce.is_zero() && self.balance.is_zero() && self.code_hash.eq(&EMPTY_CODE_HASH)
     }
 }
 
@@ -141,14 +150,7 @@ pub struct StateDB {
 impl StateDB {
     /// Create an empty Self
     pub fn new() -> Self {
-        Self {
-            state: HashMap::new(),
-            access_list_account: HashSet::new(),
-            access_list_account_storage: HashSet::new(),
-            dirty_storage: HashMap::new(),
-            destructed_account: HashSet::new(),
-            refund: 0,
-        }
+        Self::default()
     }
 
     /// Set an [`Account`] at `addr` in the StateDB.
@@ -197,7 +199,7 @@ impl StateDB {
         let (_, acc) = self.get_account(addr);
         match acc.storage.get(key) {
             Some(value) => (true, value),
-            None => (false, &(*VALUE_ZERO)),
+            None => (false, &VALUE_ZERO),
         }
     }
 

@@ -9,12 +9,10 @@ pub mod opcode_ids;
 pub mod stack;
 pub mod storage;
 
-pub use {
-    memory::{Memory, MemoryAddress},
-    opcode_ids::OpcodeId,
-    stack::{Stack, StackAddress},
-    storage::Storage,
-};
+pub use memory::{Memory, MemoryAddress};
+pub use opcode_ids::OpcodeId;
+pub use stack::{Stack, StackAddress};
+pub use storage::Storage;
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
 #[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]

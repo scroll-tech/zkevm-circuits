@@ -1,19 +1,25 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS};
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::RestoreContextGadget;
-use crate::evm_circuit::util::constraint_builder::Transition::{Delta, Same};
-use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
-use crate::evm_circuit::util::math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget};
-use crate::evm_circuit::util::memory_gadget::{address_high, address_low, MemoryExpansionGadget};
-use crate::evm_circuit::util::{CachedRegion, Cell, Word};
-use crate::table::CallContextFieldTag;
-use crate::witness::{Block, Call, ExecStep, Transaction};
-use eth_types::evm_types::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS},
+        step::ExecutionState,
+        util::{
+            common_gadget::RestoreContextGadget,
+            constraint_builder::{
+                ConstraintBuilder, StepStateTransition,
+                Transition::{Delta, Same},
+            },
+            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
+            memory_gadget::{address_high, address_low, MemoryExpansionGadget},
+            CachedRegion, Cell, Word,
+        },
+    },
+    table::CallContextFieldTag,
+    witness::{Block, Call, ExecStep, Transaction},
+};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use gadgets::util::{and, not, select, Expr};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGDynamicMemoryGadget<F> {
@@ -273,8 +279,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
 mod tests {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, word, Bytecode, ToWord};
-    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::{eth, TestContext, MOCK_ACCOUNTS};
+    use mock::{
+        eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+    };
 
     #[test]
     fn test() {

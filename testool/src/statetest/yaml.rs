@@ -1,14 +1,12 @@
-use super::parse;
-use super::spec::{AccountMatch, Env, StateTest};
-use crate::utils::MainnetFork;
-use crate::Compiler;
+use super::{
+    parse,
+    spec::{AccountMatch, Env, StateTest},
+};
+use crate::{utils::MainnetFork, Compiler};
 use anyhow::{bail, Context, Result};
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
-use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::utils::secret_key_to_address;
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::str::FromStr;
+use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
+use std::{collections::HashMap, convert::TryInto, str::FromStr};
 use yaml_rust::Yaml;
 
 type Label = String;
@@ -432,10 +430,10 @@ impl<'a> YamlStateTestBuilder<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::config::TestSuite;
-    use crate::statetest::run_test;
-    use crate::statetest::CircuitsConfig;
-    use crate::statetest::StateTestError;
+    use crate::{
+        config::TestSuite,
+        statetest::{run_test, CircuitsConfig, StateTestError},
+    };
     use eth_types::address;
 
     const TEMPLATE: &str = r#"
