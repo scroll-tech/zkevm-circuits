@@ -132,7 +132,7 @@ impl<F: Field> TxL1FeeGadget<F> {
     }
 
     pub(crate) fn tx_l1_fee(&self) -> Expression<F> {
-        from_bytes::expr(&self.tx_l1_fee_word.cells[..N_BYTES_U64])
+        self.tx_l1_fee_word.expr()
     }
 
     fn raw_construct(cb: &mut EVMConstraintBuilder<F>, tx_data_gas_cost: Expression<F>) -> Self {
