@@ -1,21 +1,19 @@
 //! Circuit implementation of `MultiBatch` public input hashes.
-//! 
-//! 
-//! IMPORTANT: 
-//! 
+//!
+//!
+//! IMPORTANT:
+//!
 //! The current implementation is KeccakCircuit parameter dependent.
 //! The current code base is hardcoded for KeccakCircuit configured
-//! with 300 rows and 83 columns per hash call. 
-//! 
+//! with 300 rows and 83 columns per hash call.
+//!
 //! This is because we need to extract the preimage and digest cells,
 //! and argue some relationship between those cells. If the cell manager
-//! configuration is changed, the cells indices will be different, 
+//! configuration is changed, the cells indices will be different,
 //! and the relationship becomes unsatisfied.
-//! 
+//!
 //! For now we stick to this hard coded design for simplicity.
 //! A flexible design is a future work.
-//! 
-
 
 use super::{multi_batch::MultiBatchPublicData, LOG_DEGREE};
 use crate::{
@@ -78,6 +76,7 @@ impl<F: Field> MultiBatchCircuitConfig<F> {
     /// Input the hash input bytes,
     /// assign the circuit for hash function,
     /// return cells for the hash inputs and digests.
+    #[allow(clippy::type_complexity)]
     pub(crate) fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -102,7 +101,7 @@ impl<F: Field> MultiBatchCircuitConfig<F> {
         let mut inputs = vec![];
         let mut digests = vec![];
 
-        let _ = layouter.assign_region(
+        layouter.assign_region(
             || "assign keccak rows",
             |mut region| {
                 if is_first_time {
