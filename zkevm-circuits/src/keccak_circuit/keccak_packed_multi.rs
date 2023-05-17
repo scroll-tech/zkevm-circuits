@@ -420,7 +420,7 @@ pub(crate) mod transform {
     }
 }
 
-// Transfroms values to cells
+// Transforms values to cells
 pub(crate) mod transform_to {
     use super::{Cell, KeccakRegion, Part, PartValue};
     use crate::{
@@ -489,7 +489,10 @@ pub(crate) mod transform_to {
     }
 }
 
-fn keccak_rows<F: Field>(bytes: &[u8], challenges: Challenges<Value<F>>) -> Vec<KeccakRow<F>> {
+pub(crate) fn keccak_rows<F: Field>(
+    bytes: &[u8],
+    challenges: Challenges<Value<F>>,
+) -> Vec<KeccakRow<F>> {
     let mut rows = Vec::new();
     keccak(&mut rows, bytes, challenges);
     rows
@@ -865,17 +868,18 @@ pub fn multi_keccak<F: Field>(
         });
     }
 
-    // Dedup actual keccaks
+    // // Dedup actual keccaks
     // let inputs_len: usize = bytes.iter().map(|k| k.len()).sum();
     // let inputs_num = bytes.len();
     // for (idx, bytes) in bytes.iter().enumerate() {
-    // debug!("{}th keccak is of len {}", idx, bytes.len());
+    //     println!("{}th keccak is of len {}", idx, bytes.len());
     // }
     // let bytes: Vec<_> = bytes.iter().unique().collect();
     // let inputs_len2: usize = bytes.iter().map(|k| k.len()).sum();
     // let inputs_num2 = bytes.len();
-    // debug!("after dedup inputs, input num {inputs_num}->{inputs_num2}, input total len
-    // {inputs_len}->{inputs_len2}");
+    // println!(
+    //     "after dedup inputs, input num {inputs_num}->{inputs_num2}, input total len
+    // {inputs_len}->{inputs_len2}" );
 
     // TODO: optimize the `extend` using Iter?
     let real_rows: Vec<_> = bytes

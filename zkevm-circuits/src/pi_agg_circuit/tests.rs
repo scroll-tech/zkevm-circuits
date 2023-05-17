@@ -1,0 +1,38 @@
+//! Test modules for aggregating public inputs
+
+use std::marker::PhantomData;
+
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+
+use crate::pi_circuit::PublicData;
+
+use super::{
+    chunk::ChunkPublicData, multi_batch::MultiBatchPublicData,
+    multi_batch_circuit::MultiBatchCircuit, LOG_DEGREE,
+};
+
+const TEST_MAX_TXS: usize = 4;
+
+#[test]
+fn test_pi_agg_circuit() {
+    let public_data = PublicData::default();
+    let chunk = ChunkPublicData::<TEST_MAX_TXS> {
+        public_data_vec: vec![public_data.clone(), public_data],
+    };
+
+    let multi_batch = MultiBatchPublicData {
+        public_data_chunks: vec![chunk.clone(), chunk],
+    };
+    let (_, hash_digest) = multi_batch.raw_public_input_hash();
+
+    let multi_batch_circuit = MultiBatchCircuit::<Fr, TEST_MAX_TXS> {
+        multi_batch_public_data: multi_batch,
+        hash_digest,
+        _marker: PhantomData::default(),
+    };
+
+    let mock_prover =
+        MockProver::<Fr>::run(LOG_DEGREE, &multi_batch_circuit, vec![vec![]]).unwrap();
+
+    mock_prover.assert_satisfied_par()
+}
