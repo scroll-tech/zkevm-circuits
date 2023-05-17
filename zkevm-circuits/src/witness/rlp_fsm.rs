@@ -466,8 +466,8 @@ pub struct RlpTable<F: FieldExt> {
     pub format: Format,
     /// The RLP tag we decoded
     pub rlp_tag: RlpTag,
-    /// The tag's accumulated value
-    pub tag_value_acc: Value<F>,
+    /// The tag's value
+    pub tag_value: Value<F>,
     /// If current row is for output
     pub is_output: bool,
     /// If current tag's value is None.
@@ -483,8 +483,6 @@ pub struct StateMachine<F: FieldExt> {
     pub tag: Tag,
     /// Next tag to be decoded
     pub tag_next: Tag,
-    /// Flag used to mark if we want to read from data table
-    pub q_lookup_data: bool,
     /// Max length of bytes of current tag
     pub max_length: usize,
     /// The index of current byte we are reading
@@ -497,6 +495,11 @@ pub struct StateMachine<F: FieldExt> {
     pub tag_idx: usize,
     /// The length of the actual bytes of tag
     pub tag_length: usize,
+    /// The accumulated value of bytes up to `tag_idx` of tag
+    /// In most cases, RlpTable.tag_value == StateMachine.tag_value_acc.
+    /// However, for RlpTag::Len, we have
+    ///  tag_value == byte_idx + tag_value_acc
+    pub tag_acc_value: Value<F>,
     /// The depth
     pub depth: usize,
     /// The RLC of bytes up to `byte_idx`
@@ -526,8 +529,8 @@ pub trait RlpFsmWitnessGen<F: FieldExt>: Sized {
 pub(crate) struct SmState<F: Field> {
     pub(crate) tag: Tag,
     pub(crate) state: State,
-    pub(crate) q_lookup_data: bool,
-    pub(crate) max_length: usize,
+    // From byte_idx we can get (byte_value, byte_rev_idx, bytes_rlc), and
+    // byte_idx starts from 0.
     pub(crate) byte_idx: usize,
     pub(crate) depth: usize,
     pub(crate) tag_idx: usize,

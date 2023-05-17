@@ -357,8 +357,6 @@ impl Transaction {
         let mut cur = SmState {
             tag: rom_table[0].tag,
             state: DecodeTagStart,
-            q_lookup_data: true,
-            max_length: rom_table[0].max_length,
             tag_idx: 0,
             tag_length: 0,
             tag_value_acc: Value::known(F::zero()),
@@ -369,7 +367,7 @@ impl Transaction {
         // At the beginning of parsing tag we actually do not know the next tag
         // only after we finished parsing the current tag, then we can know
         let mut cur_rom_row = vec![0];
-        let mut remaining_bytes = vec![];
+        let mut remaining_bytes = vec![rlp_bytes.len()];
         let mut witness_table_idx = 0;
 
         // This map keeps track
@@ -399,24 +397,23 @@ impl Transaction {
                                 .expect("remaining_bytes shall not be empty"),
                             0
                         );
-                        cur.q_lookup_data = false;
                         if cur.depth == 1 {
-                            // cur.byte_idx is +1 larger than the end
-                            assert_eq!(cur.byte_idx, rlp_bytes.len());
+                            assert_eq!(remaining_bytes.len(), 1);
+                            assert_eq!(remaining_bytes[0], 0);
+                            assert_eq!(cur.byte_idx, rlp_bytes.len() - 1);
                             is_output = true;
                             rlp_tag = RlpTag::RLC;
-                            cur.tag_value_acc = rlp_bytes_rlc[cur.byte_idx - 1];
                         }
 
                         // state transitions
                         next.depth = cur.depth - 1;
+                        next.state = DecodeTagStart;
                     } else {
                         let byte_value = rlp_bytes[cur.byte_idx];
-                        cur.q_lookup_data = true;
-                        next.byte_idx = cur.byte_idx + 1;
                         if let Some(rem) = remaining_bytes.last_mut() {
                             // read one more byte
-                            *rem = *rem - 1;
+                            assert!(*rem >= 1);
+                            *rem = (*rem) - 1;
                         }
                         if byte_value < 0x80 {
                             // assertions
@@ -443,7 +440,7 @@ impl Transaction {
                             next.tag_idx = 1;
                             next.tag_length = (byte_value - 0x80) as usize;
                             next.tag_value_acc =
-                                Value::known(F::from(rlp_bytes[next.byte_idx] as u64));
+                                Value::known(F::from(rlp_bytes[cur.byte_idx + 1] as u64));
                             next.state = State::Bytes;
                         } else if byte_value < 0xc0 {
                             // assertions
@@ -452,7 +449,7 @@ impl Transaction {
                             // state transitions
                             next.tag_idx = 1;
                             next.tag_length = (byte_value - 0xb7) as usize;
-                            lb_len = rlp_bytes[next.byte_idx] as usize;
+                            lb_len = rlp_bytes[cur.byte_idx + 1] as usize;
                             next.tag_value_acc = Value::known(F::from(lb_len as u64));
                             next.state = State::LongBytes;
                         } else if byte_value < 0xf8 {
@@ -461,19 +458,20 @@ impl Transaction {
                             if cur.depth == 0 {
                                 is_output = true;
                                 rlp_tag = RlpTag::Len;
-                                cur.tag_value_acc = Value::known(F::from(
-                                    (cur.byte_idx + 1 + usize::from(byte_value - 0xc0)) as u64,
-                                )); // +1 because byte_idx starts from 0.
-                            } else {
-                                cur.tag_value_acc =
-                                    Value::known(F::from(u64::from(byte_value - 0xc0)));
                             }
+                            cur.tag_value_acc = Value::known(F::from(u64::from(byte_value - 0xc0)));
 
                             // state transitions
+                            let num_bytes_of_new_list = usize::from(byte_value - 0xc0);
                             if let Some(rem) = remaining_bytes.last_mut() {
-                                *rem = *rem - usize::from(byte_value - 0xc0);
+                                // Since we are going to decode a new list inside current list,
+                                // after that the remaining bytes of
+                                // current list should be subtracted by
+                                // the number of bytes of the new list.
+                                assert!(*rem >= num_bytes_of_new_list);
+                                *rem = *rem - num_bytes_of_new_list;
                             }
-                            remaining_bytes.push(usize::from(byte_value - 0xc0));
+                            remaining_bytes.push(num_bytes_of_new_list);
                             next.depth = cur.depth + 1;
                             next.state = DecodeTagStart;
                         } else {
@@ -484,16 +482,15 @@ impl Transaction {
                             // state transitions
                             next.tag_idx = 1;
                             next.tag_length = (byte_value - 0xf7) as usize;
-                            lb_len = rlp_bytes[next.byte_idx] as usize;
+                            lb_len = rlp_bytes[cur.byte_idx + 1] as usize;
                             next.tag_value_acc = Value::known(F::from(lb_len as u64));
                             next.state = State::LongList;
                         }
                     }
                 }
                 State::Bytes => {
-                    cur.q_lookup_data = true;
-                    next.byte_idx = cur.byte_idx + 1;
                     if let Some(rem) = remaining_bytes.last_mut() {
+                        assert!(*rem >= 1);
                         *rem = *rem - 1;
                     }
                     if cur.tag_idx < cur.tag_length {
@@ -507,7 +504,7 @@ impl Transaction {
                         };
                         next.tag_idx = cur.tag_idx + 1;
                         next.tag_value_acc = cur.tag_value_acc * b
-                            + Value::known(F::from(rlp_bytes[next.byte_idx] as u64));
+                            + Value::known(F::from(rlp_bytes[cur.byte_idx + 1] as u64));
                     } else {
                         // assertions
                         is_output = true;
@@ -517,16 +514,15 @@ impl Transaction {
                     }
                 }
                 State::LongBytes => {
-                    cur.q_lookup_data = true;
-                    next.byte_idx = cur.byte_idx + 1;
                     if let Some(rem) = remaining_bytes.last_mut() {
+                        assert!(*rem >= 1);
                         *rem = *rem - 1;
                     }
 
                     if cur.tag_idx < cur.tag_length {
                         // state transitions
                         next.tag_idx = cur.tag_idx + 1;
-                        lb_len = lb_len * 256 + usize::from(rlp_bytes[next.byte_idx]);
+                        lb_len = lb_len * 256 + usize::from(rlp_bytes[cur.byte_idx + 1]);
                         next.tag_value_acc = Value::known(F::from(lb_len as u64));
                     } else {
                         // we're dealing with case cur.tag_idx == cur.tag_length
@@ -535,30 +531,29 @@ impl Transaction {
                         next.tag_idx = 1;
                         next.tag_length = lb_len;
                         next.tag_value_acc =
-                            Value::known(F::from(u64::from(rlp_bytes[next.byte_idx])));
+                            Value::known(F::from(u64::from(rlp_bytes[cur.byte_idx + 1])));
                         next.state = State::Bytes;
                     }
                 }
                 State::LongList => {
-                    cur.q_lookup_data = true;
-                    next.byte_idx = cur.byte_idx + 1;
                     if let Some(rem) = remaining_bytes.last_mut() {
                         // read one more byte
+                        assert!(*rem >= 1);
                         *rem = *rem - 1;
                     }
                     if cur.tag_idx < cur.tag_length {
                         // state transitions
                         next.tag_idx = cur.tag_idx + 1;
-                        lb_len = lb_len * 256 + usize::from(rlp_bytes[next.byte_idx]);
+                        lb_len = lb_len * 256 + usize::from(rlp_bytes[cur.byte_idx + 1]);
                         next.tag_value_acc = Value::known(F::from(lb_len as u64));
                     } else {
                         // assertions
                         if cur.depth == 0 {
-                            assert_eq!(lb_len + 1, rlp_bytes.len() - cur.byte_idx);
                             is_output = true;
                             rlp_tag = RlpTag::Len;
                         }
                         if let Some(rem) = remaining_bytes.last_mut() {
+                            assert!(*rem >= lb_len);
                             *rem = *rem - lb_len;
                         }
                         remaining_bytes.push(lb_len);
@@ -593,38 +588,52 @@ impl Transaction {
 
                 assert_eq!(cur.tag, rom_table[row].tag);
 
-                cur.max_length = rom_table[row].max_length;
                 tag_rom_row_map.insert(witness_table_idx, row);
                 next.tag = rom_table[row].tag_next;
                 cur_rom_row = rom_table[row].tag_next_idx.clone();
+
+                if next.tag.is_end() {
+                    // Since the EndList or EndVector tag does not read any byte from the data
+                    // table.
+                    next.byte_idx = cur.byte_idx;
+                } else {
+                    next.byte_idx = cur.byte_idx + 1;
+                }
+            } else {
+                // next.state is one of { Bytes, LongBytes, LongList }
+                // the sm in these states need to read new byte from data table
+                next.byte_idx = cur.byte_idx + 1;
             }
 
-            let (byte_value, bytes_rlc) = if cur.byte_idx < rlp_bytes.len() {
-                (rlp_bytes[cur.byte_idx], rlp_bytes_rlc[cur.byte_idx])
-            } else {
-                // the value here does not matter as we do not read it from rlp_bytes
-                (0, Value::known(F::zero()))
+            assert!(cur.byte_idx < rlp_bytes.len());
+            let (byte_value, bytes_rlc) = (rlp_bytes[cur.byte_idx], rlp_bytes_rlc[cur.byte_idx]);
+
+            let tag_value = match rlp_tag {
+                RlpTag::Len => cur.tag_value_acc + Value::known(F::from((cur.byte_idx + 1) as u64)),
+                RlpTag::RLC => bytes_rlc,
+                RlpTag::Tag(_) => cur.tag_value_acc,
             };
+
             witness.push(RlpFsmWitnessRow {
                 rlp_table: RlpTable {
                     tx_id,
                     format,
                     rlp_tag,
-                    tag_value_acc: cur.tag_value_acc,
+                    tag_value,
                     is_output,
                     is_none,
                 },
                 state_machine: StateMachine {
                     state: cur.state,
                     tag: cur.tag,
-                    q_lookup_data: cur.q_lookup_data,
-                    max_length: 0,                // will be filled up later
-                    tag_next: Default::default(), // will be filled up later
+                    max_length: Default::default(), // will be filled up later
+                    tag_next: Default::default(),   // will be filled up later
                     byte_idx: cur.byte_idx + 1,
                     byte_rev_idx: rlp_bytes.len() - cur.byte_idx,
                     byte_value,
                     tag_idx: cur.tag_idx,
                     tag_length: cur.tag_length,
+                    tag_acc_value: cur.tag_value_acc,
                     depth: cur.depth,
                     bytes_rlc,
                 },
@@ -914,14 +923,16 @@ impl From<&Transaction> for SignedTransaction {
 }
 
 mod tests {
-    use crate::{util::Challenges, witness::Transaction};
+    use crate::{
+        util::{rlc_be_bytes, Challenges},
+        witness::{RlpTag, Transaction},
+    };
     use eth_types::{address, geth_types::TxTypes, word, Address, ToBigEndian, ToScalar};
     use ethers_core::{
         types::{NameOrAddress, Signature, Transaction as EthTransaction, TransactionRequest},
         utils::rlp::{Decodable, Rlp},
     };
     use halo2_proofs::{circuit::Value, dev::unwrap_value, halo2curves::bn256::Fr};
-    use crate::witness::RlpTag;
 
     fn rlc(be_bytes: &[u8], rand: Fr) -> Fr {
         be_bytes
@@ -997,10 +1008,27 @@ mod tests {
             rlc(&data, keccak_input),
         ];
 
+        // assertions
         assert_eq!(tx_table.len() + 2, rlp_table.len()); // +2 for Len and RLC
+
+        // assertions about RlpTag::Len
+        assert_eq!(rlp_table[0].rlp_tag, RlpTag::Len);
+        assert_eq!(
+            unwrap_value(rlp_table[0].tag_value),
+            Fr::from(tx.rlp_unsigned.len() as u64)
+        );
+
+        // assertions about RlpTag::Tag(tag)
         for i in 0..tx_table.len() {
-            assert_eq!(unwrap_value(rlp_table[i + 1].tag_value_acc), tx_table[i]);
+            assert_eq!(unwrap_value(rlp_table[i + 1].tag_value), tx_table[i]);
         }
+
+        // assertions about RlpTag::RLC
+        assert_eq!(rlp_table[rlp_table.len() - 1].rlp_tag, RlpTag::RLC);
+        assert_eq!(
+            unwrap_value(rlp_table[rlp_table.len() - 1].tag_value),
+            rlc(&tx.rlp_unsigned, keccak_input)
+        );
     }
 
     #[test]
@@ -1059,13 +1087,27 @@ mod tests {
             rlc(&eth_tx.s.to_be_bytes(), evm_word),
         ]);
 
-        assert_eq!(rlp_table[1].rlp_tag, RlpTag::Len);
-
-        assert_eq!(unwrap_value(rlp_table[1].tag_value_acc), Fr::from(tx.rlp_signed.len() as u64));
-        assert_eq!(unwrap_value(rlp_table[0].tag_value_acc), tx_table[0]);
+        // assertions
         assert_eq!(tx_table.len() + 2, rlp_table.len()); // +2 for Len and RLC
+
+        // assertions about RlpTag::Len
+        assert_eq!(rlp_table[1].rlp_tag, RlpTag::Len);
+        assert_eq!(
+            unwrap_value(rlp_table[1].tag_value),
+            Fr::from(tx.rlp_signed.len() as u64)
+        );
+
+        // assertions about RlpTag::Tag(tag)
+        assert_eq!(unwrap_value(rlp_table[0].tag_value), tx_table[0]);
         for i in 1..tx_table.len() {
-            assert_eq!(unwrap_value(rlp_table[i + 1].tag_value_acc), tx_table[i]);
+            assert_eq!(unwrap_value(rlp_table[i + 1].tag_value), tx_table[i]);
         }
+
+        // assertions about RlpTag::RLC
+        assert_eq!(rlp_table[rlp_table.len() - 1].rlp_tag, RlpTag::RLC);
+        assert_eq!(
+            unwrap_value(rlp_table[rlp_table.len() - 1].tag_value),
+            rlc(&tx.rlp_signed, keccak_input)
+        );
     }
 }
