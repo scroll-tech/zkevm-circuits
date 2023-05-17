@@ -5,7 +5,8 @@
 //!
 //! The current implementation is KeccakCircuit parameter dependent.
 //! The current code base is hardcoded for KeccakCircuit configured
-//! with 300 rows and 83 columns per hash call.
+//! with 300 rows and 87 columns per hash call. The 7-th column is used
+//! for hash preimages and the 87-th column is for hash digest.
 //!
 //! This is because we need to extract the preimage and digest cells,
 //! and argue some relationship between those cells. If the cell manager
@@ -262,6 +263,13 @@ impl<F: Field, const MAX_TXS: usize> Circuit<F> for MultiBatchCircuit<F, MAX_TXS
         };
 
         let columns = keccak_circuit_config.cell_manager.columns();
+        // The current code base is hardcoded for KeccakCircuit configured
+        // with 300 rows and 87 columns per hash call.
+        assert_eq!(
+            columns.len(),
+            87,
+            "cell manager configuration does not match the hard coded setup"
+        );
 
         // enabling equality for preimage and digest columns
         meta.enable_equality(columns[6].advice);
