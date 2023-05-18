@@ -18,7 +18,6 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
-use itertools::Itertools;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
@@ -26,7 +25,7 @@ use crate::{
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
         Block, DataTable, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, State, State::DecodeTagStart,
-        Tag,
+        Tag, Transaction,
     },
 };
 
@@ -212,7 +211,6 @@ pub struct RlpCircuitConfig<F> {
     /// Check for byte_value >= 0xf8
     byte_value_gte_0xf8: ComparatorConfig<F, 1>,
     /// Check for tag_idx <= tag_length
-    /// TODO(rohit): 4 bytes is not sufficient, since len(tx.data) < 2^24.
     tidx_lte_tlength: ComparatorConfig<F, 3>,
     /// Check for tag_length <= 32
     tlength_lte_0x20: ComparatorConfig<F, 1>,
@@ -234,10 +232,10 @@ impl<F: Field> RlpCircuitConfig<F> {
     /// Configure the RLP circuit.
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        rom_table: &RlpFsmRomTable,
-        data_table: &RlpFsmDataTable,
-        rlp_table: &RlpFsmRlpTable,
-        range256_table: &Range256Table,
+        rom_table: RlpFsmRomTable,
+        data_table: RlpFsmDataTable,
+        rlp_table: RlpFsmRlpTable,
+        range256_table: Range256Table,
         challenges: &Challenges<Expression<F>>,
     ) -> Self {
         let (tx_id, format) = (rlp_table.tx_id, rlp_table.format);
@@ -299,6 +297,19 @@ impl<F: Field> RlpCircuitConfig<F> {
         is_state!(is_long_list, LongList);
         is_state!(is_end, End);
 
+        macro_rules! is_tag {
+            ($var:ident, $tag_variant:ident) => {
+                let $var = |meta: &mut VirtualCells<F>| {
+                    tag_bits.value_equals(Tag::$tag_variant, Rotation::cur())(meta)
+                };
+            };
+        }
+
+        is_tag!(is_tag_begin_list, BeginList);
+        is_tag!(is_tag_begin_vector, BeginVector);
+        is_tag!(is_tag_end_list, EndList);
+        is_tag!(is_tag_end_vector, EndVector);
+
         //////////////////////////////////////////////////////////
         //////////// data table checks. //////////////////////////
         //////////////////////////////////////////////////////////
@@ -307,7 +318,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             // the size of data table is always smaller than the size of sm rows
             // and q_enabled is true for all sm rows.
             |meta| meta.query_fixed(q_enabled, Rotation::cur()),
-            data_table.tx_id.clone(),
+            data_table.tx_id,
         );
 
         let tx_id_check = IsEqualChip::configure(
@@ -514,24 +525,9 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         debug_assert!(meta.degree() <= 9);
 
-        // is_state_next!(is_next_decode_tag_start, DecodeTagStart);
-        // is_state_next!(is_next_bytes, Bytes);
-        // is_state_next!(is_next_long_bytes, LongBytes);
-        // is_state_next!(is_next_long_list, LongList);
-        // is_state_next!(is_next_end, End);
-
-        macro_rules! is_tag {
-            ($var:ident, $tag_variant:ident) => {
-                let $var = |meta: &mut VirtualCells<F>| {
-                    tag_bits.value_equals(Tag::$tag_variant, Rotation::cur())(meta)
-                };
-            };
-        }
-        is_tag!(is_tag_begin_list, BeginList);
-        is_tag!(is_tag_begin_vector, BeginVector);
-        is_tag!(is_tag_end_list, EndList);
-        is_tag!(is_tag_end_vector, EndVector);
-
+        //////////////////////////////////////////////////
+        /////////////////// SM checks ////////////////////
+        //////////////////////////////////////////////////
         meta.create_gate("is_tag_end", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -552,6 +548,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         // construct the comparators.
         let cmp_enabled = |meta: &mut VirtualCells<F>| meta.query_fixed(q_enabled, Rotation::cur());
+
         macro_rules! byte_value_lte {
             ($var:ident, $value:expr) => {
                 let $var = ComparatorChip::configure(
@@ -619,18 +616,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             };
         }
 
-        // macro_rules! constrain_fields {
-        //     ( $meta:ident, $cb:ident, $value:expr; $($field:ident),+ ) => {
-        //         $(
-        //             $cb.require_equal(
-        //                 "field constrained (by default)",
-        //                 $meta.query_advice($field, Rotation::cur()),
-        //                 $value.expr(),
-        //             );
-        //         ),+
-        //     }
-        // }
-
         macro_rules! constrain_eq {
             ( $meta:ident, $cb:ident, $field:expr, $value:expr ) => {
                 $cb.require_equal(
@@ -696,20 +681,36 @@ impl<F: Field> RlpCircuitConfig<F> {
         let bytes_rlc_expr =
             |meta: &mut VirtualCells<F>| meta.query_advice(bytes_rlc, Rotation::cur());
         let tag_idx_expr = |meta: &mut VirtualCells<F>| meta.query_advice(tag_idx, Rotation::cur());
-        let tag_length_expr =
-            |meta: &mut VirtualCells<F>| meta.query_advice(tag_length, Rotation::cur());
         let tag_value_acc_expr =
-            |meta: &mut VirtualCells<F>| meta.query_advice(rlp_table.tag_value, Rotation::cur());
-        let is_tag_begin_expr =
-            |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_begin, Rotation::cur());
+            |meta: &mut VirtualCells<F>| meta.query_advice(tag_value_acc, Rotation::cur());
+        let is_tag_next_end_expr =
+            |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_end, Rotation::next());
         let is_tag_end_expr =
             |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_end, Rotation::cur());
 
+        // TODO: add constraints on byte_idx transition
+        meta.create_gate("state transition: byte_idx", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            // if is_tag_next_end == 1 then
+            //   next.byte_idx = cur.byte_idx
+            // else
+            //   next.byte_idx = cur.byte_idx + 1
+            cb.condition(is_tag_next_end_expr(meta), |cb| {
+                update_state!(meta, cb, byte_idx, byte_idx_expr(meta));
+            });
+            cb.condition(not::expr(is_tag_next_end_expr(meta)), |cb| {
+                update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
+            });
+
+            // TODO: add cb.gate()
+            cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
+        });
         // DecodeTagStart => DecodeTagStart
         meta.create_gate(
             "state transition: DecodeTagStart => DecodeTagStart",
             |meta| {
-                let mut cb = BaseConstraintBuilder::default();
+                let mut cb = BaseConstraintBuilder::new(9);
                 let tag_expr = tag_expr(meta);
                 let byte_value_expr = byte_value_expr(meta);
 
@@ -729,7 +730,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                     // state transitions.
                     update_state!(meta, cb, tag, tag_next_expr(meta));
-                    update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
                     update_state!(meta, cb, state, DecodeTagStart);
 
                     constrain_unchanged_fields!(meta, cb; depth, rlp_table.tx_id, rlp_table.format);
@@ -746,7 +746,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                     // state transitions.
                     update_state!(meta, cb, tag, tag_next_expr(meta));
-                    update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
                     update_state!(meta, cb, state, DecodeTagStart);
 
                     constrain_unchanged_fields!(meta, cb; depth, rlp_table.tx_id, rlp_table.format);
@@ -764,7 +763,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                     // state transitions.
                     update_state!(meta, cb, tag, tag_next_expr(meta));
-                    update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
                     update_state!(meta, cb, depth, depth_expr(meta) + 1.expr());
                     update_state!(meta, cb, state, DecodeTagStart);
 
@@ -811,9 +809,8 @@ impl<F: Field> RlpCircuitConfig<F> {
                     |cb| {
                         // assertions.
                         emit_rlp_tag!(meta, cb, RlpTag::RLC, false);
-                        // TODO: fix it
-                        // constrain_eq!(meta, cb, rlp_table.tag_value_acc, bytes_rlc_expr(meta));
-                        // constrain_eq!(meta, cb, byte_rev_idx, 1);
+                        constrain_eq!(meta, cb, rlp_table.tag_value, bytes_rlc_expr(meta));
+                        constrain_eq!(meta, cb, byte_rev_idx, 1);
 
                         // state transition.
                         // TODO(rohit): do this only if the next state is not State::End.
@@ -842,6 +839,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             },
         );
 
+        // debug_assert!(meta.degree() <= 9);
         // DecodeTagStart => Bytes
         meta.create_gate("state transition: DecodeTagStart => Bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -850,23 +848,23 @@ impl<F: Field> RlpCircuitConfig<F> {
             let (bv_lt_0xb8, _) = byte_value_lte_0xb8.expr(meta, None);
 
             // condition.
-            cb.condition(and::expr([bv_gt_0x80, bv_lt_0xb8]),
-                |cb| {
-                    // assertions
-                    do_not_emit!(meta, cb);
-                    constrain_eq!(meta, cb, is_list, false);
+            cb.condition(and::expr([
+                bv_gt_0x80, bv_lt_0xb8,
+                not::expr(is_tag_end_expr(meta)),
+            ]), |cb| {
+                // assertions
+                do_not_emit!(meta, cb);
+                constrain_eq!(meta, cb, is_list, false);
 
-                    // state transitions
-                    update_state!(meta, cb, tag_idx, 1);
-                    update_state!(meta, cb, tag_length, byte_value_expr(meta) - 0x80.expr());
-                    update_state!(meta, cb, rlp_table.tag_value, byte_value_next_expr(meta));
-                    update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
-                    update_state!(meta, cb, state, State::Bytes);
+                // state transitions
+                update_state!(meta, cb, tag_idx, 1);
+                update_state!(meta, cb, tag_length, byte_value_expr(meta) - 0x80.expr());
+                update_state!(meta, cb, tag_value_acc, byte_value_next_expr(meta));
+                update_state!(meta, cb, state, State::Bytes);
 
-                    // depth is unchanged.
-                    constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format, depth, tag, tag_next);
-                },
-            );
+                // depth is unchanged.
+                constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format, depth, tag, tag_next);
+            });
             // otherwise, we get an invalid rlp error.
             // TODO(kunxian): add error handling
 
@@ -897,8 +895,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 // state transitions
                 update_state!(meta, cb, tag_idx, tag_idx_expr(meta) + 1.expr());
-                update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
-                update_state!(meta, cb, rlp_table.tag_value,
+                update_state!(meta, cb, tag_value_acc,
                     tag_value_acc_expr(meta) * b.expr() + byte_value_next_expr(meta));
                 update_state!(meta, cb, state, State::Bytes);
 
@@ -913,7 +910,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 // state transitions.
                 update_state!(meta, cb, tag, tag_next_expr(meta));
-                update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
                 update_state!(meta, cb, state, State::DecodeTagStart);
 
                 constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format, depth);
@@ -935,6 +931,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             // condition: "0xb8 <= byte_value < 0xc0"
             cb.condition(and::expr([
                 sum::expr([bv_gt_0xb8, bv_eq_0xb8]),
+                not::expr(is_tag_end_expr(meta)),
                 bv_lt_0xc0
             ]), |cb| {
                 // assertions.
@@ -944,8 +941,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 // state transitions
                 update_state!(meta, cb, tag_length, byte_value_expr(meta) - 0xb7.expr());
                 update_state!(meta, cb, tag_idx, 1);
-                update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
-                update_state!(meta, cb, rlp_table.tag_value, byte_value_next_expr(meta));
+                update_state!(meta, cb, tag_value_acc, byte_value_next_expr(meta));
                 update_state!(meta, cb, state, State::LongBytes);
 
                 // depth is unchanged.
@@ -972,8 +968,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 // state transitions
                 update_state!(meta, cb, tag_idx, tag_idx_expr(meta) + 1.expr());
-                update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
-                update_state!(meta, cb, rlp_table.tag_value,
+                update_state!(meta, cb, tag_value_acc,
                     tag_value_acc_expr(meta) * 256.expr() + byte_value_next_expr(meta)
                 );
                 update_state!(meta, cb, state, State::LongBytes);
@@ -990,7 +985,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                 // state transition.
                 update_state!(meta, cb, tag_length, tag_value_acc_expr(meta));
                 update_state!(meta, cb, tag_idx, 1);
-                update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
                 update_state!(meta, cb, state, State::Bytes);
 
                 // depth is unchanged.
@@ -1017,8 +1011,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 // state transitions
                 update_state!(meta, cb, tag_length, byte_value_expr(meta) - 0xf7.expr());
                 update_state!(meta, cb, tag_idx, 1);
-                update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
-                update_state!(meta, cb, rlp_table.tag_value, byte_value_next_expr(meta));
+                update_state!(meta, cb, tag_value_acc, byte_value_next_expr(meta));
                 update_state!(meta, cb, state, State::LongList);
 
                 constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format, tag, tag_next);
@@ -1044,11 +1037,10 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                 // state transitions
                 update_state!(meta, cb, tag_idx, tag_idx_expr(meta) + 1.expr());
-                update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
                 update_state!(
                     meta,
                     cb,
-                    rlp_table.tag_value,
+                    tag_value_acc,
                     tag_value_acc_expr(meta) * 256.expr() + byte_value_next_expr(meta)
                 );
                 update_state!(meta, cb, state, State::LongList);
@@ -1064,7 +1056,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                 // state transitions
                 update_state!(meta, cb, tag, tag_next_expr(meta));
                 update_state!(meta, cb, depth, depth_expr(meta) + 1.expr());
-                update_state!(meta, cb, byte_idx, byte_idx_expr(meta) + 1.expr());
                 update_state!(meta, cb, state, State::DecodeTagStart);
 
                 constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format);
@@ -1075,9 +1066,13 @@ impl<F: Field> RlpCircuitConfig<F> {
                 and::expr([tidx_eq_tlen.expr(), depth_check.is_equal_expression.expr()]),
                 |cb| {
                     emit_rlp_tag!(meta, cb, RlpTag::Len, false);
-                    // TODO: do not comment out
-                    // constrain_eq!(meta, cb, rlp_table.tag_value_acc,
-                    //     byte_idx_expr(meta) + byte_rev_idx_expr(meta) - 1.expr());
+                    constrain_eq!(meta, cb, tag_value_acc, byte_rev_idx_expr(meta) - 1.expr());
+                    constrain_eq!(
+                        meta,
+                        cb,
+                        rlp_table.tag_value,
+                        byte_idx_expr(meta) + tag_value_acc_expr(meta)
+                    );
                 },
             );
 
@@ -1092,21 +1087,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                 },
             );
 
-            cb.condition(
-                and::expr([tidx_eq_tlen, depth_check.is_equal_expression.expr()]),
-                |cb| {
-                    // assertions (depth == 0)
-
-                    // byte_rev_idx ends with 1.
-                    constrain_eq!(
-                        meta,
-                        cb,
-                        rlp_table.tag_value,
-                        byte_rev_idx_expr(meta) - 1.expr()
-                    );
-                },
-            );
-
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
                 is_long_list(meta),
@@ -1115,6 +1095,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         // DecodeTagStart => End
         /*
+        TODO:
         meta.create_gate("state transition: DecodeTagStart => End", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -1163,7 +1144,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             q_enabled,
             state,
             state_bits,
-            rlp_table: rlp_table.clone(),
+            rlp_table,
             tag,
             tag_bits,
             tag_next,
@@ -1201,9 +1182,9 @@ impl<F: Field> RlpCircuitConfig<F> {
             depth_eq_one,
 
             // internal tables
-            data_table: data_table.clone(),
-            rom_table: rom_table.clone(),
-            range256_table: range256_table.clone(),
+            data_table,
+            rom_table,
+            range256_table,
         }
     }
 
@@ -1245,7 +1226,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             },
         )?;
         region.assign_advice(
-            || "rlp_table.tag_value_acc",
+            || "rlp_table.tag_value",
             self.rlp_table.tag_value,
             row,
             || witness.rlp_table.tag_value,
@@ -1283,6 +1264,18 @@ impl<F: Field> RlpCircuitConfig<F> {
             || Value::known(F::from(witness.state_machine.tag_next as u64)),
         )?;
         region.assign_advice(
+            || "max_length",
+            self.max_length,
+            row,
+            || Value::known(F::from(witness.state_machine.max_length as u64)),
+        )?;
+        region.assign_advice(
+            || "is_list",
+            self.is_list,
+            row,
+            || Value::known(F::from(witness.state_machine.tag.is_list() as u64)),
+        )?;
+        region.assign_advice(
             || "sm.tag_idx",
             self.tag_idx,
             row,
@@ -1299,6 +1292,12 @@ impl<F: Field> RlpCircuitConfig<F> {
             self.depth,
             row,
             || Value::known(F::from(witness.state_machine.depth as u64)),
+        )?;
+        region.assign_advice(
+            || "sm.tag_value_acc",
+            self.tag_value_acc,
+            row,
+            || witness.state_machine.tag_acc_value,
         )?;
         region.assign_advice(
             || "sm.byte_idx",
@@ -1326,18 +1325,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         )?;
 
         // assign to intermediates
-        region.assign_advice(
-            || "max_length",
-            self.max_length,
-            row,
-            || Value::known(F::from(witness.state_machine.max_length as u64)),
-        )?;
-        region.assign_advice(
-            || "is_list",
-            self.is_list,
-            row,
-            || Value::known(F::from(witness.state_machine.tag.is_list() as u64)),
-        )?;
+
         region.assign_advice(
             || "is_tag_begin",
             self.is_tag_begin,
@@ -1383,10 +1371,10 @@ impl<F: Field> RlpCircuitConfig<F> {
             F::from(0x20),
         )?;
 
-        let tag_chip = BinaryNumberChip::construct(self.tag_bits.clone());
+        let tag_chip = BinaryNumberChip::construct(self.tag_bits);
         tag_chip.assign(region, row, &witness.state_machine.tag)?;
 
-        let state_chip = BinaryNumberChip::construct(self.state_bits.clone());
+        let state_chip = BinaryNumberChip::construct(self.state_bits);
         state_chip.assign(region, row, &witness.state_machine.state)?;
 
         let byte_value = F::from(witness.state_machine.byte_value as u64);
@@ -1472,12 +1460,13 @@ impl<F: Field> RlpCircuitConfig<F> {
     ) -> Result<(), Error> {
         let dt_rows = inputs
             .iter()
-            .flat_map(|input| input.gen_data_table(&challenges))
+            .flat_map(|input| input.gen_data_table(challenges))
             .collect::<Vec<_>>();
         let sm_rows = inputs
             .iter()
-            .flat_map(|input| input.gen_sm_witness(&challenges))
+            .flat_map(|input| input.gen_sm_witness(challenges))
             .collect::<Vec<_>>();
+        log::debug!("{:?}", sm_rows[sm_rows.len() - 1]);
 
         self.range256_table.load(layouter)?;
         self.rom_table.load(layouter)?;
@@ -1541,10 +1530,10 @@ impl<F: Field> SubCircuitConfig<F> for RlpCircuitConfig<F> {
     fn new(meta: &mut ConstraintSystem<F>, args: Self::ConfigArgs) -> Self {
         Self::configure(
             meta,
-            &args.rom_table,
-            &args.data_table,
-            &args.rlp_table,
-            &args.range256_table,
+            args.rom_table,
+            args.data_table,
+            args.rlp_table,
+            args.range256_table,
             &args.challenges,
         )
     }
@@ -1573,14 +1562,19 @@ impl<F: Field, RLP> Default for RlpCircuit<F, RLP> {
     }
 }
 
-impl<F: Field, RLP: RlpFsmWitnessGen<F>> SubCircuit<F> for RlpCircuit<F, RLP> {
+impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
     type Config = RlpCircuitConfig<F>;
 
     fn new_from_block(block: &Block<F>) -> Self {
         let max_txs = block.circuits_params.max_txs;
         debug_assert!(block.txs.len() <= max_txs);
 
-        todo!("RlpCircuit::new_from_block")
+        Self {
+            txs: block.txs.clone(),
+            max_txs,
+            size: 0,
+            _marker: Default::default(),
+        }
     }
 
     fn synthesize_sub(
@@ -1593,11 +1587,20 @@ impl<F: Field, RLP: RlpFsmWitnessGen<F>> SubCircuit<F> for RlpCircuit<F, RLP> {
     }
 
     fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
-        unimplemented!("RlpCircuit::min_num_rows_block")
+        let challenges: Challenges<Value<F>> =
+            Challenges::mock(Value::unknown(), Value::unknown(), Value::unknown());
+        let sm_rows: usize = block
+            .txs
+            .iter()
+            .map(|tx| tx.gen_sm_witness(&challenges).len())
+            .sum();
+
+        // TODO: fix me
+        (sm_rows, sm_rows)
     }
 }
 
-impl<F: Field, RLP: RlpFsmWitnessGen<F>> Circuit<F> for RlpCircuit<F, RLP> {
+impl<F: Field> Circuit<F> for RlpCircuit<F, Transaction> {
     type Config = (RlpCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -1614,10 +1617,10 @@ impl<F: Field, RLP: RlpFsmWitnessGen<F>> Circuit<F> for RlpCircuit<F, RLP> {
         let challenge_exprs = challenges.exprs(meta);
         let config = RlpCircuitConfig::configure(
             meta,
-            &rom_table,
-            &data_table,
-            &rlp_table,
-            &u8_table,
+            rom_table,
+            data_table,
+            rlp_table,
+            u8_table,
             &challenge_exprs,
         );
         log::debug!("meta.degree() = {}", meta.degree());
@@ -1630,7 +1633,7 @@ impl<F: Field, RLP: RlpFsmWitnessGen<F>> Circuit<F> for RlpCircuit<F, RLP> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = &config.1.values(&mut layouter);
+        let challenges = &config.1.values(&layouter);
 
         self.synthesize_sub(&config.0, challenges, &mut layouter)
     }
@@ -1685,7 +1688,7 @@ mod tests {
         };
 
         let mock_prover = MockProver::run(14, &rlp_circuit, vec![]);
-        assert_eq!(mock_prover.is_ok(), true);
+        assert!(mock_prover.is_ok());
         let mock_prover = mock_prover.unwrap();
         if let Err(errors) = mock_prover.verify_par() {
             log::debug!("errors.len() = {}", errors.len());
@@ -1705,7 +1708,7 @@ mod tests {
         };
 
         let mock_prover = MockProver::run(16, &rlp_circuit, vec![]);
-        assert_eq!(mock_prover.is_ok(), true);
+        assert!(mock_prover.is_ok());
         let mock_prover = mock_prover.unwrap();
         if let Err(errors) = mock_prover.verify_par() {
             log::debug!("errors.len() = {}", errors.len());
