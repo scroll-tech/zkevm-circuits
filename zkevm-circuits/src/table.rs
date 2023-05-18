@@ -2322,8 +2322,8 @@ pub struct RlpFsmRlpTable {
     pub format: Column<Advice>,
     /// The RLP-Tag assigned at the current row.
     pub rlp_tag: Column<Advice>,
-    /// The accumulated value of the current tag being decoded.
-    pub tag_value_acc: Column<Advice>,
+    /// The actual value of the current tag being decoded.
+    pub tag_value: Column<Advice>,
     /// Whether or not the row emits an output value.
     pub is_output: Column<Advice>,
     /// Whether or not the current tag's value was nil.
@@ -2336,7 +2336,7 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
             self.tx_id.into(),
             self.format.into(),
             self.rlp_tag.into(),
-            self.tag_value_acc.into(),
+            self.tag_value.into(),
             self.is_output.into(),
             self.is_none.into(),
         ]
@@ -2361,7 +2361,7 @@ impl RlpFsmRlpTable {
             tx_id: meta.advice_column(),
             format: meta.advice_column(),
             rlp_tag: meta.advice_column(),
-            tag_value_acc: meta.advice_column_in(SecondPhase),
+            tag_value: meta.advice_column_in(SecondPhase),
             is_output: meta.advice_column(),
             is_none: meta.advice_column(),
         }
