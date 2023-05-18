@@ -497,7 +497,7 @@ impl<'a> CircuitInputBuilder {
                 state_ref.block_ctx.rwc.0,
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
-                if geth_step.op.is_push() {
+                if geth_step.op.is_push_with_data() {
                     format!("{:?}", geth_trace.struct_logs[index + 1].stack.last())
                 } else if geth_step.op.is_call_without_value() {
                     format!(
