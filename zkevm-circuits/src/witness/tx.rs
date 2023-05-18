@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use crate::{
     evm_circuit::{step::ExecutionState, util::rlc},
     table::TxContextFieldTag,
@@ -495,12 +496,10 @@ impl Transaction {
                     }
                     if cur.tag_idx < cur.tag_length {
                         // state transitions
-                        let b = if cur.tag_length < 32 {
-                            Value::known(F::from(256_u64))
-                        } else if cur.tag_length == 32 {
-                            word_rand
-                        } else {
-                            keccak_rand
+                        let b = match cur.tag_length.cmp(&32) {
+                            Ordering::Less => Value::known(F::from(256_u64)),
+                            Ordering::Equal => word_rand,
+                            Ordering::Greater => keccak_rand,
                         };
                         next.tag_idx = cur.tag_idx + 1;
                         next.tag_value_acc = cur.tag_value_acc * b
