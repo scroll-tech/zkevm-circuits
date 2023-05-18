@@ -922,13 +922,16 @@ impl From<&Transaction> for SignedTransaction {
     }
 }
 
+#[cfg(test)]
 mod tests {
+    use crate::witness::tx::Challenges;
     use eth_types::{address, geth_types::TxTypes, word, Address, ToBigEndian, ToScalar};
     use ethers_core::{
         types::{NameOrAddress, Signature, Transaction as EthTransaction, TransactionRequest},
         utils::rlp::{Decodable, Rlp},
     };
     use halo2_proofs::{circuit::Value, dev::unwrap_value, halo2curves::bn256::Fr};
+    use crate::witness::{RlpTag, Transaction};
 
     fn rlc(be_bytes: &[u8], rand: Fr) -> Fr {
         be_bytes
