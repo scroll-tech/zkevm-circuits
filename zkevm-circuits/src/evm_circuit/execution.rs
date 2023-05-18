@@ -5,6 +5,7 @@ use super::{
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
+    EvmCircuitExports,
 };
 use crate::{
     evm_circuit::{
@@ -23,13 +24,13 @@ use crate::{
     util::{query_expression, Challenges, Expr},
 };
 use bus_mapping::util::read_env_var;
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian};
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
+        Advice, Assigned, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
         VirtualCells,
     },
     poly::Rotation,
@@ -87,7 +88,7 @@ mod error_invalid_opcode;
 mod error_oog_account_access;
 mod error_oog_call;
 mod error_oog_constant;
-mod error_oog_create2;
+mod error_oog_create;
 mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
@@ -169,7 +170,7 @@ use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_account_access::ErrorOOGAccountAccessGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
-use error_oog_create2::ErrorOOGCreate2Gadget;
+use error_oog_create::ErrorOOGCreateGadget;
 use error_oog_dynamic_memory::ErrorOOGDynamicMemoryGadget;
 use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
@@ -333,7 +334,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_log: Box<ErrorOOGLogGadget<F>>,
     error_oog_account_access: Box<ErrorOOGAccountAccessGadget<F>>,
     error_oog_sha3: Box<ErrorOOGSha3Gadget<F>>,
-    error_oog_create2: Box<ErrorOOGCreate2Gadget<F>>,
+    error_oog_create: Box<ErrorOOGCreateGadget<F>>,
     error_code_store: Box<ErrorCodeStoreGadget<F>>,
     #[cfg(not(feature = "scroll"))]
     error_oog_self_destruct:
@@ -595,7 +596,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_account_access: configure_gadget!(),
             error_oog_sha3: configure_gadget!(),
             error_oog_exp: configure_gadget!(),
-            error_oog_create2: configure_gadget!(),
+            error_oog_create: configure_gadget!(),
             #[cfg(not(feature = "scroll"))]
             error_oog_self_destruct: configure_gadget!(),
             error_code_store: configure_gadget!(),
@@ -976,7 +977,7 @@ impl<F: Field> ExecutionConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
+    ) -> Result<EvmCircuitExports<Assigned<F>>, Error> {
         let mut is_first_time = true;
 
         layouter.assign_region(
@@ -1159,8 +1160,28 @@ impl<F: Field> ExecutionConfig<F> {
                 Ok(())
             },
         )?;
+
         log::debug!("assign_block done");
-        Ok(())
+
+        let final_withdraw_root_cell = self
+            .end_block_gadget
+            .withdraw_root_assigned
+            .borrow()
+            .expect("withdraw_root cell should has been assigned");
+
+        // sanity check
+        let evm_rows = block.circuits_params.max_evm_rows;
+        if evm_rows >= 2 {
+            assert_eq!(final_withdraw_root_cell.row_offset, evm_rows - 2);
+        }
+
+        let withdraw_root_rlc = challenges
+            .evm_word()
+            .map(|r| rlc::value(&block.withdraw_root.to_le_bytes(), r));
+
+        Ok(EvmCircuitExports {
+            withdraw_root: (final_withdraw_root_cell, withdraw_root_rlc.into()),
+        })
     }
 
     fn annotate_circuit(&self, region: &mut Region<F>) {
@@ -1412,8 +1433,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasEXP => {
                 assign_exec_step!(self.error_oog_exp)
             }
-            ExecutionState::ErrorOutOfGasCREATE2 => {
-                assign_exec_step!(self.error_oog_create2)
+            ExecutionState::ErrorOutOfGasCREATE => {
+                assign_exec_step!(self.error_oog_create)
             }
             ExecutionState::ErrorOutOfGasSELFDESTRUCT => {
                 #[cfg(not(feature = "scroll"))]

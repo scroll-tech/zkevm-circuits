@@ -1,7 +1,7 @@
 //! Represent the storage state under zktrie as implement
 
 use bus_mapping::state_db::{Account, StateDB};
-use eth_types::{Address, Hash, Word, H256};
+use eth_types::{Address, Hash, Word, H256, U256};
 use mpt_circuits::MPTProofType;
 
 use std::{collections::HashMap, io::Error};
@@ -61,33 +61,29 @@ impl ZktrieState {
         &self.sdb
     }
 
+    /// ...
+    pub fn set_state(&mut self, statedb: StateDB) {
+        self.sdb = statedb
+    }
+
     /// construct from external data
-    pub fn construct<'d>(
-        sdb: StateDB,
+    pub fn construct(
+        //sdb: StateDB,
         state_root: Hash,
-        proofs: impl IntoIterator<Item = &'d [u8]>,
-        acc_storage_roots: impl IntoIterator<Item = (Address, Hash)>,
+        //proofs: impl IntoIterator<Item = &'d [u8]>,
+        //acc_storage_roots: impl IntoIterator<Item = (Address, Hash)>,
     ) -> Self {
         assert!(
             *builder::HASH_SCHEME_DONE,
             "must set hash scheme into zktrie"
         );
 
-        let mut zk_db = ZkMemoryDb::default();
-        for bytes in proofs {
-            zk_db.add_node_bytes(bytes).unwrap();
-        }
-
-        let accounts = acc_storage_roots
-            .into_iter()
-            .map(|(addr_r, hash_r)| (addr_r, hash_r.0))
-            .collect();
-
+        let zk_db = ZkMemoryDb::default();
         Self {
-            sdb,
+            sdb: Default::default(),
             zk_db: Rc::new(RefCell::new(zk_db)),
             trie_root: state_root.0,
-            accounts,
+            accounts: Default::default(),
         }
     }
 
@@ -108,36 +104,37 @@ impl ZktrieState {
         )
     }
 
-    /// construct from external data, with additional proofs (trie node) can be
-    /// provided
-    pub fn from_trace_with_additional<'d, BYTES>(
-        state_root: Hash,
+    /// ..
+    pub fn update_statedb_from_proofs<'d, BYTES>(
+        &mut self,
         account_proofs: impl Iterator<Item = (&'d Address, BYTES)> + Clone,
         storage_proofs: impl Iterator<Item = (&'d Address, &'d Word, BYTES)> + Clone,
-        additional_proofs: impl Iterator<Item = &'d [u8]> + Clone,
-    ) -> Result<Self, Error>
+        _additional_proofs: impl Iterator<Item = &'d [u8]> + Clone,
+    ) -> Result<(), Error>
     where
         BYTES: IntoIterator<Item = &'d [u8]>,
     {
         use builder::{AccountProof, BytesArray, StorageProof};
-
-        let mut sdb = StateDB::new();
-        let mut acc_storage_roots: HashMap<Address, Hash> = Default::default();
-
-        let proofs = account_proofs
-            .clone()
-            .flat_map(|(_, bytes)| bytes)
-            .chain(storage_proofs.clone().flat_map(|(_, _, bytes)| bytes))
-            .chain(additional_proofs);
 
         for (addr, bytes) in account_proofs {
             let acc_proof = builder::verify_proof_leaf(
                 AccountProof::try_from(BytesArray(bytes.into_iter()))?,
                 &builder::extend_address_to_h256(addr),
             );
+            let acc_data = acc_proof.data;
+            let (exists, acc) = self.sdb.get_account(addr);
+            if exists {
+                log::trace!(
+                    "skip trace account into sdb: {:?} => {:?}, keep old: {:?}",
+                    addr,
+                    acc_data,
+                    acc
+                );
+                continue;
+            }
             if acc_proof.key.is_some() {
-                let acc_data = acc_proof.data;
-                sdb.set_account(
+                log::trace!("trace account into sdb: {:?} => {:?}", addr, acc_data);
+                self.sdb.set_account(
                     addr,
                     Account {
                         nonce: acc_data.nonce.into(),
@@ -149,35 +146,103 @@ impl ZktrieState {
                         storage: Default::default(),
                     },
                 );
-
-                acc_storage_roots.insert(*addr, acc_data.storage_root);
+                self.accounts.insert(*addr, acc_data.storage_root.0);
             } else {
-                sdb.set_account(addr, Account::zero());
-                acc_storage_roots.insert(*addr, H256::zero());
+                self.sdb.set_account(addr, Account::zero());
+                self.accounts.insert(*addr, H256::zero().0);
             }
         }
 
         for (addr, key, bytes) in storage_proofs {
-            let (_, acc) = sdb.get_account_mut(addr);
+            let (exists, _value) = self.sdb.get_storage(addr, key);
+            if exists {
+                continue;
+            }
+            let (_, acc) = self.sdb.get_account_mut(addr);
             let mut key_buf = [0u8; 32];
             key.to_big_endian(key_buf.as_mut_slice());
-            let store_proof = builder::verify_proof_leaf(
-                StorageProof::try_from(BytesArray(bytes.into_iter()))?,
-                &key_buf,
-            );
+            let bytes_array = BytesArray(bytes.into_iter());
+            let store_proof =
+                builder::verify_proof_leaf(StorageProof::try_from(bytes_array)?, &key_buf);
             if store_proof.key.is_some() {
                 if !store_proof.data.as_ref().is_zero() {
+                    log::trace!(
+                        "insert storage addr {:?} key {:?} value {:?}",
+                        addr,
+                        key,
+                        *store_proof.data.as_ref()
+                    );
                     acc.storage.insert(*key, *store_proof.data.as_ref());
                 } else {
-                    acc.storage.remove(key);
+                    //acc.storage.remove(key);
+                    acc.storage.insert(*key, U256::zero());
                 }
             } else {
-                acc.storage.remove(key);
-                // acc.storage.insert(*key, U256::zero());
+                // acc.storage.remove(key);
+                acc.storage.insert(*key, U256::zero());
             }
         }
 
-        Ok(Self::construct(sdb, state_root, proofs, acc_storage_roots))
+        Ok(())
+    }
+    /// ..
+    pub fn update_from_proofs<'d, BYTES>(
+        &mut self,
+        account_proofs: impl Iterator<Item = (&'d Address, BYTES)> + Clone,
+        storage_proofs: impl Iterator<Item = (&'d Address, &'d Word, BYTES)> + Clone,
+        additional_proofs: impl Iterator<Item = &'d [u8]> + Clone,
+    ) -> Result<(), Error>
+    where
+        BYTES: IntoIterator<Item = &'d [u8]>,
+    {
+        self.update_statedb_from_proofs(
+            account_proofs.clone(),
+            storage_proofs.clone(),
+            additional_proofs.clone(),
+        )?;
+        self.update_nodes_from_proofs(account_proofs, storage_proofs, additional_proofs)?;
+        Ok(())
+    }
+    /// ..
+    pub fn update_nodes_from_proofs<'d, BYTES>(
+        &mut self,
+        account_proofs: impl Iterator<Item = (&'d Address, BYTES)> + Clone,
+        storage_proofs: impl Iterator<Item = (&'d Address, &'d Word, BYTES)> + Clone,
+        additional_proofs: impl Iterator<Item = &'d [u8]> + Clone,
+    ) -> Result<(), Error>
+    where
+        BYTES: IntoIterator<Item = &'d [u8]>,
+    {
+        let proofs = account_proofs
+            .flat_map(|(_, bytes)| bytes)
+            .chain(storage_proofs.flat_map(|(_, _, bytes)| bytes))
+            .chain(additional_proofs);
+        let mut zk_db = self.zk_db.borrow_mut();
+        for bytes in proofs {
+            zk_db.add_node_bytes(bytes).unwrap();
+        }
+        Ok(())
+    }
+
+    /// construct from external data, with additional proofs (trie node) can be
+    /// provided
+    pub fn from_trace_with_additional<'d, BYTES>(
+        state_root: Hash,
+        account_proofs: impl Iterator<Item = (&'d Address, BYTES)> + Clone,
+        storage_proofs: impl Iterator<Item = (&'d Address, &'d Word, BYTES)> + Clone,
+        additional_proofs: impl Iterator<Item = &'d [u8]> + Clone,
+    ) -> Result<Self, Error>
+    where
+        BYTES: IntoIterator<Item = &'d [u8]>,
+    {
+        let mut state = ZktrieState::construct(state_root);
+        state.update_statedb_from_proofs(
+            account_proofs.clone(),
+            storage_proofs.clone(),
+            additional_proofs.clone(),
+        )?;
+        state.update_nodes_from_proofs(account_proofs, storage_proofs, additional_proofs)?;
+        Ok(state)
     }
 }
 
