@@ -80,26 +80,20 @@ impl From<Tag> for usize {
 impl Tag {
     /// If the tag is related to list
     pub fn is_list(&self) -> bool {
-        match &self {
-            Self::BeginList | Self::BeginVector | Self::EndList | Self::EndVector => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::BeginList | Self::BeginVector | Self::EndList | Self::EndVector
+        )
     }
 
     /// If the tag is BeginList or BeginVector
     pub fn is_begin(&self) -> bool {
-        match &self {
-            Self::BeginList | Self::BeginVector => true,
-            _ => false,
-        }
+        matches!(self, Self::BeginList | Self::BeginVector)
     }
 
     /// If the tag is EndList or EndVector
     pub fn is_end(&self) -> bool {
-        match &self {
-            Self::EndList | Self::EndVector => true,
-            _ => false,
-        }
+        matches!(self, Self::EndList | Self::EndVector)
     }
 }
 
@@ -117,10 +111,7 @@ pub enum RlpTag {
 impl RlpTag {
     /// If this tag is for output
     pub fn is_output(&self) -> bool {
-        match &self {
-            Self::RLC => true,
-            _ => false,
-        }
+        matches!(self, Self::RLC)
     }
 }
 
@@ -214,12 +205,12 @@ pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![5]),
-        (TxValue, Data, N_BYTES_WORD, vec![6]).into(),
-        (Data, SigV, 2usize.pow(24), vec![7]).into(),
-        (SigV, SigR, N_BYTES_U64, vec![8]).into(),
-        (SigR, SigS, N_BYTES_WORD, vec![9]).into(),
-        (SigS, EndList, N_BYTES_WORD, vec![10]).into(),
-        (EndList, BeginList, 0, vec![]).into(),
+        (TxValue, Data, N_BYTES_WORD, vec![6]),
+        (Data, SigV, 2usize.pow(24), vec![7]),
+        (SigV, SigR, N_BYTES_U64, vec![8]),
+        (SigR, SigS, N_BYTES_WORD, vec![9]),
+        (SigS, EndList, N_BYTES_WORD, vec![10]),
+        (EndList, BeginList, 0, vec![]),
     ];
 
     rows.into_iter()
@@ -264,8 +255,8 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (EndVector, SigV, 0, vec![22]),
         (SigV, SigR, N_BYTES_U64, vec![23]),
         (SigR, SigS, N_BYTES_WORD, vec![24]),
-        (SigS, EndList, N_BYTES_WORD, vec![25]).into(),
-        (EndList, BeginList, 0, vec![]).into(),
+        (SigS, EndList, N_BYTES_WORD, vec![25]),
+        (EndList, BeginList, 0, vec![]),
     ];
 
     rows.into_iter()
@@ -308,7 +299,7 @@ pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
         (EndList, EndVector, 0, vec![21]), // finished parsing access_list
         (EndList, BeginList, 0, vec![12]), // parse another access_list entry
         (EndVector, EndList, 0, vec![22]),
-        (EndList, BeginList, 0, vec![]).into(),
+        (EndList, BeginList, 0, vec![]),
     ];
 
     rows.into_iter()
@@ -445,6 +436,7 @@ pub struct DataTable<F: FieldExt> {
 }
 
 impl<F: FieldExt> DataTable<F> {
+    /// values
     pub fn values(&self) -> Vec<Value<F>> {
         vec![
             Value::known(F::from(self.tx_id)),

@@ -142,9 +142,11 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     if let Some(to) = st.to {
         tx = tx.to(to);
     }
+    let rlp_unsigned = tx.rlp().to_vec();
     let tx: TypedTransaction = tx.into();
 
     let sig = wallet.sign_transaction_sync(&tx);
+    let rlp_signed = tx.rlp_signed(&sig).to_vec();
     let tx_hash = keccak256(tx.rlp_signed(&sig));
     let mut accounts = st.pre;
     for i in 1..=9 {
@@ -189,6 +191,8 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 v: sig.v,
                 r: sig.r,
                 s: sig.s,
+                rlp_bytes: rlp_unsigned,
+                rlp_unsigned_bytes: rlp_signed,
                 hash: tx_hash.into(),
             }],
             accounts,

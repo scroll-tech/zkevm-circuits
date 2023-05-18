@@ -347,9 +347,9 @@ impl Transaction {
         Ok(Self {
             block_num: eth_tx.block_number.unwrap().as_u64(),
             hash: eth_tx.hash,
-            tx_type: TxTypes::get_tx_type(&eth_tx),
+            tx_type: TxTypes::get_tx_type(eth_tx),
             rlp_bytes: eth_tx.rlp().to_vec(),
-            rlp_unsigned_bytes: get_rlp_unsigned(&eth_tx),
+            rlp_unsigned_bytes: get_rlp_unsigned(eth_tx),
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),

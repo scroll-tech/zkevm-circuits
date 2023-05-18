@@ -413,7 +413,7 @@ impl Transaction {
                         if let Some(rem) = remaining_bytes.last_mut() {
                             // read one more byte
                             assert!(*rem >= 1);
-                            *rem = (*rem) - 1;
+                            *rem -= 1;
                         }
                         if byte_value < 0x80 {
                             // assertions
@@ -469,7 +469,7 @@ impl Transaction {
                                 // current list should be subtracted by
                                 // the number of bytes of the new list.
                                 assert!(*rem >= num_bytes_of_new_list);
-                                *rem = *rem - num_bytes_of_new_list;
+                                *rem -= num_bytes_of_new_list;
                             }
                             remaining_bytes.push(num_bytes_of_new_list);
                             next.depth = cur.depth + 1;
@@ -491,7 +491,7 @@ impl Transaction {
                 State::Bytes => {
                     if let Some(rem) = remaining_bytes.last_mut() {
                         assert!(*rem >= 1);
-                        *rem = *rem - 1;
+                        *rem -= 1;
                     }
                     if cur.tag_idx < cur.tag_length {
                         // state transitions
@@ -516,7 +516,7 @@ impl Transaction {
                 State::LongBytes => {
                     if let Some(rem) = remaining_bytes.last_mut() {
                         assert!(*rem >= 1);
-                        *rem = *rem - 1;
+                        *rem -= 1;
                     }
 
                     if cur.tag_idx < cur.tag_length {
@@ -539,7 +539,7 @@ impl Transaction {
                     if let Some(rem) = remaining_bytes.last_mut() {
                         // read one more byte
                         assert!(*rem >= 1);
-                        *rem = *rem - 1;
+                        *rem -= 1;
                     }
                     if cur.tag_idx < cur.tag_length {
                         // state transitions
@@ -554,7 +554,7 @@ impl Transaction {
                         }
                         if let Some(rem) = remaining_bytes.last_mut() {
                             assert!(*rem >= lb_len);
-                            *rem = *rem - lb_len;
+                            *rem -= lb_len;
                         }
                         remaining_bytes.push(lb_len);
                         next.depth = cur.depth + 1;
@@ -651,7 +651,7 @@ impl Transaction {
             while idx <= witness_idx {
                 witness[idx].state_machine.tag_next = rom_table[rom_table_row].tag_next;
                 witness[idx].state_machine.max_length = rom_table[rom_table_row].max_length;
-                idx = idx + 1;
+                idx += 1;
             }
         }
 
@@ -697,7 +697,7 @@ impl Transaction {
 impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
     fn gen_sm_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>> {
         let hash_wit = self.gen_rlp_witness(true, challenges);
-        let sign_wit = self.gen_rlp_witness(false, &challenges);
+        let sign_wit = self.gen_rlp_witness(false, challenges);
 
         [sign_wit, hash_wit].concat()
     }
@@ -720,7 +720,7 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
         let get_table = |rlp_bytes: &Vec<u8>, format: Format| {
             let n = rlp_bytes.len();
             rlp_bytes
-                .into_iter()
+                .iter()
                 .enumerate()
                 .scan(Value::known(F::zero()), |rlc, (i, &byte_value)| {
                     *rlc = *rlc * r + Value::known(F::from(byte_value as u64));
@@ -923,10 +923,6 @@ impl From<&Transaction> for SignedTransaction {
 }
 
 mod tests {
-    use crate::{
-        util::{rlc_be_bytes, Challenges},
-        witness::{RlpTag, Transaction},
-    };
     use eth_types::{address, geth_types::TxTypes, word, Address, ToBigEndian, ToScalar};
     use ethers_core::{
         types::{NameOrAddress, Signature, Transaction as EthTransaction, TransactionRequest},
