@@ -697,6 +697,9 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
         let hash_wit = self.gen_rlp_witness(true, challenges);
         let sign_wit = self.gen_rlp_witness(false, challenges);
 
+        log::debug!("{}th tx sign witness rows len = {}", self.id, sign_wit.len());
+        log::debug!("{}th tx hash witness rows len = {}", self.id, hash_wit.len());
+
         [sign_wit, hash_wit].concat()
     }
 
@@ -708,7 +711,7 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
             TxTypes::Eip155 => (TxHashEip155, TxSignEip155),
             TxTypes::PreEip155 => (TxHashPreEip155, TxSignPreEip155),
             TxTypes::Eip1559 => {
-                unimplemented!("eip1559 not supported now")
+                (TxHashEip1559, TxSignEip1559)
             }
             TxTypes::Eip2930 => {
                 unimplemented!("eip1559 not supported now")

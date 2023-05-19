@@ -552,9 +552,9 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         debug_assert!(meta.degree() <= 9);
 
-        //////////////////////////////////////////////////
-        /////////////////// SM checks ////////////////////
-        //////////////////////////////////////////////////
+        ///////////////////////////////////////////////////////////////////
+        /////////////////// SM state transition checks ////////////////////
+        ///////////////////////////////////////////////////////////////////
         // construct the comparators.
         let cmp_enabled = |meta: &mut VirtualCells<F>| {
             and::expr([
@@ -884,6 +884,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
                         // state transition.
                         update_state!(meta, cb, byte_idx, 1);
+                        update_state!(meta, cb, depth, 0);
                         update_state!(meta, cb, state, DecodeTagStart);
                         cb.require_zero(
                             "(tx_id' == tx_id + 1) or (format' == format + 1)",
@@ -938,7 +939,6 @@ impl<F: Field> RlpCircuitConfig<F> {
                 constrain_unchanged_fields!(meta, cb; rlp_table.tx_id, rlp_table.format, depth, tag, tag_next);
             });
             // otherwise, we get an invalid rlp error.
-            // TODO(kunxian): add error handling
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
@@ -1075,11 +1075,11 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             let (bv_gt_0xf8, bv_eq_0xf8) = byte_value_gte_0xf8.expr(meta, None);
 
-            let cond = sum::expr([bv_gt_0xf8, bv_eq_0xf8]);
-            cb.condition(and::expr([
-                cond.expr(),
+            let cond = and::expr([
+                sum::expr([bv_gt_0xf8, bv_eq_0xf8]),
                 not::expr(is_tag_end_expr(meta)),
-            ]), |cb| {
+            ]);
+            cb.condition(cond.expr(), |cb| {
                 // assertions.
                 constrain_eq!(meta, cb, is_tag_begin, true);
 
@@ -1169,33 +1169,27 @@ impl<F: Field> RlpCircuitConfig<F> {
         });
 
         // DecodeTagStart => End
-        /*
-        TODO:
         meta.create_gate("state transition: DecodeTagStart => End", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.condition(is_tag_end_expr(meta), |cb| {
-                // assertions
-                do_not_read_data!(meta, cb);
-                do_not_emit!(meta, cb);
-
-                // state transitions
-                update_state!(meta, cb, state, State::End);
-            });
-
             // condition.
             cb.require_equal(
-                "depth == 0",
-                depth_check.is_equal_expression.expr(),
+                "depth == 1",
+                depth_eq_one.is_equal_expression.expr(),
+                true.expr(),
+            );
+            cb.require_equal(
+                "is_tag_end == true",
+                is_tag_end_expr(meta),
                 true.expr(),
             );
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
                 is_decode_tag_start(meta),
+                is_next_end(meta),
             ]))
         });
-         */
 
         // End => End
         meta.create_gate("state transition: End", |meta| {
@@ -1761,7 +1755,9 @@ impl<F: Field> Circuit<F> for RlpCircuit<F, Transaction> {
 mod tests {
     use crate::{rlp_circuit_fsm::RlpCircuit, witness::Transaction};
     use eth_types::{geth_types::TxTypes, word, Address};
-    use ethers_core::types::{transaction::eip2718::TypedTransaction, TransactionRequest};
+    use ethers_core::types::{Eip1559TransactionRequest, transaction::eip2718::TypedTransaction, TransactionRequest};
+    use ethers_core::types::Transaction as EthTransaction;
+    use ethers_core::utils::rlp::{Decodable, Rlp};
     use ethers_signers::Wallet;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
     use mock::{eth, MOCK_CHAIN_ID};
@@ -1818,6 +1814,35 @@ mod tests {
     #[test]
     fn test_pre_eip155_tx() {
         let tx = get_tx(false);
+        let rlp_circuit = RlpCircuit::<Fr, Transaction> {
+            txs: vec![tx],
+            max_txs: 10,
+            size: 0,
+            _marker: Default::default(),
+        };
+
+        let mock_prover = MockProver::run(16, &rlp_circuit, vec![]);
+        assert!(mock_prover.is_ok());
+        let mock_prover = mock_prover.unwrap();
+        if let Err(errors) = mock_prover.verify_par() {
+            log::debug!("errors.len() = {}", errors.len());
+        }
+
+        mock_prover.assert_satisfied_par();
+    }
+
+    #[test]
+    fn test_eip1559_tx() {
+        let raw_tx_rlp_bytes = hex::decode("02f901e901833c3139842b27f14d86012309ce540083055ca8945f65f7b609678448494de4c87521cdf6cef1e93280b8e4fa558b7100000000000000000000000095ad61b0a150d79219dcf64e1e6cc01f0b64c4ce000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000000100000000000000000000000016a217dedfacdf9c23edb84b57154f26a15848e60000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000028cad80bb7cf17e27c4c8f893f7945f65f7b609678448494de4c87521cdf6cef1e932e1a0d2dc2a0881b05440a4908cf506b4871b1f7eaa46ea0c5dfdcda5f52bc17164a4f8599495ad61b0a150d79219dcf64e1e6cc01f0b64c4cef842a0ba03decd934aae936605e9d437c401439ec4cefbad5795e0965100f929fe339ca0b36e2afa1a25492257090107ad99d079032e543c8dd1ffcd44cf14a96d3015ac80a0821193127789b107351f670025dd3b862f5836e5155f627a29741a251e8d28e8a07ea1e82b1bf6f29c5d0f1e4024acdb698086ac40c353704d7d5e301fb916f2e3")
+            .expect("decode tx's hex shall not fail");
+
+        let eth_tx = EthTransaction::decode(&Rlp::new(&raw_tx_rlp_bytes))
+            .expect("decode tx's rlp bytes shall not fail");
+
+        let eth_tx_req: Eip1559TransactionRequest = (&eth_tx).into();
+        let rlp_unsigned = eth_tx_req.rlp().to_vec();
+
+        let tx = Transaction::new_from_rlp_bytes(TxTypes::Eip1559, raw_tx_rlp_bytes, rlp_unsigned);
         let rlp_circuit = RlpCircuit::<Fr, Transaction> {
             txs: vec![tx],
             max_txs: 10,

@@ -266,44 +266,32 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (TxType, BeginList, 1, vec![1]),
-        (BeginList, ChainId, 8, vec![2]),
-        (ChainId, Nonce, N_BYTES_U64, vec![3]),
-        (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![4]),
-        (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![5]),
-        (MaxFeePerGas, Gas, N_BYTES_WORD, vec![6]),
-        (Gas, To, N_BYTES_U64, vec![7]),
-        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![8]),
-        (TxValue, Data, N_BYTES_WORD, vec![9]),
-        (Data, BeginVector, 2usize.pow(24), vec![10, 11]),
-        (BeginVector, EndVector, 8, vec![21]), // access_list is none
-        (BeginVector, BeginList, 8, vec![12]),
-        (BeginList, AccessListAddress, 8, vec![13]),
-        (
-            AccessListAddress,
-            BeginVector,
-            N_BYTES_ACCOUNT_ADDRESS,
-            vec![14, 15],
-        ),
-        (BeginVector, EndVector, 8, vec![18]), /* access_list.storage_keys
-                                                * is none */
-        (BeginVector, AccessListStorageKey, 8, vec![16, 17]),
-        (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![18]), // finished parsing storage keys
-        (
-            AccessListStorageKey,
-            AccessListStorageKey,
-            N_BYTES_WORD,
-            vec![16, 17],
-        ), // keep parsing storage_keys
-        (EndVector, EndList, 0, vec![19, 20]),
-        (EndList, EndVector, 0, vec![21]), // finished parsing access_list
-        (EndList, BeginList, 0, vec![12]), // parse another access_list entry
-        (EndVector, EndList, 0, vec![22]),
+        (BeginList, ChainId, 8, vec![1]),
+        (ChainId, Nonce, N_BYTES_U64, vec![2]),
+        (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![3]),
+        (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![4]),
+        (MaxFeePerGas, Gas, N_BYTES_WORD, vec![5]),
+        (Gas, To, N_BYTES_U64, vec![6]),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![7]),
+        (TxValue, Data, N_BYTES_WORD, vec![8]),
+        (Data, BeginVector, 2usize.pow(24), vec![9, 10]),
+        (BeginVector, EndVector, 8, vec![20]), // access_list is none
+        (BeginVector, BeginList, 8, vec![11]),
+        (BeginList, AccessListAddress, 8, vec![12]),
+        (AccessListAddress, BeginVector, N_BYTES_ACCOUNT_ADDRESS, vec![13, 14]),
+        (BeginVector, EndVector, 8, vec![17]), /* access_list.storage_keys is none */
+        (BeginVector, AccessListStorageKey, 8, vec![15, 16]),
+        (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![17]), // finished parsing storage keys
+        (AccessListStorageKey, AccessListStorageKey, N_BYTES_WORD, vec![15, 16]), // keep parsing storage_keys
+        (EndVector, EndList, 0, vec![18, 19]),
+        (EndList, EndVector, 0, vec![20]), // finished parsing access_list
+        (EndList, BeginList, 0, vec![11]), // parse another access_list entry
+        (EndVector, EndList, 0, vec![21]),
         (EndList, BeginList, 0, vec![]),
     ];
 
     rows.into_iter()
-        .map(|row| (row.0, row.1, row.2, TxHashEip1559, row.3).into())
+        .map(|row| (row.0, row.1, row.2, TxSignEip1559, row.3).into())
         .collect()
 }
 
@@ -377,8 +365,8 @@ impl Format {
             TxHashEip155 => eip155_tx_hash_rom_table_rows(),
             TxSignPreEip155 => pre_eip155_tx_sign_rom_table_rows(),
             TxHashPreEip155 => pre_eip155_tx_hash_rom_table_rows(),
-            TxHashEip1559 => eip1559_tx_hash_rom_table_rows(),
             TxSignEip1559 => eip1559_tx_sign_rom_table_rows(),
+            TxHashEip1559 => eip1559_tx_hash_rom_table_rows(),
             Self::L1MsgHash => l1_msg::rom_table_rows(),
         }
     }
