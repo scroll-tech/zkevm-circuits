@@ -2369,8 +2369,8 @@ impl RlpFsmRlpTable {
 
     /// Get assignments to the RLP table.
     pub fn assignments<F: Field, RLP: RlpFsmWitnessGen<F>>(
-        inputs: Vec<RLP>,
-        challenges: &Challenges<Value<F>>,
+        _inputs: Vec<RLP>,
+        _challenges: &Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 6]> {
         unimplemented!("RlpFsmRlpTable::assignments")
     }
@@ -2378,9 +2378,9 @@ impl RlpFsmRlpTable {
     /// Load the RLP table.
     pub fn load<F: Field, RLP: RlpFsmWitnessGen<F>>(
         &self,
-        layouter: &mut impl Layouter<F>,
-        inputs: Vec<RLP>,
-        challenges: &Challenges<Value<F>>,
+        _layouter: &mut impl Layouter<F>,
+        _inputs: Vec<RLP>,
+        _challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         unimplemented!("RlpFsmRlpTable::load")
     }

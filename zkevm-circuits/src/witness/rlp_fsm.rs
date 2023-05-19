@@ -387,16 +387,16 @@ impl Format {
 /// All possible states of RLP decoding state machine
 #[derive(Clone, Copy, Debug, EnumIter, PartialEq, Eq)]
 pub enum State {
+    /// End
+    End = 0,
     /// Start
-    DecodeTagStart = 0,
+    DecodeTagStart,
     /// Bytes
     Bytes,
     /// Long bytes
     LongBytes,
     /// Long list
     LongList,
-    /// End
-    End,
 }
 
 impl From<State> for usize {
