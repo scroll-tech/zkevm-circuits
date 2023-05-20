@@ -164,12 +164,12 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 );
             });
 
-            cb.condition(not::expr(q_byte_in_field_not_last(meta)), |cb|{
+            cb.condition(meta.query_advice(is_field_border, Rotation::prev()), |cb|{
 
                 cb.require_equal(
-                    "if !q_byte_in_field_not_last padding_shift := 1",
+                    "if is_field_border_prev padding_shift := 256^(BYTES_IN_FIELD-1)",
                     meta.query_advice(padding_shift, Rotation::cur()),
-                    1.expr(),
+                    Expression::Constant(F::from(256 as u64).pow_vartime([BYTES_IN_FIELD as u64-1])),
                 );
             });
 
@@ -497,13 +497,13 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         offset: usize,
     ) -> Result<(), Error> {
         for (name, column) in [
-            ("control length header", self.control_length),
+            //            ("control length header", self.control_length),
             ("field input header", self.field_input),
             ("bytes in field header", self.bytes_in_field_index),
             ("bytes in field inv header", self.bytes_in_field_inv),
             ("field border header", self.is_field_border),
-            ("padding shift header", self.padding_shift),
-            ("field index header", self.field_index),
+            //            ("padding shift header", self.padding_shift),
+            //            ("field index header", self.field_index),
             ("field index inv header", self.field_index_inv),
         ] {
             region.assign_advice(
