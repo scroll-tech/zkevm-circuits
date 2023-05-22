@@ -21,8 +21,9 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
-#[cfg(feature = "reject-eip2718")]
-use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
+// FIXME
+// #[cfg(feature = "reject-eip2718")]
+// use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::{
     evm_circuit::{util::constraint_builder::BaseConstraintBuilder, EvmCircuitExports},
     state_circuit::StateCircuitExports,
@@ -45,6 +46,11 @@ use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
+
+// FIXME
+const TX_HASH_OFFSET: usize = 18;
+// FIXME
+const TX_LEN: usize = 19;
 
 /// Fixed by the spec
 const BLOCK_LEN: usize = 10;

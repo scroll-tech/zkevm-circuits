@@ -12,7 +12,7 @@ use ethers_core::utils::rlp::Encodable;
 pub struct L1MsgTx;
 
 impl Encodable for L1MsgTx {
-    fn rlp_append(&self, s: &mut ethers_core::utils::rlp::RlpStream) {
+    fn rlp_append(&self, _s: &mut ethers_core::utils::rlp::RlpStream) {
         unimplemented!()
     }
 }

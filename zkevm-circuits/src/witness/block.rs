@@ -3,8 +3,6 @@ use std::collections::BTreeMap;
 
 #[cfg(any(feature = "test", test))]
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
-#[cfg(feature = "test")]
-use crate::tx_circuit::TX_LEN;
 
 use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
@@ -138,7 +136,8 @@ impl<F: Field> Block<F> {
             self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
         let num_rows_required_for_tx_table: usize =
-            TX_LEN * self.circuits_params.max_txs + self.circuits_params.max_calldata;
+            // FIXME: change it to TX_LEN
+            19 * self.circuits_params.max_txs + self.circuits_params.max_calldata;
         let num_rows_required_for_exp_table: usize = self
             .exp_events
             .iter()

@@ -24,13 +24,7 @@ use eth_types::{
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
 };
-use ethers_core::{
-    types::TransactionRequest,
-    utils::{
-        keccak256,
-        rlp::{Encodable, RlpStream},
-    },
-};
+use ethers_core::{types::TransactionRequest, utils::keccak256};
 use halo2_proofs::{
     circuit::Value,
     halo2curves::{group::ff::PrimeField, secp256k1},
@@ -118,6 +112,7 @@ impl Transaction {
             ..Default::default()
         }
     }
+
     /// Sign data
     pub fn sign_data(&self) -> Result<SignData, Error> {
         let sig_r_le = self.r.to_le_bytes();
@@ -750,27 +745,6 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
     }
 }
 
-/// Signed transaction in a witness block
-#[derive(Debug, Clone)]
-pub struct SignedTransaction {
-    /// Transaction data.
-    pub tx: Transaction,
-    /// ECDSA signature on the transaction.
-    pub signature: Signature,
-}
-
-impl Encodable for SignedTransaction {
-    fn rlp_append(&self, s: &mut RlpStream) {
-        todo!()
-    }
-}
-
-impl Encodable for Transaction {
-    fn rlp_append(&self, s: &mut RlpStream) {
-        todo!()
-    }
-}
-
 impl From<MockTransaction> for Transaction {
     fn from(mock_tx: MockTransaction) -> Self {
         let is_create = mock_tx.to.is_none();
@@ -825,11 +799,6 @@ impl From<MockTransaction> for Transaction {
             calls: vec![],
             steps: vec![],
         }
-    }
-}
-impl From<MockTransaction> for SignedTransaction {
-    fn from(mock_tx: MockTransaction) -> Self {
-        SignedTransaction::from(&Transaction::from(mock_tx))
     }
 }
 
@@ -913,19 +882,6 @@ pub(super) fn tx_convert(
                 end_inner_block_steps
             })
             .collect(),
-    }
-}
-
-impl From<&Transaction> for SignedTransaction {
-    fn from(tx: &Transaction) -> Self {
-        Self {
-            tx: tx.clone(),
-            signature: Signature {
-                v: tx.v,
-                r: tx.r,
-                s: tx.s,
-            },
-        }
     }
 }
 

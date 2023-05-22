@@ -66,7 +66,8 @@ use crate::{
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
-    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
+    // FIXME
+    // tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, SubCircuit, SubCircuitConfig},
     witness::{block_convert, Block},
 };
@@ -83,11 +84,11 @@ use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, PoseidonTable,
-        RlpTable, RwTable, TxTable,
+        RlpFsmRlpTable as RlpTable, RwTable, TxTable,
     },
 };
 
-use crate::{util::circuit_stats, witness::SignedTransaction};
+use crate::util::circuit_stats;
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     mock::BlockData,
@@ -102,7 +103,8 @@ use snark_verifier_sdk::CircuitExt;
 
 use crate::{
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
-    rlp_circuit::{RlpCircuit, RlpCircuitConfig},
+    rlp_circuit_fsm::{RlpCircuit, RlpCircuitConfig, RlpCircuitConfigArgs},
+    witness::Transaction,
 };
 
 /// Configuration of the Super Circuit
@@ -115,7 +117,8 @@ pub struct SuperCircuitConfig<F: Field> {
     poseidon_table: PoseidonTable,
     evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
-    tx_circuit: TxCircuitConfig<F>,
+    // FIXME
+    // tx_circuit: TxCircuitConfig<F>,
     #[cfg(not(feature = "poseidon-codehash"))]
     bytecode_circuit: BytecodeCircuitConfig<F>,
     #[cfg(feature = "poseidon-codehash")]
@@ -200,7 +203,13 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             PoseidonCircuitConfig::new(meta, PoseidonCircuitConfigArgs { poseidon_table });
         log_circuit_info(meta, "poseidon circuit");
 
-        let rlp_circuit = RlpCircuitConfig::configure(meta, &rlp_table, &challenges);
+        let rlp_circuit = RlpCircuitConfig::new(
+            meta,
+            RlpCircuitConfigArgs {
+                rlp_table,
+                challenges: challenges.clone(),
+            },
+        );
         log_circuit_info(meta, "rlp circuit");
 
         let pi_circuit = PiCircuitConfig::new(
@@ -217,17 +226,18 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         );
         log_circuit_info(meta, "pi circuit");
 
-        let tx_circuit = TxCircuitConfig::new(
-            meta,
-            TxCircuitConfigArgs {
-                block_table: block_table.clone(),
-                tx_table: tx_table.clone(),
-                keccak_table: keccak_table.clone(),
-                rlp_table,
-                challenges: challenges.clone(),
-            },
-        );
-        log_circuit_info(meta, "tx circuit");
+        // FIXME
+        // let tx_circuit = TxCircuitConfig::new(
+        //     meta,
+        //     TxCircuitConfigArgs {
+        //         block_table: block_table.clone(),
+        //         tx_table: tx_table.clone(),
+        //         keccak_table: keccak_table.clone(),
+        //         rlp_table,
+        //         challenges: challenges.clone(),
+        //     },
+        // );
+        // log_circuit_info(meta, "tx circuit");
 
         #[cfg(not(feature = "poseidon-codehash"))]
         let bytecode_circuit = BytecodeCircuitConfig::new(
@@ -325,7 +335,8 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             poseidon_circuit,
             pi_circuit,
             rlp_circuit,
-            tx_circuit,
+            // FIXME
+            // tx_circuit,
             exp_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
@@ -347,7 +358,8 @@ pub struct SuperCircuit<
     /// State Circuit
     pub state_circuit: StateCircuit<F>,
     /// The transaction circuit that will be used in the `synthesize` step.
-    pub tx_circuit: TxCircuit<F>,
+    // FIXME: include tx circuit
+    // pub tx_circuit: TxCircuit<F>,
     /// Public Input Circuit
     pub pi_circuit: PiCircuit<F>,
     /// Bytecode Circuit
@@ -361,7 +373,7 @@ pub struct SuperCircuit<
     /// Poseidon hash Circuit
     pub poseidon_circuit: PoseidonCircuit<F>,
     /// Rlp Circuit
-    pub rlp_circuit: RlpCircuit<F, SignedTransaction>,
+    pub rlp_circuit: RlpCircuit<F, Transaction>,
     /// Mpt Circuit
     #[cfg(feature = "zktrie")]
     pub mpt_circuit: MptCircuit<F>,
@@ -379,8 +391,10 @@ impl<
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
         let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block);
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
-        let num_rows_tx_circuit =
-            TxCircuitConfig::<F>::get_num_rows_required(block.circuits_params.max_txs);
+        // FIXME
+        // let num_rows_tx_circuit =
+        //     TxCircuitConfig::<F>::get_num_rows_required(block.circuits_params.max_txs);
+        let num_rows_tx_circuit = 0;
         num_rows_evm_circuit.max(num_rows_tx_circuit)
     }
     /// Return the minimum number of rows required to prove the block
@@ -390,7 +404,8 @@ impl<
         let bytecode = BytecodeCircuit::min_num_rows_block(block);
         let copy = CopyCircuit::min_num_rows_block(block);
         let keccak = KeccakCircuit::min_num_rows_block(block);
-        let tx = TxCircuit::min_num_rows_block(block);
+        // FIXME
+        // let tx = TxCircuit::min_num_rows_block(block);
         let rlp = RlpCircuit::min_num_rows_block(block);
         let exp = ExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
@@ -404,7 +419,8 @@ impl<
             bytecode,
             copy,
             keccak,
-            tx,
+            // FIXME
+            // tx,
             rlp,
             exp,
             pi,
@@ -440,7 +456,8 @@ impl<
         itertools::max([
             EvmCircuit::<F>::unusable_rows(),
             StateCircuit::<F>::unusable_rows(),
-            TxCircuit::<F>::unusable_rows(),
+            // FIXME
+            // TxCircuit::<F>::unusable_rows(),
             PiCircuit::<F>::unusable_rows(),
             BytecodeCircuit::<F>::unusable_rows(),
             CopyCircuit::<F>::unusable_rows(),
@@ -453,7 +470,8 @@ impl<
     fn new_from_block(block: &Block<F>) -> Self {
         let evm_circuit = EvmCircuit::new_from_block(block);
         let state_circuit = StateCircuit::new_from_block(block);
-        let tx_circuit = TxCircuit::new_from_block(block);
+        // FIXME
+        // let tx_circuit = TxCircuit::new_from_block(block);
         let pi_circuit = PiCircuit::new_from_block(block);
         let bytecode_circuit = BytecodeCircuit::new_from_block(block);
         let copy_circuit = CopyCircuit::new_from_block_no_external(block);
@@ -466,7 +484,8 @@ impl<
         SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS> {
             evm_circuit,
             state_circuit,
-            tx_circuit,
+            // FIXME
+            // tx_circuit,
             pi_circuit,
             bytecode_circuit,
             copy_circuit,
@@ -484,7 +503,8 @@ impl<
         let mut instance = Vec::new();
         instance.extend_from_slice(&self.keccak_circuit.instance());
         instance.extend_from_slice(&self.pi_circuit.instance());
-        instance.extend_from_slice(&self.tx_circuit.instance());
+        // FIXME
+        // instance.extend_from_slice(&self.tx_circuit.instance());
         instance.extend_from_slice(&self.bytecode_circuit.instance());
         instance.extend_from_slice(&self.copy_circuit.instance());
         instance.extend_from_slice(&self.state_circuit.instance());
@@ -516,8 +536,9 @@ impl<
             .synthesize_sub(&config.poseidon_circuit, challenges, layouter)?;
         self.bytecode_circuit
             .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
-        self.tx_circuit
-            .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
+        // FIXME
+        // self.tx_circuit
+        //     .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
         self.state_circuit
             .synthesize_sub(&config.state_circuit, challenges, layouter)?;
         self.copy_circuit

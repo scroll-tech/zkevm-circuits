@@ -20,9 +20,6 @@ pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};
 mod receipt;
 pub use receipt::Receipt;
 
-mod rlp_encode;
-pub use rlp_encode::{RlpDataType, RlpTxTag, RlpWitnessGen, RlpWitnessRow, N_TX_TAGS};
-
 mod rlp_fsm;
 pub use rlp_fsm::{
     DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTable, RlpTag, RomTableRow, State,
@@ -38,4 +35,4 @@ pub use step::ExecStep;
 mod l1_msg;
 mod tx;
 
-pub use tx::{SignedTransaction, Transaction};
+pub use tx::Transaction;

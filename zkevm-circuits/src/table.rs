@@ -7,9 +7,8 @@ use crate::{
     impl_expr,
     util::{build_tx_log_address, Challenges},
     witness::{
-        Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates,
-        RlpFsmWitnessGen, RlpWitnessGen, Rw, RwMap, RwRow, SignedTransaction,
-        Transaction,
+        Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpFsmWitnessGen,
+        Rw, RwMap, RwRow, Transaction,
     },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
@@ -2035,102 +2034,6 @@ impl<F: Field> LookupTable<F> for RlpTable {
             String::from("data_type"),
             String::from("tag_length_eq_one"),
         ]
-    }
-}
-
-impl RlpTable {
-    /// Construct the RLP table.
-    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            q_enable: meta.fixed_column(),
-            tx_id: meta.advice_column(),
-            tag: meta.advice_column(),
-            tag_rindex: meta.advice_column(),
-            value_acc: meta.advice_column_in(SecondPhase),
-            data_type: meta.advice_column(),
-            tag_length_eq_one: meta.advice_column(),
-        }
-    }
-
-    /// Get assignments to the RLP table. Meant to be used for dev purposes.
-    pub fn dev_assignments<F: Field>(
-        txs: Vec<SignedTransaction>,
-        challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 6]> {
-        let mut assignments = vec![];
-        for signed_tx in txs {
-            for row in signed_tx
-                .gen_witness(challenges)
-                .iter()
-                .chain(signed_tx.rlp_rows(challenges.keccak_input()).iter())
-                .chain(signed_tx.tx.gen_witness(challenges).iter())
-                .chain(signed_tx.tx.rlp_rows(challenges.keccak_input()).iter())
-            {
-                assignments.push([
-                    Value::known(F::from(row.tx_id as u64)),
-                    Value::known(F::from(row.tag as u64)),
-                    Value::known(F::from(row.tag_rindex as u64)),
-                    row.value_acc,
-                    Value::known(F::from(row.data_type as u64)),
-                    Value::known(F::from((row.tag_length == 1) as u64)),
-                ]);
-            }
-        }
-        assignments
-    }
-}
-
-impl RlpTable {
-    /// Load witness into RLP table. Meant to be used for dev purposes.
-    pub fn dev_load<F: Field>(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        txs: Vec<SignedTransaction>,
-        challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "rlp table",
-            |mut region| {
-                let mut offset = 0;
-                region.assign_fixed(
-                    || format!("empty row: {}", offset),
-                    self.q_enable,
-                    offset,
-                    || Value::known(F::one()),
-                )?;
-                for column in <RlpTable as LookupTable<F>>::advice_columns(self) {
-                    region.assign_advice(
-                        || format!("empty row: {}", offset),
-                        column,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
-                }
-
-                for row in Self::dev_assignments(txs.clone(), challenges) {
-                    offset += 1;
-                    region.assign_fixed(
-                        || format!("row: {}", offset),
-                        self.q_enable,
-                        offset,
-                        || Value::known(F::one()),
-                    )?;
-                    for (column, value) in <RlpTable as LookupTable<F>>::advice_columns(self)
-                        .iter()
-                        .zip(row)
-                    {
-                        region.assign_advice(
-                            || format!("row: {}", offset),
-                            *column,
-                            offset,
-                            || value,
-                        )?;
-                    }
-                }
-
-                Ok(())
-            },
-        )
     }
 }
 

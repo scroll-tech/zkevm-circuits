@@ -27,7 +27,6 @@ pub mod keccak_circuit;
 pub mod mpt_circuit;
 pub mod pi_circuit;
 pub mod poseidon_circuit;
-pub mod rlp_circuit;
 pub mod rlp_circuit_fsm;
 // we don't use this for aggregation
 //pub mod root_circuit;
@@ -41,7 +40,9 @@ pub mod test_util;
 #[cfg(any(feature = "test", test))]
 mod stats;
 
-pub mod tx_circuit;
+// FIXME: enable it after we make changes to tx circuit
+//  as it currently depends on the old RLP table.
+// pub mod tx_circuit;
 pub mod util;
 pub mod witness;
 
