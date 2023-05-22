@@ -9,6 +9,7 @@ use halo2_proofs::{
     plonk::Circuit,
 };
 use integration_tests::{get_client, log_init, CIRCUIT, END_BLOCK, START_BLOCK, TX_ID};
+use zkevm_circuits::witness::Transaction;
 use zkevm_circuits::{
     evm_circuit::{witness::block_convert, EvmCircuit},
     keccak_circuit::keccak_packed_multi::multi_keccak,
@@ -20,7 +21,6 @@ use zkevm_circuits::{
     util::{Challenges, SubCircuit},
     witness,
 };
-use zkevm_circuits::witness::Transaction;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: 30000,

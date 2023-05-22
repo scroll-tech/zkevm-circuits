@@ -3,10 +3,9 @@
 use std::collections::BTreeMap;
 
 use eth_types::{
-    evm_types::Memory,
+    evm_types::{gas_utils::tx_data_gas_cost, Memory},
     geth_types,
     geth_types::{get_rlp_unsigned, TxTypes},
-    evm_types::{gas_utils::tx_data_gas_cost},
     Address, GethExecTrace, Signature, Word, H256,
 };
 use ethers_core::{types::TransactionRequest, utils::get_contract_address};
@@ -440,8 +439,7 @@ impl Transaction {
 
     /// Calculate L1 fee of this transaction.
     pub fn l1_fee(&self) -> u64 {
-        let tx_data_gas_cost =
-            tx_data_gas_cost(&self.rlp_unsigned_bytes);
+        let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_unsigned_bytes);
 
         self.l1_fee.tx_l1_fee(tx_data_gas_cost).0
     }

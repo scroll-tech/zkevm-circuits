@@ -17,8 +17,8 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::{self, get_dummy_tx, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
-    geth_types::TxTypes,
     evm_types::gas_utils::tx_data_gas_cost,
+    geth_types::TxTypes,
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
 };
