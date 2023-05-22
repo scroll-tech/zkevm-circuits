@@ -525,7 +525,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
         let salt = if is_create2 {
-            block.rws[step.rw_indices[3 + offset]].stack_value()
+            block.rws[step.rw_indices[3 + rw_offset]].stack_value()
         } else {
             U256::zero()
         };
@@ -619,11 +619,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             .assign_value(region, offset, code_hash_previous_rlc)?;
         let is_address_collision = !code_hash_previous.0.is_zero();
 
-        let mut rw_offset = 0;
         if is_precheck_ok == 1 && !is_address_collision {
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
+                let account_balance_pair = [16, 17]
+                    .map(|i| block.rws[step.rw_indices[i + rw_offset]].account_balance_pair());
                 rw_offset += 2;
-                [16, 17].map(|i| block.rws[step.rw_indices[i + rw_offset]].account_balance_pair())
+                account_balance_pair
             } else {
                 [(0.into(), 0.into()), (0.into(), 0.into())]
             };

@@ -274,8 +274,8 @@ impl<F: Field> RwRow<F> {
     }
     pub(crate) fn rlc(&self, randomness: F) -> F {
         let values = self.values();
-        values
-            .iter()
+        std::iter::once(&F::one())
+            .chain(values.iter())
             .rev()
             .fold(F::zero(), |acc, value| acc * randomness + value)
     }
