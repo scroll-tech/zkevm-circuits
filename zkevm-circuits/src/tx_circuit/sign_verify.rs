@@ -273,15 +273,15 @@ pub(crate) struct AssignedSignatureVerify<F: Field> {
     pub(crate) sig_is_valid: AssignedValue<F>,
 }
 
-struct SignDataDecomposed< F: Field > {
+struct SignDataDecomposed<F: Field> {
     pk_hash_cells: Vec<QuantumCell<F>>,
     msg_hash_cells: Vec<QuantumCell<F>>,
     pk_cells: Vec<QuantumCell<F>>,
     address: AssignedValue<F>,
-    is_address_zero: AssignedValue< F>,
+    is_address_zero: AssignedValue<F>,
 }
 
-impl<F: Field > SignVerifyChip<F> {
+impl<F: Field> SignVerifyChip<F> {
     /// Verifies the ecdsa relationship. I.e., prove that the signature
     /// is (in)valid or not under the given public key and the message hash in
     /// the circuit. Does not enforce the signature is valid.
@@ -410,7 +410,7 @@ impl<F: Field > SignVerifyChip<F> {
         ctx: &mut Context<F>,
         ecdsa_chip: &FpChip<F>,
         sign_data: Option<&SignData>,
-    ) -> Result<SignDataDecomposed< F>, Error> {
+    ) -> Result<SignDataDecomposed<F>, Error> {
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
 
@@ -549,7 +549,7 @@ impl<F: Field > SignVerifyChip<F> {
     #[allow(clippy::too_many_arguments)]
     fn assign_sig_verify(
         &self,
-        ctx: &mut Context< F>,
+        ctx: &mut Context<F>,
         rlc_chip: &RangeConfig<F>,
         sign_data: Option<&SignData>,
         sign_data_decomposed: &SignDataDecomposed<F>,
@@ -613,25 +613,21 @@ impl<F: Field > SignVerifyChip<F> {
         let pk_hash_rlc = rlc_chip.gate.inner_product(
             ctx,
             sign_data_decomposed.pk_hash_cells.clone(),
-            evm_challenge_powers.clone(),
+            evm_challenge_powers,
         );
 
         log::trace!("pk hash rlc halo2ecc: {:?}", pk_hash_rlc.value());
         log::trace!("finished sign verify");
         Ok((
-            [
-                sign_data_decomposed.is_address_zero.clone(),
-                pk_rlc,
-                pk_hash_rlc,
-            ],
+            [sign_data_decomposed.is_address_zero, pk_rlc, pk_hash_rlc],
             AssignedSignatureVerify {
-                address: sign_data_decomposed.address.clone().into(),
+                address: sign_data_decomposed.address,
                 msg_len: sign_data.msg.len(),
                 msg_rlc: challenges
                     .keccak_input()
                     .map(|r| rlc::value(sign_data.msg.iter().rev(), r)),
-                msg_hash_rlc: msg_hash_rlc.into(),
-                sig_is_valid: sig_is_valid.clone().into(),
+                msg_hash_rlc,
+                sig_is_valid,
             },
         ))
     }
@@ -785,7 +781,7 @@ impl<F: Field > SignVerifyChip<F> {
                 QuantumCell::Existing(crt_int.truncation.limbs[0]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[0].clone(),
+            None => crt_int.truncation.limbs[0],
         };
         let limb2_value = match overriding {
             Some(p) => flex_gate_chip.select(
@@ -794,7 +790,7 @@ impl<F: Field > SignVerifyChip<F> {
                 QuantumCell::Existing(crt_int.truncation.limbs[1]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[1].clone(),
+            None => crt_int.truncation.limbs[1],
         };
         let limb3_value = match overriding {
             Some(p) => flex_gate_chip.select(
@@ -803,7 +799,7 @@ impl<F: Field > SignVerifyChip<F> {
                 QuantumCell::Existing(crt_int.truncation.limbs[2]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[2].clone(),
+            None => crt_int.truncation.limbs[2],
         };
 
         // assert the byte_repr is the right decomposition of overflow_int
