@@ -7,8 +7,8 @@ use crate::{
     impl_expr,
     util::{build_tx_log_address, Challenges},
     witness::{
-        Block, BlockContext, BlockContexts, Bytecode, DataTable, Format, MptUpdateRow, MptUpdates,
-        RlpFsmWitnessGen, RlpWitnessGen, RomTableRow, Rw, RwMap, RwRow, SignedTransaction,
+        Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates,
+        RlpFsmWitnessGen, RlpWitnessGen, Rw, RwMap, RwRow, SignedTransaction,
         Transaction,
     },
 };
@@ -26,7 +26,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::iter::repeat;
-use strum::IntoEnumIterator;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -2123,184 +2122,6 @@ impl RlpTable {
                         region.assign_advice(
                             || format!("row: {}", offset),
                             *column,
-                            offset,
-                            || value,
-                        )?;
-                    }
-                }
-
-                Ok(())
-            },
-        )
-    }
-}
-
-/// Read-only Memory table for the new RLP circuit design based on state machine. This table allows
-/// us a lookup argument from the RLP circuit to check if a given row can occur depending on the tx
-/// format, current and next tag.
-#[derive(Clone, Copy, Debug)]
-pub struct RlpFsmRomTable {
-    /// Tag of the current field being decoded.
-    pub tag: Column<Fixed>,
-    /// Tag of the following field when the current field is finished decoding.
-    pub tag_next: Column<Fixed>,
-    /// The maximum length in terms of number of bytes that the current tag can take up.
-    pub max_length: Column<Fixed>,
-    /// Whether the current tag is a list or not.
-    pub is_list: Column<Fixed>,
-    /// The format of the current witness. This represents the type of tx we are decoding.
-    pub format: Column<Fixed>,
-}
-
-impl<F: Field> LookupTable<F> for RlpFsmRomTable {
-    fn columns(&self) -> Vec<Column<Any>> {
-        vec![
-            self.tag.into(),
-            self.tag_next.into(),
-            self.max_length.into(),
-            self.is_list.into(),
-            self.format.into(),
-        ]
-    }
-
-    fn annotations(&self) -> Vec<String> {
-        vec![
-            String::from("tag"),
-            String::from("tag_next"),
-            String::from("max_length"),
-            String::from("is_list"),
-            String::from("format"),
-        ]
-    }
-}
-
-impl RlpFsmRomTable {
-    /// Construct the ROM table.
-    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            tag: meta.fixed_column(),
-            tag_next: meta.fixed_column(),
-            max_length: meta.fixed_column(),
-            is_list: meta.fixed_column(),
-            format: meta.fixed_column(),
-        }
-    }
-
-    /// Load the ROM table.
-    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        layouter.assign_region(
-            || "RLP ROM table",
-            |mut region| {
-                let rows: Vec<RomTableRow> = Format::iter()
-                    .map(|format| format.rom_table_rows())
-                    .concat();
-
-                for (offset, row) in rows.iter().enumerate() {
-                    for (&column, value) in <RlpFsmRomTable as LookupTable<F>>::fixed_columns(self)
-                        .iter()
-                        .zip(row.values::<F>().into_iter())
-                    {
-                        region.assign_fixed(
-                            || format!("rom table row: offset = {}", offset),
-                            column,
-                            offset,
-                            || value,
-                        )?;
-                    }
-                }
-
-                Ok(())
-            },
-        )
-    }
-}
-
-/// Data table allows us a lookup argument from the RLP circuit to check the byte value at an index
-/// while decoding a tx of a given format.
-#[derive(Clone, Copy, Debug)]
-pub struct RlpFsmDataTable {
-    /// Transaction index in the batch of txs.
-    pub tx_id: Column<Advice>,
-    /// Format of the tx being decoded.
-    pub format: Column<Advice>,
-    /// The index of the current byte.
-    pub byte_idx: Column<Advice>,
-    /// The reverse index at this byte.
-    pub byte_rev_idx: Column<Advice>,
-    /// The byte value at this index.
-    pub byte_value: Column<Advice>,
-    /// The accumulated Random Linear Combination up until (including) the current byte.
-    pub bytes_rlc: Column<Advice>,
-}
-
-impl<F: Field> LookupTable<F> for RlpFsmDataTable {
-    fn columns(&self) -> Vec<Column<Any>> {
-        vec![
-            self.tx_id.into(),
-            self.format.into(),
-            self.byte_idx.into(),
-            self.byte_rev_idx.into(),
-            self.byte_value.into(),
-            self.bytes_rlc.into(),
-        ]
-    }
-
-    fn annotations(&self) -> Vec<String> {
-        vec![
-            String::from("tx_id"),
-            String::from("format"),
-            String::from("byte_idx"),
-            String::from("byte_rev_idx"),
-            String::from("byte_value"),
-            String::from("bytes_rlc"),
-        ]
-    }
-}
-
-impl RlpFsmDataTable {
-    /// Construct the data table.
-    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            tx_id: meta.advice_column(),
-            format: meta.advice_column(),
-            byte_idx: meta.advice_column(),
-            byte_rev_idx: meta.advice_column(),
-            byte_value: meta.advice_column(),
-            bytes_rlc: meta.advice_column_in(SecondPhase),
-        }
-    }
-
-    /// Assignments to the data table.
-    pub fn assignments<F: Field, RLP: RlpFsmWitnessGen<F>>(
-        inputs: &[RLP],
-        challenges: &Challenges<Value<F>>,
-    ) -> Vec<Vec<Value<F>>> {
-        let data_rows: Vec<DataTable<F>> = inputs
-            .iter()
-            .map(|input| input.gen_data_table(challenges))
-            .concat();
-
-        data_rows.iter().map(|data_row| data_row.values()).collect()
-    }
-
-    /// Load the data table.
-    pub fn load<F: Field, RLP: RlpFsmWitnessGen<F>>(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        inputs: &[RLP],
-        challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "RLP data table",
-            |mut region| {
-                for (offset, row) in Self::assignments(inputs, challenges).iter().enumerate() {
-                    for (&column, &value) in <Self as LookupTable<F>>::advice_columns(self)
-                        .iter()
-                        .zip(row)
-                    {
-                        region.assign_advice(
-                            || format!("RLP data table row: offset = {}", offset),
-                            column,
                             offset,
                             || value,
                         )?;

@@ -18,10 +18,13 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
+use halo2_proofs::plonk::Any;
+use itertools::Itertools;
+use strum::IntoEnumIterator;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    table::{LookupTable, RlpFsmDataTable, RlpFsmRlpTable, RlpFsmRomTable},
+    table::{LookupTable, RlpFsmRlpTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
         Block, DataTable, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag,
@@ -32,6 +35,7 @@ use crate::{
         Transaction,
     },
 };
+use crate::witness::{Format, RomTableRow};
 
 /// Fixed table to check if a value is a byte, i.e. 0 <= value < 256.
 #[derive(Clone, Debug)]
@@ -137,6 +141,142 @@ impl<F: Field> IsZeroChip<F> {
         )?;
 
         Ok(())
+    }
+}
+
+/// Data table allows us a lookup argument from the RLP circuit to check the byte value at an index
+/// while decoding a tx of a given format.
+#[derive(Clone, Copy, Debug)]
+pub struct RlpFsmDataTable {
+    /// Transaction index in the batch of txs.
+    pub tx_id: Column<Advice>,
+    /// Format of the tx being decoded.
+    pub format: Column<Advice>,
+    /// The index of the current byte.
+    pub byte_idx: Column<Advice>,
+    /// The reverse index at this byte.
+    pub byte_rev_idx: Column<Advice>,
+    /// The byte value at this index.
+    pub byte_value: Column<Advice>,
+    /// The accumulated Random Linear Combination up until (including) the current byte.
+    pub bytes_rlc: Column<Advice>,
+}
+
+impl<F: Field> LookupTable<F> for RlpFsmDataTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.tx_id.into(),
+            self.format.into(),
+            self.byte_idx.into(),
+            self.byte_rev_idx.into(),
+            self.byte_value.into(),
+            self.bytes_rlc.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("tx_id"),
+            String::from("format"),
+            String::from("byte_idx"),
+            String::from("byte_rev_idx"),
+            String::from("byte_value"),
+            String::from("bytes_rlc"),
+        ]
+    }
+}
+
+impl RlpFsmDataTable {
+    /// Construct the data table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            tx_id: meta.advice_column(),
+            format: meta.advice_column(),
+            byte_idx: meta.advice_column(),
+            byte_rev_idx: meta.advice_column(),
+            byte_value: meta.advice_column(),
+            bytes_rlc: meta.advice_column_in(SecondPhase),
+        }
+    }
+}
+
+/// Read-only Memory table for the new RLP circuit design based on state machine. This table allows
+/// us a lookup argument from the RLP circuit to check if a given row can occur depending on the tx
+/// format, current and next tag.
+#[derive(Clone, Copy, Debug)]
+pub struct RlpFsmRomTable {
+    /// Tag of the current field being decoded.
+    pub tag: Column<Fixed>,
+    /// Tag of the following field when the current field is finished decoding.
+    pub tag_next: Column<Fixed>,
+    /// The maximum length in terms of number of bytes that the current tag can take up.
+    pub max_length: Column<Fixed>,
+    /// Whether the current tag is a list or not.
+    pub is_list: Column<Fixed>,
+    /// The format of the current witness. This represents the type of tx we are decoding.
+    pub format: Column<Fixed>,
+}
+
+impl<F: Field> LookupTable<F> for RlpFsmRomTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.tag.into(),
+            self.tag_next.into(),
+            self.max_length.into(),
+            self.is_list.into(),
+            self.format.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("tag"),
+            String::from("tag_next"),
+            String::from("max_length"),
+            String::from("is_list"),
+            String::from("format"),
+        ]
+    }
+}
+
+impl RlpFsmRomTable {
+    /// Construct the ROM table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            tag: meta.fixed_column(),
+            tag_next: meta.fixed_column(),
+            max_length: meta.fixed_column(),
+            is_list: meta.fixed_column(),
+            format: meta.fixed_column(),
+        }
+    }
+
+    /// Load the ROM table.
+    pub fn load<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_region(
+            || "RLP ROM table",
+            |mut region| {
+                let rows: Vec<RomTableRow> = Format::iter()
+                    .map(|format| format.rom_table_rows())
+                    .concat();
+
+                for (offset, row) in rows.iter().enumerate() {
+                    for (&column, value) in <RlpFsmRomTable as LookupTable<F>>::fixed_columns(self)
+                        .iter()
+                        .zip(row.values::<F>().into_iter())
+                    {
+                        region.assign_fixed(
+                            || format!("rom table row: offset = {}", offset),
+                            column,
+                            offset,
+                            || value,
+                        )?;
+                    }
+                }
+
+                Ok(())
+            },
+        )
     }
 }
 
@@ -1634,10 +1774,6 @@ impl<F: Field> RlpCircuitConfig<F> {
         Ok(())
     }
 
-    pub fn assign_dt_end_row(&self, region: &mut Region<'_, F>, row: usize) -> Result<(), Error> {
-        Ok(())
-    }
-
     /// Assign witness to the RLP circuit.
     pub(crate) fn assign<RLP: RlpFsmWitnessGen<F>>(
         &self,
@@ -1703,11 +1839,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
 /// Arguments to configure the RLP circuit.
 pub struct RlpCircuitConfigArgs<F: Field> {
-    /// Read-only memory table.
-    pub rom_table: RlpFsmRomTable,
-    /// Data table that holds byte indices and values of instances being assigned to the RLP
-    /// circuit.
-    pub data_table: RlpFsmDataTable,
     /// RLP table.
     pub rlp_table: RlpFsmRlpTable,
     /// Fixed table to verify that the value is a single byte.
@@ -1720,10 +1851,13 @@ impl<F: Field> SubCircuitConfig<F> for RlpCircuitConfig<F> {
     type ConfigArgs = RlpCircuitConfigArgs<F>;
 
     fn new(meta: &mut ConstraintSystem<F>, args: Self::ConfigArgs) -> Self {
+        let data_table = RlpFsmDataTable::construct(meta);
+        let rom_table = RlpFsmRomTable::construct(meta);
+
         Self::configure(
             meta,
-            args.rom_table,
-            args.data_table,
+            rom_table,
+            data_table,
             args.rlp_table,
             args.range256_table,
             &args.challenges,
@@ -1802,19 +1936,18 @@ impl<F: Field> Circuit<F> for RlpCircuit<F, Transaction> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let data_table = RlpFsmDataTable::construct(meta);
+        let range256_table = Range256Table::construct(meta);
         let rlp_table = RlpFsmRlpTable::construct(meta);
-        let rom_table = RlpFsmRomTable::construct(meta);
-        let u8_table = Range256Table::construct(meta);
         let challenges = Challenges::construct(meta);
         let challenge_exprs = challenges.exprs(meta);
-        let config = RlpCircuitConfig::configure(
+
+        let config = RlpCircuitConfig::new(
             meta,
-            rom_table,
-            data_table,
-            rlp_table,
-            u8_table,
-            &challenge_exprs,
+            RlpCircuitConfigArgs {
+                rlp_table,
+                range256_table,
+                challenges: challenge_exprs,
+            }
         );
         log::debug!("meta.degree() = {}", meta.degree());
 
