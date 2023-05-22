@@ -8,7 +8,7 @@ use eth_types::{
     geth_types::{get_rlp_unsigned, TxTypes},
     Address, GethExecTrace, Signature, Word, H256,
 };
-use ethers_core::{types::TransactionRequest, utils::get_contract_address};
+use ethers_core::utils::get_contract_address;
 
 use crate::{
     l2_predeployed::l1_gas_price_oracle,
@@ -439,6 +439,7 @@ impl Transaction {
 
     /// Calculate L1 fee of this transaction.
     pub fn l1_fee(&self) -> u64 {
+        // FIXME: is it something we want???
         let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_unsigned_bytes);
 
         self.l1_fee.tx_l1_fee(tx_data_gas_cost).0
