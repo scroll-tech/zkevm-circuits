@@ -1506,8 +1506,7 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         // assign to intermediates
         let byte_value = witness.state_machine.byte_value;
-        let is_case3 =
-            (0xc0..0xf8).contains(&byte_value) && !witness.state_machine.tag.is_end();
+        let is_case3 = (0xc0..0xf8).contains(&byte_value) && !witness.state_machine.tag.is_end();
         let transit_to_new = witness.state_machine.tag.is_end()
             && (witness.state_machine.depth == 1)
             && witness_next.is_some();
