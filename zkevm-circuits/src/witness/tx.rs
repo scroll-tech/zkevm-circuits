@@ -15,12 +15,10 @@ use crate::{
         Tag::{EndList, EndVector},
     },
 };
-use bus_mapping::{
-    circuit_input_builder,
-    circuit_input_builder::{get_dummy_tx, get_dummy_tx_hash},
-};
+use bus_mapping::circuit_input_builder::{self, get_dummy_tx, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
     geth_types::TxTypes,
+    evm_types::gas_utils::tx_data_gas_cost,
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
 };
@@ -67,11 +65,13 @@ pub struct Transaction {
     pub call_data_length: usize,
     /// The gas cost for transaction call data
     pub call_data_gas_cost: u64,
+    /// The gas cost for rlp-encoded bytes of unsigned tx
+    pub tx_data_gas_cost: u64,
     /// Chain ID as per EIP-155.
     pub chain_id: u64,
     /// Rlp-encoded bytes of unsigned tx
     pub rlp_unsigned: Vec<u8>,
-    /// Rlp-encoded bytes of unsigned tx
+    /// Rlp-encoded bytes of signed tx
     pub rlp_signed: Vec<u8>,
     /// "v" value of the transaction signature
     pub v: u64,
@@ -79,6 +79,10 @@ pub struct Transaction {
     pub r: Word,
     /// "s" value of the transaction signature
     pub s: Word,
+    /// Current values of L1 fee
+    pub l1_fee: TxL1Fee,
+    /// Committed values of L1 fee
+    pub l1_fee_committed: TxL1Fee,
     /// The calls made in the transaction
     pub calls: Vec<Call>,
     /// The steps executioned in the transaction
@@ -224,6 +228,12 @@ impl Transaction {
                 Value::known(F::from(TxContextFieldTag::CallDataGasCost as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.call_data_gas_cost)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::TxDataGasCost as u64)),
+                Value::known(F::zero()),
+                Value::known(F::from(self.tx_data_gas_cost)),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -786,16 +796,16 @@ impl From<MockTransaction> for Transaction {
             value: mock_tx.value,
             call_data: mock_tx.input.to_vec(),
             call_data_length: mock_tx.input.len(),
-            call_data_gas_cost: mock_tx
-                .input
-                .iter()
-                .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
+            call_data_gas_cost: tx_data_gas_cost(&mock_tx.input),
+            tx_data_gas_cost: tx_data_gas_cost(&rlp_unsigned),
             chain_id: mock_tx.chain_id.as_u64(),
             rlp_unsigned,
             rlp_signed,
             v: sig.v,
             r: sig.r,
             s: sig.s,
+            l1_fee: Default::default(),
+            l1_fee_committed: Default::default(),
             calls: vec![],
             steps: vec![],
         }
@@ -814,6 +824,8 @@ pub(super) fn tx_convert(
         chain_id, tx.chain_id
     );
     let callee_address = if tx.is_create() { None } else { Some(tx.to) };
+    // FIXME: is it the one that we want???
+    let prune_unsigned = tx.rlp_unsigned_bytes.clone();
 
     Transaction {
         block_number: tx.block_num,
@@ -830,16 +842,16 @@ pub(super) fn tx_convert(
         value: tx.value,
         call_data: tx.input.clone(),
         call_data_length: tx.input.len(),
-        call_data_gas_cost: tx
-            .input
-            .iter()
-            .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
+        call_data_gas_cost: tx_data_gas_cost(&tx.input),
+        tx_data_gas_cost: tx_data_gas_cost(&prune_unsigned),
         chain_id,
         rlp_unsigned: tx.rlp_unsigned_bytes.clone(),
         rlp_signed: tx.rlp_bytes.clone(),
         v: tx.signature.v,
         r: tx.signature.r,
         s: tx.signature.s,
+        l1_fee: tx.l1_fee,
+        l1_fee_committed: tx.l1_fee_committed,
         calls: tx
             .calls()
             .iter()

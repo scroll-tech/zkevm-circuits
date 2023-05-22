@@ -30,6 +30,10 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
+mod tx_l1_fee;
+
+pub(crate) use tx_l1_fee::TxL1FeeGadget;
+
 /// Construction of execution state that stays in the same call context, which
 /// lookups the opcode and verifies the execution state is responsible for it,
 /// then calculates the gas_cost and constrain the state transition.

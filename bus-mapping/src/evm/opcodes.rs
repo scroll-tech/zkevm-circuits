@@ -6,16 +6,17 @@ use crate::{
         NonceUintOverflowError, OogError,
     },
     evm::OpcodeId,
+    l2_predeployed::l1_gas_price_oracle,
     operation::{
-        AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
-        TxRefundOp, RW,
+        AccountField, AccountOp, CallContextField, StorageOp, TxAccessListAccountOp,
+        TxReceiptField, TxRefundOp, RW,
     },
     state_db::CodeDB,
     Error,
 };
 use core::fmt::Debug;
 use eth_types::{
-    evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
+    evm_types::{gas_utils::tx_data_gas_cost, GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     evm_unimplemented, GethExecStep, GethExecTrace, ToAddress, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
@@ -152,11 +153,12 @@ type FnGenAssociatedOps = fn(
 ) -> Result<Vec<ExecStep>, Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
-    if opcode_id.is_push() {
+    if opcode_id.is_push_with_data() {
         return StackOnlyOpcode::<0, 1>::gen_associated_ops;
     }
 
     match opcode_id {
+        OpcodeId::PUSH0 => StackOnlyOpcode::<0, 0>::gen_associated_ops,
         OpcodeId::STOP => Stop::gen_associated_ops,
         OpcodeId::ADD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::MUL => StackOnlyOpcode::<2, 1>::gen_associated_ops,
@@ -466,6 +468,9 @@ pub fn gen_begin_tx_ops(
     let mut exec_step = state.new_begin_tx_step();
     let call = state.call()?.clone();
 
+    // Add 3 RW read operations for transaction L1 fee.
+    gen_tx_l1_fee_ops(state, &mut exec_step);
+
     for (field, value) in [
         (CallContextField::TxId, state.tx_ctx.id().into()),
         (
@@ -523,11 +528,7 @@ pub fn gen_begin_tx_ops(
     }
 
     // Calculate intrinsic gas cost
-    let call_data_gas_cost = state
-        .tx
-        .input
-        .iter()
-        .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 });
+    let call_data_gas_cost = tx_data_gas_cost(&state.tx.input);
     let intrinsic_gas_cost = if state.tx.is_create() {
         GasCost::CREATION_TX.as_u64()
     } else {
@@ -828,6 +829,56 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     }
 
     Ok(exec_step)
+}
+
+// Add 3 RW read operations for transaction L1 fee.
+fn gen_tx_l1_fee_ops(state: &mut CircuitInputStateRef, exec_step: &mut ExecStep) {
+    let tx_id = state.tx_ctx.id();
+
+    let base_fee = Word::from(state.tx.l1_fee.base_fee);
+    let fee_overhead = Word::from(state.tx.l1_fee.fee_overhead);
+    let fee_scalar = Word::from(state.tx.l1_fee.fee_scalar);
+
+    let base_fee_committed = Word::from(state.tx.l1_fee_committed.base_fee);
+    let fee_overhead_committed = Word::from(state.tx.l1_fee_committed.fee_overhead);
+    let fee_scalar_committed = Word::from(state.tx.l1_fee_committed.fee_scalar);
+
+    state.push_op(
+        exec_step,
+        RW::READ,
+        StorageOp::new(
+            *l1_gas_price_oracle::ADDRESS,
+            *l1_gas_price_oracle::BASE_FEE_SLOT,
+            base_fee,
+            base_fee,
+            tx_id,
+            base_fee_committed,
+        ),
+    );
+    state.push_op(
+        exec_step,
+        RW::READ,
+        StorageOp::new(
+            *l1_gas_price_oracle::ADDRESS,
+            *l1_gas_price_oracle::OVERHEAD_SLOT,
+            fee_overhead,
+            fee_overhead,
+            tx_id,
+            fee_overhead_committed,
+        ),
+    );
+    state.push_op(
+        exec_step,
+        RW::READ,
+        StorageOp::new(
+            *l1_gas_price_oracle::ADDRESS,
+            *l1_gas_price_oracle::SCALAR_SLOT,
+            fee_scalar,
+            fee_scalar,
+            tx_id,
+            fee_scalar_committed,
+        ),
+    );
 }
 
 #[derive(Debug, Copy, Clone)]

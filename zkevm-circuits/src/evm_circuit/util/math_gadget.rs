@@ -23,7 +23,7 @@ mod pair_select;
 mod range_check;
 mod rlp;
 #[cfg(test)]
-mod test_util;
+pub mod test_util;
 
 pub(crate) use abs_word::AbsWordGadget;
 pub(crate) use add_words::AddWordsGadget;

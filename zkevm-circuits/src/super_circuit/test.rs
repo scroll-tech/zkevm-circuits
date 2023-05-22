@@ -41,7 +41,7 @@ fn test_super_circuit<
             circuits_params,
         )
         .unwrap();
-    let prover = MockProver::run(k, &circuit, instance).unwrap();
+    let prover = MockProver::run(k+1, &circuit, instance).unwrap();
     let res = prover.verify_par();
     if let Err(err) = res {
         error!("Verification failures: {:#?}", err);

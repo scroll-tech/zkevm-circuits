@@ -52,8 +52,8 @@ use std::{
 
 use crate::table::TxFieldTag::{
     BlockNumber, CallData, CallDataGasCost, CallDataLength, CalleeAddress, CallerAddress, Gas,
-    GasPrice, IsCreate, Nonce, SigR, SigS, SigV, TxHashLength, TxHashRLC, TxSignHash, TxSignLength,
-    TxSignRLC,
+    GasPrice, IsCreate, Nonce, SigR, SigS, SigV, TxDataGasCost, TxHashLength, TxHashRLC,
+    TxSignHash, TxSignLength, TxSignRLC,
 };
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 #[cfg(feature = "onephase")]
@@ -66,9 +66,9 @@ use crate::table::BlockContextFieldTag::CumNumTxs;
 use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
 use halo2_proofs::circuit::Chip;
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 19;
+pub const TX_LEN: usize = 20;
 /// Offset of TxHash tag in the tx table
-pub const TX_HASH_OFFSET: usize = 18;
+pub const TX_HASH_OFFSET: usize = 19;
 
 #[derive(Clone, Debug)]
 struct TagTable {
@@ -1486,6 +1486,11 @@ impl<F: Field> TxCircuit<F> {
                             CallDataGasCost,
                             RlpTxTag::Padding, // no corresponding rlp tag
                             Value::known(F::from(tx.call_data_gas_cost)),
+                        ),
+                        (
+                            TxDataGasCost,
+                            RlpTxTag::Padding, // no corresponding rlp tag
+                            Value::known(F::from(tx.tx_data_gas_cost)),
                         ),
                         (SigV, RlpTxTag::SigV, Value::known(F::from(tx.v))),
                         (

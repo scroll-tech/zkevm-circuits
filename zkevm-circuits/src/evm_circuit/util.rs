@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         param::{
-            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
+            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTES_U64, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
             N_PHASE2_COLUMNS, N_PHASE2_COPY_COLUMNS,
         },
         table::Table,
@@ -537,6 +537,7 @@ impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
 }
 
 pub(crate) type Word<F> = RandomLinearCombination<F, 32>;
+pub(crate) type U64Word<F> = RandomLinearCombination<F, N_BYTES_U64>;
 pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
 /// Decodes a field element from its byte representation
