@@ -62,6 +62,8 @@ pub struct CircuitsParams {
     pub max_txs: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
+    /// Maximum number of rows that the RLP Circuit can have
+    pub max_rlp_rows: usize,
     /// Max amount of rows that the CopyCircuit can have.
     pub max_copy_rows: usize,
     /// Maximum number of inner blocks in a batch
@@ -103,6 +105,7 @@ impl Default for CircuitsParams {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_rlp_rows: 1000,
         }
     }
 }

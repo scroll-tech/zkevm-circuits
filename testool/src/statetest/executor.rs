@@ -330,6 +330,7 @@ pub fn run_test(
             max_exp_steps: 5000,
             max_keccak_rows: 0,
             max_inner_blocks: 64,
+            max_rlp_rows: 6000,
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
@@ -357,6 +358,7 @@ pub fn run_test(
             max_evm_rows: 0,
             max_keccak_rows: 0,
             max_inner_blocks: 64,
+            max_rlp_rows: 512,
         };
         let (k, circuit, instance, _builder) =
             SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 64, 0x100>::build(geth_data, circuits_params)

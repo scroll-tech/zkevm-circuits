@@ -24,8 +24,12 @@ use crate::{
     table::{LookupTable, RlpFsmDataTable, RlpFsmRlpTable, RlpFsmRomTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
-        Block, DataTable, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, State, State::DecodeTagStart,
-        Tag, Transaction,
+        Block, DataTable, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag,
+        State,
+        State::{DecodeTagStart, End},
+        Tag,
+        Tag::EndList,
+        Transaction,
     },
 };
 
@@ -204,6 +208,8 @@ pub struct RlpCircuitConfig<F> {
     /// Boolean to reduce the circuit's degree
     /// transit_to_new_rlp_instance = (is_tag_end == true) && (depth == 1) && (state' != End)
     transit_to_new_rlp_instance: Column<Advice>,
+    /// Boolean to reduce the circuit's degree
+    is_same_rlp_instance: Column<Advice>,
 
     /// Check for byte_value <= 0x80
     byte_value_lte_0x80: ComparatorConfig<F, 1>,
@@ -268,9 +274,11 @@ impl<F: Field> RlpCircuitConfig<F> {
             is_tag_end,
             is_case3,
             transit_to_new_rlp_instance,
+            is_same_rlp_instance,
         ) = (
             meta.fixed_column(),
             meta.fixed_column(),
+            meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
@@ -506,7 +514,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         debug_assert!(meta.degree() <= 9);
 
         //////////////////////////////////////////////////////////
-        //////////// sm lookups //////////////////////////////////
+        //////////// SM lookups //////////////////////////////////
         //////////////////////////////////////////////////////////
         meta.lookup_any("data table lookup", |meta| {
             let q_enabled = meta.query_fixed(q_enabled, Rotation::cur());
@@ -682,9 +690,21 @@ impl<F: Field> RlpCircuitConfig<F> {
             |meta| meta.query_advice(depth, Rotation::cur()),
             |_| 1.expr(),
         );
+        let tx_id_check_in_sm = IsEqualChip::configure(
+            meta,
+            |meta| meta.query_fixed(q_enabled, Rotation::cur()),
+            |meta| meta.query_advice(tx_id, Rotation::cur()),
+            |meta| meta.query_advice(tx_id, Rotation::next()),
+        );
+        let format_check_in_sm = IsEqualChip::configure(
+            meta,
+            |meta| meta.query_fixed(q_enabled, Rotation::cur()),
+            |meta| meta.query_advice(format, Rotation::cur()),
+            |meta| meta.query_advice(format, Rotation::next()),
+        );
 
         // constraints on the booleans that we use to reduce degree
-        meta.create_gate("booleans for reducing degree", |meta| {
+        meta.create_gate("booleans for reducing degree (part one)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             let (bv_gt_0xc0, bv_eq_0xc0) = byte_value_gte_0xc0.expr(meta, None);
@@ -710,6 +730,15 @@ impl<F: Field> RlpCircuitConfig<F> {
                     bv_lt_0xf8,
                 ]),
             );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                not::expr(is_end(meta)),
+            ]))
+        });
+        meta.create_gate("booleans for reducing degree (part two)", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
             cb.require_equal(
                 "transit_to_new = (is_tag_end == true) && (depth == 1) && (state' != End)",
                 meta.query_advice(transit_to_new_rlp_instance, Rotation::cur()),
@@ -722,6 +751,25 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             cb.gate(meta.query_fixed(q_enabled, Rotation::cur()))
         });
+        meta.create_gate("booleans for reducing degree (part three)", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_same_rlp_instance",
+                meta.query_advice(is_same_rlp_instance, Rotation::cur()),
+                and::expr([
+                    tx_id_check_in_sm.is_equal_expression.expr(),
+                    format_check_in_sm.is_equal_expression.expr(),
+                ]),
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enabled, Rotation::cur()),
+                not::expr(is_end(meta)),
+            ]))
+        });
+
+        debug_assert!(meta.degree() <= 9);
 
         let tag_expr = |meta: &mut VirtualCells<F>| meta.query_advice(tag, Rotation::cur());
         let tag_next_expr =
@@ -744,18 +792,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_end, Rotation::next());
         let is_tag_end_expr =
             |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_end, Rotation::cur());
-        let tx_id_check_in_sm = IsEqualChip::configure(
-            meta,
-            |meta| meta.query_fixed(q_enabled, Rotation::cur()),
-            |meta| meta.query_advice(tx_id, Rotation::cur()),
-            |meta| meta.query_advice(tx_id, Rotation::next()),
-        );
-        let format_check_in_sm = IsEqualChip::configure(
-            meta,
-            |meta| meta.query_fixed(q_enabled, Rotation::cur()),
-            |meta| meta.query_advice(format, Rotation::cur()),
-            |meta| meta.query_advice(format, Rotation::next()),
-        );
 
         // TODO: add constraints on byte_idx transition
         meta.create_gate("state transition: byte_idx", |meta| {
@@ -774,10 +810,11 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
-                tx_id_check_in_sm.is_equal_expression.expr(),
-                format_check_in_sm.is_equal_expression.expr(),
+                not::expr(is_end(meta)),
+                meta.query_advice(is_same_rlp_instance, Rotation::cur()),
             ]))
         });
+        debug_assert!(meta.degree() <= 9);
 
         // DecodeTagStart => DecodeTagStart
         meta.create_gate(
@@ -1178,11 +1215,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 depth_eq_one.is_equal_expression.expr(),
                 true.expr(),
             );
-            cb.require_equal(
-                "is_tag_end == true",
-                is_tag_end_expr(meta),
-                true.expr(),
-            );
+            cb.require_equal("is_tag_end == true", is_tag_end_expr(meta), true.expr());
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
@@ -1240,6 +1273,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             is_tag_end,
             is_case3,
             transit_to_new_rlp_instance,
+            is_same_rlp_instance,
 
             // comparators
             byte_value_lte_0x80,
@@ -1452,6 +1486,15 @@ impl<F: Field> RlpCircuitConfig<F> {
             Value::known(F::from(usize::from(format_next) as u64)),
         )?;
 
+        let is_same_rlp_instance = (witness.rlp_table.tx_id == tx_id_next) &&
+            (witness.rlp_table.format == format_next);
+        region.assign_advice(
+            || "is_same_rlp_instance",
+            self.is_same_rlp_instance,
+            row,
+            || Value::known(F::from(is_same_rlp_instance as u64)),
+        )?;
+
         let tidx_le_tlength_chip = ComparatorChip::construct(self.tidx_lte_tlength.clone());
         tidx_le_tlength_chip.assign(
             region,
@@ -1520,6 +1563,33 @@ impl<F: Field> RlpCircuitConfig<F> {
         Ok(())
     }
 
+    fn assign_sm_end_row(&self, region: &mut Region<'_, F>, row: usize) -> Result<(), Error> {
+        region.assign_fixed(
+            || "q_enabled",
+            self.q_enabled,
+            row,
+            || Value::known(F::one()),
+        )?;
+        region.assign_advice(
+            || "sm.state",
+            self.state,
+            row,
+            || Value::known(F::from(usize::from(End) as u64)),
+        )?;
+        region.assign_advice(
+            || "sm.tag",
+            self.tag,
+            row,
+            || Value::known(F::from(usize::from(EndList) as u64)),
+        )?;
+        let state_chip = BinaryNumberChip::construct(self.state_bits);
+        state_chip.assign(region, row, &End)?;
+        let tag_chip = BinaryNumberChip::construct(self.tag_bits);
+        tag_chip.assign(region, row, &EndList)?;
+
+        Ok(())
+    }
+
     fn assign_dt_row(
         &self,
         region: &mut Region<'_, F>,
@@ -1564,11 +1634,16 @@ impl<F: Field> RlpCircuitConfig<F> {
         Ok(())
     }
 
+    pub fn assign_dt_end_row(&self, region: &mut Region<'_, F>, row: usize) -> Result<(), Error> {
+        Ok(())
+    }
+
     /// Assign witness to the RLP circuit.
     pub(crate) fn assign<RLP: RlpFsmWitnessGen<F>>(
         &self,
         layouter: &mut impl Layouter<F>,
         inputs: &[RLP],
+        last_row: usize,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         let dt_rows = inputs
@@ -1579,6 +1654,8 @@ impl<F: Field> RlpCircuitConfig<F> {
             .iter()
             .flat_map(|input| input.gen_sm_witness(challenges))
             .collect::<Vec<_>>();
+
+        debug_assert!(sm_rows.len() <= last_row);
 
         self.range256_table.load(layouter)?;
         self.rom_table.load(layouter)?;
@@ -1611,6 +1688,9 @@ impl<F: Field> RlpCircuitConfig<F> {
                         Some(&sm_rows[i + 1])
                     };
                     self.assign_sm_row(&mut region, i, sm_row, sm_row_next)?;
+                }
+                for i in sm_rows.len()..last_row {
+                    self.assign_sm_end_row(&mut region, i)?;
                 }
 
                 Ok(())
@@ -1658,7 +1738,7 @@ pub struct RlpCircuit<F, RLP> {
     pub txs: Vec<RLP>,
     /// Maximum number of txs supported.
     pub max_txs: usize,
-    /// Size of the RLP circuit.
+    /// Maximum number of rows supported.
     pub size: usize,
     _marker: PhantomData<F>,
 }
@@ -1679,12 +1759,13 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
 
     fn new_from_block(block: &Block<F>) -> Self {
         let max_txs = block.circuits_params.max_txs;
+        let size = block.circuits_params.max_rlp_rows;
         debug_assert!(block.txs.len() <= max_txs);
 
         Self {
             txs: block.txs.clone(),
             max_txs,
-            size: 0,
+            size,
             _marker: Default::default(),
         }
     }
@@ -1695,7 +1776,7 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.assign(layouter, &self.txs, challenges)
+        config.assign(layouter, &self.txs, self.size, challenges)
     }
 
     fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
@@ -1706,9 +1787,9 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
             .iter()
             .map(|tx| tx.gen_sm_witness(&challenges).len())
             .sum();
+        let max_num_rows = block.circuits_params.max_rlp_rows;
 
-        // TODO: fix me
-        (sm_rows, sm_rows)
+        (sm_rows, max_num_rows)
     }
 }
 
@@ -1755,9 +1836,13 @@ impl<F: Field> Circuit<F> for RlpCircuit<F, Transaction> {
 mod tests {
     use crate::{rlp_circuit_fsm::RlpCircuit, witness::Transaction};
     use eth_types::{geth_types::TxTypes, word, Address};
-    use ethers_core::types::{Eip1559TransactionRequest, transaction::eip2718::TypedTransaction, TransactionRequest};
-    use ethers_core::types::Transaction as EthTransaction;
-    use ethers_core::utils::rlp::{Decodable, Rlp};
+    use ethers_core::{
+        types::{
+            transaction::eip2718::TypedTransaction, Eip1559TransactionRequest,
+            Transaction as EthTransaction, TransactionRequest,
+        },
+        utils::rlp::{Decodable, Rlp},
+    };
     use ethers_signers::Wallet;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
     use mock::{eth, MOCK_CHAIN_ID};
@@ -1797,7 +1882,7 @@ mod tests {
         let rlp_circuit = RlpCircuit::<Fr, Transaction> {
             txs: vec![tx],
             max_txs: 10,
-            size: 0,
+            size: 500,
             _marker: Default::default(),
         };
 
@@ -1817,7 +1902,7 @@ mod tests {
         let rlp_circuit = RlpCircuit::<Fr, Transaction> {
             txs: vec![tx],
             max_txs: 10,
-            size: 0,
+            size: 500,
             _marker: Default::default(),
         };
 
@@ -1846,7 +1931,7 @@ mod tests {
         let rlp_circuit = RlpCircuit::<Fr, Transaction> {
             txs: vec![tx],
             max_txs: 10,
-            size: 0,
+            size: 1000,
             _marker: Default::default(),
         };
 

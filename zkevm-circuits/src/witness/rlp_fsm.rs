@@ -278,11 +278,21 @@ pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
         (BeginVector, EndVector, 8, vec![20]), // access_list is none
         (BeginVector, BeginList, 8, vec![11]),
         (BeginList, AccessListAddress, 8, vec![12]),
-        (AccessListAddress, BeginVector, N_BYTES_ACCOUNT_ADDRESS, vec![13, 14]),
+        (
+            AccessListAddress,
+            BeginVector,
+            N_BYTES_ACCOUNT_ADDRESS,
+            vec![13, 14],
+        ),
         (BeginVector, EndVector, 8, vec![17]), /* access_list.storage_keys is none */
         (BeginVector, AccessListStorageKey, 8, vec![15, 16]),
         (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![17]), // finished parsing storage keys
-        (AccessListStorageKey, AccessListStorageKey, N_BYTES_WORD, vec![15, 16]), // keep parsing storage_keys
+        (
+            AccessListStorageKey,
+            AccessListStorageKey,
+            N_BYTES_WORD,
+            vec![15, 16],
+        ), // keep parsing storage_keys
         (EndVector, EndList, 0, vec![18, 19]),
         (EndList, EndVector, 0, vec![20]), // finished parsing access_list
         (EndList, BeginList, 0, vec![11]), // parse another access_list entry
@@ -332,7 +342,7 @@ impl RomTableRow {
 }
 
 /// Format that we are able to decode
-#[derive(Clone, Copy, Default, Debug, EnumIter)]
+#[derive(Clone, Copy, Default, Debug, EnumIter, PartialEq)]
 pub enum Format {
     /// Sign for EIP155 tx
     #[default]
