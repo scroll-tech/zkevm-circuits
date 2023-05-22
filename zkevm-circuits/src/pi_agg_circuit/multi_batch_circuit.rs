@@ -381,7 +381,6 @@ fn capacity(num_rows: usize) -> Option<usize> {
 /// Return
 /// - the indices of the rows that contain the input preimages
 /// - the indices of the rows that contain the output digest
-/// - number of rounds that used for all but last two hashes
 fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
     let mut preimage_indices = vec![];
     let mut digest_indices = vec![];

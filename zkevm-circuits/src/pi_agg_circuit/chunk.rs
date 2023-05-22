@@ -23,12 +23,10 @@ impl<const MAX_TXS: usize> ChunkPublicData<MAX_TXS> {
         let mut to_be_hashed = vec![];
 
         self.public_data_vec.iter().for_each(|public_data| {
-            to_be_hashed
-                .extend_from_slice(
-                    // extract all the data from transactions
-                    public_data.get_pi(MAX_TXS).as_bytes(),
-                )
-                .into()
+            to_be_hashed.extend_from_slice(
+                // extract all the data from transactions
+                public_data.get_pi(MAX_TXS).as_bytes(),
+            )
         });
         // data hash is the keccak hash of concatenation of all data fields
         let digest = keccak256::<&[u8]>(to_be_hashed.as_ref()).into();

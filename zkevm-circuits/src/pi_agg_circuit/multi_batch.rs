@@ -27,12 +27,10 @@ impl<const MAX_TXS: usize> MultiBatchPublicData<MAX_TXS> {
         self.public_data_chunks
             .iter()
             .for_each(|public_data_chunk| {
-                to_be_hashed
-                    .extend_from_slice(
-                        // extract all the data from each chunk
-                        public_data_chunk.raw_data_hash_bytes().as_ref(),
-                    )
-                    .into()
+                to_be_hashed.extend_from_slice(
+                    // extract all the data from each chunk
+                    public_data_chunk.raw_data_hash_bytes().as_ref(),
+                )
             });
         // data hash is the keccak hash of concatenation of all data fields
         let digest = keccak256::<&[u8]>(to_be_hashed.as_ref()).into();
@@ -51,12 +49,10 @@ impl<const MAX_TXS: usize> MultiBatchPublicData<MAX_TXS> {
         self.public_data_chunks
             .iter()
             .for_each(|public_data_chunk| {
-                to_be_hashed
-                    .extend_from_slice(
-                        // extract all the data from each chunk
-                        public_data_chunk.raw_public_input_hash_bytes().as_ref(),
-                    )
-                    .into()
+                to_be_hashed.extend_from_slice(
+                    // extract all the data from each chunk
+                    public_data_chunk.raw_public_input_hash_bytes().as_ref(),
+                )
             });
         let digest = keccak256::<&[u8]>(to_be_hashed.as_ref()).into();
         (to_be_hashed, digest)

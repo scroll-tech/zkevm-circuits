@@ -56,11 +56,6 @@ fn test_pi_agg_circuit() {
         .iter()
         .map(|byte| Fr::from(*byte as u64))
         .collect();
-    // .chunks(8)
-    // .rev() // reverse the order so it matches the layout in the circuit
-    // .map(|chunk| chunk.iter().map(|byte| Fr::from(*byte as u64)))
-    // .flatten()
-    // .collect();
     println!("rpi");
     for e in raw_public_input.iter() {
         println!("{:?}", e)
