@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_WORD,
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
@@ -44,7 +45,7 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
         // OpcodeId::AND as the delta to FixedTableTag::BitwiseAnd.
         let tag =
             FixedTableTag::BitwiseAnd.expr() + (opcode.expr() - OpcodeId::AND.as_u64().expr());
-        for idx in 0..32 {
+        for idx in 0..N_BYTES_WORD {
             cb.add_lookup(
                 "Bitwise lookup",
                 Lookup::Fixed {

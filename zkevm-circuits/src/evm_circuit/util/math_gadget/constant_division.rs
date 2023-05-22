@@ -31,6 +31,7 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
         numerator: Expression<F>,
         denominator: u64,
     ) -> Self {
+        assert!(N_BYTES <= 31);
         let quotient = cb.query_cell_with_type(CellType::storage_for_expr(&numerator));
         let remainder = cb.query_cell_with_type(CellType::storage_for_expr(&numerator));
 

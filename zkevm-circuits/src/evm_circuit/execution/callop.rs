@@ -129,6 +129,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Add callee to access list
         let is_warm = cb.query_bool();
         let is_warm_prev = cb.query_bool();
+        cb.require_true("callee add should be updated to warm", is_warm.expr());
         cb.account_access_list_write(
             tx_id.expr(),
             call_gadget.callee_address_expr(),

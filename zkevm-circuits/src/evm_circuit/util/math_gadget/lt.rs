@@ -34,6 +34,7 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
+        assert!(N_BYTES <= 31);
         let lt = cb.query_bool();
         let diff = cb.query_bytes();
         let range = pow_of_two(N_BYTES * 8);

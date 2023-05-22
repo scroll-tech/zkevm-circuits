@@ -302,7 +302,8 @@ impl ExecutionState {
                 OpcodeId::LOG3,
                 OpcodeId::LOG4,
             ],
-            Self::CREATE => vec![OpcodeId::CREATE, OpcodeId::CREATE2],
+            Self::CREATE => vec![OpcodeId::CREATE],
+            Self::CREATE2 => vec![OpcodeId::CREATE2],
             Self::CALL_OP => vec![
                 OpcodeId::CALL,
                 OpcodeId::CALLCODE,
