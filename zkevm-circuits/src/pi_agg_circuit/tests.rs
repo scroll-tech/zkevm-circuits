@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
-use crate::pi_circuit::PublicData;
+use crate::{pi_circuit::PublicData, util::SubCircuit};
 
 use super::{
     chunk::ChunkPublicData, multi_batch::MultiBatchPublicData,
@@ -50,25 +50,14 @@ fn test_pi_agg_circuit() {
         ],
     };
     let (_, hash_digest) = multi_batch.raw_public_input_hash();
-    println!("hash digest: {:?}", hash_digest);
-    let raw_public_input: Vec<Fr> = hash_digest
-        .0
-        .iter()
-        .map(|byte| Fr::from(*byte as u64))
-        .collect();
-    println!("rpi");
-    for e in raw_public_input.iter() {
-        println!("{:?}", e)
-    }
-
     let multi_batch_circuit = MultiBatchCircuit::<Fr, TEST_MAX_TXS> {
         multi_batch_public_data: multi_batch,
         hash_digest,
         _marker: PhantomData::default(),
     };
+    let instance = multi_batch_circuit.instance();
 
-    let mock_prover =
-        MockProver::<Fr>::run(LOG_DEGREE, &multi_batch_circuit, vec![raw_public_input]).unwrap();
+    let mock_prover = MockProver::<Fr>::run(LOG_DEGREE, &multi_batch_circuit, instance).unwrap();
 
     mock_prover.assert_satisfied_par()
 }

@@ -16,14 +16,16 @@
 //! For now we stick to this hard coded design for simplicity.
 //! A flexible design is a future work.
 
-use super::{multi_batch::MultiBatchPublicData, LOG_DEGREE};
+use super::{
+    multi_batch::MultiBatchPublicData, multi_batch_sub_circuit::MultiBatchCircuitConfigArgs,
+};
 use crate::{
     keccak_circuit::{
         keccak_packed_multi::{get_num_rows_per_round, multi_keccak},
         param::NUM_ROUNDS,
-        KeccakCircuitConfig, KeccakCircuitConfigArgs,
+        KeccakCircuitConfig,
     },
-    table::{KeccakTable, LookupTable},
+    table::LookupTable,
     util::{Challenges, SubCircuitConfig},
 };
 
@@ -54,21 +56,18 @@ impl<F: Field, const MAX_TXS: usize> MultiBatchCircuit<F, MAX_TXS> {
 #[derive(Clone, Debug)]
 pub struct MultiBatchCircuitConfig<F: Field> {
     /// Log of the degree of the circuit
-    log_degree: usize,
+    pub(crate) log_degree: usize,
 
     /// Max number of supported transactions
-    max_txs: usize,
+    pub(crate) max_txs: usize,
 
     /// Instance column stores the aggregated rpi hash digest
-    hash_digest_column: Column<Instance>,
-
-    /// Challenges
-    challenges: Challenges,
+    pub(crate) hash_digest_column: Column<Instance>,
 
     /// Keccak circuit config
-    keccak_circuit_config: KeccakCircuitConfig<F>,
+    pub(crate) keccak_circuit_config: KeccakCircuitConfig<F>,
 
-    _marker: PhantomData<F>,
+    pub(crate) _marker: PhantomData<F>,
 }
 
 impl<F: Field> MultiBatchCircuitConfig<F> {
@@ -255,7 +254,7 @@ impl<F: Field> MultiBatchCircuitConfig<F> {
 impl<F: Field, const MAX_TXS: usize> Circuit<F> for MultiBatchCircuit<F, MAX_TXS> {
     type FloorPlanner = SimpleFloorPlanner;
 
-    type Config = MultiBatchCircuitConfig<F>;
+    type Config = (MultiBatchCircuitConfig<F>, Challenges);
 
     fn without_witnesses(&self) -> Self {
         Self {
@@ -266,49 +265,13 @@ impl<F: Field, const MAX_TXS: usize> Circuit<F> for MultiBatchCircuit<F, MAX_TXS
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        // Instance column stores the output of the hash
-        // i.e., hi(keccak(hash_preimage)), lo(keccak(hash_preimage))
-        let hash_digest_column = meta.instance_column();
-
         let challenges = Challenges::construct(meta);
         let challenges_exprs = challenges.exprs(meta);
-
-        // hash configuration
-        let keccak_circuit_config = {
-            let keccak_table = KeccakTable::construct(meta);
-
-            let keccak_circuit_config_args = KeccakCircuitConfigArgs {
-                keccak_table,
-                challenges: challenges_exprs,
-            };
-
-            KeccakCircuitConfig::new(meta, keccak_circuit_config_args)
+        let args = MultiBatchCircuitConfigArgs {
+            challenges: challenges_exprs,
         };
-
-        let columns = keccak_circuit_config.cell_manager.columns();
-        // The current code base is hardcoded for KeccakCircuit configured
-        // with 300 rows and 87 columns per hash call.
-        assert_eq!(
-            columns.len(),
-            87,
-            "cell manager configuration does not match the hard coded setup"
-        );
-
-        // enabling equality for preimage and digest columns
-        meta.enable_equality(columns[6].advice);
-        // digest column
-        meta.enable_equality(columns.last().unwrap().advice);
-        // public input column
-        meta.enable_equality(hash_digest_column);
-
-        MultiBatchCircuitConfig {
-            log_degree: LOG_DEGREE as usize,
-            max_txs: MAX_TXS,
-            hash_digest_column,
-            challenges,
-            keccak_circuit_config,
-            _marker: PhantomData::default(),
-        }
+        let config = MultiBatchCircuitConfig::new(meta, args);
+        (config, challenges)
     }
 
     fn synthesize(
@@ -316,7 +279,9 @@ impl<F: Field, const MAX_TXS: usize> Circuit<F> for MultiBatchCircuit<F, MAX_TXS
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = config.challenges.values(&layouter);
+        let (config, challenge) = config;
+
+        let challenges = challenge.values(&layouter);
 
         //==============================================================
         // extract all the hashes and load them to the hash table
