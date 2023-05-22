@@ -32,8 +32,7 @@ use halo2_proofs::{
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, Column, ConstraintSystem, Error, Instance},
 };
-use itertools::Itertools;
-use std::marker::PhantomData;
+use std::{marker::PhantomData, vec};
 
 /// Circuit inputs for MultiBatch
 #[derive(Clone, Debug)]
@@ -60,8 +59,7 @@ pub struct MultiBatchCircuitConfig<F: Field> {
     /// Max number of supported transactions
     max_txs: usize,
 
-    /// Instance column stores the output of the hash
-    /// i.e., hi(keccak(hash_preimage)), lo(keccak(hash_preimage))
+    /// Instance column stores the aggregated rpi hash digest
     hash_digest_column: Column<Instance>,
 
     /// Challenges
@@ -83,11 +81,10 @@ impl<F: Field> MultiBatchCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         challenges: Challenges<Value<F>>,
         preimages: &[Vec<u8>],
-        num_chunks: usize,
     ) -> Result<
         (
-            Vec<AssignedCell<F, F>>, // input cells
-            Vec<AssignedCell<F, F>>, // digest cells
+            Vec<Vec<AssignedCell<F, F>>>, // input cells
+            Vec<Vec<AssignedCell<F, F>>>, // digest cells
         ),
         Error,
     > {
@@ -96,11 +93,14 @@ impl<F: Field> MultiBatchCircuitConfig<F> {
 
         let witness = multi_keccak(preimages, challenges, capacity(num_rows))?;
 
-        let preimage_indices = get_preimage_indices(preimages);
-        let digest_indices = get_digest_indices(preimages.len());
+        // extract the indices of the rows for which the preimage and the digest cells lie in
+        let (preimage_indices, digest_indices) = get_indices(preimages);
 
-        let mut inputs = vec![];
-        let mut digests = vec![];
+        log::info!("preimage indices: {:?}", preimage_indices);
+        log::info!("digest indices:   {:?}", digest_indices);
+
+        let mut hash_input_cells = vec![];
+        let mut hash_output_cells = vec![];
 
         layouter.assign_region(
             || "assign keccak rows",
@@ -112,112 +112,103 @@ impl<F: Field> MultiBatchCircuitConfig<F> {
                         .set_row(&mut region, offset, &witness[offset])?;
                     return Ok(());
                 }
-                // assign the hash cells
-                let mut final_rpi_hash_inputs = vec![];
-                let mut final_data_hash_inputs = vec![];
-                let mut final_rpi_hash_inputs_reused = vec![];
-                let mut final_data_hash_inputs_reused = vec![];
-                let total_hash_ctr = 2 * num_chunks + 2;
+                // ====================================================
+                // Step 1. Extract the hash cells
+                // ====================================================
+                let mut current_hash_input_cells = vec![];
+                let mut current_hash_output_cells = vec![];
 
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     let row =
                         self.keccak_circuit_config
                             .set_row(&mut region, offset, keccak_row)?;
 
-                    // we have k chunks, each chunk requires 2 hashes
-                    // so the total input hashes prior to the final two is 2k
-                    // extract the cells that are going to be reused as preimages
-                    if offset <= 2 * num_chunks * 300 && digest_indices.contains(&offset) {
-                        let current_hash_ctr = offset / 300;
-                        // this hash occurred in the batch,
-                        // we need to extract the digests
-                        if current_hash_ctr % 2 == 0 {
-                            // data hash
-                            final_data_hash_inputs.push(row.last().unwrap().clone())
-                        } else {
-                            // rpi hash
-                            final_rpi_hash_inputs.push(row.last().unwrap().clone())
-                        }
-                    }
-                    // extract the cells that are the preimages
-                    if offset <= (2 * num_chunks + 1) * 300
-                        && offset > 2 * num_chunks * 300
-                        && preimage_indices.contains(&offset)
-                    {
-                        // data hash
-                        final_data_hash_inputs_reused.push(row[6].clone());
-                    }
-                    if offset <= total_hash_ctr * 300
-                        && offset > (2 * num_chunks + 1) * 300
-                        && preimage_indices.contains(&offset)
-                    {
-                        // rpi hash
-                        final_rpi_hash_inputs_reused.push(row[6].clone());
-                    }
-
-                    // extract the returning cells
                     if preimage_indices.contains(&offset) {
-                        inputs.push(row[6].clone());
+                        current_hash_input_cells.push(row[6].clone());
                     }
                     if digest_indices.contains(&offset) {
-                        digests.push(row.last().unwrap().clone());
+                        current_hash_output_cells.push(row.last().unwrap().clone());
+                    }
+
+                    // we reset the current hash when it is finalized
+                    // note that length == 0 indicate that the hash is a padding
+                    // so we simply skip it
+                    if keccak_row.is_final && keccak_row.length != 0 {
+                        hash_input_cells.push(current_hash_input_cells);
+                        hash_output_cells.push(current_hash_output_cells);
+                        current_hash_input_cells = vec![];
+                        current_hash_output_cells = vec![];
                     }
                 }
-                // now we need to constrain that the hash digests are used as preimages
+
+                // sanity: we have same number of hash input and output
+                let hash_num = hash_input_cells.len();
+                assert!(hash_num % 2 == 0);
+                assert_eq!(hash_num, hash_output_cells.len());
+
+                // ====================================================
+                // Step 2. Constraint the hash digest is reused later for hash preimages
+                // ====================================================
                 {
-                    assert_eq!(
-                        final_data_hash_inputs.len(),
-                        final_data_hash_inputs_reused.len(),
-                        "final data hash's input length does not match"
-                    );
-                    let chunks = final_data_hash_inputs.len() / 8;
-                    for i in 0..chunks {
-                        for j in 0..8 {
-                            {
-                                let mut t1 = F::default();
-                                let mut t2 = F::default();
-                                final_data_hash_inputs[i * 8 + j].value().map(|f| t1 = *f);
-                                final_data_hash_inputs_reused[(chunks - i - 1) * 8 + j]
-                                    .value()
-                                    .map(|f| t2 = *f);
-                                assert_eq!(t1, t2)
+                    // 2.1 assert the data hash's input is well-formed
+                    {
+                        let mut final_data_hash_inputs = vec![];
+                        for i in 0..hash_num / 2 - 1 {
+                            final_data_hash_inputs
+                                .extend_from_slice(hash_output_cells[i * 2].as_ref());
+                        }
+                        assert_eq!(
+                            final_data_hash_inputs.len(),
+                            hash_input_cells[hash_num - 2].len()
+                        );
+                        let chunks = final_data_hash_inputs.len() / 8;
+                        for i in 0..chunks {
+                            for j in 0..8 {
+                                // sanity: the values in cells match
+                                assert_equal(
+                                    &final_data_hash_inputs[i * 8 + j],
+                                    &hash_input_cells[hash_num - 2][(chunks - i - 1) * 8 + j],
+                                );
+                                // preimage and digest has different endianness
+                                // (great design decision btw /s)
+                                region.constrain_equal(
+                                    final_data_hash_inputs[i * 8 + j].cell(),
+                                    hash_input_cells[hash_num - 2][(chunks - i - 1) * 8 + j].cell(),
+                                )?;
                             }
-                            // preimage and digest has different endianness
-                            // (great design decision btw /s)
-                            region.constrain_equal(
-                                final_data_hash_inputs[i * 8 + j].cell(),
-                                final_data_hash_inputs_reused[(chunks - i - 1) * 8 + j].cell(),
-                            )?;
+                        }
+                    }
+
+                    // 2.2 assert the rpi hash's input is well-formed
+                    {
+                        let mut final_rpi_hash_inputs = vec![];
+                        for i in 0..hash_num / 2 - 1 {
+                            final_rpi_hash_inputs
+                                .extend_from_slice(hash_output_cells[i * 2 + 1].as_ref());
+                        }
+                        assert_eq!(
+                            final_rpi_hash_inputs.len(),
+                            hash_input_cells[hash_num - 1].len()
+                        );
+                        let chunks = final_rpi_hash_inputs.len() / 8;
+                        for i in 0..chunks {
+                            for j in 0..8 {
+                                // sanity: the values in cells match
+                                assert_equal(
+                                    &final_rpi_hash_inputs[i * 8 + j],
+                                    &hash_input_cells[hash_num - 1][(chunks - i - 1) * 8 + j],
+                                );
+                                // preimage and digest has different endianness
+                                // (great design decision btw /s)
+                                region.constrain_equal(
+                                    final_rpi_hash_inputs[i * 8 + j].cell(),
+                                    hash_input_cells[hash_num - 1][(chunks - i - 1) * 8 + j].cell(),
+                                )?;
+                            }
                         }
                     }
                 }
-                {
-                    assert_eq!(
-                        final_rpi_hash_inputs.len(),
-                        final_rpi_hash_inputs_reused.len(),
-                        "final data hash's input length does not match"
-                    );
-                    let chunks = final_rpi_hash_inputs.len() / 8;
-                    for i in 0..chunks {
-                        for j in 0..8 {
-                            {
-                                let mut t1 = F::default();
-                                let mut t2 = F::default();
-                                final_rpi_hash_inputs[i * 8 + j].value().map(|f| t1 = *f);
-                                final_rpi_hash_inputs_reused[(chunks - i - 1) * 8 + j]
-                                    .value()
-                                    .map(|f| t2 = *f);
-                                assert_eq!(t1, t2)
-                            }
-                            // preimage and digest has different endianness
-                            // (great design decision btw /s)
-                            region.constrain_equal(
-                                final_rpi_hash_inputs[i * 8 + j].cell(),
-                                final_rpi_hash_inputs_reused[(chunks - i - 1) * 8 + j].cell(),
-                            )?;
-                        }
-                    }
-                }
+
                 self.keccak_circuit_config
                     .keccak_table
                     .annotate_columns_in_region(&mut region);
@@ -225,7 +216,39 @@ impl<F: Field> MultiBatchCircuitConfig<F> {
                 Ok(())
             },
         )?;
-        Ok((inputs, digests))
+
+        // ====================================================
+        // Step 3. Constraint the final hash output matches the raw public input
+        // ====================================================
+        {
+            let final_digest_cells = hash_output_cells.last().unwrap();
+            for i in 0..4 {
+                for j in 0..8 {
+                    // digest in circuit has a different endianness
+                    layouter.constrain_instance(
+                        final_digest_cells[(3 - i) * 8 + j].cell(),
+                        self.hash_digest_column,
+                        i * 8 + j,
+                    )?;
+                }
+            }
+        }
+
+        // debugging info
+        //
+        // print!("input: ");
+        // for e in hash_input_cells.iter() {
+        //     print!("{} ", e.len());
+        // }
+        // println!();
+        //
+        // print!("digests: ");
+        // for e in hash_output_cells.iter() {
+        //     print!("{} ", e.len());
+        // }
+        // println!();
+
+        Ok((hash_input_cells, hash_output_cells))
     }
 }
 
@@ -275,6 +298,8 @@ impl<F: Field, const MAX_TXS: usize> Circuit<F> for MultiBatchCircuit<F, MAX_TXS
         meta.enable_equality(columns[6].advice);
         // digest column
         meta.enable_equality(columns.last().unwrap().advice);
+        // public input column
+        meta.enable_equality(hash_digest_column);
 
         MultiBatchCircuitConfig {
             log_degree: LOG_DEGREE as usize,
@@ -298,30 +323,11 @@ impl<F: Field, const MAX_TXS: usize> Circuit<F> for MultiBatchCircuit<F, MAX_TXS
         //==============================================================
         let (preimages, _digests) = self.multi_batch_public_data.extract_hashes();
 
-        // for i in 0..4 {
-        //     println!("{}-th hash", i);
-        //     println!("preimage: {:02x?}", preimages[i]);
-        //     println!(
-        //         "preimage rlc: {:02x?}",
-        //         data_to_rlc(preimages[i].as_ref(), &challenges)
-        //     );
-        //     println!("digest: {:02x?}", digests[i]);
-        //     println!(
-        //         "digest rlc: {:02x?}\n\n",
-        //         data_to_rlc(digests[i].as_ref(), &challenges)
-        //     );
-        // }
-
         config
             .keccak_circuit_config
             .load_aux_tables(&mut layouter)?;
 
-        let (_preimages, _digests) = config.assign(
-            &mut layouter,
-            challenges,
-            &preimages,
-            self.multi_batch_public_data.public_data_chunks.len(),
-        )?;
+        let (_preimages, _digests) = config.assign(&mut layouter, challenges, &preimages)?;
 
         // Following code are used for debugging
         //
@@ -363,14 +369,6 @@ impl<F: Field, const MAX_TXS: usize> Circuit<F> for MultiBatchCircuit<F, MAX_TXS
     }
 }
 
-// compute an RLC of the hash digest in the clear
-fn data_to_rlc<F: Field>(digest: &[u8], challenges: &Challenges<Value<F>>) -> Value<F> {
-    digest.iter().fold(Value::known(F::zero()), |acc, byte| {
-        acc.zip(challenges.evm_word())
-            .and_then(|(acc, rand)| Value::known(acc * rand + F::from(*byte as u64)))
-    })
-}
-
 fn capacity(num_rows: usize) -> Option<usize> {
     if num_rows > 0 {
         // Subtract two for unusable rows
@@ -380,28 +378,45 @@ fn capacity(num_rows: usize) -> Option<usize> {
     }
 }
 
-/// Return the indices of the rows that contain the input preimages
-fn get_preimage_indices(preimages: &[Vec<u8>]) -> Vec<usize> {
-    let mut res = vec![];
-    for (i, preimage) in preimages.iter().enumerate() {
-        for (j, chunk) in preimage.iter().chunks(8).into_iter().enumerate() {
-            for (k, _) in chunk.enumerate() {
-                res.push(i * 300 + j * 12 + k + 12)
+/// Return
+/// - the indices of the rows that contain the input preimages
+/// - the indices of the rows that contain the output digest
+/// - number of rounds that used for all but last two hashes
+fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
+    let mut preimage_indices = vec![];
+    let mut digest_indices = vec![];
+    let mut round_ctr = 0;
+
+    for preimage in preimages.iter() {
+        let num_rounds = 1 + preimage.len() / 136;
+        for (i, round) in preimage.chunks(136).enumerate() {
+            // indices for preimegas
+            for (j, _chunk) in round.chunks(8).into_iter().enumerate() {
+                for k in 0..8 {
+                    preimage_indices.push(round_ctr * 300 + j * 12 + k + 12)
+                }
             }
+            // indices for digests
+            if i == num_rounds - 1 {
+                for j in 0..4 {
+                    for k in 0..8 {
+                        digest_indices.push(round_ctr * 300 + (3 - j) * 12 + k + 252)
+                    }
+                }
+            }
+            round_ctr += 1;
         }
     }
-    res
+    (preimage_indices, digest_indices)
 }
 
-/// Return the indices of the rows that contain the output digest
-fn get_digest_indices(digest_len: usize) -> Vec<usize> {
-    let mut res = vec![];
-    for i in 0..digest_len {
-        for j in 0..4 {
-            for k in 0..8 {
-                res.push(i * 300 + (3 - j) * 12 + k + 252)
-            }
-        }
-    }
-    res
+#[inline]
+// assert two cells have same value
+// (NOT constraining equality in circuit)
+fn assert_equal<F: Field>(a: &AssignedCell<F, F>, b: &AssignedCell<F, F>) {
+    let mut t1 = F::default();
+    let mut t2 = F::default();
+    a.value().map(|f| t1 = *f);
+    b.value().map(|f| t2 = *f);
+    assert_eq!(t1, t2)
 }
