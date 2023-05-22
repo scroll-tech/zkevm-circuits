@@ -1,6 +1,5 @@
 use eth_types::Field;
 use gadgets::{
-    is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     is_zero::{IsZeroChip as IsZeroGadgetChip, IsZeroConfig as IsZeroGadgetConfig},
     util::Expr,
 };

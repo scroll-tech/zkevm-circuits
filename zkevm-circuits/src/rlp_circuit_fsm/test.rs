@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::{rlp_circuit_fsm::RlpCircuit, witness::Transaction};
 use eth_types::{geth_types::TxTypes, word, Address};
 use ethers_core::{
@@ -12,6 +13,7 @@ use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use mock::{eth, MOCK_CHAIN_ID};
 use rand::rngs::OsRng;
 
+#[cfg(test)]
 fn get_tx(is_eip155: bool) -> Transaction {
     let rng = &mut OsRng;
     let from = Wallet::new(rng);

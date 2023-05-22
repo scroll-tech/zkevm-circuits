@@ -16,10 +16,9 @@ use gadgets::{
     util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+    circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Any, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        VirtualCells,
+        Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
     },
     poly::Rotation,
 };
@@ -1508,7 +1507,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         // assign to intermediates
         let byte_value = witness.state_machine.byte_value;
         let is_case3 =
-            (byte_value < 0xf8) && (byte_value >= 0xc0) && !witness.state_machine.tag.is_end();
+            (0xc0..0xf8).contains(&byte_value) && !witness.state_machine.tag.is_end();
         let transit_to_new = witness.state_machine.tag.is_end()
             && (witness.state_machine.depth == 1)
             && witness_next.is_some();
