@@ -93,6 +93,7 @@ mod tests {
             max_evm_rows: 0,
             max_inner_blocks: MAX_INNER_BLOCKS,
             max_keccak_rows: 0,
+            max_rlp_rows: 256,
         };
         let (_, circuit, instance, _) =
             SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>::build(

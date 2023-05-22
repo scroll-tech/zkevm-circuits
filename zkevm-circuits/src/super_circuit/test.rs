@@ -205,6 +205,7 @@ fn serial_test_super_circuit_1tx_1max_tx() {
         max_evm_rows: 0,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
+        max_rlp_rows: 500,
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
         block,
@@ -233,6 +234,7 @@ fn serial_test_super_circuit_1tx_deploy_2max_tx() {
         max_inner_blocks: MAX_INNER_BLOCKS,
         max_exp_steps: 256,
         max_evm_rows: 0,
+        max_rlp_rows: 500,
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
         block,
@@ -259,6 +261,7 @@ fn serial_test_super_circuit_1tx_2max_tx() {
         max_evm_rows: 0,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
+        max_rlp_rows: 500,
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
         block,
@@ -287,6 +290,7 @@ fn serial_test_super_circuit_2tx_4max_tx() {
         max_inner_blocks: MAX_INNER_BLOCKS,
         max_exp_steps: 256,
         max_evm_rows: 0,
+        max_rlp_rows: 800,
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
         block,
@@ -313,6 +317,7 @@ fn serial_test_super_circuit_2tx_2max_tx() {
         max_evm_rows: 0,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
+        max_rlp_rows: 500,
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
         block,

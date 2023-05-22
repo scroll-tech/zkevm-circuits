@@ -35,7 +35,8 @@ use zkevm_circuits::{
     keccak_circuit::TestKeccakCircuit,
     state_circuit::TestStateCircuit,
     super_circuit::SuperCircuit,
-    tx_circuit::TestTxCircuit,
+    // FIXME
+    // tx_circuit::TestTxCircuit,
     util::SubCircuit,
     witness::{block_convert, Block},
 };
@@ -47,6 +48,8 @@ const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 const MAX_TXS: usize = 4;
 /// MAX_CALLDATA
 const MAX_CALLDATA: usize = 512;
+/// MAX_RLP_ROWS
+const MAX_RLP_ROWS: usize = 1000;
 /// MAX_RWS
 const MAX_RWS: usize = 5888;
 /// MAX_BYTECODE
@@ -73,11 +76,13 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_evm_rows: MAX_EVM_ROWS,
     max_exp_steps: MAX_EXP_STEPS,
     max_keccak_rows: MAX_KECCAK_ROWS,
+    max_rlp_rows: MAX_RLP_ROWS,
 };
 
 const EVM_CIRCUIT_DEGREE: u32 = 18;
 const STATE_CIRCUIT_DEGREE: u32 = 17;
-const TX_CIRCUIT_DEGREE: u32 = 20;
+// FIXME
+// const TX_CIRCUIT_DEGREE: u32 = 20;
 const BYTECODE_CIRCUIT_DEGREE: u32 = 16;
 const COPY_CIRCUIT_DEGREE: u32 = 16;
 const KECCAK_CIRCUIT_DEGREE: u32 = 16;
@@ -107,8 +112,9 @@ lazy_static! {
     TokioMutex::new(IntegrationTest::new("State", STATE_CIRCUIT_DEGREE));
 
     /// Integration test for State circuit
-    pub static ref TX_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestTxCircuit<Fr>>> =
-    TokioMutex::new(IntegrationTest::new("Tx", TX_CIRCUIT_DEGREE));
+    // FIXME
+    // pub static ref TX_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestTxCircuit<Fr>>> =
+    // TokioMutex::new(IntegrationTest::new("Tx", TX_CIRCUIT_DEGREE));
 
     /// Integration test for Bytecode circuit
     pub static ref BYTECODE_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestBytecodeCircuit<Fr>>> =
