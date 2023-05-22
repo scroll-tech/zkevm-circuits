@@ -1,4 +1,10 @@
 //! Circuit implementation for verifying assignments to the RLP finite state machine.
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
+
+#[cfg(any(feature = "test", test))]
+mod test;
+mod util;
 
 use std::marker::PhantomData;
 
@@ -7,35 +13,32 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction},
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
-    is_zero::{IsZeroChip as IsZeroGadgetChip, IsZeroConfig as IsZeroGadgetConfig},
     util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
+        Advice, Any, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
         VirtualCells,
     },
     poly::Rotation,
 };
-use halo2_proofs::plonk::Any;
 use itertools::Itertools;
 use strum::IntoEnumIterator;
+use util::{IsZeroChip, IsZeroConfig};
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{LookupTable, RlpFsmRlpTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{
-        Block, DataTable, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag,
-        State,
+        Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
         State::{DecodeTagStart, End},
         Tag,
         Tag::EndList,
         Transaction,
     },
 };
-use crate::witness::{Format, RomTableRow};
 
 /// Fixed table to check if a value is a byte, i.e. 0 <= value < 256.
 #[derive(Clone, Debug)]
@@ -71,76 +74,6 @@ impl Range256Table {
                 Ok(())
             },
         )
-    }
-}
-
-#[derive(Clone, Debug)]
-struct IsZeroConfig<F> {
-    value: Column<Advice>,
-    config: IsZeroGadgetConfig<F>,
-}
-
-impl<F: Field> IsZeroConfig<F> {
-    /// Returns  is_zero expression
-    fn expr(&self, rotation: Rotation) -> impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F> {
-        let (value, value_inv) = (self.value, self.config.value_inv);
-        move |meta: &mut VirtualCells<'_, F>| {
-            1.expr() - meta.query_advice(value, rotation) * meta.query_advice(value_inv, rotation)
-        }
-    }
-}
-
-/// This chip is a wrapper of IsZeroChip in gadgets.
-/// It gives us the ability to access is_zero expression at any Rotation.
-#[derive(Clone, Debug)]
-struct IsZeroChip<F> {
-    config: IsZeroConfig<F>,
-}
-
-#[rustfmt::skip]
-impl<F: Field> IsZeroChip<F> {
-    fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
-        value: Column<Advice>,
-    ) -> IsZeroConfig<F> {
-        let value_inv = meta.advice_column();
-        let config = IsZeroGadgetChip::configure(
-            meta,
-            q_enable,
-            |meta| meta.query_advice(value, Rotation::cur()),
-            value_inv,
-        );
-
-        IsZeroConfig::<F> {
-            value,
-            config,
-        }
-    }
-
-    /// Given an `IsZeroConfig`, construct the chip.
-    fn construct(config: IsZeroConfig<F>) -> Self {
-        IsZeroChip { config }
-    }
-
-    fn assign(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        value: Value<F>,
-    ) -> Result<(), Error> {
-        let config = &self.config.config;
-        // postpone the invert to prover which has batch_invert function to
-        // amortize among all is_zero_chip assignments.
-        let value_invert = value.into_field().invert();
-        region.assign_advice(
-            || "witness inverse of value",
-            config.value_inv,
-            offset,
-            || value_invert,
-        )?;
-
-        Ok(())
     }
 }
 
@@ -391,8 +324,8 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         rom_table: RlpFsmRomTable,
         data_table: RlpFsmDataTable,
-        rlp_table: RlpFsmRlpTable,
         range256_table: Range256Table,
+        rlp_table: RlpFsmRlpTable,
         challenges: &Challenges<Expression<F>>,
     ) -> Self {
         let (tx_id, format) = (rlp_table.tx_id, rlp_table.format);
@@ -1626,8 +1559,8 @@ impl<F: Field> RlpCircuitConfig<F> {
             Value::known(F::from(usize::from(format_next) as u64)),
         )?;
 
-        let is_same_rlp_instance = (witness.rlp_table.tx_id == tx_id_next) &&
-            (witness.rlp_table.format == format_next);
+        let is_same_rlp_instance =
+            (witness.rlp_table.tx_id == tx_id_next) && (witness.rlp_table.format == format_next);
         region.assign_advice(
             || "is_same_rlp_instance",
             self.is_same_rlp_instance,
@@ -1841,8 +1774,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 pub struct RlpCircuitConfigArgs<F: Field> {
     /// RLP table.
     pub rlp_table: RlpFsmRlpTable,
-    /// Fixed table to verify that the value is a single byte.
-    pub range256_table: Range256Table,
     /// Challenge API.
     pub challenges: Challenges<Expression<F>>,
 }
@@ -1853,13 +1784,14 @@ impl<F: Field> SubCircuitConfig<F> for RlpCircuitConfig<F> {
     fn new(meta: &mut ConstraintSystem<F>, args: Self::ConfigArgs) -> Self {
         let data_table = RlpFsmDataTable::construct(meta);
         let rom_table = RlpFsmRomTable::construct(meta);
+        let range256_table = Range256Table::construct(meta);
 
         Self::configure(
             meta,
             rom_table,
             data_table,
+            range256_table,
             args.rlp_table,
-            args.range256_table,
             &args.challenges,
         )
     }
@@ -1924,157 +1856,5 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
         let max_num_rows = block.circuits_params.max_rlp_rows;
 
         (sm_rows, max_num_rows)
-    }
-}
-
-impl<F: Field> Circuit<F> for RlpCircuit<F, Transaction> {
-    type Config = (RlpCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let range256_table = Range256Table::construct(meta);
-        let rlp_table = RlpFsmRlpTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-        let challenge_exprs = challenges.exprs(meta);
-
-        let config = RlpCircuitConfig::new(
-            meta,
-            RlpCircuitConfigArgs {
-                rlp_table,
-                range256_table,
-                challenges: challenge_exprs,
-            }
-        );
-        log::debug!("meta.degree() = {}", meta.degree());
-
-        (config, challenges)
-    }
-
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = &config.1.values(&layouter);
-
-        self.synthesize_sub(&config.0, challenges, &mut layouter)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{rlp_circuit_fsm::RlpCircuit, witness::Transaction};
-    use eth_types::{geth_types::TxTypes, word, Address};
-    use ethers_core::{
-        types::{
-            transaction::eip2718::TypedTransaction, Eip1559TransactionRequest,
-            Transaction as EthTransaction, TransactionRequest,
-        },
-        utils::rlp::{Decodable, Rlp},
-    };
-    use ethers_signers::Wallet;
-    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    use mock::{eth, MOCK_CHAIN_ID};
-    use rand::rngs::OsRng;
-
-    fn get_tx(is_eip155: bool) -> Transaction {
-        let rng = &mut OsRng;
-        let from = Wallet::new(rng);
-        let mut tx = TransactionRequest::new()
-            .to(Address::random())
-            .value(eth(10))
-            .data(Vec::new())
-            .gas_price(word!("0x4321"))
-            .gas(word!("0x77320"))
-            .nonce(word!("0x7f"));
-        if is_eip155 {
-            tx = tx.chain_id(MOCK_CHAIN_ID.as_u64());
-        }
-        let (tx_type, unsigned_bytes) = if is_eip155 {
-            (TxTypes::Eip155, tx.rlp().to_vec())
-        } else {
-            (TxTypes::PreEip155, tx.rlp_unsigned().to_vec())
-        };
-        let typed_tx: TypedTransaction = tx.into();
-        let sig = from.sign_transaction_sync(&typed_tx);
-        let signed_bytes = typed_tx.rlp_signed(&sig).to_vec();
-
-        log::debug!("num_unsigned_bytes: {}", unsigned_bytes.len());
-        log::debug!("num_signed_bytes: {}", signed_bytes.len());
-
-        Transaction::new_from_rlp_bytes(tx_type, signed_bytes, unsigned_bytes)
-    }
-
-    #[test]
-    fn test_eip_155_tx() {
-        let tx = get_tx(true);
-        let rlp_circuit = RlpCircuit::<Fr, Transaction> {
-            txs: vec![tx],
-            max_txs: 10,
-            size: 500,
-            _marker: Default::default(),
-        };
-
-        let mock_prover = MockProver::run(14, &rlp_circuit, vec![]);
-        assert!(mock_prover.is_ok());
-        let mock_prover = mock_prover.unwrap();
-        if let Err(errors) = mock_prover.verify_par() {
-            log::debug!("errors.len() = {}", errors.len());
-        }
-
-        mock_prover.assert_satisfied_par();
-    }
-
-    #[test]
-    fn test_pre_eip155_tx() {
-        let tx = get_tx(false);
-        let rlp_circuit = RlpCircuit::<Fr, Transaction> {
-            txs: vec![tx],
-            max_txs: 10,
-            size: 500,
-            _marker: Default::default(),
-        };
-
-        let mock_prover = MockProver::run(16, &rlp_circuit, vec![]);
-        assert!(mock_prover.is_ok());
-        let mock_prover = mock_prover.unwrap();
-        if let Err(errors) = mock_prover.verify_par() {
-            log::debug!("errors.len() = {}", errors.len());
-        }
-
-        mock_prover.assert_satisfied_par();
-    }
-
-    #[test]
-    fn test_eip1559_tx() {
-        let raw_tx_rlp_bytes = hex::decode("02f901e901833c3139842b27f14d86012309ce540083055ca8945f65f7b609678448494de4c87521cdf6cef1e93280b8e4fa558b7100000000000000000000000095ad61b0a150d79219dcf64e1e6cc01f0b64c4ce000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000000100000000000000000000000016a217dedfacdf9c23edb84b57154f26a15848e60000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000028cad80bb7cf17e27c4c8f893f7945f65f7b609678448494de4c87521cdf6cef1e932e1a0d2dc2a0881b05440a4908cf506b4871b1f7eaa46ea0c5dfdcda5f52bc17164a4f8599495ad61b0a150d79219dcf64e1e6cc01f0b64c4cef842a0ba03decd934aae936605e9d437c401439ec4cefbad5795e0965100f929fe339ca0b36e2afa1a25492257090107ad99d079032e543c8dd1ffcd44cf14a96d3015ac80a0821193127789b107351f670025dd3b862f5836e5155f627a29741a251e8d28e8a07ea1e82b1bf6f29c5d0f1e4024acdb698086ac40c353704d7d5e301fb916f2e3")
-            .expect("decode tx's hex shall not fail");
-
-        let eth_tx = EthTransaction::decode(&Rlp::new(&raw_tx_rlp_bytes))
-            .expect("decode tx's rlp bytes shall not fail");
-
-        let eth_tx_req: Eip1559TransactionRequest = (&eth_tx).into();
-        let rlp_unsigned = eth_tx_req.rlp().to_vec();
-
-        let tx = Transaction::new_from_rlp_bytes(TxTypes::Eip1559, raw_tx_rlp_bytes, rlp_unsigned);
-        let rlp_circuit = RlpCircuit::<Fr, Transaction> {
-            txs: vec![tx],
-            max_txs: 10,
-            size: 1000,
-            _marker: Default::default(),
-        };
-
-        let mock_prover = MockProver::run(16, &rlp_circuit, vec![]);
-        assert!(mock_prover.is_ok());
-        let mock_prover = mock_prover.unwrap();
-        if let Err(errors) = mock_prover.verify_par() {
-            log::debug!("errors.len() = {}", errors.len());
-        }
-
-        mock_prover.assert_satisfied_par();
     }
 }
