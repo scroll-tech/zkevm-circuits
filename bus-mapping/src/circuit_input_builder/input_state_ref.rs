@@ -1270,7 +1270,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Push a copy event to the state.
     pub fn push_copy(&mut self, step: &mut ExecStep, event: CopyEvent) {
-        step.copy_rw_counter_delta = event.rw_counter_delta();
+        step.copy_rw_counter_delta += event.rw_counter_delta();
         self.block.add_copy_event(event);
     }
 

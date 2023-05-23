@@ -2,7 +2,7 @@
 
 use crate::{
     circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
-    operation::RWCounter,
+    operation::RWCounter, precompile::PrecompileCalls,
 };
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
@@ -115,6 +115,8 @@ impl Default for ExecStep {
 pub enum ExecState {
     /// EVM Opcode ID
     Op(OpcodeId),
+    /// Precompile call
+    Precompile(PrecompileCalls),
     /// Virtual step Begin Tx
     BeginTx,
     /// Virtual step End Tx
