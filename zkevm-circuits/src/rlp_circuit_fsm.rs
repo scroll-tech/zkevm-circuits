@@ -220,8 +220,6 @@ impl RlpFsmRomTable {
 pub struct RlpCircuitConfig<F> {
     /// Whether the row is the first row.
     q_first: Column<Fixed>,
-    /// Whether the row is enabled.
-    q_enabled: Column<Fixed>,
     /// The state of RLP verifier at the current row.
     state: Column<Advice>,
     /// A utility gadget to compare/query what state we are at.
@@ -328,9 +326,9 @@ impl<F: Field> RlpCircuitConfig<F> {
         challenges: &Challenges<Expression<F>>,
     ) -> Self {
         let (tx_id, format) = (rlp_table.tx_id, rlp_table.format);
+        let q_enabled = rlp_table.q_enable;
         let (
             q_first,
-            q_enabled,
             byte_idx,
             byte_rev_idx,
             byte_value,
@@ -348,7 +346,6 @@ impl<F: Field> RlpCircuitConfig<F> {
             transit_to_new_rlp_instance,
             is_same_rlp_instance,
         ) = (
-            meta.fixed_column(),
             meta.fixed_column(),
             meta.advice_column(),
             meta.advice_column(),
@@ -1315,7 +1312,6 @@ impl<F: Field> RlpCircuitConfig<F> {
 
         Self {
             q_first,
-            q_enabled,
             state,
             state_bits,
             rlp_table,
@@ -1377,8 +1373,8 @@ impl<F: Field> RlpCircuitConfig<F> {
     ) -> Result<(), Error> {
         // assign to selector
         region.assign_fixed(
-            || "q_enabled",
-            self.q_enabled,
+            || "q_enable",
+            self.rlp_table.q_enable,
             row,
             || Value::known(F::one()),
         )?;
@@ -1636,8 +1632,8 @@ impl<F: Field> RlpCircuitConfig<F> {
 
     fn assign_sm_end_row(&self, region: &mut Region<'_, F>, row: usize) -> Result<(), Error> {
         region.assign_fixed(
-            || "q_enabled",
-            self.q_enabled,
+            || "q_enable",
+            self.rlp_table.q_enable,
             row,
             || Value::known(F::one()),
         )?;

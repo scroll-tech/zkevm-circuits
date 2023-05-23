@@ -2042,6 +2042,8 @@ impl<F: Field> LookupTable<F> for RlpTable {
 /// The RLP table connected to the RLP state machine circuit.
 #[derive(Clone, Copy, Debug)]
 pub struct RlpFsmRlpTable {
+    /// Whether the row is enabled.
+    pub q_enable: Column<Fixed>,
     /// The transaction's index in the batch.
     pub tx_id: Column<Advice>,
     /// The format of the tx being decoded.
@@ -2059,6 +2061,7 @@ pub struct RlpFsmRlpTable {
 impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.tx_id.into(),
             self.format.into(),
             self.rlp_tag.into(),
@@ -2070,6 +2073,7 @@ impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("tx_id"),
             String::from("format"),
             String::from("rlp_tag"),
@@ -2084,6 +2088,7 @@ impl RlpFsmRlpTable {
     /// Construct the RLP table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            q_enable: meta.fixed_column(),
             tx_id: meta.advice_column(),
             format: meta.advice_column(),
             rlp_tag: meta.advice_column(),
