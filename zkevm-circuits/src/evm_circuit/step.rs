@@ -9,6 +9,7 @@ use crate::{
     witness::Transaction,
 };
 use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
+use eth_types::evm_types::GasCost;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Value,
@@ -154,6 +155,22 @@ impl ExecutionState {
 
     pub(crate) fn amount() -> usize {
         Self::iter().count()
+    }
+
+    pub(crate) fn precompile_base_gas_cost(&self) -> GasCost {
+        (match self {
+            Self::PrecompileEcRecover => PrecompileCalls::ECRecover,
+            Self::PrecompileSha256 => PrecompileCalls::Sha256,
+            Self::PrecompileRipemd160 => PrecompileCalls::Ripemd160,
+            Self::PrecompileIdentity => PrecompileCalls::Identity,
+            Self::PrecompileBigModExp => PrecompileCalls::Modexp,
+            Self::PrecompileBn256Add => PrecompileCalls::Bn128Add,
+            Self::PrecompileBn256ScalarMul => PrecompileCalls::Bn128Mul,
+            Self::PrecompileBn256Pairing => PrecompileCalls::Bn128Pairing,
+            Self::PrecompileBlake2f => PrecompileCalls::Blake2F,
+            _ => return GasCost(0),
+        })
+        .base_gas_cost()
     }
 
     pub(crate) fn halts_in_exception(&self) -> bool {

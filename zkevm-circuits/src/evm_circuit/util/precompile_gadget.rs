@@ -6,9 +6,7 @@ use halo2_proofs::plonk::Expression;
 use crate::evm_circuit::step::ExecutionState;
 
 use super::{
-    constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-    math_gadget::BinaryNumberGadget,
-    CachedRegion,
+    constraint_builder::EVMConstraintBuilder, math_gadget::BinaryNumberGadget, CachedRegion,
 };
 
 #[derive(Clone, Debug)]
@@ -20,61 +18,50 @@ impl<F: Field> PrecompileGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        is_success: Expression<F>,
+        _is_success: Expression<F>,
         callee_address: Expression<F>,
-        caller_id: Expression<F>,
-        cd_offset: Expression<F>,
-        cd_length: Expression<F>,
-        rd_offset: Expression<F>,
-        rd_length: Expression<F>,
+        _caller_id: Expression<F>,
+        _cd_offset: Expression<F>,
+        _cd_length: Expression<F>,
+        _rd_offset: Expression<F>,
+        _rd_length: Expression<F>,
     ) -> Self {
         let address = BinaryNumberGadget::construct(cb, callee_address.expr());
 
+        cb.condition(address.value_equals(PrecompileCalls::ECRecover), |cb| {
+            cb.constrain_next_step(ExecutionState::PrecompileEcRecover, None, |_cb| {});
+        });
+
+        cb.condition(address.value_equals(PrecompileCalls::Sha256), |cb| {
+            cb.constrain_next_step(ExecutionState::PrecompileSha256, None, |_cb| {});
+        });
+
+        cb.condition(address.value_equals(PrecompileCalls::Ripemd160), |cb| {
+            cb.constrain_next_step(ExecutionState::PrecompileRipemd160, None, |_cb| {});
+        });
+
         cb.condition(address.value_equals(PrecompileCalls::Identity), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileIdentity, None, |cb| {
-                let precomp_is_success = cb.query_cell();
-                let precomp_callee_address = cb.query_cell();
-                let precomp_caller_id = cb.query_cell();
-                let precomp_cd_offset = cb.query_cell();
-                let precomp_cd_length = cb.query_cell();
-                let precomp_rd_offset = cb.query_cell();
-                let precomp_rd_length = cb.query_cell();
-                cb.require_equal(
-                    "precompile call is_success check",
-                    is_success,
-                    precomp_is_success.expr(),
-                );
-                cb.require_equal(
-                    "precompile call callee_address check",
-                    callee_address,
-                    precomp_callee_address.expr(),
-                );
-                cb.require_equal(
-                    "precompile call caller_id check",
-                    caller_id,
-                    precomp_caller_id.expr(),
-                );
-                cb.require_equal(
-                    "precompile call call_data_offset check",
-                    cd_offset,
-                    precomp_cd_offset.expr(),
-                );
-                cb.require_equal(
-                    "precompile call call_data_length check",
-                    cd_length,
-                    precomp_cd_length.expr(),
-                );
-                cb.require_equal(
-                    "precompile call return_data_offset check",
-                    rd_offset,
-                    precomp_rd_offset.expr(),
-                );
-                cb.require_equal(
-                    "precompile call return_data_length check",
-                    rd_length,
-                    precomp_rd_length.expr(),
-                );
-            });
+            cb.constrain_next_step(ExecutionState::PrecompileIdentity, None, |_cb| {});
+        });
+
+        cb.condition(address.value_equals(PrecompileCalls::Modexp), |cb| {
+            cb.constrain_next_step(ExecutionState::PrecompileBigModExp, None, |_cb| {});
+        });
+
+        cb.condition(address.value_equals(PrecompileCalls::Bn128Add), |cb| {
+            cb.constrain_next_step(ExecutionState::PrecompileBn256Add, None, |_cb| {});
+        });
+
+        cb.condition(address.value_equals(PrecompileCalls::Bn128Mul), |cb| {
+            cb.constrain_next_step(ExecutionState::PrecompileBn256ScalarMul, None, |_cb| {});
+        });
+
+        cb.condition(address.value_equals(PrecompileCalls::Bn128Pairing), |cb| {
+            cb.constrain_next_step(ExecutionState::PrecompileBn256Pairing, None, |_cb| {});
+        });
+
+        cb.condition(address.value_equals(PrecompileCalls::Blake2F), |cb| {
+            cb.constrain_next_step(ExecutionState::PrecompileBlake2f, None, |_cb| {});
         });
 
         Self { address }

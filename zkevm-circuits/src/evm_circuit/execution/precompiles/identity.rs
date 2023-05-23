@@ -1,4 +1,4 @@
-use eth_types::{evm_types::GasCost, Field, ToScalar};
+use eth_types::{Field, ToScalar};
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -44,7 +44,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         cb.precompile_info_lookup(
             cb.execution_state().as_u64().expr(),
             callee_address.expr(),
-            GasCost::PRECOMPILE_IDENTITY_BASE.expr(),
+            cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
         Self {

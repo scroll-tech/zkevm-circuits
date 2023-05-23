@@ -181,6 +181,8 @@ pub enum CopyDataType {
     /// scenario where we wish to accumulate the value (RLC) over all rows.
     /// This is used for Copy Lookup from SHA3 opcode verification.
     RlcAcc,
+    /// When the source of the copy is a call to a precompiled contract.
+    Precompile,
 }
 
 impl From<CopyDataType> for usize {
@@ -264,7 +266,7 @@ impl CopyEvent {
     // increase in rw counter from the start of the copy event to step index
     fn rw_counter_increase(&self, step_index: usize) -> u64 {
         let source_rw_increase = match self.src_type {
-            CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
+            CopyDataType::Bytecode | CopyDataType::TxCalldata | CopyDataType::Precompile => 0,
             CopyDataType::Memory => std::cmp::min(
                 u64::try_from(step_index + 1).unwrap() / 2,
                 self.src_addr_end
@@ -276,7 +278,9 @@ impl CopyEvent {
         let destination_rw_increase = match self.dst_type {
             CopyDataType::RlcAcc | CopyDataType::Bytecode => 0,
             CopyDataType::TxLog | CopyDataType::Memory => u64::try_from(step_index).unwrap() / 2,
-            CopyDataType::TxCalldata | CopyDataType::Padding => unreachable!(),
+            CopyDataType::TxCalldata | CopyDataType::Padding | CopyDataType::Precompile => {
+                unreachable!()
+            }
         };
         source_rw_increase + destination_rw_increase
     }

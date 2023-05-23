@@ -253,10 +253,12 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         match (!is_precheck_ok, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
             (false, true, _) => {
-                assert!(call.is_success, "call to precompile should not fail");
+                let code_address = code_address.unwrap();
+                let precompile_call: PrecompileCalls = code_address.0[19].into();
+
+                // get the result of the precompile call.
                 let caller_ctx = state.caller_ctx()?;
                 let caller_memory = caller_ctx.memory.0.clone();
-                let code_address = code_address.unwrap();
                 let (result, contract_gas_cost) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
@@ -268,11 +270,12 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 );
 
                 log::trace!(
-                    "precompile return data len {} gas {}",
+                    "precompile returned data len {} gas {}",
                     result.len(),
                     contract_gas_cost
                 );
 
+                // mutate the caller memory.
                 let caller_ctx_mut = state.caller_ctx_mut()?;
                 caller_ctx_mut.return_data = result.clone();
                 let length = min(result.len(), ret_length);
@@ -326,7 +329,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // insert a copy event (input) for this step
                 let rw_counter_start = state.block_ctx.rwc;
-                if call.is_success && call.call_data_length > 0 {
+                if call.call_data_length > 0 {
                     let bytes: Vec<(u8, bool)> = caller_memory
                         .iter()
                         .skip(call.call_data_offset as usize)
@@ -368,15 +371,40 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     );
                 }
 
+                // write the result in the callee's memory.
+                let rw_counter_start = state.block_ctx.rwc;
+                if call.is_success() && call.call_data_length > 0 && length > 0 {
+                    let bytes: Vec<(u8, bool)> = result.iter().map(|b| (*b, false)).collect();
+                    for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
+                        // push callee memory read
+                        state.push_op(
+                            &mut exec_step,
+                            RW::WRITE,
+                            MemoryOp::new(call.call_id, i.into(), byte),
+                        );
+                    }
+                    state.push_copy(
+                        &mut exec_step,
+                        CopyEvent {
+                            src_id: NumberOrHash::Number(precompile_call.into()),
+                            src_type: CopyDataType::Precompile,
+                            src_addr: 0,
+                            src_addr_end: result.len() as u64,
+                            dst_id: NumberOrHash::Number(call.call_id),
+                            dst_type: CopyDataType::Memory,
+                            dst_addr: 0,
+                            log_id: None,
+                            rw_counter_start,
+                            bytes,
+                        },
+                    );
+                }
+
                 // insert another copy event (output) for this step.
                 let rw_counter_start = state.block_ctx.rwc;
-                if call.is_success && call.call_data_length > 0 && length > 0 {
-                    let bytes: Vec<(u8, bool)> = caller_memory
-                        .iter()
-                        .skip(call.call_data_offset as usize)
-                        .take(length)
-                        .map(|b| (*b, false))
-                        .collect();
+                if call.is_success() && call.call_data_length > 0 && length > 0 {
+                    let bytes: Vec<(u8, bool)> =
+                        result.iter().take(length).map(|b| (*b, false)).collect();
                     for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
                         // push callee memory read
                         state.push_op(
@@ -414,7 +442,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // TODO: when more precompiles are supported and each have their own different
                 // behaviour, we can separate out the logic specified here.
-                let precompile_call: PrecompileCalls = code_address.0[19].into();
                 let precompile_step = precompile_associated_ops(
                     state,
                     geth_steps[1].clone(),

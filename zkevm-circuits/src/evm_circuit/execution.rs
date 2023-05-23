@@ -24,7 +24,7 @@ use crate::{
     util::{query_expression, Challenges, Expr},
 };
 use bus_mapping::util::read_env_var;
-use eth_types::{evm_unimplemented, Field, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian};
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -137,7 +137,7 @@ mod sstore;
 mod stop;
 mod swap;
 
-use self::{logs::LogGadget, sha3::Sha3Gadget};
+use self::{logs::LogGadget, precompiles::BasePrecompileGadget, sha3::Sha3Gadget};
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
@@ -347,7 +347,19 @@ pub(crate) struct ExecutionConfig<F> {
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
     // precompile calls
+    precompile_ecrecover_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileEcRecover }>>,
+    precompile_sha2_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileSha256 }>>,
+    precompile_ripemd_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileRipemd160 }>>,
     precompile_identity_gadget: Box<IdentityGadget<F>>,
+    precompile_modexp_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBigModExp }>>,
+    precompile_bn128add_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256Add }>>,
+    precompile_bn128mul_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256ScalarMul }>>,
+    precompile_bn128pairing_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256Pairing }>>,
+    precompile_blake2f_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBlake2f }>>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -611,7 +623,15 @@ impl<F: Field> ExecutionConfig<F> {
             error_return_data_out_of_bound: configure_gadget!(),
             error_precompile_failed: configure_gadget!(),
             // precompile calls
+            precompile_ecrecover_gadget: configure_gadget!(),
+            precompile_sha2_gadget: configure_gadget!(),
+            precompile_ripemd_gadget: configure_gadget!(),
             precompile_identity_gadget: configure_gadget!(),
+            precompile_modexp_gadget: configure_gadget!(),
+            precompile_bn128add_gadget: configure_gadget!(),
+            precompile_bn128mul_gadget: configure_gadget!(),
+            precompile_bn128pairing_gadget: configure_gadget!(),
+            precompile_blake2f_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -1470,10 +1490,33 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
             }
+            ExecutionState::PrecompileEcRecover => {
+                assign_exec_step!(self.precompile_ecrecover_gadget)
+            }
+            ExecutionState::PrecompileSha256 => {
+                assign_exec_step!(self.precompile_sha2_gadget)
+            }
+            ExecutionState::PrecompileRipemd160 => {
+                assign_exec_step!(self.precompile_ripemd_gadget)
+            }
             ExecutionState::PrecompileIdentity => {
                 assign_exec_step!(self.precompile_identity_gadget)
             }
-            unimpl_state => evm_unimplemented!("unimplemented ExecutionState: {:?}", unimpl_state),
+            ExecutionState::PrecompileBigModExp => {
+                assign_exec_step!(self.precompile_modexp_gadget)
+            }
+            ExecutionState::PrecompileBn256Add => {
+                assign_exec_step!(self.precompile_bn128add_gadget)
+            }
+            ExecutionState::PrecompileBn256ScalarMul => {
+                assign_exec_step!(self.precompile_bn128mul_gadget)
+            }
+            ExecutionState::PrecompileBn256Pairing => {
+                assign_exec_step!(self.precompile_bn128pairing_gadget)
+            }
+            ExecutionState::PrecompileBlake2f => {
+                assign_exec_step!(self.precompile_blake2f_gadget)
+            }
         }
 
         // Fill in the witness values for stored expressions
