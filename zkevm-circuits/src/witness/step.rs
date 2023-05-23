@@ -6,6 +6,7 @@ use bus_mapping::{
     },
     evm::OpcodeId,
     operation,
+    precompile::PrecompileCalls,
 };
 
 use crate::{
@@ -214,6 +215,17 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
+            circuit_input_builder::ExecState::Precompile(precompile) => match precompile {
+                PrecompileCalls::ECRecover => ExecutionState::PrecompileEcRecover,
+                PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
+                PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
+                PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,
+                PrecompileCalls::Modexp => ExecutionState::PrecompileBigModExp,
+                PrecompileCalls::Bn128Add => ExecutionState::PrecompileBn256Add,
+                PrecompileCalls::Bn128Mul => ExecutionState::PrecompileBn256ScalarMul,
+                PrecompileCalls::Bn128Pairing => ExecutionState::PrecompileBn256Pairing,
+                PrecompileCalls::Blake2F => ExecutionState::PrecompileBlake2f,
+            },
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
             circuit_input_builder::ExecState::EndBlock => ExecutionState::EndBlock,

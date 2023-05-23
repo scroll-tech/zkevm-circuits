@@ -487,6 +487,7 @@ pub(super) fn tx_convert(
                 depth: call.depth,
                 caller_address: call.caller_address,
                 callee_address: call.address,
+                code_address: call.code_address(),
                 call_data_offset: call.call_data_offset,
                 call_data_length: call.call_data_length,
                 return_data_offset: call.return_data_offset,

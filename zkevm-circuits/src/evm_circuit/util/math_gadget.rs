@@ -29,7 +29,6 @@ pub(crate) use abs_word::AbsWordGadget;
 pub(crate) use add_words::AddWordsGadget;
 #[allow(unused_imports)]
 pub(crate) use batched_is_zero::BatchedIsZeroGadget;
-#[allow(unused_imports)]
 pub(crate) use binary_number::BinaryNumberGadget;
 pub(crate) use byte_size::ByteSizeGadget;
 pub(crate) use cmp_words::CmpWordsGadget;

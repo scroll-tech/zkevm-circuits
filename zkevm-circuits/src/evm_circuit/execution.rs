@@ -24,7 +24,7 @@ use crate::{
     util::{query_expression, Challenges, Expr},
 };
 use bus_mapping::util::read_env_var;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{evm_unimplemented, Field, ToLittleEndian};
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -120,6 +120,7 @@ mod opcode_not;
 mod origin;
 mod pc;
 mod pop;
+mod precompiles;
 mod push;
 mod return_revert;
 mod returndatacopy;
@@ -201,6 +202,7 @@ use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
+use precompiles::IdentityGadget;
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
@@ -344,6 +346,8 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
+    // precompile calls
+    precompile_identity_gadget: Box<IdentityGadget<F>>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -606,6 +610,8 @@ impl<F: Field> ExecutionConfig<F> {
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
             error_precompile_failed: configure_gadget!(),
+            // precompile calls
+            precompile_identity_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -1464,6 +1470,10 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
             }
+            ExecutionState::PrecompileIdentity => {
+                assign_exec_step!(self.precompile_identity_gadget)
+            }
+            unimpl_state => evm_unimplemented!("unimplemented ExecutionState: {:?}", unimpl_state),
         }
 
         // Fill in the witness values for stored expressions

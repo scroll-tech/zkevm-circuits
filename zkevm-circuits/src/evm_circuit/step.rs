@@ -8,7 +8,7 @@ use crate::{
     util::Expr,
     witness::Transaction,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Value,
@@ -17,6 +17,22 @@ use halo2_proofs::{
 use std::{fmt::Display, iter};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
+
+impl From<PrecompileCalls> for ExecutionState {
+    fn from(value: PrecompileCalls) -> Self {
+        match value {
+            PrecompileCalls::ECRecover => ExecutionState::PrecompileEcRecover,
+            PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
+            PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
+            PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,
+            PrecompileCalls::Modexp => ExecutionState::PrecompileBigModExp,
+            PrecompileCalls::Bn128Add => ExecutionState::PrecompileBn256Add,
+            PrecompileCalls::Bn128Mul => ExecutionState::PrecompileBn256ScalarMul,
+            PrecompileCalls::Bn128Pairing => ExecutionState::PrecompileBn256Pairing,
+            PrecompileCalls::Blake2F => ExecutionState::PrecompileBlake2f,
+        }
+    }
+}
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
@@ -107,6 +123,16 @@ pub enum ExecutionState {
     ErrorOutOfGasSloadSstore,
     ErrorOutOfGasCREATE,
     ErrorOutOfGasSELFDESTRUCT,
+    // Precompiles
+    PrecompileEcRecover,
+    PrecompileSha256,
+    PrecompileRipemd160,
+    PrecompileIdentity,
+    PrecompileBigModExp,
+    PrecompileBn256Add,
+    PrecompileBn256ScalarMul,
+    PrecompileBn256Pairing,
+    PrecompileBlake2f,
 }
 
 impl Default for ExecutionState {
