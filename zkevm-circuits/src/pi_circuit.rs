@@ -48,9 +48,9 @@ use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
 // FIXME
-const TX_HASH_OFFSET: usize = 18;
+const TX_HASH_OFFSET: usize = 19;
 // FIXME
-const TX_LEN: usize = 19;
+const TX_LEN: usize = 20;
 
 /// Fixed by the spec
 const BLOCK_LEN: usize = 10;

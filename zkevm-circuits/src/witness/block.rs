@@ -137,7 +137,7 @@ impl<F: Field> Block<F> {
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
         let num_rows_required_for_tx_table: usize =
             // FIXME: change it to TX_LEN
-            19 * self.circuits_params.max_txs + self.circuits_params.max_calldata;
+            20 * self.circuits_params.max_txs + self.circuits_params.max_calldata;
         let num_rows_required_for_exp_table: usize = self
             .exp_events
             .iter()
