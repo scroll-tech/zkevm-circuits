@@ -330,19 +330,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
                 // copy table lookup to verify the copying of bytes:
                 // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
-                // - to the current call's memory (`call_data_length` bytes starting at `0`).
+                // - to the precompile input.
                 cb.condition(call_gadget.cd_address.has_length(), |cb| {
                     cb.copy_table_lookup(
                         cb.curr.state.call_id.expr(),
                         CopyDataType::Memory.expr(),
                         callee_call_id.expr(),
-                        CopyDataType::Memory.expr(),
+                        CopyDataType::Precompile.expr(),
                         call_gadget.cd_address.offset(),
                         call_gadget.cd_address.address(),
                         0.expr(),
                         call_gadget.cd_address.length(),
                         0.expr(),
-                        2.expr() * call_gadget.cd_address.length(), // reads + writes
+                        call_gadget.cd_address.length(), // reads
                     );
                 });
 
@@ -351,7 +351,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // - to the current call's memory (starting at `0`).
                 cb.condition(call_gadget.is_success.expr(), |cb| {
                     cb.copy_table_lookup(
-                        call_gadget.callee_address_expr(),
+                        callee_call_id.expr(),
                         CopyDataType::Precompile.expr(),
                         callee_call_id.expr(),
                         CopyDataType::Memory.expr(),
@@ -360,14 +360,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         0.expr(),
                         precompile_return_length.expr(),
                         0.expr(),
-                        precompile_return_length.expr(), // only writes.
+                        precompile_return_length.expr(), // writes.
                     )
                 });
 
                 // copy table lookup to verify the copying of bytes if the precompile call was
                 // successful.
-                // - from precompile call's memory (min(rd_length, precompile_return_length) bytes
-                //   starting at `0`)
+                // - from precompile (min(rd_length, precompile_return_length) bytes)
                 // - to caller's memory (min(rd_length, precompile_return_length) bytes starting at
                 //   `return_data_offset`).
                 cb.condition(
@@ -380,7 +379,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     |cb| {
                         cb.copy_table_lookup(
                             callee_call_id.expr(),
-                            CopyDataType::Memory.expr(),
+                            CopyDataType::Precompile.expr(),
                             cb.curr.state.call_id.expr(),
                             CopyDataType::Memory.expr(),
                             0.expr(),
@@ -388,7 +387,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             call_gadget.rd_address.offset(),
                             return_data_copy_size.min(),
                             0.expr(),
-                            2.expr() * return_data_copy_size.min(), // reads + writes
+                            return_data_copy_size.min(), // writes
                         );
                     },
                 );

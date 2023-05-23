@@ -347,12 +347,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                                 byte,
                             ),
                         );
-                        // push callee memory write
-                        state.push_op(
-                            &mut exec_step,
-                            RW::WRITE,
-                            MemoryOp::new(call.call_id, i.into(), byte),
-                        );
                     }
                     state.push_copy(
                         &mut exec_step,
@@ -362,7 +356,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             src_addr: call.call_data_offset,
                             src_addr_end: call.call_data_offset + call.call_data_length,
                             dst_id: NumberOrHash::Number(call.call_id),
-                            dst_type: CopyDataType::Memory,
+                            dst_type: CopyDataType::Precompile,
                             dst_addr: 0,
                             log_id: None,
                             rw_counter_start,
@@ -376,7 +370,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 if call.is_success() && call.call_data_length > 0 && length > 0 {
                     let bytes: Vec<(u8, bool)> = result.iter().map(|b| (*b, false)).collect();
                     for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
-                        // push callee memory read
+                        // push callee memory write
                         state.push_op(
                             &mut exec_step,
                             RW::WRITE,
@@ -386,7 +380,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.push_copy(
                         &mut exec_step,
                         CopyEvent {
-                            src_id: NumberOrHash::Number(precompile_call.into()),
+                            src_id: NumberOrHash::Number(call.call_id),
                             src_type: CopyDataType::Precompile,
                             src_addr: 0,
                             src_addr_end: result.len() as u64,
@@ -406,12 +400,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     let bytes: Vec<(u8, bool)> =
                         result.iter().take(length).map(|b| (*b, false)).collect();
                     for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
-                        // push callee memory read
-                        state.push_op(
-                            &mut exec_step,
-                            RW::READ,
-                            MemoryOp::new(call.call_id, i.into(), byte),
-                        );
                         // push caller memory write
                         state.push_op(
                             &mut exec_step,
@@ -427,7 +415,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         &mut exec_step,
                         CopyEvent {
                             src_id: NumberOrHash::Number(call.call_id),
-                            src_type: CopyDataType::Memory,
+                            src_type: CopyDataType::Precompile,
                             src_addr: 0,
                             src_addr_end: length as u64,
                             dst_id: NumberOrHash::Number(call.caller_id),
