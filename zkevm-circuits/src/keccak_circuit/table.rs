@@ -1,4 +1,5 @@
 use super::{param::*, util::*};
+use crate::keccak_circuit::keccak_packed_multi::get_num_bits_per_base_chi_lookup;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, Value},
@@ -15,6 +16,17 @@ pub(crate) fn load_normalize_table<F: Field>(
 ) -> Result<(), Error> {
     let log_height = get_degree();
     load_normalize_table_impl(layouter, name, tables, range, log_height)
+}
+
+pub(crate) fn normalize_table_size(range: usize) -> usize {
+    let log_height = get_degree();
+    let part_size = get_num_bits_per_lookup_impl(range, log_height);
+    (0..part_size).fold(1usize, |acc, _| acc * range)
+}
+
+pub(crate) fn lookup_table_size(lookup_table_len: usize) -> usize {
+    let part_size = get_num_bits_per_base_chi_lookup();
+    (0..part_size).fold(1usize, |acc, _| acc * lookup_table_len)
 }
 
 // Implementation of the above without environment dependency.

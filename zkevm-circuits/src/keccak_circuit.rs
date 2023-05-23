@@ -11,8 +11,10 @@ mod util;
 mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
+
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::KeccakCircuit as TestKeccakCircuit;
+use std::cmp::max;
 
 use std::marker::PhantomData;
 pub use KeccakCircuitConfig as KeccakConfig;
@@ -1007,13 +1009,22 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let rows_per_chunk = (NUM_ROUNDS + 1) * get_num_rows_per_round();
+        let aux_tables_rows = vec![
+            normalize_table_size(6),
+            normalize_table_size(4),
+            normalize_table_size(3),
+            lookup_table_size(CHI_BASE_LOOKUP_TABLE.len()),
+        ];
         (
             block
                 .keccak_inputs
                 .iter()
                 .map(|bytes| (bytes.len() as f64 / 136.0).ceil() as usize * rows_per_chunk)
                 .sum(),
-            block.circuits_params.max_keccak_rows,
+            max(
+                block.circuits_params.max_keccak_rows,
+                *(aux_tables_rows.iter().max().unwrap()),
+            ),
         )
     }
 
