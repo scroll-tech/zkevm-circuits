@@ -18,15 +18,19 @@ impl Encodable for L1MsgTx {
 }
 
 pub fn rom_table_rows() -> Vec<RomTableRow> {
-    vec![
-        (TxType, BeginList, 1, L1MsgHash, vec![1]).into(),
-        (BeginList, Sender, 0, L1MsgHash, vec![2]).into(),
-        (Sender, To, N_BYTES_ACCOUNT_ADDRESS, L1MsgHash, vec![3]).into(),
-        (To, Nonce, N_BYTES_ACCOUNT_ADDRESS, L1MsgHash, vec![4]).into(),
-        (Nonce, GasLimit, N_BYTES_U64, L1MsgHash, vec![5]).into(),
-        (GasLimit, TxValue, N_BYTES_U64, L1MsgHash, vec![6]).into(),
-        (TxValue, Data, N_BYTES_WORD, L1MsgHash, vec![7]).into(),
-        (Data, EndList, 2usize.pow(24), L1MsgHash, vec![8]).into(),
-        (EndList, BeginList, 0, L1MsgHash, vec![]).into(),
-    ]
+    let rows = vec![
+        (TxType, BeginList, 1, vec![1]),
+        (BeginList, Nonce, 8, vec![2]),
+        (Nonce, GasLimit, N_BYTES_U64, vec![3]),
+        (GasLimit, To, N_BYTES_U64, vec![4]),
+        (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![5]),
+        (TxValue, Data, N_BYTES_WORD, vec![6]),
+        (Data, Sender, 2usize.pow(24), vec![7]),
+        (Sender, EndList, N_BYTES_ACCOUNT_ADDRESS, vec![8]),
+        (EndList, BeginList, 0, vec![]),
+    ];
+
+    rows.into_iter()
+        .map(|row| (row.0, row.1, row.2, L1MsgHash, row.3).into())
+        .collect()
 }

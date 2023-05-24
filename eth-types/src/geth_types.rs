@@ -29,7 +29,8 @@ pub enum TxTypes {
     Eip1559,
     /// EIP 2930 tx
     Eip2930,
-    // L1Msg,
+    /// L1 Message tx
+    L1Msg,
 }
 
 impl From<TxTypes> for usize {
@@ -44,6 +45,7 @@ impl TxTypes {
         match tx.transaction_type {
             Some(x) if x == U64::from(1) => Self::Eip2930,
             Some(x) if x == U64::from(2) => Self::Eip2930,
+            Some(x) if x == U64::from(0x7e) => Self::L1Msg,
             _ => match tx.v.as_u64() {
                 0 | 1 | 27 | 28 => Self::PreEip155,
                 _ => Self::Eip155,
@@ -70,6 +72,10 @@ pub fn get_rlp_unsigned(tx: &crate::Transaction) -> Vec<u8> {
         TxTypes::Eip2930 => {
             let tx: Eip2930TransactionRequest = tx.into();
             tx.rlp().to_vec()
+        }
+        TxTypes::L1Msg => {
+            // L1 msg does not have signature
+            vec![]
         }
     }
 }

@@ -6,7 +6,7 @@ use crate::{
         rlp_fsm::SmState,
         DataTable, Format,
         Format::{
-            TxHashEip155, TxHashEip1559, TxHashPreEip155, TxSignEip155, TxSignEip1559,
+            L1MsgHash, TxHashEip155, TxHashEip1559, TxHashPreEip155, TxSignEip155, TxSignEip1559,
             TxSignPreEip155,
         },
         RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTable, RlpTag, State,
@@ -331,6 +331,7 @@ impl Transaction {
                     TxTypes::Eip155 => TxHashEip155,
                     TxTypes::PreEip155 => TxHashPreEip155,
                     TxTypes::Eip1559 => TxHashEip1559,
+                    TxTypes::L1Msg => L1MsgHash,
                     _ => unimplemented!(),
                 },
             )
@@ -700,7 +701,10 @@ impl Transaction {
 impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
     fn gen_sm_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>> {
         let hash_wit = self.gen_rlp_witness(true, challenges);
-        let sign_wit = self.gen_rlp_witness(false, challenges);
+        let sign_wit = match self.tx_type {
+            TxTypes::L1Msg => vec![],
+            _ => self.gen_rlp_witness(false, challenges),
+        };
 
         log::debug!(
             "{}th tx sign witness rows len = {}",
@@ -721,12 +725,13 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
         let r = challenges.keccak_input();
 
         let (hash_format, sign_format) = match self.tx_type {
-            TxTypes::Eip155 => (TxHashEip155, TxSignEip155),
-            TxTypes::PreEip155 => (TxHashPreEip155, TxSignPreEip155),
-            TxTypes::Eip1559 => (TxHashEip1559, TxSignEip1559),
+            TxTypes::Eip155 => (TxHashEip155, Some(TxSignEip155)),
+            TxTypes::PreEip155 => (TxHashPreEip155, Some(TxSignPreEip155)),
+            TxTypes::Eip1559 => (TxHashEip1559, Some(TxSignEip1559)),
             TxTypes::Eip2930 => {
                 unimplemented!("eip1559 not supported now")
             }
+            TxTypes::L1Msg => (L1MsgHash, None),
         };
 
         let get_table = |rlp_bytes: &Vec<u8>, format: Format| {
@@ -749,9 +754,12 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
         };
 
         let hash_table = get_table(&self.rlp_signed, hash_format);
-        let sign_table = get_table(&self.rlp_unsigned, sign_format);
-
-        [sign_table, hash_table].concat()
+        if let Some(sign_format) = sign_format {
+            let sign_table = get_table(&self.rlp_unsigned, sign_format);
+            [sign_table, hash_table].concat()
+        } else {
+            hash_table
+        }
     }
 }
 
