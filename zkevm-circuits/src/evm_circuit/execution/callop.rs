@@ -893,8 +893,7 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::{circuit_input_builder::CircuitsParams, evm::PrecompileCallArgs};
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, Bytecode,
-        ToWord, Word,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word,
     };
 
     use itertools::Itertools;
