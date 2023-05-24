@@ -25,6 +25,9 @@ pub enum MainnetFork {
     Frontier = 1,
 }
 
+#[cfg(feature = "shanghai")]
+pub const TEST_FORK: MainnetFork = MainnetFork::Shanghai;
+#[cfg(not(feature = "shanghai"))]
 pub const TEST_FORK: MainnetFork = MainnetFork::Merge;
 
 impl FromStr for MainnetFork {
