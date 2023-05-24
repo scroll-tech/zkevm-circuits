@@ -527,13 +527,24 @@ pub fn gen_begin_tx_ops(
         )?;
     }
 
+    // Calculate gas cost of init code only for EIP-3860 of Shanghai.
+    #[cfg(feature = "shanghai")]
+    let init_code_gas_cost = if state.tx.is_create() {
+        (state.tx.input.len() as u64 + 31) / 32 * eth_types::evm_types::INIT_CODE_WORD_GAS
+    } else {
+        0
+    };
+    #[cfg(not(feature = "shanghai"))]
+    let init_code_gas_cost = 0;
+
     // Calculate intrinsic gas cost
     let call_data_gas_cost = tx_data_gas_cost(&state.tx.input);
     let intrinsic_gas_cost = if state.tx.is_create() {
         GasCost::CREATION_TX.as_u64()
     } else {
         GasCost::TX.as_u64()
-    } + call_data_gas_cost;
+    } + call_data_gas_cost
+        + init_code_gas_cost;
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
     // Get code_hash of callee
