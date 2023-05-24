@@ -1987,58 +1987,6 @@ impl<F: Field> LookupTable<F> for ExpTable {
     }
 }
 
-/// Lookup table embedded in the RLP circuit.
-#[derive(Clone, Copy, Debug)]
-pub struct RlpTable {
-    /// Is enabled
-    pub q_enable: Column<Fixed>,
-    /// Transaction ID of the transaction. This is not the transaction hash, but
-    /// an incremental ID starting from 1 to indicate the position of the
-    /// transaction within the L2 block.
-    pub tx_id: Column<Advice>,
-    /// Denotes the field/tag that this row represents. Example: nonce, gas,
-    /// gas_price, and so on.
-    pub tag: Column<Advice>,
-    /// Denotes the decrementing index specific to this tag. The final value of
-    /// the field is accumulated in `value_acc` at `tag_index == 1`.
-    pub tag_rindex: Column<Advice>,
-    /// Denotes the accumulator value for this field, which is a linear
-    /// combination or random linear combination of the field's bytes.
-    pub value_acc: Column<Advice>,
-    /// Denotes the type of input assigned in this row. Type can either be
-    /// `TxSign` (transaction data that needs to be signed) or `TxHash`
-    /// (signed transaction's data).
-    pub data_type: Column<Advice>,
-    /// Denotes if the tag_length is equal to 1
-    pub tag_length_eq_one: Column<Advice>,
-}
-
-impl<F: Field> LookupTable<F> for RlpTable {
-    fn columns(&self) -> Vec<Column<Any>> {
-        vec![
-            self.q_enable.into(),
-            self.tx_id.into(),
-            self.tag.into(),
-            self.tag_rindex.into(),
-            self.value_acc.into(),
-            self.data_type.into(),
-            self.tag_length_eq_one.into(),
-        ]
-    }
-
-    fn annotations(&self) -> Vec<String> {
-        vec![
-            String::from("q_enable"),
-            String::from("tx_id"),
-            String::from("tag"),
-            String::from("tag_rindex"),
-            String::from("value_acc"),
-            String::from("data_type"),
-            String::from("tag_length_eq_one"),
-        ]
-    }
-}
-
 /// The RLP table connected to the RLP state machine circuit.
 #[derive(Clone, Copy, Debug)]
 pub struct RlpFsmRlpTable {
