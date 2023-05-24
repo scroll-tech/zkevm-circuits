@@ -105,21 +105,16 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             num_additional_pushed,
         );
 
-        let rw_counter = Delta(select::expr(is_push0.expr(), 0.expr(), 1.expr()));
-        let program_counter = Delta(opcode.expr() - (OpcodeId::PUSH0.as_u64() - 1).expr());
-        let stack_pointer = Delta((-1).expr());
-        let gas_left = Delta(select::expr(
-            is_push0.expr(),
-            -OpcodeId::PUSH0.constant_gas_cost().expr(),
-            -OpcodeId::PUSH1.constant_gas_cost().expr(),
-        ));
-
         // State transition
         let step_state_transition = StepStateTransition {
-            rw_counter,
-            program_counter,
-            stack_pointer,
-            gas_left,
+            rw_counter: Delta(1.expr()),
+            program_counter: Delta(opcode.expr() - (OpcodeId::PUSH0.as_u64() - 1).expr()),
+            stack_pointer: Delta((-1).expr()),
+            gas_left: Delta(select::expr(
+                is_push0.expr(),
+                -OpcodeId::PUSH0.constant_gas_cost().expr(),
+                -OpcodeId::PUSH1.constant_gas_cost().expr(),
+            )),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
