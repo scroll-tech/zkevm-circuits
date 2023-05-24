@@ -34,7 +34,7 @@ use crate::{
         Block, DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTag, RomTableRow, State,
         State::{DecodeTagStart, End},
         Tag,
-        Tag::EndList,
+        Tag::{BeginList, EndList, TxType},
         Transaction,
     },
 };
@@ -862,7 +862,6 @@ impl<F: Field> RlpCircuitConfig<F> {
         let is_tag_end_expr =
             |meta: &mut VirtualCells<F>| meta.query_advice(is_tag_end, Rotation::cur());
 
-        // TODO: add constraints on byte_idx transition
         meta.create_gate("state transition: byte_idx", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -884,6 +883,19 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
         debug_assert!(meta.degree() <= 9);
+
+        meta.create_gate("sm init", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            let tag = tag_expr(meta);
+
+            constrain_eq!(meta, cb, byte_idx, 1.expr());
+            cb.require_zero(
+                "tag == TxType or tag == BeginList",
+                (tag.expr() - TxType.expr()) * (tag - BeginList.expr()),
+            );
+
+            cb.gate(meta.query_fixed(q_first, Rotation::cur()))
+        });
 
         // DecodeTagStart => DecodeTagStart
         meta.create_gate(
@@ -987,6 +999,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                         let tx_id_next = meta.query_advice(rlp_table.tx_id, Rotation::next());
                         let format = meta.query_advice(rlp_table.format, Rotation::cur());
                         let format_next = meta.query_advice(rlp_table.format, Rotation::next());
+                        let tag_next = tag_next_expr(meta);
 
                         // state transition.
                         update_state!(meta, cb, byte_idx, 1);
@@ -995,6 +1008,11 @@ impl<F: Field> RlpCircuitConfig<F> {
                         cb.require_zero(
                             "(tx_id' == tx_id + 1) or (format' == format + 1)",
                             (tx_id_next - tx_id - 1.expr()) * (format_next - format - 1.expr()),
+                        );
+                        cb.require_zero(
+                            "tag == TxType or tag == BeginList",
+                            (tag_next.expr() - TxType.expr())
+                                * (tag_next.expr() - BeginList.expr()),
                         );
                     },
                 );
