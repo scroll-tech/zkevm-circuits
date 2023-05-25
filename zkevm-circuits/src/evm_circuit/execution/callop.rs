@@ -349,20 +349,28 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // copy table lookup to verify the precompile result.
                 // - from precompiled contract.
                 // - to the current call's memory (starting at `0`).
-                cb.condition(call_gadget.is_success.expr(), |cb| {
-                    cb.copy_table_lookup(
-                        callee_call_id.expr(),
-                        CopyDataType::Precompile.expr(),
-                        callee_call_id.expr(),
-                        CopyDataType::Memory.expr(),
-                        0.expr(),
-                        precompile_return_length.expr(),
-                        0.expr(),
-                        precompile_return_length.expr(),
-                        0.expr(),
-                        precompile_return_length.expr(), // writes.
-                    )
-                });
+                cb.condition(
+                    and::expr([
+                        call_gadget.is_success.expr(),
+                        call_gadget.cd_address.has_length(),
+                        call_gadget.rd_address.has_length(),
+                        not::expr(precompile_return_length_zero.expr()),
+                    ]),
+                    |cb| {
+                        cb.copy_table_lookup(
+                            callee_call_id.expr(),
+                            CopyDataType::Precompile.expr(),
+                            callee_call_id.expr(),
+                            CopyDataType::Memory.expr(),
+                            0.expr(),
+                            precompile_return_length.expr(),
+                            0.expr(),
+                            precompile_return_length.expr(),
+                            0.expr(),
+                            precompile_return_length.expr(), // writes.
+                        )
+                    },
+                );
 
                 // copy table lookup to verify the copying of bytes if the precompile call was
                 // successful.
