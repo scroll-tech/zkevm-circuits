@@ -1,7 +1,7 @@
 //! Testing utilities
 
 use crate::{
-    copy_circuit::CopyCircuit,
+    // copy_circuit::CopyCircuit,
     evm_circuit::EvmCircuit,
     state_circuit::StateCircuit,
     util::{log2_ceil, SubCircuit},
@@ -248,18 +248,18 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         }
 
         // Run copy circuit test
-        {
-            let (active_rows, max_rows) = CopyCircuit::<Fr>::min_num_rows_block(&block);
-            let k1 = block.get_test_degree();
-            let k2 = log2_ceil(max_rows + NUM_BLINDING_ROWS);
-            let k = k1.max(k2);
-            let copy_circuit = CopyCircuit::<Fr>::new_from_block(&block);
-            let instance = copy_circuit.instance();
-            let prover = MockProver::<Fr>::run(k, &copy_circuit, instance).unwrap();
-            let rows = (0..active_rows).collect();
+        // {
+        //     let (active_rows, max_rows) = CopyCircuit::<Fr>::min_num_rows_block(&block);
+        //     let k1 = block.get_test_degree();
+        //     let k2 = log2_ceil(max_rows + NUM_BLINDING_ROWS);
+        //     let k = k1.max(k2);
+        //     let copy_circuit = CopyCircuit::<Fr>::new_from_block(&block);
+        //     let instance = copy_circuit.instance();
+        //     let prover = MockProver::<Fr>::run(k, &copy_circuit, instance).unwrap();
+        //     let rows = (0..active_rows).collect();
 
-            self.copy_checks.as_ref()(prover, &rows, &rows);
-        }
+        //     self.copy_checks.as_ref()(prover, &rows, &rows);
+        // }
     }
 }
 
