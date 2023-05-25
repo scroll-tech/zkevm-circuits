@@ -86,19 +86,20 @@ mod gas_create {
 
     /// Maximum init code size to permit in a creation transaction and create instructions.
     pub const MAX_INIT_CODE_SIZE: u64 = 2 * super::MAX_CODE_SIZE;
-    /// Gas per init code word of CREATE when creating a contract.
-    pub const CREATE_GAS_PER_CODE_WORD: u64 = 2;
-    /// Gas per init code word of CREATE2 when creating a contract.
-    pub const CREATE2_GAS_PER_CODE_WORD: u64 =
-        CREATE_GAS_PER_CODE_WORD + super::GasCost::COPY_SHA3.0;
+    /// Once per word of the init code when creating a contract.
+    pub const INIT_CODE_WORD_GAS: u64 = 2;
+    /// Gas per code word for CREATE.
+    pub const CREATE_GAS_PER_CODE_WORD: u64 = INIT_CODE_WORD_GAS;
+    /// Gas per code word for CREATE2.
+    pub const CREATE2_GAS_PER_CODE_WORD: u64 = INIT_CODE_WORD_GAS + super::GasCost::COPY_SHA3.0;
 }
 #[cfg(not(feature = "shanghai"))]
 mod gas_create {
     /// Maximum init code size (0x1FFFFFFFE0) if not EIP-3860.
     pub use super::MAX_EXPANDED_MEMORY_ADDRESS as MAX_INIT_CODE_SIZE;
-    /// Gas per init code word of CREATE if not EIP-3860.
+    /// Gas per code word for CREATE if not EIP-3860.
     pub const CREATE_GAS_PER_CODE_WORD: u64 = 0;
-    /// Gas per init code word of CREATE2 if not EIP-3860.
+    /// Gas per code word for CREATE2 if not EIP-3860.
     pub const CREATE2_GAS_PER_CODE_WORD: u64 = super::GasCost::COPY_SHA3.0;
 }
 pub use gas_create::*;

@@ -41,4 +41,4 @@ ctor = "0.1.22"
 default = ["ignore-test-docker", "skip-self-destruct"]
 ignore-test-docker = []
 skip-self-destruct = []
-shanghai = ["eth-types/shanghai"]
+shanghai = ["bus-mapping/shanghai", "eth-types/shanghai", "mock/shanghai", "zkevm-circuits/shanghai"]

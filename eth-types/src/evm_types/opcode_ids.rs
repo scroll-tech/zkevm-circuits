@@ -1230,6 +1230,8 @@ impl FromStr for OpcodeId {
             "SELFDESTRUCT" => OpcodeId::SELFDESTRUCT,
             "CHAINID" => OpcodeId::CHAINID,
             "BASEFEE" => OpcodeId::BASEFEE,
+            "TLOAD" => OpcodeId::INVALID(0xb3),
+            "TSTORE" => OpcodeId::INVALID(0xb4),
             _ => {
                 // Parse an invalid opcode value as reported by geth
                 lazy_static! {

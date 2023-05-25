@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
+    Shanghai = 15,
     Merge = 14,
     GrayGlacier = 13,
     ArrowGlacier = 12,
@@ -24,6 +25,9 @@ pub enum MainnetFork {
     Frontier = 1,
 }
 
+#[cfg(feature = "shanghai")]
+pub const TEST_FORK: MainnetFork = MainnetFork::Shanghai;
+#[cfg(not(feature = "shanghai"))]
 pub const TEST_FORK: MainnetFork = MainnetFork::Merge;
 
 impl FromStr for MainnetFork {
@@ -31,6 +35,7 @@ impl FromStr for MainnetFork {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
+            "Shanghai" => Self::Shanghai,
             "Merge" => Self::Merge,
             "Gray Glacier" => Self::GrayGlacier,
             "Arrow Glacier" => Self::ArrowGlacier,
