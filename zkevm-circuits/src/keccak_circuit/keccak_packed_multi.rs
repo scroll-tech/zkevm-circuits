@@ -67,9 +67,9 @@ pub struct KeccakRow<F: Field> {
     pub(crate) q_padding: bool,
     pub(crate) q_padding_last: bool,
     pub(crate) round_cst: F,
-    pub(crate) is_final: bool,
-    pub(crate) cell_values: Vec<F>,
-    pub(crate) length: usize,
+    pub is_final: bool,
+    pub cell_values: Vec<F>,
+    pub length: usize,
     pub(crate) data_rlc: Value<F>,
     pub(crate) hash_rlc: Value<F>,
 }
