@@ -891,6 +891,7 @@ impl<F: Field> KeccakCircuitConfig<F> {
         )
     }
 
+    /// Set the cells for a keccak row; return the cells that are assigned.
     pub fn set_row(
         &self,
         region: &mut Region<'_, F>,
@@ -957,6 +958,7 @@ impl<F: Field> KeccakCircuitConfig<F> {
         Ok(res)
     }
 
+    /// Load the auxiliary table for keccak table.
     pub fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         load_normalize_table(layouter, "normalize_6", &self.normalize_6, 6u64)?;
         load_normalize_table(layouter, "normalize_4", &self.normalize_4, 4u64)?;
@@ -971,6 +973,7 @@ impl<F: Field> KeccakCircuitConfig<F> {
         load_pack_table(layouter, &self.pack_table)
     }
 
+    /// Annotate the circuit
     pub fn annotate_circuit(&self, region: &mut Region<F>) {
         //region.name_column(|| "KECCAK_q_enable", self.q_enable);
         region.name_column(|| "KECCAK_q_first", self.q_first);
