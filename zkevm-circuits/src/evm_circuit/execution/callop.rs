@@ -25,7 +25,8 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, precompile::is_precompiled};
 use eth_types::{
-    evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToLittleEndian, ToScalar, U256,
+    evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToLittleEndian, ToScalar, ToWord,
+    U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -703,6 +704,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let callee_code_hash = block.rws[step.rw_indices[13 + rw_offset]]
             .account_codehash_pair()
             .0;
+        // TODO: for test build
+        let callee_code_hash = bus_mapping::state_db::CodeDB::empty_code_hash().to_word();
         let callee_exists = !callee_code_hash.is_zero() || is_precompile;
 
         let (is_warm, is_warm_prev) =
@@ -1622,5 +1625,40 @@ mod test {
                 })
                 .run();
         }
+    }
+
+    #[test]
+    fn test_precompiled_call_for_empty_account() {
+        let callee_code = bytecode! {
+                PUSH1(0)
+                PUSH1(0)
+                PUSH1(0)
+                PUSH1(0)
+                PUSH1(0)
+                PUSH1(1)
+                PUSH2(50000)
+                CALL
+                POP
+        };
+
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(callee_code),
+            |mut txs, accs| {
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[1].address)
+                    .gas(word!("0x2386F26FC10000"));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 300000,
+                ..Default::default()
+            })
+            .run();
     }
 }
