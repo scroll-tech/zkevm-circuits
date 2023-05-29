@@ -332,7 +332,7 @@ impl Transaction {
                     TxTypes::PreEip155 => TxHashPreEip155,
                     TxTypes::Eip1559 => TxHashEip1559,
                     TxTypes::L1Msg => L1MsgHash,
-                    _ => unimplemented!(),
+                    _ => unreachable!("tx type {:?} not supported", self.tx_type),
                 },
             )
         } else {
@@ -342,7 +342,7 @@ impl Transaction {
                     TxTypes::Eip155 => TxSignEip155,
                     TxTypes::PreEip155 => TxSignPreEip155,
                     TxTypes::Eip1559 => TxSignEip1559,
-                    _ => unimplemented!(),
+                    _ => unreachable!("tx type {:?} not supported", self.tx_type),
                 },
             )
         };
@@ -369,9 +369,10 @@ impl Transaction {
             byte_idx: 0,
             depth: 0,
         };
-        // TODO: what's the reason that cur_rom_row is of type `vector`.
-        // At the beginning of parsing tag we actually do not know the next tag
-        // only after we finished parsing the current tag, then we can know
+        // When we are decoding a vector of element type `t`, at the beginning
+        // we actually do not know the next tag is `EndVector` or not. After we
+        // parsed the current tag, if the remaining bytes to decode in this layer
+        // is zero, then the next tag is `EndVector`.
         let mut cur_rom_row = vec![0];
         let mut remaining_bytes = vec![rlp_bytes.len()];
         let mut witness_table_idx = 0;
