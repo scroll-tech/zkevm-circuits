@@ -279,6 +279,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let precompile_gadget = cb.condition(
             and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
             |cb| {
+                cb.require_equal(
+                    "Callee has no code for precompile",
+                    no_callee_code.expr(),
+                    true.expr(),
+                );
+
                 // Write to callee's context.
                 for (field_tag, value) in [
                     (
@@ -399,6 +405,31 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     },
                 );
 
+                let transfer_rwc_delta =
+                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
+                // +10 call context lookups for precompile.
+                let rw_counter_delta = 28.expr()
+                    + is_call.expr() * 1.expr()
+                    + transfer_rwc_delta
+                    + is_callcode.expr()
+                    + is_delegatecall.expr() * 2.expr()
+                    + precompile_memory_rws;
+
+                // TODO: update when implementing detailed precompiled calls.
+                cb.require_step_state_transition(StepStateTransition {
+                    rw_counter: Delta(rw_counter_delta),
+                    call_id: To(callee_call_id.expr()),
+                    is_root: To(false.expr()),
+                    is_create: To(false.expr()),
+                    code_hash: To(cb.empty_code_hash_rlc()),
+                    program_counter: Delta(1.expr()),
+                    stack_pointer: Delta(stack_pointer_delta.expr()),
+                    gas_left: Delta(-step_gas_cost.expr()),
+                    memory_word_size: To(0.expr()),
+                    reversible_write_counter: To(0.expr()),
+                    ..StepStateTransition::default()
+                });
+
                 PrecompileGadget::construct(
                     cb,
                     call_gadget.is_success.expr(),
@@ -430,43 +461,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 }
             },
         ); // rwc_delta += 3 for empty account
-
-        // handle calls for precompile.
-        cb.condition(
-            and::expr([is_precheck_ok.expr(), is_precompile.expr()]),
-            |cb| {
-                cb.require_equal(
-                    "Callee has no code for precompile",
-                    no_callee_code.expr(),
-                    true.expr(),
-                );
-
-                let transfer_rwc_delta =
-                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
-                // +10 call context lookups for precompile.
-                let rw_counter_delta = 28.expr()
-                    + is_call.expr() * 1.expr()
-                    + transfer_rwc_delta
-                    + is_callcode.expr()
-                    + is_delegatecall.expr() * 2.expr()
-                    + precompile_memory_rws;
-
-                // TODO: update when implementing detailed precompiled calls.
-                cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(rw_counter_delta),
-                    call_id: To(callee_call_id.expr()),
-                    is_root: To(false.expr()),
-                    is_create: To(false.expr()),
-                    code_hash: To(cb.empty_code_hash_rlc()),
-                    program_counter: Delta(1.expr()),
-                    stack_pointer: Delta(stack_pointer_delta.expr()),
-                    gas_left: Delta(-step_gas_cost.expr()),
-                    memory_word_size: To(0.expr()),
-                    reversible_write_counter: To(0.expr()),
-                    ..StepStateTransition::default()
-                });
-            },
-        );
 
         // handle calls to empty accounts without precompile.
         cb.condition(
