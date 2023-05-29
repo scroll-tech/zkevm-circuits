@@ -450,6 +450,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     + is_callcode.expr()
                     + is_delegatecall.expr() * 2.expr()
                     + precompile_memory_rws;
+
+                // TODO: update when implementing detailed precompiled calls.
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(rw_counter_delta),
                     call_id: To(callee_call_id.expr()),
