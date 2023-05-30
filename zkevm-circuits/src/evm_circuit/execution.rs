@@ -202,7 +202,6 @@ use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
-use precompiles::IdentityGadget;
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
@@ -351,7 +350,8 @@ pub(crate) struct ExecutionConfig<F> {
         Box<BasePrecompileGadget<F, { ExecutionState::PrecompileEcRecover }>>,
     precompile_sha2_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileSha256 }>>,
     precompile_ripemd_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileRipemd160 }>>,
-    precompile_identity_gadget: Box<IdentityGadget<F>>,
+    precompile_identity_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileIdentity }>>,
     precompile_modexp_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBigModExp }>>,
     precompile_bn128add_gadget:
         Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256Add }>>,
