@@ -2253,3 +2253,38 @@ impl<F: Field> LookupTable<F> for SigTable {
         ]
     }
 }
+
+/// Lookup table embedded in the modexp circuit for precompile.
+#[derive(Clone, Copy, Debug)]
+pub struct ModExpTable {
+    /// Is enabled
+    pub q_enable: Column<Fixed>,
+    /// RLC encoded of the 4 limbs-represent (notice not bytes) of U256 base in modexp circuit
+    pub base_rlc: Column<Advice>,
+    /// RLC encoded of the U256 exponent
+    pub exp_rlc: Column<Advice>,
+    /// RLC encoded of the U256 modulus
+    pub modulus_rlc: Column<Advice>,
+    /// RLC encoded of the U256 results
+    pub result_rlc: Column<Advice>,
+}
+
+
+impl ModExpTable {
+    /// Construct the modexp table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            q_enable: meta.fixed_column(),
+            base_rlc: meta.advice_column_in(SecondPhase),
+            exp_rlc: meta.advice_column_in(SecondPhase),
+            modulus_rlc: meta.advice_column_in(SecondPhase),
+            result_rlc: meta.advice_column_in(SecondPhase),
+        }
+    }
+
+    /// Get assignments to the modexp table. Meant to be used for dev purposes.
+    pub fn dev_load<F: Field>(
+        _challenges: &Challenges<Value<F>>,
+    ) {
+    }
+}
