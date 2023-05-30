@@ -502,7 +502,8 @@ impl Transaction {
                     }
                     if cur.tag_idx < cur.tag_length {
                         // state transitions
-                        let b = match cur.tag_length.cmp(&32) {
+                        let max_length = rom_table[cur_rom_row[0]].max_length;
+                        let b = match max_length.cmp(&32) {
                             Ordering::Less => Value::known(F::from(256_u64)),
                             Ordering::Equal => word_rand,
                             Ordering::Greater => keccak_rand,
@@ -953,7 +954,7 @@ mod tests {
             TxTypes::PreEip155,
             eth_tx.rlp_unsigned().to_vec(),
         );
-        let evm_word = Fr::from(0x100);
+        let evm_word = Fr::from(0x1ab);
         let keccak_input = Fr::from(0x10000);
         let mock_challenges = Challenges::mock(
             Value::known(evm_word),
@@ -1026,7 +1027,7 @@ mod tests {
             .expect("decode tx's rlp bytes shall not fail");
 
         let tx = Transaction::new_from_rlp_signed_bytes(TxTypes::Eip1559, raw_tx_rlp_bytes);
-        let evm_word = Fr::from(0x100);
+        let evm_word = Fr::from(0x1ab);
         let keccak_input = Fr::from(0x10000);
         let mock_challenges = Challenges::mock(
             Value::known(evm_word),
@@ -1044,7 +1045,7 @@ mod tests {
         let mut tx_table = vec![
             Fr::from(eth_tx.transaction_type.unwrap().as_u64()),
             Fr::from(eth_tx.chain_id.unwrap().as_u64()),
-            rlc(&eth_tx.nonce.to_be_bytes(), evm_word),
+            Fr::from(eth_tx.nonce.as_u64()),
             rlc(
                 &eth_tx.max_priority_fee_per_gas.unwrap().to_be_bytes(),
                 evm_word,
@@ -1082,7 +1083,12 @@ mod tests {
         // assertions about RlpTag::Tag(tag)
         assert_eq!(unwrap_value(rlp_table[0].tag_value), tx_table[0]);
         for i in 1..tx_table.len() {
-            assert_eq!(unwrap_value(rlp_table[i + 1].tag_value), tx_table[i]);
+            assert_eq!(
+                unwrap_value(rlp_table[i + 1].tag_value),
+                tx_table[i],
+                "{}",
+                i
+            );
         }
 
         // assertions about RlpTag::RLC

@@ -65,8 +65,6 @@ pub enum Tag {
     MaxFeePerGas,
 
     // L1MsgHash
-    /// Gas limit
-    GasLimit,
     /// Sender
     Sender,
 }

@@ -299,8 +299,8 @@ pub struct RlpCircuitConfig<F> {
     byte_value_gte_0xf8: ComparatorConfig<F, 1>,
     /// Check for tag_idx <= tag_length
     tidx_lte_tlength: ComparatorConfig<F, 3>,
-    /// Check for tag_length <= 32
-    tlength_lte_0x20: ComparatorConfig<F, 1>,
+    /// Check for max_length <= 32
+    mlength_lte_0x20: ComparatorConfig<F, 3>,
     /// Check for depth == 0
     depth_check: IsEqualConfig<F>,
     /// Check for depth == 1
@@ -741,10 +741,10 @@ impl<F: Field> RlpCircuitConfig<F> {
             |meta| meta.query_advice(tag_idx, Rotation::cur()),
             |meta| meta.query_advice(tag_length, Rotation::cur()),
         );
-        let tlength_lte_0x20 = ComparatorChip::configure(
+        let mlength_lte_0x20 = ComparatorChip::configure(
             meta,
             cmp_enabled,
-            |meta| meta.query_advice(tag_length, Rotation::cur()),
+            |meta| meta.query_advice(max_length, Rotation::cur()),
             |_meta| 0x20.expr(),
         );
         let depth_check = IsEqualChip::configure(
@@ -1076,12 +1076,12 @@ impl<F: Field> RlpCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             let (tidx_lt_tlen, tidx_eq_tlen) = tidx_lte_tlength.expr(meta, None);
-            let (tlen_lt_0x20, tlen_eq_0x20) = tlength_lte_0x20.expr(meta, None);
+            let (mlen_lt_0x20, mlen_eq_0x20) = mlength_lte_0x20.expr(meta, None);
 
             let b = select::expr(
-                tlen_lt_0x20,
+                mlen_lt_0x20,
                 256.expr(),
-                select::expr(tlen_eq_0x20, evm_word_rand, keccak_input_rand),
+                select::expr(mlen_eq_0x20, evm_word_rand, keccak_input_rand),
             );
 
             // Bytes => Bytes
@@ -1371,7 +1371,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             byte_value_lte_0xf8,
             byte_value_gte_0xf8,
             tidx_lte_tlength,
-            tlength_lte_0x20,
+            mlength_lte_0x20,
             depth_check,
             depth_eq_one,
 
@@ -1604,11 +1604,11 @@ impl<F: Field> RlpCircuitConfig<F> {
             Value::known(F::one()),
         )?;
 
-        let tlength_lte_0x20_chip = ComparatorChip::construct(self.tlength_lte_0x20.clone());
-        tlength_lte_0x20_chip.assign(
+        let mlength_lte_0x20_chip = ComparatorChip::construct(self.mlength_lte_0x20.clone());
+        mlength_lte_0x20_chip.assign(
             region,
             row,
-            F::from(witness.state_machine.tag_length as u64),
+            F::from(witness.state_machine.max_length as u64),
             F::from(0x20),
         )?;
 
