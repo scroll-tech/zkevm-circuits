@@ -1080,12 +1080,7 @@ mod tests {
         // assertions about RlpTag::Tag(tag)
         assert_eq!(unwrap_value(rlp_table[0].tag_value), tx_table[0]);
         for i in 1..tx_table.len() {
-            assert_eq!(
-                unwrap_value(rlp_table[i + 1].tag_value),
-                tx_table[i],
-                "{}",
-                i
-            );
+            assert_eq!(unwrap_value(rlp_table[i + 1].tag_value), tx_table[i]);
         }
 
         // assertions about RlpTag::RLC
