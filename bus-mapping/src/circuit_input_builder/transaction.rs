@@ -439,8 +439,7 @@ impl Transaction {
 
     /// Calculate L1 fee of this transaction.
     pub fn l1_fee(&self) -> u64 {
-        // FIXME: is it something we want???
-        let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_unsigned_bytes);
+        let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_bytes);
 
         self.l1_fee.tx_l1_fee(tx_data_gas_cost).0
     }
@@ -461,7 +460,7 @@ impl TxL1Fee {
     /// Calculate L1 fee and remainder of transaction.
     pub fn tx_l1_fee(&self, tx_data_gas_cost: u64) -> (u64, u64) {
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
-        let tx_l1_gas = tx_data_gas_cost + 1088 + self.fee_overhead;
+        let tx_l1_gas = tx_data_gas_cost + self.fee_overhead;
         let tx_l1_fee = self.fee_scalar as u128 * self.base_fee as u128 * tx_l1_gas as u128;
 
         (

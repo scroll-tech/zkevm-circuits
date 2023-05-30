@@ -834,14 +834,11 @@ pub(super) fn tx_convert(
         chain_id, tx.chain_id
     );
     let callee_address = if tx.is_create() { None } else { Some(tx.to) };
-    // FIXME: is it the one that we want???
-    let prune_unsigned = tx.rlp_unsigned_bytes.clone();
 
     Transaction {
         block_number: tx.block_num,
         id,
-        hash: tx.hash, // NOTE that if tx is not of legacy type, then tx.hash does not equal to
-        // keccak(rlp_signed)
+        hash: tx.hash,
         tx_type: tx.tx_type,
         nonce: tx.nonce,
         gas: tx.gas,
@@ -853,7 +850,7 @@ pub(super) fn tx_convert(
         call_data: tx.input.clone(),
         call_data_length: tx.input.len(),
         call_data_gas_cost: tx_data_gas_cost(&tx.input),
-        tx_data_gas_cost: tx_data_gas_cost(&prune_unsigned),
+        tx_data_gas_cost: tx_data_gas_cost(&tx.rlp_bytes),
         chain_id,
         rlp_unsigned: tx.rlp_unsigned_bytes.clone(),
         rlp_signed: tx.rlp_bytes.clone(),
