@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_WORD},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
         util::{
             and,
@@ -12,8 +12,8 @@ use crate::{
             },
             from_bytes, is_precompiled,
             math_gadget::{
-                ContractCreateGadget, IsEqualGadget, IsZeroGadget, LtGadget, MulWordByU64Gadget,
-                RangeCheckGadget,
+                ConstantDivisionGadget, ContractCreateGadget, IsEqualGadget, IsZeroGadget,
+                LtGadget, MulWordByU64Gadget, RangeCheckGadget,
             },
             CachedRegion, Cell, StepRws, Word,
         },
@@ -53,6 +53,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
     tx_call_data_length: Cell<F>,
+    tx_call_data_word_length: ConstantDivisionGadget<F, N_BYTES_U64>,
     tx_call_data_gas_cost: Cell<F>,
     // The gas cost for rlp-encoded bytes of unsigned tx
     tx_data_gas_cost: Cell<F>,
@@ -181,12 +182,27 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_precompile_lt.expr(),
         ]);
 
+        let tx_call_data_word_length =
+            ConstantDivisionGadget::construct(cb, tx_call_data_length.expr() + 31.expr(), 32);
+
         // TODO1: Take gas cost of access list (EIP 2930) into consideration.
         // Use intrinsic gas
         // TODO2: contrain calling precompile directly
+
         let intrinsic_gas_cost = cb.query_cell();
         #[cfg(feature = "reject-eip2718")]
         cb.condition(not::expr(is_precompile.expr()), |cb| {
+            // Calculate gas cost of init code only for EIP-3860 of Shanghai.
+            #[cfg(feature = "shanghai")]
+            let init_code_gas_cost = select::expr(
+                tx_is_create.expr(),
+                tx_call_data_word_length.quotient().expr()
+                    * eth_types::evm_types::INIT_CODE_WORD_GAS.expr(),
+                0.expr(),
+            );
+            #[cfg(not(feature = "shanghai"))]
+            let init_code_gas_cost = 0.expr();
+
             cb.require_equal(
                 "calculate intrinsic gas cost",
                 intrinsic_gas_cost.expr(),
@@ -194,7 +210,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     tx_is_create.expr(),
                     eth_types::evm_types::GasCost::CREATION_TX.expr(),
                     eth_types::evm_types::GasCost::TX.expr(),
-                ) + tx_call_data_gas_cost.expr(),
+                ) + tx_call_data_gas_cost.expr()
+                    + init_code_gas_cost,
             )
         });
         // Check gas_left is sufficient
@@ -576,6 +593,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_is_create,
             tx_value,
             tx_call_data_length,
+            tx_call_data_word_length,
             tx_call_data_gas_cost,
             tx_data_gas_cost,
             reversion_info,
@@ -693,6 +711,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Value::known(F::from(tx.call_data_length as u64)),
         )?;
+        self.tx_call_data_word_length
+            .assign(region, offset, tx.call_data_length as u128 + 31)?;
         self.tx_call_data_gas_cost.assign(
             region,
             offset,
