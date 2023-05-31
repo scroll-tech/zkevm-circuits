@@ -333,7 +333,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             + select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr()),
                     ),
                     (
-                        // TODO: calculate with gas cost.
+                        // TODO: calculate Precompile contract gas cost.
+                        // cb.curr.state.gas_left.expr() - gas_cost - precompile_gas_cost
                         CallContextFieldTag::GasLeft,
                         cb.next.state.gas_left.expr(),
                     ),

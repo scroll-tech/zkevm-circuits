@@ -185,25 +185,6 @@ mod test {
                     address: PrecompileCalls::Identity.address().to_word(),
                     ..Default::default()
                 },
-                /* TODO(rohit): debug error cases
-                PrecompileCallArgs {
-                    name: "insufficient gas (precompile call should fail)",
-                    setup_code: bytecode! {
-                        // place params in memory
-                        PUSH16(word!("0x0123456789abcdef0f1e2d3c4b5a6978"))
-                        PUSH1(0x00)
-                        MSTORE
-                    },
-                    call_data_offset: 0x00.into(),
-                    call_data_length: 0x10.into(),
-                    ret_offset: 0x20.into(),
-                    ret_size: 0x10.into(),
-                    address: PrecompileCalls::Identity.address().to_word(),
-                    // set gas to be insufficient
-                    gas: 1.into(),
-                    ..Default::default()
-                },
-                */
             ]
         };
     }
