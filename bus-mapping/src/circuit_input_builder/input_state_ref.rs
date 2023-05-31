@@ -1189,7 +1189,7 @@ impl<'a> CircuitInputStateRef<'a> {
             _ => [Word::zero(), Word::zero()],
         };
 
-        let gas_refund = if exec_step.error.is_some() {
+        let gas_refund = if exec_step.error.is_some() || exec_step.is_precompiled() {
             0
         } else {
             let curr_memory_word_size = (exec_step.memory_size as u64) / 32;

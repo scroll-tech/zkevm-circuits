@@ -317,6 +317,24 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // return while restoring some of caller's context.
                 for (field, value) in [
+                    (
+                        CallContextField::ProgramCounter,
+                        (geth_step.pc.0 + 1).into(),
+                    ),
+                    (
+                        CallContextField::StackPointer,
+                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
+                    ),
+                    (
+                        CallContextField::GasLeft,
+                        // TODO: calculate with gas cost.
+                        geth_steps[1].gas.0.into(),
+                    ),
+                    (CallContextField::MemorySize, next_memory_word_size.into()),
+                    (
+                        CallContextField::ReversibleWriteCounter,
+                        (exec_step.reversible_write_counter + 1).into(),
+                    ),
                     (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (
@@ -430,14 +448,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // TODO: when more precompiles are supported and each have their own different
                 // behaviour, we can separate out the logic specified here.
-                let precompile_step = precompile_associated_ops(
+                let mut precompile_step = precompile_associated_ops(
                     state,
                     geth_steps[1].clone(),
                     call.clone(),
                     precompile_call,
                 )?;
 
-                state.handle_return(&mut exec_step, geth_steps, false)?;
+                state.handle_return(&mut precompile_step, geth_steps, true)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
                 // debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);

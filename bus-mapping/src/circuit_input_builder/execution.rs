@@ -86,6 +86,11 @@ impl ExecStep {
             Some(ExecError::OutOfGas(_) | ExecError::StackOverflow | ExecError::StackUnderflow)
         )
     }
+
+    /// Returns `true` if this is a Precompile step.
+    pub fn is_precompiled(&self) -> bool {
+        matches!(self.exec_state, ExecState::Precompile(_))
+    }
 }
 
 impl Default for ExecStep {

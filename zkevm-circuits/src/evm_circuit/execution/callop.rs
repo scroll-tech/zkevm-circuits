@@ -323,6 +323,28 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
                 // Save caller's call state
                 for (field_tag, value) in [
+                    (
+                        CallContextFieldTag::ProgramCounter,
+                        cb.curr.state.program_counter.expr() + 1.expr(),
+                    ),
+                    (
+                        CallContextFieldTag::StackPointer,
+                        cb.curr.state.stack_pointer.expr()
+                            + select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr()),
+                    ),
+                    (
+                        // TODO: calculate with gas cost.
+                        CallContextFieldTag::GasLeft,
+                        cb.next.state.gas_left.expr(),
+                    ),
+                    (
+                        CallContextFieldTag::MemorySize,
+                        memory_expansion.next_memory_word_size(),
+                    ),
+                    (
+                        CallContextFieldTag::ReversibleWriteCounter,
+                        cb.curr.state.reversible_write_counter.expr() + 1.expr(),
+                    ),
                     (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),
                     (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
                     (
@@ -408,7 +430,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let transfer_rwc_delta =
                     is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
                 // +10 call context lookups for precompile.
-                let rw_counter_delta = 28.expr()
+                let rw_counter_delta = 33.expr()
                     + is_call.expr() * 1.expr()
                     + transfer_rwc_delta
                     + is_callcode.expr()
@@ -899,7 +921,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             )?;
         }
         let precompile_return_length = if is_precompiled(&callee_address.to_address()) {
-            let value_rw = block.rws[step.rw_indices[27 + rw_offset]];
+            let value_rw = block.rws[step.rw_indices[32 + rw_offset]];
             assert_eq!(
                 value_rw.field_tag(),
                 Some(CallContextFieldTag::LastCalleeReturnDataLength as u64),

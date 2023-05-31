@@ -6,7 +6,10 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        util::{constraint_builder::EVMConstraintBuilder, CachedRegion, Cell},
+        util::{
+            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder,
+            CachedRegion, Cell,
+        },
     },
     table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
@@ -21,6 +24,7 @@ pub struct BasePrecompileGadget<F, const S: ExecutionState> {
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
+    restore_context: RestoreContextGadget<F>,
 }
 
 impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGadget<F, S> {
@@ -47,6 +51,16 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
+        let restore_context = RestoreContextGadget::construct(
+            cb,
+            true.expr(),
+            0.expr(),
+            0.expr(),
+            0.expr(),
+            0.expr(),
+            0.expr(),
+        );
+
         Self {
             is_success,
             callee_address,
@@ -55,6 +69,7 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
             call_data_length,
             return_data_offset,
             return_data_length,
+            restore_context,
         }
     }
 
@@ -62,10 +77,10 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _block: &Block<F>,
+        block: &Block<F>,
         _tx: &Transaction,
         call: &Call,
-        _step: &ExecStep,
+        step: &ExecStep,
     ) -> Result<(), Error> {
         self.is_success.assign(
             region,
@@ -99,6 +114,9 @@ impl<F: Field, const S: ExecutionState> ExecutionGadget<F> for BasePrecompileGad
             offset,
             Value::known(F::from(call.return_data_length)),
         )?;
+
+        self.restore_context
+            .assign(region, offset, block, call, step, 7)?;
 
         Ok(())
     }

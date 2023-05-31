@@ -168,11 +168,12 @@ impl<F: Field> RestoreContextGadget<F> {
             * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
             * return_data_length;
 
-        let gas_refund = if cb.execution_state().halts_in_exception() {
-            0.expr() // no gas refund if call halts in exception
-        } else {
-            cb.curr.state.gas_left.expr() - memory_expansion_cost - code_deposit_cost
-        };
+        let gas_refund =
+            if cb.execution_state().halts_in_exception() || cb.execution_state().is_precompiled() {
+                0.expr() // no gas refund if call halts in exception
+            } else {
+                cb.curr.state.gas_left.expr() - memory_expansion_cost - code_deposit_cost
+            };
 
         let gas_left = caller_gas_left.expr() + gas_refund;
 
