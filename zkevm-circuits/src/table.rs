@@ -111,6 +111,8 @@ impl<F: Field, C: Into<Column<Any>> + Copy, const W: usize> LookupTable<F> for [
 pub enum TxFieldTag {
     /// Unused tag
     Null = 0,
+    /// Tx Type
+    TxType,
     /// Nonce
     Nonce,
     /// GasPrice
@@ -125,6 +127,8 @@ pub enum TxFieldTag {
     IsCreate,
     /// Value
     Value,
+    /// CallDataRLC
+    CallDataRLC,
     /// CallDataLength
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
@@ -133,6 +137,8 @@ pub enum TxFieldTag {
     TxDataGasCost,
     /// Signature field V.
     SigV,
+    /// Chain ID
+    ChainID,
     /// Signature field R.
     SigR,
     /// Signature field S.
@@ -261,16 +267,16 @@ impl TxTable {
             |mut region| {
                 let mut offset = 0;
                 let advice_columns = [self.tx_id, self.index, self.value];
-                assign_row(
-                    &mut region,
-                    offset,
-                    self.q_enable,
-                    &advice_columns,
-                    &self.tag,
-                    &[(); 4].map(|_| Value::known(F::zero())),
-                    "all-zero",
-                )?;
-                offset += 1;
+                // assign_row(
+                //     &mut region,
+                //     offset,
+                //     self.q_enable,
+                //     &advice_columns,
+                //     &self.tag,
+                //     &[(); 4].map(|_| Value::known(F::zero())),
+                //     "all-zero",
+                // )?;
+                // offset += 1;
 
                 // Tx Table contains an initial region that has a size parametrized by max_txs
                 // with all the tx data except for calldata, and then a second
@@ -2046,21 +2052,70 @@ impl RlpFsmRlpTable {
         }
     }
 
-    /// Get assignments to the RLP table.
-    pub fn assignments<F: Field, RLP: RlpFsmWitnessGen<F>>(
-        _inputs: Vec<RLP>,
-        _challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 6]> {
-        unimplemented!("RlpFsmRlpTable::assignments")
-    }
-
-    /// Load the RLP table.
-    pub fn load<F: Field, RLP: RlpFsmWitnessGen<F>>(
+    /// Load the RLP table (only for dev).
+    pub fn dev_load<F: Field>(
         &self,
-        _layouter: &mut impl Layouter<F>,
-        _inputs: Vec<RLP>,
-        _challenges: &Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
+        txs: Vec<Transaction>,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        unimplemented!("RlpFsmRlpTable::load")
+        let rows = txs
+            .into_iter()
+            .flat_map(|tx| tx.gen_sm_witness(challenges))
+            .filter(|row| row.rlp_table.is_output)
+            .map(|row| row.rlp_table)
+            .collect::<Vec<_>>();
+
+        let assign_any = |region: &mut Region<'_, F>,
+                          annotation: &'static str,
+                          col: Column<Any>,
+                          row: usize,
+                          value: Value<F>| {
+            match *(col.column_type()) {
+                Any::Fixed => {
+                    region.assign_fixed(|| annotation, col.try_into().unwrap(), row, || value)
+                }
+                Any::Advice(_) => {
+                    region.assign_advice(|| annotation, col.try_into().unwrap(), row, || value)
+                }
+                Any::Instance => unreachable!("we do not assign to instance column"),
+            }
+        };
+
+        layouter.assign_region(
+            || "RLP dev table",
+            |mut region| {
+                for (i, row) in rows.iter().enumerate() {
+                    let cells: Vec<(&'static str, Column<Any>, Value<F>)> = vec![
+                        ("q_enable", self.q_enable.into(), Value::known(F::one())),
+                        ("tx_id", self.tx_id.into(), Value::known(F::from(row.tx_id))),
+                        (
+                            "format",
+                            self.format.into(),
+                            Value::known(F::from(usize::from(row.format) as u64)),
+                        ),
+                        (
+                            "rlp_tag",
+                            self.rlp_tag.into(),
+                            Value::known(F::from(usize::from(row.rlp_tag) as u64)),
+                        ),
+                        ("tag_value", self.tag_value.into(), row.tag_value),
+                        ("is_output", self.is_output.into(), Value::known(F::one())),
+                        (
+                            "is_none",
+                            self.is_none.into(),
+                            Value::known(F::from(row.is_none as u64)),
+                        ),
+                    ];
+
+                    for cell in cells.into_iter() {
+                        assign_any(&mut region, cell.0, cell.1, i, cell.2)?;
+                    }
+                }
+                Ok(())
+            },
+        )?;
+
+        Ok(())
     }
 }

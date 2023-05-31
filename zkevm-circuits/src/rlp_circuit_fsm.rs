@@ -4,7 +4,7 @@ mod dev;
 
 #[cfg(any(feature = "test", test))]
 mod test;
-mod util;
+pub(crate) mod util;
 
 use std::marker::PhantomData;
 
@@ -420,6 +420,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             // and q_enabled is true for all sm rows.
             |meta| meta.query_fixed(q_enabled, Rotation::cur()),
             data_table.tx_id,
+            |meta| meta.advice_column(),
         );
 
         let tx_id_check_in_dt = IsEqualChip::configure(

@@ -34,7 +34,14 @@ fn run<F: Field>(
         Ok(prover) => prover,
         Err(e) => panic!("{:#?}", e),
     };
-    prover.verify()
+    // prover.verify()
+    if prover.verify_par().is_err() {
+        let errors = prover.verify_par().err().unwrap();
+        log::debug!("errors.len() = {}", errors.len());
+    }
+    prover.assert_satisfied_par();
+
+    prover.verify_par()
 }
 
 #[test]

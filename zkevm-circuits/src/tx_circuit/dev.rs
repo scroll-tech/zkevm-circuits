@@ -1,7 +1,7 @@
 pub use super::TxCircuit;
 
 use crate::{
-    table::{BlockTable, KeccakTable, RlpTable, TxTable},
+    table::{BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, TxTable},
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::Transaction,
@@ -75,7 +75,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
             self.txs
                 .iter()
                 .chain(padding_txs.iter())
-                .map(|tx| tx.into())
+                .map(|tx| tx.clone())
                 .collect(),
             &challenges,
         )?;

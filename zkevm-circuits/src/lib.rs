@@ -40,9 +40,7 @@ pub mod test_util;
 #[cfg(any(feature = "test", test))]
 mod stats;
 
-// FIXME: enable it after we make changes to tx circuit
-//  as it currently depends on the old RLP table.
-// pub mod tx_circuit;
+pub mod tx_circuit;
 pub mod util;
 pub mod witness;
 

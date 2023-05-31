@@ -20,7 +20,7 @@ pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};
 mod receipt;
 pub use receipt::Receipt;
 
-mod rlp_fsm;
+pub(crate) mod rlp_fsm;
 pub use rlp_fsm::{
     DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTable, RlpTag, RomTableRow, State,
     StateMachine, Tag,
