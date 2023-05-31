@@ -87,7 +87,7 @@ impl ExecStep {
         )
     }
 
-    /// Returns `true` if this is a Precompile step.
+    /// Returns `true` if this is an execution step of Precompile.
     pub fn is_precompiled(&self) -> bool {
         matches!(self.exec_state, ExecState::Precompile(_))
     }

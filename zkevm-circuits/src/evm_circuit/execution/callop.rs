@@ -353,7 +353,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ),
                 ] {
                     cb.call_context_lookup(true.expr(), None, field_tag, value);
-                } // rwc_delta += 3 for precompile
+                } // rwc_delta += 8 for precompile
 
                 // copy table lookup to verify the copying of bytes:
                 // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
@@ -429,7 +429,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
                 let transfer_rwc_delta =
                     is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
-                // +10 call context lookups for precompile.
+                // +15 call context lookups for precompile.
                 let rw_counter_delta = 33.expr()
                     + is_call.expr() * 1.expr()
                     + transfer_rwc_delta

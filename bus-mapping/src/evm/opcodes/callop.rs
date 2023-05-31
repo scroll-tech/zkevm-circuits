@@ -455,6 +455,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     precompile_call,
                 )?;
 
+                // Make the Precompile execution step to handle return logic and restore to caller
+                // context (similar as STOP and RETURN).
                 state.handle_return(&mut precompile_step, geth_steps, true)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
