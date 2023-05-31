@@ -893,7 +893,6 @@ impl<F: Field> KeccakCircuitConfig<F> {
         )
     }
 
-
     /// Set the cells for a keccak row; return the cells that are assigned.
     pub fn set_row(
         &self,
