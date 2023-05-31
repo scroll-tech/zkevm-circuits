@@ -55,7 +55,8 @@ pub struct KeccakCircuitConfig<F> {
     q_padding_last: Column<Fixed>,
     /// The columns for other circuits to lookup Keccak hash results
     pub keccak_table: KeccakTable,
-    pub(crate) cell_manager: CellManager<F>,
+    /// The cell manager that stores/allocates the advice columns
+    pub cell_manager: CellManager<F>,
     round_cst: Column<Fixed>,
     normalize_3: [TableColumn; 2],
     normalize_4: [TableColumn; 2],
@@ -893,7 +894,7 @@ impl<F: Field> KeccakCircuitConfig<F> {
     }
 
     /// Set a keccak row; return the cells allocated for the row.
-    pub(crate) fn set_row(
+    pub fn set_row(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -959,7 +960,8 @@ impl<F: Field> KeccakCircuitConfig<F> {
         Ok(res)
     }
 
-    pub(crate) fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    /// Load the auxiliary tables for keccak circuit
+    pub fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         load_normalize_table(layouter, "normalize_6", &self.normalize_6, 6u64)?;
         load_normalize_table(layouter, "normalize_4", &self.normalize_4, 4u64)?;
         load_normalize_table(layouter, "normalize_3", &self.normalize_3, 3u64)?;
@@ -973,7 +975,8 @@ impl<F: Field> KeccakCircuitConfig<F> {
         load_pack_table(layouter, &self.pack_table)
     }
 
-    pub(crate) fn annotate_circuit(&self, region: &mut Region<F>) {
+    /// Annotate the circuit
+    pub fn annotate_circuit(&self, region: &mut Region<F>) {
         //region.name_column(|| "KECCAK_q_enable", self.q_enable);
         region.name_column(|| "KECCAK_q_first", self.q_first);
         region.name_column(|| "KECCAK_q_round", self.q_round);

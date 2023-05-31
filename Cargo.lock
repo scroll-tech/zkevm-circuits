@@ -21,6 +21,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "aggregator"
+version = "0.1.0"
+dependencies = [
+ "ark-std 0.4.0",
+ "env_logger 0.10.0",
+ "eth-types",
+ "ethers-core",
+ "halo2-base",
+ "halo2_proofs",
+ "log",
+ "rand",
+ "snark-verifier",
+ "snark-verifier-sdk",
+ "zkevm-circuits",
+]
+
+[[package]]
 name = "ahash"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -71,6 +88,16 @@ name = "ark-std"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1df2c09229cbc5a028b1d70e00fdb2acee28b1055dfb5ca73eea49c5a25c4e7c"
+dependencies = [
+ "num-traits",
+ "rand",
+]
+
+[[package]]
+name = "ark-std"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
 dependencies = [
  "num-traits",
  "rand",
@@ -535,7 +562,7 @@ dependencies = [
 name = "circuit-benchmarks"
 version = "0.1.0"
 dependencies = [
- "ark-std",
+ "ark-std 0.3.0",
  "bus-mapping",
  "env_logger 0.9.3",
  "eth-types",
@@ -2089,6 +2116,7 @@ dependencies = [
  "ff",
  "halo2_proofs",
  "itertools",
+ "jemallocator",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2136,7 +2164,7 @@ name = "halo2_proofs"
 version = "0.2.0"
 source = "git+https://github.com/scroll-tech/halo2.git?branch=v0.4#3d40ae4968759ac4516c5f9c45ad20140e2d35d5"
 dependencies = [
- "ark-std",
+ "ark-std 0.3.0",
  "blake2b_simd",
  "cfg-if 0.1.10",
  "crossbeam",
@@ -2570,6 +2598,26 @@ name = "itoa"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "453ad9f582a441959e5f0d088b02ce04cfe8d51a8eaf077f12ac6d3e94164ca6"
+
+[[package]]
+name = "jemalloc-sys"
+version = "0.5.3+5.3.0-patched"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9bd5d616ea7ed58b571b2e209a65759664d7fb021a0819d7a790afc67e47ca1"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "jemallocator"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16c2514137880c52b0b4822b563fadd38257c1f380858addb74a400889696ea6"
+dependencies = [
+ "jemalloc-sys",
+ "libc",
+]
 
 [[package]]
 name = "jpeg-decoder"
