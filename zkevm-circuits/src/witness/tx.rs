@@ -154,15 +154,7 @@ impl Transaction {
         &self,
         challenges: Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 4]> {
-        let rlp_signed_hash = H256(keccak256(&self.rlp_signed));
-        if self.hash != rlp_signed_hash {
-            log::debug!(
-                "assign a non-legacy tx (hash = {}, rlp_signed_hash = {}) in tx table",
-                self.hash,
-                rlp_signed_hash
-            );
-        }
-        let tx_hash_be_bytes = rlp_signed_hash.to_fixed_bytes();
+        let tx_hash_be_bytes = keccak256(&self.rlp_signed);
         let tx_sign_hash_be_bytes = keccak256(&self.rlp_unsigned);
 
         let ret = vec![
@@ -216,6 +208,12 @@ impl Transaction {
                 challenges
                     .evm_word()
                     .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::CallDataRLC as u64)),
+                Value::known(F::zero()),
+                rlc_be_bytes(&self.call_data, challenges.keccak_input()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -618,6 +616,7 @@ impl Transaction {
                 RlpTag::Len => cur.tag_value_acc + Value::known(F::from((cur.byte_idx + 1) as u64)),
                 RlpTag::RLC => bytes_rlc,
                 RlpTag::Tag(_) => cur.tag_value_acc,
+                RlpTag::Null => unreachable!("Null is not used"),
             };
 
             witness.push(RlpFsmWitnessRow {
@@ -787,7 +786,6 @@ impl From<MockTransaction> for Transaction {
             }
 
             let unsigned = legacy_tx.rlp().to_vec();
-
             let signed = legacy_tx.rlp_signed(&sig).to_vec();
 
             (unsigned, signed)
@@ -807,7 +805,7 @@ impl From<MockTransaction> for Transaction {
             call_data: mock_tx.input.to_vec(),
             call_data_length: mock_tx.input.len(),
             call_data_gas_cost: tx_data_gas_cost(&mock_tx.input),
-            tx_data_gas_cost: tx_data_gas_cost(&rlp_unsigned),
+            tx_data_gas_cost: tx_data_gas_cost(&rlp_signed),
             chain_id: mock_tx.chain_id.as_u64(),
             rlp_unsigned,
             rlp_signed,

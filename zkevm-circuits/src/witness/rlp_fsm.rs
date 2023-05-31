@@ -11,7 +11,7 @@ pub enum Tag {
     #[default]
     /// Tag that marks the beginning of a list
     /// whose value gives the length of bytes of this list.
-    BeginList = 2,
+    BeginList = 3,
     /// Tag that marks the ending of a list and
     /// it does not consume any byte.
     EndList,
@@ -75,6 +75,12 @@ impl From<Tag> for usize {
     }
 }
 
+impl From<Tag> for RlpTag {
+    fn from(value: Tag) -> Self {
+        Self::Tag(value)
+    }
+}
+
 impl Tag {
     /// If the tag is related to list
     pub fn is_list(&self) -> bool {
@@ -102,6 +108,8 @@ pub enum RlpTag {
     Len,
     /// RLC of RLP bytes
     RLC,
+    /// Null never occurs in RLP table
+    Null,
     /// Tag
     Tag(Tag),
 }
@@ -118,6 +126,7 @@ impl From<RlpTag> for usize {
         match value {
             RlpTag::Len => 0,
             RlpTag::RLC => 1,
+            RlpTag::Null => 2,
             RlpTag::Tag(tag) => usize::from(tag),
         }
     }

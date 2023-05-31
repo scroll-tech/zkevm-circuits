@@ -41,8 +41,9 @@ impl<F: Field> IsZeroChip<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: impl FnOnce(&mut VirtualCells<'_, F>) -> Expression<F>,
         value: Column<Advice>,
+        value_inv: impl FnOnce(&mut ConstraintSystem<F>) -> Column<Advice>,
     ) -> IsZeroConfig<F> {
-        let value_inv = meta.advice_column();
+        let value_inv = value_inv(meta);
         let config = IsZeroGadgetChip::configure(
             meta,
             q_enable,

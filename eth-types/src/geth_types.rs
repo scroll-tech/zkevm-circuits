@@ -16,9 +16,10 @@ use serde::{Serialize, Serializer};
 use serde_with::serde_as;
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
+use strum_macros::EnumIter;
 
 /// Tx types
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Copy, Clone, EnumIter, PartialEq, Eq)]
 pub enum TxTypes {
     /// EIP 155 tx
     #[default]
@@ -40,6 +41,13 @@ impl From<TxTypes> for usize {
 }
 
 impl TxTypes {
+    /// If this type is L1Msg
+    pub fn is_l1_msg(&self) -> bool {
+        match *self {
+            TxTypes::L1Msg => true,
+            _ => false,
+        }
+    }
     /// Get the type of transaction
     pub fn get_tx_type(tx: &crate::Transaction) -> Self {
         match tx.transaction_type {
