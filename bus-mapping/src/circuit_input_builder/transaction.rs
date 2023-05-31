@@ -2,15 +2,22 @@
 
 use std::collections::BTreeMap;
 
-use eth_types::{evm_types::Memory, geth_types, Address, GethExecTrace, Signature, Word, H256};
-use ethers_core::utils::get_contract_address;
+use eth_types::{
+    evm_types::{gas_utils::tx_data_gas_cost, Memory},
+    geth_types, Address, GethExecTrace, Signature, Word, H256,
+};
+use ethers_core::{types::TransactionRequest, utils::get_contract_address};
 
 use crate::{
+    l2_predeployed::l1_gas_price_oracle,
     state_db::{CodeDB, StateDB},
     Error,
 };
 
 use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
+
+/// Precision of transaction L1 fee
+pub const TX_L1_FEE_PRECISION: u64 = 1_000_000_000;
 
 #[derive(Debug, Default)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
@@ -204,6 +211,10 @@ pub struct Transaction {
     pub chain_id: u64,
     /// Signature
     pub signature: Signature,
+    /// Current values of L1 fee
+    pub l1_fee: TxL1Fee,
+    /// Committed values of L1 fee
+    pub l1_fee_committed: TxL1Fee,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
@@ -229,6 +240,12 @@ impl From<&Transaction> for geth_types::Transaction {
     }
 }
 
+impl From<&Transaction> for TransactionRequest {
+    fn from(tx: &Transaction) -> TransactionRequest {
+        (&Into::<geth_types::Transaction>::into(tx)).into()
+    }
+}
+
 impl Transaction {
     /// Create a dummy Transaction with zero values
     pub fn dummy() -> Self {
@@ -250,6 +267,8 @@ impl Transaction {
             steps: Vec::new(),
             block_num: Default::default(),
             hash: Default::default(),
+            l1_fee: Default::default(),
+            l1_fee_committed: Default::default(),
         }
     }
 
@@ -320,6 +339,16 @@ impl Transaction {
                 debug_tx
             }
         );
+
+        let l1_fee = TxL1Fee::get_current_values_from_state_db(sdb);
+        let l1_fee_committed = TxL1Fee::get_committed_values_from_state_db(sdb);
+
+        log::debug!(
+            "l1_fee: {:?}, l1_fee_committed: {:?}",
+            l1_fee,
+            l1_fee_committed
+        );
+
         Ok(Self {
             block_num: eth_tx.block_number.unwrap().as_u64(),
             hash: eth_tx.hash,
@@ -338,6 +367,8 @@ impl Transaction {
                 r: eth_tx.r,
                 s: eth_tx.s,
             },
+            l1_fee,
+            l1_fee_committed,
         })
     }
 
@@ -384,5 +415,76 @@ impl Transaction {
     /// Return whether the steps in this transaction is empty
     pub fn is_steps_empty(&self) -> bool {
         self.steps.is_empty()
+    }
+
+    /// Calculate L1 fee of this transaction.
+    pub fn l1_fee(&self) -> u64 {
+        let tx_data_gas_cost =
+            tx_data_gas_cost(&Into::<TransactionRequest>::into(self).rlp_unsigned());
+
+        self.l1_fee.tx_l1_fee(tx_data_gas_cost).0
+    }
+}
+
+/// Transaction L1 fee for L1GasPriceOracle contract
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TxL1Fee {
+    /// L1 base fee
+    pub base_fee: u64,
+    /// L1 fee overhead
+    pub fee_overhead: u64,
+    /// L1 fee scalar
+    pub fee_scalar: u64,
+}
+
+impl TxL1Fee {
+    /// Calculate L1 fee and remainder of transaction.
+    pub fn tx_l1_fee(&self, tx_data_gas_cost: u64) -> (u64, u64) {
+        // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
+        let tx_l1_gas = tx_data_gas_cost + 1088 + self.fee_overhead;
+        let tx_l1_fee = self.fee_scalar as u128 * self.base_fee as u128 * tx_l1_gas as u128;
+
+        (
+            (tx_l1_fee / TX_L1_FEE_PRECISION as u128) as u64,
+            (tx_l1_fee % TX_L1_FEE_PRECISION as u128) as u64,
+        )
+    }
+
+    fn get_current_values_from_state_db(sdb: &StateDB) -> Self {
+        let [base_fee, fee_overhead, fee_scalar] = [
+            &l1_gas_price_oracle::BASE_FEE_SLOT,
+            &l1_gas_price_oracle::OVERHEAD_SLOT,
+            &l1_gas_price_oracle::SCALAR_SLOT,
+        ]
+        .map(|slot| {
+            sdb.get_storage(&l1_gas_price_oracle::ADDRESS, slot)
+                .1
+                .as_u64()
+        });
+
+        Self {
+            base_fee,
+            fee_overhead,
+            fee_scalar,
+        }
+    }
+
+    fn get_committed_values_from_state_db(sdb: &StateDB) -> Self {
+        let [base_fee, fee_overhead, fee_scalar] = [
+            &l1_gas_price_oracle::BASE_FEE_SLOT,
+            &l1_gas_price_oracle::OVERHEAD_SLOT,
+            &l1_gas_price_oracle::SCALAR_SLOT,
+        ]
+        .map(|slot| {
+            sdb.get_committed_storage(&l1_gas_price_oracle::ADDRESS, slot)
+                .1
+                .as_u64()
+        });
+
+        Self {
+            base_fee,
+            fee_overhead,
+            fee_scalar,
+        }
     }
 }

@@ -867,9 +867,9 @@ impl<F: Field> BytecodeCircuitConfig<F> {
     /// load fixed tables
     pub(crate) fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         // push table: BYTE -> NUM_PUSHED:
-        // [0, OpcodeId::PUSH1] -> 0
-        // [OpcodeId::PUSH1, OpcodeId::PUSH32] -> [1..32]
-        // [OpcodeId::PUSH32, 256] -> 0
+        // byte < OpcodeId::PUSH1 -> 0
+        // byte >= OpcodeId::PUSH1 and byte <= OpcodeId::PUSH32 -> [1..32]
+        // byte > OpcodeId::PUSH32 and byte < 256 -> 0
         layouter.assign_region(
             || "push table",
             |mut region| {

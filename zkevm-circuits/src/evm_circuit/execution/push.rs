@@ -8,21 +8,23 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            sum, CachedRegion, Cell, Word,
+            math_gadget::IsZeroGadget,
+            not, select, sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use array_init::array_init;
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
     same_context: SameContextGadget<F>,
+    is_push0: IsZeroGadget<F>,
     value: Word<F>,
-    selectors: [Cell<F>; 31],
+    selectors: [Cell<F>; 32],
 }
 
 impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
@@ -33,10 +35,22 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
+        let is_push0 = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::PUSH0.expr());
+
         let value = cb.query_word_rlc();
+        cb.condition(not::expr(is_push0.expr()), |cb| cb.stack_push(value.expr()));
+
         // Query selectors for each opcode_lookup
         let selectors = array_init(|_| cb.query_bool());
 
+        // TODO:
+        // The below constraints are failed when running test case
+        // `push_gadget_out_of_range`. It seems that we cannot check the exact
+        // length of `n` data bytes followed by `PUSHn` opcode. Since even if the
+        // code ends with PUSH32 should succeed to run.
+        // <https://github.com/ethereum/go-ethereum/blob/master/core/vm/analysis.go#L66>
+        // <https://github.com/privacy-scaling-explorations/zkevm-circuits/blob/43c67c91ca566fd2b7f3588979c537006090f185/eth-types/src/bytecode.rs#L288>
+        //
         // The pushed bytes are viewed as left-padded big-endian, but our random
         // linear combination uses little-endian, so we lookup from the LSB
         // which has index (program_counter + num_pushed), and then move left
@@ -51,19 +65,16 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         //   [byte31,     ...,     byte2,     byte1,     byte0]
         //
         // for idx in 0..32 {
-        // let byte = &value.cells[idx];
-        // let index = cb.curr.state.program_counter.expr() + opcode.expr()
-        // - (OpcodeId::PUSH1.as_u8() - 1 + idx as u8).expr();
-        // if idx == 0 {
-        // cb.opcode_lookup_at(index, byte.expr(), 0.expr())
-        // } else {
-        // cb.condition(selectors[idx - 1].expr(), |cb| {
-        // cb.opcode_lookup_at(index, byte.expr(), 0.expr())
-        // });
-        // }
+        //     let byte = &value.cells[idx];
+        //     let index = cb.curr.state.program_counter.expr() + opcode.expr()
+        //         - (OpcodeId::PUSH0.as_u8() + idx as u8).expr();
+
+        //     cb.condition(selectors[idx].expr(), |cb| {
+        //         cb.opcode_lookup_at(index, byte.expr(), 0.expr())
+        //     });
         // }
 
-        for idx in 0..31 {
+        for idx in 0..32 {
             let selector_prev = if idx == 0 {
                 // First selector will always be 1
                 1.expr()
@@ -79,13 +90,13 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             // byte should be 0 when selector is 0
             cb.require_zero(
                 "Constrain byte == 0 when selector == 0",
-                value.cells[idx + 1].expr() * (1.expr() - selectors[idx].expr()),
+                value.cells[idx].expr() * (1.expr() - selectors[idx].expr()),
             );
         }
 
-        // Deduce the number of additional bytes to push than PUSH1. Note that
-        // num_additional_pushed = n - 1 where n is the suffix number of PUSH*.
-        let num_additional_pushed = opcode.expr() - OpcodeId::PUSH1.as_u64().expr();
+        // Deduce the number of additional bytes to push than PUSH0. Note that
+        // num_additional_pushed = n where n is the suffix number of PUSH*.
+        let num_additional_pushed = opcode.expr() - OpcodeId::PUSH0.as_u64().expr();
         // Sum of selectors needs to be exactly the number of additional bytes
         // that needs to be pushed.
         cb.require_equal(
@@ -94,22 +105,23 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             num_additional_pushed,
         );
 
-        // Push the value on the stack
-        cb.stack_push(value.expr());
-
         // State transition
-        // `program_counter` needs to be increased by number of bytes pushed + 1
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(1.expr()),
-            program_counter: Delta(opcode.expr() - (OpcodeId::PUSH1.as_u64() - 2).expr()),
+            program_counter: Delta(opcode.expr() - (OpcodeId::PUSH0.as_u64() - 1).expr()),
             stack_pointer: Delta((-1).expr()),
-            gas_left: Delta(-OpcodeId::PUSH1.constant_gas_cost().expr()),
+            gas_left: Delta(select::expr(
+                is_push0.expr(),
+                -OpcodeId::PUSH0.constant_gas_cost().expr(),
+                -OpcodeId::PUSH1.constant_gas_cost().expr(),
+            )),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
+            is_push0,
             value,
             selectors,
         }
@@ -127,12 +139,21 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let opcode = step.opcode.unwrap();
+        self.is_push0.assign(
+            region,
+            offset,
+            F::from(opcode.as_u64()) - F::from(OpcodeId::PUSH0.as_u64()),
+        )?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = if opcode.is_push_with_data() {
+            block.rws[step.rw_indices[0]].stack_value()
+        } else {
+            U256::zero()
+        };
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        let num_additional_pushed = opcode.postfix().expect("opcode with postfix") - 1;
+        let num_additional_pushed = opcode.postfix().expect("opcode with postfix");
         for (idx, selector) in self.selectors.iter().enumerate() {
             selector.assign(
                 region,
@@ -170,6 +191,8 @@ mod test {
 
     #[test]
     fn push_gadget_simple() {
+        #[cfg(feature = "shanghai")]
+        test_ok(OpcodeId::PUSH0, &[]);
         test_ok(OpcodeId::PUSH1, &[1]);
         test_ok(OpcodeId::PUSH2, &[1, 2]);
         test_ok(

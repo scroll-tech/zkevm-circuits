@@ -2,7 +2,7 @@
 use crate::{
     bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
     table::BytecodeFieldTag,
-    util::{is_push, keccak, unusable_rows, Challenges, SubCircuit},
+    util::{is_push_with_data, keccak, unusable_rows, Challenges, SubCircuit},
 };
 use bus_mapping::{evm::OpcodeId, state_db::CodeDB};
 use eth_types::{Bytecode, Field, ToWord, Word};
@@ -64,7 +64,7 @@ fn bytecode_unrolling() {
     let mut bytecode = Bytecode::default();
     // First add all non-push bytes, which should all be seen as code
     for byte in 0u8..=255u8 {
-        if !is_push(byte) {
+        if !is_push_with_data(byte) {
             bytecode.write(byte, true);
             rows.push(BytecodeRow {
                 code_hash: Word::zero(),
@@ -87,7 +87,7 @@ fn bytecode_unrolling() {
             tag: Fr::from(BytecodeFieldTag::Byte as u64),
             index: Fr::from(rows.len() as u64),
             is_code: Fr::from(true as u64),
-            value: Fr::from(OpcodeId::PUSH1.as_u64() + ((n - 1) as u64)),
+            value: Fr::from(OpcodeId::PUSH0.as_u64() + n as u64),
         });
         for _ in 0..n {
             rows.push(BytecodeRow {

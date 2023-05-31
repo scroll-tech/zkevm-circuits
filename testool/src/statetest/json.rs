@@ -55,7 +55,7 @@ struct AccountPre {
 
 #[derive(Debug, Clone, Deserialize)]
 struct Expect {
-    indexes: Indexes,
+    indexes: Option<Indexes>,
     network: Vec<String>,
     result: HashMap<String, AccountPost>,
 }
@@ -144,9 +144,21 @@ impl<'a> JsonStateTestBuilder<'a> {
 
             let mut expects = Vec::new();
             for expect in test.expect {
-                let data_refs = Self::parse_refs(&expect.indexes.data)?;
-                let gas_refs = Self::parse_refs(&expect.indexes.gas)?;
-                let value_refs = Self::parse_refs(&expect.indexes.value)?;
+                // Considered as Anys if missing `indexes`.
+                let (data_refs, gas_refs, value_refs) = if let Some(indexes) = expect.indexes {
+                    (
+                        Self::parse_refs(&indexes.data)?,
+                        Self::parse_refs(&indexes.gas)?,
+                        Self::parse_refs(&indexes.value)?,
+                    )
+                } else {
+                    (
+                        Refs(vec![Ref::Any]),
+                        Refs(vec![Ref::Any]),
+                        Refs(vec![Ref::Any]),
+                    )
+                };
+
                 let result = self.parse_accounts_post(&expect.result)?;
 
                 if MainnetFork::in_network_range(&expect.network)? {

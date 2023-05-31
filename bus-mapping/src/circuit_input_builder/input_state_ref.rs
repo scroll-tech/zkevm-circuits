@@ -359,7 +359,10 @@ impl<'a> CircuitInputStateRef<'a> {
         if matches!(rw, RW::WRITE) {
             match op.field {
                 AccountField::Nonce => account.nonce = op.value,
-                AccountField::Balance => account.balance = op.value,
+                AccountField::Balance => {
+                    log::trace!("update balance of {:?} to {:?}", &op.address, op.value);
+                    account.balance = op.value;
+                }
                 AccountField::KeccakCodeHash => {
                     account.keccak_code_hash = H256::from(op.value.to_be_bytes())
                 }

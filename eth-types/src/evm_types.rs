@@ -60,6 +60,8 @@ impl fmt::Debug for Gas {
     }
 }
 
+/// Maximum bytecode size to permit for a contract.
+pub const MAX_CODE_SIZE: u64 = 24576;
 /// This constant ((2^32 - 1) * 32) is the highest number that can be used without overflowing the
 /// square operation of gas calculation.
 /// <https://github.com/ethereum/go-ethereum/blob/e6b6a8b738069ad0579f6798ee59fde93ed13b43/core/vm/gas_table.go#L38>
@@ -68,6 +70,39 @@ pub const MAX_EXPANDED_MEMORY_ADDRESS: u64 = 0x1FFFFFFFE0;
 pub const MAX_REFUND_QUOTIENT_OF_GAS_USED: usize = 5;
 /// Gas stipend when CALL or CALLCODE is attached with value.
 pub const GAS_STIPEND_CALL_WITH_VALUE: u64 = 2300;
+
+#[cfg(feature = "shanghai")]
+mod gas_create {
+    // For EIP-3860, there are 2 special gas cost constraints in geth
+    // [gasCreate2Eip3860](https://github.com/ethereum/go-ethereum/blob/eb83e7c54021573eaceb14236af3a7a8c64f6027/core/vm/gas_table.go#L321)
+    // (similar for CREATE).
+    // 1. size <= 49152 (MaxInitCodeSize)
+    // 2. gasCost = memoryGasCost + (2 + 6) * ((size + 31) / 32) should not
+    //    overflow for Uint64.
+    // No need to constrain the second condition, since the maximum gas cost
+    // cannot overflow for Uint64 (36028809887100925 calculated by
+    // `memorySize = 0x1FFFFFFFE0` and `size = 49152`) if the first condition is
+    // satisfied.
+
+    /// Maximum init code size to permit in a creation transaction and create instructions.
+    pub const MAX_INIT_CODE_SIZE: u64 = 2 * super::MAX_CODE_SIZE;
+    /// Once per word of the init code when creating a contract.
+    pub const INIT_CODE_WORD_GAS: u64 = 2;
+    /// Gas per code word for CREATE.
+    pub const CREATE_GAS_PER_CODE_WORD: u64 = INIT_CODE_WORD_GAS;
+    /// Gas per code word for CREATE2.
+    pub const CREATE2_GAS_PER_CODE_WORD: u64 = INIT_CODE_WORD_GAS + super::GasCost::COPY_SHA3.0;
+}
+#[cfg(not(feature = "shanghai"))]
+mod gas_create {
+    /// Maximum init code size (0x1FFFFFFFE0) if not EIP-3860.
+    pub use super::MAX_EXPANDED_MEMORY_ADDRESS as MAX_INIT_CODE_SIZE;
+    /// Gas per code word for CREATE if not EIP-3860.
+    pub const CREATE_GAS_PER_CODE_WORD: u64 = 0;
+    /// Gas per code word for CREATE2 if not EIP-3860.
+    pub const CREATE2_GAS_PER_CODE_WORD: u64 = super::GasCost::COPY_SHA3.0;
+}
+pub use gas_create::*;
 
 /// Defines the gas consumption.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]

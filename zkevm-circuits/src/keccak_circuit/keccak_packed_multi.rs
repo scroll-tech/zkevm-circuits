@@ -67,9 +67,10 @@ pub struct KeccakRow<F: Field> {
     pub(crate) q_padding: bool,
     pub(crate) q_padding_last: bool,
     pub(crate) round_cst: F,
-    /// If this row is the final row for the current keccak round
+    /// if the row is the last row of the current keccak round
     pub is_final: bool,
-    pub(crate) cell_values: Vec<F>,
+    /// the value of the cells that are to be assigned
+    pub cell_values: Vec<F>,
     /// The input length of the hash function
     pub length: usize,
     pub(crate) data_rlc: Value<F>,

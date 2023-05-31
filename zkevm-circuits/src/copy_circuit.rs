@@ -548,7 +548,12 @@ impl<F: Field> CopyCircuitConfig<F> {
         // to satisfy the query at `Rotation(2)` performed inside of the
         // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
         // Accumulation gate.
-        assert!(copy_rows_needed + 2 <= max_copy_rows);
+        assert!(
+            copy_rows_needed + 2 <= max_copy_rows,
+            "copy rows not enough {} vs {}",
+            copy_rows_needed,
+            max_copy_rows
+        );
 
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
