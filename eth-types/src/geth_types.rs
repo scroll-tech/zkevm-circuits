@@ -41,13 +41,11 @@ impl From<TxTypes> for usize {
 }
 
 impl TxTypes {
-    /// If this type is L1Msg
+    /// If this type is L1Msg or not
     pub fn is_l1_msg(&self) -> bool {
-        match *self {
-            TxTypes::L1Msg => true,
-            _ => false,
-        }
+        matches!(*self, TxTypes::L1Msg)
     }
+
     /// Get the type of transaction
     pub fn get_tx_type(tx: &crate::Transaction) -> Self {
         match tx.transaction_type {

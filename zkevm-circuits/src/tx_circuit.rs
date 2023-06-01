@@ -1480,8 +1480,8 @@ impl<F: Field> TxCircuit<F> {
                 debug_assert_eq!(assigned_sig_verifs.len() + sign_datas.len(), sigs.len());
                 debug_assert_eq!(padding_txs.len() + self.txs.len(), sigs.len());
 
-                let mut cum_num_txs = 0;
-                let mut is_padding_tx = false;
+                let mut cum_num_txs;
+                let mut is_padding_tx;
                 // Empty entry
                 config.assign_row(
                     &mut region,
@@ -1589,7 +1589,7 @@ impl<F: Field> TxCircuit<F> {
                         (
                             CallDataRLC,
                             Some(Tag::Data.into()),
-                            Some(tx.call_data.len() == 0),
+                            Some(tx.call_data.is_empty()),
                             rlc_be_bytes(&tx.call_data, challenges.keccak_input()),
                         ),
                         (

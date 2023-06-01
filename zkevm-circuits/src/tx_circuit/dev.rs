@@ -75,7 +75,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
             self.txs
                 .iter()
                 .chain(padding_txs.iter())
-                .map(|tx| tx.clone())
+                .cloned()
                 .collect(),
             &challenges,
         )?;
