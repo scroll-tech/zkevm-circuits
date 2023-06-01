@@ -1841,8 +1841,18 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
         let size = block.circuits_params.max_rlp_rows;
         debug_assert!(block.txs.len() <= max_txs);
 
+        let padding_txs = (block.txs.len()..max_txs)
+            .into_iter()
+            .map(|i| {
+                let mut tx = Transaction::dummy(block.chain_id.as_u64());
+                tx.id = i + 1;
+                tx
+            })
+            .collect::<Vec<Transaction>>();
+        let txs = [block.txs.clone(), padding_txs].concat();
+
         Self {
-            txs: block.txs.clone(),
+            txs,
             max_txs,
             size,
             _marker: Default::default(),

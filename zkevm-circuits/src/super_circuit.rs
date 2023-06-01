@@ -388,7 +388,6 @@ impl<
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         let num_rows_tx_circuit =
             TxCircuitConfig::<F>::get_num_rows_required(block.circuits_params.max_txs);
-        let num_rows_tx_circuit = 0;
         num_rows_evm_circuit.max(num_rows_tx_circuit)
     }
     /// Return the minimum number of rows required to prove the block

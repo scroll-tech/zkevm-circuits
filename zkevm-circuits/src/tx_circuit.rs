@@ -260,7 +260,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_data_gas_cost, CallDataGasCost);
         is_tx_tag!(is_tx_gas_cost, TxDataGasCost);
         is_tx_tag!(is_data_rlc, CallDataRLC);
-        is_tx_tag!(is_chain_id, ChainID);
+        // is_tx_tag!(is_chain_id, ChainID);
         is_tx_tag!(is_sig_v, SigV);
         is_tx_tag!(is_sig_r, SigR);
         is_tx_tag!(is_sig_s, SigS);
@@ -883,7 +883,7 @@ impl<F: Field> TxCircuitConfig<F> {
         is_tx_type!(is_l1_msg, L1Msg);
 
         // lookup tx type in RLP table for L1Msg only
-        meta.lookup_any("", |meta| {
+        meta.lookup_any("lookup tx type in RLP table", |meta| {
             let enable = and::expr([meta.query_fixed(q_enable, Rotation::cur()), is_l1_msg(meta)]);
             let hash_format = L1MsgHash.expr();
             let tag_value = 0x7E.expr();
@@ -1817,7 +1817,6 @@ impl<F: Field> TxCircuit<F> {
                     }
                 }
 
-                // debug_assert_eq!(offset, self.max_txs * TX_LEN + 1 + calldata_count);
                 debug_assert_eq!(offset, self.max_txs * TX_LEN + 1 + calldata_count);
 
                 Ok(offset)
