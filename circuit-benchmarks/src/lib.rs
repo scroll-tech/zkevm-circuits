@@ -4,10 +4,9 @@ pub mod evm_circuit;
 #[cfg(feature = "benches")]
 pub mod state_circuit;
 
-// FIXME
-// #[cfg(test)]
-// #[cfg(feature = "benches")]
-// pub mod tx_circuit;
+#[cfg(test)]
+#[cfg(feature = "benches")]
+pub mod tx_circuit;
 
 #[cfg(test)]
 #[cfg(feature = "benches")]

@@ -9,17 +9,16 @@ use halo2_proofs::{
     plonk::Circuit,
 };
 use integration_tests::{get_client, log_init, CIRCUIT, END_BLOCK, START_BLOCK, TX_ID};
-use zkevm_circuits::witness::Transaction;
 use zkevm_circuits::{
     evm_circuit::{witness::block_convert, EvmCircuit},
     keccak_circuit::keccak_packed_multi::multi_keccak,
     rlp_circuit_fsm::RlpCircuit,
     state_circuit::StateCircuit,
     super_circuit::SuperCircuit,
-    // FIXME
-    // tx_circuit::TxCircuit,
+    tx_circuit::TxCircuit,
     util::{Challenges, SubCircuit},
     witness,
+    witness::Transaction,
 };
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
@@ -90,9 +89,7 @@ fn test_witness_block(block: &witness::Block<Fr>) -> Vec<VerifyFailure> {
     } else if *CIRCUIT == "rlp" {
         test_with::<RlpCircuit<Fr, Transaction>>(block)
     } else if *CIRCUIT == "tx" {
-        // FIXME
-        // test_with::<TxCircuit<Fr>>(block)
-        unimplemented!("Tx circuit should be enabled")
+        test_with::<TxCircuit<Fr>>(block)
     } else if *CIRCUIT == "state" {
         test_with::<StateCircuit<Fr>>(block)
     } else if *CIRCUIT == "super" {

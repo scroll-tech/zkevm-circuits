@@ -111,6 +111,7 @@ impl<F: Field> Block<F> {
 
 #[cfg(feature = "test")]
 use crate::exp_circuit::param::OFFSET_INCREMENT;
+use crate::tx_circuit::TX_LEN;
 #[cfg(feature = "test")]
 use crate::util::log2_ceil;
 
@@ -136,8 +137,7 @@ impl<F: Field> Block<F> {
             self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
         let num_rows_required_for_tx_table: usize =
-            // FIXME: change it to TX_LEN
-            20 * self.circuits_params.max_txs + self.circuits_params.max_calldata;
+            TX_LEN * self.circuits_params.max_txs + self.circuits_params.max_calldata;
         let num_rows_required_for_exp_table: usize = self
             .exp_events
             .iter()

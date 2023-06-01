@@ -35,8 +35,7 @@ use zkevm_circuits::{
     keccak_circuit::TestKeccakCircuit,
     state_circuit::TestStateCircuit,
     super_circuit::SuperCircuit,
-    // FIXME
-    // tx_circuit::TestTxCircuit,
+    tx_circuit::TestTxCircuit,
     util::SubCircuit,
     witness::{block_convert, Block},
 };
@@ -81,8 +80,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
 
 const EVM_CIRCUIT_DEGREE: u32 = 18;
 const STATE_CIRCUIT_DEGREE: u32 = 17;
-// FIXME
-// const TX_CIRCUIT_DEGREE: u32 = 20;
+const TX_CIRCUIT_DEGREE: u32 = 20;
 const BYTECODE_CIRCUIT_DEGREE: u32 = 16;
 const COPY_CIRCUIT_DEGREE: u32 = 16;
 const KECCAK_CIRCUIT_DEGREE: u32 = 16;
@@ -112,9 +110,8 @@ lazy_static! {
     TokioMutex::new(IntegrationTest::new("State", STATE_CIRCUIT_DEGREE));
 
     /// Integration test for State circuit
-    // FIXME
-    // pub static ref TX_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestTxCircuit<Fr>>> =
-    // TokioMutex::new(IntegrationTest::new("Tx", TX_CIRCUIT_DEGREE));
+    pub static ref TX_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestTxCircuit<Fr>>> =
+    TokioMutex::new(IntegrationTest::new("Tx", TX_CIRCUIT_DEGREE));
 
     /// Integration test for Bytecode circuit
     pub static ref BYTECODE_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestBytecodeCircuit<Fr>>> =
