@@ -267,16 +267,16 @@ impl TxTable {
             |mut region| {
                 let mut offset = 0;
                 let advice_columns = [self.tx_id, self.index, self.value];
-                // assign_row(
-                //     &mut region,
-                //     offset,
-                //     self.q_enable,
-                //     &advice_columns,
-                //     &self.tag,
-                //     &[(); 4].map(|_| Value::known(F::zero())),
-                //     "all-zero",
-                // )?;
-                // offset += 1;
+                assign_row(
+                    &mut region,
+                    offset,
+                    self.q_enable,
+                    &advice_columns,
+                    &self.tag,
+                    &[(); 4].map(|_| Value::known(F::zero())),
+                    "all-zero",
+                )?;
+                offset += 1;
 
                 // Tx Table contains an initial region that has a size parametrized by max_txs
                 // with all the tx data except for calldata, and then a second
