@@ -247,6 +247,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         }
 
         // tx tags
+        is_tx_tag!(is_null, Null);
         is_tx_tag!(is_nonce, Nonce);
         is_tx_tag!(is_gas_price, GasPrice);
         is_tx_tag!(is_gas, Gas);
@@ -259,6 +260,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_data_gas_cost, CallDataGasCost);
         is_tx_tag!(is_tx_gas_cost, TxDataGasCost);
         is_tx_tag!(is_data_rlc, CallDataRLC);
+        is_tx_tag!(is_chain_id, ChainID);
         is_tx_tag!(is_sig_v, SigV);
         is_tx_tag!(is_sig_r, SigR);
         is_tx_tag!(is_sig_s, SigS);
@@ -310,6 +312,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_hash_rlc(meta), RLC),
                 (is_caller_addr(meta), Tag::Sender.into()),
                 // tx tags which correspond to Null
+                (is_null(meta), Null),
                 (is_create(meta), Null),
                 (is_data_length(meta), Null),
                 (is_data_gas_cost(meta), Null),
@@ -729,7 +732,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.create_gate("caller address == sv_address if it's not zero", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            cb.condition(not::expr(value_is_zero.is_zero_expression.expr()), |cb| {
+            cb.condition(not::expr(value_is_zero.expr(Rotation::cur())(meta)), |cb| {
                 cb.require_equal(
                     "caller address == sv_address",
                     meta.query_advice(tx_table.value, Rotation::cur()),
@@ -1216,12 +1219,6 @@ impl<F: Field> TxCircuitConfig<F> {
         Ok(())
     }
 
-    fn assign_calldata_row(&self, region: &mut Region<'_, F>) -> Result<(), Error> {
-        // TODO
-
-        Ok(())
-    }
-
     fn assign_calldata_zeros(
         &self,
         region: &mut Region<'_, F>,
@@ -1486,20 +1483,21 @@ impl<F: Field> TxCircuit<F> {
                 let mut cum_num_txs = 0;
                 let mut is_padding_tx = false;
                 // Empty entry
-                // config.assign_row(
-                //     &mut region,
-                //     &mut offset,
-                //     0,                         // tx_id
-                //     !sigs.is_empty() as usize, // tx_id_next
-                //     TxFieldTag::Null,
-                //     None,
-                //     Value::known(F::zero()),
-                //     false,
-                //     None,
-                //     None,
-                //     is_padding_tx,
-                //     cum_num_txs,
-                // )?;
+                config.assign_row(
+                    &mut region,
+                    &mut offset,
+                    None,
+                    0,                         // tx_id
+                    !sigs.is_empty() as usize, // tx_id_next
+                    TxFieldTag::Null,
+                    Value::known(F::zero()),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )?;
 
                 // Assign all tx fields except for call data
                 for (i, assigned_sig_verif) in sigs.iter().enumerate() {
@@ -1706,7 +1704,7 @@ impl<F: Field> TxCircuit<F> {
                         config.assign_row(
                             &mut region,
                             &mut offset,
-                            tx,
+                            Some(tx),
                             i + 1,      // tx_id
                             tx_id_next, // tx_id_next
                             tag,
@@ -1804,7 +1802,7 @@ impl<F: Field> TxCircuit<F> {
                         config.assign_row(
                             &mut region,
                             &mut offset,
-                            tx,
+                            Some(tx),
                             i + 1,      // tx_id
                             tx_id_next, // tx_id_next
                             CallData,
@@ -1820,7 +1818,7 @@ impl<F: Field> TxCircuit<F> {
                 }
 
                 // debug_assert_eq!(offset, self.max_txs * TX_LEN + 1 + calldata_count);
-                debug_assert_eq!(offset, self.max_txs * TX_LEN + calldata_count);
+                debug_assert_eq!(offset, self.max_txs * TX_LEN + 1 + calldata_count);
 
                 Ok(offset)
             },
