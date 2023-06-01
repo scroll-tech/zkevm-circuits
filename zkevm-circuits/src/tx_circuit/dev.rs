@@ -72,11 +72,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
         )?;
         config.rlp_table.dev_load(
             &mut layouter,
-            self.txs
-                .iter()
-                .chain(padding_txs.iter())
-                .cloned()
-                .collect(),
+            self.txs.iter().chain(padding_txs.iter()).cloned().collect(),
             &challenges,
         )?;
         self.assign_dev_block_table(config.clone(), &mut layouter)?;
