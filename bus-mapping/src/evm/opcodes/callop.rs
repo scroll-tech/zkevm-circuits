@@ -12,7 +12,7 @@ use crate::{
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        GasCost, OpcodeId,
+        Gas, GasCost, OpcodeId,
     },
     GethExecStep, ToWord, Word,
 };
@@ -460,15 +460,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
                 debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
-
-                // TODO:
-                // Suppose if could separate gas cost for CALL and Precompile. Set original (CALL)
-                // gas cost to Call execution step, and contract gas cost to Precompile step as:
-                //
-                // precompile_step.gas_left = Gas(exec_step.gas_left.0 - gas_cost);
-                // precompile_step.gas_cost = GasCost(contract_gas_cost);
-                // exec_step.gas_cost = GasCost(gas_cost);
-
+                exec_step.gas_cost = GasCost(gas_cost + contract_gas_cost);
                 if real_cost != exec_step.gas_cost.0 {
                     log::warn!(
                         "precompile gas fixed from {} to {}, step {:?}",
@@ -477,7 +469,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         geth_steps[0]
                     );
                 }
-                exec_step.gas_cost = GasCost(real_cost);
+
+                // Set gas left and gas cost for precompile step.
+                precompile_step.gas_left = Gas(callee_gas_left);
+                precompile_step.gas_cost = GasCost(contract_gas_cost);
+
                 Ok(vec![exec_step, precompile_step])
             }
             // 2. Call to account with empty code.

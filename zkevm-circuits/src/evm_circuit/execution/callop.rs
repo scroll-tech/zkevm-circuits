@@ -333,10 +333,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             + select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr()),
                     ),
                     (
-                        // TODO: calculate Precompile contract gas cost.
-                        // cb.curr.state.gas_left.expr() - gas_cost - precompile_gas_cost
                         CallContextFieldTag::GasLeft,
-                        cb.next.state.gas_left.expr(),
+                        cb.curr.state.gas_left.expr() - step_gas_cost.expr(),
                     ),
                     (
                         CallContextFieldTag::MemorySize,
@@ -438,7 +436,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     + is_delegatecall.expr() * 2.expr()
                     + precompile_memory_rws;
 
-                // TODO: update when implementing detailed precompiled calls.
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(rw_counter_delta),
                     call_id: To(callee_call_id.expr()),
@@ -447,7 +444,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     code_hash: To(cb.empty_code_hash_rlc()),
                     program_counter: Delta(1.expr()),
                     stack_pointer: Delta(stack_pointer_delta.expr()),
-                    gas_left: Delta(-step_gas_cost.expr()),
+                    gas_left: To(callee_gas_left.expr()),
                     memory_word_size: To(0.expr()),
                     reversible_write_counter: To(0.expr()),
                     ..StepStateTransition::default()
