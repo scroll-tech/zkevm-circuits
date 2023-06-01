@@ -39,7 +39,6 @@ fn run<F: Field>(
         let errors = prover.verify_par().err().unwrap();
         log::debug!("errors.len() = {}", errors.len());
     }
-    prover.assert_satisfied_par();
 
     prover.verify_par()
 }
