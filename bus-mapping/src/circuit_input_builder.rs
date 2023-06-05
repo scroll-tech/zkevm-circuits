@@ -760,6 +760,9 @@ pub fn keccak_inputs_tx_circuit(
             if tx.tx_type.is_l1_msg() {
                 warn!("tx {} is L1Msg, skipping tx circuit keccak input", i);
                 false
+            } else if tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
+                warn!("tx {} is not signed, skipping tx circuit keccak input", i);
+                false
             } else {
                 true
             }
