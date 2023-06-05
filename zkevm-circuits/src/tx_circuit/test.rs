@@ -43,7 +43,7 @@ fn build_pre_eip155_tx() -> Transaction {
 
     let eth_tx_hash = keccak256(&signed_bytes);
     assert_eq!(
-        hex::encode(&eth_tx_hash),
+        hex::encode(eth_tx_hash),
         "9cd2288e69623b109e25edc46bc518156498b521e5c162d96e1ab392ff1d9dff"
     );
 

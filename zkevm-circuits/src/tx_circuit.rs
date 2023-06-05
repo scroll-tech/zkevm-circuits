@@ -67,7 +67,7 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::{Fixed, TableColumn};
 
 use crate::{
-    table::BlockContextFieldTag::CumNumTxs,
+    table::{BlockContextFieldTag::CumNumTxs, TxFieldTag::ChainID},
     util::rlc_be_bytes,
     witness::{
         Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
@@ -128,6 +128,7 @@ pub struct TxCircuitConfig<F: Field> {
     is_tag_block_num: Column<Advice>,
     is_calldata: Column<Advice>,
     is_l1_msg: Column<Advice>,
+    is_chain_id: Column<Advice>,
     lookup_conditions: HashMap<LookupCondition, Column<Advice>>,
 
     /// Columns for accumulating call_data_length and call_data_gas_cost
@@ -208,6 +209,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         // booleans to reduce degree
         let is_l1_msg = meta.advice_column();
         let is_calldata = meta.advice_column();
+        let is_chain_id = meta.advice_column();
         let is_tag_block_num = meta.advice_column();
         let lookup_conditions = [
             LookupCondition::TxCalldata,
@@ -408,6 +410,18 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 "is_calldata",
                 tag_bits.value_equals(CallData, Rotation::cur())(meta),
                 meta.query_advice(is_calldata, Rotation::cur()),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
+        meta.create_gate("is_chain_id", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_chain_id",
+                tag_bits.value_equals(ChainID, Rotation::cur())(meta),
+                meta.query_advice(is_chain_id, Rotation::cur()),
             );
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -704,28 +718,58 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         ////////////////////////////////////////////////////////////////////////
         ///////////   SignVerify recover CallerAddress    //////////////////////
         ////////////////////////////////////////////////////////////////////////
-        // meta.create_gate("tx signature v", |meta| {
-        // let mut cb = BaseConstraintBuilder::default();
-        //
-        // let chain_id_expr = meta.query_advice(chain_id, Rotation::cur());
-        // cb.require_boolean(
-        // "V - (chain_id * 2 + 35) Є {0, 1}",
-        // meta.query_advice(tx_table.value, Rotation::cur())
-        // - (chain_id_expr.clone() + chain_id_expr + 35.expr()),
-        // );
-        //
-        // cb.gate(and::expr(vec![
-        // meta.query_fixed(q_enable, Rotation::cur()),
-        // tag.value_equals(SigV, Rotation::cur())(meta),
-        // ]))
-        // });
+        meta.create_gate("tx signature v", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            let is_chain_id = meta.query_advice(is_chain_id, Rotation::cur());
 
-        // TODO:
-        //  1. eip155 tx: v Є {chain_id*2 + 35, chain_id*2 + 36}
-        //  2. pre-eip155 tx: v Є {27, 28}
-        //  3. l1 msg: no v
-        //  4. eip1559 tx: v Є {0, 1}
-        //  5. eip2930 tx: v Є {0, 1}
+            //  1. eip155 tx: v Є {chain_id*2 + 35, chain_id*2 + 36}
+            cb.condition(
+                and::expr([
+                    is_chain_id.expr(),
+                    tx_type_bits.value_equals(Eip155, Rotation::cur())(meta),
+                ]),
+                |cb| {
+                    // we rely on the assumption that SigV is on the next of ChainID
+                    let v = meta.query_advice(tx_table.value, Rotation::next());
+                    let chain_id = meta.query_advice(tx_table.value, Rotation::cur());
+
+                    cb.require_boolean(
+                        "V - (chain_id * 2 + 35) Є {0, 1}",
+                        v - chain_id * 2.expr() - 35.expr(),
+                    );
+                },
+            );
+
+            //  2. pre-eip155 tx: v Є {27, 28}
+            cb.condition(
+                and::expr([
+                    is_chain_id.expr(),
+                    tx_type_bits.value_equals(PreEip155, Rotation::cur())(meta),
+                ]),
+                |cb| {
+                    let v = meta.query_advice(tx_table.value, Rotation::next());
+                    cb.require_boolean("V - 27 Є {0, 1}", v - 27.expr());
+                },
+            );
+
+            //  3. l1 msg: v == 0
+            cb.condition(
+                and::expr([
+                    is_chain_id.expr(),
+                    tx_type_bits.value_equals(L1Msg, Rotation::cur())(meta),
+                ]),
+                |cb| {
+                    let v = meta.query_advice(tx_table.value, Rotation::next());
+                    cb.require_zero("V == 0", v);
+                },
+            );
+
+            // TODO:
+            //  4. eip1559 tx: v Є {0, 1}
+            //  5. eip2930 tx: v Є {0, 1}
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
 
         let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone());
         #[cfg(feature = "reject-eip2718")]
@@ -768,6 +812,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_padding_tx,
             lookup_conditions,
             is_l1_msg,
+            is_chain_id,
             is_final,
             calldata_gas_cost_acc,
             sv_address,
@@ -1165,6 +1210,12 @@ impl<F: Field> TxCircuitConfig<F> {
             self.is_tag_block_num,
             *offset,
             || Value::known(F::from((tag == BlockNumber) as u64)),
+        )?;
+        region.assign_advice(
+            || "is_chain_id",
+            self.is_chain_id,
+            *offset,
+            || Value::known(F::from((tag == ChainID) as u64)),
         )?;
         region.assign_advice(
             || "is_calldata",
@@ -1616,7 +1667,7 @@ impl<F: Field> TxCircuit<F> {
                             None,
                             Value::known(F::from(tx.tx_data_gas_cost)),
                         ),
-                        // TODO: add ChainID
+                        (ChainID, None, None, Value::known(F::from(tx.chain_id))),
                         (
                             SigV,
                             Some(Tag::SigV.into()),

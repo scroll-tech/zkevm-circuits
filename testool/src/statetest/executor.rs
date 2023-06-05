@@ -4,7 +4,7 @@ use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     mock::BlockData,
 };
-use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
+use eth_types::{geth_types, geth_types::TxType, Address, Bytes, GethExecTrace, U256, U64};
 use ethers_core::{
     k256::ecdsa::SigningKey,
     types::{transaction::eip2718::TypedTransaction, TransactionRequest},
@@ -178,6 +178,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             },
 
             transactions: vec![geth_types::Transaction {
+                tx_type: TxType::Eip155,
                 from: st.from,
                 to: st.to,
                 nonce: st.nonce,
