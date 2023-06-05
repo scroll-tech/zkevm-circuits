@@ -6,7 +6,9 @@ use halo2_proofs::plonk::Expression;
 use crate::evm_circuit::step::ExecutionState;
 
 use super::{
-    constraint_builder::EVMConstraintBuilder, math_gadget::BinaryNumberGadget, CachedRegion,
+    constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+    math_gadget::BinaryNumberGadget,
+    CachedRegion,
 };
 
 #[derive(Clone, Debug)]
@@ -18,13 +20,20 @@ impl<F: Field> PrecompileGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        _is_success: Expression<F>,
+        is_success: Expression<F>,
         callee_address: Expression<F>,
         _caller_id: Expression<F>,
         _cd_offset: Expression<F>,
-        _cd_length: Expression<F>,
+        cd_length: Expression<F>,
         _rd_offset: Expression<F>,
         _rd_length: Expression<F>,
+        precompile_return_length: Expression<F>,
+        // input bytes to precompile call.
+        input_bytes_rlc: Expression<F>,
+        // output result from precompile call.
+        output_bytes_rlc: Expression<F>,
+        // returned bytes back to caller.
+        _return_bytes_rlc: Expression<F>,
     ) -> Self {
         let address = BinaryNumberGadget::construct(cb, callee_address.expr());
 
@@ -42,6 +51,18 @@ impl<F: Field> PrecompileGadget<F> {
 
         cb.condition(address.value_equals(PrecompileCalls::Identity), |cb| {
             cb.constrain_next_step(ExecutionState::PrecompileIdentity, None, |_cb| {});
+            cb.condition(is_success, |cb| {
+                cb.require_equal(
+                    "input and output bytes are the same",
+                    input_bytes_rlc,
+                    output_bytes_rlc,
+                );
+                cb.require_equal(
+                    "input length and precompile return length are the same",
+                    cd_length,
+                    precompile_return_length,
+                );
+            });
         });
 
         cb.condition(address.value_equals(PrecompileCalls::Modexp), |cb| {

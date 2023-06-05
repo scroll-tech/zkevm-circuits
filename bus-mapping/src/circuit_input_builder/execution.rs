@@ -231,6 +231,7 @@ impl strum::IntoEnumIterator for CopyDataType {
 impl Iterator for CopyDataTypeIter {
     type Item = CopyDataType;
     fn next(&mut self) -> Option<<Self as Iterator>::Item> {
+        #[allow(clippy::iter_nth_zero)]
         self.nth(0)
     }
     fn size_hint(&self) -> (usize, Option<usize>) {

@@ -1632,6 +1632,8 @@ impl CopyTable {
                         match (copy_event.src_type, copy_event.dst_type) {
                             (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
                             (_, CopyDataType::RlcAcc) => rlc_acc,
+                            (_, CopyDataType::Precompile(_)) => rlc_acc,
+                            (CopyDataType::Precompile(_), _) => rlc_acc,
                             _ => Value::known(F::zero()),
                         },
                         "rlc_acc",
