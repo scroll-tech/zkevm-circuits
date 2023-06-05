@@ -212,11 +212,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     call_gadget.rd_address.has_length(),
                     not::expr(precompile_return_length_zero.expr()),
                 ]),
-                // 2 * calldata_length rws
-                // 2 * min(return_data_length, precompile_return_length) rws
-                2.expr() * (call_gadget.cd_address.length() + return_data_copy_size.min()),
-                // 2 * calldata_length rws
-                2.expr() * call_gadget.cd_address.length(),
+                call_gadget.cd_address.length()
+                    + precompile_return_length.expr()
+                    + return_data_copy_size.min(),
+                call_gadget.cd_address.length(),
             ),
             0.expr(),
         );
@@ -280,6 +279,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let precompile_gadget = cb.condition(
             and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
             |cb| {
+                cb.require_equal(
+                    "Callee has no code for precompile",
+                    no_callee_code.expr(),
+                    true.expr(),
+                );
+
                 // Write to callee's context.
                 for (field_tag, value) in [
                     (
@@ -314,10 +319,31 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         field_tag,
                         value,
                     );
-                }
+                } // rwc_delta += 7 for precompile
 
                 // Save caller's call state
                 for (field_tag, value) in [
+                    (
+                        CallContextFieldTag::ProgramCounter,
+                        cb.curr.state.program_counter.expr() + 1.expr(),
+                    ),
+                    (
+                        CallContextFieldTag::StackPointer,
+                        cb.curr.state.stack_pointer.expr()
+                            + select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr()),
+                    ),
+                    (
+                        CallContextFieldTag::GasLeft,
+                        cb.curr.state.gas_left.expr() - step_gas_cost.expr(),
+                    ),
+                    (
+                        CallContextFieldTag::MemorySize,
+                        memory_expansion.next_memory_word_size(),
+                    ),
+                    (
+                        CallContextFieldTag::ReversibleWriteCounter,
+                        cb.curr.state.reversible_write_counter.expr() + 1.expr(),
+                    ),
                     (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),
                     (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
                     (
@@ -326,7 +352,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     ),
                 ] {
                     cb.call_context_lookup(true.expr(), None, field_tag, value);
-                }
+                } // rwc_delta += 8 for precompile
 
                 // copy table lookup to verify the copying of bytes:
                 // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
@@ -343,7 +369,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         call_gadget.cd_address.length(),
                         0.expr(),
                         call_gadget.cd_address.length(), // reads
-                    );
+                    ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
                 });
 
                 // copy table lookup to verify the precompile result.
@@ -368,7 +394,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             precompile_return_length.expr(),
                             0.expr(),
                             precompile_return_length.expr(), // writes.
-                        )
+                        ); // rwc_delta += `precompile_return_length` for precompile
                     },
                 );
 
@@ -396,9 +422,33 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             return_data_copy_size.min(),
                             0.expr(),
                             return_data_copy_size.min(), // writes
-                        );
+                        ); // rwc_delta += `return_data_copy_size.min()` for precompile
                     },
                 );
+
+                let transfer_rwc_delta =
+                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
+                // +15 call context lookups for precompile.
+                let rw_counter_delta = 33.expr()
+                    + is_call.expr() * 1.expr()
+                    + transfer_rwc_delta
+                    + is_callcode.expr()
+                    + is_delegatecall.expr() * 2.expr()
+                    + precompile_memory_rws;
+
+                cb.require_step_state_transition(StepStateTransition {
+                    rw_counter: Delta(rw_counter_delta),
+                    call_id: To(callee_call_id.expr()),
+                    is_root: To(false.expr()),
+                    is_create: To(false.expr()),
+                    code_hash: To(cb.empty_code_hash_rlc()),
+                    program_counter: Delta(1.expr()),
+                    stack_pointer: Delta(stack_pointer_delta.expr()),
+                    gas_left: To(callee_gas_left.expr()),
+                    memory_word_size: To(0.expr()),
+                    reversible_write_counter: To(0.expr()),
+                    ..StepStateTransition::default()
+                });
 
                 PrecompileGadget::construct(
                     cb,
@@ -430,11 +480,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
                 }
             },
-        );
+        ); // rwc_delta += 3 for empty account
 
-        // handle calls to empty accounts.
+        // handle calls to empty accounts without precompile.
         cb.condition(
-            and::expr([call_gadget.is_empty_code_hash.expr(), is_precheck_ok.expr()]),
+            and::expr([
+                call_gadget.is_empty_code_hash.expr(),
+                is_precheck_ok.expr(),
+                not::expr(is_precompile.expr()),
+            ]),
             |cb| {
                 // For CALLCODE opcode, it has an extra stack pop `value` and one account read
                 // for caller balance (+2).
@@ -445,12 +499,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // No extra lookups for STATICCALL opcode.
                 let transfer_rwc_delta =
                     is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
+                // +3 call context lookups for empty accounts.
                 let rw_counter_delta = 21.expr()
                     + is_call.expr() * 1.expr()
                     + transfer_rwc_delta.clone()
                     + is_callcode.expr()
-                    + is_delegatecall.expr() * 2.expr()
-                    + precompile_memory_rws;
+                    + is_delegatecall.expr() * 2.expr();
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(rw_counter_delta),
                     program_counter: Delta(1.expr()),
@@ -865,7 +919,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             )?;
         }
         let precompile_return_length = if is_precompiled(&callee_address.to_address()) {
-            let value_rw = block.rws[step.rw_indices[27 + rw_offset]];
+            let value_rw = block.rws[step.rw_indices[32 + rw_offset]];
             assert_eq!(
                 value_rw.field_tag(),
                 Some(CallContextFieldTag::LastCalleeReturnDataLength as u64),

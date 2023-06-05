@@ -12,7 +12,7 @@ use crate::{
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        GasCost, OpcodeId,
+        Gas, GasCost, OpcodeId,
     },
     GethExecStep, ToWord, Word,
 };
@@ -317,6 +317,23 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // return while restoring some of caller's context.
                 for (field, value) in [
+                    (
+                        CallContextField::ProgramCounter,
+                        (geth_step.pc.0 + 1).into(),
+                    ),
+                    (
+                        CallContextField::StackPointer,
+                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
+                    ),
+                    (
+                        CallContextField::GasLeft,
+                        (geth_steps[0].gas.0 - gas_cost - contract_gas_cost).into(),
+                    ),
+                    (CallContextField::MemorySize, next_memory_word_size.into()),
+                    (
+                        CallContextField::ReversibleWriteCounter,
+                        (exec_step.reversible_write_counter + 1).into(),
+                    ),
                     (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (
@@ -430,17 +447,20 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // TODO: when more precompiles are supported and each have their own different
                 // behaviour, we can separate out the logic specified here.
-                let precompile_step = precompile_associated_ops(
+                let mut precompile_step = precompile_associated_ops(
                     state,
                     geth_steps[1].clone(),
                     call.clone(),
                     precompile_call,
                 )?;
 
-                state.handle_return(&mut exec_step, geth_steps, false)?;
+                // Make the Precompile execution step to handle return logic and restore to caller
+                // context (similar as STOP and RETURN).
+                state.handle_return(&mut precompile_step, geth_steps, true)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
-                // debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
+                debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
+                exec_step.gas_cost = GasCost(gas_cost + contract_gas_cost);
                 if real_cost != exec_step.gas_cost.0 {
                     log::warn!(
                         "precompile gas fixed from {} to {}, step {:?}",
@@ -449,7 +469,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         geth_steps[0]
                     );
                 }
-                exec_step.gas_cost = GasCost(real_cost);
+
+                // Set gas left and gas cost for precompile step.
+                precompile_step.gas_left = Gas(callee_gas_left);
+                precompile_step.gas_cost = GasCost(contract_gas_cost);
+
                 Ok(vec![exec_step, precompile_step])
             }
             // 2. Call to account with empty code.

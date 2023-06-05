@@ -157,6 +157,21 @@ impl ExecutionState {
         Self::iter().count()
     }
 
+    pub(crate) fn is_precompiled(&self) -> bool {
+        matches!(
+            self,
+            Self::PrecompileEcRecover
+                | Self::PrecompileSha256
+                | Self::PrecompileRipemd160
+                | Self::PrecompileIdentity
+                | Self::PrecompileBigModExp
+                | Self::PrecompileBn256Add
+                | Self::PrecompileBn256ScalarMul
+                | Self::PrecompileBn256Pairing
+                | Self::PrecompileBlake2f
+        )
+    }
+
     pub(crate) fn precompile_base_gas_cost(&self) -> GasCost {
         (match self {
             Self::PrecompileEcRecover => PrecompileCalls::ECRecover,
