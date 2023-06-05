@@ -89,14 +89,14 @@ impl<F: FieldExt> Expr<F> for &Cell<F> {
 
 /// CellColumn
 #[derive(Clone, Debug)]
-pub(crate) struct CellColumn<F> {
-    pub(crate) advice: Column<Advice>,
+pub struct CellColumn<F> {
+    pub advice: Column<Advice>,
     pub(crate) expr: Expression<F>,
 }
 
 /// CellManager
 #[derive(Clone, Debug)]
-pub(crate) struct CellManager<F> {
+pub struct CellManager<F> {
     height: usize,
     columns: Vec<CellColumn<F>>,
     rows: Vec<usize>,
@@ -153,7 +153,8 @@ impl<F: FieldExt> CellManager<F> {
         self.rows.iter().cloned().max().unwrap()
     }
 
-    pub(crate) fn columns(&self) -> &[CellColumn<F>] {
+    /// expose the columns used for keccak cell
+    pub fn columns(&self) -> &[CellColumn<F>] {
         &self.columns
     }
 
