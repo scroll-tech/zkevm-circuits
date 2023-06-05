@@ -447,7 +447,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         &self,
         region: &mut Region<F>,
         offset: &mut usize,
-        tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
+        tag_chip: &BinaryNumberChip<F, CopyDataType, 4>,
         lt_chip: &LtChip<F, 8>,
         challenges: Challenges<Value<F>>,
         copy_event: &CopyEvent,
@@ -607,7 +607,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         region: &mut Region<F>,
         offset: &mut usize,
         is_last_two: bool,
-        tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
+        tag_chip: &BinaryNumberChip<F, CopyDataType, 4>,
         lt_chip: &LtChip<F, 8>,
     ) -> Result<(), Error> {
         if !is_last_two {

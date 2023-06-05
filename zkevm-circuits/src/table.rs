@@ -1490,8 +1490,8 @@ pub struct CopyTable {
     pub rwc_inc_left: Column<Advice>,
     /// Binary chip to constrain the copy table conditionally depending on the
     /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
-    /// TxLog.
-    pub tag: BinaryNumberConfig<CopyDataType, 3>,
+    /// TxLog. This also now includes various precompile calls, hence will take up more cells.
+    pub tag: BinaryNumberConfig<CopyDataType, 4>,
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];

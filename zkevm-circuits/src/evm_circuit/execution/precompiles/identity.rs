@@ -123,6 +123,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
 #[cfg(test)]
 mod test {
     use bus_mapping::{
+        circuit_input_builder::CopyDataType,
         evm::{OpcodeId, PrecompileCallArgs},
         precompile::PrecompileCalls,
     };

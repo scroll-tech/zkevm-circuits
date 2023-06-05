@@ -46,6 +46,12 @@ pub enum PrecompileCalls {
     Blake2F = 0x09,
 }
 
+impl Default for PrecompileCalls {
+    fn default() -> Self {
+        Self::ECRecover
+    }
+}
+
 impl From<PrecompileCalls> for Address {
     fn from(value: PrecompileCalls) -> Self {
         let mut addr = [0u8; 20];

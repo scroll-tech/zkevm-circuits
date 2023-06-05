@@ -373,7 +373,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             src_addr: call.call_data_offset,
                             src_addr_end: call.call_data_offset + call.call_data_length,
                             dst_id: NumberOrHash::Number(call.call_id),
-                            dst_type: CopyDataType::Precompile,
+                            dst_type: CopyDataType::Precompile(precompile_call),
                             dst_addr: 0,
                             log_id: None,
                             rw_counter_start,
@@ -398,7 +398,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         &mut exec_step,
                         CopyEvent {
                             src_id: NumberOrHash::Number(call.call_id),
-                            src_type: CopyDataType::Precompile,
+                            src_type: CopyDataType::Precompile(precompile_call),
                             src_addr: 0,
                             src_addr_end: result.len() as u64,
                             dst_id: NumberOrHash::Number(call.call_id),
@@ -432,7 +432,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         &mut exec_step,
                         CopyEvent {
                             src_id: NumberOrHash::Number(call.call_id),
-                            src_type: CopyDataType::Precompile,
+                            src_type: CopyDataType::Precompile(precompile_call),
                             src_addr: 0,
                             src_addr_end: length as u64,
                             dst_id: NumberOrHash::Number(call.caller_id),
