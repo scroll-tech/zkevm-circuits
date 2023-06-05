@@ -18,7 +18,7 @@ use crate::{
 use bus_mapping::circuit_input_builder::{self, get_dummy_tx, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
     evm_types::gas_utils::tx_data_gas_cost,
-    geth_types::TxTypes,
+    geth_types::{TxType, TxType::Eip155},
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
 };
@@ -44,7 +44,7 @@ pub struct Transaction {
     /// The hash of the transaction
     pub hash: H256,
     /// The type of the transaction
-    pub tx_type: TxTypes,
+    pub tx_type: TxType,
     /// The sender account nonce of the transaction
     pub nonce: u64,
     /// The gas limit of the transaction
@@ -112,6 +112,7 @@ impl Transaction {
             rlp_signed,
             rlp_unsigned,
             hash: dummy_tx_hash,
+            tx_type: Eip155,
 
             ..Default::default()
         }
@@ -131,7 +132,7 @@ impl Transaction {
         )?;
         let msg = self.rlp_unsigned.clone().into();
         let msg_hash = keccak256(&self.rlp_unsigned);
-        let v = ((self.v + 1) % 2) as u8;
+        let v = self.tx_type.get_recovery_id(self.v);
         let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());
@@ -326,10 +327,10 @@ impl Transaction {
             (
                 self.rlp_signed.clone(),
                 match self.tx_type {
-                    TxTypes::Eip155 => TxHashEip155,
-                    TxTypes::PreEip155 => TxHashPreEip155,
-                    TxTypes::Eip1559 => TxHashEip1559,
-                    TxTypes::L1Msg => L1MsgHash,
+                    TxType::Eip155 => TxHashEip155,
+                    TxType::PreEip155 => TxHashPreEip155,
+                    TxType::Eip1559 => TxHashEip1559,
+                    TxType::L1Msg => L1MsgHash,
                     _ => unreachable!("tx type {:?} not supported", self.tx_type),
                 },
             )
@@ -337,9 +338,9 @@ impl Transaction {
             (
                 self.rlp_unsigned.clone(),
                 match self.tx_type {
-                    TxTypes::Eip155 => TxSignEip155,
-                    TxTypes::PreEip155 => TxSignPreEip155,
-                    TxTypes::Eip1559 => TxSignEip1559,
+                    TxType::Eip155 => TxSignEip155,
+                    TxType::PreEip155 => TxSignPreEip155,
+                    TxType::Eip1559 => TxSignEip1559,
                     _ => unreachable!("tx type {:?} not supported", self.tx_type),
                 },
             )
@@ -665,7 +666,7 @@ impl Transaction {
 
     #[cfg(test)]
     pub(crate) fn new_from_rlp_bytes(
-        tx_type: TxTypes,
+        tx_type: TxType,
         signed_bytes: Vec<u8>,
         unsigned_bytes: Vec<u8>,
     ) -> Self {
@@ -679,7 +680,7 @@ impl Transaction {
     }
 
     #[cfg(test)]
-    pub(crate) fn new_from_rlp_signed_bytes(tx_type: TxTypes, bytes: Vec<u8>) -> Self {
+    pub(crate) fn new_from_rlp_signed_bytes(tx_type: TxType, bytes: Vec<u8>) -> Self {
         Self {
             id: 1,
             tx_type,
@@ -689,7 +690,7 @@ impl Transaction {
     }
 
     #[cfg(test)]
-    pub(crate) fn new_from_rlp_unsigned_bytes(tx_type: TxTypes, bytes: Vec<u8>) -> Self {
+    pub(crate) fn new_from_rlp_unsigned_bytes(tx_type: TxType, bytes: Vec<u8>) -> Self {
         Self {
             id: 1,
             tx_type,
@@ -703,7 +704,7 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
     fn gen_sm_witness(&self, challenges: &Challenges<Value<F>>) -> Vec<RlpFsmWitnessRow<F>> {
         let hash_wit = self.gen_rlp_witness(true, challenges);
         let sign_wit = match self.tx_type {
-            TxTypes::L1Msg => vec![],
+            TxType::L1Msg => vec![],
             _ => self.gen_rlp_witness(false, challenges),
         };
 
@@ -726,13 +727,13 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
         let r = challenges.keccak_input();
 
         let (hash_format, sign_format) = match self.tx_type {
-            TxTypes::Eip155 => (TxHashEip155, Some(TxSignEip155)),
-            TxTypes::PreEip155 => (TxHashPreEip155, Some(TxSignPreEip155)),
-            TxTypes::Eip1559 => (TxHashEip1559, Some(TxSignEip1559)),
-            TxTypes::Eip2930 => {
+            TxType::Eip155 => (TxHashEip155, Some(TxSignEip155)),
+            TxType::PreEip155 => (TxHashPreEip155, Some(TxSignPreEip155)),
+            TxType::Eip1559 => (TxHashEip1559, Some(TxSignEip1559)),
+            TxType::Eip2930 => {
                 unimplemented!("eip1559 not supported now")
             }
-            TxTypes::L1Msg => (L1MsgHash, None),
+            TxType::L1Msg => (L1MsgHash, None),
         };
 
         let get_table = |rlp_bytes: &Vec<u8>, format: Format| {
@@ -794,7 +795,7 @@ impl From<MockTransaction> for Transaction {
             block_number: 1,
             id: mock_tx.transaction_index.as_usize(),
             hash: mock_tx.hash.unwrap_or_default(),
-            tx_type: TxTypes::Eip155,
+            tx_type: TxType::Eip155,
             nonce: mock_tx.nonce.as_u64(),
             gas: mock_tx.gas.as_u64(),
             gas_price: mock_tx.gas_price,
@@ -905,7 +906,7 @@ pub(super) fn tx_convert(
 #[cfg(test)]
 mod tests {
     use crate::witness::{tx::Challenges, RlpTag, Transaction};
-    use eth_types::{address, geth_types::TxTypes, word, Address, ToBigEndian, ToScalar};
+    use eth_types::{address, geth_types::TxType, word, Address, ToBigEndian, ToScalar};
     use ethers_core::{
         types::{NameOrAddress, Signature, Transaction as EthTransaction, TransactionRequest},
         utils::rlp::{Decodable, Rlp},
@@ -946,7 +947,7 @@ mod tests {
 
         // testing sign RLP decoding
         let tx = Transaction::new_from_rlp_unsigned_bytes(
-            TxTypes::PreEip155,
+            TxType::PreEip155,
             eth_tx.rlp_unsigned().to_vec(),
         );
         let evm_word = Fr::from(0x1ab);
@@ -1021,7 +1022,7 @@ mod tests {
         let eth_tx = EthTransaction::decode(&Rlp::new(&raw_tx_rlp_bytes))
             .expect("decode tx's rlp bytes shall not fail");
 
-        let tx = Transaction::new_from_rlp_signed_bytes(TxTypes::Eip1559, raw_tx_rlp_bytes);
+        let tx = Transaction::new_from_rlp_signed_bytes(TxType::Eip1559, raw_tx_rlp_bytes);
         let evm_word = Fr::from(0x1ab);
         let keccak_input = Fr::from(0x10000);
         let mock_challenges = Challenges::mock(

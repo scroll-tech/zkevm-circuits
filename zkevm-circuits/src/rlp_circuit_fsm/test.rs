@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 use crate::{rlp_circuit_fsm::RlpCircuit, witness::Transaction};
-use eth_types::{geth_types::TxTypes, word, Address};
+use eth_types::{geth_types::TxType, word, Address};
 use ethers_core::{
     types::{
         transaction::eip2718::TypedTransaction, Eip1559TransactionRequest,
@@ -28,9 +28,9 @@ fn get_tx(is_eip155: bool) -> Transaction {
         tx = tx.chain_id(MOCK_CHAIN_ID.as_u64());
     }
     let (tx_type, unsigned_bytes) = if is_eip155 {
-        (TxTypes::Eip155, tx.rlp().to_vec())
+        (TxType::Eip155, tx.rlp().to_vec())
     } else {
-        (TxTypes::PreEip155, tx.rlp_unsigned().to_vec())
+        (TxType::PreEip155, tx.rlp_unsigned().to_vec())
     };
     let typed_tx: TypedTransaction = tx.into();
     let sig = from.sign_transaction_sync(&typed_tx);
@@ -93,7 +93,7 @@ fn test_eip1559_tx() {
     let eth_tx_req: Eip1559TransactionRequest = (&eth_tx).into();
     let rlp_unsigned = eth_tx_req.rlp().to_vec();
 
-    let tx = Transaction::new_from_rlp_bytes(TxTypes::Eip1559, raw_tx_rlp_bytes, rlp_unsigned);
+    let tx = Transaction::new_from_rlp_bytes(TxType::Eip1559, raw_tx_rlp_bytes, rlp_unsigned);
     let rlp_circuit = RlpCircuit::<Fr, Transaction> {
         txs: vec![tx],
         max_txs: 10,

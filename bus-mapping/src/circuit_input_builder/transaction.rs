@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, Memory},
     geth_types,
-    geth_types::{get_rlp_unsigned, TxTypes},
+    geth_types::{get_rlp_unsigned, TxType},
     Address, GethExecTrace, Signature, Word, H256,
 };
 use ethers_core::utils::get_contract_address;
@@ -194,7 +194,7 @@ pub struct Transaction {
     /// ..
     pub block_num: u64,
     /// Type
-    pub tx_type: TxTypes,
+    pub tx_type: TxType,
     /// Nonce
     pub nonce: u64,
     /// Hash
@@ -367,7 +367,7 @@ impl Transaction {
         Ok(Self {
             block_num: eth_tx.block_number.unwrap().as_u64(),
             hash: eth_tx.hash,
-            tx_type: TxTypes::get_tx_type(eth_tx),
+            tx_type: TxType::get_tx_type(eth_tx),
             rlp_bytes: eth_tx.rlp().to_vec(),
             rlp_unsigned_bytes: get_rlp_unsigned(eth_tx),
             nonce: eth_tx.nonce.as_u64(),

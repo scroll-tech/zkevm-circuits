@@ -743,27 +743,7 @@ pub fn keccak_inputs_tx_circuit(
 
     let hash_datas = txs
         .iter()
-        .map(|tx| {
-            let sig = Signature {
-                r: tx.r,
-                s: tx.s,
-                v: tx.v,
-            };
-            let mut tx: TransactionRequest = tx.into();
-            if tx.to.is_some() {
-                let to = tx.to.clone().unwrap();
-                match to {
-                    NameOrAddress::Name(_) => {}
-                    NameOrAddress::Address(addr) => {
-                        // the rlp of zero addr is 0x80
-                        if addr == Address::zero() {
-                            tx.to = None;
-                        }
-                    }
-                }
-            }
-            tx.rlp_signed(&sig).to_vec()
-        })
+        .map(|tx| tx.rlp_bytes.clone())
         .collect::<Vec<Vec<u8>>>();
     let dummy_hash_data = {
         // dummy tx is a legacy tx.
@@ -777,14 +757,14 @@ pub fn keccak_inputs_tx_circuit(
         .iter()
         .enumerate()
         .filter(|(i, tx)| {
-            if tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
-                warn!("tx {} is not signed, skipping tx circuit keccak input", i);
+            if tx.tx_type.is_l1_msg() {
+                warn!("tx {} is L1Msg, skipping tx circuit keccak input", i);
                 false
             } else {
                 true
             }
         })
-        .map(|(_, tx)| tx.sign_data(chain_id))
+        .map(|(_, tx)| tx.sign_data())
         .try_collect()?;
     // Keccak inputs from SignVerify Chip
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
@@ -798,8 +778,7 @@ pub fn keccak_inputs_tx_circuit(
         dummy_tx.rlp().to_vec()
     };
     inputs.push(dummy_sign_input);
-    // NOTE: We don't verify the Tx Hash in the circuit yet, so we don't have more
-    // hash inputs.
+
     Ok(inputs)
 }
 

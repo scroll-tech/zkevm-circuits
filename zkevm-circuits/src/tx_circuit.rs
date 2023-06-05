@@ -72,12 +72,12 @@ use crate::{
     witness::{
         Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
         RlpTag::{Len, Null, RLC},
-        Tag::TxType,
+        Tag::TxType as RLPTxType,
     },
 };
 use eth_types::geth_types::{
-    TxTypes,
-    TxTypes::{Eip155, L1Msg, PreEip155},
+    TxType,
+    TxType::{Eip155, L1Msg, PreEip155},
 };
 use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
 
@@ -107,7 +107,7 @@ pub struct TxCircuitConfig<F: Field> {
     tx_tag_bits: BinaryNumberConfig<TxFieldTag, 5>,
 
     tx_type: Column<Advice>,
-    tx_type_bits: BinaryNumberConfig<TxTypes, 3>,
+    tx_type_bits: BinaryNumberConfig<TxType, 3>,
     // The associated rlp tag to lookup in the RLP table
     rlp_tag: Column<Advice>,
     // Whether tag's RLP-encoded value is 0x80 = rlp([])
@@ -788,7 +788,7 @@ impl<F: Field> TxCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         q_enable: Column<Fixed>,
         rlp_tag: Column<Advice>,
-        tx_type_bits: BinaryNumberConfig<TxTypes, 3>,
+        tx_type_bits: BinaryNumberConfig<TxType, 3>,
         is_none: Column<Advice>,
         lookup_conditions: &HashMap<LookupCondition, Column<Advice>>,
         is_final: Column<Advice>,
@@ -800,7 +800,7 @@ impl<F: Field> TxCircuitConfig<F> {
         macro_rules! is_tx_type {
             ($var:ident, $type_variant:ident) => {
                 let $var = |meta: &mut VirtualCells<F>| {
-                    tx_type_bits.value_equals(TxTypes::$type_variant, Rotation::cur())(meta)
+                    tx_type_bits.value_equals(TxType::$type_variant, Rotation::cur())(meta)
                 };
             };
         }
@@ -892,7 +892,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 1.expr(), // q_enable = true
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 hash_format,
-                TxType.expr(),
+                RLPTxType.expr(),
                 tag_value,
                 1.expr(), // is_output = true
                 0.expr(), // is_none = false
@@ -1043,6 +1043,15 @@ impl<F: Field> TxCircuitConfig<F> {
         // assign to tag, rlp_tag, is_none
         let tag_chip = BinaryNumberChip::construct(self.tx_tag_bits);
         tag_chip.assign(region, *offset, &tag)?;
+        let tx_type = tx.map_or(Default::default(), |tx| tx.tx_type);
+        let tx_type_chip = BinaryNumberChip::construct(self.tx_type_bits);
+        tx_type_chip.assign(region, *offset, &tx_type)?;
+        region.assign_advice(
+            || "tx_type",
+            self.tx_type,
+            *offset,
+            || Value::known(F::from(usize::from(tx_type) as u64)),
+        )?;
         region.assign_advice(
             || "rlp tag",
             self.rlp_tag,
@@ -1371,11 +1380,8 @@ impl<F: Field> TxCircuit<F> {
             .chain(iter::once(&padding_tx))
             .enumerate()
             .filter(|(_, tx)| {
-                if tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
-                    log::warn!(
-                        "tx {} is not signed, skipping tx circuit keccak input",
-                        tx.id
-                    );
+                if tx.tx_type.is_l1_msg() {
+                    log::warn!("tx {} is L1Msg, skipping tx circuit keccak input", tx.id);
                     false
                 } else {
                     true
