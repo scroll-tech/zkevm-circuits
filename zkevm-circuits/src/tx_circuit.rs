@@ -82,9 +82,9 @@ use eth_types::geth_types::{
 use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 21;
+pub const TX_LEN: usize = 22;
 /// Offset of TxHash tag in the tx table
-pub const TX_HASH_OFFSET: usize = 20;
+pub const TX_HASH_OFFSET: usize = 21;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum LookupCondition {
@@ -262,7 +262,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_data_gas_cost, CallDataGasCost);
         is_tx_tag!(is_tx_gas_cost, TxDataGasCost);
         is_tx_tag!(is_data_rlc, CallDataRLC);
-        // is_tx_tag!(is_chain_id, ChainID);
+        is_tx_tag!(is_chain_id_expr, ChainID);
         is_tx_tag!(is_sig_v, SigV);
         is_tx_tag!(is_sig_r, SigR);
         is_tx_tag!(is_sig_s, SigS);
@@ -323,6 +323,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_data(meta), Null),
                 (is_tx_gas_cost(meta), Null),
                 (is_block_num(meta), Null),
+                (is_chain_id_expr(meta), Null),
             ];
 
             cb.require_boolean(

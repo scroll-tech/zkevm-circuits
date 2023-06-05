@@ -236,6 +236,12 @@ impl Transaction {
             ],
             [
                 Value::known(F::from(self.id as u64)),
+                Value::known(F::from(TxContextFieldTag::ChainID as u64)),
+                Value::known(F::zero()),
+                Value::known(F::from(self.chain_id)),
+            ],
+            [
+                Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::SigV as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.v)),
