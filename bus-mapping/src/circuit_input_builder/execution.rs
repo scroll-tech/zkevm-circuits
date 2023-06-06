@@ -12,6 +12,7 @@ use eth_types::{
 };
 use gadgets::impl_expr;
 use halo2_proofs::plonk::Expression;
+use strum::IntoEnumIterator;
 
 /// An execution step of the EVM.
 #[derive(Clone, Debug)]
@@ -189,6 +190,12 @@ pub enum CopyDataType {
     RlcAcc,
     /// When the source of the copy is a call to a precompiled contract.
     Precompile(PrecompileCalls),
+}
+impl CopyDataType {
+    /// Get variants that represent a precompile call.
+    pub fn precompile_types() -> Vec<Self> {
+        PrecompileCalls::iter().map(Self::Precompile).collect()
+    }
 }
 const NUM_COPY_DATA_TYPES: usize = 15usize;
 pub struct CopyDataTypeIter {
