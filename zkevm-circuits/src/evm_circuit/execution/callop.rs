@@ -972,38 +972,48 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_length.to_scalar().unwrap(),
         )?;
 
-        let (input_bytes_start, input_bytes_end) = (
-            33usize + rw_offset,
-            33usize + rw_offset + cd_length.as_usize(),
-        );
-        let (output_bytes_start, output_bytes_end) = (
-            input_bytes_end,
-            input_bytes_end + precompile_return_length.as_usize(),
-        );
-        let (return_bytes_start, return_bytes_end) =
-            (output_bytes_end, output_bytes_end + rd_length.as_usize());
-        let input_bytes: Vec<u8> = (input_bytes_start..input_bytes_end)
-            .map(|i| block.rws[step.rw_indices[i]].memory_value())
-            .collect();
-        let output_bytes: Vec<u8> = (output_bytes_start..output_bytes_end)
-            .map(|i| block.rws[step.rw_indices[i]].memory_value())
-            .collect();
-        let return_bytes: Vec<u8> = (return_bytes_start..return_bytes_end)
-            .map(|i| block.rws[step.rw_indices[i]].memory_value())
-            .collect();
+        let (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc) =
+            if is_precompiled(&callee_address.to_address()) {
+                let (input_bytes_start, input_bytes_end) = (
+                    33usize + rw_offset,
+                    33usize + rw_offset + cd_length.as_usize(),
+                );
+                let (output_bytes_start, output_bytes_end) = (
+                    input_bytes_end,
+                    input_bytes_end + precompile_return_length.as_usize(),
+                );
+                let (return_bytes_start, return_bytes_end) =
+                    (output_bytes_end, output_bytes_end + rd_length.as_usize());
+                let input_bytes: Vec<u8> = (input_bytes_start..input_bytes_end)
+                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                    .collect();
+                let output_bytes: Vec<u8> = (output_bytes_start..output_bytes_end)
+                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                    .collect();
+                let return_bytes: Vec<u8> = (return_bytes_start..return_bytes_end)
+                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                    .collect();
 
-        let input_bytes_rlc = region
-            .challenges()
-            .keccak_input()
-            .map(|randomness| rlc::value(input_bytes.iter().rev(), randomness));
-        let output_bytes_rlc = region
-            .challenges()
-            .keccak_input()
-            .map(|randomness| rlc::value(output_bytes.iter().rev(), randomness));
-        let return_bytes_rlc = region
-            .challenges()
-            .keccak_input()
-            .map(|randomness| rlc::value(return_bytes.iter().rev(), randomness));
+                let input_bytes_rlc = region
+                    .challenges()
+                    .keccak_input()
+                    .map(|randomness| rlc::value(input_bytes.iter().rev(), randomness));
+                let output_bytes_rlc = region
+                    .challenges()
+                    .keccak_input()
+                    .map(|randomness| rlc::value(output_bytes.iter().rev(), randomness));
+                let return_bytes_rlc = region
+                    .challenges()
+                    .keccak_input()
+                    .map(|randomness| rlc::value(return_bytes.iter().rev(), randomness));
+                (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc)
+            } else {
+                (
+                    Value::known(F::zero()),
+                    Value::known(F::zero()),
+                    Value::known(F::zero()),
+                )
+            };
 
         self.input_bytes_rlc
             .assign(region, offset, input_bytes_rlc)?;
