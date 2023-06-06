@@ -43,12 +43,11 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let block_number = WordByteCapGadget::construct(cb, current_block_number.expr());
         cb.stack_pop(block_number.original_word());
 
-        // FIXME
-        // cb.block_lookup(
-        //    BlockContextFieldTag::Number.expr(),
-        //    None,
-        //    current_block_number.expr(),
-        //);
+        cb.block_lookup(
+            BlockContextFieldTag::Number.expr(),
+            cb.curr.state.block_number.expr(),
+            current_block_number.expr(),
+        );
 
         let block_hash = cb.query_word_rlc();
 

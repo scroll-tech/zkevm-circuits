@@ -36,6 +36,13 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let callee = state.parse_call(geth_step)?;
 
+        state.call_context_read(
+            &mut exec_step,
+            state.call()?.call_id,
+            CallContextField::IsStatic,
+            Word::from(state.call()?.is_static as u8),
+        );
+
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
         for i in 0..n_pop {
             state.stack_read(
@@ -428,7 +435,7 @@ mod tests {
         );
 
         let container = builder.block.container.clone();
-        let operation = &container.stack[step.bus_mapping_instance[0].as_usize()];
+        let operation = &container.stack[step.bus_mapping_instance[1].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
     }
 }
