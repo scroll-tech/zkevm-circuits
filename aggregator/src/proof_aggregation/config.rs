@@ -1,0 +1,129 @@
+use halo2_proofs::{
+    halo2curves::bn256::{Fq, Fr, G1Affine},
+    plonk::{Column, ConstraintSystem, Instance},
+};
+use snark_verifier::{
+    loader::halo2::halo2_ecc::{
+        ecc::{BaseFieldEccChip, EccChip},
+        fields::fp::FpConfig,
+        halo2_base::gates::{flex_gate::FlexGateConfig, range::RangeConfig},
+    },
+    util::arithmetic::modulus,
+};
+use zkevm_circuits::{
+    keccak_circuit::{KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    table::KeccakTable,
+    util::{Challenges, SubCircuitConfig},
+};
+
+use crate::param::{ConfigParams, BITS, LIMBS};
+
+#[derive(Debug, Clone)]
+/// Configurations for aggregation circuit
+/// This config is hard coded for BN256 curve
+pub struct AggregationConfig {
+    /// Non-native field chip configurations
+    pub base_field_config: FpConfig<Fr, Fq>,
+    /// Keccak circuit configurations
+    pub keccak_circuit_config: KeccakCircuitConfig<Fr>,
+    /// Instance for public input; stores
+    /// - accumulator from aggregation (12 elements)
+    /// - aggregated public inputs (132 elements):
+    ///     chain_id ||
+    ///     chunk[0].prev_state_root ||
+    ///     chunk[k-1].post_state_root ||
+    ///     chunk[k-1].withdraw_root ||
+    ///     batch_data_hash
+    pub instance: Column<Instance>,
+}
+
+impl AggregationConfig {
+    /// Build a configuration from parameters.
+    pub fn configure(
+        meta: &mut ConstraintSystem<Fr>,
+        params: &ConfigParams,
+        challenges: Challenges,
+    ) -> Self {
+        assert!(
+            params.limb_bits == BITS && params.num_limbs == LIMBS,
+            "For now we fix limb_bits = {}, otherwise change code",
+            BITS
+        );
+
+        // base field configuration for aggregation circuit
+        let base_field_config = FpConfig::configure(
+            meta,
+            params.strategy.clone(),
+            &params.num_advice,
+            &params.num_lookup_advice,
+            params.num_fixed,
+            params.lookup_bits,
+            BITS,
+            LIMBS,
+            modulus::<Fq>(),
+            0,
+            params.degree as usize,
+        );
+
+        // hash configuration for aggregation circuit
+        let keccak_circuit_config = {
+            let keccak_table = KeccakTable::construct(meta);
+            let challenges_exprs = challenges.exprs(meta);
+
+            let keccak_circuit_config_args = KeccakCircuitConfigArgs {
+                keccak_table,
+                challenges: challenges_exprs,
+            };
+
+            KeccakCircuitConfig::new(meta, keccak_circuit_config_args)
+        };
+
+        // The current code base is hardcoded for KeccakCircuit configured
+        // with 300 rows and 87 columns per hash call.
+        let columns = keccak_circuit_config.cell_manager.columns();
+
+        assert_eq!(
+            columns.len(),
+            87,
+            "cell manager configuration does not match the hard coded setup"
+        );
+
+        // enabling equality for preimage and digest columns
+        meta.enable_equality(columns[6].advice);
+        // digest column
+        meta.enable_equality(columns.last().unwrap().advice);
+
+        // Instance column stores
+        // - the accumulator
+        // - the output of the hash
+        let instance = meta.instance_column();
+        // public input column
+        meta.enable_equality(instance);
+
+        Self {
+            base_field_config,
+            keccak_circuit_config,
+            instance,
+        }
+    }
+
+    /// Expose the instance column
+    pub fn instance_column(&self) -> Column<Instance> {
+        self.instance
+    }
+
+    /// Range gate configuration
+    pub fn range(&self) -> &RangeConfig<Fr> {
+        &self.base_field_config.range
+    }
+
+    /// Flex gate configuration
+    pub fn gate(&self) -> &FlexGateConfig<Fr> {
+        &self.base_field_config.range.gate
+    }
+
+    /// Ecc gate configuration
+    pub fn ecc_chip(&self) -> BaseFieldEccChip<G1Affine> {
+        EccChip::construct(self.base_field_config.clone())
+    }
+}

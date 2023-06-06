@@ -1,11 +1,11 @@
 use ark_std::{end_timer, start_timer, test_rng};
-use halo2_base::utils::fs::gen_srs;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
 use snark_verifier_sdk::{
     gen_pk,
     halo2::{gen_snark_shplonk, verify_snark_shplonk},
+    CircuitExt,
 };
-use zkevm_circuits::util::SubCircuit;
 
 use crate::{BatchHashCircuit, LOG_DEGREE};
 
@@ -17,7 +17,7 @@ fn test_pi_aggregation_mock_prover() {
     let chunks_per_batch = 8;
 
     let circuit = BatchHashCircuit::<Fr>::mock_batch_hash_circuit(&mut rng, chunks_per_batch);
-    let instance = circuit.instance();
+    let instance = circuit.instances();
 
     let mock_prover = MockProver::<Fr>::run(LOG_DEGREE, &circuit, instance).unwrap();
 

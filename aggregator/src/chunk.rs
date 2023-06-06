@@ -3,7 +3,7 @@
 use eth_types::H256;
 use ethers_core::utils::keccak256;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Copy)]
 /// A chunk is a set of continuous blocks.
 /// A ChunkHash consists of 4 hashes, representing the changes incurred by this chunk of blocks:
 /// - state root before this chunk
@@ -47,14 +47,20 @@ impl ChunkHash {
     /// Public input hash for a given chunk is defined as
     ///  keccak( chain id || prev state root || post state root || withdraw root || data hash )
     pub fn public_input_hash(&self) -> H256 {
-        let preimage = [
+        let preimage = self.extract_hash_preimage();
+        keccak256::<&[u8]>(preimage.as_ref()).into()
+    }
+
+    /// Extract the preimage for the hash
+    ///  chain id || prev state root || post state root || withdraw root || data hash
+    pub fn extract_hash_preimage(&self) -> Vec<u8> {
+        [
             self.chain_id.to_le_bytes().as_ref(),
             self.prev_state_root.as_bytes(),
             self.post_state_root.as_bytes(),
             self.withdraw_root.as_bytes(),
             self.data_hash.as_bytes(),
         ]
-        .concat();
-        keccak256::<&[u8]>(preimage.as_ref()).into()
+        .concat()
     }
 }

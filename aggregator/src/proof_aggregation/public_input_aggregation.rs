@@ -11,15 +11,22 @@
 //! Those 4 hashes are obtained from the caller.
 //!
 //! A chunk's public input hash is then derived from the above 4 attributes via
-//! - chunk_pi_hash   := keccak(chain_id    || prev_state_root || post_state_root || withdraw_root
-//!   || chunk_data_hash)
+//! - chunk_pi_hash   := keccak(chain_id    
+//!                   || prev_state_root
+//!                   || post_state_root
+//!                   || withdraw_root
+//!                   || chunk_data_hash)
 //!
 //! A batch is a list of continuous chunks. It consists of 2 hashes
-//! - batch_data_hash := keccak(chunk_0.data_hash      || ...                        ||
-//!   chunk_k-1.data_hash)
+//! - batch_data_hash := keccak(chunk_0.data_hash      
+//!                   || ...                        
+//!                   || chunk_k-1.data_hash)
 //!
-//! - batch_pi_hash   := keccak(chain_id               ||   chunk_0.prev_state_root    ||
-//!   chunk_k-1.post_state_root  || chunk_k-1.withdraw_root    || batch_data_hash)
+//! - batch_pi_hash   := keccak(chain_id               
+//!                   || chunk_0.prev_state_root    
+//!                   || chunk_k-1.post_state_root  
+//!                   || chunk_k-1.withdraw_root    
+//!                   || batch_data_hash)
 //!
 //! Note that chain_id is used for all public input hashes. But not for any data hashes.
 //!
@@ -51,23 +58,14 @@
 //!
 //! See tests::test_pi_aggregation_circuit
 
-// This module implements `Chunk` related data types.
-// A chunk is a list of blocks.
-mod chunk;
-// This module implements `Batch` related data types.
-// A batch is a list of chunk.
-mod batch;
 // Circuit implementation of `BatchHashCircuit`.
 mod circuit;
-// SubCircuit implementation of `BatchHashCircuit`.
-mod sub_circuit;
 // CircuitExt implementation of `BatchHashCircuit`.
 mod circuit_ext;
 // Circuit and SubCircuit configurations
 mod config;
 
-pub use batch::BatchHash;
-pub use chunk::ChunkHash;
+pub use crate::{BatchHash, ChunkHash};
 pub use circuit::{BatchHashCircuit, BatchHashCircuitPublicInput};
 pub use config::{BatchCircuitConfig, BatchCircuitConfigArgs};
 
@@ -81,6 +79,3 @@ pub(crate) const LOG_DEGREE: u32 = 19;
 pub(crate) const DEFAULT_KECCAK_ROWS: usize = 12;
 // Adopted from keccak circuit
 pub(crate) const NUM_ROUNDS: usize = 24;
-
-#[cfg(test)]
-mod tests;

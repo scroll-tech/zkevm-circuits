@@ -9,11 +9,9 @@ use halo2_proofs::{
 
 use zkevm_circuits::util::{Challenges, SubCircuitConfig};
 
-use super::{
-    batch::BatchHash,
-    chunk::ChunkHash,
-    config::{BatchCircuitConfig, BatchCircuitConfigArgs},
-};
+use crate::{core::assign_batch_hashes, BatchHash, ChunkHash};
+
+use super::config::{BatchCircuitConfig, BatchCircuitConfigArgs};
 
 /// BatchCircuit struct.
 ///
@@ -168,8 +166,60 @@ impl<F: Field> Circuit<F> for BatchHashCircuit<F> {
             .load_aux_tables(&mut layouter)?;
         end_timer!(timer);
 
-        let timer = start_timer!(|| ("assign  cells").to_string());
-        config.assign(&mut layouter, challenges, &preimages)?;
+        let timer = start_timer!(|| ("assign cells").to_string());
+        let (hash_input_cells, hash_output_cells) = assign_batch_hashes(
+            &config.keccak_circuit_config,
+            &mut layouter,
+            challenges,
+            &preimages,
+        )?;
+        end_timer!(timer);
+
+        let timer = start_timer!(|| ("constraint public inputs").to_string());
+        // ====================================================
+        // Constraint the hash data matches the raw public input
+        // ====================================================
+        {
+            for i in 0..32 {
+                // first_chunk_prev_state_root
+                layouter.constrain_instance(
+                    hash_input_cells[2][4 + i].cell(),
+                    config.hash_digest_column,
+                    i,
+                )?;
+                // last_chunk_post_state_root
+                layouter.constrain_instance(
+                    hash_input_cells.last().unwrap()[36 + i].cell(),
+                    config.hash_digest_column,
+                    i + 32,
+                )?;
+                // last_chunk_withdraw_root
+                layouter.constrain_instance(
+                    hash_input_cells.last().unwrap()[68 + i].cell(),
+                    config.hash_digest_column,
+                    i + 64,
+                )?;
+            }
+            // batch_public_input_hash
+            for i in 0..4 {
+                for j in 0..8 {
+                    // digest in circuit has a different endianness
+                    layouter.constrain_instance(
+                        hash_output_cells[0][(3 - i) * 8 + j].cell(),
+                        config.hash_digest_column,
+                        i * 8 + j + 96,
+                    )?;
+                }
+            }
+            // last 4 inputs are the chain id
+            for i in 0..4 {
+                layouter.constrain_instance(
+                    hash_input_cells[0][i].cell(),
+                    config.hash_digest_column,
+                    128 + i,
+                )?;
+            }
+        }
         end_timer!(timer);
         Ok(())
     }
