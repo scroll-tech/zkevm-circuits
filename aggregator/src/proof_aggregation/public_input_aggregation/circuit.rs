@@ -77,7 +77,7 @@ impl<F: Field> BatchHashCircuit<F> {
     /// orders:
     /// - batch_public_input_hash
     /// - batch_data_hash_preimage
-    /// - chunk[i].piHash for i in [0, k)
+    /// - chunk\[i\].piHash for i in \[0, k)
     pub(crate) fn extract_hash_preimages(&self) -> Vec<Vec<u8>> {
         let mut res = vec![];
 

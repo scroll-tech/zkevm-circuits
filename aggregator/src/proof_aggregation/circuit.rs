@@ -1,30 +1,30 @@
 use ark_std::{end_timer, start_timer};
-use halo2_proofs::plonk::Error;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
-    plonk::{Circuit, ConstraintSystem},
+    plonk::{Circuit, ConstraintSystem, Error},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use itertools::Itertools;
 use rand::Rng;
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
-    self, AssignedValue, Context, ContextParams,
-};
-use snark_verifier::loader::halo2::Halo2Loader;
 use snark_verifier::{
+    loader::halo2::{
+        halo2_ecc::halo2_base::{self, AssignedValue, Context, ContextParams},
+        Halo2Loader,
+    },
     pcs::kzg::{Bdfg21, Kzg, KzgAccumulator, KzgSuccinctVerifyingKey},
     util::arithmetic::fe_to_limbs,
 };
-use snark_verifier_sdk::halo2::aggregation::{aggregate, flatten_accumulator};
-use snark_verifier_sdk::CircuitExt;
-use snark_verifier_sdk::{halo2::aggregation::Svk, NativeLoader, Snark, SnarkWitness};
+use snark_verifier_sdk::{
+    halo2::aggregation::{aggregate, flatten_accumulator, Svk},
+    CircuitExt, NativeLoader, Snark, SnarkWitness,
+};
 use zkevm_circuits::util::Challenges;
 
-use crate::core::{assign_batch_hashes, extract_accumulators_and_proof};
-use crate::proof_aggregation::config::AggregationConfig;
 use crate::{
+    core::{assign_batch_hashes, extract_accumulators_and_proof},
     param::{ConfigParams, BITS, LIMBS},
+    proof_aggregation::config::AggregationConfig,
     BatchHashCircuit, ChunkHash,
 };
 
@@ -104,7 +104,7 @@ impl AggregationCircuit {
 
         Self {
             svk,
-            snarks: snarks.into_iter().cloned().map_into().collect(),
+            snarks: snarks.iter().cloned().map_into().collect(),
             flattened_instances,
             as_proof: Value::known(as_proof),
             batch_hash_circuit,
@@ -157,18 +157,18 @@ impl Circuit<Fr> for AggregationCircuit {
             .expect("load range lookup table");
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
 
-        // This circuit takes 2 steps
+        // This circuit takes 3 steps
         // - 1. use aggregation circuit to aggregate the multiple snarks into a single one;
-        //      re-export all the public input of the snarks, denoted by [snarks_instances], and
-        //      the accumulator [acc_instances]
-        // - 2. use public input aggregation circuit to aggregate the chunks;
-        //      expose the instance dentoed by [pi_agg_instances]
-        // - 3. assert [snarks_instances] are private inputs used for public input aggregation circuit
+        //   re-export all the public input of the snarks, denoted by [snarks_instances], and the
+        //   accumulator [acc_instances]
+        // - 2. use public input aggregation circuit to aggregate the chunks; expose the instance
+        //   dentoed by [pi_agg_instances]
+        // - 3. assert [snarks_instances] are private inputs used for public input aggregation
+        //   circuit
 
         // ==============================================
         // Step 1: aggregation circuit
         // ==============================================
-        // let mut aggregation_instances = vec![];
         let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
         let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
         layouter.assign_region(
@@ -192,7 +192,8 @@ impl Circuit<Fr> for AggregationCircuit {
 
                 //
                 // extract the assigned values for
-                // - instances which are the public inputs of each chunk (prefixed with 12 instances from previous accumualtors)
+                // - instances which are the public inputs of each chunk (prefixed with 12 instances
+                //   from previous accumualtors)
                 // - new accumulator to be verified on chain
                 //
                 let (assigned_aggreation_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
@@ -209,17 +210,13 @@ impl Circuit<Fr> for AggregationCircuit {
                 // extract the following cells for later constraints
                 // - the accumulators
                 // - the public input from snark
-                accumulator_instances.extend(
-                    flatten_accumulator(acc)
-                        .iter()
-                        .map(|assigned| assigned.clone()),
-                );
+                accumulator_instances.extend(flatten_accumulator(acc).iter().copied());
                 // - the snark is not a fresh one, assigned_instances already contains an
                 //   accumulator so we want to skip the first 12 elements from the public input
                 snark_inputs.extend(
                     assigned_aggreation_instances
                         .iter()
-                        .flat_map(|instance_column| instance_column.iter().skip(12).map(|x| x)),
+                        .flat_map(|instance_column| instance_column.iter().skip(12)),
                 );
 
                 config.range().finalize(&mut loader.ctx_mut());
@@ -243,7 +240,6 @@ impl Circuit<Fr> for AggregationCircuit {
         // step 2: public input aggregation circuit
         // ==============================================
         // extract all the hashes and load them to the hash table
-        // assert the public input matches that of the pi_aggregation_circuit
         let challenges = challenge.values(&layouter);
 
         let timer = start_timer!(|| ("extract hash").to_string());
@@ -297,9 +293,7 @@ impl Circuit<Fr> for AggregationCircuit {
 
                 for chunk_idx in 0..self.snarks.len() {
                     // step 3.1, data hash
-                    // - batch_data_hash := keccak(chunk_0.data_hash
-                    //                   || ...
-                    //                   || chunk_k-1.data_hash)
+                    // - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
                     // where batch_data_hash is the second hash for pi aggregation
                     for i in 0..32 {
                         region.constrain_equal(

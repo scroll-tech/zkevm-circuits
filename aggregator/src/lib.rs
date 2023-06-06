@@ -7,7 +7,7 @@ mod batch;
 /// Core module for circuit assignment
 mod core;
 /// Parameters for compression circuit
-pub mod param;
+mod param;
 /// proof aggregation
 mod proof_aggregation;
 /// proof compression
@@ -20,5 +20,6 @@ mod tests;
 
 pub use batch::BatchHash;
 pub use chunk::ChunkHash;
+pub use param::*;
 pub use proof_aggregation::*;
 pub use proof_compression::*;

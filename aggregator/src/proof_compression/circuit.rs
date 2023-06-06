@@ -9,16 +9,18 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error},
 };
 use rand::Rng;
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
-    self,
-    halo2_proofs::{
-        halo2curves::bn256::{Bn256, Fr},
-        poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
-    },
-    Context, ContextParams,
-};
 use snark_verifier::{
-    loader::halo2::Halo2Loader,
+    loader::halo2::{
+        halo2_ecc::halo2_base::{
+            self,
+            halo2_proofs::{
+                halo2curves::bn256::{Bn256, Fr},
+                poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+            },
+            Context, ContextParams,
+        },
+        Halo2Loader,
+    },
     pcs::kzg::{Bdfg21, Kzg, KzgAccumulator, KzgSuccinctVerifyingKey},
     util::arithmetic::fe_to_limbs,
 };
@@ -98,7 +100,7 @@ impl Circuit<Fr> for CompressionCircuit {
         let mut first_pass = halo2_base::SKIP_FIRST_PASS;
         let mut instances = vec![];
         layouter.assign_region(
-            || "",
+            || "compression circuit",
             |region| {
                 if first_pass {
                     first_pass = false;

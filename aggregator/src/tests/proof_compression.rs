@@ -12,8 +12,8 @@ use halo2_proofs::{
     },
     transcript::TranscriptReadBuffer,
 };
-use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{halo2_proofs, utils::fs::gen_srs};
 use snark_verifier::{
+    loader::halo2::halo2_ecc::halo2_base::{halo2_proofs, utils::fs::gen_srs},
     pcs::kzg::{Bdfg21, Kzg},
     system::halo2::transcript::evm::EvmTranscript,
 };
@@ -59,7 +59,7 @@ fn test_proof_compression() {
         let layer_0_snark = gen_snark_shplonk(
             &layer_0_params,
             &layer_0_pk,
-            circuit.clone(),
+            circuit,
             &mut rng,
             Some(&path.join(Path::new("layer_0.snark"))),
         );
@@ -98,8 +98,7 @@ fn test_proof_compression() {
             CompressionCircuit::new(&layer_1_params, layer_0_snark, true, &mut rng);
         let instances = compression_circuit.instances();
 
-        let mock_prover =
-            MockProver::<Fr>::run(k1, &compression_circuit, instances.clone()).unwrap();
+        let mock_prover = MockProver::<Fr>::run(k1, &compression_circuit, instances).unwrap();
 
         mock_prover.assert_satisfied_par();
     }
@@ -139,7 +138,7 @@ fn test_two_layer_proof_compression() {
         let layer_0_snark = gen_snark_shplonk(
             &layer_0_params,
             &layer_0_pk,
-            circuit.clone(),
+            circuit,
             &mut rng,
             Some(&path.join(Path::new("layer_0.snark"))),
         );
@@ -241,7 +240,7 @@ fn test_two_layer_proof_compression() {
         evm_verify(
             deployment_code,
             compression_circuit.instances(),
-            layer_1_proof.clone(),
+            layer_1_proof,
         );
         log::trace!("layer 1 evm verification finished");
 
@@ -249,7 +248,7 @@ fn test_two_layer_proof_compression() {
         let layer_1_snark = gen_snark_shplonk(
             &layer_1_params,
             &layer_1_pk,
-            compression_circuit.clone(),
+            compression_circuit,
             &mut rng,
             Some(&path.join(Path::new("layer_1.snark"))),
         );
@@ -291,7 +290,7 @@ fn test_two_layer_proof_compression() {
             &layer_2_params,
             &layer_2_pk,
             compression_circuit.clone(),
-            instances.clone(),
+            instances,
             &mut rng,
         );
 
@@ -310,7 +309,7 @@ fn test_two_layer_proof_compression() {
         evm_verify(
             deployment_code,
             compression_circuit.instances(),
-            layer_2_proof.clone(),
+            layer_2_proof,
         );
         log::trace!("layer 2 evm verification finished");
     }

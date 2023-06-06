@@ -11,22 +11,16 @@
 //! Those 4 hashes are obtained from the caller.
 //!
 //! A chunk's public input hash is then derived from the above 4 attributes via
-//! - chunk_pi_hash   := keccak(chain_id    
-//!                   || prev_state_root
-//!                   || post_state_root
-//!                   || withdraw_root
-//!                   || chunk_data_hash)
+//!
+//! - chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root ||
+//!   chunk_data_hash)
 //!
 //! A batch is a list of continuous chunks. It consists of 2 hashes
-//! - batch_data_hash := keccak(chunk_0.data_hash      
-//!                   || ...                        
-//!                   || chunk_k-1.data_hash)
 //!
-//! - batch_pi_hash   := keccak(chain_id               
-//!                   || chunk_0.prev_state_root    
-//!                   || chunk_k-1.post_state_root  
-//!                   || chunk_k-1.withdraw_root    
-//!                   || batch_data_hash)
+//! - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
+//!
+//! - batch_pi_hash   := keccak(chain_id || chunk_0.prev_state_root || chunk_k-1.post_state_root ||
+//!   chunk_k-1.withdraw_root || batch_data_hash)
 //!
 //! Note that chain_id is used for all public input hashes. But not for any data hashes.
 //!

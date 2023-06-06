@@ -66,7 +66,7 @@ fn test_aggregation_circuit() {
                 let snark = gen_snark_shplonk(
                     &layer_0_params,
                     &layer_0_pk,
-                    circuit.clone(),
+                    *circuit,
                     &mut rng,
                     Some(&path.join(Path::new(format!("layer_0_{}.snark", i).as_str()))),
                 );
@@ -102,11 +102,7 @@ fn test_aggregation_circuit() {
         let compression_circuit =
             CompressionCircuit::new(&layer_1_params, layer_0_snarks[0].clone(), true, &mut rng);
 
-        let layer_1_pk = gen_pk(
-            &layer_1_params,
-            &compression_circuit,
-            None
-        );
+        let layer_1_pk = gen_pk(&layer_1_params, &compression_circuit, None);
 
         log::trace!("finished layer 1 pk gen");
         let mut layer_1_snarks = vec![];
@@ -154,8 +150,7 @@ fn test_aggregation_circuit() {
         let instances = aggregation_circuit.instances();
 
         log::trace!("start mock proving");
-        let mock_prover =
-            MockProver::<Fr>::run(k1, &aggregation_circuit, instances.clone()).unwrap();
+        let mock_prover = MockProver::<Fr>::run(k1, &aggregation_circuit, instances).unwrap();
 
         mock_prover.assert_satisfied_par();
     }

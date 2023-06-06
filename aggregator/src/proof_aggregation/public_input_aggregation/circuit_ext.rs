@@ -5,7 +5,7 @@ use crate::BatchHashCircuit;
 
 impl<F: Field> CircuitExt<F> for BatchHashCircuit<F> {
     fn num_instance(&self) -> Vec<usize> {
-        vec![self.instances()[0].len()]
+        vec![132]
     }
 
     /// Compute the public inputs for this circuit.

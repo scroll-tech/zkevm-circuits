@@ -19,8 +19,9 @@ use zkevm_circuits::{
 use crate::param::{ConfigParams, BITS, LIMBS};
 
 #[derive(Debug, Clone)]
-/// Configurations for aggregation circuit
-/// This config is hard coded for BN256 curve
+#[rustfmt::skip]
+/// Configurations for aggregation circuit.
+/// This config is hard coded for BN256 curve.
 pub struct AggregationConfig {
     /// Non-native field chip configurations
     pub base_field_config: FpConfig<Fr, Fq>,
@@ -30,9 +31,9 @@ pub struct AggregationConfig {
     /// - accumulator from aggregation (12 elements)
     /// - aggregated public inputs (132 elements):
     ///     chain_id ||
-    ///     chunk[0].prev_state_root ||
-    ///     chunk[k-1].post_state_root ||
-    ///     chunk[k-1].withdraw_root ||
+    ///     chunk\[0\].prev_state_root ||
+    ///     chunk\[k-1\].post_state_root ||
+    ///     chunk\[k-1\].withdraw_root ||
     ///     batch_data_hash
     pub instance: Column<Instance>,
 }

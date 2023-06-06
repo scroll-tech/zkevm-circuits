@@ -35,6 +35,7 @@ impl Circuit<Fr> for MockChunkCircuit {
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
+
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let challenges = Challenges::construct(meta);
         let challenges_exprs = challenges.exprs(meta);

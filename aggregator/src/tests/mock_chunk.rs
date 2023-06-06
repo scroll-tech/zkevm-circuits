@@ -1,10 +1,10 @@
 use ark_std::{end_timer, start_timer, test_rng};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
-use snark_verifier_sdk::CircuitExt;
 use snark_verifier_sdk::{
     gen_pk,
     halo2::{gen_snark_shplonk, verify_snark_shplonk},
+    CircuitExt,
 };
 
 use crate::{ChunkHash, LOG_DEGREE};
@@ -15,6 +15,11 @@ mod config;
 
 #[derive(Debug, Default, Clone, Copy)]
 /// A mock chunk circuit
+///
+/// This mock chunk circuit simulates a zkEVM circuit.
+/// It's public inputs consists of 64 elements:
+/// - data hash
+/// - public input hash
 pub struct MockChunkCircuit {
     pub(crate) chunk: ChunkHash,
 }

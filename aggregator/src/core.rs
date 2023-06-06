@@ -2,10 +2,8 @@ use ark_std::{end_timer, start_timer};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
-    plonk::Error,
-};
-use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
+    plonk::Error,
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use rand::Rng;
