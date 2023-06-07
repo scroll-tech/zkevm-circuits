@@ -737,7 +737,7 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
             TxType::PreEip155 => (TxHashPreEip155, Some(TxSignPreEip155)),
             TxType::Eip1559 => (TxHashEip1559, Some(TxSignEip1559)),
             TxType::Eip2930 => {
-                unimplemented!("eip1559 not supported now")
+                unimplemented!("eip2930 not supported now")
             }
             TxType::L1Msg => (L1MsgHash, None),
         };
@@ -911,7 +911,7 @@ pub(super) fn tx_convert(
 
 #[cfg(test)]
 mod tests {
-    use crate::witness::{tx::Challenges, RlpTag, Transaction};
+    use crate::witness::{tx::Challenges, RlpTag, Tag, Transaction};
     use eth_types::{geth_types::TxType, Address, ToBigEndian, ToScalar};
     use ethers_core::{
         types::{Transaction as EthTransaction, TransactionRequest},
@@ -992,6 +992,66 @@ mod tests {
 
     #[test]
     fn test_rlp_eip155() {}
+
+    #[test]
+    fn test_rlp_l1_msg() {
+        let raw_tx_rlp_bytes = hex::decode("7ef901b60b825dc0941a258d17bf244c4df02d40343a7626a9d321e10580b901848ef1332e000000000000000000000000ea08a65b1829af779261e768d609e59279b510f2000000000000000000000000f2ec6b6206f6208e8f9b394efc1a01c1cbde77750000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000b00000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000a4232e87480000000000000000000000002b5ad5c4795c026514f8317c7a215e218dccd6cf0000000000000000000000002b5ad5c4795c026514f8317c7a215e218dccd6cf0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000094478cdd110520a8e733e2acf9e543d2c687ea5239")
+            .expect("decode tx's hex shall not fail");
+
+        let eth_tx = EthTransaction::decode(&Rlp::new(&raw_tx_rlp_bytes))
+            .expect("decode tx's rlp bytes shall not fail");
+
+        // testing sign RLP decoding
+        let tx = Transaction::new_from_rlp_signed_bytes(TxType::L1Msg, eth_tx.rlp().to_vec());
+        let evm_word = Fr::from(0x1ab);
+        let keccak_input = Fr::from(0x10000);
+        let mock_challenges = Challenges::mock(
+            Value::known(evm_word),
+            Value::known(keccak_input),
+            Value::known(Fr::from(0x100)),
+        );
+        let witness_table = tx.gen_rlp_witness(true, &mock_challenges);
+
+        let rlp_table = witness_table
+            .iter()
+            .filter(|row| row.rlp_table.is_output)
+            .map(|row| row.rlp_table)
+            .collect::<Vec<_>>();
+
+        let to = eth_tx.to.map_or(Address::zero(), |to| to);
+        let data = eth_tx.input.to_vec();
+        let tx_table = vec![
+            rlc(&eth_tx.nonce.to_be_bytes(), evm_word),
+            Fr::from(eth_tx.gas.as_u64()),
+            to.to_scalar().unwrap(),
+            rlc(&eth_tx.value.to_be_bytes(), evm_word),
+            rlc(&data, keccak_input),
+            eth_tx.from.to_scalar().unwrap(),
+        ];
+
+        // assertions about TxType
+        assert_eq!(rlp_table[0].rlp_tag, Tag::TxType.into());
+        assert_eq!(unwrap_value(rlp_table[0].tag_value), Fr::from(0x7e));
+
+        // assertions about RlpTag::Len
+        assert_eq!(rlp_table[1].rlp_tag, RlpTag::Len);
+        assert_eq!(
+            unwrap_value(rlp_table[1].tag_value),
+            Fr::from(tx.rlp_signed.len() as u64)
+        );
+
+        // assertions about RlpTag::Tag(tag)
+        for i in 0..tx_table.len() {
+            assert_eq!(unwrap_value(rlp_table[i + 2].tag_value), tx_table[i]);
+        }
+
+        // assertions about RlpTag::RLC
+        assert_eq!(rlp_table[rlp_table.len() - 1].rlp_tag, RlpTag::RLC);
+        assert_eq!(
+            unwrap_value(rlp_table[rlp_table.len() - 1].tag_value),
+            rlc(&tx.rlp_signed, keccak_input)
+        );
+    }
 
     #[test]
     fn test_rlp_eip1559() {
