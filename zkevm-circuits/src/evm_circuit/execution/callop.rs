@@ -975,16 +975,24 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc) =
             if is_precompiled(&callee_address.to_address()) {
-                let (input_bytes_start, input_bytes_end) = (
-                    33usize + rw_offset,
-                    33usize + rw_offset + cd_length.as_usize(),
-                );
-                let (output_bytes_start, output_bytes_end) = (
-                    input_bytes_end,
-                    input_bytes_end + precompile_return_length.as_usize(),
-                );
-                let (return_bytes_start, return_bytes_end) =
-                    (output_bytes_end, output_bytes_end + rd_length.as_usize());
+                let input_length = cd_length.as_usize();
+                let (input_bytes_start, input_bytes_end) =
+                    (33usize + rw_offset, 33usize + rw_offset + input_length);
+                let [output_bytes_start, output_bytes_end, return_bytes_start, return_bytes_end] =
+                    if input_length > 0 {
+                        let (output_start, output_end) = (
+                            input_bytes_end,
+                            input_bytes_end + precompile_return_length.as_usize(),
+                        );
+                        [
+                            output_start,
+                            output_end,
+                            output_end,
+                            output_end + rd_length.min(precompile_return_length).as_usize(),
+                        ]
+                    } else {
+                        [input_bytes_end; 4]
+                    };
                 let input_bytes: Vec<u8> = (input_bytes_start..input_bytes_end)
                     .map(|i| block.rws[step.rw_indices[i]].memory_value())
                     .collect();
