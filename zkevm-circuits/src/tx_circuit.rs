@@ -584,6 +584,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.create_gate("l1 msg lookup into RLP table condition", |meta| {
             let mut cb = BaseConstraintBuilder::default();
             let is_tag_in_l1_msg_hash = sum::expr([
+                is_tx_type(meta),
                 is_nonce(meta),
                 is_gas(meta),
                 is_to(meta),
