@@ -18,8 +18,6 @@ const CHUNKS_PER_BATCH: usize = 2;
 
 #[test]
 fn test_aggregation_circuit() {
-    env_logger::init();
-
     let process_id = process::id();
 
     let dir = format!("data/{}", process_id);

@@ -28,8 +28,6 @@ use crate::{tests::mock_chunk::MockChunkCircuit, CompressionCircuit};
 
 #[test]
 fn test_proof_compression() {
-    env_logger::init();
-
     let dir = format!("data/{}", process::id());
     let path = Path::new(dir.as_str());
     fs::create_dir(path).unwrap();
@@ -106,8 +104,6 @@ fn test_proof_compression() {
 
 #[test]
 fn test_two_layer_proof_compression() {
-    env_logger::init();
-
     let dir = format!("data/{}", process::id());
     let path = Path::new(dir.as_str());
     fs::create_dir(path).unwrap();

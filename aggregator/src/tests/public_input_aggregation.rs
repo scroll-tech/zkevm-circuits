@@ -11,8 +11,6 @@ use crate::{BatchHashCircuit, LOG_DEGREE};
 
 #[test]
 fn test_pi_aggregation_mock_prover() {
-    env_logger::init();
-
     let mut rng = test_rng();
     let chunks_per_batch = 8;
 

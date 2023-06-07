@@ -26,8 +26,6 @@ pub struct MockChunkCircuit {
 
 #[test]
 fn test_mock_chunk_prover() {
-    env_logger::init();
-
     let mut rng = test_rng();
 
     let param = gen_srs(LOG_DEGREE);
