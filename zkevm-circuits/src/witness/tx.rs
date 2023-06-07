@@ -912,9 +912,9 @@ pub(super) fn tx_convert(
 #[cfg(test)]
 mod tests {
     use crate::witness::{tx::Challenges, RlpTag, Transaction};
-    use eth_types::{address, geth_types::TxType, word, Address, ToBigEndian, ToScalar};
+    use eth_types::{geth_types::TxType, Address, ToBigEndian, ToScalar};
     use ethers_core::{
-        types::{NameOrAddress, Signature, Transaction as EthTransaction, TransactionRequest},
+        types::{Transaction as EthTransaction, TransactionRequest},
         utils::rlp::{Decodable, Rlp},
     };
     use halo2_proofs::{circuit::Value, dev::unwrap_value, halo2curves::bn256::Fr};
@@ -931,30 +931,15 @@ mod tests {
         let raw_tx_rlp_bytes = hex::decode("f86780862d79883d2000825208945df9b87991262f6ba471f09758cde1c0fc1de734827a69801ca088ff6cf0fefd94db46111149ae4bfc179e9b94721fffd821d38d16464b3f71d0a045e0aff800961cfce805daef7016b9b675c137a6a41a548f7b60a3484c06a33a")
             .expect("decode tx's hex shall not fail");
 
-        // NOTE: the decode method in ethers-rs (0.17.0) is buggy
-        // let eth_tx = EthTransaction::decode(&Rlp::new(&raw_tx_rlp_bytes))
-        //     .expect("decode tx's rlp bytes shall not fail");
-
-        let eth_tx = TransactionRequest::new()
-            .nonce(word!("0x00"))
-            .gas_price(word!("0x2d79883d2000"))
-            .gas(word!("0x5208"))
-            .to(address!("0x5df9b87991262f6ba471f09758cde1c0fc1de734"))
-            .value(word!("0x7a69"));
-
-        let eth_sig = Signature {
-            r: word!("0x88ff6cf0fefd94db46111149ae4bfc179e9b94721fffd821d38d16464b3f71d0"),
-            s: word!("0x45e0aff800961cfce805daef7016b9b675c137a6a41a548f7b60a3484c06a33a"),
-            v: 0x1c,
-        };
-
-        let eth_tx_bytes = eth_tx.rlp_signed(&eth_sig).to_vec();
-        assert_eq!(eth_tx_bytes, raw_tx_rlp_bytes);
+        let eth_tx = EthTransaction::decode(&Rlp::new(&raw_tx_rlp_bytes))
+            .expect("decode tx's rlp bytes shall not fail");
 
         // testing sign RLP decoding
         let tx = Transaction::new_from_rlp_unsigned_bytes(
             TxType::PreEip155,
-            eth_tx.rlp_unsigned().to_vec(),
+            <&eth_types::Transaction as Into<TransactionRequest>>::into(&eth_tx)
+                .rlp_unsigned()
+                .to_vec(),
         );
         let evm_word = Fr::from(0x1ab);
         let keccak_input = Fr::from(0x10000);
@@ -971,25 +956,14 @@ mod tests {
             .map(|row| row.rlp_table)
             .collect::<Vec<_>>();
 
-        let to = if let Some(to) = eth_tx.to {
-            match to {
-                NameOrAddress::Name(_) => Address::zero(),
-                NameOrAddress::Address(to) => to,
-            }
-        } else {
-            Address::zero()
-        };
-        let data = if let Some(data) = eth_tx.data {
-            data.to_vec()
-        } else {
-            vec![]
-        };
+        let to = eth_tx.to.map_or(Address::zero(), |to| to);
+        let data = eth_tx.input.to_vec();
         let tx_table = vec![
-            rlc(&eth_tx.nonce.unwrap().to_be_bytes(), evm_word),
+            rlc(&eth_tx.nonce.to_be_bytes(), evm_word),
             rlc(&eth_tx.gas_price.unwrap().to_be_bytes(), evm_word),
-            Fr::from(eth_tx.gas.unwrap().as_u64()),
+            Fr::from(eth_tx.gas.as_u64()),
             to.to_scalar().unwrap(),
-            rlc(&eth_tx.value.unwrap().to_be_bytes(), evm_word),
+            rlc(&eth_tx.value.to_be_bytes(), evm_word),
             rlc(&data, keccak_input),
         ];
 
