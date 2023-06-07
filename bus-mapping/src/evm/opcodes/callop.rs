@@ -384,7 +384,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 // write the result in the callee's memory.
                 let rw_counter_start = state.block_ctx.rwc;
-                if call.is_success() && call.call_data_length > 0 && length > 0 {
+                if call.is_success() && call.call_data_length > 0 && !result.is_empty() {
                     let bytes: Vec<(u8, bool)> = result.iter().map(|b| (*b, false)).collect();
                     for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
                         // push callee memory write
