@@ -68,7 +68,6 @@ use crate::{
     witness::{
         Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
         RlpTag::{Len, Null, RLC},
-        Tag::TxType as RLPTxType,
     },
 };
 use eth_types::geth_types::{
@@ -432,6 +431,27 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     cb.require_zero(
                         "CallDataLength != 0",
                         value_is_zero.expr(Rotation::next())(meta),
+                    );
+                },
+            );
+
+            // tag = TxType => tx_type == tx_table.value
+            cb.condition(is_tx_type(meta), |cb| {
+                cb.require_equal(
+                    "tx_type == tx_table.value if tag == TxType",
+                    meta.query_advice(tx_table.value, Rotation::cur()),
+                    meta.query_advice(tx_type, Rotation::cur()),
+                );
+            });
+
+            // is_l1_msg => tx_type == 0x7e
+            cb.condition(
+                and::expr([meta.query_advice(is_l1_msg, Rotation::cur())]),
+                |cb| {
+                    cb.require_equal(
+                        "tx_type == 0x7e",
+                        meta.query_advice(tx_type, Rotation::cur()),
+                        0x7E.expr(),
                     );
                 },
             );
@@ -986,30 +1006,6 @@ impl<F: Field> TxCircuitConfig<F> {
         is_tx_type!(is_pre_eip155, PreEip155);
         is_tx_type!(is_eip155, Eip155);
         is_tx_type!(is_l1_msg, L1Msg);
-
-        // lookup tx type in RLP table for L1Msg only
-        meta.lookup_any("lookup tx type in RLP table", |meta| {
-            let enable = and::expr([meta.query_fixed(q_enable, Rotation::cur()), is_l1_msg(meta)]);
-            let hash_format = L1MsgHash.expr();
-            let tag_value = 0x7E.expr();
-
-            let input_exprs = vec![
-                1.expr(), // q_enable = true
-                meta.query_advice(tx_table.tx_id, Rotation::cur()),
-                hash_format,
-                RLPTxType.expr(),
-                tag_value,
-                1.expr(), // is_output = true
-                0.expr(), // is_none = false
-            ];
-            assert_eq!(input_exprs.len(), rlp_table.table_exprs(meta).len());
-
-            input_exprs
-                .into_iter()
-                .zip(rlp_table.table_exprs(meta).into_iter())
-                .map(|(input, table)| (enable.expr() * input, table))
-                .collect()
-        });
 
         // lookup tx tag in RLP table for signing.
         meta.lookup_any("lookup tx tag in RLP Table for signing", |meta| {
