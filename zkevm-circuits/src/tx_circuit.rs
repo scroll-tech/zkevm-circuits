@@ -60,10 +60,7 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::{Fixed, TableColumn};
 
 use crate::{
-    table::{
-        BlockContextFieldTag::CumNumTxs,
-        TxFieldTag::{ChainID, TxType as TxTypeTag},
-    },
+    table::{BlockContextFieldTag::CumNumTxs, TxFieldTag::ChainID},
     util::rlc_be_bytes,
     witness::{
         Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
@@ -78,9 +75,9 @@ use eth_types::geth_types::{
 use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 23;
+pub const TX_LEN: usize = 22;
 /// Offset of TxHash tag in the tx table
-pub const TX_HASH_OFFSET: usize = 22;
+pub const TX_HASH_OFFSET: usize = 21;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum LookupCondition {
@@ -248,7 +245,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         // tx tags
         is_tx_tag!(is_null, Null);
-        is_tx_tag!(is_tx_type, TxType);
         is_tx_tag!(is_nonce, Nonce);
         is_tx_tag!(is_gas_price, GasPrice);
         is_tx_tag!(is_gas, Gas);
@@ -297,20 +293,17 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.create_gate("tx_id transition", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // if tag_next == TxType, then tx_id' = tx_id + 1
+            // if tag_next == Nonce, then tx_id' = tx_id + 1
+            cb.condition(tag_bits.value_equals(Nonce, Rotation::next())(meta), |cb| {
+                cb.require_equal(
+                    "tx_id increments",
+                    meta.query_advice(tx_table.tx_id, Rotation::next()),
+                    meta.query_advice(tx_table.tx_id, Rotation::cur()) + 1.expr(),
+                );
+            });
+            // if tag_next != Nonce, then tx_id' = tx_id, tx_type' = tx_type
             cb.condition(
-                tag_bits.value_equals(TxTypeTag, Rotation::next())(meta),
-                |cb| {
-                    cb.require_equal(
-                        "tx_id increments",
-                        meta.query_advice(tx_table.tx_id, Rotation::next()),
-                        meta.query_advice(tx_table.tx_id, Rotation::cur()) + 1.expr(),
-                    );
-                },
-            );
-            // if tag_next != TxType, then tx_id' = tx_id
-            cb.condition(
-                not::expr(tag_bits.value_equals(TxTypeTag, Rotation::next())(meta)),
+                not::expr(tag_bits.value_equals(Nonce, Rotation::next())(meta)),
                 |cb| {
                     cb.require_equal(
                         "tx_id does not change",
@@ -350,7 +343,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_hash_length(meta), Len),
                 (is_hash_rlc(meta), RLC),
                 (is_caller_addr(meta), Tag::Sender.into()),
-                (is_tx_type(meta), Tag::TxType.into()),
                 // tx tags which correspond to Null
                 (is_null(meta), Null),
                 (is_create(meta), Null),
@@ -1228,7 +1220,6 @@ impl<F: Field> TxCircuitConfig<F> {
             // lookup to RLP table for hashing (L1 msg)
             conditions.insert(LookupCondition::L1MsgHash, {
                 let hash_set = [
-                    TxTypeTag,
                     Nonce,
                     Gas,
                     CalleeAddress,
@@ -1654,12 +1645,6 @@ impl<F: Field> TxCircuit<F> {
                     log::debug!("calldata len: {}", tx.call_data.len());
                     for (tag, rlp_tag, is_none, value) in [
                         // need to be in same order as that tx table load function uses
-                        (
-                            TxTypeTag,
-                            Some(Tag::TxType.into()),
-                            Some(false),
-                            Value::known(F::from(u64::from(tx.tx_type))),
-                        ),
                         (
                             Nonce,
                             Some(Tag::Nonce.into()),

@@ -161,12 +161,6 @@ impl Transaction {
         let ret = vec![
             [
                 Value::known(F::from(self.id as u64)),
-                Value::known(F::from(TxContextFieldTag::TxType as u64)),
-                Value::known(F::zero()),
-                Value::known(F::from(usize::from(self.tx_type) as u64)),
-            ],
-            [
-                Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::Nonce as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.nonce)),

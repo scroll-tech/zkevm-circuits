@@ -113,8 +113,6 @@ pub enum TxFieldTag {
     Null = 0,
     /// CallData
     CallData,
-    /// Tx Type
-    TxType,
     /// Nonce
     Nonce,
     /// GasPrice
