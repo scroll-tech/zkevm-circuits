@@ -78,9 +78,9 @@ use eth_types::geth_types::{
 use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
 
 /// Number of rows of one tx occupies in the fixed part of tx table
-pub const TX_LEN: usize = 22;
+pub const TX_LEN: usize = 23;
 /// Offset of TxHash tag in the tx table
-pub const TX_HASH_OFFSET: usize = 21;
+pub const TX_HASH_OFFSET: usize = 22;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum LookupCondition {
@@ -220,9 +220,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         .map(|condition| (condition, meta.advice_column()))
         .collect::<HashMap<LookupCondition, Column<Advice>>>();
 
+        // TODO: add lookup to SignVerify table for sv_address
         let sv_address = meta.advice_column();
         meta.enable_equality(tx_table.value);
-        meta.enable_equality(sv_address);
 
         let log_deg = |s: &'static str, meta: &mut ConstraintSystem<F>| {
             debug_assert!(meta.degree() <= 9);
@@ -248,6 +248,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         // tx tags
         is_tx_tag!(is_null, Null);
+        is_tx_tag!(is_tx_type, TxType);
         is_tx_tag!(is_nonce, Nonce);
         is_tx_tag!(is_gas_price, GasPrice);
         is_tx_tag!(is_gas, Gas);
@@ -292,6 +293,44 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             |meta| meta.advice_column_in(SecondPhase), // value is at 2nd phase
         );
 
+        // tx_id transition
+        meta.create_gate("tx_id transition", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            // if tag_next == TxType, then tx_id' = tx_id + 1
+            cb.condition(
+                tag_bits.value_equals(TxTypeTag, Rotation::next())(meta),
+                |cb| {
+                    cb.require_equal(
+                        "tx_id increments",
+                        meta.query_advice(tx_table.tx_id, Rotation::next()),
+                        meta.query_advice(tx_table.tx_id, Rotation::cur()) + 1.expr(),
+                    );
+                },
+            );
+            // if tag_next != TxType, then tx_id' = tx_id
+            cb.condition(
+                not::expr(tag_bits.value_equals(TxTypeTag, Rotation::next())(meta)),
+                |cb| {
+                    cb.require_equal(
+                        "tx_id does not change",
+                        meta.query_advice(tx_table.tx_id, Rotation::next()),
+                        meta.query_advice(tx_table.tx_id, Rotation::cur()),
+                    );
+                    cb.require_equal(
+                        "tx_type does not change",
+                        meta.query_advice(tx_type, Rotation::next()),
+                        meta.query_advice(tx_type, Rotation::cur()),
+                    );
+                },
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_advice(is_calldata, Rotation::next())),
+            ]))
+        });
+
         // Basic constraints
         meta.create_gate("basic constraints", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -311,6 +350,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_hash_length(meta), Len),
                 (is_hash_rlc(meta), RLC),
                 (is_caller_addr(meta), Tag::Sender.into()),
+                (is_tx_type(meta), Tag::TxType.into()),
                 // tx tags which correspond to Null
                 (is_null(meta), Null),
                 (is_create(meta), Null),
@@ -810,11 +850,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 ]))
             },
         );
-        // TODO: add constraints on tx_type
 
-        // TODO: skip caller_address == sv_address check for L1Msg tx
-
-        log_deg("end", meta);
+        log_deg("tx_circuit", meta);
 
         Self {
             minimum_rows: meta.minimum_rows(),
@@ -1617,6 +1654,12 @@ impl<F: Field> TxCircuit<F> {
                     log::debug!("calldata len: {}", tx.call_data.len());
                     for (tag, rlp_tag, is_none, value) in [
                         // need to be in same order as that tx table load function uses
+                        (
+                            TxTypeTag,
+                            Some(Tag::TxType.into()),
+                            Some(false),
+                            Value::known(F::from(u64::from(tx.tx_type))),
+                        ),
                         (
                             Nonce,
                             Some(Tag::Nonce.into()),

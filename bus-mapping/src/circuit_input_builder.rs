@@ -757,17 +757,23 @@ pub fn keccak_inputs_tx_circuit(
         .iter()
         .enumerate()
         .filter(|(i, tx)| {
-            if tx.tx_type.is_l1_msg() {
-                warn!("tx {} is L1Msg, skipping tx circuit keccak input", i);
-                false
-            } else if tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
-                warn!("tx {} is not signed, skipping tx circuit keccak input", i);
+            if !tx.tx_type.is_l1_msg() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
+                warn!(
+                    "tx {} is not signed and is not L1Msg, skipping tx circuit keccak input",
+                    i
+                );
                 false
             } else {
                 true
             }
         })
-        .map(|(_, tx)| tx.sign_data())
+        .map(|(_, tx)| {
+            if tx.tx_type.is_l1_msg() {
+                Ok(SignData::default())
+            } else {
+                tx.sign_data()
+            }
+        })
         .try_collect()?;
     // Keccak inputs from SignVerify Chip
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);

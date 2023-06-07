@@ -40,6 +40,12 @@ impl From<TxType> for usize {
     }
 }
 
+impl From<TxType> for u64 {
+    fn from(value: TxType) -> Self {
+        value as u64
+    }
+}
+
 impl TxType {
     /// If this type is L1Msg or not
     pub fn is_l1_msg(&self) -> bool {
