@@ -1,13 +1,14 @@
 #![allow(unused_imports)]
+
 use ethers_core::{
-    types::{NameOrAddress, Signature, TransactionRequest},
-    utils::keccak256,
+    types::{NameOrAddress, Signature, Transaction as EthTransaction, TransactionRequest},
+    utils::{keccak256, rlp, rlp::Decodable},
 };
 use std::cmp::max;
 
 use super::*;
 use crate::util::{log2_ceil, unusable_rows};
-use eth_types::{address, evm_types::gas_utils::tx_data_gas_cost, word, H256, U64};
+use eth_types::{address, evm_types::gas_utils::tx_data_gas_cost, word, H256, U256, U64};
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
@@ -68,6 +69,36 @@ fn build_pre_eip155_tx() -> Transaction {
     tx.v = eth_sig.v;
     tx.r = eth_sig.r;
     tx.s = eth_sig.s;
+
+    tx
+}
+
+fn build_l1_msg_tx() -> Transaction {
+    let raw_tx_rlp_bytes = hex::decode("7ef901b60b825dc0941a258d17bf244c4df02d40343a7626a9d321e10580b901848ef1332e000000000000000000000000ea08a65b1829af779261e768d609e59279b510f2000000000000000000000000f2ec6b6206f6208e8f9b394efc1a01c1cbde77750000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000b00000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000a4232e87480000000000000000000000002b5ad5c4795c026514f8317c7a215e218dccd6cf0000000000000000000000002b5ad5c4795c026514f8317c7a215e218dccd6cf0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000094478cdd110520a8e733e2acf9e543d2c687ea5239")
+        .expect("decode tx's hex shall not fail");
+
+    let eth_tx = EthTransaction::decode(&rlp::Rlp::new(&raw_tx_rlp_bytes))
+        .expect("decode tx's rlp bytes shall not fail");
+
+    let signed_bytes = eth_tx.rlp().to_vec();
+    let mut tx = Transaction::new_from_rlp_signed_bytes(L1Msg, signed_bytes);
+
+    tx.hash = eth_tx.hash;
+    tx.block_number = 1;
+    tx.id = 1;
+    tx.nonce = eth_tx.nonce.as_u64();
+    tx.gas_price = eth_tx.gas_price.unwrap_or(U256::zero());
+    tx.gas = eth_tx.gas.as_u64();
+    tx.call_data = eth_tx.input.to_vec();
+    tx.callee_address = eth_tx.to;
+    tx.caller_address = eth_tx.from;
+    tx.is_create = eth_tx.to.is_none();
+    tx.call_data_length = tx.call_data.len();
+    tx.call_data_gas_cost = tx_data_gas_cost(&tx.call_data);
+    tx.tx_data_gas_cost = tx_data_gas_cost(&tx.rlp_signed);
+    tx.v = eth_tx.v.as_u64();
+    tx.r = eth_tx.r;
+    tx.s = eth_tx.s;
 
     tx
 }
@@ -149,9 +180,18 @@ fn tx_circuit_1tx_2max_tx() {
     const MAX_CALLDATA: usize = 320;
 
     let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
-
-    // let tx: Transaction = mock::CORRECT_MOCK_TXS[0].clone().into();
     let tx = build_pre_eip155_tx();
+
+    assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
+}
+
+#[test]
+fn tx_circuit_l1_msg_tx() {
+    const MAX_TXS: usize = 4;
+    const MAX_CALLDATA: usize = 400;
+
+    let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
+    let tx = build_l1_msg_tx();
 
     assert_eq!(run::<Fr>(vec![tx], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
 }

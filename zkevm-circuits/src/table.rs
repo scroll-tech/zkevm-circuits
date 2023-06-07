@@ -111,6 +111,8 @@ impl<F: Field, C: Into<Column<Any>> + Copy, const W: usize> LookupTable<F> for [
 pub enum TxFieldTag {
     /// Unused tag
     Null = 0,
+    /// CallData
+    CallData,
     /// Tx Type
     TxType,
     /// Nonce
@@ -160,8 +162,6 @@ pub enum TxFieldTag {
     TxHashRLC,
     /// TxHash: Hash of the transaction with the signature
     TxHash,
-    /// CallData
-    CallData,
     /// The block number in which this tx is included.
     BlockNumber,
 }

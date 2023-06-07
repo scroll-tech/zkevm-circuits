@@ -25,19 +25,12 @@ use crate::{
     witness::{rlp_fsm::Tag, RlpTag, Transaction},
 };
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
-#[cfg(not(feature = "enable-sign-verify"))]
-use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness};
 use eth_types::{sign_types::SignData, Address, Field, ToAddress, ToLittleEndian, ToScalar};
-#[cfg(not(feature = "enable-sign-verify"))]
-use ethers_core::utils::keccak256;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     util::{and, not, select, sum, Expr},
 };
-use halo2_base::AssignedValue;
-#[cfg(feature = "enable-sign-verify")]
-use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
@@ -67,7 +60,10 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::plonk::{Fixed, TableColumn};
 
 use crate::{
-    table::{BlockContextFieldTag::CumNumTxs, TxFieldTag::ChainID},
+    table::{
+        BlockContextFieldTag::CumNumTxs,
+        TxFieldTag::{ChainID, TxType as TxTypeTag},
+    },
     util::rlc_be_bytes,
     witness::{
         Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
@@ -127,6 +123,7 @@ pub struct TxCircuitConfig<F: Field> {
     /// Columns used to reduce degree
     is_tag_block_num: Column<Advice>,
     is_calldata: Column<Advice>,
+    is_caller_address: Column<Advice>,
     is_l1_msg: Column<Advice>,
     is_chain_id: Column<Advice>,
     lookup_conditions: HashMap<LookupCondition, Column<Advice>>,
@@ -209,6 +206,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         // booleans to reduce degree
         let is_l1_msg = meta.advice_column();
         let is_calldata = meta.advice_column();
+        let is_caller_address = meta.advice_column();
         let is_chain_id = meta.advice_column();
         let is_tag_block_num = meta.advice_column();
         let lookup_conditions = [
@@ -416,6 +414,18 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
+        meta.create_gate("is_caller_address", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "is_caller_address",
+                tag_bits.value_equals(CallerAddress, Rotation::cur())(meta),
+                meta.query_advice(is_caller_address, Rotation::cur()),
+            );
+
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+        });
+
         meta.create_gate("is_chain_id", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -562,7 +572,13 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         meta.create_gate("lookup into Keccak table condition", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let is_tag_sign_or_hash = sum::expr([is_sign_length(meta), is_hash_length(meta)]);
+            let is_tag_sign_or_hash = sum::expr([
+                and::expr([
+                    is_sign_length(meta),
+                    not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                ]),
+                is_hash_length(meta),
+            ]);
             cb.require_equal(
                 "condition",
                 is_tag_sign_or_hash,
@@ -594,13 +610,13 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             let is_tag_caller_addr = is_caller_addr(meta);
             let mut cb = BaseConstraintBuilder::default();
 
+            // the offset between CallerAddress and BlockNumber
+            let offset = usize::from(BlockNumber) - usize::from(CallerAddress);
             // if tag == CallerAddress
             cb.condition(is_tag_caller_addr.expr(), |cb| {
                 cb.require_equal(
                     "is_padding_tx = true if caller_address = 0",
-                    meta.query_advice(is_padding_tx, Rotation(15)), /* the offset between
-                                                                     * CallerAddress and
-                                                                     * BlockNumber */
+                    meta.query_advice(is_padding_tx, Rotation(offset as i32)),
                     value_is_zero.expr(Rotation::cur())(meta),
                 );
             });
@@ -774,22 +790,26 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone());
         #[cfg(feature = "reject-eip2718")]
-        meta.create_gate("caller address == sv_address if it's not zero", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate(
+            "caller address == sv_address if it's not zero and tx_type != L1Msg",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
 
-            cb.condition(not::expr(value_is_zero.expr(Rotation::cur())(meta)), |cb| {
-                cb.require_equal(
-                    "caller address == sv_address",
-                    meta.query_advice(tx_table.value, Rotation::cur()),
-                    meta.query_advice(sv_address, Rotation::cur()),
-                );
-            });
+                cb.condition(not::expr(value_is_zero.expr(Rotation::cur())(meta)), |cb| {
+                    cb.require_equal(
+                        "caller address == sv_address",
+                        meta.query_advice(tx_table.value, Rotation::cur()),
+                        meta.query_advice(sv_address, Rotation::cur()),
+                    );
+                });
 
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                tag_bits.value_equals(CallerAddress, Rotation::cur())(meta),
-            ]))
-        });
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(is_caller_address, Rotation::cur()),
+                    not::expr(meta.query_advice(is_l1_msg, Rotation::cur())),
+                ]))
+            },
+        );
         // TODO: add constraints on tx_type
 
         // TODO: skip caller_address == sv_address check for L1Msg tx
@@ -808,6 +828,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             value_is_zero,
             tx_id_unchanged,
             is_calldata,
+            is_caller_address,
             tx_id_cmp_cum_num_txs,
             cum_num_txs,
             is_padding_tx,
@@ -1170,11 +1191,12 @@ impl<F: Field> TxCircuitConfig<F> {
             // lookup to RLP table for hashing (L1 msg)
             conditions.insert(LookupCondition::L1MsgHash, {
                 let hash_set = [
+                    TxTypeTag,
                     Nonce,
-                    GasPrice,
                     Gas,
                     CalleeAddress,
                     TxFieldTag::Value,
+                    CallDataRLC,
                     CallerAddress,
                     TxHashLength,
                     TxHashRLC,
@@ -1185,9 +1207,9 @@ impl<F: Field> TxCircuitConfig<F> {
             });
             // lookup to Keccak table for tx_sign_hash and tx_hash
             conditions.insert(LookupCondition::Keccak, {
-                let set = [TxSignLength, TxHashLength];
-                let is_tag_in_set = set.into_iter().filter(|_tag| tag == *_tag).count();
-                Value::known(F::from(is_tag_in_set as u64))
+                let case1 = (tag == TxSignLength) && !is_l1_msg;
+                let case2 = tag == TxHashLength;
+                Value::known(F::from((case1 || case2) as u64))
             });
         }
         for (condition, value) in conditions {
@@ -1217,6 +1239,12 @@ impl<F: Field> TxCircuitConfig<F> {
             self.is_chain_id,
             *offset,
             || Value::known(F::from((tag == ChainID) as u64)),
+        )?;
+        region.assign_advice(
+            || "is_caller_address",
+            self.is_caller_address,
+            *offset,
+            || Value::known(F::from((tag == CallerAddress) as u64)),
         )?;
         region.assign_advice(
             || "is_calldata",
@@ -1431,19 +1459,15 @@ impl<F: Field> TxCircuit<F> {
             .iter()
             .chain(iter::once(&padding_tx))
             .enumerate()
-            .filter(|(_, tx)| {
-                if tx.tx_type.is_l1_msg() {
-                    log::warn!("tx {} is L1Msg, skipping tx circuit keccak input", tx.id);
-                    false
-                } else {
-                    true
-                }
-            })
             .map(|(_, tx)| {
-                tx.sign_data().map_err(|e| {
-                    error!("keccak_inputs_tx_circuit error: {:?}", e);
-                    Error::Synthesis
-                })
+                if tx.tx_type.is_l1_msg() {
+                    Ok(SignData::default())
+                } else {
+                    tx.sign_data().map_err(|e| {
+                        error!("keccak_inputs_tx_circuit error: {:?}", e);
+                        Error::Synthesis
+                    })
+                }
             })
             .collect::<Result<Vec<SignData>, Error>>()?;
         // Keccak inputs from SignVerify Chip
@@ -1780,50 +1804,23 @@ impl<F: Field> TxCircuit<F> {
                             CallerAddress => {
                                 #[cfg(feature = "enable-sign-verify")]
                                 {
-                                    let address: AssignedValue<_> =
-                                        assigned_sig_verif.address.clone().into();
-                                    address.copy_advice(&mut region, config.sv_address, offset - 1);
+                                    // TODO: do lookup to SignVerify table instead.
                                 }
-                                #[cfg(not(feature = "enable-sign-verify"))]
-                                {
-                                    let pk_le = pk_bytes_le(&assigned_sig_verif.pk);
-                                    let pk_be = pk_bytes_swap_endianness(&pk_le);
-                                    let pk_hash = keccak256(pk_be);
-                                    let address =
-                                        Value::known(pub_key_hash_to_address::<F>(&pk_hash));
-                                    region.assign_advice(
-                                        || "sv_address",
-                                        config.sv_address,
-                                        offset - 1,
-                                        || address,
-                                    )?;
-                                }
+                                let sv_address = assigned_sig_verif.address.value;
+                                region.assign_advice(
+                                    || "sv_address",
+                                    config.sv_address,
+                                    offset - 1,
+                                    || sv_address,
+                                )?;
                             }
-                            TxSignHash => {
+                            TxSignHash | SigV | SigR | SigS => {
                                 #[cfg(feature = "enable-sign-verify")]
                                 {
-                                    region.constrain_equal(
-                                        assigned_sig_verif.msg_hash_rlc.clone().cell,
-                                        Cell {
-                                            // FIXME
-                                            region_index: RegionIndex(1),
-                                            row_offset: offset - 1, /* offset is increased by 1
-                                                                     * inside assign_row */
-                                            column: config.tx_table.value.into(),
-                                        },
-                                    )?;
+                                    // TODO: do lookup to SignVerify table instead.
                                 }
                             }
-                            SigV => {
-                                // region.assign_advice(
-                                //     || "chain id",
-                                //     config.chain_id,
-                                //     offset,
-                                //     || Value::known(F::from(self.chain_id)),
-                                // )?;
-                            }
-                            // TODO: connect r, s to SignVerifyChip
-                            _ => (),
+                            _ => {}
                         }
                     }
                 }
@@ -1971,10 +1968,14 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             .iter()
             .chain(padding_txs.iter())
             .map(|tx| {
-                tx.sign_data().map_err(|e| {
-                    error!("tx_to_sign_data error for tx {:?}", e);
-                    Error::Synthesis
-                })
+                if tx.tx_type.is_l1_msg() {
+                    Ok(SignData::default())
+                } else {
+                    tx.sign_data().map_err(|e| {
+                        error!("tx_to_sign_data error for tx {:?}", e);
+                        Error::Synthesis
+                    })
+                }
             })
             .collect::<Result<Vec<SignData>, Error>>()?;
 
@@ -1995,7 +1996,8 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         for (pk, tx) in recovered_pks.into_iter().zip(self.txs.iter()) {
             let pk_hash = keccak(&pk);
             let address = pk_hash.to_address();
-            if address != tx.caller_address {
+            // L1 Msg does not have signature
+            if !tx.tx_type.is_l1_msg() && address != tx.caller_address {
                 log::error!(
                     "pk address from sign data {:?} does not match the one from tx address {:?}",
                     address,
