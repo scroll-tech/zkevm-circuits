@@ -102,6 +102,8 @@ fn test_proof_compression() {
     }
 }
 
+// This test takes about 1 hour on CPU
+#[ignore="it takes too much time"]
 #[test]
 fn test_two_layer_proof_compression() {
     let dir = format!("data/{}", process::id());
