@@ -49,6 +49,7 @@ mod mload;
 mod mstore;
 mod number;
 mod origin;
+mod precompiles;
 mod push0;
 mod return_revert;
 mod returndatacopy;
@@ -76,6 +77,8 @@ mod error_write_protection;
 
 #[cfg(test)]
 mod memory_expansion_test;
+#[cfg(feature = "test")]
+pub use callop::tests::PrecompileCallArgs;
 
 use self::sha3::Sha3;
 use crate::precompile::is_precompiled;

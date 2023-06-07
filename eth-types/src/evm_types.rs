@@ -176,6 +176,30 @@ impl GasCost {
     /// Times ceil exponent byte size for the EXP instruction, EIP-158 changed
     /// it from 10 to 50.
     pub const EXP_BYTE_TIMES: Self = Self(50);
+    /// Base gas price for precompile call: Elliptic curve recover
+    pub const PRECOMPILE_EC_RECOVER_BASE: Self = Self(3000);
+    /// Base gas price for precompile call: SHA256
+    pub const PRECOMPILE_SHA256_BASE: Self = Self(60);
+    /// Per-word gas price for SHA256
+    pub const PRECOMPILE_SHA256_PER_WORD: Self = Self(12);
+    /// Base gas price for precompile call: RIPEMD160
+    pub const PRECOMPILE_RIPEMD160_BASE: Self = Self(600);
+    /// Per-word gas price for RIPEMD160
+    pub const PRECOMPILE_RIPEMD160_PER_WORD: Self = Self(120);
+    /// Base gas price for precompile call: Identity
+    pub const PRECOMPILE_IDENTITY_BASE: Self = Self(15);
+    /// Per-word gas price for Identity
+    pub const PRECOMPILE_IDENTITY_PER_WORD: Self = Self(3);
+    /// Base gas price for precompile call: BN256 point addition
+    pub const PRECOMPILE_BN256ADD: Self = Self(150);
+    /// Base gas price for precompile call: BN256 scalar multiplication
+    pub const PRECOMPILE_BN256MUL: Self = Self(6000);
+    /// Base gas price for precompile call: BN256 pairing per point
+    pub const PRECOMPILE_BN256PAIRING: Self = Self(45000);
+    /// Base gas price for precompile call: MODEXP
+    pub const PRECOMPILE_MODEXP: Self = Self(0);
+    /// Base gas price for precompile call: BLAKE2F
+    pub const PRECOMPILE_BLAKE2F: Self = Self(0);
 }
 
 impl GasCost {

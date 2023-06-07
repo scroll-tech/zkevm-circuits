@@ -10,13 +10,16 @@ mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::CopyCircuit as TestCopyCircuit;
 
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
+use bus_mapping::{
+    circuit_input_builder::{CopyDataType, CopyEvent},
+    precompile::PrecompileCalls,
+};
 use eth_types::{Field, Word};
 
 use gadgets::{
     binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
-    util::{and, not, or, Expr},
+    util::{and, not, or, sum, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -59,6 +62,15 @@ pub struct CopyCircuitConfig<F> {
     /// In case of a bytecode tag, this denotes whether or not the copied byte
     /// is an opcode or push data byte.
     pub is_code: Column<Advice>,
+    /// Indicates whether or not the copy event copies bytes to a precompiled call or copies bytes
+    /// from a precompiled call back to caller.
+    pub is_precompiled: Column<Advice>,
+    /// Booleans to indicate what copy data type exists at the current row.
+    pub is_tx_calldata: Column<Advice>,
+    /// Booleans to indicate what copy data type exists at the current row.
+    pub is_bytecode: Column<Advice>,
+    /// Booleans to indicate what copy data type exists at the current row.
+    pub is_memory: Column<Advice>,
     /// Whether the row is enabled or not.
     pub q_enable: Column<Fixed>,
     /// The Copy Table contains the columns that are exposed via the lookup
@@ -114,6 +126,12 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let value = meta.advice_column_in(SecondPhase);
         let value_acc = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
+        let (is_precompiled, is_tx_calldata, is_bytecode, is_memory) = (
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        );
         let is_pad = meta.advice_column();
         let is_first = copy_table.is_first;
         let id = copy_table.id;
@@ -137,6 +155,63 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             |meta| meta.query_advice(addr, Rotation::cur()),
             |meta| meta.query_advice(src_addr_end, Rotation::cur()),
         );
+
+        meta.create_gate("is precompile", |meta| {
+            let enabled = meta.query_fixed(q_enable, Rotation::cur());
+            let is_precompile = meta.query_advice(is_precompiled, Rotation::cur());
+            let is_tx_calldata = meta.query_advice(is_tx_calldata, Rotation::cur());
+            let is_bytecode = meta.query_advice(is_bytecode, Rotation::cur());
+            let is_memory = meta.query_advice(is_memory, Rotation::cur());
+            let precompiles = sum::expr([
+                tag.value_equals(
+                    CopyDataType::Precompile(PrecompileCalls::ECRecover),
+                    Rotation::cur(),
+                )(meta),
+                tag.value_equals(
+                    CopyDataType::Precompile(PrecompileCalls::Sha256),
+                    Rotation::cur(),
+                )(meta),
+                tag.value_equals(
+                    CopyDataType::Precompile(PrecompileCalls::Ripemd160),
+                    Rotation::cur(),
+                )(meta),
+                tag.value_equals(
+                    CopyDataType::Precompile(PrecompileCalls::Identity),
+                    Rotation::cur(),
+                )(meta),
+                tag.value_equals(
+                    CopyDataType::Precompile(PrecompileCalls::Modexp),
+                    Rotation::cur(),
+                )(meta),
+                tag.value_equals(
+                    CopyDataType::Precompile(PrecompileCalls::Bn128Add),
+                    Rotation::cur(),
+                )(meta),
+                tag.value_equals(
+                    CopyDataType::Precompile(PrecompileCalls::Bn128Mul),
+                    Rotation::cur(),
+                )(meta),
+                tag.value_equals(
+                    CopyDataType::Precompile(PrecompileCalls::Bn128Pairing),
+                    Rotation::cur(),
+                )(meta),
+                tag.value_equals(
+                    CopyDataType::Precompile(PrecompileCalls::Blake2F),
+                    Rotation::cur(),
+                )(meta),
+            ]);
+            vec![
+                enabled.expr() * (is_precompile - precompiles),
+                enabled.expr()
+                    * (is_tx_calldata
+                        - tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)),
+                enabled.expr()
+                    * (is_bytecode
+                        - tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)),
+                enabled.expr()
+                    * (is_memory - tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)),
+            ]
+        });
 
         meta.create_gate("verify row", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -198,7 +273,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             let rw_diff = and::expr([
                 or::expr([
-                    tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
+                    meta.query_advice(is_memory, Rotation::cur()),
                     tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta),
                 ]),
                 not::expr(meta.query_advice(is_pad, Rotation::cur())),
@@ -235,6 +310,28 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         });
 
         meta.create_gate(
+            "Last Step (check value accumulator) Memory => Precompile or Precompile => Memory",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
+
+                cb.require_equal(
+                    "value_acc == rlc_acc on the last row",
+                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(rlc_acc, Rotation::next()),
+                );
+
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(is_last, Rotation::next()),
+                    or::expr([
+                        meta.query_advice(is_precompiled, Rotation::cur()),
+                        meta.query_advice(is_precompiled, Rotation::next()),
+                    ]),
+                ]))
+            },
+        );
+
+        meta.create_gate(
             "Last Step (check value accumulator) Memory => Bytecode",
             |meta| {
                 let mut cb = BaseConstraintBuilder::default();
@@ -249,8 +346,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(is_last, Rotation::next()),
                     and::expr([
-                        tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
-                        tag.value_equals(CopyDataType::Bytecode, Rotation::next())(meta),
+                        meta.query_advice(is_memory, Rotation::cur()),
+                        meta.query_advice(is_bytecode, Rotation::next()),
                     ]),
                 ]))
             },
@@ -344,7 +441,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         meta.lookup_any("Memory lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
-                * tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)
+                * meta.query_advice(is_memory, Rotation::cur())
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 1.expr(),
@@ -391,7 +488,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         meta.lookup_any("Bytecode lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
-                * tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)
+                * meta.query_advice(is_bytecode, Rotation::cur())
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 1.expr(),
@@ -409,7 +506,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         meta.lookup_any("Tx calldata lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
-                * tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)
+                * meta.query_advice(is_tx_calldata, Rotation::cur())
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()));
             vec![
                 1.expr(),
@@ -431,6 +528,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             value_acc,
             is_pad,
             is_code,
+            is_precompiled,
+            is_tx_calldata,
+            is_bytecode,
+            is_memory,
             q_enable,
             addr_lt_addr_end,
             copy_table,
@@ -447,7 +548,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         &self,
         region: &mut Region<F>,
         offset: &mut usize,
-        tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
+        tag_chip: &BinaryNumberChip<F, CopyDataType, 4>,
         lt_chip: &LtChip<F, 8>,
         challenges: Challenges<Value<F>>,
         copy_event: &CopyEvent,
@@ -528,6 +629,33 @@ impl<F: Field> CopyCircuitConfig<F> {
                 )?;
             }
 
+            // if the memory copy operation is related to precompile calls.
+            let is_precompiled = CopyDataType::precompile_types().contains(tag);
+            region.assign_advice(
+                || format!("is_precompiled at row: {}", *offset),
+                self.is_precompiled,
+                *offset,
+                || Value::known(F::from(is_precompiled)),
+            )?;
+            region.assign_advice(
+                || format!("is_tx_calldata at row: {}", *offset),
+                self.is_tx_calldata,
+                *offset,
+                || Value::known(F::from(tag.eq(&CopyDataType::TxCalldata))),
+            )?;
+            region.assign_advice(
+                || format!("is_bytecode at row: {}", *offset),
+                self.is_bytecode,
+                *offset,
+                || Value::known(F::from(tag.eq(&CopyDataType::Bytecode))),
+            )?;
+            region.assign_advice(
+                || format!("is_memory at row: {}", *offset),
+                self.is_memory,
+                *offset,
+                || Value::known(F::from(tag.eq(&CopyDataType::Memory))),
+            )?;
+
             *offset += 1;
         }
 
@@ -607,7 +735,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         region: &mut Region<F>,
         offset: &mut usize,
         is_last_two: bool,
-        tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
+        tag_chip: &BinaryNumberChip<F, CopyDataType, 4>,
         lt_chip: &LtChip<F, 8>,
     ) -> Result<(), Error> {
         if !is_last_two {
@@ -719,6 +847,19 @@ impl<F: Field> CopyCircuitConfig<F> {
         tag_chip.assign(region, *offset, &CopyDataType::Padding)?;
         // Assign LT gadget
         lt_chip.assign(region, *offset, F::zero(), F::one())?;
+        for column in [
+            self.is_precompiled,
+            self.is_tx_calldata,
+            self.is_bytecode,
+            self.is_memory,
+        ] {
+            region.assign_advice(
+                || format!("assigning padding row: {}", *offset),
+                column,
+                *offset,
+                || Value::known(F::zero()),
+            )?;
+        }
 
         *offset += 1;
 
