@@ -16,7 +16,7 @@ pub(crate) struct IsZeroConfig<F> {
 }
 
 impl<F: Field> IsZeroConfig<F> {
-    /// Returns  is_zero expression
+    /// Returns is_zero expression
     pub(crate) fn expr(
         &self,
         rotation: Rotation,
