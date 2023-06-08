@@ -39,15 +39,35 @@ impl<F: Field> PrecompileGadget<F> {
 
         cb.condition(address.value_equals(PrecompileCalls::Ecrecover), |cb| {
             cb.constrain_next_step(ExecutionState::PrecompileEcrecover, None, |cb| {
-                let (msg_hash, sig_v, sig_r, sig_s, recovered_addr) = (
+                let (_recovered, msg_hash, sig_v, sig_r, sig_s, recovered_addr) = (
+                    cb.query_bool(),
                     cb.query_cell_phase2(),
                     cb.query_cell(),
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
                     cb.query_cell(),
                 );
-                // TODO: compare input_bytes_rlc to (msg_hash, sig_v, sig_r, sig_s)
-                // TODO: compare output_bytes_rlc to recovered_addr
+                let (r_pow_32, r_pow_64, r_pow_96) = {
+                    let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
+                    let r_pow_16 = challenges[15].clone();
+                    let r_pow_32 = r_pow_16.square();
+                    let r_pow_64 = r_pow_32.clone().square();
+                    let r_pow_96 = r_pow_64.clone() * r_pow_32.clone();
+                    (r_pow_32, r_pow_64, r_pow_96)
+                };
+                cb.require_equal(
+                    "input bytes (RLC) = [msg_hash | sig_v | sig_r | sig_s]",
+                    input_bytes_rlc.expr(),
+                    (msg_hash.expr() * r_pow_96)
+                        + (sig_v.expr() * r_pow_64)
+                        + (sig_r.expr() * r_pow_32)
+                        + sig_s.expr(),
+                );
+                cb.require_equal(
+                    "output bytes (RLC) = recovered address",
+                    output_bytes_rlc.expr(),
+                    recovered_addr.expr(),
+                );
             });
         });
 

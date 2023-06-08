@@ -3,21 +3,39 @@ use eth_types::{GethExecStep, ToWord, Word};
 use crate::{
     circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep},
     operation::CallContextField,
-    precompile::PrecompileCalls,
+    precompile::{EcrecoverAuxData, PrecompileAuxData, PrecompileCalls},
     Error,
 };
+
+type InOutRetData = (Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
 
 pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_step: GethExecStep,
     call: Call,
     precompile: PrecompileCalls,
+    (input_bytes, output_bytes, returned_bytes): InOutRetData,
 ) -> Result<ExecStep, Error> {
     assert_eq!(call.code_address(), Some(precompile.into()));
     let mut exec_step = state.new_step(&geth_step)?;
     exec_step.exec_state = ExecState::Precompile(precompile);
 
     common_call_ctx_reads(state, &mut exec_step, &call);
+
+    // TODO: refactor and replace with `match` once we have more branches.
+    if precompile == PrecompileCalls::Ecrecover {
+        let input_bytes = input_bytes.map_or(vec![0u8; 128], |mut bytes| {
+            bytes.resize(128, 0u8);
+            bytes
+        });
+        let output_bytes = output_bytes.map_or(vec![0u8; 32], |mut bytes| {
+            bytes.resize(32, 0u8);
+            bytes
+        });
+        let aux_data = EcrecoverAuxData::new(input_bytes, output_bytes);
+
+        exec_step.aux_data = Some(PrecompileAuxData::Ecrecover(aux_data));
+    }
 
     Ok(exec_step)
 }

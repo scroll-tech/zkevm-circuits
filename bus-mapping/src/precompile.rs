@@ -1,6 +1,6 @@
 //! precompile helpers
 
-use eth_types::{evm_types::GasCost, Address};
+use eth_types::{evm_types::GasCost, Address, Word};
 use revm_precompile::{Precompile, Precompiles};
 use strum::EnumIter;
 
@@ -108,5 +108,48 @@ impl PrecompileCalls {
     /// Get the EVM address for this precompile call.
     pub fn address(&self) -> u64 {
         (*self).into()
+    }
+}
+
+/// Auxiliary data for Ecrecover
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EcrecoverAuxData {
+    /// Keccak hash of the message being signed.
+    pub msg_hash: Word,
+    /// v-component of signature.
+    pub sig_v: Word,
+    /// r-component of signature.
+    pub sig_r: Word,
+    /// s-component of signature.
+    pub sig_s: Word,
+    /// Address that was recovered, right aligned to 32-bytes.
+    pub recovered_addr: Word,
+}
+
+impl EcrecoverAuxData {
+    /// Create a new instance of ecrecover auxiliary data.
+    pub fn new(input: Vec<u8>, output: Vec<u8>) -> Self {
+        assert_eq!(input.len(), 128);
+        assert_eq!(output.len(), 32);
+        Self {
+            msg_hash: Word::from_big_endian(&input[0x00..0x20]),
+            sig_v: Word::from_big_endian(&input[0x20..0x40]),
+            sig_r: Word::from_big_endian(&input[0x40..0x60]),
+            sig_s: Word::from_big_endian(&input[0x60..0x80]),
+            recovered_addr: Word::from_big_endian(&output[0x00..0x20]),
+        }
+    }
+}
+
+/// Auxiliary data attached to an internal state for precompile verification.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PrecompileAuxData {
+    /// Ecrecover.
+    Ecrecover(EcrecoverAuxData),
+}
+
+impl Default for PrecompileAuxData {
+    fn default() -> Self {
+        Self::Ecrecover(EcrecoverAuxData::default())
     }
 }
