@@ -212,7 +212,7 @@ impl CopyDataTypeIter {
             3usize => Some(CopyDataType::TxCalldata),
             4usize => Some(CopyDataType::TxLog),
             5usize => Some(CopyDataType::RlcAcc),
-            6usize => Some(CopyDataType::Precompile(PrecompileCalls::ECRecover)),
+            6usize => Some(CopyDataType::Precompile(PrecompileCalls::Ecrecover)),
             7usize => Some(CopyDataType::Precompile(PrecompileCalls::Sha256)),
             8usize => Some(CopyDataType::Precompile(PrecompileCalls::Ripemd160)),
             9usize => Some(CopyDataType::Precompile(PrecompileCalls::Identity)),

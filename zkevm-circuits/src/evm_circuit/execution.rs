@@ -202,7 +202,7 @@ use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
-use precompiles::IdentityGadget;
+use precompiles::{EcrecoverGadget, IdentityGadget};
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
@@ -347,8 +347,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
     // precompile calls
-    precompile_ecrecover_gadget:
-        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileEcRecover }>>,
+    precompile_ecrecover_gadget: Box<EcrecoverGadget<F>>,
     precompile_sha2_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileSha256 }>>,
     precompile_ripemd_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileRipemd160 }>>,
     precompile_identity_gadget: Box<IdentityGadget<F>>,
@@ -1494,7 +1493,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
             }
-            ExecutionState::PrecompileEcRecover => {
+            ExecutionState::PrecompileEcrecover => {
                 assign_exec_step!(self.precompile_ecrecover_gadget)
             }
             ExecutionState::PrecompileSha256 => {

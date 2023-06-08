@@ -37,8 +37,18 @@ impl<F: Field> PrecompileGadget<F> {
     ) -> Self {
         let address = BinaryNumberGadget::construct(cb, callee_address.expr());
 
-        cb.condition(address.value_equals(PrecompileCalls::ECRecover), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileEcRecover, None, |_cb| {});
+        cb.condition(address.value_equals(PrecompileCalls::Ecrecover), |cb| {
+            cb.constrain_next_step(ExecutionState::PrecompileEcrecover, None, |cb| {
+                let (msg_hash, sig_v, sig_r, sig_s, recovered_addr) = (
+                    cb.query_cell_phase2(),
+                    cb.query_cell(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell(),
+                );
+                // TODO: compare input_bytes_rlc to (msg_hash, sig_v, sig_r, sig_s)
+                // TODO: compare output_bytes_rlc to recovered_addr
+            });
         });
 
         cb.condition(address.value_equals(PrecompileCalls::Sha256), |cb| {

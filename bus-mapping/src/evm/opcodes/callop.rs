@@ -269,10 +269,12 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     callee_gas_left,
                 );
 
-                log::trace!(
-                    "precompile returned data len {} gas {}",
+                log::info!(
+                    "precompile returned {:?} with len {} and gas {} and is_success {}",
+                    result,
                     result.len(),
-                    contract_gas_cost
+                    contract_gas_cost,
+                    call.is_success(),
                 );
 
                 // mutate the caller memory.

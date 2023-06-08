@@ -27,7 +27,7 @@ pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, EnumIter)]
 pub enum PrecompileCalls {
     /// Elliptic Curve Recovery
-    ECRecover = 0x01,
+    Ecrecover = 0x01,
     /// SHA2-256 hash function
     Sha256 = 0x02,
     /// Ripemd-160 hash function
@@ -48,7 +48,7 @@ pub enum PrecompileCalls {
 
 impl Default for PrecompileCalls {
     fn default() -> Self {
-        Self::ECRecover
+        Self::Ecrecover
     }
 }
 
@@ -75,7 +75,7 @@ impl From<PrecompileCalls> for usize {
 impl From<u8> for PrecompileCalls {
     fn from(value: u8) -> Self {
         match value {
-            0x01 => Self::ECRecover,
+            0x01 => Self::Ecrecover,
             0x02 => Self::Sha256,
             0x03 => Self::Ripemd160,
             0x04 => Self::Identity,
@@ -93,7 +93,7 @@ impl PrecompileCalls {
     /// Get the base gas cost for the precompile call.
     pub fn base_gas_cost(&self) -> GasCost {
         match self {
-            Self::ECRecover => GasCost::PRECOMPILE_EC_RECOVER_BASE,
+            Self::Ecrecover => GasCost::PRECOMPILE_ECRECOVER_BASE,
             Self::Sha256 => GasCost::PRECOMPILE_SHA256_BASE,
             Self::Ripemd160 => GasCost::PRECOMPILE_RIPEMD160_BASE,
             Self::Identity => GasCost::PRECOMPILE_IDENTITY_BASE,
