@@ -39,15 +39,17 @@ use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::{
     circuit::{Cell, Layouter, Value},
     halo2curves::secp256k1::{Fp, Fq, Secp256k1Affine},
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Any, Fixed, Selector},
     poly::Rotation,
 };
+use halo2_proofs::circuit::RegionIndex;
+use halo2_proofs::circuit::Region;
 
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use log::error;
 use std::{iter, marker::PhantomData};
-
+use std::time::Instant;
 // Hard coded parameters.
 // FIXME: allow for a configurable param.
 const MAX_NUM_SIG: usize = 32;
@@ -55,7 +57,7 @@ const MAX_NUM_SIG: usize = 32;
 // We set CELLS_PER_SIG = 535000 to allows for a few buffer
 const CELLS_PER_SIG: usize = 535000;
 // Total number of rows allocated for ecdsa chip
-const TOTAL_NUM_ROWS: usize = 19;
+const TOTAL_NUM_ROWS: usize = 21;
 
 fn calc_required_advices(num_verif: usize) -> usize {
     let mut num_adv = 1;
@@ -291,6 +293,25 @@ pub(crate) struct AssignedValueNoTimer<F: Field> {
     pub context_id: usize,
 }
 
+impl<F: Field> Default for AssignedValueNoTimer<F> {
+    fn default() -> Self {
+        let tmp: Column<Fixed> = Column {
+            index: 0,
+            column_type: Fixed,
+        };
+        Self {
+            cell: Cell {
+                region_index: RegionIndex(0),
+                row_offset: 0,
+                column: tmp.into(),
+            },
+            value: Value::default(),
+            row_offset: 0,
+            context_id: 0,
+        }
+    }
+}
+
 impl<'v, F: Field> From<AssignedValue<'v, F>> for AssignedValueNoTimer<F> {
     fn from(input: AssignedValue<'v, F>) -> Self {
         Self {
@@ -333,6 +354,18 @@ pub(crate) struct AssignedSignatureVerify<F: Field> {
     pub(crate) msg_rlc: Value<F>,
     pub(crate) msg_hash_rlc: AssignedValueNoTimer<F>,
     pub(crate) sig_is_valid: AssignedValueNoTimer<F>,
+}
+
+impl<F: Field> Default for AssignedSignatureVerify<F> {
+    fn default() -> Self {
+        Self {
+            address: AssignedValueNoTimer::default(),
+            msg_len: 0,
+            msg_rlc: Value::default(),
+            msg_hash_rlc: AssignedValueNoTimer::default(),
+            sig_is_valid: AssignedValueNoTimer::default(),
+        }
+    }
 }
 
 struct SignDataDecomposed<'a: 'v, 'v, F: Field> {
@@ -704,7 +737,10 @@ impl<F: Field> SignVerifyChip<F> {
         layouter: &mut impl Layouter<F>,
         signatures: &[SignData],
         challenges: &Challenges<Value<F>>,
+        parallel_syn: bool,
     ) -> Result<Vec<AssignedSignatureVerify<F>>, Error> {
+        println!("parallel_syn = {}", parallel_syn);
+        println!("self.max_verif = {}", self.max_verif);
         if signatures.len() > self.max_verif {
             error!(
                 "signatures.len() = {} > max_verif = {}",
@@ -719,13 +755,24 @@ impl<F: Field> SignVerifyChip<F> {
         let assigned_sig_verifs = layouter.assign_region(
             || "ecdsa chip verification",
             |region| {
-                if first_pass {
-                    first_pass = false;
-                    return Ok(vec![]);
-                }
+                // if first_pass {
+                //     first_pass = false;
+                //     println!("first_pass return!");
+                //     return Ok(vec![]);
+                // }
 
                 let mut ctx = ecdsa_chip.new_context(region);
-
+                // println!("region = {:?}", region.clone());
+                println!("ctx.region = {:?}", ctx.region);
+                println!("ctx.max_rows = {:?}", ctx.max_rows);
+                println!("ctx.total_advice = {}", ctx.total_advice);
+                println!("ctx.fixed_col = {}", ctx.fixed_col);
+                println!("ctx.fixed_offset = {}", ctx.fixed_offset);
+                println!("ctx.cells_to_lookup.len() = {}", ctx.cells_to_lookup.len());
+                println!("ctx.current_phase = {}", ctx.current_phase);
+                
+                ctx.print_stats(&["Range"]);
+                
                 // ================================================
                 // step 1: assert the signature is valid in circuit
                 // ================================================
@@ -739,8 +786,19 @@ impl<F: Field> SignVerifyChip<F> {
                         SignData::default()
                     };
                     let assigned_ecdsa = self.assign_ecdsa(&mut ctx, ecdsa_chip, &signature)?;
+                    println!("ctx.total_advice[{}] = {}", i, ctx.total_advice);
+                    println!("ctx.cells_to_lookup.len() = {}", ctx.cells_to_lookup.len());
+                    ctx.print_stats(&["Range"]);
                     assigned_ecdsas.push(assigned_ecdsa);
                 }
+
+                println!("ctx.region = {:?}", ctx.region);
+                println!("ctx.max_rows = {:?}", ctx.max_rows);
+                println!("ctx.total_advice = {}", ctx.total_advice);
+                println!("ctx.fixed_col = {}", ctx.fixed_col);
+                println!("ctx.fixed_offset = {}", ctx.fixed_offset);
+                println!("ctx.cells_to_lookup.len() = {}", ctx.cells_to_lookup.len());
+                println!("ctx.current_phase = {}", ctx.current_phase);
 
                 // ================================================
                 // step 2: decompose the keys and messages
@@ -752,6 +810,14 @@ impl<F: Field> SignVerifyChip<F> {
                         self.sign_data_decomposition(&mut ctx, ecdsa_chip, sign_data)?;
                     sign_data_decomposed_vec.push(sign_data_decomposed);
                 }
+
+                println!("ctx.region = {:?}", ctx.region);
+                println!("ctx.max_rows = {:?}", ctx.max_rows);
+                println!("ctx.total_advice = {}", ctx.total_advice);
+                println!("ctx.fixed_col = {}", ctx.fixed_col);
+                println!("ctx.fixed_offset = {}", ctx.fixed_offset);
+                println!("ctx.cells_to_lookup.len() = {}", ctx.cells_to_lookup.len());
+                println!("ctx.current_phase = {}", ctx.current_phase);
 
                 // IMPORTANT: Move to Phase2 before RLC
                 log::debug!("before proceeding to the next phase");
@@ -784,6 +850,14 @@ impl<F: Field> SignVerifyChip<F> {
                     deferred_keccak_check.push(to_be_keccak_checked);
                 }
 
+                println!("ctx.region = {:?}", ctx.region);
+                println!("ctx.max_rows = {:?}", ctx.max_rows);
+                println!("ctx.total_advice = {}", ctx.total_advice);
+                println!("ctx.fixed_col = {}", ctx.fixed_col);
+                println!("ctx.fixed_offset = {}", ctx.fixed_offset);
+                println!("ctx.cells_to_lookup.len() = {}", ctx.cells_to_lookup.len());
+                println!("ctx.current_phase = {}", ctx.current_phase);
+
                 // ================================================
                 // step 4: deferred keccak checks
                 // ================================================
@@ -800,6 +874,14 @@ impl<F: Field> SignVerifyChip<F> {
                     )?;
                 }
 
+                println!("ctx.region = {:?}", ctx.region);
+                println!("ctx.max_rows = {:?}", ctx.max_rows);
+                println!("ctx.total_advice = {}", ctx.total_advice);
+                println!("ctx.fixed_col = {}", ctx.fixed_col);
+                println!("ctx.fixed_offset = {}", ctx.fixed_offset);
+                println!("ctx.cells_to_lookup.len() = {}", ctx.cells_to_lookup.len());
+                println!("ctx.current_phase = {}", ctx.current_phase);
+
                 // IMPORTANT: this assigns all constants to the fixed columns
                 // IMPORTANT: this copies cells to the lookup advice column to perform range
                 // check lookups
@@ -807,10 +889,211 @@ impl<F: Field> SignVerifyChip<F> {
                 let lookup_cells = ecdsa_chip.finalize(&mut ctx);
                 log::debug!("total number of lookup cells: {}", lookup_cells);
 
+                println!("ctx.region = {:?}", ctx.region);
+                println!("ctx.max_rows = {:?}", ctx.max_rows);
+                println!("ctx.total_advice = {}", ctx.total_advice);
+                println!("ctx.fixed_col = {}", ctx.fixed_col);
+                println!("ctx.fixed_offset = {}", ctx.fixed_offset);
+                println!("ctx.cells_to_lookup.len() = {}", ctx.cells_to_lookup.len());
+                println!("ctx.current_phase = {}", ctx.current_phase);
+
                 ctx.print_stats(&["Range"]);
                 Ok(assigned_sig_verifs)
             },
         )?;
+
+        Ok(assigned_sig_verifs)
+    }
+
+    pub(crate) fn assign_parallel(
+        &self,
+        config: &SignVerifyConfig<F>,
+        layouter: &mut impl Layouter<F>,
+        signatures: &[SignData],
+        challenges: &Challenges<Value<F>>,
+        parallel_syn: bool,
+    ) -> Result<Vec<AssignedSignatureVerify<F>>, Error> {
+        println!("parallel_syn = {}", parallel_syn);
+        println!("self.max_verif = {}", self.max_verif);
+        if signatures.len() > self.max_verif {
+            error!(
+                "signatures.len() = {} > max_verif = {}",
+                signatures.len(),
+                self.max_verif
+            );
+            return Err(Error::Synthesis);
+        }
+        println!("signatures.len() = {}", signatures.len());
+        println!("self.max_verif = {}", self.max_verif);
+        // let mut first_pass = SKIP_FIRST_PASS;
+        let ecdsa_chip = &config.ecdsa_config;
+
+        let assigned_sig_verifs_timer = Instant::now();
+        let mut first_pass_vec = vec![true; self.max_verif];
+        let assigned_sig_verifs = layouter.assign_regions(
+            || "ecdsa chip verification",
+            (0..self.max_verif)
+                .into_iter()
+                .zip(first_pass_vec.iter_mut())
+                .map(|(i, first_pass)| {
+                    move |region: Region<'_, F>| {
+                        // let first_pass_flag = *first_pass;
+                        // println!("first_pass_flag[{}] = {}", i, first_pass_flag);
+                        // if first_pass_flag {
+                        //     *first_pass = false;
+                        //     return Ok(AssignedSignatureVerify::default());
+                        // }
+                        let mut ctx = ecdsa_chip.new_context(region);
+                        ctx.print_stats(&["Range"]);
+
+                        // let first_pass_flag = *first_pass;
+                        // println!("first_pass_flag[{}] = {}", i, first_pass_flag);
+                        // if first_pass_flag {
+                        //     *first_pass = false;
+                        //     let column = ecdsa_chip.range.lookup_advice[ctx.current_phase][0].clone();
+                        //     ctx.region.assign_advice(|| "dummy",
+                        //         column,
+                        //         1<<17,//524279,//1<<19,
+                        //         || Value::known(F::zero()),
+                        //         )?;
+                        //     ctx.print_stats(&["Range"]);
+                        //     return Ok(AssignedSignatureVerify::default());
+                        // }
+
+                        println!("sig idx = [{}]", i);
+
+                        // ================================================
+                        // step 1: assert the signature is valid in circuit
+                        // ================================================
+                        let step_1_timer = Instant::now();
+
+                        let signature = if i < signatures.len() {
+                            signatures[i].clone()
+                        } else {
+                            // padding (enabled when address == 0)
+                            SignData::default()
+                        };
+                        let assigned_ecdsa = self.assign_ecdsa(&mut ctx, ecdsa_chip, &signature)?;
+
+                        println!("step_1_timer: {:?}", step_1_timer.elapsed());
+
+                        println!("ctx.region = {:?}", ctx.region);
+                        println!("ctx.max_rows = {:?}", ctx.max_rows);
+                        println!("ctx.total_advice = {}", ctx.total_advice);
+                        println!("ctx.fixed_col = {}", ctx.fixed_col);
+                        println!("ctx.fixed_offset = {}", ctx.fixed_offset);
+                        println!("ctx.cells_to_lookup.len() = {}", ctx.cells_to_lookup.len());
+                        println!("ctx.current_phase = {}", ctx.current_phase);
+
+                        // ================================================
+                        // step 2: decompose the keys and messages
+                        // ================================================
+                        let step_2_timer = Instant::now();
+                        let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
+                        let sign_data_decomposed =
+                            self.sign_data_decomposition(&mut ctx, ecdsa_chip, sign_data)?;
+
+                        // IMPORTANT: Move to Phase2 before RLC
+                        log::info!("before proceeding to the next phase");
+                        ctx.print_stats(&["Range"]);
+
+                        #[cfg(not(feature = "onephase"))]
+                        {
+                            println!("onephase");
+                            // finalize the current lookup table before moving to next phase
+                            ecdsa_chip.finalize(&mut ctx);
+                            ctx.next_phase();
+                        }
+
+                        println!("step_2_timer: {:?}", step_2_timer.elapsed());
+
+                        println!("ctx.region = {:?}", ctx.region);
+                        println!("ctx.max_rows = {:?}", ctx.max_rows);
+                        println!("ctx.total_advice = {}", ctx.total_advice);
+                        println!("ctx.fixed_col = {}", ctx.fixed_col);
+                        println!("ctx.fixed_offset = {}", ctx.fixed_offset);
+                        println!("ctx.cells_to_lookup.len() = {}", ctx.cells_to_lookup.len());
+                        println!("ctx.current_phase = {}", ctx.current_phase);
+        
+
+                        // ================================================
+                        // step 3: compute RLC of keys and messages
+                        // ================================================
+                        let step_3_timer = Instant::now();
+                        let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
+                        let sign_data_decomposed = &sign_data_decomposed;
+                        let (to_be_keccak_checked, assigned_sig_verif) = self.assign_sig_verify(
+                            &mut ctx,
+                            &ecdsa_chip.range,
+                            sign_data,
+                            sign_data_decomposed,
+                            challenges,
+                            &assigned_ecdsa.sig_is_valid,
+                        )?;
+
+                        // if first_pass_flag {
+                        //     *first_pass = false;
+                        //     return Ok(assigned_sig_verif);
+                        // }
+
+                        println!("step_3_timer: {:?}", step_3_timer.elapsed());
+
+                        println!("ctx.region = {:?}", ctx.region);
+                        println!("ctx.max_rows = {:?}", ctx.max_rows);
+                        println!("ctx.total_advice = {}", ctx.total_advice);
+                        println!("ctx.fixed_col = {}", ctx.fixed_col);
+                        println!("ctx.fixed_offset = {}", ctx.fixed_offset);
+                        println!("ctx.cells_to_lookup.len() = {}", ctx.cells_to_lookup.len());
+                        println!("ctx.current_phase = {}", ctx.current_phase);
+
+                        // ================================================
+                        // step 4: deferred keccak checks
+                        // ================================================
+                        let step_4_timer = Instant::now();
+                        let mut offset = 0;
+                        let [is_address_zero, pk_rlc, pk_hash_rlc] = to_be_keccak_checked;
+                        self.enable_keccak_lookup(
+                            config,
+                            &mut ctx,
+                            &mut offset,
+                            &is_address_zero,
+                            &pk_rlc,
+                            &pk_hash_rlc,
+                        )?;
+                        println!("step_4_timer: {:?}", step_4_timer.elapsed());
+
+                        // IMPORTANT: this assigns all constants to the fixed columns
+                        // IMPORTANT: this copies cells to the lookup advice column to perform range
+                        // check lookups
+                        // This is not optional.
+                        let final_timer = Instant::now();
+                        // let mut lookup_cells: usize = 0;
+                        // if first_pass_flag {
+                        //     *first_pass = false;
+                        // }
+                        // else {
+                        //     lookup_cells = ecdsa_chip.finalize(&mut ctx);
+                        //     println!("first_pass_flag: {}", first_pass_flag);
+                        //     println!("lookup_cells: {}", lookup_cells);
+                        // }
+
+                        let lookup_cells = ecdsa_chip.finalize(&mut ctx);
+                        
+                        log::info!("total number of lookup cells: {}", lookup_cells);
+
+                        println!("final_timer: {:?}", final_timer.elapsed());
+
+                        ctx.print_stats(&["Range"]);
+                        Ok(assigned_sig_verif)
+                    }
+                })
+                .collect_vec()
+        )?;
+
+        println!(
+            "assigned_sig_verifs_timer: {:?}",
+            assigned_sig_verifs_timer.elapsed()
+        );
 
         Ok(assigned_sig_verifs)
     }
@@ -1006,6 +1289,7 @@ mod sign_verify_tests {
     struct TestCircuitSignVerify<F: Field> {
         sign_verify: SignVerifyChip<F>,
         signatures: Vec<SignData>,
+        parallel_syn: bool,
     }
 
     impl<F: Field> Circuit<F> for TestCircuitSignVerify<F> {
@@ -1025,6 +1309,7 @@ mod sign_verify_tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
+            println!("synthesizing circuit, self.parallel_syn = {}", self.parallel_syn);
             let challenges = config.challenges.values(&layouter);
             config.sign_verify.load_range(&mut layouter)?;
             let assigned_sig_verifs = self.sign_verify.assign(
@@ -1032,6 +1317,7 @@ mod sign_verify_tests {
                 &mut layouter,
                 &self.signatures,
                 &challenges,
+                self.parallel_syn, // TODO
             )?;
             config.sign_verify.keccak_table.dev_load(
                 &mut layouter,
@@ -1056,6 +1342,7 @@ mod sign_verify_tests {
                 _marker: PhantomData,
             },
             signatures,
+            parallel_syn: true,
         };
 
         let prover = match MockProver::run(k, &circuit, vec![vec![]]) {

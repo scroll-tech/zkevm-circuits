@@ -1234,16 +1234,19 @@ pub struct TxCircuit<F: Field> {
     pub chain_id: u64,
     /// Size
     pub size: usize,
+    /// Parellel Synthesis
+    pub parallel_syn: bool,
 }
 
 impl<F: Field> TxCircuit<F> {
     /// Return a new TxCircuit
-    pub fn new(max_txs: usize, max_calldata: usize, chain_id: u64, txs: Vec<Transaction>) -> Self {
+    pub fn new(max_txs: usize, max_calldata: usize, chain_id: u64, txs: Vec<Transaction>, parallel_syn: bool) -> Self {
         log::info!(
-            "TxCircuit::new(max_txs = {}, max_calldata = {}, chain_id = {})",
+            "TxCircuit::new(max_txs = {}, max_calldata = {}, chain_id = {}, parallel_syn = {})",
             max_txs,
             max_calldata,
-            chain_id
+            chain_id,
+            parallel_syn
         );
         debug_assert!(txs.len() <= max_txs);
 
@@ -1254,6 +1257,7 @@ impl<F: Field> TxCircuit<F> {
             txs,
             size: Self::min_num_rows(max_txs, max_calldata),
             chain_id,
+            parallel_syn,
         }
     }
 
@@ -1311,6 +1315,7 @@ impl<F: Field> TxCircuit<F> {
         let min_rows = std::cmp::max(tx_table_len, SignVerifyChip::<F>::min_num_rows(txs_len));
         #[cfg(not(feature = "enable-sign-verify"))]
         let min_rows = tx_table_len;
+        println!("TxCircuit min_num_rows = {}", min_rows);
         min_rows
     }
 
@@ -1741,6 +1746,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             block.circuits_params.max_calldata,
             block.chain_id.as_u64(),
             block.txs.clone(),
+            false // TODO 
         )
     }
 
@@ -1818,9 +1824,20 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
 
         #[cfg(feature = "enable-sign-verify")]
         {
-            let assigned_sig_verifs =
-                self.sign_verify
-                    .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
+            // let assigned_sig_verifs = self.sign_verify
+            //     .assign(&config.sign_verify, layouter, &sign_datas, challenges,
+            //     self.parallel_syn)?;
+            let assigned_sig_verifs: Vec<AssignedSignatureVerify<F>>;
+            if self.parallel_syn {
+                assigned_sig_verifs = self.sign_verify
+                    .assign_parallel(&config.sign_verify, layouter, &sign_datas, challenges,
+                    self.parallel_syn)?;
+            }
+            else {
+                assigned_sig_verifs = self.sign_verify
+                    .assign(&config.sign_verify, layouter, &sign_datas, challenges,
+                    self.parallel_syn)?;
+            }
             self.sign_verify.assert_sig_is_valid(
                 &config.sign_verify,
                 layouter,
