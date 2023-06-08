@@ -4,10 +4,10 @@ mod dev;
 
 #[cfg(any(feature = "test", test))]
 mod test;
-pub(crate) mod util;
 
 use std::marker::PhantomData;
 
+use crate::util::is_zero::{IsZeroChip, IsZeroConfig};
 use eth_types::Field;
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
@@ -24,7 +24,6 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use strum::IntoEnumIterator;
-use util::{IsZeroChip, IsZeroConfig};
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},

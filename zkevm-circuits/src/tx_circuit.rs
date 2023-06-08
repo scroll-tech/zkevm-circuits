@@ -46,12 +46,12 @@ use std::{
 };
 
 use crate::{
-    rlp_circuit_fsm::util::{IsZeroChip, IsZeroConfig},
     table::TxFieldTag::{
         BlockNumber, CallData, CallDataGasCost, CallDataLength, CallDataRLC, CalleeAddress,
         CallerAddress, Gas, GasPrice, IsCreate, Nonce, SigR, SigS, SigV, TxDataGasCost,
         TxHashLength, TxHashRLC, TxSignHash, TxSignLength, TxSignRLC,
     },
+    util::is_zero::{IsZeroChip, IsZeroConfig},
 };
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
