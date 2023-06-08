@@ -196,14 +196,14 @@ impl Circuit<Fr> for AggregationCircuit {
                 //   from previous accumualtors)
                 // - new accumulator to be verified on chain
                 //
-                let (assigned_aggreation_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
+                let (assigned_aggregation_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
                     &self.svk,
                     &loader,
                     &self.snarks,
                     self.as_proof(),
                 );
                 log::trace!("aggregation circuit during assigning");
-                for (i, e) in assigned_aggreation_instances[0].iter().enumerate() {
+                for (i, e) in assigned_aggregation_instances[0].iter().enumerate() {
                     log::trace!("{}-th instance: {:?}", i, e.value)
                 }
 
@@ -214,7 +214,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 // - the snark is not a fresh one, assigned_instances already contains an
                 //   accumulator so we want to skip the first 12 elements from the public input
                 snark_inputs.extend(
-                    assigned_aggreation_instances
+                    assigned_aggregation_instances
                         .iter()
                         .flat_map(|instance_column| instance_column.iter().skip(12)),
                 );

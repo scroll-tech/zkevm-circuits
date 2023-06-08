@@ -16,9 +16,8 @@ use super::mock_chunk::MockChunkCircuit;
 
 const CHUNKS_PER_BATCH: usize = 2;
 
-
 // This test takes about 1 hour on CPU
-#[ignore="it takes too much time"]
+#[ignore = "it takes too much time"]
 #[test]
 fn test_aggregation_circuit() {
     let process_id = process::id();
