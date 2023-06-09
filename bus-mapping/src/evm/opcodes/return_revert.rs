@@ -201,10 +201,7 @@ fn handle_copy(
         .get_addr_shift_slot((destination.offset + copy_length) as u64)
         .unwrap();
 
-    let slot_count = max(
-        (src_end_slot - src_begin_slot),
-        (dst_end_slot - dst_begin_slot),
-    ) as usize;
+    let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize;
     let src_end_slot = src_begin_slot as usize + slot_count;
     let dst_end_slot = dst_begin_slot as usize + slot_count;
     // callee‘s memory

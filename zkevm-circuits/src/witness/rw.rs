@@ -218,7 +218,7 @@ pub enum Rw {
         memory_address: u64,
         byte: u8,
     },
-    /// Memory
+    /// Memory word
     MemoryWord {
         rw_counter: usize,
         is_write: bool,

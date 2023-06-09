@@ -180,10 +180,10 @@ mod log_tests {
         Bytecode, ToWord, Word,
     };
 
+    use crate::operation::MemoryWordOp;
+    use eth_types::evm_types::MemoryAddress;
     use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
-    use eth_types::evm_types::MemoryAddress;
-    use crate::operation::MemoryWordOp;
 
     #[test]
     fn logs_opcode_ok() {
@@ -393,7 +393,7 @@ mod log_tests {
                             TxLogField::Data,
                             idx * 32,
                             Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
-                        )
+                        ),
                     )
                 })
                 .collect::<Vec<(RW, TxLogOp)>>(),

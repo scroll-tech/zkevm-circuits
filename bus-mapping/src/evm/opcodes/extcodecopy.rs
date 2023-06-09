@@ -178,8 +178,8 @@ mod extcodecopy_tests {
         circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
         operation::{
-            AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, StackOp,
-            TxAccessListAccountOp, RW,
+            AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, MemoryWordOp,
+            StackOp, TxAccessListAccountOp, RW,
         },
         state_db::CodeDB,
     };
@@ -190,7 +190,6 @@ mod extcodecopy_tests {
         Bytecode, Bytes, ToWord, Word, U256,
     };
     use mock::TestContext;
-    use crate::operation::MemoryWordOp;
 
     fn test_ok(
         code_ext: Bytes,
@@ -429,7 +428,7 @@ mod extcodecopy_tests {
                             call_id,
                             address: MemoryAddress(copy_start + idx * 32),
                             value: Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
-                        }
+                        },
                     )
                 })
                 .collect::<Vec<(RW, MemoryWordOp)>>(),

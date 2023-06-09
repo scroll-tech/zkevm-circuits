@@ -253,10 +253,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             let dst_begin_slot = dst_addr - dst_addr % 32;
             let dst_end_slot = dst_addr_end - dst_addr_end % 32;
 
-            let slot_count = max(
-                (src_end_slot - src_begin_slot),
-                (dst_end_slot - dst_begin_slot),
-            );
+            let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot);
 
             2 * (slot_count / 32 + 1)
         };
