@@ -23,7 +23,11 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, precompile::is_precompiled};
+use bus_mapping::{
+    circuit_input_builder::CopyDataType,
+    evm::OpcodeId,
+    precompile::{is_precompiled, PrecompileCalls},
+};
 use eth_types::{
     evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToLittleEndian, ToScalar, U256,
 };
@@ -68,7 +72,8 @@ pub(crate) struct CallOpGadget<F> {
     precompile_return_length: Cell<F>,
     precompile_return_length_zero: IsZeroGadget<F>,
     return_data_copy_size: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
-    input_bytes_rlc: Cell<F>,  // input bytes to precompile call.
+    input_len: Cell<F>, // the number of input bytes taken for the precompile call.
+    input_bytes_rlc: Cell<F>, // input bytes to precompile call.
     output_bytes_rlc: Cell<F>, // output bytes from precompile call.
     return_bytes_rlc: Cell<F>, // bytes returned to caller from precompile call.
 }
@@ -208,6 +213,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_return_length.expr(),
             call_gadget.rd_address.length(),
         );
+        let input_len = cb.query_cell();
         let precompile_memory_rws = select::expr(
             call_gadget.cd_address.has_length(),
             select::expr(
@@ -216,10 +222,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     call_gadget.rd_address.has_length(),
                     not::expr(precompile_return_length_zero.expr()),
                 ]),
-                call_gadget.cd_address.length()
-                    + precompile_return_length.expr()
-                    + return_data_copy_size.min(),
-                call_gadget.cd_address.length(),
+                input_len.expr() + precompile_return_length.expr() + return_data_copy_size.min(),
+                input_len.expr(),
             ),
             0.expr(),
         );
@@ -375,11 +379,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             callee_call_id.expr(),
                             5.expr() + call_gadget.callee_address_expr(), // refer u64::from(CopyDataType)
                             call_gadget.cd_address.offset(),
-                            call_gadget.cd_address.address(),
+                            call_gadget.cd_address.offset() + input_len.expr(),
                             0.expr(),
-                            call_gadget.cd_address.length(),
+                            input_len.expr(),
                             input_bytes_rlc.expr(),
-                            call_gadget.cd_address.length(), // reads
+                            input_len.expr(), // reads
                         ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
                         input_bytes_rlc
                     });
@@ -718,6 +722,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_return_length,
             precompile_return_length_zero,
             return_data_copy_size,
+            input_len,
             input_bytes_rlc,
             output_bytes_rlc,
             return_bytes_rlc,
@@ -934,19 +939,21 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         )?;
 
         // precompile related assignment.
+        let (is_precompile_call, precompile_addr) = {
+            let precompile_addr = callee_address.to_address();
+            let is_precompiled_call = is_precompiled(&precompile_addr);
+            (is_precompiled_call, precompile_addr)
+        };
         let code_address: F = callee_address.to_address().to_scalar().unwrap();
         self.is_code_address_zero
             .assign(region, offset, code_address)?;
         self.is_precompile_lt
             .assign(region, offset, code_address, 0x0Au64.into())?;
-        if is_precompiled(&callee_address.to_address()) {
-            self.precompile_gadget.assign(
-                region,
-                offset,
-                callee_address.to_address().0[19].into(),
-            )?;
+        if is_precompile_call {
+            self.precompile_gadget
+                .assign(region, offset, precompile_addr.0[19].into())?;
         }
-        let precompile_return_length = if is_precompiled(&callee_address.to_address()) {
+        let precompile_return_length = if is_precompile_call {
             let value_rw = block.rws[step.rw_indices[32 + rw_offset]];
             assert_eq!(
                 value_rw.field_tag(),
@@ -973,57 +980,69 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_length.to_scalar().unwrap(),
         )?;
 
-        let (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc) =
-            if is_precompiled(&callee_address.to_address()) {
-                let input_length = cd_length.as_usize();
-                let (input_bytes_start, input_bytes_end) =
-                    (33usize + rw_offset, 33usize + rw_offset + input_length);
-                let [output_bytes_start, output_bytes_end, return_bytes_start, return_bytes_end] =
-                    if input_length > 0 {
-                        let (output_start, output_end) = (
-                            input_bytes_end,
-                            input_bytes_end + precompile_return_length.as_usize(),
-                        );
-                        [
-                            output_start,
-                            output_end,
-                            output_end,
-                            output_end + rd_length.min(precompile_return_length).as_usize(),
-                        ]
-                    } else {
-                        [input_bytes_end; 4]
-                    };
-                let input_bytes: Vec<u8> = (input_bytes_start..input_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
-                let output_bytes: Vec<u8> = (output_bytes_start..output_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
-                let return_bytes: Vec<u8> = (return_bytes_start..return_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
-
-                let input_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(input_bytes.iter().rev(), randomness));
-                let output_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(output_bytes.iter().rev(), randomness));
-                let return_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(return_bytes.iter().rev(), randomness));
-                (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc)
+        let (input_len, input_bytes_rlc, output_bytes_rlc, return_bytes_rlc) = if is_precompile_call
+        {
+            let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
+            let input_len = if let Some(input_len) = precompile_call.input_len() {
+                input_len
             } else {
-                (
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                )
+                cd_length.as_usize()
             };
+            let (input_bytes_start, input_bytes_end) =
+                (33usize + rw_offset, 33usize + rw_offset + input_len);
+            let [output_bytes_start, output_bytes_end, return_bytes_start, return_bytes_end] =
+                if input_len > 0 {
+                    let (output_start, output_end) = (
+                        input_bytes_end,
+                        input_bytes_end + precompile_return_length.as_usize(),
+                    );
+                    [
+                        output_start,
+                        output_end,
+                        output_end,
+                        output_end + rd_length.min(precompile_return_length).as_usize(),
+                    ]
+                } else {
+                    [input_bytes_end; 4]
+                };
+            let input_bytes: Vec<u8> = (input_bytes_start..input_bytes_end)
+                .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                .collect();
+            let output_bytes: Vec<u8> = (output_bytes_start..output_bytes_end)
+                .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                .collect();
+            let return_bytes: Vec<u8> = (return_bytes_start..return_bytes_end)
+                .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                .collect();
 
+            let input_bytes_rlc = region
+                .challenges()
+                .keccak_input()
+                .map(|randomness| rlc::value(input_bytes.iter().rev(), randomness));
+            let output_bytes_rlc = region
+                .challenges()
+                .keccak_input()
+                .map(|randomness| rlc::value(output_bytes.iter().rev(), randomness));
+            let return_bytes_rlc = region
+                .challenges()
+                .keccak_input()
+                .map(|randomness| rlc::value(return_bytes.iter().rev(), randomness));
+            (
+                Value::known(F::from(input_len as u64)),
+                input_bytes_rlc,
+                output_bytes_rlc,
+                return_bytes_rlc,
+            )
+        } else {
+            (
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+            )
+        };
+
+        self.input_len.assign(region, offset, input_len)?;
         self.input_bytes_rlc
             .assign(region, offset, input_bytes_rlc)?;
         self.output_bytes_rlc

@@ -109,6 +109,16 @@ impl PrecompileCalls {
     pub fn address(&self) -> u64 {
         (*self).into()
     }
+
+    /// Maximum length of input bytes considered for the precompile call.
+    pub fn input_len(&self) -> Option<usize> {
+        match self {
+            Self::Ecrecover | Self::Bn128Add => Some(128),
+            Self::Bn128Mul => Some(96),
+            Self::Blake2F => Some(213),
+            _ => None,
+        }
+    }
 }
 
 /// Auxiliary data for Ecrecover

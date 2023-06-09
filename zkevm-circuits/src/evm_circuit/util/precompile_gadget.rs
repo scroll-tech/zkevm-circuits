@@ -51,8 +51,8 @@ impl<F: Field> PrecompileGadget<F> {
                     let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
                     let r_pow_16 = challenges[15].clone();
                     let r_pow_32 = r_pow_16.square();
-                    let r_pow_64 = r_pow_32.clone().square();
-                    let r_pow_96 = r_pow_64.clone() * r_pow_32.clone();
+                    let r_pow_64 = r_pow_32.expr().square();
+                    let r_pow_96 = r_pow_64.expr() * r_pow_32.expr();
                     (r_pow_32, r_pow_64, r_pow_96)
                 };
                 cb.require_equal(

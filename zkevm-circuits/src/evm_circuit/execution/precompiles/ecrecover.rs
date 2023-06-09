@@ -112,6 +112,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::Ecrecover(aux_data)) = &step.aux_data {
+            log::info!("aux data = {:?}", aux_data.clone());
             let recovered = !aux_data.recovered_addr.is_zero();
             self.recovered
                 .assign(region, offset, Value::known(F::from(recovered as u64)))?;
@@ -293,6 +294,36 @@ mod test {
                     // valid.
                     call_data_offset: 0x00.into(),
                     call_data_length: 0x80.into(),
+                    // return 32 bytes and write from memory addr 128
+                    ret_offset: 0x80.into(),
+                    ret_size: 0x20.into(),
+                    address: PrecompileCalls::Ecrecover.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "ecrecover (valid sig, addr recovered, extra input bytes)",
+                    setup_code: bytecode! {
+                        // msg hash from 0x00
+                        PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3"))
+                        PUSH1(0x00)
+                        MSTORE
+                        // signature v from 0x20
+                        PUSH1(28)
+                        PUSH1(0x20)
+                        MSTORE
+                        // signature r from 0x40
+                        PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608"))
+                        PUSH1(0x40)
+                        MSTORE
+                        // signature s from 0x60
+                        PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    // copy 133 bytes from memory addr 0. Address is recovered and the signature is
+                    // valid. The 5 bytes after the first 128 bytes are ignored.
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x85.into(),
                     // return 32 bytes and write from memory addr 128
                     ret_offset: 0x80.into(),
                     ret_size: 0x20.into(),
