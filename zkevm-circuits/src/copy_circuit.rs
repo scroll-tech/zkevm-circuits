@@ -425,6 +425,29 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     );
                 }
             );
+            cb.condition(
+                and::expr([
+                    not::expr(is_word_index_end.is_lt(meta, None)),
+                    not_last_two_rows.expr(),
+                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
+                    and::expr([
+                        tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
+                        tag.value_equals(CopyDataType::Memory, Rotation::next())(meta),
+                    ])
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "rows[0].rw_counter + 2 == rows[2].rw_counter",
+                        meta.query_advice(rw_counter, Rotation::cur()) + 2.expr(),
+                        meta.query_advice(rw_counter, Rotation(2)),
+                    );
+                    cb.require_equal(
+                        "rows[0].rwc_inc_left - 2 == rows[2].rwc_inc_left",
+                        meta.query_advice(rwc_inc_left, Rotation::cur()) - 2.expr(),
+                        meta.query_advice(rwc_inc_left, Rotation(2)),
+                    );
+                }
+            );
 
             cb.condition(
                 not_last_two_rows.expr()
