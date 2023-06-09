@@ -263,10 +263,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let dst_begin_slot = dst_begin - dst_begin % 32;
         let dst_end_slot = dst_end - dst_end % 32;
 
-        let slot_count = max(
-            (src_end_slot - src_begin_slot),
-            (dst_end_slot - dst_begin_slot),
-        );
+        let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot);
         let src_end_slot = src_begin_slot + slot_count;
         let dst_end_slot = dst_begin_slot + slot_count;
 
