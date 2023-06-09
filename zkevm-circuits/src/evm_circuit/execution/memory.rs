@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_CHUNK, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -11,13 +11,14 @@ use crate::{
             },
             from_bytes,
             math_gadget::IsEqualGadget,
-            memory_gadget::{MemoryExpansionGadget, MemoryWordAddress},
+            memory_gadget::{MemoryExpansionGadget, MemoryMask, MemoryWordAddress},
             not, CachedRegion, Cell, MemoryAddress, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
+use array_init::array_init;
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -31,14 +32,20 @@ pub(crate) struct MemoryGadget<F> {
     //address: MemoryAddress<F>,
     address: MemoryWordAddress<F>,
     // consider move to MemoryWordAddress ?
+    /// The value poped from or pushed to the stack.
     value: Word<F>,
+    /// The left memory word read or written.
     value_left: Word<F>,
+    /// The left memory word before the write.
+    value_left_prev: Word<F>,
+    /// The right memory word read or written.
     value_right: Word<F>,
+    /// The right memory word before the write.
+    value_right_prev: Word<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     is_mload: IsEqualGadget<F>,
     is_mstore8: IsEqualGadget<F>,
-    // TODO: add mask
-    // mask: [Cell<F>, 5]
+    mask: MemoryMask<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
@@ -52,9 +59,12 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // In successful case the address must be in 5 bytes
         let address = cb.query_word_rlc();
         let address_word = MemoryWordAddress::construct(cb, address.clone());
+        // TODO: we do not need the 32 bytes of the value, only the RLC.
         let value = cb.query_word_rlc();
         let value_left = cb.query_word_rlc();
+        let value_left_prev = cb.query_word_rlc();
         let value_right = cb.query_word_rlc();
+        let value_right_prev = cb.query_word_rlc();
 
         // Check if this is an MLOAD
         let is_mload = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MLOAD.expr());
@@ -72,6 +82,33 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             [from_bytes::expr(&address.cells) + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
         );
 
+        let shift_bits = address_word.shift_bits();
+
+        let mask = MemoryMask::construct(cb, &shift_bits, is_mstore8.expr());
+
+        // Extract word parts. Example with shift=4:
+        // Left  = Aaaa Bbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        // Right = Cccc Dddddddddddddddddddddddddddd
+        let a = mask.get_left(cb, &value_left);
+        let a_prev = mask.get_left(cb, &value_left_prev);
+        let b = mask.get_right(cb, &value_left);
+        let c = mask.get_left(cb, &value_right);
+        let d = mask.get_right(cb, &value_right);
+        let d_prev = mask.get_right(cb, &value_right_prev);
+
+        cb.require_equal("unchanged left bytes: L' & M == L & M", a, a_prev);
+
+        cb.require_equal("unchanged right bytes: R' & !M == R & !M", d, d_prev);
+
+        // Compute powers of the RLC challenge. These are used to shift bytes in equations below.
+        let x = cb.challenges().evm_word();
+        // X**32
+        let x32 = MemoryMask::make_x32(x.clone());
+        // X**(31-shift)
+        let x31_shift = MemoryMask::make_x31_off(x.clone(), &shift_bits);
+        // X**(32-shift)
+        let x32_shift = x * x31_shift.clone();
+
         // Stack operations
         // Pop the address from the stack
         cb.stack_pop(address.expr());
@@ -83,8 +120,12 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             value.expr(),
         );
 
-        // TODO: replace with value_left = instruction.memory_lookup(RW.Write, addr_left)
         cb.condition(is_mstore8.expr(), |cb| {
+            cb.require_equal(
+                "W[0] * X³¹⁻ˢʰⁱᶠᵗ = B(X)",
+                value.cells[0].expr() * x31_shift.clone(),
+                b.clone(),
+            );
             cb.memory_lookup_word(1.expr(), address_word.addr_left(), value_left.expr(), None);
         });
 
@@ -95,6 +136,12 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         //    RW.Write if is_store == FQ(1) else RW.Read, addr_right
         // )
         cb.condition(is_not_mstore8, |cb| {
+            cb.require_equal(
+                "W(X) * X³²⁻ˢʰⁱᶠᵗ  =  B(X) * X³² + C(X)",
+                value.expr() * x32_shift,
+                b * x32 + c,
+            );
+
             cb.memory_lookup_word(
                 is_store.clone(),
                 address_word.addr_left(),
@@ -132,10 +179,13 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             address: address_word,
             value,
             value_left,
+            value_left_prev,
             value_right,
+            value_right_prev,
             memory_expansion,
             is_mload,
             is_mstore8,
+            mask,
         }
     }
 
@@ -167,11 +217,6 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        // TODO: assign value_right
-        let address_u64 = address.as_u64();
-        let shift = address_u64 % 32;
-        let slot = address_u64 - shift;
-        println!("slot {}, shift {}", slot, shift);
         // Check if this is an MLOAD
         self.is_mload.assign(
             region,
@@ -186,6 +231,10 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             F::from(opcode.as_u64()),
             F::from(OpcodeId::MSTORE8.as_u64()),
         )?;
+
+        let shift = address.as_u64() % 32;
+        self.mask
+            .assign(region, offset, shift, is_mstore8 == F::one())?;
 
         // Memory expansion
         self.memory_expansion.assign(
@@ -203,10 +252,21 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             block.rws[step.rw_indices[3]].memory_word_value()
         };
 
+        // TODO: rm.
+        println!("address: {:?}", address);
+        println!("value (LE):  {:?}", value.to_le_bytes());
+        println!("value_left:  {:?}", value_left.to_le_bytes());
+        println!("value_right: {:?}", value_right.to_le_bytes());
+
+        // TODO: updated values for MSTORE.
         self.value_left
+            .assign(region, offset, Some(value_left.to_le_bytes()))?;
+        self.value_left_prev
             .assign(region, offset, Some(value_left.to_le_bytes()))?;
 
         self.value_right
+            .assign(region, offset, Some(value_right.to_le_bytes()))?;
+        self.value_right_prev
             .assign(region, offset, Some(value_right.to_le_bytes()))?;
         Ok(())
     }
