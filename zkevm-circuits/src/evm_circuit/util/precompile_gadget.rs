@@ -3,7 +3,7 @@ use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
 
-use crate::evm_circuit::step::ExecutionState;
+use crate::evm_circuit::{param::N_BYTES_ACCOUNT_ADDRESS, step::ExecutionState};
 
 use super::{
     constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
@@ -42,10 +42,10 @@ impl<F: Field> PrecompileGadget<F> {
                 let (_recovered, msg_hash, sig_v, sig_r, sig_s, recovered_addr) = (
                     cb.query_bool(),
                     cb.query_cell_phase2(),
-                    cb.query_cell(),
+                    cb.query_byte(),
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
-                    cb.query_cell(),
+                    cb.query_keccak_rlc::<N_BYTES_ACCOUNT_ADDRESS>(),
                 );
                 let (r_pow_32, r_pow_64, r_pow_96) = {
                     let challenges = cb.challenges().keccak_powers_of_randomness::<16>();

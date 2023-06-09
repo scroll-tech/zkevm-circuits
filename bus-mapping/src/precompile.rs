@@ -117,13 +117,13 @@ pub struct EcrecoverAuxData {
     /// Keccak hash of the message being signed.
     pub msg_hash: Word,
     /// v-component of signature.
-    pub sig_v: Word,
+    pub sig_v: u8,
     /// r-component of signature.
     pub sig_r: Word,
     /// s-component of signature.
     pub sig_s: Word,
-    /// Address that was recovered, right aligned to 32-bytes.
-    pub recovered_addr: Word,
+    /// Address that was recovered.
+    pub recovered_addr: Address,
 }
 
 impl EcrecoverAuxData {
@@ -131,12 +131,21 @@ impl EcrecoverAuxData {
     pub fn new(input: Vec<u8>, output: Vec<u8>) -> Self {
         assert_eq!(input.len(), 128);
         assert_eq!(output.len(), 32);
+
+        // assert that sig v is a byte, which indirectly means the other 31 bytes are 0.
+        assert!(input[0x20..0x3f].iter().all(|&b| b == 0));
+        let sig_v = input[0x3f];
+
+        // assert that recovered address is 20 bytes.
+        assert!(output[0x00..0x0c].iter().all(|&b| b == 0));
+        let recovered_addr = Address::from_slice(&output[0x0c..0x20]);
+
         Self {
             msg_hash: Word::from_big_endian(&input[0x00..0x20]),
-            sig_v: Word::from_big_endian(&input[0x20..0x40]),
+            sig_v,
             sig_r: Word::from_big_endian(&input[0x40..0x60]),
             sig_s: Word::from_big_endian(&input[0x60..0x80]),
-            recovered_addr: Word::from_big_endian(&output[0x00..0x20]),
+            recovered_addr,
         }
     }
 }

@@ -6,10 +6,11 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder, rlc,
-            CachedRegion, Cell,
+            CachedRegion, Cell, RandomLinearCombination,
         },
     },
     table::CallContextFieldTag,
@@ -23,7 +24,7 @@ pub struct EcrecoverGadget<F> {
     sig_v: Cell<F>,
     sig_r: Cell<F>,
     sig_s: Cell<F>,
-    recovered_addr: Cell<F>,
+    recovered_addr: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -44,15 +45,16 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         let (recovered, msg_hash, sig_v, sig_r, sig_s, recovered_addr) = (
             cb.query_bool(),
             cb.query_cell_phase2(),
-            cb.query_cell(),
+            cb.query_byte(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
-            cb.query_cell(),
+            cb.query_keccak_rlc(),
         );
 
-        // TODO: lookup to the sign_verify table: https://github.com/scroll-tech/zkevm-circuits/issues/527
-        // || v | r | s | msg_hash | recovered_addr ||
-        cb.condition(recovered.expr(), |_cb| {});
+        cb.condition(recovered.expr(), |_cb| {
+            // TODO: lookup to the sign_verify table: https://github.com/scroll-tech/zkevm-circuits/issues/527
+            // || v | r | s | msg_hash | recovered_addr ||
+        });
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -111,6 +113,8 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::Ecrecover(aux_data)) = &step.aux_data {
             let recovered = !aux_data.recovered_addr.is_zero();
+            self.recovered
+                .assign(region, offset, Value::known(F::from(recovered as u64)))?;
             self.msg_hash.assign(
                 region,
                 offset,
@@ -119,7 +123,36 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(&aux_data.msg_hash.to_le_bytes(), r)),
             )?;
-            // TODO: others
+            self.sig_v.assign(
+                region,
+                offset,
+                Value::known(F::from(u64::from(aux_data.sig_v))),
+            )?;
+            self.sig_r.assign(
+                region,
+                offset,
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|r| rlc::value(&aux_data.sig_r.to_le_bytes(), r)),
+            )?;
+            self.sig_s.assign(
+                region,
+                offset,
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|r| rlc::value(&aux_data.sig_s.to_le_bytes(), r)),
+            )?;
+            self.recovered_addr.assign(
+                region,
+                offset,
+                Some({
+                    let mut recovered_addr = aux_data.recovered_addr.to_fixed_bytes();
+                    recovered_addr.reverse();
+                    recovered_addr
+                }),
+            )?;
         }
 
         self.is_success.assign(
@@ -159,6 +192,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             .assign(region, offset, block, call, step, 7)
     }
 }
+
 #[cfg(test)]
 mod test {
     use bus_mapping::{

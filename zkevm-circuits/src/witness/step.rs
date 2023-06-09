@@ -276,6 +276,6 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u6
         reversible_write_counter_delta: step.reversible_write_counter_delta,
         log_id: step.log_id,
         block_num,
-        aux_data: step.aux_data,
+        aux_data: step.aux_data.clone(),
     }
 }

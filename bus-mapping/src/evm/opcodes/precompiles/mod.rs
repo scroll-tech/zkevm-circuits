@@ -14,7 +14,7 @@ pub fn gen_associated_ops(
     geth_step: GethExecStep,
     call: Call,
     precompile: PrecompileCalls,
-    (input_bytes, output_bytes, returned_bytes): InOutRetData,
+    (input_bytes, output_bytes, _returned_bytes): InOutRetData,
 ) -> Result<ExecStep, Error> {
     assert_eq!(call.code_address(), Some(precompile.into()));
     let mut exec_step = state.new_step(&geth_step)?;
