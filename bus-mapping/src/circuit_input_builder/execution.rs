@@ -267,7 +267,7 @@ impl CopyEvent {
 
         // // step_index == self.bytes.len() when caculate total rw increasing.
         if self.dst_type == CopyDataType::TxLog && step_index != self.bytes.len() * 2 {
-            if step_index % 32 == 31 && step_index % 2 == 1 {
+            if step_index % 64 == 63 {
                 // log writing
                 rw_counter = rw_counter + 1;
             }
