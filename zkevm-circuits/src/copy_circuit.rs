@@ -262,189 +262,57 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 }
             );
 
-            // All case
-            // on the last step:
-            //     rw_counter increase by 1 to next step (if any)
-            //     rwc_inc_left decrease by 1 to next step (if any)
+            // for all cases, rw_counter + rwc_inc_left keeps same
             cb.condition(
                 and::expr([
-                    not::expr(is_word_index_end.is_lt(meta, None)),
-                    not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    not::expr(meta.query_selector(q_step)), // write step
+                    not_last_two_rows.expr(),
                     not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
                 ]),
                 |cb| {
                     cb.require_equal(
-                        "rows[0].rw_counter + 1 == rows[1].rw_counter",
-                        meta.query_advice(rw_counter, Rotation::cur()) + 1.expr(),
-                        meta.query_advice(rw_counter, Rotation::next()),
-                    );
-                    cb.require_equal(
-                        "rows[0].rwc_inc_left - 1 == rows[1].rwc_inc_left",
-                        meta.query_advice(rwc_inc_left, Rotation::cur()) - 1.expr(),
-                        meta.query_advice(rwc_inc_left, Rotation::next()),
+                        "rows[0].rw_counter + rows[0].rwc_inc_left == rows[1].rw_counter + rows[1].rwc_inc_left",
+                        meta.query_advice(rw_counter, Rotation::cur()) + meta.query_advice(rwc_inc_left, Rotation::cur()),
+                        meta.query_advice(rw_counter, Rotation::next()) + meta.query_advice(rwc_inc_left, Rotation::next()),
                     );
                 }
             );
-
-            // Non Memory -> Memory case
-            // for 0 <= word_index < 31:
-            //     rows[0].rw_counter == rows[1].rw_counter
-            //     rows[0].rwc_inc_left == rows[1].rwc_inc_left
-            // for word_index == 31:
-            //     for Memory -> TxLog:
-            //         rows[0].rw_counter + 1 == rows[1].rw_counter
-            //         rows[0].rwc_inc_left - 1 == rows[1].rwc_inc_left
-            //     for others:
-            //         read_step:
-            //             rows[0].rw_counter == rows[1].rw_counter
-            //             rows[0].rwc_inc_left == rows[1].rwc_inc_left
-            //         write_step:
-            //             rows[0].rw_counter + 1 == rows[1].rw_counter // covered by All case rules
-            //             rows[0].rwc_inc_left - 1 == rows[1].rwc_inc_left // covered by All case rules
-            cb.condition(
-                and::expr([
-                    is_word_index_end.is_lt(meta, None),
-                    not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
-                    not::expr(and::expr([
-                        tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
-                        tag.value_equals(CopyDataType::Memory, Rotation::next())(meta),
-                    ]))
-                ]),
-                |cb| {
-                    cb.require_equal(
-                        "rows[0].rw_counter == rows[1].rw_counter",
-                        meta.query_advice(rw_counter, Rotation::cur()),
-                        meta.query_advice(rw_counter, Rotation::next()),
-                    );
-                    cb.require_equal(
-                        "rows[0].rwc_inc_left == rows[1].rwc_inc_left",
-                        meta.query_advice(rwc_inc_left, Rotation::cur()),
-                        meta.query_advice(rwc_inc_left, Rotation::next()),
-                    );
-                }
-            );
-            cb.condition(
-                and::expr([
-                    not::expr(is_word_index_end.is_lt(meta, None)),
-                    not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
-                    or::expr([
-                        tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta),
-                        tag.value_equals(CopyDataType::TxLog, Rotation::next())(meta),
-                    ])
-                ]),
-                |cb| {
-                    cb.require_equal(
-                        "rows[0].rw_counter + 1 == rows[1].rw_counter",
-                        meta.query_advice(rw_counter, Rotation::cur()) + 1.expr(),
-                        meta.query_advice(rw_counter, Rotation::next()),
-                    );
-                    cb.require_equal(
-                        "rows[0].rwc_inc_left - 1 == rows[1].rwc_inc_left",
-                        meta.query_advice(rwc_inc_left, Rotation::cur()) - 1.expr(),
-                        meta.query_advice(rwc_inc_left, Rotation::next()),
-                    );
-                }
-            );
-            cb.condition(
-                and::expr([
-                    not::expr(is_word_index_end.is_lt(meta, None)),
-                    not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
-                    not::expr(or::expr([
-                        and::expr([
-                            tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
-                            tag.value_equals(CopyDataType::Memory, Rotation::next())(meta),
-                        ]),
-                        tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta),
-                        tag.value_equals(CopyDataType::TxLog, Rotation::next())(meta),
-                    ])),
-                    meta.query_selector(q_step), // read step
-                ]),
-                |cb| {
-                    cb.require_equal(
-                        "rows[0].rw_counter == rows[1].rw_counter",
-                        meta.query_advice(rw_counter, Rotation::cur()),
-                        meta.query_advice(rw_counter, Rotation::next()),
-                    );
-                    cb.require_equal(
-                        "rows[0].rwc_inc_left == rows[1].rwc_inc_left",
-                        meta.query_advice(rwc_inc_left, Rotation::cur()),
-                        meta.query_advice(rwc_inc_left, Rotation::next()),
-                    );
-                }
-            );
-
-            // Memory -> Memory case
-            // for 0 <= word_index < 31:
-            //     on read step: rows[0].rw_counter + 1 == rows[1].rw_counter
-            //     on every step:
-            //         rows[0].rw_counter == rows[2].rw_counter
-            //         rows[0].rwc_inc_left == rows[2].rwc_inc_left
-            cb.condition(
-                and::expr([
-                    is_word_index_end.is_lt(meta, None),
-                    not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
-                    and::expr([
-                        tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
-                        tag.value_equals(CopyDataType::Memory, Rotation::next())(meta),
-                    ]),
-                    meta.query_selector(q_step), // read step
-                ]),
-                |cb| {
-                    cb.require_equal(
-                        "rows[0].rw_counter + 1 == rows[1].rw_counter",
-                        meta.query_advice(rw_counter, Rotation::cur()) + 1.expr(),
-                        meta.query_advice(rw_counter, Rotation::next()),
-                    );
-                }
-            );
+            // for all cases, rows[0].rw_counter + diff == rows[1].rw_counter
             cb.condition(
                 and::expr([
                     is_word_index_end.is_lt(meta, None),
                     not_last_two_rows.expr(),
                     not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
-                    and::expr([
-                        tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
-                        tag.value_equals(CopyDataType::Memory, Rotation::next())(meta),
-                    ])
                 ]),
                 |cb| {
-                    cb.require_equal(
-                        "rows[0].rw_counter == rows[2].rw_counter",
-                        meta.query_advice(rw_counter, Rotation::cur()),
-                        meta.query_advice(rw_counter, Rotation(2)),
+                    let is_memory2memory = and::expr([
+                        tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
+                        tag.value_equals(CopyDataType::Memory, Rotation::next())(meta),
+                    ]);
+                    let diff = select::expr(
+                        is_memory2memory,
+                        select::expr(meta.query_selector(q_step), 1.expr(), -1.expr()),
+                        0.expr(),
                     );
                     cb.require_equal(
-                        "rows[0].rwc_inc_left == rows[2].rwc_inc_left",
-                        meta.query_advice(rwc_inc_left, Rotation::cur()),
-                        meta.query_advice(rwc_inc_left, Rotation(2)),
+                        "rows[0].rw_counter + diff == rows[1].rw_counter",
+                        meta.query_advice(rw_counter, Rotation::cur()) + diff.expr(),
+                        meta.query_advice(rw_counter, Rotation::next()),
                     );
                 }
             );
+            // for all cases, rw_counter increase by 1 on word end for write step
             cb.condition(
                 and::expr([
                     not::expr(is_word_index_end.is_lt(meta, None)),
-                    not_last_two_rows.expr(),
+                    not::expr(meta.query_advice(is_last, Rotation::cur())),
+                    not::expr(meta.query_selector(q_step)),
                     not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
-                    and::expr([
-                        tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
-                        tag.value_equals(CopyDataType::Memory, Rotation::next())(meta),
-                    ])
                 ]),
                 |cb| {
                     cb.require_equal(
-                        "rows[0].rw_counter + 2 == rows[2].rw_counter",
-                        meta.query_advice(rw_counter, Rotation::cur()) + 2.expr(),
-                        meta.query_advice(rw_counter, Rotation(2)),
-                    );
-                    cb.require_equal(
-                        "rows[0].rwc_inc_left - 2 == rows[2].rwc_inc_left",
-                        meta.query_advice(rwc_inc_left, Rotation::cur()) - 2.expr(),
-                        meta.query_advice(rwc_inc_left, Rotation(2)),
+                        "rows[0].rw_counter + 1 == rows[1].rw_counter",
+                        meta.query_advice(rw_counter, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(rw_counter, Rotation::next()),
                     );
                 }
             );
@@ -483,16 +351,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::cur())),
                 |cb| {
-                    // cb.require_equal(
-                    //     "rows[0].rw_counter + rw_diff == rows[1].rw_counter",
-                    //     meta.query_advice(rw_counter, Rotation::cur()) + rw_diff.clone(),
-                    //     meta.query_advice(rw_counter, Rotation::next()),
-                    // );
-                    // cb.require_equal(
-                    //     "rows[0].rwc_inc_left - rw_diff == rows[1].rwc_inc_left",
-                    //     meta.query_advice(rwc_inc_left, Rotation::cur()) - rw_diff.clone(),
-                    //     meta.query_advice(rwc_inc_left, Rotation::next()),
-                    // );
                     cb.require_equal(
                         "rows[0].rlc_acc == rows[1].rlc_acc",
                         meta.query_advice(rlc_acc, Rotation::cur()),
