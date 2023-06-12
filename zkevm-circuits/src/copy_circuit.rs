@@ -95,6 +95,8 @@ pub struct CopyCircuitConfig<F> {
     /// In case of a bytecode tag, this denotes whether or not the copied byte
     /// is an opcode or push data byte.
     pub is_code: Column<Advice>,
+    /// auxiliary column to store whether this is memory to memory copy.
+    pub is_mem_to_mem: Column<Advice>,
     /// Whether the row is enabled or not.
     pub q_enable: Column<Fixed>,
     /// The Copy Table contains the columns that are exposed via the lookup
@@ -160,6 +162,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         let value_acc = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
+        let is_mem_to_mem = meta.advice_column();
         let is_pad = meta.advice_column();
         let is_first = copy_table.is_first;
         let id = copy_table.id;
@@ -217,6 +220,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(is_last, Rotation::cur()),
             );
             cb.require_boolean("mask is boolean", meta.query_advice(mask, Rotation::cur()));
+            cb.require_boolean(
+                "is_mem_to_mem is boolean",
+                meta.query_advice(is_mem_to_mem, Rotation::cur()),
+            );
             cb.require_zero(
                 "is_first == 0 when q_step == 0",
                 and::expr([
@@ -235,6 +242,21 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let not_last_two_rows = 1.expr()
                 - meta.query_advice(is_last, Rotation::cur())
                 - meta.query_advice(is_last, Rotation::next());
+
+            cb.condition(
+                and::expr([
+                    not_last_two_rows.expr(),
+                    tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
+                    tag.value_equals(CopyDataType::Memory, Rotation::next())(meta),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "is_mem_to_mem == 1 when tag matches",
+                        1.expr(),
+                        meta.query_advice(is_mem_to_mem, Rotation::cur()),
+                    )
+                }
+            );
 
             cb.condition(
                 and::expr([
@@ -297,10 +319,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
                 ]),
                 |cb| {
-                    let is_memory2memory = and::expr([
-                        tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
-                        tag.value_equals(CopyDataType::Memory, Rotation::next())(meta),
-                    ]);
+                    let is_memory2memory = meta.query_advice(is_mem_to_mem, Rotation::cur());
                     let diff = select::expr(
                         is_memory2memory,
                         select::expr(meta.query_selector(q_step), 1.expr(), -1.expr()),
@@ -624,6 +643,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             value_acc,
             is_pad,
             is_code,
+            is_mem_to_mem,
             q_enable,
             addr_lt_addr_end,
             is_word_index_end,
@@ -654,6 +674,21 @@ impl<F: Field> CopyCircuitConfig<F> {
                 .iter()
                 .enumerate()
         {
+            if copy_event.src_type == CopyDataType::Memory && copy_event.dst_type == CopyDataType::Memory {
+                region.assign_advice(
+                    || "is_mem_to_mem",
+                    self.is_mem_to_mem,
+                    *offset,
+                    || Value::known(F::one())
+                )?;
+            } else {
+                region.assign_advice(
+                    || "is_mem_to_mem",
+                    self.is_mem_to_mem,
+                    *offset,
+                    || Value::known(F::zero())
+                )?;
+            }
             let is_read = step_idx % 2 == 0;
 
             // Copy table assignments
@@ -785,6 +820,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 region.name_column(|| "mask", self.mask);
                 region.name_column(|| "is_code", self.is_code);
                 region.name_column(|| "is_pad", self.is_pad);
+                region.name_column(|| "is_mem_to_mem", self.is_mem_to_mem);
 
                 let mut offset = 0;
                 for (ev_idx, copy_event) in copy_events.iter().enumerate() {
@@ -984,6 +1020,13 @@ impl<F: Field> CopyCircuitConfig<F> {
             self.copy_table.rw_counter,
             *offset,
             || Value::known(F::zero()),
+        )?;
+
+        region.assign_advice(
+            || "is_mem_to_mem",
+            self.is_mem_to_mem,
+            *offset,
+            || Value::known(F::zero())
         )?;
         // rwc_inc_left
         region.assign_advice(
