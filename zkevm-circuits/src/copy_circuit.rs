@@ -516,15 +516,15 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     not::expr(meta.query_advice(is_last, Rotation::next())),
                     not::expr(meta.query_advice(is_pad, Rotation::cur())),
-                    not::expr(meta.query_advice(mask, Rotation::cur())),
+                    not::expr(meta.query_advice(mask, Rotation(2))),
                 ]),
                 |cb| {
-                    // cb.require_equal(
-                    //     "value_acc(2) == value_acc(0) * r + value(2)",
-                    //     meta.query_advice(value_acc, Rotation(2)),
-                    //     meta.query_advice(value_acc, Rotation::cur()) * challenges.keccak_input()
-                    //         + meta.query_advice(value, Rotation(2)),
-                    // );
+                    cb.require_equal(
+                        "value_acc(2) == value_acc(0) * r + value(2)",
+                        meta.query_advice(value_acc, Rotation(2)),
+                        meta.query_advice(value_acc, Rotation::cur()) * challenges.keccak_input()
+                            + meta.query_advice(value, Rotation(2)),
+                    );
                 },
             );
             cb.condition(not::expr(meta.query_advice(mask, Rotation::cur())), |cb| {
