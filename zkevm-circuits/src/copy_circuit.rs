@@ -86,11 +86,12 @@ pub struct CopyCircuitConfig<F> {
     pub rlc_acc_read: Column<Advice>,
     /// Random linear combination of the write value
     pub rlc_acc_write: Column<Advice>,
-    /// mask indicates the byte is actual coped or padding to memory word
+    /// mask indicates when a row is not part of the copy, but it is needed to complete the front
+    /// or the back of the first or last memory word.
     pub mask: Column<Advice>,
     /// Random linear combination accumulator value.
     pub value_acc: Column<Advice>,
-    /// Whether the row is padding.
+    /// Whether the row is padding for out-of-bound reads when source address >= src_addr_end.
     pub is_pad: Column<Advice>,
     /// In case of a bytecode tag, this denotes whether or not the copied byte
     /// is an opcode or push data byte.
@@ -106,10 +107,8 @@ pub struct CopyCircuitConfig<F> {
     /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
     /// the Lt chip.
     pub addr_lt_addr_end: LtConfig<F, 8>,
-    /// Lt chip to check: src_addr < src_addr_end.
-    /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
-    /// the Lt chip.
-    pub is_word_index_end: LtConfig<F, 1>,
+    /// Whether this row is a continuation of a word (not last byte).
+    pub is_word_continue: LtConfig<F, 1>,
     /// non pad and non mask gadget
     pub non_pad_non_mask: LtConfig<F, 1>,
     // External tables
@@ -191,7 +190,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             |meta| meta.query_advice(src_addr_end, Rotation::cur()),
         );
 
-        let is_word_index_end = LtChip::configure(
+        let is_word_continue = LtChip::configure(
             meta,
             |meta| meta.query_selector(q_step),
             |meta| meta.query_advice(word_index, Rotation::cur()),
@@ -260,7 +259,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             cb.condition(
                 and::expr([
-                    is_word_index_end.is_lt(meta, None),
+                    is_word_continue.is_lt(meta, None),
                     not_last_two_rows.expr(),
                     not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
                         meta,
@@ -277,7 +276,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             cb.condition(
                 and::expr([
-                    not::expr(is_word_index_end.is_lt(meta, None)),
+                    not::expr(is_word_continue.is_lt(meta, None)),
                     not_last_two_rows.expr(),
                     not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
                         meta,
@@ -314,7 +313,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // for all cases, rows[0].rw_counter + diff == rows[1].rw_counter
             cb.condition(
                 and::expr([
-                    is_word_index_end.is_lt(meta, None),
+                    is_word_continue.is_lt(meta, None),
                     not_last_two_rows.expr(),
                     not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
                 ]),
@@ -335,7 +334,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // for all cases, rw_counter increase by 1 on word end for write step
             cb.condition(
                 and::expr([
-                    not::expr(is_word_index_end.is_lt(meta, None)),
+                    not::expr(is_word_continue.is_lt(meta, None)),
                     not::expr(meta.query_advice(is_last, Rotation::cur())),
                     not::expr(meta.query_selector(q_step)),
                     not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
@@ -347,6 +346,24 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         meta.query_advice(rw_counter, Rotation::next()),
                     );
                 }
+            );
+
+            // addr change: for tx log, addr use addr_slot as index, not increase by 1
+            cb.condition(
+                and::expr([
+                    not_last_two_rows.expr(),
+                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
+                        meta,
+                    )),
+                    not::expr(tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "rows[0].addr + 1 == rows[2].addr",
+                        meta.query_advice(addr, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(addr, Rotation(2)),
+                    );
+                },
             );
 
             cb.condition(
@@ -365,13 +382,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         tag.value(Rotation::cur())(meta),
                         tag.value(Rotation(2))(meta),
                     );
-                    // not work for this tx log, log index use addr_slot as index
-                    // TODO: handle tx log case
-                    // cb.require_equal(
-                    //     "rows[0].addr + 1 == rows[2].addr",
-                    //     meta.query_advice(addr, Rotation::cur()) + 1.expr(),
-                    //     meta.query_advice(addr, Rotation(2)),
-                    // );
+
                     cb.require_equal(
                         "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
                         meta.query_advice(src_addr_end, Rotation::cur()),
@@ -551,7 +562,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Memory word lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)
-                * not::expr(is_word_index_end.is_lt(meta, None));
+                * not::expr(is_word_continue.is_lt(meta, None));
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
                 not::expr(meta.query_selector(q_step)),
@@ -574,7 +585,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("TxLog word lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)
-                * not::expr(is_word_index_end.is_lt(meta, None));
+                * not::expr(is_word_continue.is_lt(meta, None));
 
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
@@ -646,7 +657,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             is_mem_to_mem,
             q_enable,
             addr_lt_addr_end,
-            is_word_index_end,
+            is_word_continue,
             non_pad_non_mask,
             copy_table,
             tx_table,
@@ -773,7 +784,7 @@ impl<F: Field> CopyCircuitConfig<F> {
 
             // todo: debug info will remove it later
             let sum: F = pad + mask;
-            println!("pad + sum: {:?} offset : {}", sum, offset);
+            //println!("pad + sum: {:?} offset : {}", sum, offset);
 
             non_pad_non_mask_chip.assign(
                 region,
@@ -806,7 +817,7 @@ impl<F: Field> CopyCircuitConfig<F> {
 
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
-        let lt_word_end_chip: LtChip<F, 1> = LtChip::construct(self.is_word_index_end);
+        let lt_word_end_chip: LtChip<F, 1> = LtChip::construct(self.is_word_continue);
         let non_pad_non_mask_chip: LtChip<F, 1> = LtChip::construct(self.non_pad_non_mask);
 
         layouter.assign_region(
