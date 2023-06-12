@@ -108,6 +108,8 @@ pub struct CopyCircuitConfig<F> {
     /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
     /// the Lt chip.
     pub is_word_index_end: LtConfig<F, 1>,
+    /// non pad and non mask gadget
+    pub non_pad_non_mask: LtConfig<F, 1>,
     // External tables
     /// TxTable
     pub tx_table: TxTable,
@@ -193,6 +195,16 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             |meta| 31.expr(),
         );
 
+        let non_pad_non_mask = LtChip::configure(
+            meta,
+            |meta| meta.query_selector(q_step),
+            |meta| {
+                meta.query_advice(is_pad, Rotation::cur())
+                    + meta.query_advice(mask, Rotation::cur())
+            },
+            |meta| 1.expr(),
+        );
+
         meta.create_gate("verify row", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -204,10 +216,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 "is_last is boolean",
                 meta.query_advice(is_last, Rotation::cur()),
             );
-            cb.require_boolean(
-                "mask is boolean",
-                meta.query_advice(mask, Rotation::cur()),
-            );
+            cb.require_boolean("mask is boolean", meta.query_advice(mask, Rotation::cur()));
             cb.require_zero(
                 "is_first == 0 when q_step == 0",
                 and::expr([
@@ -231,7 +240,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     is_word_index_end.is_lt(meta, None),
                     not_last_two_rows.expr(),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
+                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
+                        meta,
+                    )),
                 ]),
                 |cb| {
                     cb.require_equal(
@@ -239,14 +250,16 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         meta.query_advice(word_index, Rotation::cur()) + 1.expr(),
                         meta.query_advice(word_index, Rotation(2)),
                     )
-                }
+                },
             );
 
             cb.condition(
                 and::expr([
                     not::expr(is_word_index_end.is_lt(meta, None)),
                     not_last_two_rows.expr(),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
+                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
+                        meta,
+                    )),
                 ]),
                 |cb| {
                     cb.require_equal(
@@ -259,7 +272,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         meta.query_advice(word_index, Rotation(2)),
                         0.expr(),
                     );
-                }
+                },
             );
 
             // for all cases, rw_counter + rwc_inc_left keeps same
@@ -452,12 +465,22 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     );
                 },
             );
-            // we use rlc to constraint the write == read now
-            // cb.require_equal(
-            //     "write value == read value",
-            //     meta.query_advice(value, Rotation::cur()),
-            //     meta.query_advice(value, Rotation::next()),
-            // );
+            // we use rlc to constraint the write == read specially for memory to memory case
+            // here only handle non memory to memory cases
+            let non_memory_to_memory =
+                not::expr(tag.value_equals(CopyDataType::Memory, Rotation::cur())(
+                    meta,
+                )) * not::expr(tag.value_equals(CopyDataType::Memory, Rotation::next())(
+                    meta,
+                ));
+            cb.condition(non_memory_to_memory, |cb| {
+                cb.require_equal(
+                    "write value == read value",
+                    meta.query_advice(value, Rotation::cur()),
+                    meta.query_advice(value, Rotation::next()),
+                );
+            });
+
             cb.require_equal(
                 "value_acc is same for read-write rows",
                 meta.query_advice(value_acc, Rotation::cur()),
@@ -509,7 +532,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Memory word lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)
-                //* not::expr(meta.query_advice(is_pad, Rotation::cur()))
                 * not::expr(is_word_index_end.is_lt(meta, None));
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
@@ -533,7 +555,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("TxLog word lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)
-                //* not::expr(meta.query_advice(mask, Rotation::cur()));
                 * not::expr(is_word_index_end.is_lt(meta, None));
 
             vec![
@@ -558,8 +579,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Bytecode lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)
-                * not::expr(meta.query_advice(is_pad, Rotation::cur()))
-                * not::expr(meta.query_advice(mask, Rotation::cur()));
+                * non_pad_non_mask.is_lt(meta, None);
 
             vec![
                 meta.query_advice(id, Rotation::cur()),
@@ -578,7 +598,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()));
-            //* not::expr(meta.query_advice(mask, Rotation::cur()));
 
             vec![
                 meta.query_advice(id, Rotation::cur()),
@@ -608,6 +627,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             q_enable,
             addr_lt_addr_end,
             is_word_index_end,
+            non_pad_non_mask,
             copy_table,
             tx_table,
             rw_table,
@@ -625,6 +645,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
         lt_word_end_chip: &LtChip<F, 1>,
+        non_pad_non_mask_chip: &LtChip<F, 1>,
         challenges: Challenges<Value<F>>,
         copy_event: &CopyEvent,
     ) -> Result<(), Error> {
@@ -709,6 +730,23 @@ impl<F: Field> CopyCircuitConfig<F> {
                 F::from((step_idx as u64 / 2) % 32), // word index
                 F::from(31u64),
             )?;
+
+            let mut pad = F::zero();
+            circuit_row[6].0.map(|f: F| pad = f);
+            let mut mask = F::zero();
+            circuit_row[8].0.map(|f: F| mask = f);
+
+            // todo: debug info will remove it later
+            let sum: F = pad + mask;
+            println!("pad + sum: {:?} offset : {}", sum, offset);
+
+            non_pad_non_mask_chip.assign(
+                region,
+                *offset,
+                pad + mask, // is_pad + mask
+                F::from(1u64),
+            )?;
+
             *offset += 1;
         }
 
@@ -733,7 +771,8 @@ impl<F: Field> CopyCircuitConfig<F> {
 
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
-        let lt_word_end_chip = LtChip::construct(self.is_word_index_end);
+        let lt_word_end_chip: LtChip<F, 1> = LtChip::construct(self.is_word_index_end);
+        let non_pad_non_mask_chip: LtChip<F, 1> = LtChip::construct(self.non_pad_non_mask);
 
         layouter.assign_region(
             || "assign copy table",
@@ -766,6 +805,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                         &tag_chip,
                         &lt_chip,
                         &lt_word_end_chip,
+                        &non_pad_non_mask_chip,
                         challenges,
                         copy_event,
                     )?;
@@ -780,6 +820,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                         &tag_chip,
                         &lt_chip,
                         &lt_word_end_chip,
+                        &non_pad_non_mask_chip,
                     )?;
                 }
 
@@ -790,6 +831,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                     &tag_chip,
                     &lt_chip,
                     &lt_word_end_chip,
+                    &non_pad_non_mask_chip,
                 )?;
                 self.assign_padding_row(
                     &mut region,
@@ -798,6 +840,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                     &tag_chip,
                     &lt_chip,
                     &lt_word_end_chip,
+                    &non_pad_non_mask_chip,
                 )?;
 
                 Ok(())
@@ -813,6 +856,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
         lt_word_end_chip: &LtChip<F, 1>,
+        non_pad_non_mask_chip: &LtChip<F, 1>,
     ) -> Result<(), Error> {
         if !is_last_two {
             // q_enable
@@ -903,7 +947,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             || format!("assign mask {}", *offset),
             self.mask,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::one()),
         )?;
 
         // value_acc
@@ -953,6 +997,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         // Assign LT gadget
         lt_chip.assign(region, *offset, F::zero(), F::one())?;
         lt_word_end_chip.assign(region, *offset, F::zero(), F::from(31u64))?;
+        non_pad_non_mask_chip.assign(region, *offset, F::one(), F::one())?;
 
         *offset += 1;
 

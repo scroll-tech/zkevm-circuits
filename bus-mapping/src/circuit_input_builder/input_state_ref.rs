@@ -1776,10 +1776,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         println!("overflow check: {} {}", src_begin_slot, src_end_slot);
         println!("overflow check: {} {}", dst_begin_slot, dst_end_slot);
-        let slot_count = max(
-            (src_end_slot - src_begin_slot),
-            (dst_end_slot - dst_begin_slot),
-        ) as usize;
+        let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize;
         let src_end_slot = src_begin_slot as usize + slot_count;
         let dst_end_slot = dst_begin_slot as usize + slot_count;
 
@@ -1901,10 +1898,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
         let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + copy_length).unwrap();
 
-        let slot_count = max(
-            (src_end_slot - src_begin_slot),
-            (dst_end_slot - dst_begin_slot),
-        ) as usize;
+        let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize;
         let src_end_slot = src_begin_slot as usize + slot_count;
         let dst_end_slot = dst_begin_slot as usize + slot_count;
 

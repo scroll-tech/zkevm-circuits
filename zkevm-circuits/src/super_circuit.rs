@@ -697,9 +697,7 @@ pub(crate) mod super_circuit_tests {
         SuperCircuit::<_, 1, 32, 64, 0x100>::configure(&mut cs);
         log::info!("super circuit degree: {}", cs.degree());
         log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
-        let degree: usize = cs.degree();
-        // todo: investigate why degree increase by 1
-        assert!(cs.degree() <= 10);
+        assert!(cs.degree() <= 9);
     }
 
     fn test_super_circuit<
