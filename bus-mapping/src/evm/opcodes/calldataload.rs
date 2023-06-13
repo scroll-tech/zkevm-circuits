@@ -197,7 +197,7 @@ mod calldataload_tests {
         // };
         let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
             address: addr_b,
-            pushdata,
+            pushdata: pushdata.clone(),
             call_data_length,
             call_data_offset,
             ..MockCallBytecodeParams::default()
