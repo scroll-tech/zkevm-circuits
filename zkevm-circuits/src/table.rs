@@ -13,7 +13,7 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
-use eth_types::{Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
+use eth_types::{Field, ToLittleEndian, ToScalar, ToWord, Word, U256, sign_types::{SignData, pk_bytes_le, pk_bytes_swap_endianness}};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{split_u256, split_u256_limb64},
@@ -2119,3 +2119,133 @@ impl RlpFsmRlpTable {
         Ok(())
     }
 }
+
+
+/// The sig table is used to verify signatures, used in tx circuit and ecrecover precompile.
+///
+#[derive(Clone, Copy, Debug)]
+pub struct SigTable {
+    /// Is enable
+    pub q_enable: Column<Fixed>,
+    /// .
+    pub address: Column<Advice>,
+    /// input[63] - 27, should be in range [0, 4)
+    /// TODO: we need to constrain v <=> pub.y oddness
+    pub v: Column<Advice>,
+    /// .
+    pub r_rlc: Column<Advice>,
+    /// .
+    pub s_rlc: Column<Advice>,
+    /// .
+    pub is_valid: Column<Advice>,
+}
+
+impl SigTable {
+/// Construct the SigTable.
+pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+    Self {
+        q_enable: meta.fixed_column(),
+        address: meta.advice_column(),
+        v: meta.advice_column(),
+        s_rlc: meta.advice_column_in(SecondPhase),
+        r_rlc: meta.advice_column_in(SecondPhase),
+        is_valid: meta.advice_column(),
+    }
+}
+/// Assign witness data from a block to the exponentiation table.
+pub fn dev_load<F: Field>(
+    &self,
+    layouter: &mut impl Layouter<F>,
+    block: &Block<F>,
+    challenges: &Challenges<Value<F>>,
+) -> Result<(), Error> {
+    layouter.assign_region(
+        || "exponentiation table",
+        |mut region| {
+            // TODO(rohit): add ecrecover witness here?
+            let signatures: Vec<SignData> = block
+            .txs
+            .iter()
+            .map(|tx| {
+                if tx.tx_type.is_l1_msg() {
+                    // dummy signature
+                    Ok(SignData::default())
+                } else {
+                    tx.sign_data().map_err(|e| {
+                        log::error!("tx_to_sign_data error for tx {:?}", e);
+                        Error::Synthesis
+                    })
+                }
+        })
+            .collect::<Result<Vec<SignData>, Error>>()?;
+        for (offset, sign_data) in signatures.iter().enumerate() {
+            let pk_le = pk_bytes_le(&sign_data.pk);
+        let pk_be = pk_bytes_swap_endianness(&pk_le);
+        let pk_hash: [u8; 32] = {
+                let mut keccak = Keccak::default();
+                keccak.update(&pk_be);
+                let hash: [_; 32] = keccak.digest().try_into().expect("vec to array of size 32");
+                hash
+            };
+            let addr = pk_hash.iter().take(20).fold(F::from(0u64), |acc, elem| {
+                acc * F::from(256u64) + F::from(*elem as u64)
+            });
+
+            let r_rlc = challenges.evm_word().map(|challenge| {
+                rlc::value(
+                    &sign_data.signature.0.to_bytes(),
+                    challenge,
+                )
+            }); 
+            let s_rlc = challenges.evm_word().map(|challenge| {
+                rlc::value(
+                    &sign_data.signature.1.to_bytes(),
+                    challenge,
+                )
+            }); 
+
+            region.assign_fixed(
+                || format!("sig table q_enable"),
+                self.q_enable,
+                offset,
+                || Value::known(F::one()),
+            )?;
+            region.assign_advice(
+                || format!("sig table address"),
+                self.address,
+                offset,
+                || Value::known(addr),
+            )?;
+            region.assign_advice(
+                || format!("sig table r_rlc"),
+                self.r_rlc,
+                offset,
+                || r_rlc,
+            )?;
+            region.assign_advice(
+                || format!("sig table s_rlc"),
+                self.s_rlc,
+                offset,
+                || s_rlc,
+            )?;
+            region.assign_advice(
+                || format!("sig table is_valid"),
+                self.is_valid,
+                offset,
+                || Value::known(F::one()),
+            )?;
+            region.assign_advice(
+                || format!("sig table v"),
+                self.v,
+                offset,
+                || Value::known(F::from(sign_data.signature.2 as u64)),
+            )?;
+
+
+        }
+        Ok(())
+    })?;
+    Ok(())
+}
+}
+

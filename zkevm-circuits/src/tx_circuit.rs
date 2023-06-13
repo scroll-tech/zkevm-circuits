@@ -4,12 +4,8 @@
 // - *_be: Big-Endian bytes
 // - *_le: Little-Endian bytes
 
-pub mod sign_verify;
-
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod dev;
-#[cfg(not(feature = "enable-sign-verify"))]
-use crate::tx_circuit::sign_verify::pub_key_hash_to_address;
 #[cfg(any(feature = "test", test))]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
@@ -18,11 +14,12 @@ pub use dev::TxCircuit as TestTxCircuit;
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{
-        BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, TxFieldTag, TxTable,
+        BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, TxFieldTag, TxTable, SigTable,
     },
     util::{keccak, random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig},
     witness,
     witness::{rlp_fsm::Tag, RlpTag, Transaction},
+    sig_circuit::{SigCircuit, AssignedSignatureVerify},
 };
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use eth_types::{sign_types::SignData, Address, Field, ToAddress, ToLittleEndian, ToScalar};
@@ -38,7 +35,7 @@ use halo2_proofs::{
 };
 use log::error;
 use num::Zero;
-use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
+//use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     iter,
@@ -74,6 +71,8 @@ use eth_types::geth_types::{
 };
 use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
 
+
+//use self::sign_verify::SigTable;
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 22;
 /// Offset of TxHash tag in the tx table
@@ -142,7 +141,12 @@ pub struct TxCircuitConfig<F: Field> {
 
     /// Address recovered by SignVerifyChip
     sv_address: Column<Advice>,
-    sign_verify: SignVerifyConfig<F>,
+
+    /// A fixed column to store F::one, used to constraint signature_is_valid == one.
+    // FIXME: it is pretty wasteful to allocate a new fixed column just
+    // to store a constant value F::one.
+    fixed_column: Column<Fixed>,
+    sig_table: SigTable,
 
     // External tables
     block_table: BlockTable,
@@ -162,6 +166,8 @@ pub struct TxCircuitConfigArgs<F: Field> {
     pub keccak_table: KeccakTable,
     /// RlpTable
     pub rlp_table: RlpTable,
+    /// SigTable
+    pub sig_table: SigTable,
     /// Challenges
     pub challenges: crate::util::Challenges<Expression<F>>,
 }
@@ -177,10 +183,15 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             block_table,
             keccak_table,
             rlp_table,
+            sig_table,
             challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = tx_table.q_enable;
+
+        // we will need one fixed column to check if ecdsa is valid
+        let fixed_column = meta.fixed_column();
+        meta.enable_equality(fixed_column);
 
         // tag, rlp_tag, tx_type, is_none
         let tx_type = meta.advice_column();
@@ -820,8 +831,8 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone());
-        #[cfg(feature = "reject-eip2718")]
+        //let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone());
+        //#[cfg(feature = "reject-eip2718")]
         meta.create_gate(
             "caller address == sv_address if it's not zero and tx_type != L1Msg",
             |meta| {
@@ -847,6 +858,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         Self {
             minimum_rows: meta.minimum_rows(),
+            fixed_column,
             tx_tag_bits: tag_bits,
             tx_type,
             tx_type_bits,
@@ -867,7 +879,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_final,
             calldata_gas_cost_acc,
             sv_address,
-            sign_verify,
+            sig_table,
             block_table,
             tx_table,
             keccak_table,
@@ -1110,9 +1122,6 @@ impl<F: Field> TxCircuitConfig<F> {
                 Ok(())
             },
         )?;
-
-        #[cfg(feature = "enable-sign-verify")]
-        self.sign_verify.load_range(layouter)?;
 
         Ok(())
     }
@@ -1436,13 +1445,14 @@ pub struct TxCircuit<F: Field> {
     /// Max number of supported calldata bytes
     pub max_calldata: usize,
     /// SignVerify chip
-    pub sign_verify: SignVerifyChip<F>,
+    //pub sign_verify: SignVerifyChip<F>,
     /// List of Transactions
     pub txs: Vec<Transaction>,
     /// Chain ID
     pub chain_id: u64,
     /// Size
     pub size: usize,
+    _marker: PhantomData<F>,
 }
 
 impl<F: Field> TxCircuit<F> {
@@ -1459,13 +1469,15 @@ impl<F: Field> TxCircuit<F> {
         TxCircuit::<F> {
             max_txs,
             max_calldata,
-            sign_verify: SignVerifyChip::new(max_txs),
+            //sign_verify: SignVerifyChip::new(max_txs),
             txs,
             size: Self::min_num_rows(max_txs, max_calldata),
             chain_id,
+            _marker: PhantomData::default(),
         }
     }
 
+    /// Returned data contains both the tx hash and sig hash
     fn keccak_inputs(&self) -> Result<Vec<Vec<u8>>, Error> {
         let mut inputs = Vec::new();
 
@@ -1510,7 +1522,7 @@ impl<F: Field> TxCircuit<F> {
     pub fn min_num_rows(txs_len: usize, call_data_len: usize) -> usize {
         let tx_table_len = txs_len * TX_LEN + call_data_len;
         #[cfg(feature = "enable-sign-verify")]
-        let min_rows = std::cmp::max(tx_table_len, SignVerifyChip::<F>::min_num_rows(txs_len));
+        let min_rows = std::cmp::max(tx_table_len, SigCircuit::<F>::min_num_rows(txs_len));
         #[cfg(not(feature = "enable-sign-verify"))]
         let min_rows = tx_table_len;
         min_rows
@@ -1574,7 +1586,7 @@ impl<F: Field> TxCircuit<F> {
         config: &TxCircuitConfig<F>,
         challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
-        assigned_sig_verifs: Vec<AssignedSignatureVerify<F>>,
+        //assigned_sig_verifs: Vec<AssignedSignatureVerify<F>>,
         sign_datas: Vec<SignData>,
         padding_txs: &[Transaction],
     ) -> Result<(), Error> {
@@ -1582,13 +1594,16 @@ impl<F: Field> TxCircuit<F> {
             || "tx table aux",
             |mut region| {
                 let mut offset = 0;
-                #[cfg(feature = "enable-sign-verify")]
-                let sigs = &assigned_sig_verifs;
-                #[cfg(not(feature = "enable-sign-verify"))]
+                
+                //#[cfg(feature = "enable-sign-verify")]
+                //let sigs = &assigned_sig_verifs;
+                //#[cfg(not(feature = "enable-sign-verify"))]
                 let sigs = &sign_datas;
 
-                debug_assert_eq!(assigned_sig_verifs.len() + sign_datas.len(), sigs.len());
+                //debug_assert_eq!(assigned_sig_verifs.len() + sign_datas.len(), sigs.len());
+                
                 debug_assert_eq!(padding_txs.len() + self.txs.len(), sigs.len());
+                
 
                 let mut cum_num_txs;
                 let mut is_padding_tx;
@@ -1630,9 +1645,9 @@ impl<F: Field> TxCircuit<F> {
                         is_padding_tx = true;
                     }
 
-                    #[cfg(feature = "enable-sign-verify")]
-                    let tx_sign_hash = assigned_sig_verif.msg_hash_rlc.value;
-                    #[cfg(not(feature = "enable-sign-verify"))]
+                    //#[cfg(feature = "enable-sign-verify")]
+                    //let tx_sign_hash = assigned_sig_verif.msg_hash_rlc.value;
+                    //#[cfg(not(feature = "enable-sign-verify"))]
                     let tx_sign_hash = {
                         challenges.evm_word().map(|rand| {
                             assigned_sig_verif
@@ -1834,12 +1849,12 @@ impl<F: Field> TxCircuit<F> {
                                 {
                                     // TODO: do lookup to SignVerify table instead.
                                 }
-                                let sv_address = assigned_sig_verif.address.value;
+                                let sv_address: F = assigned_sig_verif.get_addr().to_scalar().unwrap();
                                 region.assign_advice(
                                     || "sv_address",
                                     config.sv_address,
                                     offset - 1,
-                                    || sv_address,
+                                    || Value::known(sv_address),
                                 )?;
                             }
                             TxSignHash | SigV | SigR | SigS => {
@@ -2033,7 +2048,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                 )
             }
         }
-
+/* 
         #[cfg(feature = "enable-sign-verify")]
         {
             let assigned_sig_verifs =
@@ -2053,13 +2068,14 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                 &padding_txs,
             )?;
         }
-        #[cfg(not(feature = "enable-sign-verify"))]
+        */
+        //#[cfg(not(feature = "enable-sign-verify"))]
         {
             self.assign(
                 config,
                 challenges,
                 layouter,
-                Vec::new(),
+                //Vec::new(),
                 sign_datas,
                 &padding_txs,
             )?;

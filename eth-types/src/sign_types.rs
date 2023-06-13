@@ -16,6 +16,7 @@ use halo2_proofs::{
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use sha3::{Digest, Keccak256};
+//use keccak256::plain::Keccak;
 use subtle::CtOption;
 
 /// Do a secp256k1 signature with a given randomness value.
@@ -23,11 +24,12 @@ pub fn sign(
     randomness: secp256k1::Fq,
     sk: secp256k1::Fq,
     msg_hash: secp256k1::Fq,
-) -> (secp256k1::Fq, secp256k1::Fq) {
+) -> (secp256k1::Fq, secp256k1::Fq, u8) {
     let randomness_inv =
         Option::<secp256k1::Fq>::from(randomness.invert()).expect("cannot invert randomness");
     let generator = Secp256k1Affine::generator();
     let sig_point = generator * randomness;
+    let is_odd: bool = sig_point.y.is_odd().into();
     let x = *Option::<Coordinates<_>>::from(sig_point.to_affine().coordinates())
         .expect("point is the identity")
         .x();
@@ -40,7 +42,7 @@ pub fn sign(
 
     let sig_r = secp256k1::Fq::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
-    (sig_r, sig_s)
+    (sig_r, sig_s, if is_odd { 1 } else { 0 })
 }
 
 /// Signature data required by the SignVerify Chip as input to verify a
@@ -48,13 +50,32 @@ pub fn sign(
 #[derive(Clone, Debug)]
 pub struct SignData {
     /// Secp256k1 signature point
-    pub signature: (secp256k1::Fq, secp256k1::Fq),
+    /// v must be 0 or 1
+    pub signature: (secp256k1::Fq, secp256k1::Fq, u8),
     /// Secp256k1 public key
     pub pk: Secp256k1Affine,
     /// Message being hashed before signing.
     pub msg: Bytes,
     /// Hash of the message that is being signed
     pub msg_hash: secp256k1::Fq,
+}
+
+impl SignData {
+    /// Recover address of the signature
+    pub fn get_addr(&self) -> Word {
+        let pk_le = pk_bytes_le(&self.pk);
+        let pk_be = pk_bytes_swap_endianness(&pk_le);
+        let pk_hash: [u8; 32] = Keccak256::digest(pk_be)
+        .as_slice()
+        .to_vec()
+        .try_into()
+        .expect("hash length isn't 32 bytes");
+        let addr = pk_hash.iter().take(20).fold(Word::from(0u64), |acc, elem| {
+                acc * Word::from(256u64) + Word::from(*elem as u64)
+            });
+        addr
+
+    }
 }
 
 lazy_static! {
@@ -80,10 +101,10 @@ lazy_static! {
             .expect("hash length isn't 32 bytes");
         let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
         let randomness = secp256k1::Fq::one();
-        let (sig_r, sig_s) = sign(randomness, sk, msg_hash);
+        let (sig_r, sig_s, v) = sign(randomness, sk, msg_hash);
 
         SignData {
-            signature: (sig_r, sig_s),
+            signature: (sig_r, sig_s, v),
             pk,
             msg: msg.into(),
             msg_hash,
@@ -92,12 +113,12 @@ lazy_static! {
 }
 
 impl Default for SignData {
+    // Hardcoded valid signature corresponding to a hardcoded private key and
+    // message hash generated from "nothing up my sleeve" values to make the
+    // ECDSA chip pass the constraints, to be use for padding signature
+    // verifications (where the constraints pass, but we don't care about the
+    // message hash and public key).
     fn default() -> Self {
-        // Hardcoded valid signature corresponding to a hardcoded private key and
-        // message hash generated from "nothing up my sleeve" values to make the
-        // ECDSA chip pass the constraints, to be use for padding signature
-        // verifications (where the constraints pass, but we don't care about the
-        // message hash and public key).
         SIGN_DATA_DEFAULT.clone()
     }
 }

@@ -68,7 +68,7 @@ use crate::{
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, SubCircuit, SubCircuitConfig},
-    witness::{block_convert, Block},
+    witness::{block_convert, Block}, sig_circuit::{SigCircuitConfig, SigCircuitConfigArgs, SigCircuit}, table::SigTable,
 };
 
 #[cfg(feature = "zktrie")]
@@ -117,6 +117,7 @@ pub struct SuperCircuitConfig<F: Field> {
     evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
+    sig_circuit: SigCircuitConfig<F>,
     #[cfg(not(feature = "poseidon-codehash"))]
     bytecode_circuit: BytecodeCircuitConfig<F>,
     #[cfg(feature = "poseidon-codehash")]
@@ -187,6 +188,8 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         log_circuit_info(meta, "rlp table");
         let keccak_table = KeccakTable::construct(meta);
         log_circuit_info(meta, "keccak table");
+        let sig_table = SigTable::construct(meta);
+        log_circuit_info(meta, "sig table");
 
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
@@ -231,6 +234,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 tx_table: tx_table.clone(),
                 keccak_table: keccak_table.clone(),
                 rlp_table,
+                sig_table: sig_table.clone(),
                 challenges: challenges.clone(),
             },
         );
@@ -285,6 +289,15 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         #[cfg(feature = "zktrie")]
         log_circuit_info(meta, "zktrie circuit");
 
+        let sig_circuit = SigCircuitConfig::new(meta, 
+            SigCircuitConfigArgs {
+                keccak_table: keccak_table.clone(),
+                sig_table: sig_table.clone(),
+                challenges: challenges.clone(),
+            }
+            );
+            log_circuit_info(meta, "sig circuit");
+
         let state_circuit = StateCircuitConfig::new(
             meta,
             StateCircuitConfigArgs {
@@ -334,6 +347,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             rlp_circuit,
             tx_circuit,
             exp_circuit,
+            sig_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
         }
@@ -367,6 +381,8 @@ pub struct SuperCircuit<
     pub keccak_circuit: KeccakCircuit<F>,
     /// Poseidon hash Circuit
     pub poseidon_circuit: PoseidonCircuit<F>,
+    /// Sig Circuit
+    pub sig_circuit: SigCircuit<F>,
     /// Rlp Circuit
     pub rlp_circuit: RlpCircuit<F, Transaction>,
     /// Mpt Circuit
@@ -468,6 +484,7 @@ impl<
         let keccak_circuit = KeccakCircuit::new_from_block(block);
         let poseidon_circuit = PoseidonCircuit::new_from_block(block);
         let rlp_circuit = RlpCircuit::new_from_block(block);
+        let sig_circuit = SigCircuit::new_from_block(block);
         #[cfg(feature = "zktrie")]
         let mpt_circuit = MptCircuit::new_from_block(block);
         SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS> {
@@ -481,6 +498,7 @@ impl<
             keccak_circuit,
             poseidon_circuit,
             rlp_circuit,
+            sig_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
         }

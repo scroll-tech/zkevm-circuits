@@ -143,7 +143,7 @@ impl Transaction {
             libsecp256k1::Error::InvalidMessage,
         )?;
         Ok(SignData {
-            signature: (sig_r, sig_s),
+            signature: (sig_r, sig_s, v),
             pk,
             msg,
             msg_hash,
