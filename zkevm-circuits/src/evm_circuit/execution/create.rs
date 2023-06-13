@@ -667,7 +667,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Value::known(if is_precheck_ok == 0 || is_address_collision {
                 F::zero()
             } else {
-                block.rws[step.rw_indices[23 + rw_offset]]
+                block.rws[step.rw_indices
+                    [23 + rw_offset + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
