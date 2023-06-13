@@ -1657,6 +1657,191 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(copy_steps)
     }
 
+    pub(crate) fn gen_copy_steps_for_precompile_calldata(
+        &mut self,
+        exec_step: &mut ExecStep,
+        call_id: usize,
+        src_addr: u64,
+        copy_length: u64,
+        caller_memory: &Vec<u8>,
+    ) -> Result<Vec<(u8, bool, bool)>, Error> {
+        let mut copy_steps = Vec::with_capacity(copy_length as usize);
+        if copy_length == 0 {
+            return Ok(copy_steps);
+        }
+
+        let (_, src_begin_slot) = self.get_addr_shift_slot(src_addr).unwrap();
+        let (_, src_end_slot) = self.get_addr_shift_slot(src_addr + copy_length).unwrap();
+        let slot_count = src_end_slot - src_begin_slot;
+
+        let mut caller_memory = caller_memory.clone();
+
+        let minimal_length = src_end_slot as usize + 32;
+        if caller_memory.len() < minimal_length {
+            caller_memory.resize(minimal_length, 0);
+        }
+        let calldata_slot_bytes =
+            caller_memory[src_begin_slot as usize..(src_end_slot + 32) as usize].to_vec();
+
+        Self::gen_memory_copy_steps(
+            &mut copy_steps,
+            &caller_memory,
+            slot_count as usize + 32,
+            src_addr as usize,
+            src_begin_slot as usize,
+            copy_length as usize,
+        );
+
+        let mut chunk_index = src_begin_slot;
+        for chunk in calldata_slot_bytes.chunks(32) {
+            self.push_op(
+                exec_step,
+                RW::READ,
+                MemoryWordOp::new(
+                    call_id,
+                    chunk_index.into(),
+                    Word::from_big_endian(&chunk)
+                ),
+            );
+            chunk_index += 32;
+        }
+
+        Ok(copy_steps)
+    }
+
+    pub(crate) fn gen_copy_steps_for_precompile_callee_memory(
+        &mut self,
+        exec_step: &mut ExecStep,
+        call_id: usize,
+        result: &Vec<u8>,
+    ) -> Result<Vec<(u8, bool, bool)>, Error> {
+        let mut copy_steps = Vec::with_capacity(result.len() as usize);
+        if result.len() == 0 {
+            return Ok(copy_steps);
+        }
+
+        let (_, end_slot) = self.get_addr_shift_slot(result.len() as u64)?;
+        let minimal_length = end_slot as usize + 32;
+        let mut memory = result.clone();
+        if memory.len() < minimal_length {
+            memory.resize(minimal_length, 0);
+        }
+
+        Self::gen_memory_copy_steps(
+            &mut copy_steps,
+            &memory,
+            end_slot as usize + 32,
+            0,
+            0,
+            result.len() as usize,
+        );
+
+        let mut chunk_index = 0;
+        for chunk in result.chunks(32) {
+            self.push_op(
+                exec_step,
+                RW::WRITE,
+                MemoryWordOp::new(
+                    call_id,
+                    chunk_index.into(),
+                    Word::from_big_endian(&chunk)
+                )
+            );
+            chunk_index += 32;
+        }
+
+        Ok(copy_steps)
+    }
+
+    // TODO: this is kind like returndatacopy, we should reuse it.
+    pub(crate) fn gen_copy_steps_for_precompile_returndata(
+        &mut self,
+        exec_step: &mut ExecStep,
+        call_id: usize,
+        caller_id: usize,
+        dst_addr: u64,
+        copy_length: usize,
+        result: &Vec<u8>,
+    ) -> Result<(Vec<(u8, bool, bool)>, Vec<(u8, bool, bool)>), Error> {
+        let mut read_steps = Vec::with_capacity(copy_length as usize);
+        let mut write_steps = Vec::with_capacity(copy_length as usize);
+        if copy_length == 0 {
+            return Ok((read_steps, write_steps));
+        }
+        let src_begin_slot = 0;
+        let (_, src_end_slot) = self.get_addr_shift_slot(copy_length as u64).unwrap();
+        assert!(copy_length <= result.len());
+        let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
+        let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + copy_length as u64).unwrap();
+
+        let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize;
+        let src_end_slot = src_begin_slot as usize + slot_count;
+        let dst_end_slot = dst_begin_slot as usize + slot_count;
+
+        let mut src_memory = result.clone();
+        if src_memory.len() < src_end_slot as usize + 32 {
+            src_memory.resize(src_end_slot as usize + 32, 0);
+        }
+
+        let mut dst_memory = self.caller_ctx()?.memory.clone();
+        let minimal_length = dst_end_slot as usize + 32;
+        dst_memory.extend_at_least(minimal_length);
+
+        let read_slot_bytes =
+            src_memory[src_begin_slot as usize..(src_end_slot + 32) as usize].to_vec();
+        let write_slot_bytes =
+            dst_memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+
+        Self::gen_memory_copy_steps(
+            &mut read_steps,
+            &src_memory,
+            slot_count + 32,
+            0,
+            src_begin_slot as usize,
+            copy_length as usize,
+        );
+
+        Self::gen_memory_copy_steps(
+            &mut write_steps,
+            &dst_memory.0,
+            slot_count + 32,
+            dst_addr as usize,
+            dst_begin_slot as usize,
+            copy_length as usize,
+        );
+
+
+        let mut src_chunk_index = src_begin_slot;
+        let mut dst_chunk_index = dst_begin_slot;
+
+        for (read_chunk, write_chunk) in read_slot_bytes.chunks(32).zip(write_slot_bytes.chunks(32))
+        {
+            self.push_op(
+                exec_step,
+                RW::READ,
+                MemoryWordOp::new(
+                    call_id,
+                    src_chunk_index.into(),
+                    Word::from_big_endian(&read_chunk)
+                )
+            );
+            src_chunk_index += 32;
+
+            self.push_op(
+                exec_step,
+                RW::WRITE,
+                MemoryWordOp::new(
+                    caller_id,
+                    dst_chunk_index.into(),
+                    Word::from_big_endian(&write_chunk)
+                ),
+            );
+            dst_chunk_index += 32;
+        }
+
+        Ok((read_steps, write_steps))
+    }
+
     /// Generate copy steps for call data.
     pub(crate) fn gen_copy_steps_for_call_data_root(
         &mut self,
