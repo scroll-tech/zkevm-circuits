@@ -1349,6 +1349,27 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    // Sig Table
+    pub(crate) fn sig_table_lookup<E: Expr<F>>(
+        &mut self,
+        msg_hash_rlc: E,
+        sig_v: E,
+        sig_r_rlc: E,
+        sig_s_rlc: E,
+        recovered_addr: E,
+    ) {
+        self.add_lookup(
+            "sig table",
+            Lookup::SigTable {
+                msg_hash_rlc: msg_hash_rlc.expr(),
+                sig_v: sig_v.expr(),
+                sig_r_rlc: sig_r_rlc.expr(),
+                sig_s_rlc: sig_s_rlc.expr(),
+                recovered_addr: recovered_addr.expr(),
+            },
+        );
+    }
+
     // Keccak Table
 
     pub(crate) fn keccak_table_lookup(

@@ -325,6 +325,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 copy_table,
                 keccak_table,
                 exp_table,
+                sig_table,
             },
         );
         log_circuit_info(meta, "evm circuit");

@@ -60,6 +60,8 @@ pub struct Block<F> {
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
+    /// IO to/from precompile Ecrecover calls.
+    pub ecrecover_events: Vec<SignData>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
     /// Withdraw root
@@ -430,6 +432,7 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
+        ecrecover_events: block.ecrecover_events.clone(),
         circuits_params: CircuitsParams {
             max_rws,
             ..block.circuits_params

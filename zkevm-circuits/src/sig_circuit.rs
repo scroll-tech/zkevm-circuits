@@ -66,7 +66,7 @@ pub struct SigCircuitConfigArgs<F: Field> {
     /// SigTable
     pub sig_table: SigTable,
     /// Challenges
-    pub challenges: crate::util::Challenges<Expression<F>>,
+    pub challenges: Challenges<Expression<F>>,
 }
 
 /// SignVerify Configuration
@@ -145,12 +145,12 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         meta.enable_equality(rlc_column);
 
         // TODO: enable_equality here?
-        meta.enable_equality(sig_table.address);
-        meta.enable_equality(sig_table.r_rlc);
-        meta.enable_equality(sig_table.s_rlc);
+        meta.enable_equality(sig_table.recovered_addr);
+        meta.enable_equality(sig_table.sig_r_rlc);
+        meta.enable_equality(sig_table.sig_s_rlc);
         //meta.enable_equality(ec_recover_table.v);
         meta.enable_equality(sig_table.is_valid);
-        //meta.enable_equality(sig_table.hash_rlc);
+        //meta.enable_equality(sig_table.msg_hash_rlc);
 
         // Ref. spec SignVerifyChip 1. Verify that keccak(pub_key_bytes) = pub_key_hash
         // by keccak table lookup, where pub_key_bytes is built from the pub_key
@@ -820,19 +820,19 @@ impl<F: Field> SigCircuit<F> {
                     // FIXME: constrain v
                     region.assign_advice(
                         || "assign ec_recover_table selector",
-                        config.sig_table.v,
+                        config.sig_table.sig_v,
                         idx,
                         || Value::known(F::from(signatures[idx].signature.2 as u64)),
                     )?;
 
                     let r_rlc: AssignedValue<_> = assigned_sig_verif.r_rlc.clone().into();
-                    r_rlc.copy_advice(&mut region, config.sig_table.r_rlc, idx);
+                    r_rlc.copy_advice(&mut region, config.sig_table.sig_r_rlc, idx);
 
                     let s_rlc: AssignedValue<_> = assigned_sig_verif.r_rlc.clone().into();
-                    s_rlc.copy_advice(&mut region, config.sig_table.s_rlc, idx);
+                    s_rlc.copy_advice(&mut region, config.sig_table.sig_s_rlc, idx);
 
                     let address: AssignedValue<_> = assigned_sig_verif.address.clone().into();
-                    address.copy_advice(&mut region, config.sig_table.address, idx);
+                    address.copy_advice(&mut region, config.sig_table.recovered_addr, idx);
 
                     let is_valid: AssignedValue<_> = assigned_sig_verif.sig_is_valid.clone().into();
                     is_valid.copy_advice(&mut region, config.sig_table.is_valid, idx);
