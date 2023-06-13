@@ -118,7 +118,22 @@ impl WitnessGenerator {
             let mut word_buf = [0u8; 32];
             old_value.to_big_endian(word_buf.as_mut_slice());
             // sanity check
-            assert_eq!(word_buf, trie.get_store(key.as_ref()).unwrap_or_default());
+            let old_value_in_statedb = trie.get_store(key.as_ref()).unwrap_or_default();
+            if word_buf != old_value_in_statedb {
+                log::error!(
+                    "old value in proof {:?} != old value in partial db {:?}",
+                    hex::encode(word_buf),
+                    hex::encode(old_value_in_statedb)
+                );
+                log::error!(
+                    "address {:?} key {:?} new_value {:?} old_value {:?}",
+                    address,
+                    key,
+                    new_value,
+                    old_value
+                );
+            }
+            assert_eq!(word_buf, old_value_in_statedb);
             StateData {
                 key,
                 value: HexBytes(word_buf),

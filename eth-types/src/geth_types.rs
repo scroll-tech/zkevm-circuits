@@ -5,7 +5,9 @@ use crate::{
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
     Word, U64,
 };
-use ethers_core::types::{NameOrAddress, TransactionRequest, H256};
+use ethers_core::types::{
+    Eip1559TransactionRequest, Eip2930TransactionRequest, NameOrAddress, TransactionRequest, H256,
+};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
@@ -14,6 +16,105 @@ use serde::{Serialize, Serializer};
 use serde_with::serde_as;
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
+use strum_macros::EnumIter;
+
+/// Tx type
+#[derive(Default, Debug, Copy, Clone, EnumIter, Serialize, PartialEq, Eq)]
+pub enum TxType {
+    /// EIP 155 tx
+    #[default]
+    Eip155 = 0,
+    /// Pre EIP 155 tx
+    PreEip155,
+    /// EIP 1559 tx
+    Eip1559,
+    /// EIP 2930 tx
+    Eip2930,
+    /// L1 Message tx
+    L1Msg,
+}
+
+impl From<TxType> for usize {
+    fn from(value: TxType) -> Self {
+        value as usize
+    }
+}
+
+impl From<TxType> for u64 {
+    fn from(value: TxType) -> Self {
+        value as u64
+    }
+}
+
+impl TxType {
+    /// If this type is L1Msg or not
+    pub fn is_l1_msg(&self) -> bool {
+        matches!(*self, TxType::L1Msg)
+    }
+
+    /// Get the type of transaction
+    pub fn get_tx_type(tx: &crate::Transaction) -> Self {
+        match tx.transaction_type {
+            Some(x) if x == U64::from(1) => Self::Eip2930,
+            Some(x) if x == U64::from(2) => Self::Eip2930,
+            Some(x) if x == U64::from(0x7e) => Self::L1Msg,
+            _ => match tx.v.as_u64() {
+                0 | 1 | 27 | 28 => Self::PreEip155,
+                _ => Self::Eip155,
+            },
+        }
+    }
+
+    /// Return the recovery id of signature for recovering the signing pk
+    pub fn get_recovery_id(&self, v: u64) -> u8 {
+        let recovery_id = match *self {
+            TxType::Eip155 => (v + 1) % 2,
+            TxType::PreEip155 => {
+                assert!(v == 0x1b || v == 0x1c, "v: {}", v);
+                v - 27
+            }
+            TxType::Eip1559 => {
+                assert!(v <= 1);
+                v
+            }
+            TxType::Eip2930 => {
+                assert!(v <= 1);
+                v
+            }
+            TxType::L1Msg => {
+                unreachable!("L1 msg does not have signature")
+            }
+        };
+
+        recovery_id as u8
+    }
+}
+
+/// Get the RLP bytes for signing
+pub fn get_rlp_unsigned(tx: &crate::Transaction) -> Vec<u8> {
+    match TxType::get_tx_type(tx) {
+        TxType::Eip155 => {
+            let tx: TransactionRequest = tx.into();
+            tx.rlp().to_vec()
+        }
+        TxType::PreEip155 => {
+            let tx: TransactionRequest = tx.into();
+            tx.rlp_unsigned().to_vec()
+        }
+        TxType::Eip1559 => {
+            let tx: Eip1559TransactionRequest = tx.into();
+            tx.rlp().to_vec()
+        }
+        TxType::Eip2930 => {
+            let tx: Eip2930TransactionRequest = tx.into();
+            tx.rlp().to_vec()
+        }
+        TxType::L1Msg => {
+            // L1 msg does not have signature
+            vec![]
+        }
+    }
+}
 
 /// Definition of all of the data related to an account.
 #[serde_as]
@@ -110,6 +211,8 @@ impl BlockConstants {
 /// Definition of all of the constants related to an Ethereum transaction.
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct Transaction {
+    /// Tx type
+    pub tx_type: TxType,
     /// Sender address
     pub from: Address,
     /// Recipient address (None for contract creation)
@@ -140,6 +243,11 @@ pub struct Transaction {
     /// "s" value of the transaction signature
     pub s: Word,
 
+    /// RLP bytes
+    pub rlp_bytes: Vec<u8>,
+    /// RLP unsigned bytes
+    pub rlp_unsigned_bytes: Vec<u8>,
+
     /// Transaction hash
     pub hash: H256,
 }
@@ -169,6 +277,7 @@ impl From<&Transaction> for crate::Transaction {
 impl From<&crate::Transaction> for Transaction {
     fn from(tx: &crate::Transaction) -> Transaction {
         Transaction {
+            tx_type: TxType::get_tx_type(tx),
             from: tx.from,
             to: tx.to,
             nonce: tx.nonce,
@@ -182,6 +291,8 @@ impl From<&crate::Transaction> for Transaction {
             v: tx.v.as_u64(),
             r: tx.r,
             s: tx.s,
+            rlp_bytes: tx.rlp().to_vec(),
+            rlp_unsigned_bytes: get_rlp_unsigned(tx),
             hash: tx.hash,
         }
     }
@@ -204,7 +315,7 @@ impl From<&Transaction> for TransactionRequest {
 
 impl Transaction {
     /// Return the SignData associated with this Transaction.
-    pub fn sign_data(&self, chain_id: u64) -> Result<SignData, Error> {
+    pub fn sign_data(&self) -> Result<SignData, Error> {
         let sig_r_le = self.r.to_le_bytes();
         let sig_s_le = self.s.to_le_bytes();
         let sig_r = ct_option_ok_or(
@@ -215,28 +326,13 @@ impl Transaction {
             secp256k1::Fq::from_repr(sig_s_le),
             Error::Signature(libsecp256k1::Error::InvalidSignature),
         )?;
-        // msg = rlp([nonce, gasPrice, gas, to, value, data, chain_id, 0, 0])
-        let mut req: TransactionRequest = self.into();
-        if req.to.is_some() {
-            let to = req.to.clone().unwrap();
-            match to {
-                NameOrAddress::Name(_) => {}
-                NameOrAddress::Address(addr) => {
-                    if addr == Address::zero() {
-                        // the rlp of zero addr is 0x80 instead of
-                        // [0x94, 0, ..., 0]
-                        req.to = None;
-                    }
-                }
-            }
-        }
-        let msg = req.chain_id(chain_id).rlp();
+        let msg = self.rlp_unsigned_bytes.clone().into();
         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
             .as_slice()
             .to_vec()
             .try_into()
             .expect("hash length isn't 32 bytes");
-        let v = ((self.v + 1) % 2) as u8;
+        let v = self.tx_type.get_recovery_id(self.v);
         let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());

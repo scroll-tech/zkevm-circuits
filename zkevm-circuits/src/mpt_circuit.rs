@@ -40,12 +40,31 @@ impl<F: Field> SubCircuitConfig<F> for MptCircuitConfig {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let conf = EthTrieConfig::configure_sub(
-            meta,
-            mpt_table.0,
-            poseidon_table.0,
-            challenges.evm_word(),
+        let poseidon_table = (
+            poseidon_table.q_enable,
+            [
+                poseidon_table.hash_id,
+                poseidon_table.input0,
+                poseidon_table.input1,
+                poseidon_table.control,
+                poseidon_table.heading_mark,
+            ],
         );
+        let mpt_table = (
+            mpt_table.q_enable,
+            [
+                mpt_table.address,
+                mpt_table.storage_key,
+                mpt_table.proof_type,
+                mpt_table.new_root,
+                mpt_table.old_root,
+                mpt_table.new_value,
+                mpt_table.old_value,
+            ],
+        );
+
+        let conf =
+            EthTrieConfig::configure_sub(meta, mpt_table, poseidon_table, challenges.evm_word());
         Self(conf)
     }
 }
@@ -67,7 +86,7 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
             (
                 // notice we do not use the accompanied hash circuit so just assign any size
                 100usize,
-                Some(block.circuits_params.max_rws),
+                Some(block.circuits_params.max_mpt_rows),
             ),
             &block.mpt_updates.proof_types,
         );

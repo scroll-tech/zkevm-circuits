@@ -1,11 +1,9 @@
 //! Circuit to verify multiple ECDSA secp256k1 signatures.
-// This module uses two different types of chip configurations
-// - halo2-ecc's ecdsa chip, which is used
-//    - to prove the correctness of secp signatures
-//    - to compute the RLC in circuit
-// - halo2wrong's main gate chip: this is used for keccak lookup table
 //
-//
+// This module uses halo2-ecc's ecdsa chip
+//  - to prove the correctness of secp signatures
+//  - to compute the RLC in circuit
+//  - to perform keccak lookup table
 //
 // Naming notes:
 // - *_be: Big-Endian bytes
@@ -34,12 +32,17 @@ use halo2_ecc::{
         FieldChip,
     },
 };
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::{
     circuit::{Cell, Layouter, Value},
     halo2curves::secp256k1::{Fp, Fq, Secp256k1Affine},
-    plonk::{ConstraintSystem, Error, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
+
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use log::error;
@@ -59,7 +62,7 @@ fn calc_required_advices(num_verif: usize) -> usize {
     let total_cells = num_verif * CELLS_PER_SIG;
     while num_adv < 150 {
         if num_adv << TOTAL_NUM_ROWS > total_cells {
-            log::info!(
+            log::debug!(
                 "ecdsa chip uses {} advice columns for {} signatures",
                 num_adv,
                 num_verif
@@ -113,7 +116,7 @@ impl<F: Field> SignVerifyChip<F> {
                 CELLS_PER_SIG
             )
         } else {
-            log::info!(
+            log::debug!(
                 "ecdsa chip: rows: {}, advice {}, num of sigs {}, cells per sig {}",
                 TOTAL_NUM_ROWS,
                 calc_required_advices(num_verif),
@@ -138,45 +141,43 @@ impl<F: Field> Default for SignVerifyChip<F> {
 /// SignVerify Configuration
 #[derive(Debug, Clone)]
 pub(crate) struct SignVerifyConfig<F: Field> {
-    // ECDSA
+    /// ECDSA
     ecdsa_config: FpChip<F>,
-    // main_gate_config: MainGateConfig,
-    // Keccak
+    /// A fixed column to store F::one
+    // FIXME: it is pretty wasteful to allocate a new fixed column just
+    // to store a constant value F::one.
+    fixed_column: Column<Fixed>,
+    /// An advice column to store RLC witnesses
+    rlc_column: Column<Advice>,
+    /// selector for keccak lookup table
     q_keccak: Selector,
     keccak_table: KeccakTable,
 }
 
 impl<F: Field> SignVerifyConfig<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>, keccak_table: KeccakTable) -> Self {
+        #[cfg(feature = "onephase")]
+        let num_advice = [calc_required_advices(MAX_NUM_SIG)];
+        #[cfg(not(feature = "onephase"))]
+        // need an additional phase 2 column/basic gate to hold the witnesses during RLC
+        // computations
+        let num_advice = [calc_required_advices(MAX_NUM_SIG), 1];
+
+        #[cfg(feature = "onephase")]
+        log::debug!("configuring ECDSA chip with single phase");
+        #[cfg(not(feature = "onephase"))]
+        log::debug!("configuring ECDSA chip with multiple phases");
+
         // halo2-ecc's ECDSA config
         //
-        // Create a new FpConfig chip for the following parameters
-        // {"strategy":"Simple","degree":14,"num_advice":36,"num_lookup_advice":6,"
-        // num_fixed":1," lookup_bits":13,"limb_bits":88,"num_limbs":3}
-        //
         // - num_advice: 36
-        // - num_lookup_advice: 6
+        // - num_lookup_advice: 17
         // - num_fixed: 1
         // - lookup_bits: 13
         // - limb_bits: 88
         // - num_limbs: 3
         //
         // TODO: make those parameters tunable from a config file
-
-        #[cfg(feature = "onephase")]
-        // need one extra column to host the lookup cells and RLC cells
-        let num_advice = [calc_required_advices(MAX_NUM_SIG) + 1];
-        #[cfg(not(feature = "onephase"))]
-        // need two phase 2 columns:
-        // - one to hold the witnesses for RLC computations
-        // - one to hold the actual results of RLCs, i.e., rlc_column
-        let num_advice = [calc_required_advices(MAX_NUM_SIG), 2];
-
-        #[cfg(feature = "onephase")]
-        log::info!("configuring ECDSA chip with single phase");
-        #[cfg(not(feature = "onephase"))]
-        log::info!("configuring ECDSA chip with multiple phases");
-
         let ecdsa_config = FpConfig::configure(
             meta,
             FpStrategy::Simple,
@@ -191,14 +192,18 @@ impl<F: Field> SignVerifyConfig<F> {
             TOTAL_NUM_ROWS, // maximum k of the chip
         );
 
-        // halo2wrong's main gate config
+        // we are not really using this instance column
         let instance = meta.instance_column();
         meta.enable_equality(instance);
-
-        #[cfg(not(feature = "onephase"))]
-        let rlc_column = ecdsa_config.range.gate.basic_gates[1].last().unwrap().value;
+        // we will need one fixed column to check if ecdsa is valid
+        let fixed_column = meta.fixed_column();
+        meta.enable_equality(fixed_column);
+        // we need one phase 2 column to store RLC results
         #[cfg(feature = "onephase")]
-        let rlc_column = ecdsa_config.range.gate.basic_gates[0].last().unwrap().value;
+        let rlc_column = meta.advice_column_in(FirstPhase);
+        #[cfg(not(feature = "onephase"))]
+        let rlc_column = meta.advice_column_in(SecondPhase);
+        meta.enable_equality(rlc_column);
 
         // Ref. spec SignVerifyChip 1. Verify that keccak(pub_key_bytes) = pub_key_hash
         // by keccak table lookup, where pub_key_bytes is built from the pub_key
@@ -210,7 +215,7 @@ impl<F: Field> SignVerifyConfig<F> {
             // msg_hash and signature which is not constrained to match msg_hash_rlc nor
             // the address.
             // Layout:
-            // | q_keccak |        rlc      |
+            // | q_keccak |       rlc       |
             // | -------- | --------------- |
             // |     1    | is_address_zero |
             // |          |    pk_rlc       |
@@ -221,17 +226,18 @@ impl<F: Field> SignVerifyConfig<F> {
 
             let input = [
                 is_enable.clone(),
+                is_enable.clone(),
                 is_enable.clone() * meta.query_advice(rlc_column, Rotation(1)),
                 is_enable.clone() * 64usize.expr(),
                 is_enable * meta.query_advice(rlc_column, Rotation(2)),
             ];
             let table = [
-                keccak_table.is_enabled,
-                keccak_table.input_rlc,
-                keccak_table.input_len,
-                keccak_table.output_rlc,
-            ]
-            .map(|column| meta.query_advice(column, Rotation::cur()));
+                meta.query_fixed(keccak_table.q_enable, Rotation::cur()),
+                meta.query_advice(keccak_table.is_final, Rotation::cur()),
+                meta.query_advice(keccak_table.input_rlc, Rotation::cur()),
+                meta.query_advice(keccak_table.input_len, Rotation::cur()),
+                meta.query_advice(keccak_table.output_rlc, Rotation::cur()),
+            ];
 
             input.into_iter().zip(table).collect()
         });
@@ -240,6 +246,8 @@ impl<F: Field> SignVerifyConfig<F> {
             ecdsa_config,
             keccak_table,
             q_keccak,
+            fixed_column,
+            rlc_column,
         }
     }
 }
@@ -365,7 +373,6 @@ impl<F: Field> SignVerifyChip<F> {
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
         // build Fq chip from Fp chip
-        // TODO: pass the parameters
         let fq_chip = FqChip::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq>());
 
         log::trace!("r: {:?}", sig_r);
@@ -424,22 +431,10 @@ impl<F: Field> SignVerifyChip<F> {
         // |          |    pk_hash_rlc  |
         config.q_keccak.enable(&mut ctx.region, *offset)?;
 
-        // this is a phase 2 column if "onephase" is not enabled
-        #[cfg(not(feature = "onephase"))]
-        let rlc_column = config.ecdsa_config.range.gate.basic_gates[1]
-            .last()
-            .unwrap()
-            .value;
-        #[cfg(feature = "onephase")]
-        let rlc_column = config.ecdsa_config.range.gate.basic_gates[0]
-            .last()
-            .unwrap()
-            .value;
-
         // is_address_zero
         let tmp_cell = ctx.region.assign_advice(
             || "is_address_zero",
-            rlc_column,
+            config.rlc_column,
             *offset,
             || is_address_zero.value,
         )?;
@@ -447,15 +442,18 @@ impl<F: Field> SignVerifyChip<F> {
             .constrain_equal(is_address_zero.cell, tmp_cell.cell())?;
 
         // pk_rlc
-        let tmp_cell =
-            ctx.region
-                .assign_advice(|| "pk_rlc", rlc_column, *offset + 1, || pk_rlc.value)?;
+        let tmp_cell = ctx.region.assign_advice(
+            || "pk_rlc",
+            config.rlc_column,
+            *offset + 1,
+            || pk_rlc.value,
+        )?;
         ctx.region.constrain_equal(pk_rlc.cell, tmp_cell.cell())?;
 
         // pk_hash_rlc
         let tmp_cell = ctx.region.assign_advice(
             || "pk_hash_rlc",
-            rlc_column,
+            config.rlc_column,
             *offset + 2,
             || pk_hash_rlc.value,
         )?;
@@ -718,12 +716,12 @@ impl<F: Field> SignVerifyChip<F> {
         let mut first_pass = SKIP_FIRST_PASS;
         let ecdsa_chip = &config.ecdsa_config;
 
-        let (deferred_keccak_check, assigned_sig_verifs) = layouter.assign_region(
+        let assigned_sig_verifs = layouter.assign_region(
             || "ecdsa chip verification",
             |region| {
                 if first_pass {
                     first_pass = false;
-                    return Ok((vec![], vec![]));
+                    return Ok(vec![]);
                 }
 
                 let mut ctx = ecdsa_chip.new_context(region);
@@ -756,7 +754,7 @@ impl<F: Field> SignVerifyChip<F> {
                 }
 
                 // IMPORTANT: Move to Phase2 before RLC
-                log::info!("before proceeding to the next phase");
+                log::debug!("before proceeding to the next phase");
                 ctx.print_stats(&["Range"]);
 
                 #[cfg(not(feature = "onephase"))]
@@ -783,11 +781,23 @@ impl<F: Field> SignVerifyChip<F> {
                         &e.sig_is_valid,
                     )?;
                     assigned_sig_verifs.push(assigned_sig_verif);
-                    deferred_keccak_check.push([
-                        AssignedValueNoTimer::from(to_be_keccak_checked[0].clone()),
-                        AssignedValueNoTimer::from(to_be_keccak_checked[1].clone()),
-                        AssignedValueNoTimer::from(to_be_keccak_checked[2].clone()),
-                    ]);
+                    deferred_keccak_check.push(to_be_keccak_checked);
+                }
+
+                // ================================================
+                // step 4: deferred keccak checks
+                // ================================================
+                let mut offset = 0;
+                for e in deferred_keccak_check.iter() {
+                    let [is_address_zero, pk_rlc, pk_hash_rlc] = e;
+                    self.enable_keccak_lookup(
+                        config,
+                        &mut ctx,
+                        &mut offset,
+                        is_address_zero,
+                        pk_rlc,
+                        pk_hash_rlc,
+                    )?;
                 }
 
                 // IMPORTANT: this assigns all constants to the fixed columns
@@ -795,40 +805,10 @@ impl<F: Field> SignVerifyChip<F> {
                 // check lookups
                 // This is not optional.
                 let lookup_cells = ecdsa_chip.finalize(&mut ctx);
-                log::info!("total number of lookup cells: {}", lookup_cells);
+                log::debug!("total number of lookup cells: {}", lookup_cells);
 
-                for sig_verif in assigned_sig_verifs.iter() {
-                    config.ecdsa_config.range.gate.assert_equal(
-                        &mut ctx,
-                        QuantumCell::Existing(&sig_verif.sig_is_valid.clone().into()),
-                        QuantumCell::Constant(F::one()),
-                    );
-                }
                 ctx.print_stats(&["Range"]);
-                Ok((deferred_keccak_check, assigned_sig_verifs))
-            },
-        )?;
-
-        layouter.assign_region(
-            || "keccak lookup",
-            |region| {
-                let mut ctx = ecdsa_chip.new_context(region);
-                let mut offset = 0;
-                for e in deferred_keccak_check.iter() {
-                    let [is_address_zero, pk_rlc, pk_hash_rlc] = e;
-                    let is_address_zero = AssignedValue::from(is_address_zero);
-                    let pk_rlc = AssignedValue::from(pk_rlc);
-                    let pk_hash_rlc = AssignedValue::from(pk_hash_rlc);
-                    self.enable_keccak_lookup(
-                        config,
-                        &mut ctx,
-                        &mut offset,
-                        &is_address_zero,
-                        &pk_rlc,
-                        &pk_hash_rlc,
-                    )?;
-                }
-                Ok(())
+                Ok(assigned_sig_verifs)
             },
         )?;
 
@@ -943,24 +923,29 @@ impl<F: Field> SignVerifyChip<F> {
 
     pub(crate) fn assert_sig_is_valid(
         &self,
-        _config: &SignVerifyConfig<F>,
+        config: &SignVerifyConfig<F>,
         layouter: &mut impl Layouter<F>,
         sig_verifs: &[AssignedSignatureVerify<F>],
     ) -> Result<(), Error> {
-        // let flex_gate_chip = &config.ecdsa_config.range.gate;
-        for (i, s) in sig_verifs.iter().enumerate() {
-            log::trace!(
-                "checking {}-th signature is valid: {:?}",
-                i,
-                s.sig_is_valid.value
-            );
-        }
-
         layouter.assign_region(
             || "ecdsa chip verification",
-            |_region| {
-                // not doing anything as the validity is already been checked
-                // within assign() function
+            |mut region| {
+                let one = region.assign_fixed(
+                    || "one",
+                    config.fixed_column,
+                    0,
+                    || Value::known(F::one()),
+                )?;
+
+                for (i, sig_verif) in sig_verifs.iter().enumerate() {
+                    log::trace!(
+                        "checking {}-th signature is valid: {:?}",
+                        i,
+                        sig_verif.sig_is_valid.value
+                    );
+
+                    region.constrain_equal(sig_verif.sig_is_valid.cell, one.cell())?;
+                }
 
                 Ok(())
             },
@@ -1119,7 +1104,7 @@ mod sign_verify_tests {
         let mut rng = XorShiftRng::seed_from_u64(1);
         let max_sigs = [4];
         for max_sig in max_sigs.iter() {
-            log::info!("testing for {} signatures", max_sig);
+            log::debug!("testing for {} signatures", max_sig);
             let mut signatures = Vec::new();
             for _ in 0..*max_sig {
                 let (sk, pk) = gen_key_pair(&mut rng);
@@ -1142,7 +1127,7 @@ mod sign_verify_tests {
             let k = TOTAL_NUM_ROWS as u32;
             run::<Fr>(k, *max_sig, signatures);
 
-            log::info!("end of testing for {} signatures", max_sig);
+            log::debug!("end of testing for {} signatures", max_sig);
         }
     }
 }

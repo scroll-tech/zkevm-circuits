@@ -5,7 +5,7 @@ use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Value},
-    plonk::{Challenge, ConstraintSystem, Error, Expression, FirstPhase, VirtualCells},
+    plonk::{Challenge, Circuit, ConstraintSystem, Error, Expression, FirstPhase, VirtualCells},
 };
 use keccak256::plain::Keccak;
 
@@ -18,6 +18,9 @@ use crate::{evm_circuit::util::rlc, table::TxLogFieldTag, witness};
 use eth_types::{Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
+
+/// A wrapper of is_zero in gadgets which gives is_zero at any rotation
+pub mod is_zero;
 
 pub(crate) fn query_expression<F: FieldExt, T>(
     meta: &mut ConstraintSystem<F>,
@@ -207,6 +210,12 @@ pub trait SubCircuit<F: Field> {
     /// Configuration of the SubCircuit.
     type Config: SubCircuitConfig<F>;
 
+    /// Returns number of unusable rows of the SubCircuit, which should be
+    /// `meta.blinding_factors() + 1`.
+    fn unusable_rows() -> usize {
+        256
+    }
+
     /// Create a new SubCircuit from a witness Block
     fn new_from_block(block: &witness::Block<F>) -> Self;
 
@@ -250,13 +259,13 @@ pub(crate) fn keccak(msg: &[u8]) -> Word {
     Word::from_big_endian(keccak.digest().as_slice())
 }
 
-pub(crate) fn is_push(byte: u8) -> bool {
-    OpcodeId::from(byte).is_push()
+pub(crate) fn is_push_with_data(byte: u8) -> bool {
+    OpcodeId::from(byte).is_push_with_data()
 }
 
 pub(crate) fn get_push_size(byte: u8) -> u64 {
-    if is_push(byte) {
-        byte as u64 - OpcodeId::PUSH1.as_u64() + 1
+    if is_push_with_data(byte) {
+        byte as u64 - OpcodeId::PUSH0.as_u64()
     } else {
         0u64
     }
@@ -309,7 +318,31 @@ pub(crate) fn circuit_stats<F: Field>(meta: &ConstraintSystem<F>) -> CircuitStat
         num_rotation: rotations.len(),
         min_rotation: rotations.first().cloned().unwrap_or_default(),
         max_rotation: rotations.last().cloned().unwrap_or_default(),
-        // TODO: add permutation related ecmuls
-        num_verification_ecmul: meta.num_advice_columns + 3 * meta.lookups.len() + rotations.len(),
+        num_verification_ecmul: meta.num_advice_columns
+            + meta.num_instance_columns
+            + meta.permutation.columns.len()
+            + meta.num_selectors
+            + meta.num_fixed_columns
+            + 3 * meta.lookups.len()
+            + rotations.len(),
     }
+}
+
+/// Returns number of unusable rows of the Circuit.
+/// The minimum unusable rows of a circuit is currently 6, where
+/// - 3 comes from minimum number of distinct queries to permutation argument witness column
+/// - 1 comes from queries at x_3 during multiopen
+/// - 1 comes as slight defense against off-by-one errors
+/// - 1 comes from reservation for last row for grand-product boundray check, hence not copy-able or
+///   lookup-able. Note this 1 is not considered in [`ConstraintSystem::blinding_factors`], so below
+///   we need to add an extra 1.
+///
+/// For circuit with column queried at more than 3 distinct rotation, we can
+/// calculate the unusable rows as (x - 3) + 6 where x is the number of distinct
+/// rotation.
+pub(crate) fn unusable_rows<F: Field, C: Circuit<F>>() -> usize {
+    let mut cs = ConstraintSystem::default();
+    C::configure(&mut cs);
+
+    cs.blinding_factors() + 1
 }

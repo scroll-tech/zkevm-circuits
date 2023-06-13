@@ -28,12 +28,12 @@ pub enum Error {
     /// Code not found in the CodeDB
     CodeNotFound(H256),
     /// Unable to figure out error at a [`GethExecStep`]
-    UnexpectedExecStepError(&'static str, GethExecStep),
+    UnexpectedExecStepError(&'static str, Box<GethExecStep>),
     /// Invalid [`eth_types::GethExecTrace`] due to an invalid/unexpected value
     /// in it.
     InvalidGethExecTrace(&'static str),
     /// Invalid [`GethExecStep`] due to an invalid/unexpected value in it.
-    InvalidGethExecStep(&'static str, GethExecStep),
+    InvalidGethExecStep(&'static str, Box<GethExecStep>),
     /// Eth type related error.
     EthTypeError(eth_types::Error),
     /// EVM Execution error
@@ -70,8 +70,8 @@ pub enum OogError {
     /// Out of Gas for MLOAD, MSTORE, MSTORE8, which have static memory
     /// expansion gas cost
     StaticMemoryExpansion,
-    /// Out of Gas for CREATE, RETURN, REVERT, which have dynamic memory
-    /// expansion gas cost
+    /// Out of Gas for RETURN, REVERT, which have dynamic memory expansion gas
+    /// cost
     DynamicMemoryExpansion,
     /// Out of Gas for CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY,
     /// which copy a specified chunk of memory
@@ -92,10 +92,30 @@ pub enum OogError {
     SloadSstore,
     /// Out of Gas for CALL, CALLCODE, DELEGATECALL and STATICCALL
     Call,
-    /// Out of Gas for CREATE2
-    Create2,
+    /// Out of Gas for CREATE and CREATE2
+    Create,
     /// Out of Gas for SELFDESTRUCT
     SelfDestruct,
+}
+
+/// Contract address collision errors by opcode/state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ContractAddressCollisionError {
+    /// Contract address collision during CREATE opcode.
+    Create,
+    /// Contract address collision during CREATE2 opcode.
+    Create2,
+}
+
+/// Depth above limit errors by opcode/state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DepthError {
+    /// Depth above limit during CALL/CALLCODE/DELEGATECALL/STATICCALL opcode.
+    Call,
+    /// Depth above limit during CREATE opcode.
+    Create,
+    /// Depth above limit during CREATE2 opcode.
+    Create2,
 }
 
 /// Insufficient balance errors by opcode/state.
@@ -133,11 +153,11 @@ pub enum ExecError {
     /// SELFDESTRUCT
     WriteProtection,
     /// For CALL, CALLCODE, DELEGATECALL, STATICCALL
-    Depth,
+    Depth(DepthError),
     /// For CALL, CALLCODE, CREATE, CREATE2
     InsufficientBalance(InsufficientBalanceError),
     /// For CREATE, CREATE2
-    ContractAddressCollision,
+    ContractAddressCollision(ContractAddressCollisionError),
     /// contract must not begin with 0xef due to EIP #3541 EVM Object Format
     /// (EOF)
     InvalidCreationCode,
@@ -163,9 +183,7 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
             OpcodeId::MLOAD | OpcodeId::MSTORE | OpcodeId::MSTORE8 => {
                 OogError::StaticMemoryExpansion
             }
-            OpcodeId::CREATE | OpcodeId::RETURN | OpcodeId::REVERT => {
-                OogError::DynamicMemoryExpansion
-            }
+            OpcodeId::RETURN | OpcodeId::REVERT => OogError::DynamicMemoryExpansion,
             OpcodeId::CALLDATACOPY
             | OpcodeId::CODECOPY
             | OpcodeId::EXTCODECOPY
@@ -182,7 +200,7 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
                 OogError::Call
             }
             OpcodeId::SLOAD | OpcodeId::SSTORE => OogError::SloadSstore,
-            OpcodeId::CREATE2 => OogError::Create2,
+            OpcodeId::CREATE | OpcodeId::CREATE2 => OogError::Create,
             OpcodeId::SELFDESTRUCT => OogError::SelfDestruct,
             _ => OogError::Constant,
         };

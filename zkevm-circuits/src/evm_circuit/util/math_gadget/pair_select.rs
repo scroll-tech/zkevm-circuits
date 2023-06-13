@@ -1,5 +1,8 @@
 use crate::{
-    evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell},
+    evm_circuit::util::{
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        CachedRegion, Cell,
+    },
     util::Expr,
 };
 use eth_types::Field;
@@ -22,7 +25,7 @@ pub struct PairSelectGadget<F> {
 
 impl<F: Field> PairSelectGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         value: Expression<F>,
         a: Expression<F>,
         b: Expression<F>,
@@ -59,6 +62,8 @@ impl<F: Field> PairSelectGadget<F> {
 
 #[cfg(test)]
 mod tests {
+    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
+
     use super::{super::test_util::*, *};
     use eth_types::*;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
@@ -75,7 +80,7 @@ mod tests {
     impl<F: Field, const SELECT_A: bool> MathGadgetContainer<F>
         for PairSelectionTestContainer<F, SELECT_A>
     {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let v = cb.query_cell();
             let a = cb.query_cell();
             let b = cb.query_cell();

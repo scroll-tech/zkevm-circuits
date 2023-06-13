@@ -49,10 +49,12 @@ mod tests {
             max_txs: 500,
             max_calldata: 2_000_000,
             max_inner_blocks: 64,
+            max_mpt_rows: 3_000_000,
             max_bytecode: 3_000_000,
             max_keccak_rows: 0, // FIXME: can this be none?
             max_exp_steps: 100_000,
             max_evm_rows: 4_000_000,
+            max_rlp_rows: 4_000_000,
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let (builder, _) = cli.gen_inputs(block_num).await.unwrap();

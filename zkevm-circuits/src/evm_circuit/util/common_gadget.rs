@@ -1,4 +1,5 @@
 use super::{
+    constraint_builder::ConstrainBuilderCommon,
     from_bytes,
     math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
     memory_gadget::{CommonMemoryAddressGadget, MemoryExpansionGadget},
@@ -11,7 +12,7 @@ use crate::{
         table::{FixedTableTag, Lookup},
         util::{
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
@@ -29,6 +30,10 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
+mod tx_l1_fee;
+
+pub(crate) use tx_l1_fee::TxL1FeeGadget;
+
 /// Construction of execution state that stays in the same call context, which
 /// lookups the opcode and verifies the execution state is responsible for it,
 /// then calculates the gas_cost and constrain the state transition.
@@ -40,7 +45,7 @@ pub(crate) struct SameContextGadget<F> {
 
 impl<F: Field> SameContextGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         opcode: Cell<F>,
         step_state_transition: StepStateTransition<F>,
     ) -> Self {
@@ -79,11 +84,8 @@ impl<F: Field> SameContextGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from((step.gas_left - step.gas_cost) as u64),
-        )?;
+        self.sufficient_gas_left
+            .assign(region, offset, F::from(step.gas_left - step.gas_cost))?;
 
         Ok(())
     }
@@ -106,7 +108,7 @@ pub(crate) struct RestoreContextGadget<F> {
 impl<F: Field> RestoreContextGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         is_success: Expression<F>,
         // Expression for the number of rw lookups that occur after this gadget is constructed.
         subsequent_rw_lookups: Expression<F>,
@@ -166,11 +168,12 @@ impl<F: Field> RestoreContextGadget<F> {
             * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
             * return_data_length;
 
-        let gas_refund = if cb.execution_state().halts_in_exception() {
-            0.expr() // no gas refund if call halts in exception
-        } else {
-            cb.curr.state.gas_left.expr() - memory_expansion_cost - code_deposit_cost
-        };
+        let gas_refund =
+            if cb.execution_state().halts_in_exception() || cb.execution_state().is_precompiled() {
+                0.expr() // no gas refund if call halts in exception
+            } else {
+                cb.curr.state.gas_left.expr() - memory_expansion_cost - code_deposit_cost
+            };
 
         let gas_left = caller_gas_left.expr() + gas_refund;
 
@@ -223,13 +226,29 @@ impl<F: Field> RestoreContextGadget<F> {
         step: &ExecStep,
         rw_offset: usize,
     ) -> Result<(), Error> {
+        let field_tags = [
+            CallContextFieldTag::CallerId,
+            CallContextFieldTag::IsRoot,
+            CallContextFieldTag::IsCreate,
+            CallContextFieldTag::CodeHash,
+            CallContextFieldTag::ProgramCounter,
+            CallContextFieldTag::StackPointer,
+            CallContextFieldTag::GasLeft,
+            CallContextFieldTag::MemorySize,
+            CallContextFieldTag::ReversibleWriteCounter,
+        ];
         let [caller_id, caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             if call.is_root {
                 [U256::zero(); 9]
             } else {
-                [0, 1, 2, 3, 4, 5, 6, 7, 8]
-                    .map(|i| step.rw_indices[i + rw_offset])
-                    .map(|idx| block.rws[idx].call_context_value())
+                field_tags
+                    .zip([0, 1, 2, 3, 4, 5, 6, 7, 8])
+                    .map(|(field_tag, i)| {
+                        let idx = step.rw_indices[i + rw_offset];
+                        let rw = block.rws[idx];
+                        debug_assert_eq!(rw.field_tag(), Some(field_tag as u64));
+                        rw.call_context_value()
+                    })
             };
 
         for (cell, value) in [
@@ -272,7 +291,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
     UpdateBalanceGadget<F, N_ADDENDS, INCREASE>
 {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         address: Expression<F>,
         updates: Vec<Word<F>>,
         reversion_info: Option<&mut ReversionInfo<F>>,
@@ -367,7 +386,7 @@ pub(crate) struct TransferWithGasFeeGadget<F> {
 impl<F: Field> TransferWithGasFeeGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         sender_address: Expression<F>,
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
@@ -500,7 +519,7 @@ pub(crate) struct TransferGadget<F> {
 
 impl<F: Field> TransferGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         sender_address: Expression<F>,
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
@@ -635,7 +654,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
     CommonCallGadget<F, MemAddrGadget, IS_SUCCESS_CALL>
 {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         is_call: Expression<F>,
         is_callcode: Expression<F>,
         is_delegatecall: Expression<F>,
@@ -836,7 +855,7 @@ pub(crate) struct SloadGasGadget<F> {
 }
 
 impl<F: Field> SloadGasGadget<F> {
-    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
+    pub(crate) fn construct(_cb: &mut EVMConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
         let gas_cost = select::expr(
             is_warm.expr(),
             GasCost::WARM_ACCESS.expr(),
@@ -866,7 +885,7 @@ pub(crate) struct SstoreGasGadget<F> {
 
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         value: Cell<F>,
         value_prev: Cell<F>,
         original_value: Cell<F>,
@@ -987,7 +1006,7 @@ pub(crate) struct CommonErrorGadget<F> {
 
 impl<F: Field> CommonErrorGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
     ) -> Self {
@@ -1001,7 +1020,7 @@ impl<F: Field> CommonErrorGadget<F> {
     }
 
     pub(crate) fn construct_with_lastcallee_return_data(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
         return_data_offset: Expression<F>,
@@ -1091,8 +1110,8 @@ impl<F: Field> CommonErrorGadget<F> {
     }
 }
 
-/// Check if the passed in word is within the specified byte range and less than
-/// a maximum cap.
+/// Check if the passed in word is within the specified byte range
+/// (not overflow) and less than a maximum cap.
 #[derive(Clone, Debug)]
 pub(crate) struct WordByteCapGadget<F, const VALID_BYTES: usize> {
     word: WordByteRangeGadget<F, VALID_BYTES>,
@@ -1100,16 +1119,16 @@ pub(crate) struct WordByteCapGadget<F, const VALID_BYTES: usize> {
 }
 
 impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, cap: Expression<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, cap: Expression<F>) -> Self {
         let word = WordByteRangeGadget::construct(cb);
-        let value = select::expr(word.within_range(), word.valid_value(), cap.expr());
+        let value = select::expr(word.overflow(), cap.expr(), word.valid_value());
         let lt_cap = LtGadget::construct(cb, value, cap);
 
         Self { word, lt_cap }
     }
 
-    /// Return true if within the specified byte range, false if overflow. No
-    /// matter whether it is less than the cap.
+    /// Return true if within the specified byte range (not overflow), false if
+    /// overflow. No matter whether it is less than the cap.
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -1117,9 +1136,9 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         original: U256,
         cap: F,
     ) -> Result<bool, Error> {
-        let within_range = self.word.assign(region, offset, original)?;
+        let not_overflow = self.word.assign(region, offset, original)?;
 
-        let value = if within_range {
+        let value = if not_overflow {
             let mut bytes = [0; 32];
             bytes[0..VALID_BYTES].copy_from_slice(&original.to_le_bytes()[0..VALID_BYTES]);
             F::from_repr(bytes).unwrap()
@@ -1129,7 +1148,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
 
         self.lt_cap.assign(region, offset, value, cap)?;
 
-        Ok(within_range)
+        Ok(not_overflow)
     }
 
     pub(crate) fn lt_cap(&self) -> Expression<F> {
@@ -1148,28 +1167,28 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         self.word.valid_value()
     }
 
-    pub(crate) fn within_range(&self) -> Expression<F> {
-        self.word.within_range()
+    pub(crate) fn not_overflow(&self) -> Expression<F> {
+        self.word.not_overflow()
     }
 }
 
-/// Check if the passed in word is within the specified byte range.
+/// Check if the passed in word is within the specified byte range (not overflow).
 #[derive(Clone, Debug)]
 pub(crate) struct WordByteRangeGadget<F, const VALID_BYTES: usize> {
     original: Word<F>,
-    within_range: IsZeroGadget<F>,
+    not_overflow: IsZeroGadget<F>,
 }
 
 impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
         debug_assert!(VALID_BYTES < 32);
 
         let original = cb.query_word_rlc();
-        let within_range = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
+        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
 
         Self {
             original,
-            within_range,
+            not_overflow,
         }
     }
 
@@ -1180,15 +1199,13 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         offset: usize,
         original: U256,
     ) -> Result<bool, Error> {
-        debug_assert!(VALID_BYTES < 32);
-
         self.original
             .assign(region, offset, Some(original.to_le_bytes()))?;
 
         let overflow_hi = original.to_le_bytes()[VALID_BYTES..]
             .iter()
             .fold(0, |acc, val| acc + u64::from(*val));
-        self.within_range
+        self.not_overflow
             .assign(region, offset, F::from(overflow_hi))?;
 
         Ok(overflow_hi == 0)
@@ -1199,16 +1216,14 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
     }
 
     pub(crate) fn overflow(&self) -> Expression<F> {
-        not::expr(self.within_range())
+        not::expr(self.not_overflow())
     }
 
     pub(crate) fn valid_value(&self) -> Expression<F> {
-        debug_assert!(VALID_BYTES < 32);
-
         from_bytes::expr(&self.original.cells[..VALID_BYTES])
     }
 
-    pub(crate) fn within_range(&self) -> Expression<F> {
-        self.within_range.expr()
+    pub(crate) fn not_overflow(&self) -> Expression<F> {
+        self.not_overflow.expr()
     }
 }

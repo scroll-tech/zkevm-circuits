@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::{SameContextGadget, SloadGasGadget},
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
             CachedRegion, Cell,
         },
@@ -34,7 +34,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SLOAD;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);

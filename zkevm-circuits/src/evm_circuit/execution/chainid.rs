@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -27,7 +27,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CHAINID;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let chain_id = cb.query_cell_phase2();
 
         // Push the value to the stack

@@ -4,8 +4,8 @@ use crate::{
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, CachedRegion,
-            Cell,
+            common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -25,7 +25,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorStack;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         cb.add_lookup(
@@ -131,7 +131,7 @@ mod test {
             }
         }
         // append final stop op code
-        bytecode.write_op(OpcodeId::STOP);
+        bytecode.op_stop();
 
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),

@@ -4,17 +4,35 @@ mod cell_manager;
 pub mod keccak_packed_multi;
 mod param;
 mod table;
-#[cfg(test)]
-mod test;
 /// Util
 mod util;
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
+#[cfg(any(feature = "test", test))]
+mod test;
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use dev::KeccakCircuit as TestKeccakCircuit;
+use std::cmp::max;
 
 use std::marker::PhantomData;
 pub use KeccakCircuitConfig as KeccakConfig;
 
-use self::{cell_manager::*, keccak_packed_multi::*, param::*, table::*, util::*};
+use self::{
+    cell_manager::*,
+    keccak_packed_multi::{keccak_unusable_rows, multi_keccak, KeccakRow},
+    param::*,
+    table::*,
+    util::*,
+};
 use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    keccak_circuit::keccak_packed_multi::{
+        decode, get_num_bits_per_absorb_lookup, get_num_bits_per_base_chi_lookup,
+        get_num_bits_per_rho_pi_lookup, get_num_bits_per_theta_c_lookup, get_num_rows_per_round,
+        split, split_uniform, transform, transform_to, Part,
+    },
     table::{KeccakTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
@@ -22,13 +40,10 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{and, not, select, sum, Expr};
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
+    circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed, TableColumn, VirtualCells},
     poly::Rotation,
 };
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// KeccakConfig
 #[derive(Clone, Debug)]
@@ -42,7 +57,8 @@ pub struct KeccakCircuitConfig<F> {
     q_padding_last: Column<Fixed>,
     /// The columns for other circuits to lookup Keccak hash results
     pub keccak_table: KeccakTable,
-    cell_manager: CellManager<F>,
+    /// Expose the columns that stores the cells for hash input/output
+    pub cell_manager: CellManager<F>,
     round_cst: Column<Fixed>,
     normalize_3: [TableColumn; 2],
     normalize_4: [TableColumn; 2],
@@ -75,7 +91,8 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             get_num_rows_per_round() > NUM_BYTES_PER_WORD,
             "KeccakCircuit requires KECCAK_ROWS>=9"
         );
-        let q_enable = meta.fixed_column();
+        let q_enable = keccak_table.q_enable;
+
         let q_first = meta.fixed_column();
         let q_round = meta.fixed_column();
         let q_absorb = meta.fixed_column();
@@ -84,7 +101,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         let q_padding_last = meta.fixed_column();
         let round_cst = meta.fixed_column();
 
-        let is_final = keccak_table.is_enabled;
+        let is_final = keccak_table.is_final;
         let length = keccak_table.input_len;
         let data_rlc = keccak_table.input_rlc;
         let hash_rlc = keccak_table.output_rlc;
@@ -176,7 +193,14 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         cell_manager.start_region();
         let mut lookup_counter = 0;
         // Potential optimization: could do multiple bytes per lookup
-        let packed_parts = split::expr(meta, &mut cell_manager, &mut cb, absorb_data.expr(), 0, 8);
+        let packed_parts = split::expr(
+            meta,
+            &mut cell_manager,
+            &mut cb,
+            absorb_data.expr(),
+            0,
+            NUM_BYTES_PER_WORD,
+        );
         cell_manager.start_region();
         let input_bytes = transform::expr(
             "input unpack",
@@ -869,12 +893,13 @@ impl<F: Field> KeccakCircuitConfig<F> {
         )
     }
 
-    fn set_row(
+    /// Set the cells for a keccak row; return the cells that are assigned.
+    pub fn set_row(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
         row: &KeccakRow<F>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         // Fixed selectors
         for (name, column, value) in &[
             ("q_enable", self.q_enable, F::from(row.q_enable)),
@@ -909,18 +934,19 @@ impl<F: Field> KeccakCircuitConfig<F> {
         )?;
 
         // Cell values
+        let mut res = vec![];
         for (idx, (bit, column)) in row
             .cell_values
             .iter()
             .zip(self.cell_manager.columns())
             .enumerate()
         {
-            region.assign_advice(
+            res.push(region.assign_advice(
                 || format!("assign lookup value {} {}", idx, offset),
                 column.advice,
                 offset,
                 || Value::known(*bit),
-            )?;
+            )?);
         }
 
         // Round constant
@@ -931,10 +957,11 @@ impl<F: Field> KeccakCircuitConfig<F> {
             || Value::known(row.round_cst),
         )?;
 
-        Ok(())
+        Ok(res)
     }
 
-    pub(crate) fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    /// Load the auxiliary table for keccak table.
+    pub fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         load_normalize_table(layouter, "normalize_6", &self.normalize_6, 6u64)?;
         load_normalize_table(layouter, "normalize_4", &self.normalize_4, 4u64)?;
         load_normalize_table(layouter, "normalize_3", &self.normalize_3, 3u64)?;
@@ -948,8 +975,9 @@ impl<F: Field> KeccakCircuitConfig<F> {
         load_pack_table(layouter, &self.pack_table)
     }
 
-    fn annotate_circuit(&self, region: &mut Region<F>) {
-        region.name_column(|| "KECCAK_q_enable", self.q_enable);
+    /// Annotate the circuit
+    pub fn annotate_circuit(&self, region: &mut Region<F>) {
+        //region.name_column(|| "KECCAK_q_enable", self.q_enable);
         region.name_column(|| "KECCAK_q_first", self.q_first);
         region.name_column(|| "KECCAK_q_round", self.q_round);
         region.name_column(|| "KECCAK_q_absorb", self.q_absorb);
@@ -969,6 +997,10 @@ pub struct KeccakCircuit<F: Field> {
 impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     type Config = KeccakCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        keccak_unusable_rows()
+    }
+
     /// The `block.circuits_params.keccak_padding` parmeter, when enabled, sets
     /// up the circuit to support a fixed number of permutations/keccak_f's,
     /// independently of the permutations required by `inputs`.
@@ -982,13 +1014,22 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let rows_per_chunk = (NUM_ROUNDS + 1) * get_num_rows_per_round();
+        let aux_tables_rows = vec![
+            normalize_table_size(6),
+            normalize_table_size(4),
+            normalize_table_size(3),
+            lookup_table_size(CHI_BASE_LOOKUP_TABLE.len()),
+        ];
         (
             block
                 .keccak_inputs
                 .iter()
                 .map(|bytes| (bytes.len() as f64 / 136.0).ceil() as usize * rows_per_chunk)
                 .sum(),
-            block.circuits_params.max_keccak_rows,
+            max(
+                block.circuits_params.max_keccak_rows,
+                *(aux_tables_rows.iter().max().unwrap()),
+            ),
         )
     }
 
@@ -1002,42 +1043,6 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
         config.load_aux_tables(layouter)?;
         let witness = self.generate_witness(*challenges);
         config.assign(layouter, witness.as_slice())
-    }
-}
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-impl<F: Field> Circuit<F> for KeccakCircuit<F> {
-    type Config = (KeccakCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let keccak_table = KeccakTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-
-        let config = {
-            let challenges = challenges.exprs(meta);
-            KeccakCircuitConfig::new(
-                meta,
-                KeccakCircuitConfigArgs {
-                    keccak_table,
-                    challenges,
-                },
-            )
-        };
-        (config, challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&layouter);
-        self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 

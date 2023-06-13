@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::{CommonErrorGadget, WordByteCapGadget},
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsEqualGadget, IsZeroGadget},
             CachedRegion, Cell,
         },
@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidJump;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let code_len = cb.query_cell();
         let dest = WordByteCapGadget::construct(cb, code_len.expr());
 

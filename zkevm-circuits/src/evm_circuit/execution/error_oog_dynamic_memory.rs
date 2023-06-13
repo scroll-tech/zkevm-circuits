@@ -4,71 +4,46 @@ use crate::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
-            },
-            math_gadget::{IsEqualGadget, LtGadget},
+            common_gadget::CommonErrorGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::{LtGadget, PairSelectGadget},
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryExpandedAddressGadget, MemoryExpansionGadget,
             },
-            or, CachedRegion, Cell, Word,
+            or, CachedRegion, Cell,
         },
     },
-    table::CallContextFieldTag,
     witness::{Block, Call, ExecStep, Transaction},
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use gadgets::util::{not, select, Expr};
+use eth_types::{evm_types::OpcodeId, Field};
+use gadgets::util::{select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGDynamicMemoryGadget<F> {
     opcode: Cell<F>,
-    is_create: IsEqualGadget<F>,
-    is_return: IsEqualGadget<F>,
-    value: Word<F>,
+    is_return: PairSelectGadget<F>,
     memory_address: MemoryExpandedAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
-    rw_counter_end_of_reversion: Cell<F>,
-    restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
     const NAME: &'static str = "ErrorOutOfGasDynamicMemoryExpansion";
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasDynamicMemoryExpansion;
 
-    // Support other OOG due to pure memory including CREATE, RETURN and REVERT
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    // Support other OOG due to pure memory including RETURN and REVERT
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
-
-        let is_create = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::CREATE.expr());
-        let is_return = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::RETURN.expr());
-
-        cb.require_equal(
-            "ErrorOutOfGasDynamicMemoryExpansion opcode must be CREATE or RETURN or REVERT",
+        let is_return = PairSelectGadget::construct(
+            cb,
             opcode.expr(),
-            select::expr(
-                is_create.expr(),
-                OpcodeId::CREATE.expr(),
-                select::expr(
-                    is_return.expr(),
-                    OpcodeId::RETURN.expr(),
-                    OpcodeId::REVERT.expr(),
-                ),
-            ),
+            OpcodeId::RETURN.expr(),
+            OpcodeId::REVERT.expr(),
         );
 
         let memory_address = MemoryExpandedAddressGadget::construct_self(cb);
-
-        let value = cb.query_word_rlc();
-        cb.condition(is_create.expr(), |cb| {
-            cb.stack_pop(value.expr());
-        });
-
         cb.stack_pop(memory_address.offset_rlc());
         cb.stack_pop(memory_address.length_rlc());
 
@@ -78,13 +53,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
             cb,
             cb.curr.state.gas_left.expr(),
             select::expr(
-                is_create.expr(),
-                OpcodeId::CREATE.constant_gas_cost().expr(),
-                select::expr(
-                    is_return.expr(),
-                    OpcodeId::RETURN.constant_gas_cost().expr(),
-                    OpcodeId::REVERT.constant_gas_cost().expr(),
-                ),
+                is_return.expr().0,
+                OpcodeId::RETURN.constant_gas_cost().expr(),
+                OpcodeId::REVERT.constant_gas_cost().expr(),
             ) + memory_expansion.gas_cost(),
         );
 
@@ -94,48 +65,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
             1.expr(),
         );
 
-        // Current call must fail.
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
-        let rw_counter_end_of_reversion = cb.query_cell();
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                rw_counter: Delta(
-                    4.expr() + is_create.expr() + cb.curr.state.reversible_write_counter.expr(),
-                ),
-                ..StepStateTransition::any()
-            });
-        });
-        let restore_context = cb.condition(not::expr(cb.curr.state.is_root.expr()), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 4.expr());
 
         Self {
             opcode,
-            is_create,
             is_return,
-            value,
             memory_address,
             memory_expansion,
             insufficient_gas,
-            rw_counter_end_of_reversion,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -149,31 +87,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        self.is_create.assign(
-            region,
-            offset,
-            F::from(opcode.as_u64()),
-            F::from(OpcodeId::CREATE.as_u64()),
-        )?;
         self.is_return.assign(
             region,
             offset,
             F::from(opcode.as_u64()),
             F::from(OpcodeId::RETURN.as_u64()),
+            F::from(OpcodeId::REVERT.as_u64()),
         )?;
 
-        let mut rw_offset = 0;
-        if opcode == OpcodeId::CREATE {
-            let value = block.rws[step.rw_indices[rw_offset]].stack_value();
-            self.value
-                .assign(region, offset, Some(value.to_le_bytes()))?;
-            rw_offset += 1;
-        }
-        let memory_offset = block.rws[step.rw_indices[rw_offset]].stack_value();
-        let memory_length = block.rws[step.rw_indices[rw_offset + 1]].stack_value();
+        let [memory_offset, memory_length] =
+            [0, 1].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
         let memory_address =
             self.memory_address
                 .assign(region, offset, memory_offset, memory_length)?;
@@ -183,7 +108,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
             .assign(region, offset, step.memory_word_size(), [memory_address])?
             .1;
         let constant_gas_cost = opcode.constant_gas_cost().0;
-
         self.insufficient_gas.assign(
             region,
             offset,
@@ -191,20 +115,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
             F::from(memory_expansion_gas + constant_gas_cost),
         )?;
 
-        self.rw_counter_end_of_reversion.assign(
-            region,
-            offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
-        )?;
+        self.common_error_gadget
+            .assign(region, offset, block, call, step, 4)?;
 
-        self.restore_context.assign(
-            region,
-            offset,
-            block,
-            call,
-            step,
-            if opcode == OpcodeId::CREATE { 5 } else { 4 },
-        )?;
         Ok(())
     }
 }
@@ -312,13 +225,6 @@ mod tests {
                 PUSH32(size)
                 PUSH32(offset)
                 REVERT
-            },
-            bytecode! {
-                PUSH32(size)
-                PUSH32(offset)
-                PUSH8(0) // value
-                CREATE
-                STOP
             },
         ]
     }

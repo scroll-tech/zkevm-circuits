@@ -7,7 +7,9 @@ use crate::evm_circuit::{
     step::ExecutionState,
     util::{
         common_gadget::SameContextGadget,
-        constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+        constraint_builder::{
+            ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
+        },
         from_bytes,
         math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
         CachedRegion, Cell, Word,
@@ -48,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // Query RLC-encoded values for base, exponent and exponentiation, where:

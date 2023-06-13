@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::EVMConstraintBuilder,
             from_bytes,
             math_gadget::IsEqualGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget, MemoryWordAddress},
@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidCreationCode;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let first_byte = cb.query_cell();

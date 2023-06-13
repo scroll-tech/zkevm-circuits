@@ -6,7 +6,10 @@ use crate::{
         util::{
             and,
             common_gadget::{SameContextGadget, WordByteCapGadget},
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             math_gadget::LtGadget,
             CachedRegion, Cell, Word,
         },
@@ -35,17 +38,16 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKHASH;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let current_block_number = cb.query_cell();
         let block_number = WordByteCapGadget::construct(cb, current_block_number.expr());
         cb.stack_pop(block_number.original_word());
 
-        // FIXME
-        // cb.block_lookup(
-        //    BlockContextFieldTag::Number.expr(),
-        //    None,
-        //    current_block_number.expr(),
-        //);
+        cb.block_lookup(
+            BlockContextFieldTag::Number.expr(),
+            cb.curr.state.block_number.expr(),
+            current_block_number.expr(),
+        );
 
         let block_hash = cb.query_word_rlc();
 
