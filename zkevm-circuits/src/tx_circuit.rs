@@ -13,13 +13,14 @@ pub use dev::TxCircuit as TestTxCircuit;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    sig_circuit::{AssignedSignatureVerify, SigCircuit},
     table::{
-        BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, TxFieldTag, TxTable, SigTable,
+        BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
+        TxTable,
     },
     util::{keccak, random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig},
     witness,
     witness::{rlp_fsm::Tag, RlpTag, Transaction},
-    sig_circuit::{SigCircuit, AssignedSignatureVerify},
 };
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use eth_types::{sign_types::SignData, Address, Field, ToAddress, ToLittleEndian, ToScalar};
@@ -70,7 +71,6 @@ use eth_types::geth_types::{
     TxType::{Eip155, L1Msg, PreEip155},
 };
 use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
-
 
 //use self::sign_verify::SigTable;
 /// Number of rows of one tx occupies in the fixed part of tx table
@@ -1594,16 +1594,15 @@ impl<F: Field> TxCircuit<F> {
             || "tx table aux",
             |mut region| {
                 let mut offset = 0;
-                
+
                 //#[cfg(feature = "enable-sign-verify")]
                 //let sigs = &assigned_sig_verifs;
                 //#[cfg(not(feature = "enable-sign-verify"))]
                 let sigs = &sign_datas;
 
                 //debug_assert_eq!(assigned_sig_verifs.len() + sign_datas.len(), sigs.len());
-                
+
                 debug_assert_eq!(padding_txs.len() + self.txs.len(), sigs.len());
-                
 
                 let mut cum_num_txs;
                 let mut is_padding_tx;
@@ -1849,7 +1848,8 @@ impl<F: Field> TxCircuit<F> {
                                 {
                                     // TODO: do lookup to SignVerify table instead.
                                 }
-                                let sv_address: F = assigned_sig_verif.get_addr().to_scalar().unwrap();
+                                let sv_address: F =
+                                    assigned_sig_verif.get_addr().to_scalar().unwrap();
                                 region.assign_advice(
                                     || "sv_address",
                                     config.sv_address,
@@ -2048,7 +2048,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                 )
             }
         }
-/* 
+        /*
         #[cfg(feature = "enable-sign-verify")]
         {
             let assigned_sig_verifs =

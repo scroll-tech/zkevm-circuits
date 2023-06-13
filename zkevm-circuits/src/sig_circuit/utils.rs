@@ -1,12 +1,18 @@
 use std::marker::PhantomData;
 
-use eth_types::{Field, sign_types::SignData};
-use halo2_base::{QuantumCell, AssignedValue};
-use halo2_ecc::{fields::{FieldChip, fp::FpConfig}, bigint::CRTInteger, ecc::EcPoint};
-use halo2_proofs::{circuit::{Value, Cell}, halo2curves::secp256k1::{Fp, Fq}};
+use eth_types::{sign_types::SignData, Field};
+use halo2_base::{AssignedValue, QuantumCell};
+use halo2_ecc::{
+    bigint::CRTInteger,
+    ecc::EcPoint,
+    fields::{fp::FpConfig, FieldChip},
+};
+use halo2_proofs::{
+    circuit::{Cell, Value},
+    halo2curves::secp256k1::{Fp, Fq},
+};
 
 use crate::witness::Transaction;
-
 
 // Hard coded parameters.
 // FIXME: allow for a configurable param.
@@ -24,7 +30,7 @@ pub(super) fn calc_required_advices(num_verif: usize) -> usize {
     let total_cells = num_verif * CELLS_PER_SIG;
     let row_num = 1 << LOG_TOTAL_NUM_ROWS;
     while num_adv < COLUMN_NUM_LIMIT {
-        if num_adv * row_num  > total_cells {
+        if num_adv * row_num > total_cells {
             log::debug!(
                 "ecdsa chip uses {} advice columns for {} signatures",
                 num_adv,
@@ -36,8 +42,7 @@ pub(super) fn calc_required_advices(num_verif: usize) -> usize {
     }
     panic!(
         "the required advice columns exceeds {} for {} signatures",
-        COLUMN_NUM_LIMIT,
-        num_verif
+        COLUMN_NUM_LIMIT, num_verif
     );
 }
 
@@ -45,7 +50,6 @@ pub(super) fn calc_required_advices(num_verif: usize) -> usize {
 pub(super) type FqChip<F> = FpConfig<F, Fq>;
 /// Chip to handle ECDSA::Fp, the base field
 pub(super) type FpChip<F> = FpConfig<F, Fp>;
-
 
 pub(crate) struct AssignedECDSA<'v, F: Field, FC: FieldChip<F>> {
     pub(super) pk: EcPoint<F, FC::FieldPoint<'v>>,
@@ -137,37 +141,40 @@ pub(super) struct SignDataDecomposed<'a: 'v, 'v, F: Field> {
     //v:  AssignedValue<'v, F>, // bool
 }
 
-
 pub(crate) fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
     pk_hash[32 - 20..]
         .iter()
         .fold(F::zero(), |acc, b| acc * F::from(256) + F::from(*b as u64))
 }
 
-pub(crate) fn get_sign_data(txs: &[Transaction], max_txs: usize, chain_id: usize) -> Result<Vec<SignData>, halo2_proofs::plonk::Error> {
+pub(crate) fn get_sign_data(
+    txs: &[Transaction],
+    max_txs: usize,
+    chain_id: usize,
+) -> Result<Vec<SignData>, halo2_proofs::plonk::Error> {
     let padding_txs = (txs.len()..max_txs)
-            .into_iter()
-            .map(|i| {
-                let mut tx = Transaction::dummy(chain_id as u64);
-                tx.id = i + 1;
-                tx
-            })
-            .collect::<Vec<Transaction>>();
-        let signatures: Vec<SignData> = txs
-            .iter()
-            .chain(padding_txs.iter())
-            .map(|tx| {
-                if tx.tx_type.is_l1_msg() {
-                    // dummy signature
-                    Ok(SignData::default())
-                } else {
-                    // TODO: map err or still use bus_mapping::err?
-                    tx.sign_data().map_err(|e| {
-                        log::error!("tx_to_sign_data error for tx {:?}", e);
-                        halo2_proofs::plonk::Error::Synthesis
-                    })
-                }
-            })
-            .collect::<Result<Vec<SignData>, halo2_proofs::plonk::Error>>()?;
-        Ok(signatures)
+        .into_iter()
+        .map(|i| {
+            let mut tx = Transaction::dummy(chain_id as u64);
+            tx.id = i + 1;
+            tx
+        })
+        .collect::<Vec<Transaction>>();
+    let signatures: Vec<SignData> = txs
+        .iter()
+        .chain(padding_txs.iter())
+        .map(|tx| {
+            if tx.tx_type.is_l1_msg() {
+                // dummy signature
+                Ok(SignData::default())
+            } else {
+                // TODO: map err or still use bus_mapping::err?
+                tx.sign_data().map_err(|e| {
+                    log::error!("tx_to_sign_data error for tx {:?}", e);
+                    halo2_proofs::plonk::Error::Synthesis
+                })
+            }
+        })
+        .collect::<Result<Vec<SignData>, halo2_proofs::plonk::Error>>()?;
+    Ok(signatures)
 }

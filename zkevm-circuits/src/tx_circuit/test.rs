@@ -7,7 +7,11 @@ use ethers_core::{
 use std::cmp::max;
 
 use super::*;
-use crate::{util::{log2_ceil, unusable_rows}, tx_circuit::dev::TxCircuitTester, sig_circuit::get_sign_data};
+use crate::{
+    sig_circuit::get_sign_data,
+    tx_circuit::dev::TxCircuitTester,
+    util::{log2_ceil, unusable_rows},
+};
 use eth_types::{address, evm_types::gas_utils::tx_data_gas_cost, word, H256, U256, U64};
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},

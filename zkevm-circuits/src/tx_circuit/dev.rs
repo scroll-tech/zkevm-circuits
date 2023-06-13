@@ -2,18 +2,17 @@ pub use super::TxCircuit;
 //use super::sign_verify::SigTable;
 
 use crate::{
-    table::{BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, TxTable, SigTable},
+    sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
+    table::{BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable},
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
-    sig_circuit::SigCircuit,
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness::Transaction, sig_circuit::{SigCircuitConfig, SigCircuitConfigArgs},
+    witness::Transaction,
 };
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
-
 
 /// TxCircuitTesterConfig
 #[derive(Clone, Debug)]
@@ -34,8 +33,6 @@ pub struct TxCircuitTester<F: Field> {
     //sig_config: SigCircuitConfig<F>,
 }
 
-
-
 // SigCircuit is embedded inside TxCircuit to make testing easier
 impl<F: Field> Circuit<F> for TxCircuitTester<F> {
     type Config = (TxCircuitTesterConfig<F>, Challenges);
@@ -53,8 +50,7 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
         let sig_table = SigTable::construct(meta);
         let challenges = Challenges::construct(meta);
 
-
-        // TODO: check this 
+        // TODO: check this
         //#[cfg(feature = "enable-sign-verify")]
         //self.sign_verify.load_range(layouter)?;
 
@@ -66,7 +62,7 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
                     sig_table: sig_table.clone(),
                     challenges: challenges.clone(),
                     keccak_table: keccak_table.clone(),
-                }
+                },
             );
             let tx_config = TxCircuitConfig::new(
                 meta,
@@ -96,12 +92,17 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&layouter);
-        config.tx_config
-            .keccak_table
-            .dev_load(&mut layouter, &self.tx_circuit.keccak_inputs()?, &challenges)?;
-        self.tx_circuit.synthesize_sub(&config.tx_config, &challenges, &mut layouter)?;
-        self.sig_circuit.synthesize_sub(&config.sig_config, &challenges, &mut layouter)?;
-        self.tx_circuit.assign_dev_block_table(config.tx_config, &mut layouter)?;
+        config.tx_config.keccak_table.dev_load(
+            &mut layouter,
+            &self.tx_circuit.keccak_inputs()?,
+            &challenges,
+        )?;
+        self.tx_circuit
+            .synthesize_sub(&config.tx_config, &challenges, &mut layouter)?;
+        self.sig_circuit
+            .synthesize_sub(&config.sig_config, &challenges, &mut layouter)?;
+        self.tx_circuit
+            .assign_dev_block_table(config.tx_config, &mut layouter)?;
         Ok(())
     }
 }

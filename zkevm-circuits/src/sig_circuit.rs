@@ -17,7 +17,8 @@ mod test;
 use crate::{
     evm_circuit::util::{not, rlc},
     table::{KeccakTable, SigTable},
-    util::{Challenges, Expr, SubCircuitConfig, SubCircuit}, witness::Transaction,
+    util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
+    witness::Transaction,
 };
 use eth_types::{
     self,
@@ -49,7 +50,7 @@ use halo2_proofs::plonk::FirstPhase;
 use halo2_proofs::{
     circuit::{Cell, Layouter, Value},
     halo2curves::secp256k1::{Fp, Fq, Secp256k1Affine},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, SecondPhase},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, Selector},
     poly::Rotation,
 };
 
@@ -57,7 +58,6 @@ use itertools::Itertools;
 use keccak256::plain::Keccak;
 use log::error;
 use std::{iter, marker::PhantomData};
-
 
 /// Circuit configuration arguments
 pub struct SigCircuitConfigArgs<F: Field> {
@@ -83,7 +83,6 @@ pub struct SigCircuitConfig<F: Field> {
     /// The exposed table to be used by tx circuit and ecrecover
     sig_table: SigTable,
 }
-
 
 impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
     type ConfigArgs = SigCircuitConfigArgs<F>;
@@ -207,11 +206,9 @@ impl<F: Field> SigCircuitConfig<F> {
 }
 // impl<F: Field> SubCircuit<F> for TxCircuit<F> {
 
-
-
 /// Auxiliary Gadget to verify a that a message hash is signed by the public
 /// key corresponding to an Ethereum Address.
-#[derive(Clone, Debug,Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SigCircuit<F: Field> {
     /// Max number of verifications
     pub max_verif: usize,
@@ -224,17 +221,17 @@ pub struct SigCircuit<F: Field> {
     pub _marker: PhantomData<F>,
 }
 
-
 impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     type Config = SigCircuitConfig<F>;
 
     fn new_from_block(block: &crate::witness::Block<F>) -> Self {
         // TODO: seperate this with max_txs?
-       // TODO: better way than unwrap?
-        SigCircuit { 
-            max_verif: block.circuits_params.max_txs, 
-            signatures: block.get_sign_data().unwrap(), 
-            _marker: Default::default() }
+        // TODO: better way than unwrap?
+        SigCircuit {
+            max_verif: block.circuits_params.max_txs,
+            signatures: block.get_sign_data().unwrap(),
+            _marker: Default::default(),
+        }
     }
 
     fn synthesize_sub(
@@ -248,7 +245,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         Ok(())
     }
 
-    // Since sig circuit / halo2-lib use veticle cell assignment, 
+    // Since sig circuit / halo2-lib use veticle cell assignment,
     // so the returned pair is consisted of same values
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
         let row_num = Self::min_num_rows(block.circuits_params.max_txs);
@@ -265,7 +262,6 @@ impl<F: Field> SigCircuit<F> {
             _marker: PhantomData,
         }
     }
-
 
     /// Return the minimum number of rows required to prove an input of a
     /// particular size.
@@ -297,7 +293,6 @@ impl<F: Field> SigCircuit<F> {
         row_num
     }
 }
-
 
 impl<F: Field> SigCircuit<F> {
     /// Verifies the ecdsa relationship. I.e., prove that the signature
@@ -454,12 +449,12 @@ impl<F: Field> SigCircuit<F> {
         let pk_le = pk_bytes_le(&sign_data.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
         let pk_hash = {
-                let mut keccak = Keccak::default();
-                keccak.update(&pk_be);
-                let hash: [_; 32] = keccak.digest().try_into().expect("vec to array of size 32");
-                hash
-            }
-            .map(|byte| Value::known(F::from(byte as u64)));
+            let mut keccak = Keccak::default();
+            keccak.update(&pk_be);
+            let hash: [_; 32] = keccak.digest().try_into().expect("vec to array of size 32");
+            hash
+        }
+        .map(|byte| Value::known(F::from(byte as u64)));
 
         log::trace!("pk hash {:0x?}", pk_hash);
         let pk_hash_cells = pk_hash
@@ -488,7 +483,11 @@ impl<F: Field> SigCircuit<F> {
         // message hash cells
         // ================================================
 
-        let assert_crt = |ctx: &mut Context<F>, bytes: [u8; 32], v:&Fq, overriding: &Option<&QuantumCell<F>>| -> Result<_, Error> {
+        let assert_crt = |ctx: &mut Context<F>,
+                          bytes: [u8; 32],
+                          v: &Fq,
+                          overriding: &Option<&QuantumCell<F>>|
+         -> Result<_, Error> {
             //let bytes: [u8; 32] = v.to_bytes();
             let byte_cells: Vec<QuantumCell<F>> = bytes
                 .iter()
@@ -522,44 +521,43 @@ impl<F: Field> SigCircuit<F> {
         // pk cells
         // ================================================
         let pk_x_le = sign_data
-        .pk
-        .x
-        .to_bytes()
-        .iter()
-        .map(|&x| QuantumCell::Witness(Value::known(F::from_u128(x as u128))))
-        .collect_vec();
+            .pk
+            .x
+            .to_bytes()
+            .iter()
+            .map(|&x| QuantumCell::Witness(Value::known(F::from_u128(x as u128))))
+            .collect_vec();
 
-    let pk_y_le = sign_data
-        .pk
-        .y
-        .to_bytes()
-        .iter()
-        .map(|&x| QuantumCell::Witness(Value::known(F::from_u128(x as u128))))
-        .collect_vec();
-    let pk_assigned = ecc_chip.load_private(
-        ctx,
-        (Value::known(sign_data.pk.x), Value::known(sign_data.pk.y)),
-    );
+        let pk_y_le = sign_data
+            .pk
+            .y
+            .to_bytes()
+            .iter()
+            .map(|&x| QuantumCell::Witness(Value::known(F::from_u128(x as u128))))
+            .collect_vec();
+        let pk_assigned = ecc_chip.load_private(
+            ctx,
+            (Value::known(sign_data.pk.x), Value::known(sign_data.pk.y)),
+        );
 
-    self.assert_crt_int_byte_repr(
-        ctx,
-        &ecdsa_chip.range,
-        &pk_assigned.x,
-        &pk_x_le,
-        &powers_of_256_cells,
-        &None,
-    )?;
+        self.assert_crt_int_byte_repr(
+            ctx,
+            &ecdsa_chip.range,
+            &pk_assigned.x,
+            &pk_x_le,
+            &powers_of_256_cells,
+            &None,
+        )?;
 
-    self.assert_crt_int_byte_repr(
-        ctx,
-        &ecdsa_chip.range,
-        &pk_assigned.y,
-        &pk_y_le,
-        &powers_of_256_cells,
-        &None,
-    )?;
+        self.assert_crt_int_byte_repr(
+            ctx,
+            &ecdsa_chip.range,
+            &pk_assigned.y,
+            &pk_y_le,
+            &powers_of_256_cells,
+            &None,
+        )?;
 
-        
         let assigned_pk_le_selected = [pk_y_le, pk_x_le].concat();
         log::trace!("finished data decomposition");
 
@@ -575,7 +573,6 @@ impl<F: Field> SigCircuit<F> {
             &sign_data.signature.1,
             &None,
         )?;
-
 
         Ok(SignDataDecomposed {
             pk_hash_cells,
@@ -840,13 +837,13 @@ impl<F: Field> SigCircuit<F> {
                     let is_valid: AssignedValue<_> = assigned_sig_verif.sig_is_valid.clone().into();
                     is_valid.copy_advice(&mut region, config.sig_table.is_valid, idx);
 
-                    //let hash_rlc: AssignedValue<_> = assigned_sig_verif.msg_hash_rlc.clone().into();
-                    //hash_rlc.copy_advice(&mut region, config.sig_table.hash_rlc, idx);
-                   
-                } 
+                    //let hash_rlc: AssignedValue<_> =
+                    // assigned_sig_verif.msg_hash_rlc.clone().into();
+                    // hash_rlc.copy_advice(&mut region, config.sig_table.hash_rlc, idx);
+                }
                 Ok(())
-            }
-            )?;
+            },
+        )?;
 
         Ok(assigned_sig_verifs)
     }
@@ -956,7 +953,7 @@ impl<F: Field> SigCircuit<F> {
 
         Ok(())
     }
-/* 
+    /*
     pub(crate) fn assert_sig_is_valid(
         &self,
         config: &SigCircuitConfig<F>,
@@ -989,4 +986,3 @@ impl<F: Field> SigCircuit<F> {
     }
     */
 }
-

@@ -4,12 +4,15 @@ use std::collections::BTreeMap;
 #[cfg(any(feature = "test", test))]
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 
-use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit, sig_circuit::get_sign_data};
+use crate::{
+    evm_circuit::util::rlc, sig_circuit::get_sign_data, table::BlockContextFieldTag,
+    util::SubCircuit,
+};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256, sign_types::SignData};
+use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 
 use super::{
@@ -108,11 +111,10 @@ impl<F: Field> Block<F> {
         }
     }
     pub(crate) fn get_sign_data(&self) -> Result<Vec<SignData>, halo2_proofs::plonk::Error> {
-    let max_verif = self.circuits_params.max_txs;
+        let max_verif = self.circuits_params.max_txs;
         let chain_id = self.chain_id.as_u64();
         get_sign_data(&self.txs, max_verif, chain_id as usize)
-
-}
+    }
 }
 
 #[cfg(feature = "test")]

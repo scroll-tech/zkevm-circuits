@@ -66,9 +66,11 @@ use crate::{
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
+    sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
+    table::SigTable,
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, SubCircuit, SubCircuitConfig},
-    witness::{block_convert, Block}, sig_circuit::{SigCircuitConfig, SigCircuitConfigArgs, SigCircuit}, table::SigTable,
+    witness::{block_convert, Block},
 };
 
 #[cfg(feature = "zktrie")]
@@ -289,14 +291,15 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         #[cfg(feature = "zktrie")]
         log_circuit_info(meta, "zktrie circuit");
 
-        let sig_circuit = SigCircuitConfig::new(meta, 
+        let sig_circuit = SigCircuitConfig::new(
+            meta,
             SigCircuitConfigArgs {
                 keccak_table: keccak_table.clone(),
                 sig_table: sig_table.clone(),
                 challenges: challenges.clone(),
-            }
-            );
-            log_circuit_info(meta, "sig circuit");
+            },
+        );
+        log_circuit_info(meta, "sig circuit");
 
         let state_circuit = StateCircuitConfig::new(
             meta,
