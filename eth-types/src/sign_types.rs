@@ -1,7 +1,10 @@
 //! secp256k1 signature types and helper functions.
 
-use crate::{ToBigEndian, Word};
-use ethers_core::types::Bytes;
+use crate::{ToBigEndian, ToWord, Word};
+use ethers_core::{
+    types::{Address, Bytes},
+    utils::keccak256,
+};
 use halo2_proofs::{
     arithmetic::{CurveAffine, FieldExt},
     halo2curves::{
@@ -29,7 +32,7 @@ pub fn sign(
         Option::<secp256k1::Fq>::from(randomness.invert()).expect("cannot invert randomness");
     let generator = Secp256k1Affine::generator();
     let sig_point = generator * randomness;
-    let is_odd: bool = sig_point.y.is_odd().into();
+    let sig_v: bool = sig_point.y.is_odd().into();
     let x = *Option::<Coordinates<_>>::from(sig_point.to_affine().coordinates())
         .expect("point is the identity")
         .x();
@@ -42,7 +45,7 @@ pub fn sign(
 
     let sig_r = secp256k1::Fq::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
-    (sig_r, sig_s, if is_odd { 1 } else { 0 })
+    (sig_r, sig_s, u8::from(sig_v))
 }
 
 /// Signature data required by the SignVerify Chip as input to verify a
@@ -65,16 +68,10 @@ impl SignData {
     pub fn get_addr(&self) -> Word {
         let pk_le = pk_bytes_le(&self.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
-        let pk_hash: [u8; 32] = Keccak256::digest(pk_be)
-        .as_slice()
-        .to_vec()
-        .try_into()
-        .expect("hash length isn't 32 bytes");
-        let addr = pk_hash.iter().take(20).fold(Word::from(0u64), |acc, elem| {
-                acc * Word::from(256u64) + Word::from(*elem as u64)
-            });
-        addr
-
+        let pk_hash = keccak256(pk_be);
+        let mut addr_bytes = [0u8; 20];
+        addr_bytes.copy_from_slice(&pk_hash[12..]);
+        Address::from(addr_bytes).to_word()
     }
 }
 
