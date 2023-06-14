@@ -581,9 +581,7 @@ impl<F: Field> MemoryMask<F> {
     /// Check that a `value` word misaligned by `shift` matches the left and right aligned words, on
     /// the range where they overlap.
     ///
-    /// This function converts the byte order to match MLOAD/MSTORE/CALLDATALOAD semantics.
-    /// `value_rlc` is MSB-first from the stack, while `value_left` and `value_right` are LSB-first
-    /// from zkEVM internals.
+    /// All values are MSB-first to match MLOAD/MSTORE/CALLDATALOAD semantics.
     pub(crate) fn require_equal_unaligned_word(
         &self,
         cb: &mut ConstraintBuilder<F>,
@@ -602,21 +600,21 @@ impl<F: Field> MemoryMask<F> {
     }
 
     /// Return the RLC of the left part of a word, called "A" or "C". The right part is zeroed.
-    /// This is MSB-first to match MLOAD/MSTORE semantics.
+    /// The value is MSB-first so we read the mask in reverse.
     fn left_rlc(&self, cb: &mut ConstraintBuilder<F>, word: &Word<F>) -> Expression<F> {
         let masked: [Expression<F>; N_BYTES_WORD] = array_init(|i| {
             let reversed_i = N_BYTES_WORD - 1 - i;
-            word.cells[reversed_i].expr() * self.mask[reversed_i].expr()
+            word.cells[i].expr() * self.mask[reversed_i].expr()
         });
         cb.word_rlc(masked)
     }
 
     /// Return the RLC of the right part of a word, called "B" or "D". The left part is zeroed.
-    /// This is MSB-first to match MLOAD/MSTORE semantics.
+    /// The value is MSB-first so we read the mask in reverse.
     fn right_rlc(&self, cb: &mut ConstraintBuilder<F>, word: &Word<F>) -> Expression<F> {
         let masked: [Expression<F>; N_BYTES_WORD] = array_init(|i| {
             let reversed_i = N_BYTES_WORD - 1 - i;
-            word.cells[reversed_i].expr() * (1.expr() - self.mask[reversed_i].expr())
+            word.cells[i].expr() * (1.expr() - self.mask[reversed_i].expr())
         });
         cb.word_rlc(masked)
     }

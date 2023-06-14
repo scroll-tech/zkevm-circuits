@@ -216,13 +216,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             block.rws[step.rw_indices[3]].memory_word_value()
         };
 
-        // TODO: rm.
-        println!("address: {:?}", address);
-        println!("value (LE):  {:?}", value.to_le_bytes());
-        println!("value_left:  {:?}", value_left.to_le_bytes());
-        println!("value_right: {:?}", value_right.to_le_bytes());
-
-        // TODO: updated values for MSTORE.
+        // TODO: get previous values for MSTORE.
         self.value_left
             .assign(region, offset, Some(value_left.to_le_bytes()))?;
         self.value_left_prev

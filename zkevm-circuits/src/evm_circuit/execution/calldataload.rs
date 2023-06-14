@@ -1,6 +1,6 @@
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256};
+use eth_types::{Field, ToBigEndian, ToLittleEndian, U256};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -310,10 +310,16 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             value_right_bytes = block.rws[step.rw_indices[5]]
                 .memory_word_value()
                 .to_le_bytes();
+
+            // Here we write exactly what is in the RW table.
             self.value_left
                 .assign(region, offset, Some(value_left_bytes))?;
             self.value_right
                 .assign(region, offset, Some(value_right_bytes))?;
+
+            // The RW values were BE order (see bus-mapping), so go back to normal memory order.
+            value_left_bytes.reverse();
+            value_right_bytes.reverse();
         }
 
         // reconstruct the unaligned word.

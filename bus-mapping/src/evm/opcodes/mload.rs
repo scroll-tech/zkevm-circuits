@@ -41,8 +41,8 @@ impl Opcode for Mload {
             let slots_content = state.call_ctx()?.memory.read_chunk(slot.into(), 64.into());
 
             (
-                Word::from_little_endian(&slots_content[..32]),
-                Word::from_little_endian(&slots_content[32..64]),
+                Word::from_big_endian(&slots_content[..32]),
+                Word::from_big_endian(&slots_content[32..64]),
             )
         };
 

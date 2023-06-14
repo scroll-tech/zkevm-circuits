@@ -53,8 +53,8 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
 
             // after memory construction, we can get the left and right words to fill bus mapping.
             (
-                Word::from_little_endian(&slots_content[..32]),
-                Word::from_little_endian(&slots_content[32..64]),
+                Word::from_big_endian(&slots_content[..32]),
+                Word::from_big_endian(&slots_content[32..64]),
             )
         };
 
