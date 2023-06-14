@@ -361,7 +361,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             let padded_bytes: Vec<u8> = (3..3 + copy_rwc_inc as usize)
                 .map(|i| {
                     let mut bytes = block.rws[step.rw_indices[i]]
-                        .memory_word_value()
+                        .memory_word_pair()
+                        .0
                         .to_le_bytes();
                     bytes.reverse();
                     bytes

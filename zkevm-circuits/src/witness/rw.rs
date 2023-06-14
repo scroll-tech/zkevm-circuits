@@ -416,9 +416,11 @@ impl Rw {
             _ => unreachable!("{:?}", self),
         }
     }
-    pub fn memory_word_value(&self) -> Word {
+
+    /// Return the memory word read or written, and its value before the operation.
+    pub fn memory_word_pair(&self) -> (Word, Word) {
         match self {
-            Self::MemoryWord { value, .. } => *value,
+            Self::MemoryWord { value, .. } => (*value, *value),
             _ => unreachable!("{:?}", self),
         }
     }

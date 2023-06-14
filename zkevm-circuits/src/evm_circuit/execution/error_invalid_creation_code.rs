@@ -109,7 +109,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
             ),
         )?;
 
-        let word_left = block.rws[step.rw_indices[2]].memory_word_value();
+        let word_left = block.rws[step.rw_indices[2]].memory_word_pair().0;
         self.value_left
             .assign(region, offset, Some(word_left.to_le_bytes()))?;
 

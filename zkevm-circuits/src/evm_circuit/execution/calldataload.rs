@@ -305,10 +305,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         if !call.is_root && offset_within_range {
             // assign value_left, value_right word
             value_left_bytes = block.rws[step.rw_indices[4]]
-                .memory_word_value()
+                .memory_word_pair()
+                .0
                 .to_le_bytes();
             value_right_bytes = block.rws[step.rw_indices[5]]
-                .memory_word_value()
+                .memory_word_pair()
+                .0
                 .to_le_bytes();
 
             // Here we write exactly what is in the RW table.

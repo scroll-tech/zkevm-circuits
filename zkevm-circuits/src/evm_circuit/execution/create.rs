@@ -518,7 +518,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             ..4 + usize::from(is_create2) + copy_rwc_inc as usize)
             .map(|i| {
                 let mut bytes = block.rws[step.rw_indices[i]]
-                    .memory_word_value()
+                    .memory_word_pair()
+                    .0
                     .to_le_bytes();
                 bytes.reverse();
                 bytes

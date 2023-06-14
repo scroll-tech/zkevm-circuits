@@ -209,23 +209,22 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         )?;
 
         // assign value_left value_right word
-        let value_left = block.rws[step.rw_indices[2]].memory_word_value();
-        let value_right = if is_mstore8 == F::one() {
-            U256::zero() //Word::from(0x00u64)
+        let (value_left, value_left_prev) = block.rws[step.rw_indices[2]].memory_word_pair();
+        let (value_right, value_right_prev) = if is_mstore8 == F::one() {
+            (U256::zero(), U256::zero())
         } else {
-            block.rws[step.rw_indices[3]].memory_word_value()
+            block.rws[step.rw_indices[3]].memory_word_pair()
         };
 
-        // TODO: get previous values for MSTORE.
         self.value_left
             .assign(region, offset, Some(value_left.to_le_bytes()))?;
         self.value_left_prev
-            .assign(region, offset, Some(value_left.to_le_bytes()))?;
+            .assign(region, offset, Some(value_left_prev.to_le_bytes()))?;
 
         self.value_right
             .assign(region, offset, Some(value_right.to_le_bytes()))?;
         self.value_right_prev
-            .assign(region, offset, Some(value_right.to_le_bytes()))?;
+            .assign(region, offset, Some(value_right_prev.to_le_bytes()))?;
         Ok(())
     }
 }
