@@ -9,7 +9,7 @@ mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-pub use dev::TxCircuit as TestTxCircuit;
+pub use dev::TxCircuitTester as TestTxCircuit;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
@@ -145,6 +145,8 @@ pub struct TxCircuitConfig<F: Field> {
     /// A fixed column to store F::one, used to constraint signature_is_valid == one.
     // FIXME: it is pretty wasteful to allocate a new fixed column just
     // to store a constant value F::one.
+    // Since we will use lookup to constrain is_valid later, is the "constant one" fixed column
+    // still needed?
     fixed_column: Column<Fixed>,
     sig_table: SigTable,
 
@@ -644,6 +646,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             tx_table.clone(),
             keccak_table.clone(),
             rlp_table,
+            sig_table,
         );
 
         ///////////////////////////////////////////////////////////////////////
@@ -904,6 +907,7 @@ impl<F: Field> TxCircuitConfig<F> {
         tx_table: TxTable,
         keccak_table: KeccakTable,
         rlp_table: RlpTable,
+        sig_table: SigTable,
     ) {
         macro_rules! is_tx_type {
             ($var:ident, $type_variant:ident) => {
@@ -1079,6 +1083,29 @@ impl<F: Field> TxCircuitConfig<F> {
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
+
+        ////////////////////////////////////////////////////////////////////
+        /////////////////    Sig table lookups     //////////////////////
+        ///////////////// //////////////////////////////////////////////////
+        /*
+        meta.lookup_any("Sig table lookup", |meta| {
+
+            let enabled = 0.expr(); // TODO: enabled == !is_l1_tx
+            let input_exprs = vec![
+                sv_address
+            ];
+            // LookupTable::table_exprs is not used here since `is_valid` not used by evm circuit.
+            let table_exprs = vec![
+            meta.query_fixed(sig_table.q_enable, Rotation::cur()),
+            // msg_hash_rlc not needed to be looked up for tx circuit?
+            meta.query_advice(sig_table.msg_hash_rlc, Rotation::cur()),
+            meta.query_advice(sig_table.sig_v, Rotation::cur()),
+            meta.query_advice(sig_table.sig_r_rlc, Rotation::cur()),
+            meta.query_advice(sig_table.sig_s_rlc, Rotation::cur()),
+            meta.query_advice(sig_table.recovered_addr, Rotation::cur()),
+        ]
+        });
+        */
 
         ////////////////////////////////////////////////////////////////////
         /////////////////    Keccak table lookups     //////////////////////
@@ -2083,6 +2110,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         Ok(())
     }
 
+    // TODO: is this still needed since we switch from halo2wrong to halo2-ecc?
     fn instance(&self) -> Vec<Vec<F>> {
         // The maingate expects an instance column, but we don't use it, so we return an
         // "empty" instance column

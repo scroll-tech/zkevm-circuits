@@ -144,13 +144,12 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
 
         meta.enable_equality(rlc_column);
 
-        // TODO: enable_equality here?
         meta.enable_equality(sig_table.recovered_addr);
         meta.enable_equality(sig_table.sig_r_rlc);
         meta.enable_equality(sig_table.sig_s_rlc);
         //meta.enable_equality(ec_recover_table.v);
         meta.enable_equality(sig_table.is_valid);
-        //meta.enable_equality(sig_table.msg_hash_rlc);
+        meta.enable_equality(sig_table.msg_hash_rlc);
 
         // Ref. spec SignVerifyChip 1. Verify that keccak(pub_key_bytes) = pub_key_hash
         // by keccak table lookup, where pub_key_bytes is built from the pub_key
@@ -204,17 +203,13 @@ impl<F: Field> SigCircuitConfig<F> {
         self.ecdsa_config.range.load_lookup_table(layouter)
     }
 }
-// impl<F: Field> SubCircuit<F> for TxCircuit<F> {
 
-/// Auxiliary Gadget to verify a that a message hash is signed by the public
+/// Verify a message hash is signed by the public
 /// key corresponding to an Ethereum Address.
 #[derive(Clone, Debug, Default)]
 pub struct SigCircuit<F: Field> {
     /// Max number of verifications
     pub max_verif: usize,
-    //pub chain_id: u64,
-    /// List of Transactions, with padding Tx::default()
-    //pub txs: Vec<Transaction>,
     /// Without padding
     pub signatures: Vec<SignData>,
     /// Marker
@@ -225,10 +220,10 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
     type Config = SigCircuitConfig<F>;
 
     fn new_from_block(block: &crate::witness::Block<F>) -> Self {
-        // TODO: seperate this with max_txs?
-        // TODO: better way than unwrap?
         SigCircuit {
+            // TODO: seperate max_verif with max_txs?
             max_verif: block.circuits_params.max_txs,
+            // TODO: better way than unwrap?
             signatures: block.get_sign_data().unwrap(),
             _marker: Default::default(),
         }
@@ -254,7 +249,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
 }
 
 impl<F: Field> SigCircuit<F> {
-    /// Return a new SignVerifyChip
+    /// Return a new SigCircuit
     pub fn new(max_verif: usize) -> Self {
         Self {
             max_verif,
@@ -819,7 +814,7 @@ impl<F: Field> SigCircuit<F> {
 
                     // FIXME: constrain v
                     region.assign_advice(
-                        || "assign ec_recover_table selector",
+                        || "assign sig_table v",
                         config.sig_table.sig_v,
                         idx,
                         || Value::known(F::from(signatures[idx].signature.2 as u64)),
@@ -828,7 +823,7 @@ impl<F: Field> SigCircuit<F> {
                     let r_rlc: AssignedValue<_> = assigned_sig_verif.r_rlc.clone().into();
                     r_rlc.copy_advice(&mut region, config.sig_table.sig_r_rlc, idx);
 
-                    let s_rlc: AssignedValue<_> = assigned_sig_verif.r_rlc.clone().into();
+                    let s_rlc: AssignedValue<_> = assigned_sig_verif.s_rlc.clone().into();
                     s_rlc.copy_advice(&mut region, config.sig_table.sig_s_rlc, idx);
 
                     let address: AssignedValue<_> = assigned_sig_verif.address.clone().into();
@@ -837,9 +832,8 @@ impl<F: Field> SigCircuit<F> {
                     let is_valid: AssignedValue<_> = assigned_sig_verif.sig_is_valid.clone().into();
                     is_valid.copy_advice(&mut region, config.sig_table.is_valid, idx);
 
-                    //let hash_rlc: AssignedValue<_> =
-                    // assigned_sig_verif.msg_hash_rlc.clone().into();
-                    // hash_rlc.copy_advice(&mut region, config.sig_table.hash_rlc, idx);
+                    let hash_rlc: AssignedValue<_> = assigned_sig_verif.msg_hash_rlc.clone().into();
+                    hash_rlc.copy_advice(&mut region, config.sig_table.msg_hash_rlc, idx);
                 }
                 Ok(())
             },

@@ -66,7 +66,7 @@ impl<F: Field> Circuit<F> for SigCircuit<F> {
     ) -> Result<(), Error> {
         let challenges = config.challenges.values(&layouter);
         config.sign_verify.load_range(&mut layouter)?;
-        let assigned_sig_verifs = self.assign(
+        let _assigned_sig_verifs = self.assign(
             &config.sign_verify,
             &mut layouter,
             &self.signatures,

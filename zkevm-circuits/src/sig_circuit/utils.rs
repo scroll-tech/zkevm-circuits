@@ -141,6 +141,7 @@ pub(super) struct SignDataDecomposed<'a: 'v, 'v, F: Field> {
     //v:  AssignedValue<'v, F>, // bool
 }
 
+// FIXME: is this correct? not used anywhere?
 pub(crate) fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
     pk_hash[32 - 20..]
         .iter()

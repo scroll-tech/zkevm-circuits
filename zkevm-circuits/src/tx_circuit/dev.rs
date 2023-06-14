@@ -1,8 +1,10 @@
+use std::marker::PhantomData;
+
 pub use super::TxCircuit;
 //use super::sign_verify::SigTable;
 
 use crate::{
-    sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
+    sig_circuit::{get_sign_data, SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
     table::{BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable},
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
     util::{Challenges, SubCircuit, SubCircuitConfig},
@@ -11,17 +13,78 @@ use crate::{
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
-    plonk::{Circuit, ConstraintSystem, Error},
+    plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
+
+/// Circuit configuration arguments
+pub struct TxCircuitTesterConfigArgs<F: Field> {
+    /// TxTable
+    pub tx_table: TxTable,
+    /// Block Table
+    pub block_table: BlockTable,
+    /// RlpTable
+    pub rlp_table: RlpTable,
+    /// KeccakTable
+    pub keccak_table: KeccakTable,
+    /// SigTable
+    pub sig_table: SigTable,
+    /// Challenges
+    pub challenges: Challenges<Expression<F>>,
+}
 
 /// TxCircuitTesterConfig
 #[derive(Clone, Debug)]
 pub struct TxCircuitTesterConfig<F: Field> {
     // SigTable is assigned inside SigCircuit
-    sig_table: SigTable,
-    keccak_table: KeccakTable,
+    //sig_table: SigTable,
+    //keccak_table: KeccakTable,
     tx_config: TxCircuitConfig<F>,
     sig_config: SigCircuitConfig<F>,
+}
+
+impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
+    type ConfigArgs = TxCircuitTesterConfigArgs<F>;
+
+    fn new(
+        meta: &mut ConstraintSystem<F>,
+        Self::ConfigArgs {
+            tx_table,
+            block_table,
+            keccak_table,
+            rlp_table,
+            sig_table,
+            challenges,
+        }: Self::ConfigArgs,
+    ) -> Self {
+        let config = {
+            let sig_config = SigCircuitConfig::new(
+                meta,
+                SigCircuitConfigArgs {
+                    sig_table: sig_table.clone(),
+                    challenges: challenges.clone(),
+                    keccak_table: keccak_table.clone(),
+                },
+            );
+            let tx_config = TxCircuitConfig::new(
+                meta,
+                TxCircuitConfigArgs {
+                    sig_table: sig_table.clone(),
+                    block_table,
+                    tx_table,
+                    keccak_table: keccak_table.clone(),
+                    rlp_table,
+                    challenges,
+                },
+            );
+            TxCircuitTesterConfig {
+                //sig_table,
+                //keccak_table,
+                tx_config,
+                sig_config,
+            }
+        };
+        config
+    }
 }
 
 /// The difference of this tester circuit and TxCircuit is that sig_circuit is included here.
@@ -31,6 +94,40 @@ pub struct TxCircuitTester<F: Field> {
     //keccak_table: KeccakTable,
     pub(super) tx_circuit: TxCircuit<F>,
     //sig_config: SigCircuitConfig<F>,
+}
+
+impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
+    type Config = TxCircuitTesterConfig<F>;
+
+    fn new_from_block(block: &crate::witness::Block<F>) -> Self {
+        let txs = block.txs.clone();
+        let max_txs = block.circuits_params.max_txs;
+        let chain_id = block.chain_id.as_u64();
+        let max_calldata = block.circuits_params.max_calldata;
+        let circuit = TxCircuitTester::<F> {
+            sig_circuit: SigCircuit {
+                max_verif: max_txs,
+                signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
+                _marker: PhantomData,
+            },
+            tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, txs),
+        };
+        circuit
+    }
+
+    fn synthesize_sub(
+        &self,
+        config: &Self::Config,
+        challenges: &Challenges<halo2_proofs::circuit::Value<F>>,
+        layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
+        todo!()
+    }
+
+    fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
+        // TODO
+        SigCircuit::min_num_rows_block(block)
+    }
 }
 
 // SigCircuit is embedded inside TxCircuit to make testing easier
@@ -49,10 +146,6 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
         let rlp_table = RlpTable::construct(meta);
         let sig_table = SigTable::construct(meta);
         let challenges = Challenges::construct(meta);
-
-        // TODO: check this
-        //#[cfg(feature = "enable-sign-verify")]
-        //self.sign_verify.load_range(layouter)?;
 
         let config = {
             let challenges = challenges.exprs(meta);
@@ -76,8 +169,8 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
                 },
             );
             TxCircuitTesterConfig {
-                sig_table,
-                keccak_table,
+                //sig_table,
+                //keccak_table,
                 tx_config,
                 sig_config,
             }
@@ -86,23 +179,54 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
         (config, challenges)
     }
 
+    // TODO: refactor this function, too complex
     fn synthesize(
         &self,
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&layouter);
+
+        let padding_txs = (self.tx_circuit.txs.len()..self.tx_circuit.max_txs)
+            .into_iter()
+            .map(|i| {
+                let mut tx = Transaction::dummy(self.tx_circuit.chain_id);
+                tx.id = i + 1;
+                tx
+            })
+            .collect::<Vec<Transaction>>();
+
         config.tx_config.keccak_table.dev_load(
             &mut layouter,
             &self.tx_circuit.keccak_inputs()?,
             &challenges,
         )?;
+
+        config.tx_config.tx_table.load(
+            &mut layouter,
+            &self.tx_circuit.txs,
+            self.tx_circuit.max_txs,
+            self.tx_circuit.max_calldata,
+            self.tx_circuit.chain_id,
+            &challenges,
+        )?;
+        config.tx_config.rlp_table.dev_load(
+            &mut layouter,
+            self.tx_circuit
+                .txs
+                .iter()
+                .chain(padding_txs.iter())
+                .cloned()
+                .collect(),
+            &challenges,
+        )?;
+
+        self.tx_circuit
+            .assign_dev_block_table(config.tx_config.clone(), &mut layouter)?;
         self.tx_circuit
             .synthesize_sub(&config.tx_config, &challenges, &mut layouter)?;
         self.sig_circuit
             .synthesize_sub(&config.sig_config, &challenges, &mut layouter)?;
-        self.tx_circuit
-            .assign_dev_block_table(config.tx_config, &mut layouter)?;
         Ok(())
     }
 }
