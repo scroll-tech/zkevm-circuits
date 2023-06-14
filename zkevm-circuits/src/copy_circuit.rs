@@ -329,7 +329,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // for all cases, rw_counter + rwc_inc_left keeps same
             cb.condition(
                 and::expr([
-                    not_last_two_rows.expr(),
+                    not::expr(meta.query_advice(is_last, Rotation::cur())),
                     not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
                 ]),
                 |cb| {
