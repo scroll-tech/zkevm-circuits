@@ -247,6 +247,4 @@ mod test {
     fn blockhash_gadget_block_number_overflow() {
         test_ok(U256::MAX, 0xcafeu64);
     }
-
-    // TODO: add a test case to use same inputs of scroll go-ethereum.
 }
