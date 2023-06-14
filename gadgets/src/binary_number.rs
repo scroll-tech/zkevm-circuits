@@ -6,7 +6,7 @@ use crate::util::{and, not, Expr};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use std::{collections::BTreeSet, marker::PhantomData};
@@ -132,7 +132,7 @@ where
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
-        value: Option<Column<Advice>>,
+        value: Option<Column<Any>>,
     ) -> BinaryNumberConfig<T, N> {
         let bits = [0; N].map(|_| meta.advice_column());
         bits.map(|bit| {
@@ -154,7 +154,7 @@ where
                 vec![
                     selector
                         * (config.value(Rotation::cur())(meta)
-                            - meta.query_advice(value, Rotation::cur())),
+                            - meta.query_any(value, Rotation::cur())),
                 ]
             });
         }

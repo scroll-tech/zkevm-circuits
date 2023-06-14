@@ -14,3 +14,7 @@ ethers-signers = "0.17.0"
 ethers-core = "0.17.0"
 rand_chacha = "0.3"
 rand = "0.8"
+
+[features]
+default = []
+shanghai = ["eth-types/shanghai"]

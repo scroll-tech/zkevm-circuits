@@ -139,9 +139,12 @@ mod calldataload_tests {
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        ToWord, Word,
+        Word,
     };
-    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
+    use mock::{
+        generate_mock_call_bytecode, test_ctx::helpers::account_0_code_account_1_no_code,
+        MockCallBytecodeParams, TestContext,
+    };
     use rand::random;
 
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
@@ -176,22 +179,29 @@ mod calldataload_tests {
             memory_a.resize(call_data_length, 0);
         }
 
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH32(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call addr_b
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH1(call_data_length) // argsLength
-            PUSH1(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        // let code_a = bytecode! {
+        //     // populate memory in A's context.
+        //     PUSH32(Word::from_big_endian(&pushdata))
+        //     PUSH1(0x00) // offset
+        //     MSTORE
+        //     // call addr_b
+        //     PUSH1(0x00) // retLength
+        //     PUSH1(0x00) // retOffset
+        //     PUSH1(call_data_length) // argsLength
+        //     PUSH1(call_data_offset) // argsOffset
+        //     PUSH1(0x00) // value
+        //     PUSH32(addr_b.to_word()) // addr
+        //     PUSH32(0x1_0000) // gas
+        //     CALL
+        //     STOP
+        // };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length,
+            call_data_offset,
+            ..MockCallBytecodeParams::default()
+        });
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(

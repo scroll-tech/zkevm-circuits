@@ -14,7 +14,10 @@ use crate::{
         util::{
             and,
             common_gadget::{SameContextGadget, WordByteCapGadget},
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             from_bytes,
             memory_gadget::{BufferReaderGadget, MemoryMask, MemoryWordAddress},
             not, select, CachedRegion, Cell, Word,
@@ -64,7 +67,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
     const NAME: &'static str = "CALLDATALOAD";
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let src_id = cb.query_cell();
@@ -79,7 +82,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         cb.stack_pop(data_offset.original_word());
 
         cb.condition(
-            and::expr([data_offset.within_range(), cb.curr.state.is_root.expr()]),
+            and::expr([data_offset.not_overflow(), cb.curr.state.is_root.expr()]),
             |cb| {
                 cb.call_context_lookup(
                     false.expr(),
@@ -103,7 +106,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         cb.condition(
             and::expr([
-                data_offset.within_range(),
+                data_offset.not_overflow(),
                 not::expr(cb.curr.state.is_root.expr()),
             ]),
             |cb| {
@@ -147,7 +150,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 // For a root call, the call data comes from tx's data field.
                 cb.condition(
                     and::expr([
-                        data_offset.within_range(),
+                        data_offset.not_overflow(),
                         buffer_reader.read_flag(idx),
                         cb.curr.state.is_root.expr(),
                     ]),
@@ -160,7 +163,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                         );
                     },
                 );
-
                 buffer_reader.byte(idx)
             })
             .collect();
@@ -184,7 +186,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         // For an internal call, the call data comes from memory，read memory word
         cb.condition(
             and::expr([
-                data_offset.within_range(),
+                data_offset.not_overflow(),
                 not::expr(cb.curr.state.is_root.expr()),
             ]),
             |cb| {
@@ -279,16 +281,16 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             .assign(region, offset, Value::known(F::from(call_data_offset)))?;
 
         let data_offset = block.rws[step.rw_indices[0]].stack_value();
-        let offset_within_range =
+        let offset_not_overflow =
             self.data_offset
                 .assign(region, offset, data_offset, F::from(call_data_length))?;
 
-        let data_offset = if offset_within_range {
+        let data_offset = if offset_not_overflow {
             data_offset.as_u64()
         } else {
             call_data_length
         };
-        let src_addr_end = call_data_offset.checked_add(call_data_length).unwrap();
+        let src_addr_end = call_data_offset + call_data_length;
         let src_addr = call_data_offset
             .checked_add(data_offset)
             .unwrap_or(src_addr_end)
@@ -302,7 +304,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let mut value_left_bytes = [0u8; N_BYTES_WORD];
         let mut value_right_bytes = [0u8; N_BYTES_WORD];
 
-        if !call.is_root && offset_within_range {
+        if !call.is_root && offset_not_overflow {
             // assign value_left, value_right word
             value_left_bytes = block.rws[step.rw_indices[4]]
                 .memory_word_value()
@@ -329,11 +331,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
 
-        if offset_within_range {
+        if offset_not_overflow {
             for (i, byte) in calldata_bytes.iter_mut().enumerate() {
                 if call.is_root {
                     // Fetch from tx call data.
-                    if src_addr.checked_add(i as u64).unwrap() < tx.call_data_length as u64 {
+                    if src_addr + (i as u64) < tx.call_data_length as u64 {
                         *byte = tx.call_data[src_addr as usize + i];
                     }
                 } else {
@@ -369,15 +371,19 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::{bytecode, ToWord, Word};
-    use mock::TestContext;
+    use eth_types::{bytecode, Word};
+    use mock::{generate_mock_call_bytecode, MockCallBytecodeParams, TestContext};
 
-    fn test_root_ok(offset: Word) {
-        let bytecode = bytecode! {
+    fn test_bytecode(offset: Word) -> eth_types::Bytecode {
+        bytecode! {
             PUSH32(offset)
             CALLDATALOAD
             STOP
-        };
+        }
+    }
+
+    fn test_root_ok(offset: Word) {
+        let bytecode = test_bytecode(offset);
 
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
@@ -389,29 +395,14 @@ mod test {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
-        let code_b = bytecode! {
-            PUSH32(offset)
-            CALLDATALOAD
-            STOP
-        };
-
-        let pushdata = rand_bytes(32);
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH32(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call addr_b
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_b = test_bytecode(offset);
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata: rand_bytes(32),
+            call_data_length,
+            call_data_offset,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,

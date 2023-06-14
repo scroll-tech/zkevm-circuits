@@ -1,7 +1,6 @@
 use super::{
     lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
-    random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
-    N_LIMBS_RW_COUNTER,
+    param::*, random_linear_combination::Queries as RlcQueries,
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::not},
@@ -33,6 +32,7 @@ pub struct RwTableQueries<F: Field> {
 
 #[derive(Clone)]
 pub struct MptUpdateTableQueries<F: Field> {
+    pub q_enable: Expression<F>,
     pub address: Expression<F>,
     pub storage_key: Expression<F>,
     pub proof_type: Expression<F>,
@@ -345,6 +345,7 @@ impl<F: Field> ConstraintBuilder<F> {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for AccountStorage last access",
                 vec![
+                    (1.expr(), q.mpt_update_table.q_enable.clone()),
                     (
                         q.rw_table.address.clone(),
                         q.mpt_update_table.address.clone(),
@@ -448,11 +449,6 @@ impl<F: Field> ConstraintBuilder<F> {
         });
         // 7.2. `initial value` is 0
         self.require_zero("initial TxRefund value is 0", q.initial_value());
-        // 7.3. First access for a set of all keys are 0 if READ
-        self.require_zero(
-            "first access for a set of all keys are 0 if READ",
-            q.first_access() * q.is_read() * q.value(),
-        );
     }
 
     fn build_account_constraints(&mut self, q: &Queries<F>) {

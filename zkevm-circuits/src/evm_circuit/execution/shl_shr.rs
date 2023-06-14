@@ -6,7 +6,10 @@ use crate::{
         util::{
             self,
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             from_bytes,
             math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
             sum, CachedRegion, Cell,
@@ -51,7 +54,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SHL_SHR;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let is_shl = OpcodeId::SHR.expr() - opcode.expr();
         let is_shr = 1.expr() - is_shl.expr();

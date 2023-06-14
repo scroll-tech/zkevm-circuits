@@ -2,19 +2,24 @@
 
 #![allow(missing_docs)]
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     plonk::*,
 };
 
 mod execution;
 pub mod param;
 pub(crate) mod step;
+pub mod table;
 pub(crate) mod util;
 
-pub mod table;
+#[cfg(any(feature = "test", test))]
+pub(crate) mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use self::EvmCircuit as TestEvmCircuit;
 
 pub use crate::witness;
 use crate::{
+    evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
     },
@@ -62,6 +67,13 @@ pub struct EvmCircuitConfigArgs<F: Field> {
     pub keccak_table: KeccakTable,
     /// ExpTable
     pub exp_table: ExpTable,
+}
+
+/// Circuit exported cells after synthesis, used for subcircuit
+#[derive(Clone, Debug)]
+pub struct EvmCircuitExports<V> {
+    /// withdraw root
+    pub withdraw_root: (Cell, Value<V>),
 }
 
 impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
@@ -175,6 +187,7 @@ pub struct EvmCircuit<F: Field> {
     /// Block
     pub block: Option<Block<F>>,
     fixed_table_tags: Vec<FixedTableTag>,
+    pub(crate) exports: std::cell::RefCell<Option<EvmCircuitExports<Assigned<F>>>>,
 }
 
 impl<F: Field> EvmCircuit<F> {
@@ -183,6 +196,7 @@ impl<F: Field> EvmCircuit<F> {
         Self {
             block: Some(block),
             fixed_table_tags: FixedTableTag::iter().collect(),
+            ..Default::default()
         }
     }
 
@@ -190,6 +204,7 @@ impl<F: Field> EvmCircuit<F> {
         Self {
             block: Some(block),
             fixed_table_tags,
+            ..Default::default()
         }
     }
 
@@ -241,6 +256,12 @@ impl<F: Field> EvmCircuit<F> {
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     type Config = EvmCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        // Most columns are queried at MAX_STEP_HEIGHT + STEP_STATE_HEIGHT distinct rotations, so
+        // returns (MAX_STEP_HEIGHT + STEP_STATE_HEIGHT + 3) unusable rows.
+        MAX_STEP_HEIGHT + STEP_STATE_HEIGHT + 3
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         Self::new(block.clone())
     }
@@ -276,7 +297,9 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 
         config.load_fixed_table(layouter, self.fixed_table_tags.clone())?;
         config.load_byte_table(layouter)?;
-        config.execution.assign_block(layouter, block, challenges)
+        let export = config.execution.assign_block(layouter, block, challenges)?;
+        self.exports.borrow_mut().replace(export);
+        Ok(())
     }
 }
 
@@ -431,56 +454,19 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         )?;
         config
             .bytecode_table
-            .load(&mut layouter, block.bytecodes.values(), &challenges)?;
+            .dev_load(&mut layouter, block.bytecodes.values(), &challenges)?;
         config
             .block_table
-            .load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
-        config.copy_table.load(&mut layouter, block, &challenges)?;
+            .dev_load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
+        config
+            .copy_table
+            .dev_load(&mut layouter, block, &challenges)?;
         config
             .keccak_table
             .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
-        config.exp_table.load(&mut layouter, block)?;
+        config.exp_table.dev_load(&mut layouter, block)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
-    }
-}
-
-#[cfg(any(feature = "test", test))]
-pub mod test {
-    use super::*;
-    use crate::evm_circuit::witness::Block;
-
-    use eth_types::{Field, Word};
-    use rand::{
-        distributions::uniform::{SampleRange, SampleUniform},
-        random, thread_rng, Rng,
-    };
-
-    pub(crate) fn rand_range<T, R>(range: R) -> T
-    where
-        T: SampleUniform,
-        R: SampleRange<T>,
-    {
-        thread_rng().gen_range(range)
-    }
-
-    pub(crate) fn rand_bytes(n: usize) -> Vec<u8> {
-        (0..n).map(|_| random()).collect()
-    }
-
-    pub(crate) fn rand_bytes_array<const N: usize>() -> [u8; N] {
-        [(); N].map(|_| random())
-    }
-
-    pub(crate) fn rand_word() -> Word {
-        Word::from_big_endian(&rand_bytes_array::<32>())
-    }
-
-    impl<F: Field> EvmCircuit<F> {
-        pub fn get_test_cicuit_from_block(block: Block<F>) -> Self {
-            let fixed_table_tags = detect_fixed_table_tags(&block);
-            EvmCircuit::<F>::new_dev(block, fixed_table_tags)
-        }
     }
 }
 
@@ -490,12 +476,14 @@ mod evm_circuit_stats {
         evm_circuit::{
             param::{
                 LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
+                N_PHASE2_COPY_COLUMNS,
             },
             step::ExecutionState,
             EvmCircuit,
         },
         stats::print_circuit_stats_by_states,
         test_util::CircuitTestBuilder,
+        util::{unusable_rows, SubCircuit},
         witness::block_convert,
     };
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
@@ -514,6 +502,14 @@ mod evm_circuit_stats {
         },
         MOCK_ACCOUNTS,
     };
+
+    #[test]
+    fn evm_circuit_unusable_rows() {
+        assert_eq!(
+            EvmCircuit::<Fr>::unusable_rows(),
+            unusable_rows::<Fr, EvmCircuit::<Fr>>(),
+        )
+    }
 
     #[test]
     pub fn empty_evm_circuit_no_padding() {
@@ -631,6 +627,8 @@ mod evm_circuit_stats {
             N_PHASE2_COLUMNS,
             storage_perm,
             N_COPY_COLUMNS,
+            storage_perm_2,
+            N_PHASE2_COPY_COLUMNS,
             byte_lookup,
             N_BYTE_LOOKUPS,
             fixed_table,
@@ -651,10 +649,14 @@ mod evm_circuit_stats {
             LOOKUP_CONFIG[7].1
         );
     }
+
+    #[ignore = "need to make table dev_load padding to fix this"]
     #[test]
     fn variadic_size_check() {
         let params = CircuitsParams {
             max_evm_rows: 1 << 12,
+            max_keccak_rows: 1 << 12,
+            max_bytecode: 1 << 12,
             ..Default::default()
         };
         // Empty

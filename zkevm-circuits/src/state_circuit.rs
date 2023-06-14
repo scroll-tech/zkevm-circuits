@@ -3,10 +3,20 @@ mod constraint_builder;
 mod lexicographic_ordering;
 mod lookups;
 mod multiple_precision_integer;
+mod param;
 mod random_linear_combination;
-#[cfg(test)]
-mod test;
 
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
+#[cfg(any(feature = "test", test))]
+mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use dev::StateCircuit as TestStateCircuit;
+
+use self::{
+    constraint_builder::{MptUpdateTableQueries, RwTableQueries},
+    lexicographic_ordering::LimbIndex,
+};
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
     table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, RwTableTag},
@@ -27,9 +37,8 @@ use halo2_proofs::{
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
+use param::*;
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
-#[cfg(test)]
-use std::collections::HashMap;
 use std::marker::PhantomData;
 
 #[cfg(feature = "onephase")]
@@ -37,17 +46,8 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
-use self::{
-    constraint_builder::{MptUpdateTableQueries, RwTableQueries},
-    lexicographic_ordering::LimbIndex,
-};
-
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
-
-const N_LIMBS_RW_COUNTER: usize = 2;
-const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
-const N_LIMBS_ID: usize = 2;
+use std::collections::HashMap;
 
 /// Config for StateCircuit
 #[derive(Clone)]
@@ -107,13 +107,13 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let selector = meta.fixed_column();
+        let selector = rw_table.q_enable;
         log::debug!("state circuit selector {:?}", selector);
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness: [Expression<F>; 31] = challenges.evm_word_powers_of_randomness();
 
         let rw_counter = MpiChip::configure(meta, selector, rw_table.rw_counter, lookups);
-        let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
+        let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag.into()));
         let id = MpiChip::configure(meta, selector, rw_table.id, lookups);
         let address = MpiChip::configure(meta, selector, rw_table.address, lookups);
 
@@ -465,8 +465,8 @@ pub struct StateCircuit<F> {
     pub(crate) updates: MptUpdates,
     pub(crate) n_rows: usize,
     pub(crate) exports: std::cell::RefCell<Option<StateCircuitExports<Assigned<F>>>>,
-    #[cfg(test)]
-    overrides: HashMap<(test::AdviceColumn, isize), F>,
+    #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+    overrides: HashMap<(dev::AdviceColumn, isize), F>,
     _marker: PhantomData<F>,
 }
 
@@ -485,7 +485,7 @@ impl<F: Field> StateCircuit<F> {
             updates,
             exports: std::cell::RefCell::new(None),
             n_rows,
-            #[cfg(test)]
+            #[cfg(any(feature = "test", test, feature = "test-circuits"))]
             overrides: HashMap::new(),
             _marker: PhantomData::default(),
         }
@@ -503,10 +503,16 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
             updates,
             exports: std::cell::RefCell::new(None),
             n_rows: block.circuits_params.max_rws,
-            #[cfg(test)]
+            #[cfg(any(feature = "test", test, feature = "test-circuits"))]
             overrides: HashMap::new(),
             _marker: PhantomData::default(),
         }
+    }
+
+    fn unusable_rows() -> usize {
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
+        6
     }
 
     /// Return the minimum number of rows required to prove the block
@@ -564,7 +570,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     self.exports.borrow_mut().replace(exports);
                 }
 
-                #[cfg(test)]
+                #[cfg(any(feature = "test", test, feature = "test-circuits"))]
                 {
                     let padding_length = RwMap::padding_len(self.rows.len(), self.n_rows);
                     for ((column, row_offset), &f) in &self.overrides {
@@ -592,56 +598,10 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-impl<F: Field> Circuit<F> for StateCircuit<F>
-where
-    F: Field,
-{
-    type Config = (StateCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let rw_table = RwTable::construct(meta);
-        let mpt_table = MptTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-
-        let config = {
-            let challenges = challenges.exprs(meta);
-            StateCircuitConfig::new(
-                meta,
-                StateCircuitConfigArgs {
-                    rw_table,
-                    mpt_table,
-                    challenges,
-                },
-            )
-        };
-
-        (config, challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&layouter);
-        config
-            .mpt_table
-            .load(&mut layouter, &self.updates, challenges.evm_word())?;
-        self.synthesize_sub(&config, &challenges, &mut layouter)
-    }
-}
-
 fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) -> Queries<F> {
     let first_different_limb = c.lexicographic_ordering.first_different_limb;
     let final_bits_sum = meta.query_advice(first_different_limb.bits[3], Rotation::cur())
         + meta.query_advice(first_different_limb.bits[4], Rotation::cur());
-    let mpt_update_table_expressions = c.mpt_table.table_exprs(meta);
 
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
@@ -661,15 +621,15 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             value_prev: meta.query_advice(c.rw_table.value, Rotation::prev()),
             value_prev_column: meta.query_advice(c.rw_table.value_prev, Rotation::cur()),
         },
-        // TODO: clean this up
         mpt_update_table: MptUpdateTableQueries {
-            address: mpt_update_table_expressions[0].clone(),
-            storage_key: mpt_update_table_expressions[1].clone(),
-            proof_type: mpt_update_table_expressions[2].clone(),
-            new_root: mpt_update_table_expressions[3].clone(),
-            old_root: mpt_update_table_expressions[4].clone(),
-            new_value: mpt_update_table_expressions[5].clone(),
-            old_value: mpt_update_table_expressions[6].clone(),
+            q_enable: meta.query_fixed(c.mpt_table.q_enable, Rotation::cur()),
+            address: meta.query_advice(c.mpt_table.address, Rotation::cur()),
+            storage_key: meta.query_advice(c.mpt_table.storage_key, Rotation::cur()),
+            proof_type: meta.query_advice(c.mpt_table.proof_type, Rotation::cur()),
+            new_root: meta.query_advice(c.mpt_table.new_root, Rotation::cur()),
+            old_root: meta.query_advice(c.mpt_table.old_root, Rotation::cur()),
+            new_value: meta.query_advice(c.mpt_table.new_value, Rotation::cur()),
+            old_value: meta.query_advice(c.mpt_table.old_value, Rotation::cur()),
         },
         lexicographic_ordering_selector: meta
             .query_fixed(c.lexicographic_ordering.selector, Rotation::cur()),

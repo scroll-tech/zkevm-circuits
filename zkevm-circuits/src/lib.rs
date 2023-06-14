@@ -5,6 +5,7 @@
 #![allow(incomplete_features)]
 // Needed by DummyGadget in evm circuit
 #![feature(adt_const_params)]
+#![feature(array_zip)]
 // Needed by some builder patterns in testing modules.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Temporary until we have more of the crate implemented.
@@ -26,7 +27,7 @@ pub mod keccak_circuit;
 pub mod mpt_circuit;
 pub mod pi_circuit;
 pub mod poseidon_circuit;
-pub mod rlp_circuit;
+pub mod rlp_circuit_fsm;
 // we don't use this for aggregation
 //pub mod root_circuit;
 pub mod state_circuit;

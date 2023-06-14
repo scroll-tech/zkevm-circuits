@@ -1,18 +1,24 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep},
-    operation::{AccountField, CallContextField, MemoryWordOp, TxAccessListAccountOp, RW},
-    precompile::{execute_precompiled, is_precompiled},
+    circuit_input_builder::{
+        CallKind, CircuitInputStateRef, CodeSource, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
+    evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
+    operation::{
+        AccountField, CallContextField, MemoryOp, MemoryWordOp, TxAccessListAccountOp, RW,
+    },
+    precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
 };
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        GasCost, OpcodeId,
+        Gas, GasCost, OpcodeId,
     },
     GethExecStep, ToWord, Word,
 };
+use std::cmp::min;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL`, `OpcodeId::CALLCODE`,
@@ -135,7 +141,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 (call.is_persistent as u64).into(),
             ),
         ] {
-            state.call_context_write(&mut exec_step, call.clone().call_id, field, value);
+            state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
         let (found, sender_account) = state.sdb.get_account(&call.caller_address);
@@ -147,13 +153,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         // Precheck is OK when depth is in range and caller balance is sufficient.
         let is_precheck_ok =
             geth_step.depth < 1025 && (!is_call_or_callcode || caller_balance >= call.value);
-
-        // log::debug!(
-        //    "is_precheck_ok: {}, call type: {:?}, sender_account: {:?} ",
-        //    is_precheck_ok,
-        //    call.kind,
-        //    call.caller_address
-        //);
 
         // read balance of caller to compare to value for insufficient_balance checking
         // in circuit, also use for callcode successful case check balance is
@@ -256,26 +255,87 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         match (!is_precheck_ok, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
             (false, true, _) => {
-                assert!(call.is_success, "call to precompile should not fail");
-                let caller_ctx = state.caller_ctx_mut()?;
                 let code_address = code_address.unwrap();
+                let precompile_call: PrecompileCalls = code_address.0[19].into();
+
+                // get the result of the precompile call.
+                let caller_ctx = state.caller_ctx()?;
+                let caller_memory = caller_ctx.memory.0.clone();
                 let (result, contract_gas_cost) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
-                        &caller_ctx.memory.0[args_offset..args_offset + args_length]
+                        &caller_memory[args_offset..args_offset + args_length]
                     } else {
                         &[]
                     },
                     callee_gas_left,
                 );
+
                 log::trace!(
-                    "precompile return data len {} gas {}",
+                    "precompile returned data len {} gas {}",
                     result.len(),
                     contract_gas_cost
                 );
-                caller_ctx.return_data = result.clone();
+
+                // mutate the caller memory.
+                let caller_ctx_mut = state.caller_ctx_mut()?;
+                caller_ctx_mut.return_data = result.clone();
+                let length = min(result.len(), ret_length);
+                if length > 0 {
+                    caller_ctx_mut.memory.extend_at_least(ret_offset + length);
+                    caller_ctx_mut.memory.0[ret_offset..ret_offset + length]
+                        .copy_from_slice(&result[..length]);
+                }
 
                 for (field, value) in [
+                    (
+                        CallContextField::IsSuccess,
+                        Word::from(call.is_success as u64),
+                    ),
+                    (
+                        CallContextField::CalleeAddress,
+                        call.code_address().unwrap().to_word(),
+                    ),
+                    (CallContextField::CallerId, call.caller_id.into()),
+                    (
+                        CallContextField::CallDataOffset,
+                        call.call_data_offset.into(),
+                    ),
+                    (
+                        CallContextField::CallDataLength,
+                        call.call_data_length.into(),
+                    ),
+                    (
+                        CallContextField::ReturnDataOffset,
+                        call.return_data_offset.into(),
+                    ),
+                    (
+                        CallContextField::ReturnDataLength,
+                        call.return_data_length.into(),
+                    ),
+                ] {
+                    state.call_context_write(&mut exec_step, call.call_id, field, value);
+                }
+
+                // return while restoring some of caller's context.
+                for (field, value) in [
+                    (
+                        CallContextField::ProgramCounter,
+                        (geth_step.pc.0 + 1).into(),
+                    ),
+                    (
+                        CallContextField::StackPointer,
+                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
+                    ),
+                    (
+                        CallContextField::GasLeft,
+                        (geth_steps[0].gas.0 - gas_cost - contract_gas_cost).into(),
+                    ),
+                    (CallContextField::MemorySize, next_memory_word_size.into()),
+                    (
+                        CallContextField::ReversibleWriteCounter,
+                        (exec_step.reversible_write_counter + 1).into(),
+                    ),
                     (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (
@@ -286,14 +346,136 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
 
-                let length = ret_length.min(result.len());
-                write_memory_words(state, &mut exec_step, &result, 0, length, false)?;
-                write_memory_words(state, &mut exec_step, &result, ret_offset, length, true)?;
+                // let length = ret_length.min(result.len());
+                // todo: enable below word memory read & write, constrct proper bytes for folowing
+                // copy events write_memory_words(state, &mut exec_step, &result, 0,
+                // length, false)?; write_memory_words(state, &mut exec_step,
+                // &result, ret_offset, length, true)?; insert a copy event (input)
+                // for this step
+                let rw_counter_start = state.block_ctx.rwc;
+                if call.call_data_length > 0 {
+                    let bytes: Vec<(u8, bool, bool)> = caller_memory
+                        .iter()
+                        .skip(call.call_data_offset as usize)
+                        .take(call.call_data_length as usize)
+                        .map(|b| (*b, false, false))
+                        .collect();
+                    for (i, &(byte, _is_code, _mask)) in bytes.iter().enumerate() {
+                        // push caller memory read
+                        state.push_op(
+                            &mut exec_step,
+                            RW::READ,
+                            MemoryOp::new(
+                                call.caller_id,
+                                (call.call_data_offset + i as u64).into(),
+                                byte,
+                            ),
+                        );
+                    }
+                    state.push_copy(
+                        &mut exec_step,
+                        CopyEvent {
+                            src_id: NumberOrHash::Number(call.caller_id),
+                            src_type: CopyDataType::Memory,
+                            src_addr: call.call_data_offset,
+                            src_addr_end: call.call_data_offset + call.call_data_length,
+                            dst_id: NumberOrHash::Number(call.call_id),
+                            dst_type: CopyDataType::Precompile(precompile_call),
+                            dst_addr: 0,
+                            log_id: None,
+                            rw_counter_start,
+                            bytes,
+                            aux_bytes: None,
+                        },
+                    );
+                }
 
-                state.handle_return(geth_step)?;
+                // write the result in the callee's memory.
+                let rw_counter_start = state.block_ctx.rwc;
+                if call.is_success() && call.call_data_length > 0 && !result.is_empty() {
+                    //todo: update this bytes
+                    let bytes: Vec<(u8, bool, bool)> =
+                        result.iter().map(|b| (*b, false, false)).collect();
+                    for (i, &(byte, _is_code, _mask)) in bytes.iter().enumerate() {
+                        // push callee memory write
+                        state.push_op(
+                            &mut exec_step,
+                            RW::WRITE,
+                            MemoryOp::new(call.call_id, i.into(), byte),
+                        );
+                    }
+                    state.push_copy(
+                        &mut exec_step,
+                        CopyEvent {
+                            src_id: NumberOrHash::Number(call.call_id),
+                            src_type: CopyDataType::Precompile(precompile_call),
+                            src_addr: 0,
+                            src_addr_end: result.len() as u64,
+                            dst_id: NumberOrHash::Number(call.call_id),
+                            dst_type: CopyDataType::Memory,
+                            dst_addr: 0,
+                            log_id: None,
+                            rw_counter_start,
+                            bytes,
+                            aux_bytes: None,
+                        },
+                    );
+                }
+
+                // insert another copy event (output) for this step.
+                let rw_counter_start = state.block_ctx.rwc;
+                if call.is_success() && call.call_data_length > 0 && length > 0 {
+                    let bytes: Vec<(u8, bool, bool)> = result
+                        .iter()
+                        .take(length)
+                        .map(|b| (*b, false, false))
+                        .collect();
+                    for (i, &(byte, _is_code, _mask)) in bytes.iter().enumerate() {
+                        // push caller memory write
+                        state.push_op(
+                            &mut exec_step,
+                            RW::WRITE,
+                            MemoryOp::new(
+                                call.caller_id,
+                                (call.return_data_offset + i as u64).into(),
+                                byte,
+                            ),
+                        );
+                    }
+                    state.push_copy(
+                        &mut exec_step,
+                        CopyEvent {
+                            src_id: NumberOrHash::Number(call.call_id),
+                            src_type: CopyDataType::Precompile(precompile_call),
+                            src_addr: 0,
+                            src_addr_end: length as u64,
+                            dst_id: NumberOrHash::Number(call.caller_id),
+                            dst_type: CopyDataType::Memory,
+                            dst_addr: call.return_data_offset,
+                            log_id: None,
+                            rw_counter_start,
+                            bytes,
+                            aux_bytes: None,
+                        },
+                    );
+                }
+
+                // TODO: when more precompiles are supported and each have their own different
+                // behaviour, we can separate out the logic specified here.
+                let mut precompile_step = precompile_associated_ops(
+                    state,
+                    geth_steps[1].clone(),
+                    call.clone(),
+                    precompile_call,
+                )?;
+
+                // Make the Precompile execution step to handle return logic and restore to caller
+                // context (similar as STOP and RETURN).
+                state.handle_return(&mut precompile_step, geth_steps, true)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
-                // debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
+                debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
+                exec_step.gas_cost = GasCost(gas_cost + contract_gas_cost);
                 if real_cost != exec_step.gas_cost.0 {
                     log::warn!(
                         "precompile gas fixed from {} to {}, step {:?}",
@@ -302,8 +484,12 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         geth_steps[0]
                     );
                 }
-                exec_step.gas_cost = GasCost(real_cost);
-                Ok(vec![exec_step])
+
+                // Set gas left and gas cost for precompile step.
+                precompile_step.gas_left = Gas(callee_gas_left);
+                precompile_step.gas_cost = GasCost(contract_gas_cost);
+
+                Ok(vec![exec_step, precompile_step])
             }
             // 2. Call to account with empty code.
             (false, _, true) => {
@@ -314,7 +500,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                state.handle_return(geth_step)?;
+                state.handle_return(&mut exec_step, geth_steps, false)?;
 
                 // FIXME
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
@@ -412,7 +598,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                state.handle_return(geth_step)?;
+                state.handle_return(&mut exec_step, geth_steps, false)?;
                 Ok(vec![exec_step])
             } //
         }
@@ -460,371 +646,402 @@ fn write_memory_words(
     Ok(())
 }
 
-#[cfg(test)]
-mod call_tests {
-    use crate::mock::BlockData;
-    use eth_types::{bytecode, geth_types::GethData, word};
-    use mock::{
-        test_ctx::{
-            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
-            LoggerConfig,
-        },
-        TestContext,
-    };
+#[cfg(any(test, feature = "test"))]
+pub mod tests {
+    use eth_types::{evm_types::OpcodeId, Bytecode, Word};
 
-    #[test]
-    fn test_precompiled_call_callcode() {
-        let code = bytecode! {
-            PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
-            PUSH1(0x00)
-            MSTORE
-        };
+    /// Precompile call args
+    pub struct PrecompileCallArgs {
+        /// description for the instance of a precompile call.
+        pub name: &'static str,
+        /// the bytecode that when call can produce the desired precompile call.
+        pub setup_code: Bytecode,
+        /// the call's return data size.
+        pub ret_size: Word,
+        /// the call's return data offset.
+        pub ret_offset: Word,
+        /// the call's calldata offset.
+        pub call_data_offset: Word,
+        /// the call's calldata length.
+        pub call_data_length: Word,
+        /// the address to which the call is made, i.e. callee address.
+        pub address: Word,
+        /// the optional value sent along with the call.
+        pub value: Word,
+        /// the gas limit for the call.
+        pub gas: Word,
+        /// stack values during the call.
+        pub stack_value: Vec<(Word, Word)>,
+        /// maximum number of RW entries for the call.
+        pub max_rws: usize,
+    }
 
-        let stack = [
-            bytecode! {
-                PUSH1(0x20)
-                PUSH1(0x20)
-                PUSH1(0x20)
-                PUSH1(0x00)
-                PUSH1(0x00)
-                PUSH1(0x04)
-                PUSH1(0xFF)
-            },
-            bytecode! {
-                PUSH1(0x20)
-                PUSH1(0x20)
-                PUSH1(0x20)
-                PUSH1(0x00)
-                PUSH1(0x04)
-                PUSH1(0xFF)
-            },
-        ];
-
-        let instructions = [
-            [bytecode! { CALL }, bytecode! { CALLCODE }],
-            [bytecode! { STATICCALL }, bytecode! { DELEGATECALL }],
-        ];
-
-        for (stack, instructions) in stack.iter().zip(instructions.iter()) {
-            for instruction in instructions.iter() {
-                let mut code = code.clone();
-                code.append(stack);
-                code.append(instruction);
-
-                // Get the execution steps from the external tracer
-                let block: GethData = TestContext::<2, 1>::new_with_logger_config(
-                    None,
-                    account_0_code_account_1_no_code(code),
-                    tx_from_1_to_0,
-                    |block, _tx| block.number(0xcafeu64),
-                    LoggerConfig::enable_memory(),
-                )
-                .unwrap()
-                .into();
-
-                let mut builder =
-                    BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-                builder
-                    .handle_block(&block.eth_block, &block.geth_traces)
-                    .unwrap();
+    impl Default for PrecompileCallArgs {
+        fn default() -> Self {
+            PrecompileCallArgs {
+                name: "precompiled call",
+                setup_code: Bytecode::default(),
+                ret_size: Word::zero(),
+                ret_offset: Word::zero(),
+                call_data_offset: Word::zero(),
+                call_data_length: Word::zero(),
+                address: Word::zero(),
+                value: Word::zero(),
+                gas: Word::from(0xFFFFFFF),
+                stack_value: vec![],
+                max_rws: 1000,
             }
         }
     }
 
+    impl PrecompileCallArgs {
+        /// Get the setup bytecode for call to a precompiled contract.
+        pub fn with_call_op(&self, call_op: OpcodeId) -> Bytecode {
+            assert!(
+                call_op.is_call(),
+                "invalid setup, {:?} is not a call op",
+                call_op
+            );
+            let mut code = self.setup_code.clone();
+            code.push(32, self.ret_size)
+                .push(32, self.ret_offset)
+                .push(32, self.call_data_length)
+                .push(32, self.call_data_offset);
+            if call_op == OpcodeId::CALL || call_op == OpcodeId::CALLCODE {
+                code.push(32, self.value);
+            }
+            code.push(32, self.address)
+                .push(32, self.gas)
+                .write_op(call_op)
+                .write_op(OpcodeId::POP);
+            for (offset, _) in self.stack_value.iter().rev() {
+                code.push(32, *offset).write_op(OpcodeId::MLOAD);
+            }
+
+            code
+        }
+    }
+
+    // move this to circuit after circuit part is complete
     #[test]
-    fn test_others() {
-        let ec_recover = bytecode! {
-            // First place the parameters in memory
-            PUSH32(word!("456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3")) // hash
-            PUSH1(0)
-            MSTORE
-            PUSH1(28) // v
-            PUSH1(0x20)
-            MSTORE
-            PUSH32(word!("9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608")) // r
-            PUSH1(0x40)
-            MSTORE
-            PUSH32(word!("4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada")) // s
-            PUSH1(0x60)
-            MSTORE
-
-            // Do the call
-            PUSH1(32) // retSize
-            PUSH1(0x80) // retOffset
-            PUSH1(0x80) // argsSize
-            PUSH1(0) // argsOffset
-            PUSH1(1) // address
-            PUSH4(word!("FFFFFFFF")) // gas
-            STATICCALL
+    fn test_precompiled_call() {
+        use crate::{circuit_input_builder::CircuitsParams, mock::BlockData};
+        use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Word};
+        use mock::{
+            test_ctx::{
+                helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+                LoggerConfig,
+            },
+            TestContext,
         };
 
-        let neg_ec_recover = bytecode! {
-            // First place the parameters in memory
-            PUSH32(word!("a")) // hash
-            PUSH1(0)
-            MSTORE
-            PUSH1(0xb) // v
-            PUSH1(0x20)
-            MSTORE
-            PUSH32(word!("0xc")) // r
-            PUSH1(0x40)
-            MSTORE
-            PUSH32(word!("0xd")) // s
-            PUSH1(0x60)
-            MSTORE
+        let test_vector = [
+            PrecompileCallArgs {
+                name: "ecRecover",
+                setup_code: bytecode! {
+                    PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3")) // hash
+                    PUSH1(0x0)
+                    MSTORE
+                    PUSH1(28) // v
+                    PUSH1(0x20)
+                    MSTORE
+                    PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608")) // r
+                    PUSH1(0x40)
+                    MSTORE
+                    PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada")) // s
+                    PUSH1(0x60)
+                    MSTORE
+                },
+                ret_size: Word::from(0x20),
+                ret_offset: Word::from(0x80),
+                call_data_length: Word::from(0x80),
+                address: Word::from(0x1),
+                stack_value: vec![(
+                    Word::from(0x80),
+                    word!("7156526fbd7a3c72969b54f64e42c10fbb768c8a"),
+                )],
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "SHA2-256",
+                setup_code: bytecode! {
+                    PUSH1(0xFF) // data
+                    PUSH1(0)
+                    MSTORE
+                },
+                ret_size: Word::from(0x20),
+                ret_offset: Word::from(0x20),
+                call_data_length: Word::from(0x1),
+                call_data_offset: Word::from(0x1F),
+                address: Word::from(0x2),
+                stack_value: vec![(
+                    Word::from(0x20),
+                    word!("a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
+                )],
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "RIPEMD-160",
+                setup_code: bytecode! {
+                    PUSH1(0xFF) // data
+                    PUSH1(0)
+                    MSTORE
+                },
+                ret_size: Word::from(0x20),
+                ret_offset: Word::from(0x20),
+                call_data_length: Word::from(0x1),
+                call_data_offset: Word::from(0x1F),
+                address: Word::from(0x3),
+                stack_value: vec![(
+                    Word::from(0x20),
+                    word!("2c0c45d3ecab80fe060e5f1d7057cd2f8de5e557"),
+                )],
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "identity",
+                setup_code: bytecode! {
+                    PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
+                    PUSH1(0x00)
+                    MSTORE
+                },
+                ret_size: Word::from(0x20),
+                ret_offset: Word::from(0x20),
+                call_data_length: Word::from(0x20),
+                address: Word::from(0x4),
+                stack_value: vec![(Word::from(0x20), word!("0123456789ABCDEF0123456789ABCDEF"))],
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "modexp",
+                setup_code: bytecode! {
+                    PUSH1(1) // Bsize
+                    PUSH1(0)
+                    MSTORE
+                    PUSH1(1) // Esize
+                    PUSH1(0x20)
+                    MSTORE
+                    PUSH1(1) // Msize
+                    PUSH1(0x40)
+                    MSTORE
+                    PUSH32(word!("0x08090A0000000000000000000000000000000000000000000000000000000000")) // B, E and M
+                    PUSH1(0x60)
+                    MSTORE
+                },
+                ret_size: Word::from(0x01),
+                ret_offset: Word::from(0x9F),
+                call_data_length: Word::from(0x63),
+                address: Word::from(0x5),
+                stack_value: vec![(Word::from(0x80), Word::from(8))],
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecAdd",
+                setup_code: bytecode! {
+                    PUSH1(1) // x1
+                    PUSH1(0)
+                    MSTORE
+                    PUSH1(2) // y1
+                    PUSH1(0x20)
+                    MSTORE
+                    PUSH1(1) // x2
+                    PUSH1(0x40)
+                    MSTORE
+                    PUSH1(2) // y2
+                    PUSH1(0x60)
+                    MSTORE
+                },
+                ret_size: Word::from(0x40),
+                ret_offset: Word::from(0x80),
+                call_data_length: Word::from(0x80),
+                address: Word::from(0x6),
+                stack_value: vec![
+                    (
+                        Word::from(0x80),
+                        word!("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd3"),
+                    ),
+                    (
+                        Word::from(0xA0),
+                        word!("15ed738c0e0a7c92e7845f96b2ae9c0a68a6a449e3538fc7ff3ebf7a5a18a2c4"),
+                    ),
+                ],
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecMul",
+                setup_code: bytecode! {
+                    PUSH1(1) // x1
+                    PUSH1(0)
+                    MSTORE
+                    PUSH1(2) // y1
+                    PUSH1(0x20)
+                    MSTORE
+                    PUSH1(2) // s
+                    PUSH1(0x40)
+                    MSTORE
+                },
+                ret_size: Word::from(0x40),
+                ret_offset: Word::from(0x60),
+                call_data_length: Word::from(0x60),
+                address: Word::from(0x7),
+                stack_value: vec![
+                    (
+                        Word::from(0x60),
+                        word!("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd3"),
+                    ),
+                    (
+                        Word::from(0x80),
+                        word!("15ed738c0e0a7c92e7845f96b2ae9c0a68a6a449e3538fc7ff3ebf7a5a18a2c4"),
+                    ),
+                ],
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "ecPairing",
+                setup_code: bytecode! {
+                    PUSH32(word!("0x23a8eb0b0996252cb548a4487da97b02422ebc0e834613f954de6c7e0afdc1fc"))
+                    PUSH32(word!("0x2a23af9a5ce2ba2796c1f4e453a370eb0af8c212d9dc9acd8fc02c2e907baea2"))
+                    PUSH32(word!("0x091058a3141822985733cbdddfed0fd8d6c104e9e9eff40bf5abfef9ab163bc7"))
+                    PUSH32(word!("0x1971ff0471b09fa93caaf13cbf443c1aede09cc4328f5a62aad45f40ec133eb4"))
+                    PUSH32(word!("0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45"))
+                    PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000001"))
+                    PUSH32(word!("0x2fe02e47887507adf0ff1743cbac6ba291e66f59be6bd763950bb16041a0a85e"))
+                    PUSH32(word!("0x2bd368e28381e8eccb5fa81fc26cf3f048eea9abfdd85d7ed3ab3698d63e4f90"))
+                    PUSH32(word!("0x22606845ff186793914e03e21df544c34ffe2f2f3504de8a79d9159eca2d98d9"))
+                    PUSH32(word!("0x1fb19bb476f6b9e44e2a32234da8212f61cd63919354bc06aef31e3cfaff3ebc"))
+                    PUSH32(word!("0x2c0f001f52110ccfe69108924926e45f0b0c868df0e7bde1fe16d3242dc715f6"))
+                    PUSH32(word!("0x2cf44499d5d27bb186308b7af7af02ac5bc9eeb6a3d147c186b21fb1b76e18da"))
 
-            // Do the call
-            PUSH1(32) // retSize
-            PUSH1(0x80) // retOffset
-            PUSH1(0x80) // argsSize
-            PUSH1(0) // argsOffset
-            PUSH1(1) // address
-            PUSH4(word!("FFFFFFFF")) // gas
-            STATICCALL
-        };
+                    PUSH1(12)
+                    PUSH2(0x200)
+                    MSTORE
 
-        let sha2 = bytecode! {
-            // First place the parameters in memory
-            PUSH1(0xFF) // data
-            PUSH1(0)
-            MSTORE
+                    JUMPDEST
 
-            // Do the call
-            PUSH1(0x20) // retSize
-            PUSH1(0x20) // retOffset
-            PUSH1(1) // argsSize
-            PUSH1(0x1F) // argsOffset
-            PUSH1(2) // address
-            PUSH4(word!("FFFFFFFF")) // gas
-            STATICCALL
-        };
+                    PUSH2(0x200)
+                    MLOAD
+                    PUSH1(12)
+                    SUB
+                    PUSH1(0x20)
+                    MUL
+                    MSTORE
+                    PUSH1(1)
+                    PUSH2(0x200)
+                    MLOAD
+                    SUB
+                    DUP1
+                    PUSH2(0x200)
+                    MSTORE
+                    PUSH2(0x192)
+                    JUMPI
+                },
+                ret_size: Word::from(0x20),
+                call_data_length: Word::from(0x180),
+                address: Word::from(0x8),
+                stack_value: vec![(Word::from(0x0), Word::from(1))],
+                max_rws: 3000,
+                ..Default::default()
+            },
+            PrecompileCallArgs {
+                name: "blake2f",
+                setup_code: bytecode! {
+                    PUSH32(word!("0000000003000000000000000000000000000000010000000000000000000000"))
+                    PUSH32(word!("0000000000000000000000000000000000000000000000000000000000000000"))
+                    PUSH32(word!("0000000000000000000000000000000000000000000000000000000000000000"))
+                    PUSH32(word!("0000000000000000000000000000000000000000000000000000000000000000"))
+                    PUSH32(word!("19cde05b61626300000000000000000000000000000000000000000000000000"))
+                    PUSH32(word!("3af54fa5d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e13"))
+                    PUSH32(word!("0000000048c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f"))
 
-        let sha2_less_return = bytecode! {
-            // First place the parameters in memory
-            PUSH1(0xFF) // data
-            PUSH1(0)
-            MSTORE
+                    PUSH1(7)
+                    PUSH2(0x160)
+                    MSTORE
 
-            // Do the call
-            PUSH1(0x10) // retSize
-            PUSH1(0x20) // retOffset
-            PUSH1(1) // argsSize
-            PUSH1(0x1F) // argsOffset
-            PUSH1(2) // address
-            PUSH4(word!("FFFFFFFF")) // gas
-            STATICCALL
-        };
+                    JUMPDEST
 
-        let ripemd_160 = bytecode! {
-            // First place the parameters in memory
-            PUSH1(0xFF) // data
-            PUSH1(0)
-            MSTORE
-
-            // Do the call
-            PUSH1(0x20) // retSize
-            PUSH1(0x20) // retOffset
-            PUSH1(1) // argsSize
-            PUSH1(0x1F) // argsOffset
-            PUSH1(3) // address
-            PUSH4(word!("FFFFFFFF")) // gas
-            STATICCALL
-        };
-
-        let modexp = bytecode! {
-            // First place the parameters in memory
-            PUSH1(1) // Bsize
-            PUSH1(0)
-            MSTORE
-            PUSH1(1) // Esize
-            PUSH1(0x20)
-            MSTORE
-            PUSH1(1) // Msize
-            PUSH1(0x40)
-            MSTORE
-            PUSH32(word!("08090A0000000000000000000000000000000000000000000000000000000000")) // B, E and M
-            PUSH1(0x60)
-            MSTORE
-
-            // Do the call
-            PUSH1(1) // retSize
-            PUSH1(0x9F) // retOffset
-            PUSH1(0x63) // argsSize
-            PUSH1(0) // argsOffset
-            PUSH1(5) // address
-            PUSH4(word!("FFFFFFFF")) // gas
-            STATICCALL
-        };
-
-        let ec_add = bytecode! {
-            // First place the parameters in memory
-            PUSH1(1) // x1
-            PUSH1(0)
-            MSTORE
-            PUSH1(2) // y1
-            PUSH1(0x20)
-            MSTORE
-            PUSH1(1) // x2
-            PUSH1(0x40)
-            MSTORE
-            PUSH1(2) // y2
-            PUSH1(0x60)
-            MSTORE
-
-            // Do the call
-            PUSH1(0x40) // retSize
-            PUSH1(0x80) // retOffset
-            PUSH1(0x80) // argsSize
-            PUSH1(0) // argsOffset
-            PUSH1(6) // address
-            PUSH4(word!("FFFFFFFF")) // gas
-            STATICCALL
-        };
-
-        let ec_mul = bytecode! {
-            // First place the parameters in memory
-            PUSH1(1) // x1
-            PUSH1(0)
-            MSTORE
-            PUSH1(2) // y1
-            PUSH1(0x20)
-            MSTORE
-            PUSH1(2) // s
-            PUSH1(0x40)
-            MSTORE
-
-            // Do the call
-            PUSH1(0x40) // retSize
-            PUSH1(0x60) // retOffset
-            PUSH1(0x60) // argsSize
-            PUSH1(0) // argsOffset
-            PUSH1(7) // address
-            PUSH4(word!("FFFFFFFF")) // gas
-            STATICCALL
-        };
-
-        let ec_pairing = bytecode! {
-            PUSH32(word!("2cf44499d5d27bb186308b7af7af02ac5bc9eeb6a3d147c186b21fb1b76e18da"))
-            PUSH1(0x0)
-            MSTORE
-
-            PUSH32(word!("2c0f001f52110ccfe69108924926e45f0b0c868df0e7bde1fe16d3242dc715f6"))
-            PUSH1(0x20)
-            MSTORE
-
-            PUSH32(word!("1fb19bb476f6b9e44e2a32234da8212f61cd63919354bc06aef31e3cfaff3ebc"))
-            PUSH1(0x40)
-            MSTORE
-
-            PUSH32(word!("22606845ff186793914e03e21df544c34ffe2f2f3504de8a79d9159eca2d98d9"))
-            PUSH1(0x60)
-            MSTORE
-
-            PUSH32(word!("2bd368e28381e8eccb5fa81fc26cf3f048eea9abfdd85d7ed3ab3698d63e4f90"))
-            PUSH1(0x80)
-            MSTORE
-
-            PUSH32(word!("2fe02e47887507adf0ff1743cbac6ba291e66f59be6bd763950bb16041a0a85e"))
-            PUSH1(0xA0)
-            MSTORE
-
-            PUSH32(word!("0000000000000000000000000000000000000000000000000000000000000001"))
-            PUSH1(0xC0)
-            MSTORE
-
-            PUSH32(word!("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45"))
-            PUSH1(0xE0)
-            MSTORE
-
-            PUSH32(word!("1971ff0471b09fa93caaf13cbf443c1aede09cc4328f5a62aad45f40ec133eb4"))
-            PUSH2(0x0100)
-            MSTORE
-
-            PUSH32(word!("091058a3141822985733cbdddfed0fd8d6c104e9e9eff40bf5abfef9ab163bc7"))
-            PUSH2(0x0120)
-            MSTORE
-
-            PUSH32(word!("2a23af9a5ce2ba2796c1f4e453a370eb0af8c212d9dc9acd8fc02c2e907baea2"))
-            PUSH2(0x0140)
-            MSTORE
-
-            PUSH32(word!("23a8eb0b0996252cb548a4487da97b02422ebc0e834613f954de6c7e0afdc1fc"))
-            PUSH2(0x0160)
-            MSTORE
-
-
-            PUSH1(0x20) // retSize
-            PUSH2(0x180)  // retOffset
-            PUSH2(0x0180) // argsSize
-            PUSH1(0x0) // argsOffset
-            PUSH1(0x08) // address
-            PUSH4(word!("FFFFFFFF")) // gas
-            STATICCALL
-        };
-
-        let blake2f = bytecode! {
-            PUSH1(0x0000000C)
-            PUSH1(0x0)
-            MSTORE
-
-            PUSH32(word!("48c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5"))
-            PUSH1(0x20)
-            MSTORE
-            PUSH32(word!("d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e1319cde05b"))
-            PUSH1(0x40)
-            MSTORE
-
-            PUSH32(word!("6162630000000000000000000000000000000000000000000000000000000000"))
-            PUSH1(0x60)
-            MSTORE
-            PUSH32(0x0)
-            PUSH1(0xC0)
-            MSTORE
-
-            PUSH32(word!("0300000000000000010000000000000000000000000000000000000000000000"))
-            PUSH1(0xE0)
-            MSTORE
-
-            // Do the call
-            PUSH1(0x40) // retSize
-            PUSH1(0xC0) // retOffset
-            PUSH1(212) // argsSize
-            PUSH1(28) // argsOffset
-            PUSH1(0x04) // address
-            PUSH4(word!("FFFFFFFF")) // gas
-            STATICCALL
-        };
-
-        let codes = [
-            ec_recover,
-            sha2,
-            ripemd_160,
-            modexp,
-            ec_add,
-            ec_mul,
-            ec_pairing,
-            blake2f,
-            neg_ec_recover,
-            sha2_less_return,
+                    PUSH2(0x160)
+                    MLOAD
+                    PUSH1(7)
+                    SUB
+                    PUSH1(0x20)
+                    MUL
+                    MSTORE
+                    PUSH1(1)
+                    PUSH2(0x160)
+                    MLOAD
+                    SUB
+                    DUP1
+                    PUSH2(0x160)
+                    MSTORE
+                    PUSH2(0xed)
+                    JUMPI
+                },
+                ret_size: Word::from(0x40),
+                ret_offset: Word::from(0x0),
+                call_data_length: Word::from(0xd5),
+                address: Word::from(0x9),
+                stack_value: vec![
+                    (
+                        Word::from(0x20),
+                        word!("d282e6ad7f520e511f6c3e2b8c68059b9442be0454267ce079217e1319cde05b"),
+                    ),
+                    (
+                        Word::from(0x0),
+                        word!("8c9bcf367e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5"),
+                    ),
+                ],
+                max_rws: 3000,
+                ..Default::default()
+            },
         ];
 
-        for code in codes.into_iter() {
-            // Get the execution steps from the external tracer
+        let call_ops = [
+            OpcodeId::CALL,
+            OpcodeId::CALLCODE,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::STATICCALL,
+        ];
+
+        for (test_call, call_op) in itertools::iproduct!(test_vector.iter(), call_ops.iter()) {
+            let code = test_call.with_call_op(*call_op);
             let block: GethData = TestContext::<2, 1>::new_with_logger_config(
                 None,
                 account_0_code_account_1_no_code(code),
                 tx_from_1_to_0,
                 |block, _tx| block.number(0xcafeu64),
-                LoggerConfig::enable_memory(),
+                LoggerConfig {
+                    enable_memory: true,
+                    ..Default::default()
+                },
             )
             .unwrap()
             .into();
 
-            let mut builder =
-                BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+            let mut builder = BlockData::new_from_geth_data_with_params(
+                block.clone(),
+                CircuitsParams {
+                    max_rws: test_call.max_rws,
+                    ..Default::default()
+                },
+            )
+            .new_circuit_input_builder();
             builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
+
+            let step = block.geth_traces[0]
+                .struct_logs
+                .last()
+                .expect("at least one step");
+            log::debug!("{:?}", step.stack);
+            for (offset, (_, stack_value)) in test_call.stack_value.iter().enumerate() {
+                assert_eq!(
+                    *stack_value,
+                    step.stack.nth_last(offset).expect("stack value not found"),
+                    "stack output mismatch {}",
+                    test_call.name
+                );
+            }
         }
     }
 }

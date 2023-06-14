@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},
@@ -59,7 +59,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::RETURN_REVERT;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let bytes_length_word = cb.query_cell();
 
@@ -727,9 +727,7 @@ mod test {
             .chain(0u8..((32 - initializer.len() % 32) as u8))
             .collect();
         for (index, word) in code_creator.chunks(32).enumerate() {
-            bytecode.push(32, Word::from_big_endian(word));
-            bytecode.push(32, Word::from(index * 32));
-            bytecode.write_op(OpcodeId::MSTORE);
+            bytecode.op_mstore(index * 32, Word::from_big_endian(word));
         }
         bytecode.append(&bytecode! {
             PUSH3(0x123456) // salt

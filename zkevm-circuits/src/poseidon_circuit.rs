@@ -36,7 +36,17 @@ impl<F: Field> SubCircuitConfig<F> for PoseidonCircuitConfig<F> {
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs { poseidon_table }: Self::ConfigArgs,
     ) -> Self {
-        let conf = PoseidonHashConfig::configure_sub(meta, poseidon_table.0, HASH_BLOCK_STEP_SIZE);
+        let poseidon_table = (
+            poseidon_table.q_enable,
+            [
+                poseidon_table.hash_id,
+                poseidon_table.input0,
+                poseidon_table.input1,
+                poseidon_table.control,
+                poseidon_table.heading_mark,
+            ],
+        );
+        let conf = PoseidonHashConfig::configure_sub(meta, poseidon_table, HASH_BLOCK_STEP_SIZE);
         Self(conf)
     }
 }

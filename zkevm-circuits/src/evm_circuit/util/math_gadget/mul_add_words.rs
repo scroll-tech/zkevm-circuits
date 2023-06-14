@@ -1,7 +1,8 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two_expr, split_u256,
-        split_u256_limb64, CachedRegion, Cell,
+        self,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell,
     },
     util::Expr,
 };
@@ -24,7 +25,7 @@ use halo2_proofs::{
 ///   t2 = a0 * b2 + a2 * b0 + a1 * b1, contribute to above 128 bit
 ///   t3 = a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2, contribute to above 192 bit
 ///
-/// so t0 ~ t1 include all contributions to the low 256-bit of product, with
+/// so t0 ~ t3 include all contributions to the low 256-bit of product, with
 /// a maximum 68-bit radix (the part higher than 256-bit), denoted as carry_hi
 /// Similarly, we define carry_lo as the radix of contributions to the low
 /// 128-bit of the product.
@@ -32,8 +33,8 @@ use halo2_proofs::{
 /// allocate 9 bytes for them each
 ///
 /// Finally we just prove:
-///   t0 + t1 * 2^64 = <low 128 bit of product> + carry_lo
-///   t2 + t3 * 2^64 + carry_lo = <high 128 bit of product> + carry_hi
+///   t0 + t1 * 2^64 = <low 128 bit of product> + carry_lo * 2^128
+///   t2 + t3 * 2^64 + carry_lo = <high 128 bit of product> + carry_hi * 2^128
 ///
 /// Last, we sum the parts that are higher than 256-bit in the multiplication
 /// into overflow
@@ -49,7 +50,7 @@ pub(crate) struct MulAddWordsGadget<F> {
 }
 
 impl<F: Field> MulAddWordsGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 4]) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&util::Word<F>; 4]) -> Self {
         let (a, b, c, d) = (words[0], words[1], words[2], words[3]);
         let carry_lo = cb.query_bytes();
         let carry_hi = cb.query_bytes();
@@ -165,7 +166,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for MulAddGadgetContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_word_rlc();
             let b = cb.query_word_rlc();
             let c = cb.query_word_rlc();

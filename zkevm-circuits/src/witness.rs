@@ -7,19 +7,32 @@ pub use block::{
     block_apply_mpt_state, block_convert, Block, BlockContext, BlockContexts,
     NUM_PREV_BLOCK_ALLOWED,
 };
+
 mod bytecode;
 pub use bytecode::Bytecode;
+
 mod call;
 pub use call::Call;
+
 mod mpt;
 pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};
+
 mod receipt;
 pub use receipt::Receipt;
-mod rlp_encode;
-pub use rlp_encode::{RlpDataType, RlpTxTag, RlpWitnessGen, RlpWitnessRow, N_TX_TAGS};
+
+pub(crate) mod rlp_fsm;
+pub use rlp_fsm::{
+    DataTable, Format, RlpFsmWitnessGen, RlpFsmWitnessRow, RlpTable, RlpTag, RomTableRow, State,
+    StateMachine, Tag,
+};
+
 mod rw;
 pub use rw::{Rw, RwMap, RwRow};
+
 mod step;
 pub use step::ExecStep;
+
+mod l1_msg;
 mod tx;
-pub use tx::{SignedTransaction, Transaction};
+
+pub use tx::Transaction;

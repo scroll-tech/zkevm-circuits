@@ -2,7 +2,10 @@
 
 use std::{iter, marker::PhantomData};
 
-use crate::table::{BlockContextFieldTag, KeccakTable};
+use crate::{
+    evm_circuit::util::constraint_builder::ConstrainBuilderCommon,
+    table::{BlockContextFieldTag, KeccakTable},
+};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{Address, Field, Hash, ToBigEndian, Word, H256};
 use ethers_core::utils::keccak256;
@@ -21,7 +24,7 @@ use halo2_proofs::plonk::SecondPhase;
 #[cfg(feature = "reject-eip2718")]
 use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    evm_circuit::{util::constraint_builder::BaseConstraintBuilder, EvmCircuitExports},
     state_circuit::StateCircuitExports,
     witness::{self, Block, BlockContext, BlockContexts, Transaction},
 };
@@ -124,11 +127,13 @@ impl PublicData {
                     .filter(|tx| tx.block_number == *block_num)
                     .count() as u16;
                 let parent_hash = block.eth_block.parent_hash;
-                log::debug!(
-                    "block.history_hashes.len() = {}, parent_hash = {}",
-                    block.history_hashes.len(),
-                    parent_hash
-                );
+                if !block.history_hashes.is_empty() || !parent_hash.is_zero() {
+                    log::debug!(
+                        "block.history_hashes.len() = {}, parent_hash = {}",
+                        block.history_hashes.len(),
+                        parent_hash
+                    );
+                }
                 // TODO: use reasonable method to get this data
                 let num_l1_msgs = 0_u16; // 0 for now
 
@@ -237,8 +242,6 @@ pub struct PiCircuitConfig<F: Field> {
     tx_table: TxTable,
     keccak_table: KeccakTable,
 
-    pub(crate) state_roots: Option<StateCircuitExports<Assigned<F>>>,
-
     _marker: PhantomData<F>,
 }
 
@@ -302,7 +305,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
         let q_block_tag = meta.fixed_column();
         let cum_num_txs = meta.advice_column();
-        let block_tag_bits = BinaryNumberChip::configure(meta, q_block_tag, Some(block_table.tag));
+        let block_tag_bits =
+            BinaryNumberChip::configure(meta, q_block_tag, Some(block_table.tag.into()));
 
         meta.enable_equality(constant);
         meta.enable_equality(rpi_bytes);
@@ -411,7 +415,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         });
 
         meta.lookup_any("keccak(rpi)", |meta| {
-            let is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+            let is_enabled = meta.query_advice(keccak_table.is_final, Rotation::cur())
+                * meta.query_fixed(keccak_table.q_enable, Rotation::cur());
             let input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
             let input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
             let output_rlc = meta.query_advice(keccak_table.output_rlc, Rotation::cur());
@@ -462,7 +467,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                 let cum_num_txs_cur = meta.query_advice(cum_num_txs, Rotation::cur());
                 let cum_num_txs_next = meta.query_advice(cum_num_txs, Rotation::next());
                 let is_num_txs_field = block_tag_bits.value_equals(BlockContextFieldTag::NumTxs, Rotation::cur())(meta);
-                let block_tag = meta.query_advice(block_table.tag, Rotation::cur());
+                let block_tag = meta.query_fixed(block_table.tag, Rotation::cur());
                 let tag_bits = block_tag_bits.value(Rotation::cur())(meta);
 
                 let num_txs = select::expr(
@@ -512,9 +517,18 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             q_block_tag,
             pi,
             _marker: PhantomData,
-            state_roots: None,
         }
     }
+}
+
+// (hi cell, lo cell)
+type KeccakExport<F> = (AssignedCell<F, F>, AssignedCell<F, F>);
+
+#[derive(Debug, Clone)]
+struct Connections<F: Field> {
+    start_state_root: AssignedCell<F, F>,
+    end_state_root: AssignedCell<F, F>,
+    withdraw_root: AssignedCell<F, F>,
 }
 
 impl<F: Field> PiCircuitConfig<F> {
@@ -525,7 +539,7 @@ impl<F: Field> PiCircuitConfig<F> {
         public_data: &PublicData,
         block_value_cells: &[AssignedCell<F, F>],
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
+    ) -> Result<(KeccakExport<F>, Connections<F>), Error> {
         let block_values = &public_data.block_ctxs;
         let tx_hashes = public_data
             .transactions
@@ -599,11 +613,10 @@ impl<F: Field> PiCircuitConfig<F> {
             false,
         )?;
 
-        let withdraw_trie_root = Word::zero();
-        self.assign_field_in_pi(
+        let withdraw_root_cells = self.assign_field_in_pi(
             region,
             &mut offset,
-            &withdraw_trie_root.to_be_bytes(),
+            &public_data.withdraw_trie_root.to_fixed_bytes(),
             &mut rpi_rlc_acc,
             &mut rpi_length_acc,
             false,
@@ -612,21 +625,11 @@ impl<F: Field> PiCircuitConfig<F> {
             false,
         )?;
 
-        // copy state roots to pi circuit when we are in super circuit.
-        if self.state_roots.is_some() {
-            log::debug!("connect state roots {:?}", self.state_roots);
-            let state_roots = self.state_roots.clone().unwrap();
-            region.constrain_equal(
-                prev_state_cells[RPI_CELL_IDX].cell(),
-                state_roots.start_state_root.0,
-            )?;
-            region.constrain_equal(
-                next_state_cells[RPI_CELL_IDX].cell(),
-                state_roots.end_state_root.0,
-            )?;
-        } else {
-            log::warn!("state roots are not set, skip connection with state circuit");
-        }
+        let connections = Connections {
+            start_state_root: prev_state_cells[RPI_CELL_IDX].clone(),
+            end_state_root: next_state_cells[RPI_CELL_IDX].clone(),
+            withdraw_root: withdraw_root_cells[RPI_CELL_IDX].clone(),
+        };
 
         for (i, block) in block_values
             .ctxs
@@ -976,7 +979,7 @@ impl<F: Field> PiCircuitConfig<F> {
             cells[RPI_RLC_ACC_CELL_IDX].cell(),
         )?;
 
-        Ok((keccak_hi_cell, keccak_lo_cell))
+        Ok(((keccak_hi_cell, keccak_lo_cell), connections))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1165,12 +1168,18 @@ impl<F: Field> PiCircuitConfig<F> {
                 .into_iter()
                 .zip(tag.iter())
             {
-                for (column, value) in block_table_columns.iter().zip_eq(row) {
+                region.assign_fixed(
+                    || format!("block table row {}", offset),
+                    self.block_table.tag,
+                    offset,
+                    || row[0],
+                )?;
+                for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                     let cell = region.assign_advice(
                         || format!("block table row {}", offset),
                         *column,
                         offset,
-                        || value,
+                        || *value,
                     )?;
                     if *column == self.block_table.value {
                         block_value_cells.push(cell);
@@ -1213,6 +1222,8 @@ pub struct PiCircuit<F: Field> {
     pub public_data: PublicData,
 
     _marker: PhantomData<F>,
+
+    connections: std::cell::RefCell<Option<Connections<F>>>,
 }
 
 impl<F: Field> PiCircuit<F> {
@@ -1235,7 +1246,7 @@ impl<F: Field> PiCircuit<F> {
             transactions: block.txs.clone(),
             block_ctxs: block.context.clone(),
             prev_state_root: H256(block.mpt_updates.old_root().to_be_bytes()),
-            withdraw_trie_root: H256::zero(),
+            withdraw_trie_root: H256(block.withdraw_root.to_be_bytes()),
         };
         Self {
             public_data,
@@ -1243,12 +1254,56 @@ impl<F: Field> PiCircuit<F> {
             max_calldata,
             max_inner_blocks,
             _marker: PhantomData,
+            connections: Default::default(),
         }
     }
 
     /// Return txs
     pub fn txs(&self) -> &[Transaction] {
         &self.public_data.transactions
+    }
+
+    /// Connect the exportings from other circuit when we are in super circuit
+    pub fn connect_export(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        state_roots: Option<&StateCircuitExports<Assigned<F>>>,
+        withdraw_roots: Option<&EvmCircuitExports<Assigned<F>>>,
+    ) -> Result<(), Error> {
+        let local_conn = self
+            .connections
+            .borrow()
+            .clone()
+            .expect("expected to be called after syncthesis");
+
+        layouter.assign_region(
+            || "pi connecting region",
+            |mut region| {
+                if let Some(state_roots) = state_roots {
+                    region.constrain_equal(
+                        local_conn.start_state_root.cell(),
+                        state_roots.start_state_root.0,
+                    )?;
+                    region.constrain_equal(
+                        local_conn.end_state_root.cell(),
+                        state_roots.end_state_root.0,
+                    )?;
+                } else {
+                    log::warn!("state roots are not set, skip connection with state circuit");
+                }
+
+                if let Some(withdraw_roots) = withdraw_roots {
+                    region.constrain_equal(
+                        local_conn.withdraw_root.cell(),
+                        withdraw_roots.withdraw_root.0,
+                    )?;
+                } else {
+                    log::warn!("withdraw roots are not set, skip connection with evm circuit");
+                }
+
+                Ok(())
+            },
+        )
     }
 }
 
@@ -1323,12 +1378,14 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     challenges,
                 )?;
                 // assign pi cols
-                let (keccak_hi_cell, keccak_lo_cell) = config.assign(
+                let ((keccak_hi_cell, keccak_lo_cell), conn) = config.assign(
                     &mut region,
                     &self.public_data,
                     &block_value_cells,
                     challenges,
                 )?;
+
+                self.connections.borrow_mut().replace(conn);
 
                 Ok(vec![keccak_hi_cell, keccak_lo_cell])
             },

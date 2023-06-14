@@ -1,7 +1,19 @@
 //! Exponentiation verification circuit.
 
-use std::{marker::PhantomData, ops::Add};
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
+pub(crate) mod param;
+#[cfg(any(feature = "test", test))]
+mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use dev::ExpCircuit as TestExpCircuit;
 
+use crate::{
+    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    table::{ExpTable, LookupTable},
+    util::{Challenges, SubCircuit, SubCircuitConfig},
+    witness,
+};
 use bus_mapping::circuit_input_builder::{ExpEvent, ExpStep};
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
@@ -10,36 +22,19 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{ConstraintSystem, Error, Selector},
+    plonk::{Column, ConstraintSystem, Error, Fixed},
     poly::Rotation,
 };
 
-use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
-    table::{ExpTable, LookupTable},
-    util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness,
-};
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
-
-/// The number of rows assigned for each step in an exponentiation trace.
-pub const OFFSET_INCREMENT: usize = 7usize;
-/// The number of rows required for the exponentiation table within the circuit
-/// for each step.
-pub const ROWS_PER_STEP: usize = 4usize;
-/// The gate "verify all but the last step" at constraint "`base_limb[i]` is the
-/// same across all steps" uses rotation 10 in `exp_table.base_limb` which is
-/// enabled with `q_usable`, which in turn is enabled in all steps.  This means
-/// this circuit requires these extra rows after the last enabled `q_usable`.
-const UNUSABLE_EXP_ROWS: usize = 10usize;
+use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
+use param::*;
+use std::{marker::PhantomData, ops::Add};
 
 /// Layout for the Exponentiation circuit.
 #[derive(Clone, Debug)]
 pub struct ExpCircuitConfig<F> {
     /// Whether the row is enabled.
-    pub q_usable: Selector,
+    pub q_enable: Column<Fixed>,
     /// The Exponentiation circuit's table.
     pub exp_table: ExpTable,
     /// Multiplication gadget for verification of each step.
@@ -53,16 +48,16 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
 
     /// Return a new ExpCircuitConfig
     fn new(meta: &mut ConstraintSystem<F>, exp_table: Self::ConfigArgs) -> Self {
-        let q_usable = meta.complex_selector();
+        let q_enable = exp_table.q_enable;
         let mul_gadget = MulAddChip::configure(meta, |meta| {
             and::expr([
-                meta.query_selector(q_usable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_fixed(exp_table.is_step, Rotation::cur()),
             ])
         });
         let parity_check = MulAddChip::configure(meta, |meta| {
             and::expr([
-                meta.query_selector(q_usable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_fixed(exp_table.is_step, Rotation::cur()),
             ])
         });
@@ -112,7 +107,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
             );
 
             cb.gate(and::expr([
-                meta.query_selector(q_usable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_fixed(exp_table.is_step, Rotation::cur()),
                 not::expr(meta.query_advice(exp_table.is_last, Rotation::cur())),
             ]))
@@ -133,7 +128,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
                 meta.query_advice(exp_table.is_last, Rotation::cur()),
             );
 
-            cb.gate(meta.query_selector(q_usable))
+            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
         meta.create_gate("verify all steps", |meta| {
@@ -274,7 +269,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
             });
 
             cb.gate(and::expr([
-                meta.query_selector(q_usable),
+                meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_fixed(exp_table.is_step, Rotation::cur()),
             ]))
         });
@@ -282,7 +277,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         exp_table.annotate_columns(meta);
 
         Self {
-            q_usable,
+            q_enable,
             exp_table,
             mul_gadget,
             parity_check,
@@ -418,7 +413,12 @@ impl<F: Field> ExpCircuitConfig<F> {
         let (exponent_div2, remainder) = exponent.div_mod(two);
 
         for i in 0..OFFSET_INCREMENT {
-            self.q_usable.enable(region, offset + i)?;
+            region.assign_fixed(
+                || "assign q_enable",
+                self.q_enable,
+                offset + i,
+                || Value::known(F::one()),
+            )?;
         }
         mul_chip.assign(region, offset, [step.a, step.b, U256::zero(), step.d])?;
         parity_check_chip.assign(region, offset, [two, exponent_div2, remainder, *exponent])?;
@@ -501,6 +501,29 @@ impl<F: Field> ExpCircuit<F> {
 impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     type Config = ExpCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        // Column base_limb of ExpTable is queried at 8 distinct rotations at
+        // - Rotation(0)
+        // - Rotation(1)
+        // - Rotation(2)
+        // - Rotation(3)
+        // - Rotation(7)
+        // - Rotation(8)
+        // - Rotation(9)
+        // - Rotation(10)
+        // Also column col2 and col3 of are queried at 8 distinct rotations at
+        // - Rotation(0)
+        // - Rotation(1)
+        // - Rotation(2)
+        // - Rotation(3)
+        // - Rotation(4)
+        // - Rotation(5)
+        // - Rotation(6)
+        // - Rotation(9)
+        // so returns 11 unusable rows.
+        11
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         // Hardcoded to pass unit tests for now. In the future, insert:
         // "block.circuits_params.max_exp_rows"
@@ -526,187 +549,5 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.assign_exp_events(layouter, &self.exp_events, self.max_exp_rows)
-    }
-}
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-impl<F: Field> Circuit<F> for ExpCircuit<F> {
-    type Config = (ExpCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let exp_table = ExpTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-        (ExpCircuitConfig::new(meta, exp_table), challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), halo2_proofs::plonk::Error> {
-        let challenges = challenges.values(&layouter);
-        self.synthesize_sub(&config, &challenges, &mut layouter)
-    }
-}
-
-#[cfg(any(feature = "test", test))]
-/// Dev helpers
-pub mod dev {
-    use super::*;
-    use eth_types::Field;
-    use halo2_proofs::dev::MockProver;
-
-    use crate::evm_circuit::witness::Block;
-
-    /// Test exponentiation circuit with the provided block witness
-    pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) {
-        let circuit = ExpCircuit::<F>::new(
-            block.exp_events.clone(),
-            block.circuits_params.max_exp_steps,
-        );
-        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        prover.assert_satisfied_par()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use bus_mapping::{
-        circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
-        evm::OpcodeId,
-        mock::BlockData,
-    };
-    use eth_types::{bytecode, geth_types::GethData, Bytecode, Word};
-    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    use mock::TestContext;
-
-    use crate::{
-        evm_circuit::witness::block_convert,
-        exp_circuit::{dev::test_exp_circuit, ExpCircuit},
-    };
-
-    fn gen_code_single(base: Word, exponent: Word) -> Bytecode {
-        bytecode! {
-            PUSH32(exponent)
-            PUSH32(base)
-            EXP
-            STOP
-        }
-    }
-
-    fn gen_code_multiple(args: Vec<(Word, Word)>) -> Bytecode {
-        let mut code = Bytecode::default();
-        for (base, exponent) in args.into_iter() {
-            code.push(32, exponent);
-            code.push(32, base);
-            code.write_op(OpcodeId::EXP);
-        }
-        code.write_op(OpcodeId::STOP);
-        code
-    }
-
-    fn gen_data(code: Bytecode) -> CircuitInputBuilder {
-        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
-        let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        builder
-    }
-
-    fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
-        let code = gen_code_single(base, exponent);
-        let builder = gen_data(code);
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        test_exp_circuit(k.unwrap_or(18), block);
-    }
-
-    fn test_ok_multiple(args: Vec<(Word, Word)>) {
-        let code = gen_code_multiple(args);
-        let builder = gen_data(code);
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        test_exp_circuit(20, block);
-    }
-
-    #[test]
-    fn exp_circuit_single() {
-        test_ok(2.into(), 2.into(), None);
-        test_ok(3.into(), 7.into(), None);
-        test_ok(5.into(), 11.into(), None);
-        test_ok(7.into(), 13.into(), None);
-        test_ok(11.into(), 17.into(), None);
-        test_ok(13.into(), 23.into(), None);
-        test_ok(29.into(), 43.into(), None);
-        test_ok(41.into(), 259.into(), None);
-    }
-
-    #[test]
-    fn exp_circuit_big() {
-        test_ok(
-            2.into(),
-            Word::from_str_radix("0x1FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE", 16).unwrap(),
-            Some(20),
-        );
-    }
-
-    #[test]
-    fn exp_circuit_multiple() {
-        test_ok_multiple(vec![
-            (3.into(), 7.into()),
-            (5.into(), 11.into()),
-            (7.into(), 13.into()),
-            (11.into(), 17.into()),
-            (13.into(), 23.into()),
-            (29.into(), 43.into()),
-            (41.into(), 259.into()),
-        ]);
-    }
-
-    #[test]
-    fn variadic_size_check() {
-        let k = 20;
-        // Empty
-        let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
-            .unwrap()
-            .into();
-        let mut builder =
-            BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
-                .new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        let circuit = ExpCircuit::<Fr>::new(
-            block.exp_events.clone(),
-            block.circuits_params.max_exp_steps,
-        );
-        let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
-
-        // Non-empty
-        let code = bytecode! {
-            PUSH32(8)
-            PUSH32(10)
-            EXP
-            PUSH32(3)
-            PUSH32(5)
-            EXP
-            STOP
-        };
-        let builder = gen_data(code);
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        let circuit = ExpCircuit::<Fr>::new(
-            block.exp_events.clone(),
-            block.circuits_params.max_exp_steps,
-        );
-        let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
-
-        assert_eq!(prover1.fixed(), prover2.fixed());
-        assert_eq!(prover1.permutation(), prover2.permutation());
     }
 }

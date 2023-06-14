@@ -3,7 +3,9 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::ConstraintBuilder, math_gadget::IsZeroGadget, CachedRegion, Cell,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::IsZeroGadget,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -36,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndInnerBlock;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // The number of txs in the inner block is also the ID of the last tx in the
         // block.
         let last_tx_id = cb.query_cell();

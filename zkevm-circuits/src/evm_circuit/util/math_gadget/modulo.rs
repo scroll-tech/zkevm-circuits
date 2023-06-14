@@ -1,6 +1,9 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, math_gadget::*, sum, CachedRegion,
+        self,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        math_gadget::*,
+        select, sum, CachedRegion,
     },
     util::Expr,
 };
@@ -23,24 +26,22 @@ pub(crate) struct ModGadget<F> {
     mul_add_words: MulAddWordsGadget<F>,
     n_is_zero: IsZeroGadget<F>,
     a_or_is_zero: IsZeroGadget<F>,
-    eq: IsEqualGadget<F>,
     lt: LtWordGadget<F>,
 }
 impl<F: Field> ModGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
         let k = cb.query_word_rlc();
         let a_or_zero = cb.query_word_rlc();
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
         let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.cells));
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
-        let eq = IsEqualGadget::construct(cb, a.expr(), a_or_zero.expr());
         let lt = LtWordGadget::construct(cb, r, n);
         // Constrain the aux variable a_or_zero to be =a or =0 if n==0:
-        // (a == a_or_zero) ^ (n == 0 & a_or_zero == 0)
-        cb.add_constraint(
-            " (1 - (a == a_or_zero)) * ( 1 - (n == 0) * (a_or_zero == 0)",
-            (1.expr() - eq.expr()) * (1.expr() - n_is_zero.expr() * a_or_is_zero.expr()),
+        cb.require_equal(
+            "a_or_zero == if n == 0 { 0 } else { a }",
+            a_or_zero.expr(),
+            select::expr(n_is_zero.expr(), 0.expr(), a.expr()),
         );
 
         // Constrain the result r to be valid: (r<n) ^ n==0
@@ -58,7 +59,6 @@ impl<F: Field> ModGadget<F> {
             mul_add_words,
             n_is_zero,
             a_or_is_zero,
-            eq,
             lt,
         }
     }
@@ -86,13 +86,6 @@ impl<F: Field> ModGadget<F> {
         self.mul_add_words
             .assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
-        self.eq.assign_value(
-            region,
-            offset,
-            region.word_rlc(a),
-            region.word_rlc(a_or_zero),
-        )?;
-
         Ok(())
     }
 }
@@ -113,7 +106,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_word_rlc();
             let n = cb.query_word_rlc();
             let r = cb.query_word_rlc();

@@ -1,7 +1,8 @@
 use crate::{
     evm_circuit::{
         param::{
-            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
+            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_BYTES_U64, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
+            N_PHASE2_COLUMNS, N_PHASE2_COPY_COLUMNS,
         },
         table::Table,
     },
@@ -28,6 +29,7 @@ pub(crate) mod constraint_builder;
 pub(crate) mod instrumentation;
 pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
+pub(crate) mod precompile_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
 
@@ -289,6 +291,7 @@ pub(crate) enum CellType {
     StoragePhase1,
     StoragePhase2,
     StoragePermutation,
+    StoragePermutationPhase2,
     LookupByte,
     Lookup(Table),
 }
@@ -307,7 +310,7 @@ impl CellType {
     }
 
     /// Return the storage phase of phase
-    pub(crate) fn storage_for_phase<F: FieldExt>(phase: u8) -> CellType {
+    pub(crate) fn storage_for_phase(phase: u8) -> CellType {
         match phase {
             0 => CellType::StoragePhase1,
             1 => CellType::StoragePhase2,
@@ -317,7 +320,7 @@ impl CellType {
 
     /// Return the storage cell of the expression
     pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType {
-        Self::storage_for_phase::<F>(Self::expr_phase::<F>(expr))
+        Self::storage_for_phase(Self::expr_phase::<F>(expr))
     }
 }
 
@@ -378,8 +381,15 @@ impl<F: FieldExt> CellManager<F> {
             }
         }
 
+        // Mark columns used for copy constraints on phase2
+        for _ in 0..N_PHASE2_COPY_COLUMNS {
+            meta.enable_equality(advices[column_idx]);
+            columns[column_idx].cell_type = CellType::StoragePermutationPhase2;
+            column_idx += 1;
+        }
+
         // Mark columns used for Phase2 constraints
-        for _ in 0..N_PHASE2_COLUMNS {
+        for _ in N_PHASE2_COPY_COLUMNS..N_PHASE2_COLUMNS {
             columns[column_idx].cell_type = CellType::StoragePhase2;
             column_idx += 1;
         }
@@ -430,8 +440,8 @@ impl<F: FieldExt> CellManager<F> {
                 best_height = column.height;
             }
         }
-        // Replace a CellType::Storage by CellType::StoragePermutation if the later has
-        // better height
+        // Replace a CellType::Storage by CellType::StoragePermutation (phase 1 or phase 2) if the
+        // later has better height
         if cell_type == CellType::StoragePhase1 {
             for column in self.columns.iter() {
                 if column.cell_type == CellType::StoragePermutation && column.height < best_height {
@@ -439,7 +449,17 @@ impl<F: FieldExt> CellManager<F> {
                     best_height = column.height;
                 }
             }
+        } else if cell_type == CellType::StoragePhase2 {
+            for column in self.columns.iter() {
+                if column.cell_type == CellType::StoragePermutationPhase2
+                    && column.height < best_height
+                {
+                    best_index = Some(column.index);
+                    best_height = column.height;
+                }
+            }
         }
+
         match best_index {
             Some(index) => index,
             // If we reach this case, it means that all the columns of cell_type have assignments
@@ -518,6 +538,7 @@ impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
 }
 
 pub(crate) type Word<F> = RandomLinearCombination<F, 32>;
+pub(crate) type U64Word<F> = RandomLinearCombination<F, N_BYTES_U64>;
 pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
 /// Decodes a field element from its byte representation

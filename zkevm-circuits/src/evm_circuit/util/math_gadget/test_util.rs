@@ -8,7 +8,7 @@ use crate::{
         step::{ExecutionState, Step},
         table::{FixedTableTag, Table},
         util::{
-            constraint_builder::ConstraintBuilder, rlc, CachedRegion, CellType, Expr,
+            constraint_builder::EVMConstraintBuilder, rlc, CachedRegion, CellType, Expr,
             StoredExpression, LOOKUP_CONFIG,
         },
         Advice, Column, Fixed,
@@ -58,7 +58,7 @@ pub(crate) fn generate_power_of_randomness<F: Field>(randomness: F) -> Vec<F> {
 }
 
 pub(crate) trait MathGadgetContainer<F: Field>: Clone {
-    fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self
+    fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self
     where
         Self: Sized;
 
@@ -137,7 +137,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
 
         let step_curr = Step::new(meta, advices, 0, false);
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-        let mut cb = ConstraintBuilder::new(
+        let mut cb = EVMConstraintBuilder::new(
             step_curr.clone(),
             step_next,
             &challenges_exprs,

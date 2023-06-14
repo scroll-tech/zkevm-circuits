@@ -1,4 +1,4 @@
-use super::{from_bits, CachedRegion, Word};
+use super::{constraint_builder::ConstrainBuilderCommon, from_bits, CachedRegion, Word};
 use crate::{
     evm_circuit::{
         param::{
@@ -7,7 +7,7 @@ use crate::{
         },
         util::{
             and,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::EVMConstraintBuilder,
             from_bytes,
             math_gadget::{
                 AddWordsGadget, ConstantDivisionGadget, IsZeroGadget, LtGadget, MinMaxGadget,
@@ -70,7 +70,7 @@ pub(crate) mod address_high {
 
 /// Memory address trait to adapt for right and Uint overflow cases.
 pub(crate) trait CommonMemoryAddressGadget<F: FieldExt> {
-    fn construct_self(cb: &mut ConstraintBuilder<F>) -> Self;
+    fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self;
 
     /// Return the memory address (offset + length).
     fn assign(
@@ -107,7 +107,7 @@ pub(crate) struct MemoryAddressGadget<F> {
 }
 
 impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
-    fn construct_self(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
         Self::construct(cb, offset, length)
@@ -176,7 +176,7 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
 
 impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         memory_offset: Cell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
@@ -229,7 +229,7 @@ pub(crate) struct MemoryExpandedAddressGadget<F> {
 }
 
 impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
-    fn construct_self(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let offset = cb.query_word_rlc();
         let length = cb.query_word_rlc();
         let sum = cb.query_word_rlc();
@@ -377,7 +377,7 @@ pub(crate) struct MemoryWordSizeGadget<F> {
 }
 
 impl<F: Field> MemoryWordSizeGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, address: Expression<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, address: Expression<F>) -> Self {
         let memory_word_size = ConstantDivisionGadget::construct(cb, address + 31.expr(), 32);
 
         Self { memory_word_size }
@@ -414,7 +414,7 @@ pub(crate) struct MemoryWordAddress<F> {
 }
 
 impl<F: Field> MemoryWordAddress<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, address: MemoryAddress<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, address: MemoryAddress<F>) -> Self {
         let address_first_bits = array_init(|_| cb.query_bool());
 
         cb.require_equal(
@@ -499,7 +499,7 @@ pub(crate) struct MemoryMask<F> {
 
 impl<F: Field> MemoryMask<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         shift_bits: &[Cell<F>; 5],
         is_mstore8: Expression<F>,
     ) -> Self {
@@ -547,7 +547,7 @@ impl<F: Field> MemoryMask<F> {
 
     pub(crate) fn require_left_equal(
         &self,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         value_left: &Word<F>,
         value_left_prev: &Word<F>,
     ) {
@@ -558,7 +558,7 @@ impl<F: Field> MemoryMask<F> {
 
     pub(crate) fn require_right_equal(
         &self,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         value_right: &Word<F>,
         value_right_prev: &Word<F>,
     ) {
@@ -569,7 +569,7 @@ impl<F: Field> MemoryMask<F> {
 
     pub(crate) fn require_equal_unaligned_byte(
         &self,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         byte: Expression<F>,
         value_left: &Word<F>,
     ) {
@@ -584,7 +584,7 @@ impl<F: Field> MemoryMask<F> {
     /// All values are MSB-first to match MLOAD/MSTORE/CALLDATALOAD semantics.
     pub(crate) fn require_equal_unaligned_word(
         &self,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         value_rlc: Expression<F>,
         value_left: &Word<F>,
         value_right: &Word<F>,
@@ -601,7 +601,7 @@ impl<F: Field> MemoryMask<F> {
 
     /// Return the RLC of the left part of a word, called "A" or "C". The right part is zeroed.
     /// The value is MSB-first so we read the mask in reverse.
-    fn left_rlc(&self, cb: &mut ConstraintBuilder<F>, word: &Word<F>) -> Expression<F> {
+    fn left_rlc(&self, cb: &mut EVMConstraintBuilder<F>, word: &Word<F>) -> Expression<F> {
         let masked: [Expression<F>; N_BYTES_WORD] = array_init(|i| {
             let reversed_i = N_BYTES_WORD - 1 - i;
             word.cells[i].expr() * self.mask[reversed_i].expr()
@@ -611,7 +611,7 @@ impl<F: Field> MemoryMask<F> {
 
     /// Return the RLC of the right part of a word, called "B" or "D". The left part is zeroed.
     /// The value is MSB-first so we read the mask in reverse.
-    fn right_rlc(&self, cb: &mut ConstraintBuilder<F>, word: &Word<F>) -> Expression<F> {
+    fn right_rlc(&self, cb: &mut EVMConstraintBuilder<F>, word: &Word<F>) -> Expression<F> {
         let masked: [Expression<F>; N_BYTES_WORD] = array_init(|i| {
             let reversed_i = N_BYTES_WORD - 1 - i;
             word.cells[i].expr() * (1.expr() - self.mask[reversed_i].expr())
@@ -732,7 +732,10 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
     /// Output ranges:
     /// - `next_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, addresses: [Expression<F>; N]) -> Self {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        addresses: [Expression<F>; N],
+    ) -> Self {
         // Calculate the memory size of the memory access
         // `address_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
         let memory_word_sizes =
@@ -811,7 +814,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
             .collect::<Result<Vec<_>, _>>()?;
 
         // Calculate the next memory size
-        let mut next_memory_word_size = curr_memory_word_size as u64;
+        let mut next_memory_word_size = curr_memory_word_size;
         for (max_memory_word_sizes, memory_word_size) in self
             .max_memory_word_sizes
             .iter()
@@ -820,7 +823,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
             let (_, max) = max_memory_word_sizes.assign(
                 region,
                 offset,
-                F::from(next_memory_word_size as u64),
+                F::from(next_memory_word_size),
                 F::from(*memory_word_size),
             )?;
             next_memory_word_size = max.get_lower_128() as u64;
@@ -840,7 +843,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
 
         // Calculate the gas cost for the expansian
         let memory_cost = GasCost::MEMORY_EXPANSION_LINEAR_COEFF.as_u64()
-            * (next_memory_word_size - curr_memory_word_size as u64)
+            * (next_memory_word_size - curr_memory_word_size)
             + (next_quad_memory_cost - curr_quad_memory_cost) as u64;
 
         // Return the new memory size and the memory expansion gas cost
@@ -869,7 +872,7 @@ impl<F: Field, const GAS_COPY: GasCost> MemoryCopierGasGadget<F, GAS_COPY> {
     /// - `next_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         num_bytes: Expression<F>,
         memory_expansion_gas_cost: Expression<F>,
     ) -> Self {
@@ -930,7 +933,7 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
     BufferReaderGadget<F, MAX_BYTES, ADDR_SIZE_IN_BYTES>
 {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         addr_start: Expression<F>,
         addr_end: Expression<F>,
     ) -> Self {
