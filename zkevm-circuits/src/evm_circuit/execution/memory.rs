@@ -59,12 +59,13 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // In successful case the address must be in 5 bytes
         let address = cb.query_word_rlc();
         let address_word = MemoryWordAddress::construct(cb, address.clone());
-        // TODO: we do not need the 32 bytes of the value, only the RLC.
         let value = cb.query_word_rlc();
         let value_left = cb.query_word_rlc();
         let value_left_prev = cb.query_word_rlc();
         let value_right = cb.query_word_rlc();
         let value_right_prev = cb.query_word_rlc();
+        // Optimization possible: MSTORE does not need the value bytes, only the RLC. MSTORE8 does
+        // not need the right value. So we could repurpose the same cells.
 
         // Check if this is an MLOAD
         let is_mload = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MLOAD.expr());
@@ -82,32 +83,11 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             [from_bytes::expr(&address.cells) + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
         );
 
-        let shift_bits = address_word.shift_bits();
+        let mask = MemoryMask::construct(cb, &address_word.shift_bits(), is_mstore8.expr());
 
-        let mask = MemoryMask::construct(cb, &shift_bits, is_mstore8.expr());
-
-        // Extract word parts. Example with shift=4:
-        // Left  = Aaaa Bbbbbbbbbbbbbbbbbbbbbbbbbbbb
-        // Right = Cccc Dddddddddddddddddddddddddddd
-        let a = mask.get_left(cb, &value_left);
-        let a_prev = mask.get_left(cb, &value_left_prev);
-        let b = mask.get_right(cb, &value_left);
-        let c = mask.get_left(cb, &value_right);
-        let d = mask.get_right(cb, &value_right);
-        let d_prev = mask.get_right(cb, &value_right_prev);
-
-        cb.require_equal("unchanged left bytes: L' & M == L & M", a, a_prev);
-
-        cb.require_equal("unchanged right bytes: R' & !M == R & !M", d, d_prev);
-
-        // Compute powers of the RLC challenge. These are used to shift bytes in equations below.
-        let x = cb.challenges().evm_word();
-        // X**32
-        let x32 = MemoryMask::make_x32(x.clone());
-        // X**(31-shift)
-        let x31_shift = MemoryMask::make_x31_off(x.clone(), &shift_bits);
-        // X**(32-shift)
-        let x32_shift = x * x31_shift.clone();
+        // Check the unchanged part of the memory words, i.e. the bytes that are not overwritten.
+        mask.require_left_equal(cb, &value_left, &value_left_prev);
+        mask.require_right_equal(cb, &value_right, &value_right_prev);
 
         // Stack operations
         // Pop the address from the stack
@@ -121,27 +101,17 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         );
 
         cb.condition(is_mstore8.expr(), |cb| {
-            cb.require_equal(
-                "W[0] * X³¹⁻ˢʰⁱᶠᵗ = B(X)",
-                value.cells[0].expr() * x31_shift.clone(),
-                b.clone(),
-            );
+            // Check the byte that is written.
+            let first_byte = value.cells[0].expr();
+            mask.require_equal_unaligned_byte(cb, first_byte, &value_left);
+            // Update the memory word.
             cb.memory_lookup_word(1.expr(), address_word.addr_left(), value_left.expr(), None);
         });
 
-        //  value_left = instruction.memory_lookup(
-        //    RW.Write if is_store == FQ(1) else RW.Read, addr_left
-        // )
-        // value_right = instruction.memory_lookup(
-        //    RW.Write if is_store == FQ(1) else RW.Read, addr_right
-        // )
         cb.condition(is_not_mstore8, |cb| {
-            cb.require_equal(
-                "W(X) * X³²⁻ˢʰⁱᶠᵗ  =  B(X) * X³² + C(X)",
-                value.expr() * x32_shift,
-                b * x32 + c,
-            );
-
+            // Check the bytes that are read or written from the left and right words.
+            mask.require_equal_unaligned_word(cb, value.expr(), &value_left, &value_right);
+            // Read or update the left and right words.
             cb.memory_lookup_word(
                 is_store.clone(),
                 address_word.addr_left(),

@@ -400,6 +400,8 @@ impl<F: Field> MemoryWordSizeGadget<F> {
     }
 }
 
+/// The MemoryWordAddress gadget splits a memory address into an aligned address called `slot`, and
+/// a `shift` into the aligned word.
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryWordAddress<F> {
     // normal RLC randomness address
@@ -480,10 +482,23 @@ impl<F: Field> MemoryWordAddress<F> {
     }
 }
 
+/// The MemoryMask gadget splits a memory word into a left and right part around a `shift` index.
+///
+/// Here is a schema of the word parts. Example with shift=4:
+///   Value = cccC bbbbbbbbbbbbbbbbbbbbbbbbbbbB
+///   Left  = Aaaa Bbbbbbbbbbbbbbbbbbbbbbbbbbbb
+///   Right = Cccc Dddddddddddddddddddddddddddd
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryMask<F> {
     /// The bitmask where 1 selects the left parts of words.
     mask: [Cell<F>; N_BYTES_WORD],
+
+    // X**32
+    x32: Expression<F>,
+    // X**(31-shift)
+    x31_shift: Expression<F>,
+    // X**(32-shift)
+    x32_shift: Expression<F>,
 }
 
 impl<F: Field> MemoryMask<F> {
@@ -520,26 +535,73 @@ impl<F: Field> MemoryMask<F> {
             expect,
         );
 
-        Self { mask }
+        // Compute powers of the RLC challenge. These are used to shift bytes in equations below.
+        let x = cb.challenges().evm_word();
+        let x32 = MemoryMask::make_x32(x.clone());
+        let x31_shift = MemoryMask::make_x31_off(x.clone(), &shift_bits);
+        let x32_shift = x * x31_shift.clone();
+
+        Self {
+            mask,
+            x32,
+            x31_shift,
+            x32_shift,
+        }
     }
 
-    pub(crate) fn mask(&self) -> &[Cell<F>; N_BYTES_WORD] {
-        &self.mask
+    pub(crate) fn require_left_equal(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        value_left: &Word<F>,
+        value_left_prev: &Word<F>,
+    ) {
+        let a = self.left_rlc(cb, &value_left);
+        let a_prev = self.left_rlc(cb, &value_left_prev);
+        cb.require_equal("unchanged left bytes: L' & M == L & M", a, a_prev);
     }
 
-    // TODO: not needed.
-    pub(crate) fn masked_word(&self, word: &Word<F>) -> [Expression<F>; N_BYTES_WORD] {
-        array_init(|i| word.cells[i].expr() * self.mask[i].expr())
+    pub(crate) fn require_right_equal(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        value_right: &Word<F>,
+        value_right_prev: &Word<F>,
+    ) {
+        let d = self.right_rlc(cb, &value_right);
+        let d_prev = self.right_rlc(cb, &value_right_prev);
+        cb.require_equal("unchanged right bytes: R' & !M == R & !M", d, d_prev);
     }
 
-    // TODO: not needed.
-    pub(crate) fn unmasked_word(&self, word: &Word<F>) -> [Expression<F>; N_BYTES_WORD] {
-        array_init(|i| word.cells[i].expr() * (1.expr() - self.mask[i].expr()))
+    pub(crate) fn require_equal_unaligned_byte(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        byte: Expression<F>,
+        value_left: &Word<F>,
+    ) {
+        let b = self.right_rlc(cb, &value_left);
+
+        cb.require_equal("W[0] * X³¹⁻ˢʰⁱᶠᵗ = B(X)", byte * self.x31_shift.clone(), b);
     }
 
-    /// Return the RLC of the left part of a word (right part is zeroed).
+    pub(crate) fn require_equal_unaligned_word(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        value_rlc: Expression<F>,
+        value_left: &Word<F>,
+        value_right: &Word<F>,
+    ) {
+        let b = self.right_rlc(cb, &value_left);
+        let c = self.left_rlc(cb, &value_right);
+
+        cb.require_equal(
+            "W(X) * X³²⁻ˢʰⁱᶠᵗ  =  B(X) * X³² + C(X)",
+            value_rlc * self.x32_shift.clone(),
+            b * self.x32.clone() + c,
+        );
+    }
+
+    /// Return the RLC of the left part of a word, called "A" or "C". The right part is zeroed.
     /// This is MSB-first to match MLOAD/MSTORE semantics.
-    pub(crate) fn get_left(&self, cb: &mut ConstraintBuilder<F>, word: &Word<F>) -> Expression<F> {
+    fn left_rlc(&self, cb: &mut ConstraintBuilder<F>, word: &Word<F>) -> Expression<F> {
         let masked: [Expression<F>; N_BYTES_WORD] = array_init(|i| {
             let reversed_i = N_BYTES_WORD - 1 - i;
             word.cells[reversed_i].expr() * self.mask[reversed_i].expr()
@@ -547,9 +609,9 @@ impl<F: Field> MemoryMask<F> {
         cb.word_rlc(masked)
     }
 
-    /// Return the RLC of the right part of a word (left part is zeroed).
+    /// Return the RLC of the right part of a word, called "B" or "D". The left part is zeroed.
     /// This is MSB-first to match MLOAD/MSTORE semantics.
-    pub(crate) fn get_right(&self, cb: &mut ConstraintBuilder<F>, word: &Word<F>) -> Expression<F> {
+    fn right_rlc(&self, cb: &mut ConstraintBuilder<F>, word: &Word<F>) -> Expression<F> {
         let masked: [Expression<F>; N_BYTES_WORD] = array_init(|i| {
             let reversed_i = N_BYTES_WORD - 1 - i;
             word.cells[reversed_i].expr() * (1.expr() - self.mask[reversed_i].expr())
@@ -558,7 +620,7 @@ impl<F: Field> MemoryMask<F> {
     }
 
     /// Compute X**32 by squaring. This does *not* depend on a witness, only on the challenge X.
-    pub(crate) fn make_x32(x: Expression<F>) -> Expression<F> {
+    fn make_x32(x: Expression<F>) -> Expression<F> {
         let mut x32 = x;
         for _ in 0..5 {
             x32 = x32.clone() * x32;
@@ -568,7 +630,7 @@ impl<F: Field> MemoryMask<F> {
 
     /// Compute `X**(31-shift)` by squaring-and-multiplying.
     /// The shift is given as a LSB-first 5-bit integer.
-    pub(crate) fn make_x31_off(x: Expression<F>, shift_bits: &[Cell<F>; 5]) -> Expression<F> {
+    fn make_x31_off(x: Expression<F>, shift_bits: &[Cell<F>; 5]) -> Expression<F> {
         let mut x_pow = 1.expr();
 
         for bit in shift_bits.iter().rev() {
@@ -582,7 +644,7 @@ impl<F: Field> MemoryMask<F> {
 
     /// Compute 2**shift by squaring-and-multiplying.
     /// The shift is given as a LSB-first 5-bit integer.
-    pub(crate) fn make_two_pow(shift_bits: &[Cell<F>; 5]) -> Expression<F> {
+    fn make_two_pow(shift_bits: &[Cell<F>; 5]) -> Expression<F> {
         let mut two_pow = 1.expr();
 
         for bit in shift_bits.iter().rev() {
