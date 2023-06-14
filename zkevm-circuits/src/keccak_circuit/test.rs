@@ -1,10 +1,32 @@
-use crate::keccak_circuit::KeccakCircuit;
+#![allow(unused_imports)]
+use super::*;
+use crate::util::unusable_rows;
 use eth_types::Field;
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use halo2_proofs::{
+    circuit::{Layouter, SimpleFloorPlanner},
+    dev::MockProver,
+    halo2curves::bn256::Fr,
+    plonk::{Circuit, ConstraintSystem, Error},
+};
 use log::error;
 use std::iter::zip;
 
 use super::util::{target_part_sizes, target_part_sizes_rot, WordParts};
+
+// This needs to be tested independent since it sets the environment variable
+// which might affect other tests.
+#[ignore]
+#[test]
+fn serial_keccak_circuit_unusable_rows() {
+    for keccak_rows in NUM_BYTES_PER_WORD + 1..=32 {
+        std::env::set_var("KECCAK_ROWS", format!("{keccak_rows}"));
+        assert_eq!(
+            KeccakCircuit::<Fr>::unusable_rows(),
+            unusable_rows::<Fr, KeccakCircuit::<Fr>>(),
+        )
+    }
+    std::env::set_var("KECCAK_ROWS", format!("{DEFAULT_KECCAK_ROWS}"));
+}
 
 fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
     let circuit = KeccakCircuit::new(2usize.pow(k), inputs);

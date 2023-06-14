@@ -21,7 +21,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::keccak_circuit::KeccakCircuit;
+    use zkevm_circuits::{keccak_circuit::TestKeccakCircuit, util::SubCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -41,7 +41,10 @@ mod tests {
         let inputs = vec![(0u8..135).collect::<Vec<_>>(); 3];
 
         // Create the circuit. Leave last dozens of rows for blinding.
-        let circuit = KeccakCircuit::new(2usize.pow(degree) - 64, inputs);
+        let circuit = TestKeccakCircuit::new(
+            2usize.pow(degree) - TestKeccakCircuit::<Fr>::unusable_rows(),
+            inputs,
+        );
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([
@@ -74,7 +77,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            KeccakCircuit<Fr>,
+            TestKeccakCircuit<Fr>,
         >(
             &general_params,
             &pk,

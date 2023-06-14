@@ -68,10 +68,8 @@ impl Opcode for ErrorReturnDataOutOfBound {
             return_data.len().into(),
         );
 
-        // `IsSuccess` call context operation is added in gen_restore_context_ops
-
-        state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
-        state.handle_return(geth_step)?;
+        // `IsSuccess` call context operation is added in handle_return
+        state.handle_return(&mut exec_step, geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }
@@ -80,16 +78,16 @@ impl Opcode for ErrorReturnDataOutOfBound {
 mod tests {
     use super::*;
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::RW};
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word};
+    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
     use mock::{
         test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
-        TestContext,
+        TestContext, MOCK_DEPLOYED_CONTRACT_BYTECODE,
     };
 
     #[test]
     fn test_returndata_error() {
         let code = bytecode! {
-            PUSH21(word!("6B6020600060003760206000F3600052600C6014F3"))
+            PUSH21(*MOCK_DEPLOYED_CONTRACT_BYTECODE)
             PUSH1(0)
             MSTORE
 

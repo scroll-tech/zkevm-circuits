@@ -3,7 +3,8 @@ use crate::evm_circuit::{
     step::ExecutionState,
     table::{FixedTableTag, Lookup},
     util::{
-        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, CachedRegion, Cell,
+        common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder, CachedRegion,
+        Cell,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -24,7 +25,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidOpcode;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.add_lookup(
             "Responsible opcode lookup",
@@ -55,8 +56,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = F::from(step.opcode.unwrap().as_u64());
-        self.opcode.assign(region, offset, Value::known(opcode))?;
+        let opcode = step.opcode.unwrap().as_u64();
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode)))?;
+
+        log::debug!("ErrorInvalidOpcode - opcode = {}", opcode);
 
         self.common_error_gadget
             .assign(region, offset, block, call, step, 2)?;
@@ -67,9 +71,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::{bytecode, bytecode::Bytecode, ToWord, Word};
+    use eth_types::{bytecode::Bytecode, Word};
     use lazy_static::lazy_static;
-    use mock::TestContext;
+    use mock::{generate_mock_call_bytecode, MockCallBytecodeParams, TestContext};
 
     lazy_static! {
         static ref TESTING_INVALID_CODES: [Vec<u8>; 6] = [
@@ -80,7 +84,7 @@ mod test {
             vec![0xf6],
             vec![0xfe],
             // Multiple invalid opcodes
-            vec![0x5c, 0x5e, 0x5f],
+            vec![0x5c, 0x5e],
         ];
     }
 
@@ -96,6 +100,24 @@ mod test {
         for invalid_code in TESTING_INVALID_CODES.iter() {
             test_internal_ok(0x20, 0x00, invalid_code);
         }
+    }
+
+    #[cfg(feature = "scroll")]
+    #[test]
+    fn invalid_opcode_selfdestruct_for_scroll() {
+        let selfdestruct_opcode = 0xff_u8;
+        test_root_ok(&[selfdestruct_opcode]);
+        test_internal_ok(0x20, 0x00, &[selfdestruct_opcode]);
+    }
+
+    #[cfg(not(feature = "shanghai"))]
+    #[test]
+    fn invalid_opcode_push0_for_not_shanghai() {
+        // Should test with logs in `assign_exec_step`, otherwise it could also
+        // pass (since PushGadget).
+        let push0 = 0x5f;
+        test_root_ok(&[push0]);
+        test_internal_ok(0x20, 0x00, &[push0]);
     }
 
     fn test_root_ok(invalid_code: &[u8]) {
@@ -120,23 +142,13 @@ mod test {
         });
 
         // code A calls code B.
-        let pushdata = rand_bytes(8);
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata: rand_bytes(32),
+            call_data_length,
+            call_data_offset,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,

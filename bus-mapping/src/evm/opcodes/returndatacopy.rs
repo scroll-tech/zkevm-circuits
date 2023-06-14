@@ -133,36 +133,16 @@ fn gen_copy_event(
 #[cfg(test)]
 mod return_tests {
     use crate::mock::BlockData;
-    use eth_types::{bytecode, geth_types::GethData, word};
+    use eth_types::{bytecode, geth_types::GethData};
     use mock::{
         test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
-        TestContext,
+        TestContext, MOCK_DEPLOYED_CONTRACT_BYTECODE,
     };
 
     #[test]
     fn test_ok() {
-        // // deployed contract
-        // PUSH1 0x20
-        // PUSH1 0
-        // PUSH1 0
-        // CALLDATACOPY
-        // PUSH1 0x20
-        // PUSH1 0
-        // RETURN
-        //
-        // bytecode: 0x6020600060003760206000F3
-        //
-        // // constructor
-        // PUSH12 0x6020600060003760206000F3
-        // PUSH1 0
-        // MSTORE
-        // PUSH1 0xC
-        // PUSH1 0x14
-        // RETURN
-        //
-        // bytecode: 0x6B6020600060003760206000F3600052600C6014F3
         let code = bytecode! {
-            PUSH21(word!("6B6020600060003760206000F3600052600C6014F3"))
+            PUSH21(*MOCK_DEPLOYED_CONTRACT_BYTECODE)
             PUSH1(0)
             MSTORE
 

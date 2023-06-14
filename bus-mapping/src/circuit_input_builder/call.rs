@@ -115,6 +115,7 @@ impl Call {
     pub fn is_delegatecall(&self) -> bool {
         matches!(self.kind, CallKind::DelegateCall)
     }
+
     /// Get the code address if possible
     pub fn code_address(&self) -> Option<Address> {
         match self.kind {

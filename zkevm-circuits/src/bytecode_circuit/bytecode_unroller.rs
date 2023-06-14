@@ -14,7 +14,7 @@ pub(crate) struct BytecodeRow<F: Field> {
 }
 
 /// Unrolled bytecode
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct UnrolledBytecode<F: Field> {
     pub(crate) bytes: Vec<u8>,
     pub(crate) rows: Vec<BytecodeRow<F>>,

@@ -1,6 +1,7 @@
 //! Testing utilities
 
 use crate::{
+    copy_circuit::CopyCircuit,
     evm_circuit::EvmCircuit,
     state_circuit::StateCircuit,
     util::{log2_ceil, SubCircuit},
@@ -80,6 +81,7 @@ pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     block: Option<Block<Fr>>,
     evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
+    copy_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
 }
 
@@ -97,6 +99,12 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 ), Ok(()));
             }),
             state_checks: Box::new(|prover, gate_rows, lookup_rows| {
+                assert_eq!(prover.verify_at_rows_par(
+                    gate_rows.iter().cloned(),
+                    lookup_rows.iter().cloned(),
+                ), Ok(()));
+            }),
+            copy_checks: Box::new(|prover, gate_rows, lookup_rows| {
                 assert_eq!(prover.verify_at_rows_par(
                     gate_rows.iter().cloned(),
                     lookup_rows.iter().cloned(),
@@ -225,7 +233,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         {
             let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
             let k = log2_ceil(rows_needed + NUM_BLINDING_ROWS);
-            let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
+            let state_circuit = StateCircuit::<Fr>::new(block.rws.clone(), params.max_rws);
             let instance = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing
@@ -234,11 +242,23 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 .iter()
                 .filter(|rw| !matches!(rw, Rw::Start { .. }))
                 .count();
-            let rows = (params.max_rws - non_start_rows_len..params.max_rws)
-                .into_iter()
-                .collect();
+            let rows = (params.max_rws - non_start_rows_len..params.max_rws).collect();
 
             self.state_checks.as_ref()(prover, &rows, &rows);
+        }
+
+        // Run copy circuit test
+        {
+            let (active_rows, max_rows) = CopyCircuit::<Fr>::min_num_rows_block(&block);
+            let k1 = block.get_test_degree();
+            let k2 = log2_ceil(max_rows + NUM_BLINDING_ROWS);
+            let k = k1.max(k2);
+            let copy_circuit = CopyCircuit::<Fr>::new_from_block(&block);
+            let instance = copy_circuit.instance();
+            let prover = MockProver::<Fr>::run(k, &copy_circuit, instance).unwrap();
+            let rows = (0..active_rows).collect();
+
+            self.copy_checks.as_ref()(prover, &rows, &rows);
         }
     }
 }

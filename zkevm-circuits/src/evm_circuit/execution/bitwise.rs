@@ -1,11 +1,12 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_WORD,
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -28,7 +29,7 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BITWISE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let a = cb.query_word_rlc();
@@ -44,7 +45,7 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
         // OpcodeId::AND as the delta to FixedTableTag::BitwiseAnd.
         let tag =
             FixedTableTag::BitwiseAnd.expr() + (opcode.expr() - OpcodeId::AND.as_u64().expr());
-        for idx in 0..32 {
+        for idx in 0..N_BYTES_WORD {
             cb.add_lookup(
                 "Bitwise lookup",
                 Lookup::Fixed {

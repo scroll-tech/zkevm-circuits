@@ -5,7 +5,10 @@ use crate::{
         table::{FixedTableTag, Lookup},
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                EVMConstraintBuilder, StepStateTransition,
+                Transition::{Delta, Same},
+            },
             CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -27,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::NOT;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let input = cb.query_word_rlc();
@@ -50,7 +53,7 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
             program_counter: Delta(1.expr()),
-            stack_pointer: Delta(0.expr()),
+            stack_pointer: Same,
             gas_left: Delta(-OpcodeId::NOT.constant_gas_cost().expr()),
             ..Default::default()
         };

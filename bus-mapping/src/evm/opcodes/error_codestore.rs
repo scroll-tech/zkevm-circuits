@@ -2,7 +2,6 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     error::ExecError,
     evm::Opcode,
-    operation::CallContextField,
     Error,
 };
 use eth_types::GethExecStep;
@@ -33,31 +32,11 @@ impl Opcode for ErrorCodeStore {
 
         // in internal call context
         let call = state.call()?;
-        let call_id = call.call_id;
-        let is_success = call.is_success;
 
         // create context check
         assert!(call.is_create());
 
-        state.call_context_read(
-            &mut exec_step,
-            call_id,
-            CallContextField::IsSuccess,
-            (is_success as u64).into(),
-        );
-
-        state.call_context_read(
-            &mut exec_step,
-            call_id,
-            CallContextField::RwCounterEndOfReversion,
-            0u64.into(),
-        );
-
-        // refer to return_revert Case C
-        state.handle_restore_context(geth_steps, &mut exec_step)?;
-
-        // state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
-        state.handle_return(geth_step)?;
+        state.handle_return(&mut exec_step, geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

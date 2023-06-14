@@ -4,8 +4,11 @@ use crate::{
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS},
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, from_bytes,
-            math_gadget::LtGadget, select, CachedRegion, Cell, Word,
+            common_gadget::CommonErrorGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            from_bytes,
+            math_gadget::LtGadget,
+            select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -35,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGAccountAccessGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasAccountAccess;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.require_in_set(
             "ErrorOutOfGasAccountAccess happens for BALANCE | EXTCODESIZE | EXTCODEHASH ",

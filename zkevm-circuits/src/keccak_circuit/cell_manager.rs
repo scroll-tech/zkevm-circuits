@@ -1,4 +1,4 @@
-use crate::keccak_circuit::{util::extract_field, KeccakRegion};
+use crate::keccak_circuit::util::extract_field;
 use gadgets::util::Expr;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -6,6 +6,8 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
+
+use super::keccak_packed_multi::KeccakRegion;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
@@ -59,11 +61,7 @@ impl<F: FieldExt> Cell<F> {
     }
 
     pub(crate) fn assign(&self, region: &mut KeccakRegion<F>, offset: i32, value: F) {
-        region.assign(
-            self.column_idx,
-            ((offset as i32) + self.rotation) as usize,
-            value,
-        );
+        region.assign(self.column_idx, (offset + self.rotation) as usize, value);
     }
 
     pub(crate) fn assign_value(&self, region: &mut KeccakRegion<F>, offset: i32, value: Value<F>) {
@@ -73,11 +71,7 @@ impl<F: FieldExt> Cell<F> {
         // this shouldn't be needed.
         let value_f = extract_field(value);
 
-        region.assign(
-            self.column_idx,
-            ((offset as i32) + self.rotation) as usize,
-            value_f,
-        );
+        region.assign(self.column_idx, (offset + self.rotation) as usize, value_f);
     }
 }
 
@@ -95,14 +89,14 @@ impl<F: FieldExt> Expr<F> for &Cell<F> {
 
 /// CellColumn
 #[derive(Clone, Debug)]
-pub(crate) struct CellColumn<F> {
-    pub(crate) advice: Column<Advice>,
+pub struct CellColumn<F> {
+    pub advice: Column<Advice>,
     pub(crate) expr: Expression<F>,
 }
 
 /// CellManager
 #[derive(Clone, Debug)]
-pub(crate) struct CellManager<F> {
+pub struct CellManager<F> {
     height: usize,
     columns: Vec<CellColumn<F>>,
     rows: Vec<usize>,
@@ -159,7 +153,8 @@ impl<F: FieldExt> CellManager<F> {
         self.rows.iter().cloned().max().unwrap()
     }
 
-    pub(crate) fn columns(&self) -> &[CellColumn<F>] {
+    /// expose the columns used for keccak cell
+    pub fn columns(&self) -> &[CellColumn<F>] {
         &self.columns
     }
 

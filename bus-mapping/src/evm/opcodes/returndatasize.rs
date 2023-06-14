@@ -57,37 +57,19 @@ mod returndatasize_tests {
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        word, Word,
+        Word,
     };
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::{
+        test_ctx::{helpers::*, TestContext},
+        MOCK_DEPLOYED_CONTRACT_BYTECODE,
+    };
     use pretty_assertions::assert_eq;
 
     #[test]
     fn test_ok() {
         let return_data_size = 0x20;
-
-        // // deployed contract
-        // PUSH1 0x20
-        // PUSH1 0
-        // PUSH1 0
-        // CALLDATACOPY
-        // PUSH1 0x20
-        // PUSH1 0
-        // RETURN
-        //
-        // bytecode: 0x6020600060003760206000F3
-        //
-        // // constructor
-        // PUSH12 0x6020600060003760206000F3
-        // PUSH1 0
-        // MSTORE
-        // PUSH1 0xC
-        // PUSH1 0x14
-        // RETURN
-        //
-        // bytecode: 0x6B6020600060003760206000F3600052600C6014F3
         let code = bytecode! {
-            PUSH21(word!("6B6020600060003760206000F3600052600C6014F3"))
+            PUSH21(*MOCK_DEPLOYED_CONTRACT_BYTECODE)
             PUSH1(0)
             MSTORE
 

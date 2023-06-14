@@ -1,5 +1,9 @@
 use crate::{
-    evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, select},
+    evm_circuit::util::{
+        and,
+        constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+        not, or, select,
+    },
     table::{BytecodeFieldTag, KeccakTable, PoseidonTable},
     util::{Challenges, Expr, SubCircuitConfig},
 };
@@ -11,6 +15,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
+use itertools::Itertools;
 use log::trace;
 use mpt_zktrie::hash::HASHABLE_DOMAIN_SPEC;
 use std::vec;
@@ -159,12 +164,12 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 );
             });
 
-            cb.condition(not::expr(q_byte_in_field_not_last(meta)), |cb|{
+            cb.condition(meta.query_advice(is_field_border, Rotation::prev()), |cb|{
 
                 cb.require_equal(
-                    "if !q_byte_in_field_not_last padding_shift := 1",
+                    "if is_field_border_prev padding_shift := 256^(BYTES_IN_FIELD-1)",
                     meta.query_advice(padding_shift, Rotation::cur()),
-                    1.expr(),
+                    Expression::Constant(F::from(256 as u64).pow_vartime([BYTES_IN_FIELD as u64-1])),
                 );
             });
 
@@ -287,10 +292,21 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         // ]))
         // });
 
-        let pick_hash_tbl_cols = |inp_i: usize| {
-            let cols =
-                <PoseidonTable as crate::table::LookupTable<F>>::advice_columns(&poseidon_table);
-            [cols[0], cols[inp_i + 1], cols[cols.len() - 2]]
+        let pick_hash_tbl_cols = |meta: &mut VirtualCells<F>, inp_i: usize| {
+            debug_assert_eq!(PoseidonTable::INPUT_WIDTH, 2);
+            [
+                meta.query_fixed(poseidon_table.q_enable, Rotation::cur()),
+                meta.query_advice(poseidon_table.hash_id, Rotation::cur()),
+                meta.query_advice(
+                    match inp_i {
+                        0 => poseidon_table.input0,
+                        1 => poseidon_table.input1,
+                        _ => unreachable!("valid poseidon input index"),
+                    },
+                    Rotation::cur(),
+                ),
+                meta.query_advice(poseidon_table.control, Rotation::cur()),
+            ]
         };
 
         // we use a special selection exp for only 2 indexs
@@ -305,6 +321,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         //  * PoseidonTable::INPUT_WIDTH lookups for each input field
         //  * PoseidonTable::INPUT_WIDTH -1 lookups for the padded zero input
         //  so we have 2*PoseidonTable::INPUT_WIDTH -1 lookups
+        #[cfg(feature = "poseidon-codehash-lookup")]
         for i in 0..PoseidonTable::INPUT_WIDTH {
             meta.lookup_any("poseidon input", |meta| {
                 // Conditions:
@@ -314,26 +331,27 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                     meta.query_advice(is_field_border, Rotation::cur()),
                     field_selector(meta)[i].clone(),
                 ]);
-                let mut constraints = Vec::new(); // vec![(
-                                                  // enable.clone(),
-                                                  // meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
-                                                  // )];
-                let lookup_columns = [
+                let mut constraints = Vec::new();
+
+                let lookup_inputs = [
+                    1.expr(),
                     meta.query_advice(code_hash, Rotation::cur()),
                     meta.query_advice(field_input, Rotation::cur()),
                     meta.query_advice(control_length, Rotation::cur()) * domain_spec_factor.clone(),
                 ];
-                for (l_col, tbl_col) in lookup_columns.into_iter().zip(pick_hash_tbl_cols(i)) {
-                    constraints.push((
-                        enable.clone() * l_col,
-                        meta.query_advice(tbl_col, Rotation::cur()),
-                    ))
+
+                for (input_expr, table_expr) in lookup_inputs
+                    .into_iter()
+                    .zip_eq(pick_hash_tbl_cols(meta, i))
+                {
+                    constraints.push((enable.clone() * input_expr, table_expr))
                 }
                 constraints
             });
         }
 
         // the canonical form should be `for i in 1..PoseidonTable::INPUT_WIDTH{...}`
+        #[cfg(feature = "poseidon-codehash-lookup")]
         meta.lookup_any("poseidon input padding zero for final", |meta| {
             // Conditions:
             // - On the row with the last byte (`is_byte_to_header == 1`)
@@ -344,18 +362,17 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 2.expr() - meta.query_advice(field_index, Rotation::cur()),
             ]);
             let mut constraints = Vec::new();
-            for (l_exp, tbl_col) in [
+            let lookup_inputs = [
+                1.expr(),
                 meta.query_advice(code_hash, Rotation::cur()),
                 0.expr(),
                 meta.query_advice(control_length, Rotation::cur()) * domain_spec_factor,
-            ]
-            .into_iter()
-            .zip(pick_hash_tbl_cols(1))
+            ];
+            for (input_expr, table_expr) in lookup_inputs
+                .into_iter()
+                .zip_eq(pick_hash_tbl_cols(meta, 1))
             {
-                constraints.push((
-                    enable.clone() * l_exp,
-                    meta.query_advice(tbl_col, Rotation::cur()),
-                ))
+                constraints.push((enable.clone() * input_expr, table_expr))
             }
             constraints
         });
@@ -382,9 +399,10 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         layouter: &mut impl Layouter<F>,
         size: usize,
         witness: &[UnrolledBytecode<F>],
+        overwrite: &UnrolledBytecode<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        self.assign_internal(layouter, size, witness, challenges, true)
+        self.assign_internal(layouter, size, witness, overwrite, challenges, true)
     }
 
     pub(crate) fn assign_internal(
@@ -392,12 +410,15 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         layouter: &mut impl Layouter<F>,
         size: usize,
         witness: &[UnrolledBytecode<F>],
+        overwrite: &UnrolledBytecode<F>,
         challenges: &Challenges<Value<F>>,
         fail_fast: bool,
     ) -> Result<(), Error> {
         let base_conf = &self.base_conf;
         let push_data_left_is_zero_chip =
             IsZeroChip::construct(base_conf.push_data_left_is_zero.clone());
+        let index_length_diff_is_zero_chip =
+            IsZeroChip::construct(base_conf.index_length_diff_is_zero.clone());
 
         // Subtract the unusable rows from the size
         assert!(size > base_conf.minimum_rows);
@@ -424,6 +445,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                         bytecode,
                         challenges,
                         &push_data_left_is_zero_chip,
+                        &index_length_diff_is_zero_chip,
                         empty_hash,
                         &mut offset,
                         last_row_offset,
@@ -452,12 +474,16 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                     base_conf.set_padding_row(
                         &mut region,
                         &push_data_left_is_zero_chip,
+                        &index_length_diff_is_zero_chip,
                         empty_hash,
                         idx,
                         last_row_offset,
                     )?;
                     self.set_header_row(&mut region, 0, idx)?;
                 }
+
+                base_conf.assign_overwrite(&mut region, overwrite, challenges)?;
+
                 Ok(())
             },
         )
@@ -471,13 +497,13 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         offset: usize,
     ) -> Result<(), Error> {
         for (name, column) in [
-            ("control length header", self.control_length),
+            //            ("control length header", self.control_length),
             ("field input header", self.field_input),
             ("bytes in field header", self.bytes_in_field_index),
             ("bytes in field inv header", self.bytes_in_field_inv),
             ("field border header", self.is_field_border),
-            ("padding shift header", self.padding_shift),
-            ("field index header", self.field_index),
+            //            ("padding shift header", self.padding_shift),
+            //            ("field index header", self.field_index),
             ("field index inv header", self.field_index_inv),
         ] {
             region.assign_advice(

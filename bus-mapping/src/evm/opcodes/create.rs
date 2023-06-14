@@ -2,7 +2,7 @@ use crate::{
     circuit_input_builder::{
         CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
-    error::ExecError,
+    error::{ContractAddressCollisionError, ExecError},
     evm::{Opcode, OpcodeId},
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
     state_db::CodeDB,
@@ -35,6 +35,13 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let next_memory_word_size = state.call_ctx()?.memory_word_size();
 
         let callee = state.parse_call(geth_step)?;
+
+        state.call_context_read(
+            &mut exec_step,
+            state.call()?.call_id,
+            CallContextField::IsStatic,
+            Word::from(state.call()?.is_static as u8),
+        );
 
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
         for i in 0..n_pop {
@@ -157,9 +164,19 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         // ErrContractAddressCollision
         let code_hash_previous = if callee_exists {
             if is_precheck_ok {
-                // only create2 possibly cause address collision error.
-                assert_eq!(geth_step.op, OpcodeId::CREATE2);
-                exec_step.error = Some(ExecError::ContractAddressCollision);
+                // CREATE2 may cause address collision error. And for a tricky
+                // case of CREATE, it could also cause this error. e.g. the `to`
+                // field of transaction is set to the calculated contract
+                // address (reference testool case
+                // `RevertDepthCreateAddressCollision_d0_g0_v0` for details).
+                exec_step.error = Some(ExecError::ContractAddressCollision(match geth_step.op {
+                    OpcodeId::CREATE => ContractAddressCollisionError::Create,
+                    OpcodeId::CREATE2 => ContractAddressCollisionError::Create2,
+                    op => unreachable!(
+                        "Contract address collision error is unexpected for opcode: {:?}",
+                        op
+                    ),
+                }));
             }
             callee_account.code_hash
         } else {
@@ -225,7 +242,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             ] {
                 state.call_context_write(&mut exec_step, caller.call_id, field, value);
             }
-            state.handle_return(geth_step)?;
+            state.handle_return(&mut exec_step, geth_steps, false)?;
             return Ok(vec![exec_step]);
         }
 
@@ -295,7 +312,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             ] {
                 state.call_context_write(&mut exec_step, caller.call_id, field, value);
             }
-            state.handle_return(geth_step)?;
+            state.handle_return(&mut exec_step, geth_steps, false)?;
         }
 
         Ok(vec![exec_step])
@@ -447,10 +464,15 @@ mod tests {
             .last()
             .unwrap();
 
-        assert_eq!(step.error, Some(ExecError::ContractAddressCollision));
+        assert_eq!(
+            step.error,
+            Some(ExecError::ContractAddressCollision(
+                ContractAddressCollisionError::Create2
+            ))
+        );
 
         let container = builder.block.container.clone();
-        let operation = &container.stack[step.bus_mapping_instance[0].as_usize()];
+        let operation = &container.stack[step.bus_mapping_instance[1].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
     }
 }

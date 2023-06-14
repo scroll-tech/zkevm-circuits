@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::LtGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             CachedRegion, Cell,
@@ -38,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorCodeStore;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let offset = cb.query_cell_phase2();

@@ -3,7 +3,7 @@ use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
@@ -28,6 +28,7 @@ pub enum FixedTableTag {
     ResponsibleOpcode,
     Pow2,
     ConstantGasCost,
+    PrecompileInfo,
 }
 impl_expr!(FixedTableTag);
 
@@ -117,6 +118,17 @@ impl FixedTableTag {
                         ]
                     }),
             ),
+            Self::PrecompileInfo => Box::new(PrecompileCalls::iter().map(move |precompile| {
+                [
+                    tag,
+                    F::from({
+                        let state: ExecutionState = precompile.into();
+                        state.as_u64()
+                    }),
+                    F::from(u64::from(precompile)),
+                    F::from(precompile.base_gas_cost().0),
+                ]
+            })),
         }
     }
 }
@@ -311,7 +323,13 @@ impl<F: Field> Lookup<F> {
                 field_tag,
                 index,
                 value,
-            } => vec![id.clone(), field_tag.clone(), index.clone(), value.clone()],
+            } => vec![
+                1.expr(),
+                id.clone(),
+                field_tag.clone(),
+                index.clone(),
+                value.clone(),
+            ],
             Self::Rw {
                 counter,
                 is_write,
@@ -319,6 +337,7 @@ impl<F: Field> Lookup<F> {
                 values,
             } => {
                 vec![
+                    1.expr(),
                     counter.clone(),
                     is_write.clone(),
                     tag.clone(),
@@ -340,6 +359,7 @@ impl<F: Field> Lookup<F> {
                 value,
             } => {
                 vec![
+                    1.expr(), // q_enable
                     hash.clone(),
                     tag.clone(),
                     index.clone(),
@@ -368,6 +388,7 @@ impl<F: Field> Lookup<F> {
                 rw_counter,
                 rwc_inc,
             } => vec![
+                1.expr(),
                 is_first.clone(),
                 src_id.clone(),
                 src_tag.clone(),
@@ -386,7 +407,8 @@ impl<F: Field> Lookup<F> {
                 input_len,
                 output_rlc,
             } => vec![
-                1.expr(), // is_enabled
+                1.expr(), // q_enable
+                1.expr(), // is_final
                 input_rlc.clone(),
                 input_len.clone(),
                 output_rlc.clone(),
@@ -398,6 +420,7 @@ impl<F: Field> Lookup<F> {
                 exponent_lo_hi,
                 exponentiation_lo_hi,
             } => vec![
+                1.expr(), // q_enable
                 1.expr(), // is_step
                 identifier.clone(),
                 is_last.clone(),

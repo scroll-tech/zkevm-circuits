@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -24,7 +24,7 @@ pub(crate) struct BlockCtxGadget<F, const N_BYTES: usize> {
 }
 
 impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
-    fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let value = cb.query_word_rlc();
 
         // Push the const generic parameter N_BYTES value to the stack
@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU64;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let value_u64 = BlockCtxGadget::construct(cb);
 
         Self { value_u64 }
@@ -112,7 +112,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU160;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let value_u160 = BlockCtxGadget::construct(cb);
 
         Self { value_u160 }
@@ -157,7 +157,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKCTXU256;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let value_u256 = BlockCtxGadget::construct(cb);
 
         Self { value_u256 }

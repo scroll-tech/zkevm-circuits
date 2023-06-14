@@ -202,11 +202,34 @@ impl ToWord for u64 {
     }
 }
 
+impl ToWord for u128 {
+    fn to_word(&self) -> Word {
+        Word::from(*self)
+    }
+}
+
 impl ToWord for usize {
     fn to_word(&self) -> Word {
         u64::try_from(*self)
             .expect("usize bigger than u64")
             .to_word()
+    }
+}
+
+impl ToWord for i32 {
+    fn to_word(&self) -> Word {
+        let value = Word::from(self.unsigned_abs() as u64);
+        if self.is_negative() {
+            value.overflowing_neg().0
+        } else {
+            value
+        }
+    }
+}
+
+impl ToWord for Word {
+    fn to_word(&self) -> Word {
+        *self
     }
 }
 

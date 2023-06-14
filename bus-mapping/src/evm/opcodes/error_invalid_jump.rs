@@ -40,10 +40,9 @@ impl Opcode for InvalidJump {
                 condition,
             )?;
         }
-        // `IsSuccess` call context operation is added in gen_restore_context_ops
 
-        state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
-        state.handle_return(geth_step)?;
+        // `IsSuccess` call context operation is added in handle_return
+        state.handle_return(&mut exec_step, geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

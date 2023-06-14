@@ -5,6 +5,7 @@ use super::{
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
+    EvmCircuitExports,
 };
 use crate::{
     evm_circuit::{
@@ -12,7 +13,9 @@ use crate::{
         step::{ExecutionState, Step},
         table::Table,
         util::{
-            constraint_builder::{BaseConstraintBuilder, ConstraintBuilder},
+            constraint_builder::{
+                BaseConstraintBuilder, ConstrainBuilderCommon, EVMConstraintBuilder,
+            },
             rlc, CellType,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -21,13 +24,13 @@ use crate::{
     util::{query_expression, Challenges, Expr},
 };
 use bus_mapping::util::read_env_var;
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian};
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
+        Advice, Assigned, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
         VirtualCells,
     },
     poly::Rotation,
@@ -72,6 +75,7 @@ mod codecopy;
 mod codesize;
 mod comparator;
 mod create;
+#[cfg(not(feature = "scroll"))]
 mod dummy;
 mod dup;
 mod end_block;
@@ -84,7 +88,7 @@ mod error_invalid_opcode;
 mod error_oog_account_access;
 mod error_oog_call;
 mod error_oog_constant;
-mod error_oog_create2;
+mod error_oog_create;
 mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
@@ -116,6 +120,7 @@ mod opcode_not;
 mod origin;
 mod pc;
 mod pop;
+mod precompiles;
 mod push;
 mod return_revert;
 mod returndatacopy;
@@ -132,7 +137,7 @@ mod sstore;
 mod stop;
 mod swap;
 
-use self::{logs::LogGadget, sha3::Sha3Gadget};
+use self::{logs::LogGadget, precompiles::BasePrecompileGadget, sha3::Sha3Gadget};
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
@@ -153,6 +158,7 @@ use codecopy::CodeCopyGadget;
 use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
 use create::CreateGadget;
+#[cfg(not(feature = "scroll"))]
 use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
@@ -165,7 +171,7 @@ use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_account_access::ErrorOOGAccountAccessGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
-use error_oog_create2::ErrorOOGCreate2Gadget;
+use error_oog_create::ErrorOOGCreateGadget;
 use error_oog_dynamic_memory::ErrorOOGDynamicMemoryGadget;
 use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
@@ -196,6 +202,7 @@ use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
+use precompiles::IdentityGadget;
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
@@ -216,7 +223,7 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
 
     const EXECUTION_STATE: ExecutionState;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self;
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self;
 
     fn assign_exec_step(
         &self,
@@ -304,6 +311,7 @@ pub(crate) struct ExecutionConfig<F> {
     returndatacopy_gadget: Box<ReturnDataCopyGadget<F>>,
     create_gadget: Box<CreateGadget<F, false, { ExecutionState::CREATE }>>,
     create2_gadget: Box<CreateGadget<F, true, { ExecutionState::CREATE2 }>>,
+    #[cfg(not(feature = "scroll"))]
     selfdestruct_gadget: Box<DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>>,
     signed_comparator_gadget: Box<SignedComparatorGadget<F>>,
     signextend_gadget: Box<SignextendGadget<F>>,
@@ -328,16 +336,30 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_log: Box<ErrorOOGLogGadget<F>>,
     error_oog_account_access: Box<ErrorOOGAccountAccessGadget<F>>,
     error_oog_sha3: Box<ErrorOOGSha3Gadget<F>>,
-    error_oog_create2: Box<ErrorOOGCreate2Gadget<F>>,
+    error_oog_create: Box<ErrorOOGCreateGadget<F>>,
     error_code_store: Box<ErrorCodeStoreGadget<F>>,
+    #[cfg(not(feature = "scroll"))]
     error_oog_self_destruct:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>>,
     error_invalid_jump: Box<ErrorInvalidJumpGadget<F>>,
     error_invalid_opcode: Box<ErrorInvalidOpcodeGadget<F>>,
-    error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
+    // precompile calls
+    precompile_ecrecover_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileEcRecover }>>,
+    precompile_sha2_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileSha256 }>>,
+    precompile_ripemd_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileRipemd160 }>>,
+    precompile_identity_gadget: Box<IdentityGadget<F>>,
+    precompile_modexp_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBigModExp }>>,
+    precompile_bn128add_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256Add }>>,
+    precompile_bn128mul_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256ScalarMul }>>,
+    precompile_bn128pairing_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256Pairing }>>,
+    precompile_blake2f_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBlake2f }>>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -566,6 +588,7 @@ impl<F: Field> ExecutionConfig<F> {
             returndatacopy_gadget: configure_gadget!(),
             create_gadget: configure_gadget!(),
             create2_gadget: configure_gadget!(),
+            #[cfg(not(feature = "scroll"))]
             selfdestruct_gadget: configure_gadget!(),
             shl_shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
@@ -589,16 +612,26 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_account_access: configure_gadget!(),
             error_oog_sha3: configure_gadget!(),
             error_oog_exp: configure_gadget!(),
-            error_oog_create2: configure_gadget!(),
+            error_oog_create: configure_gadget!(),
+            #[cfg(not(feature = "scroll"))]
             error_oog_self_destruct: configure_gadget!(),
             error_code_store: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
             error_invalid_opcode: configure_gadget!(),
             error_write_protection: configure_gadget!(),
-            error_depth: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
             error_precompile_failed: configure_gadget!(),
+            // precompile calls
+            precompile_ecrecover_gadget: configure_gadget!(),
+            precompile_sha2_gadget: configure_gadget!(),
+            precompile_ripemd_gadget: configure_gadget!(),
+            precompile_identity_gadget: configure_gadget!(),
+            precompile_modexp_gadget: configure_gadget!(),
+            precompile_bn128add_gadget: configure_gadget!(),
+            precompile_bn128mul_gadget: configure_gadget!(),
+            precompile_bn128pairing_gadget: configure_gadget!(),
+            precompile_blake2f_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -646,7 +679,7 @@ impl<F: Field> ExecutionConfig<F> {
         // height
         let height = {
             let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-            let mut cb = ConstraintBuilder::new(
+            let mut cb = EVMConstraintBuilder::new(
                 step_curr.clone(),
                 dummy_step_next,
                 challenges,
@@ -659,7 +692,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         // Now actually configure the gadget with the correct minimal height
         let step_next = &Step::new(meta, advices, height, true);
-        let mut cb = ConstraintBuilder::new(
+        let mut cb = EVMConstraintBuilder::new(
             step_curr.clone(),
             step_next.clone(),
             challenges,
@@ -705,7 +738,7 @@ impl<F: Field> ExecutionConfig<F> {
         name: &'static str,
         execution_state: ExecutionState,
         height: usize,
-        mut cb: ConstraintBuilder<F>,
+        mut cb: EVMConstraintBuilder<F>,
     ) {
         // Enforce the step height for this opcode
         let num_rows_until_next_step_next = query_expression(meta, |meta| {
@@ -970,7 +1003,7 @@ impl<F: Field> ExecutionConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
+    ) -> Result<EvmCircuitExports<Assigned<F>>, Error> {
         let mut is_first_time = true;
 
         layouter.assign_region(
@@ -1153,8 +1186,28 @@ impl<F: Field> ExecutionConfig<F> {
                 Ok(())
             },
         )?;
+
         log::debug!("assign_block done");
-        Ok(())
+
+        let final_withdraw_root_cell = self
+            .end_block_gadget
+            .withdraw_root_assigned
+            .borrow()
+            .expect("withdraw_root cell should has been assigned");
+
+        // sanity check
+        let evm_rows = block.circuits_params.max_evm_rows;
+        if evm_rows >= 2 {
+            assert_eq!(final_withdraw_root_cell.row_offset, evm_rows - 2);
+        }
+
+        let withdraw_root_rlc = challenges
+            .evm_word()
+            .map(|r| rlc::value(&block.withdraw_root.to_le_bytes(), r));
+
+        Ok(EvmCircuitExports {
+            withdraw_root: (final_withdraw_root_cell, withdraw_root_rlc.into()),
+        })
     }
 
     fn annotate_circuit(&self, region: &mut Region<F>) {
@@ -1363,7 +1416,10 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
             // dummy gadgets
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
-            ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
+            ExecutionState::SELFDESTRUCT => {
+                #[cfg(not(feature = "scroll"))]
+                assign_exec_step!(self.selfdestruct_gadget)
+            }
             // end of dummy gadgets
             ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
             ExecutionState::SHL_SHR => assign_exec_step!(self.shl_shr_gadget),
@@ -1403,13 +1459,13 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasEXP => {
                 assign_exec_step!(self.error_oog_exp)
             }
-            ExecutionState::ErrorOutOfGasCREATE2 => {
-                assign_exec_step!(self.error_oog_create2)
+            ExecutionState::ErrorOutOfGasCREATE => {
+                assign_exec_step!(self.error_oog_create)
             }
             ExecutionState::ErrorOutOfGasSELFDESTRUCT => {
+                #[cfg(not(feature = "scroll"))]
                 assign_exec_step!(self.error_oog_self_destruct)
             }
-
             ExecutionState::ErrorCodeStore => {
                 assign_exec_step!(self.error_code_store)
             }
@@ -1425,12 +1481,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorWriteProtection => {
                 assign_exec_step!(self.error_write_protection)
             }
-            ExecutionState::ErrorDepth => {
-                assign_exec_step!(self.error_depth)
-            }
-            ExecutionState::ErrorContractAddressCollision => {
-                assign_exec_step!(self.create_gadget)
-            }
             ExecutionState::ErrorInvalidCreationCode => {
                 assign_exec_step!(self.error_invalid_creation_code)
             }
@@ -1439,6 +1489,33 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
+            }
+            ExecutionState::PrecompileEcRecover => {
+                assign_exec_step!(self.precompile_ecrecover_gadget)
+            }
+            ExecutionState::PrecompileSha256 => {
+                assign_exec_step!(self.precompile_sha2_gadget)
+            }
+            ExecutionState::PrecompileRipemd160 => {
+                assign_exec_step!(self.precompile_ripemd_gadget)
+            }
+            ExecutionState::PrecompileIdentity => {
+                assign_exec_step!(self.precompile_identity_gadget)
+            }
+            ExecutionState::PrecompileBigModExp => {
+                assign_exec_step!(self.precompile_modexp_gadget)
+            }
+            ExecutionState::PrecompileBn256Add => {
+                assign_exec_step!(self.precompile_bn128add_gadget)
+            }
+            ExecutionState::PrecompileBn256ScalarMul => {
+                assign_exec_step!(self.precompile_bn128mul_gadget)
+            }
+            ExecutionState::PrecompileBn256Pairing => {
+                assign_exec_step!(self.precompile_bn128pairing_gadget)
+            }
+            ExecutionState::PrecompileBlake2f => {
+                assign_exec_step!(self.precompile_blake2f_gadget)
             }
         }
 

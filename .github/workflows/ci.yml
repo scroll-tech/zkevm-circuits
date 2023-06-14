@@ -42,12 +42,10 @@ jobs:
     name: Test Default
     needs: [runner]
     runs-on: ${{ matrix.os }}
-    concurrency: ${{ needs.runner.outputs.concurrency-group1 }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group2 }}
     strategy:
       matrix:
-        # We don't need to test across multiple platforms yet
-        # os: [ubuntu-latest, windows-latest, macOS-latest]
-        os: ${{ fromJSON(needs.runner.outputs.runner-matrix1) }}
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
 
     steps:
       - uses: actions/checkout@v2
@@ -61,7 +59,7 @@ jobs:
         uses: actions/setup-go@v3
         with:
           cache: false
-          go-version: ~1.18
+          go-version: ~1.19
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -93,12 +91,10 @@ jobs:
     name: Test Scroll
     needs: [runner]
     runs-on: ${{ matrix.os }}
-    concurrency: ${{ needs.runner.outputs.concurrency-group2 }}
+    concurrency: ${{ needs.runner.outputs.concurrency-group1 }}
     strategy:
       matrix:
-        # We don't need to test across multiple platforms yet
-        # os: [ubuntu-latest, windows-latest, macOS-latest]
-        os: ${{ fromJSON(needs.runner.outputs.runner-matrix2) }}
+        os: ${{ fromJSON(needs.runner.outputs.runner-matrix1) }}
 
     steps:
       - uses: actions/checkout@v2
@@ -112,7 +108,7 @@ jobs:
         uses: actions/setup-go@v3
         with:
           cache: false
-          go-version: ~1.18
+          go-version: ~1.19
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -133,6 +129,12 @@ jobs:
         with:
           command: test
           args: --verbose --release --all --features scroll --exclude integration-tests --exclude circuit-benchmarks --exclude testool
+      - name: Run heavy tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --verbose --release --features scroll --all --exclude integration-tests --exclude circuit-benchmarks serial_  -- --ignored
+
 
   build:
     needs: [skip_check]

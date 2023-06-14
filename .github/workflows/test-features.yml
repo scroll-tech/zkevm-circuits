@@ -1,0 +1,82 @@
+name: Test feature flags
+
+on:
+  merge_group:
+  pull_request:
+    types: [synchronize, opened, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+
+jobs:
+  skip_check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@v5
+        with:
+          cancel_others: 'true'
+          concurrent_skipping: 'same_content_newer'
+          paths_ignore: '["**/README.md"]'
+
+  test_features:
+    needs: [skip_check]
+    if: false &&
+      github.event.pull_request.draft == false &&
+      (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - zkevm-circuits
+        feature:
+          - default
+          - test
+          - test-circuits
+          - warn-unimplemented
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          override: false
+
+      # Go cache for building geth-utils
+      - name: Go cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ github.workflow }}-${{ matrix.crate }}-${{ matrix.feature }}-${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+
+      - name: Cargo cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ github.workflow }}-${{ matrix.crate }}-${{ matrix.feature }}-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: '${{ matrix.crate }}: ${{ matrix.feature }}'
+        run: |
+          GIT_ROOT=$(pwd)
+          cd /tmp
+          cargo new foobar
+          cd foobar
+          cp "${GIT_ROOT}/rust-toolchain" . || true
+          cargo add --path "${GIT_ROOT}/${{ matrix.crate }}" --features '${{ matrix.feature }}'
+          cd ../
+          rm -rf foobar
+
+  test_features_complete:
+    needs: [test_features]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo dummy

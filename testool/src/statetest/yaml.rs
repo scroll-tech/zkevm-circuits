@@ -137,12 +137,12 @@ impl<'a> YamlStateTestBuilder<'a> {
                 }
 
                 let data_refs = Self::parse_refs(&expect["indexes"]["data"])?;
-                let gparse_refs = Self::parse_refs(&expect["indexes"]["gas"])?;
+                let gas_refs = Self::parse_refs(&expect["indexes"]["gas"])?;
                 let value_refs = Self::parse_refs(&expect["indexes"]["value"])?;
                 let result = self.parse_accounts(&expect["result"])?;
 
                 if MainnetFork::in_network_range(&networks)? {
-                    expects.push((exception, data_refs, gparse_refs, value_refs, result));
+                    expects.push((exception, data_refs, gas_refs, value_refs, result));
                 }
             }
 
@@ -152,7 +152,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                 for (idx_gas, gas_limit) in gas_limit_s.iter().enumerate() {
                     for (idx_value, value) in value_s.iter().enumerate() {
                         // find the first result that fulfills the pattern
-                        for (exception, data_refs, parse_refs, value_refs, result) in &expects {
+                        for (exception, data_refs, gas_refs, value_refs, result) in &expects {
                             // check if this result can be applied to the current test
                             let mut data_label = String::new();
                             if let Some(label) = &data.1 {
@@ -164,7 +164,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                                 continue;
                             }
 
-                            if !parse_refs.contains_index(idx_gas) {
+                            if !gas_refs.contains_index(idx_gas) {
                                 continue;
                             }
 
@@ -386,6 +386,11 @@ impl<'a> YamlStateTestBuilder<'a> {
     ///   <range_lo>-<range_hi> >= Ref::Index(range_lo)..=RefIndex(range_hi)
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn parse_refs(yaml: &Yaml) -> Result<Refs> {
+        if yaml.is_badvalue() {
+            // It is considered as Any if missing this field.
+            return Ok(Refs(vec![Ref::Any]));
+        }
+
         // convert a unique element into a list
         let yamls = if yaml.is_array() {
             yaml.as_vec().context("as_vec")?.iter().collect()

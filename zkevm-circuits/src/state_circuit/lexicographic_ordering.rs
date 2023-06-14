@@ -1,4 +1,4 @@
-use super::{lookups, SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
+use super::{lookups, param::*, SortKeysConfig};
 use crate::{evm_circuit::param::N_BYTES_WORD, impl_expr, util::Expr, witness::Rw};
 use eth_types::{Field, ToBigEndian};
 use gadgets::binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig};

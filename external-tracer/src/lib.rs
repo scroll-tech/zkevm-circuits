@@ -21,24 +21,23 @@ pub struct TraceConfig {
     pub accounts: HashMap<Address, Account>,
     /// transaction
     pub transactions: Vec<Transaction>,
-    /// logger
+    /// logger config
     pub logger_config: LoggerConfig,
+    /// chain config
+    pub chain_config: Option<ChainConfig>,
 }
 
 /// Configuration structure for `logger.Config`
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct LoggerConfig {
     /// enable memory capture
-    #[serde(rename = "EnableMemory")]
     pub enable_memory: bool,
     /// disable stack capture
-    #[serde(rename = "DisableStack")]
     pub disable_stack: bool,
     /// disable storage capture
-    #[serde(rename = "DisableStorage")]
     pub disable_storage: bool,
     /// enable return data capture
-    #[serde(rename = "EnableReturnData")]
     pub enable_return_data: bool,
 }
 
@@ -58,6 +57,32 @@ impl LoggerConfig {
         Self {
             enable_memory: true,
             ..Self::default()
+        }
+    }
+}
+
+/// Configuration structure for `params.ChainConfig`
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ChainConfig {
+    /// Shanghai switch time (nil = no fork, 0 = already on shanghai)
+    pub shanghai_time: Option<u64>,
+    /// TerminalTotalDifficulty is the amount of total difficulty reached by
+    /// the network that triggers the consensus upgrade.
+    pub terminal_total_difficulty: Option<u64>,
+    /// TerminalTotalDifficultyPassed is a flag specifying that the network already
+    /// passed the terminal total difficulty. Its purpose is to disable legacy sync
+    /// even without having seen the TTD locally (safer long term).
+    pub terminal_total_difficulty_passed: bool,
+}
+
+impl ChainConfig {
+    /// Create a chain config for Shanghai fork.
+    pub fn shanghai() -> Self {
+        Self {
+            shanghai_time: Some(0),
+            terminal_total_difficulty: Some(0),
+            terminal_total_difficulty_passed: true,
         }
     }
 }
