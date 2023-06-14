@@ -70,6 +70,9 @@ pub(crate) struct CallOpGadget<F> {
     input_bytes_rlc: Cell<F>,  // input bytes to precompile call.
     output_bytes_rlc: Cell<F>, // output bytes from precompile call.
     return_bytes_rlc: Cell<F>, // bytes returned to caller from precompile call.
+    precompile_input_rws: Cell<F>,
+    precompile_output_rws: Cell<F>,
+    precompile_return_rws: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
@@ -207,21 +210,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_return_length.expr(),
             call_gadget.rd_address.length(),
         );
-        let precompile_memory_rws = select::expr(
-            call_gadget.cd_address.has_length(),
-            select::expr(
-                and::expr([
-                    call_gadget.is_success.expr(),
-                    call_gadget.rd_address.has_length(),
-                    not::expr(precompile_return_length_zero.expr()),
-                ]),
-                call_gadget.cd_address.length()
-                    + precompile_return_length.expr()
-                    + return_data_copy_size.min(),
-                call_gadget.cd_address.length(),
-            ),
-            0.expr(),
-        );
+        // FIXME: soundness problem
+        let precompile_input_rws = cb.query_cell();
+        let precompile_output_rws = cb.query_cell();
+        let precompile_return_rws = cb.query_cell();
 
         // Verify transfer only for CALL opcode in the successful case.  If value == 0,
         // skip the transfer (this is necessary for non-existing accounts, which
@@ -378,7 +370,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             0.expr(),
                             call_gadget.cd_address.length(),
                             input_bytes_rlc.expr(),
-                            call_gadget.cd_address.length(), // reads
+                            precompile_input_rws.expr(), // reads
                         ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
                         input_bytes_rlc
                     });
@@ -405,7 +397,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                                 0.expr(),
                                 precompile_return_length.expr(),
                                 output_bytes_rlc.expr(),
-                                precompile_return_length.expr(), // writes.
+                                precompile_output_rws.expr(), // writes.
                             ); // rwc_delta += `precompile_return_length` for precompile
                             output_bytes_rlc
                         },
@@ -435,7 +427,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                                 call_gadget.rd_address.offset(),
                                 return_data_copy_size.min(),
                                 return_bytes_rlc.expr(),
-                                return_data_copy_size.min(), // writes
+                                precompile_return_rws.expr(), // writes
                             ); // rwc_delta += `return_data_copy_size.min()` for precompile
                             return_bytes_rlc
                         },
@@ -449,7 +441,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         + transfer_rwc_delta
                         + is_callcode.expr()
                         + is_delegatecall.expr() * 2.expr()
-                        + precompile_memory_rws;
+                        + precompile_input_rws.expr()
+                        + precompile_output_rws.expr()
+                        + precompile_return_rws.expr();
 
                     cb.require_step_state_transition(StepStateTransition {
                         rw_counter: Delta(rw_counter_delta),
@@ -720,6 +714,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             input_bytes_rlc,
             output_bytes_rlc,
             return_bytes_rlc,
+            precompile_input_rws,
+            precompile_output_rws,
+            precompile_return_rws,
         }
     }
 
@@ -972,7 +969,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_length.to_scalar().unwrap(),
         )?;
 
-        let (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc) =
+        let (
+            input_bytes_rlc,
+            output_bytes_rlc,
+            return_bytes_rlc,
+            input_rws,
+            output_rws,
+            return_rws,
+        ) =
             if is_precompiled(&callee_address.to_address()) {
                 for (idx, idx_rw) in step.rw_indices.iter().enumerate() {
                     println!("{idx} {:?}", block.rws[*idx_rw])
@@ -997,7 +1001,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let return_bytes_begin_slot = return_bytes_begin - return_bytes_begin % 32;
                 let return_bytes_end_slot = return_bytes_end - return_bytes_end % 32;
                 let return_bytes_slot_count = max(callee_memory_end_slot, return_bytes_end_slot - return_bytes_begin_slot);
-                let copy_word_count = return_bytes_slot_count / 32 + 1;
+                let return_bytes_word_count = return_bytes_slot_count / 32 + 1;
                 // return data may not be aligned to 32 bytes. actual return data is [start_offset..end_offset]
                 let return_bytes_start_offset = return_bytes_begin - return_bytes_begin_slot;
                 let return_bytes_end_offset = return_bytes_end - return_bytes_begin_slot;
@@ -1017,7 +1021,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 println!(
                     "return_bytes copy [{},{})",
                     33 + rw_offset + input_bytes_word_count + output_bytes_word_count,
-                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count + copy_word_count * 2
+                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count + return_bytes_word_count * 2
                 );
 
                 let input_bytes_rw_start = 33 + rw_offset;
@@ -1033,7 +1037,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .flatten()
                     .collect::<Vec<_>>();
                 let return_bytes_rw_start = output_bytes_rw_start + output_bytes_word_count;
-                let return_bytes = (return_bytes_rw_start..return_bytes_rw_start + copy_word_count * 2)
+                let return_bytes = (return_bytes_rw_start..return_bytes_rw_start + return_bytes_word_count * 2)
                     .step_by(2)
                     .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
                     .map(|word| word.to_be_bytes())
@@ -1056,9 +1060,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .challenges()
                     .keccak_input()
                     .map(|randomness| rlc::value(return_bytes[return_bytes_start_offset..return_bytes_end_offset].iter().rev(), randomness));
-                (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc)
+                let input_rws = Value::known(F::from(input_bytes_word_count as u64));
+                let output_rws = Value::known(F::from(output_bytes_word_count as u64));
+                let return_rws = Value::known(F::from((return_bytes_word_count * 2) as u64));
+                (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc, input_rws, output_rws, return_rws)
             } else {
                 (
+                    Value::known(F::zero()),
+                    Value::known(F::zero()),
+                    Value::known(F::zero()),
                     Value::known(F::zero()),
                     Value::known(F::zero()),
                     Value::known(F::zero()),
@@ -1071,6 +1081,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, output_bytes_rlc)?;
         self.return_bytes_rlc
             .assign(region, offset, return_bytes_rlc)?;
+        self.precompile_input_rws
+            .assign(region, offset, input_rws)?;
+        self.precompile_output_rws
+            .assign(region, offset, output_rws)?;
+        self.precompile_return_rws
+            .assign(region, offset, return_rws)?;
 
         Ok(())
     }
