@@ -99,32 +99,26 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             value.expr(),
         );
 
+        // Read or update the left word.
+        cb.memory_lookup_word(
+            is_store.clone(),
+            address_word.addr_left(),
+            value_left.expr(),
+            value_left_prev.expr(),
+            None,
+        );
+
         cb.condition(is_mstore8.expr(), |cb| {
             // Check the byte that is written.
             let first_byte = value.cells[0].expr();
             mask.require_equal_unaligned_byte(cb, first_byte, &value_left);
-            // Update the memory word.
-            cb.memory_lookup_word(
-                1.expr(),
-                address_word.addr_left(),
-                value_left.expr(),
-                value_left_prev.expr(),
-                None,
-            );
         });
 
         cb.condition(is_not_mstore8, |cb| {
             // Check the bytes that are read or written from the left and right words.
             mask.require_equal_unaligned_word(cb, value.expr(), &value_left, &value_right);
 
-            // Read or update the left and right words.
-            cb.memory_lookup_word(
-                is_store.clone(),
-                address_word.addr_left(),
-                value_left.expr(),
-                value_left_prev.expr(),
-                None,
-            );
+            // Read or update the right word.
             cb.memory_lookup_word(
                 is_store.clone(),
                 address_word.addr_right(),
