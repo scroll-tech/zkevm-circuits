@@ -225,6 +225,7 @@ pub enum Rw {
         call_id: usize,
         memory_address: u64,
         value: Word,
+        value_prev: Word,
     },
     /// TxLog
     TxLog {
@@ -420,7 +421,9 @@ impl Rw {
     /// Return the memory word read or written, and its value before the operation.
     pub fn memory_word_pair(&self) -> (Word, Word) {
         match self {
-            Self::MemoryWord { value, .. } => (*value, *value),
+            Self::MemoryWord {
+                value, value_prev, ..
+            } => (*value, *value_prev),
             _ => unreachable!("{:?}", self),
         }
     }
@@ -693,6 +696,9 @@ impl Rw {
             Self::AccountStorage { value_prev, .. } => {
                 Some(rlc::value(&value_prev.to_le_bytes(), randomness))
             }
+            Self::MemoryWord { value_prev, .. } => {
+                Some(rlc::value(&value_prev.to_le_bytes(), randomness))
+            }
             Self::TxAccessListAccount { is_warm_prev, .. }
             | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
                 Some(F::from(*is_warm_prev as u64))
@@ -701,7 +707,6 @@ impl Rw {
             Self::Start { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
-            | Self::MemoryWord { .. }
             | Self::CallContext { .. }
             | Self::TxLog { .. }
             | Self::TxReceipt { .. } => None,
@@ -906,6 +911,7 @@ impl From<&operation::OperationContainer> for RwMap {
                         op.op().address().to_le_bytes()[..8].try_into().unwrap(),
                     ),
                     value: op.op().value(),
+                    value_prev: op.op().value_prev(),
                 })
                 .collect(),
         );

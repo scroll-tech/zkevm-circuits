@@ -209,11 +209,13 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                     0.expr(),
                     address_align.addr_left(),
                     value_left.expr(),
+                    value_left.expr(),
                     Some(src_id.expr()),
                 );
                 cb.memory_lookup_word(
                     0.expr(),
                     address_align.addr_right(),
+                    value_right.expr(),
                     value_right.expr(),
                     Some(src_id.expr()),
                 );

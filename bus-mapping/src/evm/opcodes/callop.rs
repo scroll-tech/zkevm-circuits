@@ -446,13 +446,15 @@ fn write_memory_words(
 
     // Add memory word write ops.
     for (i, chunk) in slot_bytes.chunks(32).enumerate() {
+        let chunk_prev = chunk; // TODO: get previous value
         state.push_op(
             exec_step,
             RW::WRITE,
-            MemoryWordOp::new(
+            MemoryWordOp::new_write(
                 call_id,
                 (begin_slot + 32 * i).into(),
                 Word::from_big_endian(chunk),
+                Word::from_big_endian(chunk_prev),
             ),
         );
     }

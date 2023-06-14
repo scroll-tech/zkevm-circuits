@@ -225,14 +225,21 @@ fn handle_copy(
         state.push_op(
             step,
             RW::READ,
-            MemoryWordOp::new(source.id, src_chunk_index.into(), src_word),
+            MemoryWordOp::new_read(source.id, src_chunk_index.into(), src_word),
         );
-        let dest_word = Word::from_big_endian(&write_chunk);
+
+        let write_chunk_prev = write_chunk; // TODO: get previous value
+
         // write memory
         state.push_op(
             step,
             RW::WRITE,
-            MemoryWordOp::new(destination.id, dst_chunk_index.into(), dest_word),
+            MemoryWordOp::new_write(
+                destination.id,
+                dst_chunk_index.into(),
+                Word::from_big_endian(&write_chunk),
+                Word::from_big_endian(&write_chunk_prev),
+            ),
         );
         dst_chunk_index += 32;
         src_chunk_index += 32;

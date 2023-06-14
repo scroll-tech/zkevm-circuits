@@ -244,7 +244,11 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
     ) -> Result<(), Error> {
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::READ, MemoryWordOp::new(call_id, address, value));
+        self.push_op(
+            step,
+            RW::READ,
+            MemoryWordOp::new_read(call_id, address, value),
+        );
         Ok(())
     }
 
@@ -276,10 +280,14 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         address: MemoryAddress, //Caution: make sure this address = slot passing
         value: Word,
-        // TODO: take value_prev as parameter.
+        value_prev: Word,
     ) -> Result<(), Error> {
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::WRITE, MemoryWordOp::new(call_id, address, value));
+        self.push_op(
+            step,
+            RW::WRITE,
+            MemoryWordOp::new_write(call_id, address, value, value_prev),
+        );
         Ok(())
     }
 
@@ -1678,7 +1686,8 @@ impl<'a> CircuitInputStateRef<'a> {
         // memory word writes to destination word
         for chunk in code_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(&chunk);
-            self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
+            let dest_word_prev = dest_word; // TODO: get previous value
+            self.memory_write_word(exec_step, chunk_index.into(), dest_word, dest_word_prev)?;
             chunk_index = chunk_index + 32;
         }
 
@@ -1736,16 +1745,18 @@ impl<'a> CircuitInputStateRef<'a> {
         chunk_index = dst_begin_slot;
         for chunk in calldata_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(&chunk);
+            let dest_word_prev = dest_word; // TODO: get previous value
+
             // memory word reads if it is an internal call
             if !is_root {
                 self.push_op(
                     exec_step,
                     RW::READ,
-                    MemoryWordOp::new(self.call()?.caller_id, chunk_index.into(), dest_word),
+                    MemoryWordOp::new_read(self.call()?.caller_id, chunk_index.into(), dest_word),
                 );
             }
 
-            self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
+            self.memory_write_word(exec_step, chunk_index.into(), dest_word, dest_word_prev)?;
             chunk_index = chunk_index + 32;
         }
 
@@ -1817,7 +1828,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.push_op(
                 exec_step,
                 RW::READ,
-                MemoryWordOp::new(
+                MemoryWordOp::new_read(
                     caller_id,
                     src_chunk_index.into(),
                     Word::from_big_endian(read_chunk),
@@ -1829,13 +1840,16 @@ impl<'a> CircuitInputStateRef<'a> {
             );
             src_chunk_index = src_chunk_index + 32;
 
+            let write_chunk_prev = write_chunk; // TODO: get previous value
+
             self.push_op(
                 exec_step,
                 RW::WRITE,
-                MemoryWordOp::new(
+                MemoryWordOp::new_write(
                     current_call_id,
                     dst_chunk_index.into(),
                     Word::from_big_endian(write_chunk),
+                    Word::from_big_endian(write_chunk_prev),
                 ),
             );
             println!(
@@ -1940,7 +1954,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.push_op(
                 exec_step,
                 RW::READ,
-                MemoryWordOp::new(
+                MemoryWordOp::new_read(
                     last_callee_id,
                     src_chunk_index.into(),
                     Word::from_big_endian(read_chunk),
@@ -1952,13 +1966,16 @@ impl<'a> CircuitInputStateRef<'a> {
             );
             src_chunk_index = src_chunk_index + 32;
 
+            let write_chunk_prev = write_chunk; // TODO: get previous value
+
             self.push_op(
                 exec_step,
                 RW::WRITE,
-                MemoryWordOp::new(
+                MemoryWordOp::new_write(
                     current_call_id,
                     dst_chunk_index.into(),
                     Word::from_big_endian(write_chunk),
+                    Word::from_big_endian(write_chunk_prev),
                 ),
             );
             println!(

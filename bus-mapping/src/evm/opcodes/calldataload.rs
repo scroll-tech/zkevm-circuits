@@ -111,12 +111,12 @@ impl Opcode for Calldataload {
                 state.push_op(
                     &mut exec_step,
                     RW::READ,
-                    MemoryWordOp::new(caller_id, slot.into(), addr_left_Word),
+                    MemoryWordOp::new_read(caller_id, slot.into(), addr_left_Word),
                 );
                 state.push_op(
                     &mut exec_step,
                     RW::READ,
-                    MemoryWordOp::new(caller_id, (slot + 32).into(), addr_right_Word),
+                    MemoryWordOp::new_read(caller_id, (slot + 32).into(), addr_right_Word),
                 );
             }
 
@@ -313,11 +313,11 @@ mod calldataload_tests {
             vec![
                 (
                     RW::READ,
-                    MemoryWordOp::new(caller_id, slot.into(), addr_left_Word,),
+                    MemoryWordOp::new_read(caller_id, slot.into(), addr_left_Word,),
                 ),
                 (
                     RW::READ,
-                    MemoryWordOp::new(caller_id, (slot + 32).into(), addr_right_Word,),
+                    MemoryWordOp::new_read(caller_id, (slot + 32).into(), addr_right_Word,),
                 ),
             ]
         );

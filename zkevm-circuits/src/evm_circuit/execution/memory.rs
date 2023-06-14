@@ -104,7 +104,13 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             let first_byte = value.cells[0].expr();
             mask.require_equal_unaligned_byte(cb, first_byte, &value_left);
             // Update the memory word.
-            cb.memory_lookup_word(1.expr(), address_word.addr_left(), value_left.expr(), None);
+            cb.memory_lookup_word(
+                1.expr(),
+                address_word.addr_left(),
+                value_left.expr(),
+                value_left_prev.expr(),
+                None,
+            );
         });
 
         cb.condition(is_not_mstore8, |cb| {
@@ -116,12 +122,14 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
                 is_store.clone(),
                 address_word.addr_left(),
                 value_left.expr(),
+                value_left_prev.expr(),
                 None,
             );
             cb.memory_lookup_word(
                 is_store.clone(),
                 address_word.addr_right(),
                 value_right.expr(),
+                value_right_prev.expr(),
                 None,
             );
         });

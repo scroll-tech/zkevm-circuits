@@ -35,9 +35,10 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let slot = offset_u64 - shift;
         println!("shift {}, slot {}", shift, slot);
 
-        let (left_word, right_word) = {
+        let (left_word, left_word_prev, right_word, right_word_prev) = {
             // Get the memory chunk that contains the word, starting at an aligned slot address.
-            let mut slots_content = state.call_ctx()?.memory.read_chunk(slot.into(), 64.into());
+            let slots_prev = state.call_ctx()?.memory.read_chunk(slot.into(), 64.into());
+            let mut slots_content = slots_prev.clone();
 
             // reconstruct memory with value
             match IS_MSTORE8 {
@@ -53,17 +54,24 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
 
             // after memory construction, we can get the left and right words to fill bus mapping.
             (
-                Word::from_big_endian(&slots_content[..32]),
-                Word::from_big_endian(&slots_content[32..64]),
+                Word::from_big_endian(&slots_content[..32]),   // left
+                Word::from_big_endian(&slots_prev[..32]),      // left previous
+                Word::from_big_endian(&slots_content[32..64]), // right
+                Word::from_big_endian(&slots_prev[32..64]),    // right previous
             )
         };
 
         // memory write left word for mstore8 and mstore.
-        state.memory_write_word(&mut exec_step, slot.into(), left_word)?;
+        state.memory_write_word(&mut exec_step, slot.into(), left_word, left_word_prev)?;
 
         if !IS_MSTORE8 {
             // memory write right word for mstore
-            state.memory_write_word(&mut exec_step, (slot + 32).into(), right_word)?;
+            state.memory_write_word(
+                &mut exec_step,
+                (slot + 32).into(),
+                right_word,
+                right_word_prev,
+            )?;
 
             // TODO: edge case: if shift = 0, we could skip the right word?
         }
@@ -169,11 +177,21 @@ mod mstore_tests {
             vec![
                 (
                     RW::WRITE,
-                    MemoryWordOp::new(1, MemoryAddress(slot), Word::from(0x1234u64))
+                    MemoryWordOp::new_write(
+                        1,
+                        MemoryAddress(slot),
+                        Word::from(0x1234u64),
+                        Word::zero()
+                    )
                 ),
                 (
                     RW::WRITE,
-                    MemoryWordOp::new(1, MemoryAddress(slot + 32), Word::from(0x00))
+                    MemoryWordOp::new_write(
+                        1,
+                        MemoryAddress(slot + 32),
+                        Word::from(0x00),
+                        Word::zero()
+                    )
                 ),
             ]
         )
@@ -234,7 +252,7 @@ mod mstore_tests {
             (memory_word_op.rw(), memory_word_op.op()),
             (
                 RW::WRITE,
-                &MemoryWordOp::new(1, MemoryAddress(slot), Word::from(0x34))
+                &MemoryWordOp::new_write(1, MemoryAddress(slot), Word::from(0x34), Word::zero())
             )
         )
     }

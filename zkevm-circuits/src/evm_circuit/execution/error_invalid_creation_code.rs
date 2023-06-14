@@ -53,7 +53,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
 
         let address_word = MemoryWordAddress::construct(cb, offset.clone());
         // lookup memory for first word
-        cb.memory_lookup_word(0.expr(), address_word.addr_left(), value_left.expr(), None);
+        cb.memory_lookup_word(
+            0.expr(),
+            address_word.addr_left(),
+            value_left.expr(),
+            value_left.expr(),
+            None,
+        );
         // let first_byte = value_left.cells[address_word.shift()];
         // constrain first byte is 0xef
         let is_first_byte_invalid = IsEqualGadget::construct(cb, first_byte.expr(), 0xef.expr());
