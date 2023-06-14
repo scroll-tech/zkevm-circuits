@@ -100,7 +100,7 @@ impl Opcode for Calldataload {
 
                 slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize + 32)]);
 
-                let addr_left_Word = Word::from_big_endian(&slot_bytes);
+                let addr_left_Word = Word::from_little_endian(&slot_bytes);
                 // TODO: edge case: if shift = 0, skip to read right word ?
                 let mut word_right_bytes: [u8; 32] = [0; 32];
                 word_right_bytes

@@ -96,15 +96,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
-        self.memory_address.assign(
-            region,
-            offset,
-            Some(
-                memory_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        self.memory_address
+            .assign(region, offset, memory_offset.as_u64())?;
 
         self.length.assign(
             region,

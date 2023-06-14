@@ -29,8 +29,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryGadget<F> {
     same_context: SameContextGadget<F>,
-    //address: MemoryAddress<F>,
     address: MemoryWordAddress<F>,
+    mask: MemoryMask<F>,
     // consider move to MemoryWordAddress ?
     /// The value poped from or pushed to the stack.
     value: Word<F>,
@@ -45,7 +45,6 @@ pub(crate) struct MemoryGadget<F> {
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     is_mload: IsEqualGadget<F>,
     is_mstore8: IsEqualGadget<F>,
-    mask: MemoryMask<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
@@ -111,6 +110,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         cb.condition(is_not_mstore8, |cb| {
             // Check the bytes that are read or written from the left and right words.
             mask.require_equal_unaligned_word(cb, value.expr(), &value_left, &value_right);
+
             // Read or update the left and right words.
             cb.memory_lookup_word(
                 is_store.clone(),
@@ -175,15 +175,9 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // Inputs/Outputs
         let [address, value] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
-        self.address.assign(
-            region,
-            offset,
-            Some(
-                address.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+        let address = address.as_u64();
+
+        self.address.assign(region, offset, address)?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
@@ -202,7 +196,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             F::from(OpcodeId::MSTORE8.as_u64()),
         )?;
 
-        let shift = address.as_u64() % 32;
+        let shift = address % 32;
         self.mask
             .assign(region, offset, shift, is_mstore8 == F::one())?;
 
@@ -211,7 +205,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            [address.as_u64() + if is_mstore8 == F::one() { 1 } else { 32 }],
+            [address + if is_mstore8 == F::one() { 1 } else { 32 }],
         )?;
 
         // assign value_left value_right word

@@ -459,25 +459,21 @@ impl<F: Field> MemoryWordAddress<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        bytes: Option<[u8; N_BYTES_MEMORY_ADDRESS]>,
+        address: u64,
     ) -> Result<(), Error> {
-        // calculate bytes value to u64 and get shift, slot
-        // make sure bytes order is correct
-        let address_u64 = U256::from_little_endian(&bytes.unwrap()).as_u64();
+        let address_bytes: [u8; 5] = address.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
+            .try_into()
+            .unwrap();
 
         for (i, bit) in self.address_first_bits.iter().enumerate() {
-            bit.assign(
-                region,
-                offset,
-                Value::known(F::from((address_u64 >> i) & 1)),
-            )?;
+            bit.assign(region, offset, Value::known(F::from((address >> i) & 1)))?;
         }
 
-        let shift = address_u64 % 32;
-        let slot = address_u64 - shift;
+        let shift = address % 32;
+        let slot = address - shift;
         self.slot
             .assign(region, offset, Value::known(F::from(slot)))?;
-        self.address.assign(region, offset, bytes)?;
+        self.address.assign(region, offset, Some(address_bytes))?;
         Ok(())
     }
 }
@@ -582,6 +578,12 @@ impl<F: Field> MemoryMask<F> {
         cb.require_equal("W[0] * X³¹⁻ˢʰⁱᶠᵗ = B(X)", byte * self.x31_shift.clone(), b);
     }
 
+    /// Check that a `value` word misaligned by `shift` matches the left and right aligned words, on
+    /// the range where they overlap.
+    ///
+    /// This function converts the byte order to match MLOAD/MSTORE/CALLDATALOAD semantics.
+    /// `value_rlc` is MSB-first from the stack, while `value_left` and `value_right` are LSB-first
+    /// from zkEVM internals.
     pub(crate) fn require_equal_unaligned_word(
         &self,
         cb: &mut ConstraintBuilder<F>,
@@ -686,6 +688,25 @@ impl<F: Field> MemoryMask<F> {
             }
         }
         Ok(())
+    }
+
+    /// Get the bytes of an unaligned word from the left and right words that contain it at `shift`.
+    ///
+    /// This function converts the byte order to match MLOAD/MSTORE/CALLDATALOAD semantics.
+    /// The returned word is MSB-first for the stack, while `value_left` and `value_right` are
+    /// LSB-first from zkEVM internals.
+    pub(crate) fn make_unaligned_word(
+        shift: u64,
+        left: &[u8; N_BYTES_WORD],
+        right: &[u8; N_BYTES_WORD],
+    ) -> [u8; N_BYTES_WORD] {
+        let shift = shift as usize;
+
+        let mut word = [0u8; N_BYTES_WORD];
+        word[..N_BYTES_WORD - shift].copy_from_slice(&left[shift..]);
+        word[N_BYTES_WORD - shift..].copy_from_slice(&right[0..shift]);
+        word.reverse();
+        word
     }
 }
 
