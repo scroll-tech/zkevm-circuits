@@ -120,6 +120,9 @@ impl Transaction {
 
     /// Sign data
     pub fn sign_data(&self) -> Result<SignData, Error> {
+        if self.r.is_zero() && self.s.is_zero() && self.v == 0 {
+            return Ok(SignData::default())
+        }
         let sig_r_le = self.r.to_le_bytes();
         let sig_s_le = self.s.to_le_bytes();
         let sig_r = ct_option_ok_or(
