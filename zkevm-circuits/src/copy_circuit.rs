@@ -57,6 +57,8 @@ pub struct CopyCircuitConfig<F> {
     pub value: Column<Advice>,
     /// The word value for memory lookup.
     pub value_word_rlc: Column<Advice>,
+    /// The word value for memory lookup, before the write.
+    pub value_word_rlc_prev: Column<Advice>,
     /// The index of a word [0..31].
     pub word_index: Column<Advice>,
     /// address for slot memory src or dest, review if can reuse `addr` .
@@ -142,6 +144,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let is_last = meta.advice_column();
         let value = meta.advice_column_in(SecondPhase);
         let value_word_rlc = meta.advice_column_in(SecondPhase);
+        let value_word_rlc_prev = meta.advice_column_in(SecondPhase);
         let rlc_acc_read = meta.advice_column_in(SecondPhase);
         let rlc_acc_write = meta.advice_column_in(SecondPhase);
 
@@ -588,7 +591,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 0.expr(),
                 0.expr(),
                 meta.query_advice(value_word_rlc, Rotation::cur()),
-                0.expr(),
+                meta.query_advice(value_word_rlc_prev, Rotation::cur()),
                 0.expr(),
                 0.expr(),
             ]
@@ -665,6 +668,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             is_last,
             value,
             value_word_rlc,
+            value_word_rlc_prev,
             rlc_acc_read,
             rlc_acc_write,
             word_index,
@@ -751,6 +755,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.is_last,
                 self.value,
                 self.value_word_rlc,
+                self.value_word_rlc_prev,
                 self.rlc_acc_read,
                 self.rlc_acc_write,
                 self.value_acc,
@@ -870,7 +875,8 @@ impl<F: Field> CopyCircuitConfig<F> {
             |mut region| {
                 region.name_column(|| "is_last", self.is_last);
                 region.name_column(|| "value", self.value);
-                region.name_column(|| "value_wrod_rlc", self.value_word_rlc);
+                region.name_column(|| "value_word_rlc", self.value_word_rlc);
+                region.name_column(|| "value_word_rlc_prev", self.value_word_rlc_prev);
                 region.name_column(|| "word_index", self.word_index);
                 region.name_column(|| "addr_slot", self.addr_slot);
                 region.name_column(|| "mask", self.mask);
@@ -1012,10 +1018,17 @@ impl<F: Field> CopyCircuitConfig<F> {
             *offset,
             || Value::known(F::zero()),
         )?;
-        // value_wrod_rlc
+        // value_word_rlc
         region.assign_advice(
-            || format!("assign value_wrod_rlc {}", *offset),
+            || format!("assign value_word_rlc {}", *offset),
             self.value_word_rlc,
+            *offset,
+            || Value::known(F::zero()),
+        )?;
+        // value_word_rlc_prev
+        region.assign_advice(
+            || format!("assign value_word_rlc_prev {}", *offset),
+            self.value_word_rlc_prev,
             *offset,
             || Value::known(F::zero()),
         )?;

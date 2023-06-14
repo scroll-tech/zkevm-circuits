@@ -1519,7 +1519,7 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 12];
 
 impl CopyTable {
     /// Construct a new CopyTable
@@ -1565,6 +1565,7 @@ impl CopyTable {
         println!("rlc_acc of bytecode bytes {:?} ", rlc_acc);
         let mut value_word_read_rlc = Value::known(F::zero());
         let mut value_word_write_rlc = Value::known(F::zero());
+        let mut value_word_write_rlc_prev = Value::known(F::zero());
         let mut value_acc = Value::known(F::zero());
         let mut rlc_acc_read = Value::known(F::zero());
         let mut rlc_acc_write = Value::known(F::zero());
@@ -1658,13 +1659,14 @@ impl CopyTable {
                     if step_idx / 64 > 0 && step_idx % 64 == 1 {
                         // reset
                         value_word_write_rlc = Value::known(F::zero());
-                        value_word_write_rlc = value_word_write_rlc * challenges.evm_word()
-                            + Value::known(F::from(copy_step.value as u64));
+                        value_word_write_rlc_prev = Value::known(F::zero());
                         write_addr_slot += 32;
-                    } else {
-                        value_word_write_rlc = value_word_write_rlc * challenges.evm_word()
-                            + Value::known(F::from(copy_step.value as u64));
                     }
+                    value_word_write_rlc = value_word_write_rlc * challenges.evm_word()
+                        + Value::known(F::from(copy_step.value as u64));
+                    // TODO: use value_prev.
+                    value_word_write_rlc_prev = value_word_write_rlc_prev * challenges.evm_word()
+                        + Value::known(F::from(copy_step.value as u64));
                 }
             }
 
@@ -1791,6 +1793,14 @@ impl CopyTable {
                             value_word_write_rlc
                         },
                         "value_word_rlc",
+                    ),
+                    (
+                        if is_read_step {
+                            value_word_read_rlc // Read does not change the value.
+                        } else {
+                            value_word_write_rlc_prev
+                        },
+                        "value_word_rlc_prev",
                     ),
                     (rlc_acc_read, "rlc_acc_read"),
                     (rlc_acc_write, "rlc_acc_write"),
