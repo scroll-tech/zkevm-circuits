@@ -220,7 +220,7 @@ fn gen_sha3_data() -> CircuitInputBuilder {
         block.clone(),
         CircuitsParams {
             max_rws: 2000,
-            max_copy_rows: 0x200 * 2 + 2,
+            max_copy_rows: 0x250 * 2 + 2,
             ..Default::default()
         },
     )
@@ -361,7 +361,7 @@ fn copy_circuit_invalid_calldatacopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block),
-        vec!["Memory lookup", "Tx calldata lookup"],
+        vec!["Memory word lookup", "Tx calldata lookup"],
     );
 }
 
@@ -377,7 +377,7 @@ fn copy_circuit_invalid_codecopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(10, block),
-        vec!["Memory lookup", "Bytecode lookup"],
+        vec!["Memory word lookup", "Bytecode lookup"],
     );
 }
 
@@ -393,7 +393,7 @@ fn copy_circuit_invalid_extcodecopy() {
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block),
-        vec!["Memory lookup", "Bytecode lookup"],
+        vec!["Memory word lookup", "Bytecode lookup"],
     );
 }
 
@@ -409,7 +409,7 @@ fn copy_circuit_invalid_sha3() {
 
     assert_error_matches(
         test_copy_circuit_from_block(14, block),
-        vec!["Memory lookup"],
+        vec!["Memory word lookup"],
     );
 }
 
@@ -425,7 +425,7 @@ fn copy_circuit_invalid_tx_log() {
 
     assert_error_matches(
         test_copy_circuit_from_block(10, block),
-        vec!["Memory lookup", "TxLog lookup"],
+        vec!["Memory word lookup", "TxLog word lookup"],
     );
 }
 
