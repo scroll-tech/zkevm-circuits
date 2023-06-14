@@ -220,7 +220,7 @@ fn gen_sha3_data() -> CircuitInputBuilder {
         block.clone(),
         CircuitsParams {
             max_rws: 2000,
-            max_copy_rows: 0x200 * 2 + 2,
+            max_copy_rows: 0x250 * 2 + 2,
             ..Default::default()
         },
     )
