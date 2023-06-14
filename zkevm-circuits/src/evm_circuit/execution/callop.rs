@@ -1,3 +1,4 @@
+use std::cmp::{max, min};
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -24,9 +25,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, precompile::is_precompiled};
-use eth_types::{
-    evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToLittleEndian, ToScalar, U256,
-};
+use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
@@ -975,46 +974,88 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc) =
             if is_precompiled(&callee_address.to_address()) {
-                let input_length = cd_length.as_usize();
-                let (input_bytes_start, input_bytes_end) =
-                    (33usize + rw_offset, 33usize + rw_offset + input_length);
-                let [output_bytes_start, output_bytes_end, return_bytes_start, return_bytes_end] =
-                    if input_length > 0 {
-                        let (output_start, output_end) = (
-                            input_bytes_end,
-                            input_bytes_end + precompile_return_length.as_usize(),
-                        );
-                        [
-                            output_start,
-                            output_end,
-                            output_end,
-                            output_end + rd_length.min(precompile_return_length).as_usize(),
-                        ]
-                    } else {
-                        [input_bytes_end; 4]
-                    };
-                let input_bytes: Vec<u8> = (input_bytes_start..input_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
-                let output_bytes: Vec<u8> = (output_bytes_start..output_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
-                let return_bytes: Vec<u8> = (return_bytes_start..return_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
+                for (idx, idx_rw) in step.rw_indices.iter().enumerate() {
+                    println!("{idx} {:?}", block.rws[*idx_rw])
+                }
+
+                let input_bytes_begin = cd_offset.as_usize();
+                let input_bytes_end = cd_offset.as_usize() + cd_length.as_usize();
+                let input_bytes_begin_slot = input_bytes_begin - input_bytes_begin % 32;
+                let input_bytes_end_slot = input_bytes_end - input_bytes_end % 32;
+                let input_bytes_word_count = (input_bytes_end_slot - input_bytes_begin_slot + 32) / 32;
+                // input may not be aligned to 32 bytes. actual input is [start_offset..end_offset]
+                let input_bytes_start_offset = input_bytes_begin - input_bytes_begin_slot;
+                let input_bytes_end_offset = input_bytes_end - input_bytes_begin_slot;
+
+                let output_bytes_length = precompile_return_length.as_usize();
+                let output_bytes_word_count = (output_bytes_length + 31) / 32;
+
+                let return_bytes_length = min(rd_length.as_usize(), output_bytes_length);
+                let callee_memory_end_slot = return_bytes_length - return_bytes_length % 32;
+                let return_bytes_begin = rd_offset.as_usize();
+                let return_bytes_end = return_bytes_begin + return_bytes_length;
+                let return_bytes_begin_slot = return_bytes_begin - return_bytes_begin % 32;
+                let return_bytes_end_slot = return_bytes_end - return_bytes_end % 32;
+                let return_bytes_slot_count = max(callee_memory_end_slot, return_bytes_end_slot - return_bytes_begin_slot);
+                let copy_word_count = return_bytes_slot_count / 32 + 1;
+                // return data may not be aligned to 32 bytes. actual return data is [start_offset..end_offset]
+                let return_bytes_start_offset = return_bytes_begin - return_bytes_begin_slot;
+                let return_bytes_end_offset = return_bytes_end - return_bytes_begin_slot;
+
+
+                println!("rw_offset {rw_offset}");
+                println!(
+                    "input_bytes rws [{},{})",
+                    33 + rw_offset,
+                    33 + rw_offset + input_bytes_word_count
+                );
+                println!(
+                    "output_bytes rws [{},{})",
+                    33 + rw_offset + input_bytes_word_count,
+                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count
+                );
+                println!(
+                    "return_bytes copy [{},{})",
+                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count,
+                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count + copy_word_count * 2
+                );
+
+                let input_bytes_rw_start = 33 + rw_offset;
+                let input_bytes = (input_bytes_rw_start..input_bytes_rw_start + input_bytes_word_count)
+                    .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                    .map(|word| word.to_be_bytes())
+                    .flatten()
+                    .collect::<Vec<_>>();
+                let output_bytes_rw_start = input_bytes_rw_start + input_bytes_word_count;
+                let output_bytes = (output_bytes_rw_start..output_bytes_rw_start + output_bytes_word_count)
+                    .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                    .map(|word| word.to_be_bytes())
+                    .flatten()
+                    .collect::<Vec<_>>();
+                let return_bytes_rw_start = output_bytes_rw_start + output_bytes_word_count;
+                let return_bytes = (return_bytes_rw_start..return_bytes_rw_start + copy_word_count * 2)
+                    .step_by(2)
+                    .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                    .map(|word| word.to_be_bytes())
+                    .flatten()
+                    .collect::<Vec<_>>();
+
+                println!("input_bytes: {:x?}", input_bytes);
+                println!("output_bytes: {:x?}", output_bytes);
+                println!("return_bytes: {:x?}", return_bytes);
 
                 let input_bytes_rlc = region
                     .challenges()
                     .keccak_input()
-                    .map(|randomness| rlc::value(input_bytes.iter().rev(), randomness));
+                    .map(|randomness| rlc::value(input_bytes[input_bytes_start_offset..input_bytes_end_offset].iter().rev(), randomness));
                 let output_bytes_rlc = region
                     .challenges()
                     .keccak_input()
-                    .map(|randomness| rlc::value(output_bytes.iter().rev(), randomness));
+                    .map(|randomness| rlc::value(output_bytes[..output_bytes_length].iter().rev(), randomness));
                 let return_bytes_rlc = region
                     .challenges()
                     .keccak_input()
-                    .map(|randomness| rlc::value(return_bytes.iter().rev(), randomness));
+                    .map(|randomness| rlc::value(return_bytes[return_bytes_start_offset..return_bytes_end_offset].iter().rev(), randomness));
                 (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc)
             } else {
                 (
