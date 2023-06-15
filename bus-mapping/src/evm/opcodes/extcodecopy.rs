@@ -189,7 +189,7 @@ mod extcodecopy_tests {
         geth_types::GethData,
         Bytecode, Bytes, ToWord, Word, U256,
     };
-    use mock::TestContext;
+    use mock::{test_ctx::LoggerConfig, TestContext};
 
     fn test_ok(
         code_ext: Bytes,
@@ -226,7 +226,7 @@ mod extcodecopy_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<3, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new_with_logger_config(
             None,
             |accs| {
                 accs[0]
@@ -243,6 +243,7 @@ mod extcodecopy_tests {
                 txs[0].to(accs[0].address).from(accs[2].address);
             },
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();

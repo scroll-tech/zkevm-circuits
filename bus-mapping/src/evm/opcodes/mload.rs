@@ -34,7 +34,6 @@ impl Opcode for Mload {
         let offset = stack_value_read.as_u64();
         let shift = offset % 32;
         let slot = offset - shift;
-        println!("shift {}, slot {}", shift, slot);
 
         let (left_word, right_word) = {
             // Get the memory chunk that contains the word, starting at an aligned slot address.

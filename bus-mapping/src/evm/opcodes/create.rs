@@ -406,7 +406,10 @@ mod tests {
     use super::*;
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::RW};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word};
-    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
+    use mock::{
+        test_ctx::{helpers::account_0_code_account_1_no_code, LoggerConfig},
+        TestContext,
+    };
 
     #[test]
     fn test_create_address_collision_error() {
@@ -439,13 +442,14 @@ mod tests {
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             |mut txs, accs| {
                 txs[0].from(accs[1].address).to(accs[0].address);
             },
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();

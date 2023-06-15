@@ -33,12 +33,10 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let offset_u64 = offset.as_u64() as usize;
         let shift = offset_u64 % 32;
         let slot = offset_u64 - shift;
-        println!("shift {}, slot {}", shift, slot);
 
-        let (left_word, left_word_prev, right_word, right_word_prev) = {
+        let (left_word, right_word) = {
             // Get the memory chunk that contains the word, starting at an aligned slot address.
-            let slots_prev = state.call_ctx()?.memory.read_chunk(slot.into(), 64.into());
-            let mut slots_content = slots_prev.clone();
+            let mut slots_content = state.call_ctx()?.memory.read_chunk(slot.into(), 64.into());
 
             // reconstruct memory with value
             match IS_MSTORE8 {
@@ -55,47 +53,23 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
             // after memory construction, we can get the left and right words to fill bus mapping.
             (
                 Word::from_big_endian(&slots_content[..32]),   // left
-                Word::from_big_endian(&slots_prev[..32]),      // left previous
                 Word::from_big_endian(&slots_content[32..64]), // right
-                Word::from_big_endian(&slots_prev[32..64]),    // right previous
             )
         };
-
-        // memory write left word for mstore8 and mstore.
-        state.memory_write_word(&mut exec_step, slot.into(), left_word, left_word_prev)?;
-
-        if !IS_MSTORE8 {
-            // memory write right word for mstore
-            state.memory_write_word(
-                &mut exec_step,
-                (slot + 32).into(),
-                right_word,
-                right_word_prev,
-            )?;
-
-            // TODO: edge case: if shift = 0, we could skip the right word?
-        }
-
-        // reconstruction
 
         let minimal_length = offset_u64 + if IS_MSTORE8 { 1 } else { 32 };
         state.call_ctx_mut()?.memory.extend_at_least(minimal_length);
 
-        match IS_MSTORE8 {
-            true => {
-                let val = *value.to_le_bytes().first().unwrap();
-                state.call_ctx_mut()?.memory.0[offset_u64] = val;
-            }
-            false => {
-                let bytes = value.to_be_bytes();
-                state.call_ctx_mut()?.memory[offset_u64..offset_u64 + 32].copy_from_slice(&bytes);
-            }
+        // memory write left word for mstore8 and mstore.
+        state.memory_write_word(&mut exec_step, slot.into(), left_word)?;
+
+        if !IS_MSTORE8 {
+            // memory write right word for mstore
+            state.memory_write_word(&mut exec_step, (slot + 32).into(), right_word)?;
+
+            // TODO: edge case: if shift = 0, we could skip the right word?
         }
 
-        println!(
-            "after mstore memory length {}",
-            state.call_ctx_mut()?.memory.0.len()
-        );
         Ok(vec![exec_step])
     }
 }
@@ -115,7 +89,7 @@ mod mstore_tests {
         Word, U256,
     };
     use itertools::Itertools;
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -129,11 +103,12 @@ mod mstore_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();

@@ -179,7 +179,7 @@ mod calldatacopy_tests {
 
     use mock::{
         generate_mock_call_bytecode,
-        test_ctx::{helpers::*, TestContext},
+        test_ctx::{helpers::*, LoggerConfig, TestContext},
         MockCallBytecodeParams,
     };
     use pretty_assertions::assert_eq;
@@ -215,7 +215,7 @@ mod calldatacopy_tests {
         });
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<3, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new_with_logger_config(
             None,
             |accs| {
                 accs[0].address(addr_b).code(code_b);
@@ -228,6 +228,7 @@ mod calldatacopy_tests {
                 txs[0].to(accs[1].address).from(accs[2].address);
             },
             |block, _tx| block,
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();
@@ -362,7 +363,7 @@ mod calldatacopy_tests {
         });
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<3, 1>::new(
+        let block: GethData = TestContext::<3, 1>::new_with_logger_config(
             None,
             |accs| {
                 accs[0].address(addr_b).code(code_b);
@@ -375,6 +376,7 @@ mod calldatacopy_tests {
                 txs[0].to(accs[1].address).from(accs[2].address);
             },
             |block, _tx| block,
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();
@@ -398,7 +400,7 @@ mod calldatacopy_tests {
         };
 
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             |mut txs, accs| {
@@ -408,6 +410,7 @@ mod calldatacopy_tests {
                     .input(calldata.clone().into());
             },
             |block, _tx| block,
+            LoggerConfig::enable_memory(),
         )
         .unwrap()
         .into();

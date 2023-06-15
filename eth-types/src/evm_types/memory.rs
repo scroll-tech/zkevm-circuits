@@ -6,7 +6,7 @@ use core::{
 };
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
-use std::fmt;
+use std::{cmp, fmt};
 
 /// Represents a `MemoryAddress` of the EVM.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
@@ -313,6 +313,23 @@ impl Memory {
             chunk[..length.0].to_vec()
         };
         chunk
+    }
+
+    /// Write a chunk of memory[offset..offset+length]. If any data is written out-of-bound, it must
+    /// be zeros. This does not resize the memory.
+    pub fn write_chunk(&mut self, offset: MemoryAddress, data: &[u8]) {
+        let len = if self.0.len() > offset.0 {
+            let len = cmp::min(data.len(), self.0.len() - offset.0);
+            // Copy the data to the in-bound memory.
+            self.0[offset.0..offset.0 + len].copy_from_slice(&data[..len]);
+            len
+        } else {
+            0
+        };
+        // Check that the out-of-bound data is all zeros.
+        for b in &data[len..] {
+            assert_eq!(*b, 0);
+        }
     }
 
     /// Returns the size of memory in word.

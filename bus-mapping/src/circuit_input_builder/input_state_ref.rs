@@ -283,8 +283,13 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         address: MemoryAddress, //Caution: make sure this address = slot passing
         value: Word,
-        value_prev: Word,
     ) -> Result<(), Error> {
+        let mem = &mut self.call_ctx_mut()?.memory;
+        let value_prev = mem.read_word(address);
+
+        let value_bytes = value.to_be_bytes();
+        mem.write_chunk(address, &value_bytes);
+
         let call_id = self.call()?.call_id;
         self.push_op(
             step,
@@ -1659,8 +1664,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // memory word writes to destination word
         for chunk in code_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(&chunk);
-            let dest_word_prev = dest_word; // TODO: get previous value
-            self.memory_write_word(exec_step, chunk_index.into(), dest_word, dest_word_prev)?;
+            self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
             chunk_index = chunk_index + 32;
         }
 
@@ -1717,7 +1721,6 @@ impl<'a> CircuitInputStateRef<'a> {
         // memory word writes to destination word
         for chunk in calldata_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(&chunk);
-            let dest_word_prev = dest_word; // TODO: get previous value
 
             // memory word reads if it is an internal call
             if !is_root {
@@ -1728,7 +1731,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 );
             }
 
-            self.memory_write_word(exec_step, chunk_index.into(), dest_word, dest_word_prev)?;
+            self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
             chunk_index = chunk_index + 32;
         }
 
