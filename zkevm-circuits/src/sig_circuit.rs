@@ -349,6 +349,8 @@ impl<F: Field> SigCircuit<F> {
         Ok(AssignedECDSA {
             pk: pk_assigned,
             msg_hash,
+            integer_r,
+            integer_s,
             sig_is_valid: ecdsa_is_valid,
         })
     }
@@ -413,6 +415,7 @@ impl<F: Field> SigCircuit<F> {
         ctx: &mut Context<'v, F>,
         ecdsa_chip: &FpChip<F>,
         sign_data: Option<&SignData>,
+        assigned_data: &AssignedECDSA<'v, F, FpChip<F>>,
     ) -> Result<SignDataDecomposed<'a, 'v, F>, Error> {
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
@@ -475,7 +478,7 @@ impl<F: Field> SigCircuit<F> {
 
         let assert_crt = |ctx: &mut Context<F>,
                           bytes: [u8; 32],
-                          v: &Fq,
+                          crt_integer: &CRTInteger<'v, F>,
                           overriding: &Option<&QuantumCell<F>>|
          -> Result<_, Error> {
             //let bytes: [u8; 32] = v.to_bytes();
@@ -483,9 +486,6 @@ impl<F: Field> SigCircuit<F> {
                 .iter()
                 .map(|&x| QuantumCell::Witness(Value::known(F::from_u128(x as u128))))
                 .collect_vec();
-
-            let crt_integer =
-                ecdsa_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*v)));
 
             self.assert_crt_int_byte_repr(
                 ctx,
@@ -503,7 +503,7 @@ impl<F: Field> SigCircuit<F> {
         let assigned_msg_hash_le = assert_crt(
             ctx,
             sign_data.msg_hash.to_bytes(),
-            &sign_data.msg_hash,
+            &assigned_data.msg_hash,
             &Some(&is_address_zero_cell),
         )?;
 
@@ -554,13 +554,13 @@ impl<F: Field> SigCircuit<F> {
         let r_cells = assert_crt(
             ctx,
             sign_data.signature.0.to_bytes(),
-            &sign_data.signature.0,
+            &assigned_data.integer_r,
             &None,
         )?;
         let s_cells = assert_crt(
             ctx,
             sign_data.signature.1.to_bytes(),
-            &sign_data.signature.1,
+            &assigned_data.integer_s,
             &None,
         )?;
 
@@ -707,18 +707,7 @@ impl<F: Field> SigCircuit<F> {
                 let mut ctx = ecdsa_chip.new_context(region);
 
                 // ================================================
-                // step 0: decompose the keys and messages
-                // ================================================
-                let mut sign_data_decomposed_vec = Vec::new();
-                for i in 0..self.max_verif {
-                    let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
-                    let sign_data_decomposed =
-                        self.sign_data_decomposition(&mut ctx, ecdsa_chip, sign_data)?;
-                    sign_data_decomposed_vec.push(sign_data_decomposed);
-                }
-
-                // ================================================
-                // step 1: assert the signature is valid in circuit
+                // step 0: assert the signature is valid in circuit
                 // ================================================
                 let mut assigned_ecdsas = Vec::new();
 
@@ -731,6 +720,21 @@ impl<F: Field> SigCircuit<F> {
                     };
                     let assigned_ecdsa = self.assign_ecdsa(&mut ctx, ecdsa_chip, &signature)?;
                     assigned_ecdsas.push(assigned_ecdsa);
+                }
+
+                // ================================================
+                // step 1: decompose the keys and messages
+                // ================================================
+                let mut sign_data_decomposed_vec = Vec::new();
+                for i in 0..self.max_verif {
+                    let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
+                    let sign_data_decomposed = self.sign_data_decomposition(
+                        &mut ctx,
+                        ecdsa_chip,
+                        sign_data,
+                        &assigned_ecdsas[i],
+                    )?;
+                    sign_data_decomposed_vec.push(sign_data_decomposed);
                 }
 
                 // IMPORTANT: Move to Phase2 before RLC
