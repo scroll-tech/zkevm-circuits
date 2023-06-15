@@ -424,11 +424,12 @@ mod extcodecopy_tests {
                 .map(|idx| {
                     (
                         RW::WRITE,
-                        MemoryWordOp {
+                        MemoryWordOp::new_write(
                             call_id,
-                            address: MemoryAddress(copy_start + idx * 32),
-                            value: Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
-                        },
+                            MemoryAddress(copy_start + idx * 32),
+                            Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
+                            Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]), // TODO: get previous value
+                        ),
                     )
                 })
                 .collect::<Vec<(RW, MemoryWordOp)>>(),
