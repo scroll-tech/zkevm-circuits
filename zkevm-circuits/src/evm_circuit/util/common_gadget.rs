@@ -1155,6 +1155,10 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         self.lt_cap.expr()
     }
 
+    pub(crate) fn original_ref(&self) -> &Word<F> {
+        self.word.original_ref()
+    }
+
     pub(crate) fn original_word(&self) -> Expression<F> {
         self.word.original_word()
     }
@@ -1209,6 +1213,10 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
             .assign(region, offset, F::from(overflow_hi))?;
 
         Ok(overflow_hi == 0)
+    }
+
+    pub(crate) fn original_ref(&self) -> &Word<F> {
+        &self.original
     }
 
     pub(crate) fn original_word(&self) -> Expression<F> {
