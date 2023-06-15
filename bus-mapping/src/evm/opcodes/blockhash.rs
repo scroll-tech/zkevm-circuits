@@ -42,6 +42,8 @@ impl Opcode for Blockhash {
 
             #[cfg(feature = "scroll")]
             assert_eq!(block_hash, _sha3_output);
+        } else {
+            assert_eq!(block_hash, 0.into());
         }
 
         Ok(vec![exec_step])

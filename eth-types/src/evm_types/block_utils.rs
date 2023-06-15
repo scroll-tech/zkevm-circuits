@@ -3,7 +3,7 @@
 use crate::{U256, U64};
 use ethers_core::utils::keccak256;
 
-/// max range of prev blocks allowed inside BLOCKHASH opcode
+/// Maximum range of previous blocks allowed inside BLOCKHASH opcode
 pub const NUM_PREV_BLOCK_ALLOWED: u64 = 256;
 
 /// Calculate block hash by chain ID and block number (only for scroll).
