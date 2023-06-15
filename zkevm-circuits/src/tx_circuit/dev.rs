@@ -56,34 +56,29 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let config = {
-            let sig_config = SigCircuitConfig::new(
-                meta,
-                SigCircuitConfigArgs {
-                    sig_table: sig_table.clone(),
-                    challenges: challenges.clone(),
-                    keccak_table: keccak_table.clone(),
-                },
-            );
-            let tx_config = TxCircuitConfig::new(
-                meta,
-                TxCircuitConfigArgs {
-                    sig_table: sig_table.clone(),
-                    block_table,
-                    tx_table,
-                    keccak_table: keccak_table.clone(),
-                    rlp_table,
-                    challenges,
-                },
-            );
-            TxCircuitTesterConfig {
-                //sig_table,
-                //keccak_table,
-                tx_config,
-                sig_config,
-            }
-        };
-        config
+        let sig_config = SigCircuitConfig::new(
+            meta,
+            SigCircuitConfigArgs {
+                sig_table,
+                challenges: challenges.clone(),
+                keccak_table: keccak_table.clone(),
+            },
+        );
+        let tx_config = TxCircuitConfig::new(
+            meta,
+            TxCircuitConfigArgs {
+                sig_table,
+                block_table,
+                tx_table,
+                keccak_table,
+                rlp_table,
+                challenges,
+            },
+        );
+        TxCircuitTesterConfig {
+            tx_config,
+            sig_config,
+        }
     }
 }
 
@@ -104,15 +99,14 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
         let max_txs = block.circuits_params.max_txs;
         let chain_id = block.chain_id.as_u64();
         let max_calldata = block.circuits_params.max_calldata;
-        let circuit = TxCircuitTester::<F> {
+        TxCircuitTester::<F> {
             sig_circuit: SigCircuit {
                 max_verif: max_txs,
                 signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
                 _marker: PhantomData,
             },
             tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, txs),
-        };
-        circuit
+        }
     }
 
     fn synthesize_sub(
@@ -152,7 +146,7 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
             let sig_config = SigCircuitConfig::new(
                 meta,
                 SigCircuitConfigArgs {
-                    sig_table: sig_table.clone(),
+                    sig_table,
                     challenges: challenges.clone(),
                     keccak_table: keccak_table.clone(),
                 },
@@ -160,10 +154,10 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
             let tx_config = TxCircuitConfig::new(
                 meta,
                 TxCircuitConfigArgs {
-                    sig_table: sig_table.clone(),
+                    sig_table,
                     block_table,
                     tx_table,
-                    keccak_table: keccak_table.clone(),
+                    keccak_table,
                     rlp_table,
                     challenges,
                 },

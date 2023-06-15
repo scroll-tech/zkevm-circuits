@@ -16,7 +16,7 @@ use halo2_proofs::{
 };
 use rand::{Rng, RngCore, SeedableRng};
 use rand_xorshift::XorShiftRng;
-use sha3::{Digest, Keccak256};
+use sha3::Keccak256;
 
 /// SigCircuitTesterConfig
 #[derive(Clone, Debug)]

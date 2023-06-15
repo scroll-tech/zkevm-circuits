@@ -703,7 +703,7 @@ impl<F: Field> SigCircuit<F> {
 
         let assigned_sig_verifs = layouter.assign_region(
             || "ecdsa chip verification",
-            |mut region| {
+            |region| {
                 if first_pass {
                     first_pass = false;
                     return Ok(vec![]);

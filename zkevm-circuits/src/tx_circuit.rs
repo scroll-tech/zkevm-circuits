@@ -13,7 +13,7 @@ pub use dev::TxCircuitTester as TestTxCircuit;
 
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
-    sig_circuit::{AssignedSignatureVerify, SigCircuit},
+    sig_circuit::SigCircuit,
     table::{
         BlockTable, KeccakTable, LookupTable, RlpFsmRlpTable as RlpTable, SigTable, TxFieldTag,
         TxTable,

@@ -15,7 +15,7 @@ use zkevm_circuits::{
     rlp_circuit_fsm::RlpCircuit,
     state_circuit::StateCircuit,
     super_circuit::SuperCircuit,
-    tx_circuit::TxCircuit,
+    tx_circuit::TestTxCircuit as TxCircuit,
     util::{Challenges, SubCircuit},
     witness,
     witness::Transaction,

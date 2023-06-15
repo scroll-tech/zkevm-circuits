@@ -12,7 +12,7 @@ use ethers_core::{
 use ethers_signers::{LocalWallet, Signer};
 use lazy_static::lazy_static;
 use rand::SeedableRng;
-use rand_chacha::{ChaCha20Rng, rand_core::OsRng};
+use rand_chacha::{rand_core::OsRng, ChaCha20Rng};
 
 lazy_static! {
     /// Collection of correctly hashed and signed Transactions which can be used to test circuits or opcodes that have to check integrity of the Tx itself.

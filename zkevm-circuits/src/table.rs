@@ -2127,7 +2127,7 @@ pub struct SigTable {
     pub q_enable: Column<Fixed>,
     /// Random-linear combination of the Keccak256 hash of the message that's signed.
     pub msg_hash_rlc: Column<Advice>,
-    /// input[63] - 27, should be in range [0, 4)
+    /// should be in range [0, 1]
     /// TODO: we need to constrain v <=> pub.y oddness
     pub sig_v: Column<Advice>,
     /// Random-linear combination of the signature's `r` component.

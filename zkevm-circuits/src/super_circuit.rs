@@ -236,7 +236,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 tx_table: tx_table.clone(),
                 keccak_table: keccak_table.clone(),
                 rlp_table,
-                sig_table: sig_table.clone(),
+                sig_table,
                 challenges: challenges.clone(),
             },
         );
@@ -295,7 +295,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             meta,
             SigCircuitConfigArgs {
                 keccak_table: keccak_table.clone(),
-                sig_table: sig_table.clone(),
+                sig_table,
                 challenges: challenges.clone(),
             },
         );
