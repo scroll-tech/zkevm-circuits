@@ -90,8 +90,8 @@ impl<F: Field> PrecompileGadget<F> {
             cb.condition(is_success, |cb| {
                 cb.require_equal(
                     "input and output bytes are the same",
-                    input_bytes_rlc,
-                    output_bytes_rlc,
+                    input_bytes_rlc.clone(),
+                    output_bytes_rlc.clone(),
                 );
                 cb.require_equal(
                     "input length and precompile return length are the same",
@@ -102,7 +102,20 @@ impl<F: Field> PrecompileGadget<F> {
         });
 
         cb.condition(address.value_equals(PrecompileCalls::Modexp), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBigModExp, None, |_cb| {});
+            cb.constrain_next_step(ExecutionState::PrecompileBigModExp, None, |cb| {
+                let input_bytes_acc_copied = cb.query_copy_cell_phase2();
+                let output_bytes_acc_copied = cb.query_copy_cell_phase2();
+                cb.require_equal(
+                    "copy input bytes",
+                    input_bytes_rlc.clone(),
+                    input_bytes_acc_copied.expr(),
+                );
+                cb.require_equal(
+                    "copy output bytes",
+                    output_bytes_rlc.clone(),
+                    output_bytes_acc_copied.expr(),
+                );                
+            });
         });
 
         cb.condition(address.value_equals(PrecompileCalls::Bn128Add), |cb| {

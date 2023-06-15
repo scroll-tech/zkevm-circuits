@@ -19,6 +19,7 @@ mod ecrecover;
 pub use ecrecover::EcrecoverGadget;
 
 mod identity;
+mod modexp;
 pub use identity::IdentityGadget;
 
 #[derive(Clone, Debug)]
