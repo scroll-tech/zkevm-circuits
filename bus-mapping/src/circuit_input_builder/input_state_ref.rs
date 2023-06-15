@@ -1737,7 +1737,7 @@ impl<'a> CircuitInputStateRef<'a> {
         );
 
         let mut chunk_index = 0;
-        for chunk in result.chunks(32) {
+        for chunk in memory.chunks(32) {
             self.push_op(
                 exec_step,
                 RW::WRITE,
@@ -1762,11 +1762,10 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: u64,
         copy_length: usize,
         result: &Vec<u8>,
-    ) -> Result<(Vec<(u8, bool, bool)>, Vec<(u8, bool, bool)>), Error> {
-        let mut read_steps = Vec::with_capacity(copy_length as usize);
+    ) -> Result<Vec<(u8, bool, bool)>, Error> {
         let mut write_steps = Vec::with_capacity(copy_length as usize);
         if copy_length == 0 {
-            return Ok((read_steps, write_steps));
+            return Ok(write_steps);
         }
         let src_begin_slot = 0;
         let (_, src_end_slot) = self.get_addr_shift_slot(copy_length as u64).unwrap();
@@ -1793,15 +1792,6 @@ impl<'a> CircuitInputStateRef<'a> {
             dst_memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
 
         Self::gen_memory_copy_steps(
-            &mut read_steps,
-            &src_memory,
-            slot_count + 32,
-            0,
-            src_begin_slot as usize,
-            copy_length as usize,
-        );
-
-        Self::gen_memory_copy_steps(
             &mut write_steps,
             &dst_memory.0,
             slot_count + 32,
@@ -1816,16 +1806,6 @@ impl<'a> CircuitInputStateRef<'a> {
 
         for (read_chunk, write_chunk) in read_slot_bytes.chunks(32).zip(write_slot_bytes.chunks(32))
         {
-            self.push_op(
-                exec_step,
-                RW::READ,
-                MemoryWordOp::new(
-                    call_id,
-                    src_chunk_index.into(),
-                    Word::from_big_endian(&read_chunk)
-                )
-            );
-            src_chunk_index += 32;
 
             self.push_op(
                 exec_step,
@@ -1839,7 +1819,7 @@ impl<'a> CircuitInputStateRef<'a> {
             dst_chunk_index += 32;
         }
 
-        Ok((read_steps, write_steps))
+        Ok(write_steps)
     }
 
     /// Generate copy steps for call data.

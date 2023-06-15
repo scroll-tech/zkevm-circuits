@@ -368,7 +368,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             call_gadget.cd_address.offset(),
                             call_gadget.cd_address.address(),
                             0.expr(),
-                            call_gadget.cd_address.length(),
+                            precompile_input_rws.expr() * 32.expr(),
                             input_bytes_rlc.expr(),
                             precompile_input_rws.expr(), // reads
                         ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
@@ -395,7 +395,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                                 0.expr(),
                                 precompile_return_length.expr(),
                                 0.expr(),
-                                precompile_return_length.expr(),
+                                precompile_output_rws.expr() * 32.expr(),
                                 output_bytes_rlc.expr(),
                                 precompile_output_rws.expr(), // writes.
                             ); // rwc_delta += `precompile_return_length` for precompile
@@ -425,7 +425,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                                 0.expr(),
                                 return_data_copy_size.min(),
                                 call_gadget.rd_address.offset(),
-                                return_data_copy_size.min(),
+                                precompile_return_rws.expr() * 32.expr(),
                                 return_bytes_rlc.expr(),
                                 precompile_return_rws.expr(), // writes
                             ); // rwc_delta += `return_data_copy_size.min()` for precompile
@@ -991,10 +991,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let input_bytes_start_offset = input_bytes_begin - input_bytes_begin_slot;
                 let input_bytes_end_offset = input_bytes_end - input_bytes_begin_slot;
 
-                let output_bytes_length = precompile_return_length.as_usize();
-                let output_bytes_word_count = (output_bytes_length + 31) / 32;
+                let output_bytes_end = precompile_return_length.as_usize();
+                let output_bytes_end_slot = output_bytes_end - output_bytes_end % 32;
+                let output_bytes_word_count = (output_bytes_end_slot + 32) / 32;
 
-                let return_bytes_length = min(rd_length.as_usize(), output_bytes_length);
+                let return_bytes_length = min(rd_length.as_usize(), output_bytes_end);
                 let callee_memory_end_slot = return_bytes_length - return_bytes_length % 32;
                 let return_bytes_begin = rd_offset.as_usize();
                 let return_bytes_end = return_bytes_begin + return_bytes_length;
@@ -1021,7 +1022,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 println!(
                     "return_bytes copy [{},{})",
                     33 + rw_offset + input_bytes_word_count + output_bytes_word_count,
-                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count + return_bytes_word_count * 2
+                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count + return_bytes_word_count
                 );
 
                 let input_bytes_rw_start = 33 + rw_offset;
@@ -1037,7 +1038,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .flatten()
                     .collect::<Vec<_>>();
                 let return_bytes_rw_start = output_bytes_rw_start + output_bytes_word_count;
-                let return_bytes = (return_bytes_rw_start..return_bytes_rw_start + return_bytes_word_count * 2)
+                let return_bytes = (return_bytes_rw_start..return_bytes_rw_start + return_bytes_word_count)
                     .step_by(2)
                     .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
                     .map(|word| word.to_be_bytes())
@@ -1055,14 +1056,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let output_bytes_rlc = region
                     .challenges()
                     .keccak_input()
-                    .map(|randomness| rlc::value(output_bytes[..output_bytes_length].iter().rev(), randomness));
+                    .map(|randomness| rlc::value(output_bytes[..output_bytes_end].iter().rev(), randomness));
                 let return_bytes_rlc = region
                     .challenges()
                     .keccak_input()
                     .map(|randomness| rlc::value(return_bytes[return_bytes_start_offset..return_bytes_end_offset].iter().rev(), randomness));
+                println!("input_bytes_rlc: {:?}", input_bytes_rlc);
+                println!("output_bytes_rlc: {:?}", output_bytes_rlc);
+                println!("return_bytes_rlc: {:?}", return_bytes_rlc);
                 let input_rws = Value::known(F::from(input_bytes_word_count as u64));
                 let output_rws = Value::known(F::from(output_bytes_word_count as u64));
-                let return_rws = Value::known(F::from((return_bytes_word_count * 2) as u64));
+                let return_rws = Value::known(F::from(return_bytes_word_count as u64));
+                println!("input_rws: {:?}", input_rws);
+                println!("output_rws: {:?}", output_rws);
+                println!("return_rws: {:?}", return_rws);
                 (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc, input_rws, output_rws, return_rws)
             } else {
                 (
