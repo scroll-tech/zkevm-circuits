@@ -37,7 +37,6 @@ use halo2_proofs::{
 };
 use log::error;
 use num::Zero;
-//use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     iter,
@@ -73,7 +72,6 @@ use eth_types::geth_types::{
 };
 use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstruction};
 
-//use self::sign_verify::SigTable;
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 22;
 /// Offset of TxHash tag in the tx table
@@ -192,6 +190,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
     ) -> Self {
         let q_enable = tx_table.q_enable;
 
+        // not needed now?
         // we will need one fixed column to check if ecdsa is valid
         let fixed_column = meta.fixed_column();
         meta.enable_equality(fixed_column);
@@ -2117,4 +2116,36 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         // "empty" instance column
         vec![vec![]]
     }
+}
+
+pub(crate) fn get_sign_data(
+    txs: &[Transaction],
+    max_txs: usize,
+    chain_id: usize,
+) -> Result<Vec<SignData>, halo2_proofs::plonk::Error> {
+    let padding_txs = (txs.len()..max_txs)
+        .into_iter()
+        .map(|i| {
+            let mut tx = Transaction::dummy(chain_id as u64);
+            tx.id = i + 1;
+            tx
+        })
+        .collect::<Vec<Transaction>>();
+    let signatures: Vec<SignData> = txs
+        .iter()
+        .chain(padding_txs.iter())
+        .map(|tx| {
+            if tx.tx_type.is_l1_msg() {
+                // dummy signature
+                Ok(SignData::default())
+            } else {
+                // TODO: map err or still use bus_mapping::err?
+                tx.sign_data().map_err(|e| {
+                    log::error!("tx_to_sign_data error for tx {:?}", e);
+                    halo2_proofs::plonk::Error::Synthesis
+                })
+            }
+        })
+        .collect::<Result<Vec<SignData>, halo2_proofs::plonk::Error>>()?;
+    Ok(signatures)
 }

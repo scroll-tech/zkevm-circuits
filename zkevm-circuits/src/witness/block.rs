@@ -4,10 +4,7 @@ use std::collections::BTreeMap;
 #[cfg(any(feature = "test", test))]
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 
-use crate::{
-    evm_circuit::util::rlc, sig_circuit::get_sign_data, table::BlockContextFieldTag,
-    util::SubCircuit,
-};
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
@@ -105,10 +102,40 @@ impl<F: Field> Block<F> {
             }
         }
     }
-    pub(crate) fn get_sign_data(&self) -> Result<Vec<SignData>, halo2_proofs::plonk::Error> {
-        let max_verif = self.circuits_params.max_txs;
-        let chain_id = self.chain_id.as_u64();
-        get_sign_data(&self.txs, max_verif, chain_id as usize)
+    pub(crate) fn get_sign_data(
+        &self,
+        padding: bool,
+    ) -> Result<Vec<SignData>, halo2_proofs::plonk::Error> {
+        let mut signatures: Vec<SignData> = self
+            .txs
+            .iter()
+            .map(|tx| {
+                if tx.tx_type.is_l1_msg() {
+                    // dummy signature
+                    Ok(SignData::default())
+                } else {
+                    // TODO: map err or still use bus_mapping::err?
+                    tx.sign_data().map_err(|e| {
+                        log::error!("tx_to_sign_data error for tx {:?}", e);
+                        halo2_proofs::plonk::Error::Synthesis
+                    })
+                }
+            })
+            .collect::<Result<Vec<SignData>, halo2_proofs::plonk::Error>>()?;
+        signatures.extend_from_slice(&self.ecrecover_events);
+        if padding {
+            let max_verif = self.circuits_params.max_txs;
+            if max_verif != 0 {
+                if signatures.len() > max_verif {
+                    log::error!("sig overflow {} > {}", signatures.len(), max_verif);
+                    return Err(halo2_proofs::plonk::Error::Synthesis);
+                }
+                for _ in signatures.len()..max_verif {
+                    signatures.push(SignData::default())
+                }
+            }
+        }
+        Ok(signatures)
     }
 }
 

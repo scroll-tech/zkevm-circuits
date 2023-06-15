@@ -1,11 +1,11 @@
 /// TxCircuitTester is the combined circuit of tx circuit and sig circuit.
 use std::marker::PhantomData;
 
+use super::get_sign_data;
 pub use super::TxCircuit;
-//use super::sign_verify::SigTable;
 
 use crate::{
-    sig_circuit::{get_sign_data, SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
+    sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
     table::{BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, SigTable, TxTable},
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
     util::{Challenges, SubCircuit, SubCircuitConfig},
@@ -36,10 +36,8 @@ pub struct TxCircuitTesterConfigArgs<F: Field> {
 /// TxCircuitTesterConfig
 #[derive(Clone, Debug)]
 pub struct TxCircuitTesterConfig<F: Field> {
-    // SigTable is assigned inside SigCircuit
-    //sig_table: SigTable,
-    //keccak_table: KeccakTable,
     tx_config: TxCircuitConfig<F>,
+    // SigTable is assigned inside SigCircuit
     sig_config: SigCircuitConfig<F>,
 }
 
@@ -121,7 +119,7 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
         challenges: &Challenges<halo2_proofs::circuit::Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        todo!()
+        unimplemented!("not needed")
     }
 
     fn min_num_rows_block(block: &crate::witness::Block<F>) -> (usize, usize) {
@@ -130,7 +128,7 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
     }
 }
 
-// SigCircuit is embedded inside TxCircuit to make testing easier
+// SigCircuit is embedded inside TxCircuitTester to make testing easier
 impl<F: Field> Circuit<F> for TxCircuitTester<F> {
     type Config = (TxCircuitTesterConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
@@ -169,8 +167,6 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
                 },
             );
             TxCircuitTesterConfig {
-                //sig_table,
-                //keccak_table,
                 tx_config,
                 sig_config,
             }
@@ -179,7 +175,6 @@ impl<F: Field> Circuit<F> for TxCircuitTester<F> {
         (config, challenges)
     }
 
-    // TODO: refactor this function, too complex
     fn synthesize(
         &self,
         (config, challenges): Self::Config,

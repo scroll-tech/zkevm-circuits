@@ -2154,7 +2154,7 @@ impl SigTable {
         }
     }
 
-    /// Assign witness data from a block to the exponentiation table.
+    /// Assign witness data from a block to the verification table.
     pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -2164,22 +2164,7 @@ impl SigTable {
         layouter.assign_region(
             || "signature verification table",
             |mut region| {
-                let mut signatures: Vec<SignData> = block
-                    .txs
-                    .iter()
-                    .map(|tx| {
-                        if tx.tx_type.is_l1_msg() {
-                            // dummy signature
-                            Ok(SignData::default())
-                        } else {
-                            tx.sign_data().map_err(|e| {
-                                log::error!("tx_to_sign_data error for tx {:?}", e);
-                                Error::Synthesis
-                            })
-                        }
-                    })
-                    .collect::<Result<Vec<SignData>, Error>>()?;
-                signatures.extend_from_slice(&block.ecrecover_events);
+                let signatures: Vec<SignData> = block.get_sign_data(false)?;
 
                 for (offset, sign_data) in signatures.iter().enumerate() {
                     let addr: F = sign_data.get_addr().to_scalar().unwrap();

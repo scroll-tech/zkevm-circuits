@@ -90,7 +90,6 @@ fn run<F: Field>(k: u32, max_verif: usize, signatures: Vec<SignData>) {
     let circuit = SigCircuit::<Fr> {
         max_verif,
         signatures,
-        //txs: Vec::new(),
         _marker: PhantomData,
     };
 

@@ -19,7 +19,6 @@ use halo2_proofs::{
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use sha3::{Digest, Keccak256};
-//use keccak256::plain::Keccak;
 use subtle::CtOption;
 
 /// Do a secp256k1 signature with a given randomness value.

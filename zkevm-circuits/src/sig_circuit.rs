@@ -18,7 +18,6 @@ use crate::{
     evm_circuit::util::{not, rlc},
     table::{KeccakTable, SigTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
-    //witness::Transaction,
 };
 use eth_types::{
     self,
@@ -42,11 +41,6 @@ use halo2_ecc::{
 mod utils;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub(crate) use utils::*;
-
-//#[cfg(feature = "onephase")]
-use halo2_proofs::plonk::FirstPhase;
-//#[cfg(not(feature = "onephase"))]
-//use halo2_proofs::plonk::SecondPhase;
 
 use halo2_proofs::{
     circuit::{Layouter, Value},
@@ -139,9 +133,9 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
 
         // we need one phase 2 column to store RLC results
         #[cfg(feature = "onephase")]
-        let rlc_column = meta.advice_column_in(FirstPhase);
+        let rlc_column = meta.advice_column_in(halo2_proofs::plonk::FirstPhase);
         #[cfg(not(feature = "onephase"))]
-        let rlc_column = meta.advice_column_in(SecondPhase);
+        let rlc_column = meta.advice_column_in(halo2_proofs::plonk::SecondPhase);
 
         meta.enable_equality(rlc_column);
 
@@ -225,7 +219,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
             // TODO: seperate max_verif with max_txs?
             max_verif: block.circuits_params.max_txs,
             // TODO: better way than unwrap?
-            signatures: block.get_sign_data().unwrap(),
+            signatures: block.get_sign_data(true).unwrap(),
             _marker: Default::default(),
         }
     }
@@ -794,8 +788,6 @@ impl<F: Field> SigCircuit<F> {
                 log::debug!("total number of lookup cells: {}", lookup_cells);
 
                 ctx.print_stats(&["Range"]);
-                //drop(ctx);
-
                 Ok(assigned_sig_verifs)
             },
         )?;
