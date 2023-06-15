@@ -419,14 +419,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             let return_bytes_rlc = cb.query_cell_phase2();
                             cb.copy_table_lookup(
                                 callee_call_id.expr(),
-                                5.expr() + call_gadget.callee_address_expr(), // refer u64::from(CopyDataType)
+                                CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
                                 cb.curr.state.call_id.expr(),
                                 CopyDataType::Memory.expr(),
                                 0.expr(),
                                 return_data_copy_size.min(),
                                 call_gadget.rd_address.offset(),
-                                precompile_return_rws.expr() * 32.expr(),
-                                return_bytes_rlc.expr(),
+                                precompile_return_rws.expr() * 16.expr(),
+                                0.expr(),
                                 precompile_return_rws.expr(), // writes
                             ); // rwc_delta += `return_data_copy_size.min()` for precompile
                             return_bytes_rlc
@@ -1022,7 +1022,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 println!(
                     "return_bytes copy [{},{})",
                     33 + rw_offset + input_bytes_word_count + output_bytes_word_count,
-                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count + return_bytes_word_count
+                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count + return_bytes_word_count * 2
                 );
 
                 let input_bytes_rw_start = 33 + rw_offset;
@@ -1038,7 +1038,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .flatten()
                     .collect::<Vec<_>>();
                 let return_bytes_rw_start = output_bytes_rw_start + output_bytes_word_count;
-                let return_bytes = (return_bytes_rw_start..return_bytes_rw_start + return_bytes_word_count)
+                let return_bytes = (return_bytes_rw_start..return_bytes_rw_start + return_bytes_word_count * 2)
                     .step_by(2)
                     .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
                     .map(|word| word.to_be_bytes())
@@ -1066,7 +1066,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 println!("return_bytes_rlc: {:?}", return_bytes_rlc);
                 let input_rws = Value::known(F::from(input_bytes_word_count as u64));
                 let output_rws = Value::known(F::from(output_bytes_word_count as u64));
-                let return_rws = Value::known(F::from(return_bytes_word_count as u64));
+                let return_rws = Value::known(F::from((return_bytes_word_count * 2) as u64));
                 println!("input_rws: {:?}", input_rws);
                 println!("output_rws: {:?}", output_rws);
                 println!("return_rws: {:?}", return_rws);

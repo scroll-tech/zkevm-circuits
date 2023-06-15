@@ -410,7 +410,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 // insert another copy event (output) for this step.
                 let rw_counter_start = state.block_ctx.rwc;
                 if call.is_success() && call.call_data_length > 0 && length > 0 {
-                    let write_steps = state.gen_copy_steps_for_precompile_returndata(
+                    let (read_steps, write_steps) = state.gen_copy_steps_for_precompile_returndata(
                         &mut exec_step,
                         call.call_id,
                         call.caller_id,
@@ -422,7 +422,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         &mut exec_step,
                         CopyEvent {
                             src_id: NumberOrHash::Number(call.call_id),
-                            src_type: CopyDataType::Precompile(precompile_call),
+                            src_type: CopyDataType::Memory,
                             src_addr: 0,
                             src_addr_end: length as u64,
                             dst_id: NumberOrHash::Number(call.caller_id),
@@ -430,8 +430,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             dst_addr: call.return_data_offset,
                             log_id: None,
                             rw_counter_start,
-                            bytes: write_steps,
-                            aux_bytes: None,
+                            bytes: read_steps,
+                            aux_bytes: Some(write_steps),
                         },
                     );
                 }

@@ -1762,10 +1762,11 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: u64,
         copy_length: usize,
         result: &Vec<u8>,
-    ) -> Result<Vec<(u8, bool, bool)>, Error> {
+    ) -> Result<(Vec<(u8, bool, bool)>, Vec<(u8, bool, bool)>), Error> {
+        let mut read_steps = Vec::with_capacity(copy_length as usize);
         let mut write_steps = Vec::with_capacity(copy_length as usize);
         if copy_length == 0 {
-            return Ok(write_steps);
+            return Ok((read_steps, write_steps));
         }
         let src_begin_slot = 0;
         let (_, src_end_slot) = self.get_addr_shift_slot(copy_length as u64).unwrap();
@@ -1792,6 +1793,15 @@ impl<'a> CircuitInputStateRef<'a> {
             dst_memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
 
         Self::gen_memory_copy_steps(
+            &mut read_steps,
+            &src_memory,
+            slot_count + 32,
+            0,
+            src_begin_slot as usize,
+            copy_length as usize,
+        );
+
+        Self::gen_memory_copy_steps(
             &mut write_steps,
             &dst_memory.0,
             slot_count + 32,
@@ -1809,6 +1819,17 @@ impl<'a> CircuitInputStateRef<'a> {
 
             self.push_op(
                 exec_step,
+                RW::READ,
+                MemoryWordOp::new(
+                    call_id,
+                    src_chunk_index.into(),
+                    Word::from_big_endian(&read_chunk)
+                )
+            );
+            src_chunk_index += 32;
+
+            self.push_op(
+                exec_step,
                 RW::WRITE,
                 MemoryWordOp::new(
                     caller_id,
@@ -1819,7 +1840,7 @@ impl<'a> CircuitInputStateRef<'a> {
             dst_chunk_index += 32;
         }
 
-        Ok(write_steps)
+        Ok((read_steps, write_steps))
     }
 
     /// Generate copy steps for call data.
