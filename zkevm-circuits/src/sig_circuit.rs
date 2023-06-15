@@ -490,7 +490,7 @@ impl<F: Field> SigCircuit<F> {
             self.assert_crt_int_byte_repr(
                 ctx,
                 &ecdsa_chip.range,
-                &crt_integer,
+                crt_integer,
                 &byte_cells,
                 &powers_of_256_cells,
                 overriding,
@@ -726,13 +726,13 @@ impl<F: Field> SigCircuit<F> {
                 // step 1: decompose the keys and messages
                 // ================================================
                 let mut sign_data_decomposed_vec = Vec::new();
-                for i in 0..self.max_verif {
+                for (i, assigned_ecdsa) in assigned_ecdsas.iter().enumerate() {
                     let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
                     let sign_data_decomposed = self.sign_data_decomposition(
                         &mut ctx,
                         ecdsa_chip,
                         sign_data,
-                        &assigned_ecdsas[i],
+                        assigned_ecdsa,
                     )?;
                     sign_data_decomposed_vec.push(sign_data_decomposed);
                 }
