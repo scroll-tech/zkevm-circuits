@@ -137,6 +137,7 @@ impl<F: Field> Circuit<F> for BatchHashCircuit<F> {
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
+
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let challenges = Challenges::construct(meta);
         let challenges_exprs = challenges.exprs(meta);
