@@ -25,7 +25,7 @@ mod tests {
     use rand_chacha::ChaCha20Rng;
     use std::env::var;
     use zkevm_circuits::{
-        tx_circuit::dev::TestTxCircuit as TxCircuit, util::SubCircuit, witness::block_convert,
+        tx_circuit::TestTxCircuit as TxCircuit, util::SubCircuit, witness::block_convert,
     };
 
     use bus_mapping::rpc::GethClient;

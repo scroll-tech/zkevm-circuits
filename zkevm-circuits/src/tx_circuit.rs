@@ -5,6 +5,7 @@
 // - *_le: Little-Endian bytes
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+/// TxCircuitTester is the combined circuit of tx circuit and sig circuit.
 mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;

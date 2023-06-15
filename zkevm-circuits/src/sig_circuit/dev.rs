@@ -6,17 +6,7 @@ use crate::util::Challenges;
 //use crate::util::MockChallenges as Challenges;
 
 use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
-use eth_types::sign_types::sign;
-use halo2_proofs::{
-    arithmetic::Field as HaloField,
-    circuit::SimpleFloorPlanner,
-    dev::MockProver,
-    halo2curves::{bn256::Fr, group::Curve, secp256k1},
-    plonk::Circuit,
-};
-use rand::{Rng, RngCore, SeedableRng};
-use rand_xorshift::XorShiftRng;
-use sha3::Keccak256;
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// SigCircuitTesterConfig
 #[derive(Clone, Debug)]

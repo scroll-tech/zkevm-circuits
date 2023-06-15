@@ -11,14 +11,14 @@
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
 use crate::{
     evm_circuit::util::{not, rlc},
     table::{KeccakTable, SigTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
-    witness::Transaction,
+    //witness::Transaction,
 };
 use eth_types::{
     self,
@@ -32,7 +32,7 @@ use halo2_base::{
 };
 use halo2_ecc::{
     bigint::CRTInteger,
-    ecc::{ecdsa::ecdsa_verify_no_pubkey_check, EcPoint, EccChip},
+    ecc::{ecdsa::ecdsa_verify_no_pubkey_check, EccChip},
     fields::{
         fp::{FpConfig, FpStrategy},
         FieldChip,
@@ -40,7 +40,8 @@ use halo2_ecc::{
 };
 
 mod utils;
-pub use utils::*;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub(crate) use utils::*;
 
 //#[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase;
@@ -48,9 +49,9 @@ use halo2_proofs::plonk::FirstPhase;
 //use halo2_proofs::plonk::SecondPhase;
 
 use halo2_proofs::{
-    circuit::{Cell, Layouter, Value},
+    circuit::{Layouter, Value},
     halo2curves::secp256k1::{Fp, Fq, Secp256k1Affine},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 

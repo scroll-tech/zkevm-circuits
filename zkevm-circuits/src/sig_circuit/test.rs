@@ -1,34 +1,26 @@
 use std::marker::PhantomData;
 
-use super::dev::SigCircuitTesterConfig;
 use halo2_proofs::halo2curves::secp256k1::Secp256k1Affine;
 
-//#[cfg(not(feature = "onephase"))]
-use crate::{
-    sig_circuit::{SigCircuit, LOG_TOTAL_NUM_ROWS},
-    util::Challenges,
-};
-//#[cfg(feature = "onephase")]
-//use crate::util::MockChallenges as Challenges;
+use crate::sig_circuit::SigCircuit;
 
-use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
 use eth_types::{
     sign_types::{sign, SignData},
     Field,
 };
 use halo2_proofs::{
     arithmetic::Field as HaloField,
-    circuit::SimpleFloorPlanner,
     dev::MockProver,
     halo2curves::{bn256::Fr, group::Curve, secp256k1},
-    plonk::Circuit,
 };
-use rand::{Rng, RngCore, SeedableRng};
-use rand_xorshift::XorShiftRng;
-use sha3::{Digest, Keccak256};
+use rand::{Rng, RngCore};
 
 #[test]
 fn sign_verify() {
+    use super::utils::LOG_TOTAL_NUM_ROWS;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
+    use sha3::{Digest, Keccak256};
     let mut rng = XorShiftRng::seed_from_u64(1);
     let max_sigs = [4];
     for max_sig in max_sigs.iter() {

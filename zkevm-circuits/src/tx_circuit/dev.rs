@@ -1,3 +1,4 @@
+/// TxCircuitTester is the combined circuit of tx circuit and sig circuit.
 use std::marker::PhantomData;
 
 pub use super::TxCircuit;
@@ -86,9 +87,21 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitTesterConfig<F> {
 #[derive(Clone, Debug, Default)]
 pub struct TxCircuitTester<F: Field> {
     pub(super) sig_circuit: SigCircuit<F>,
-    //keccak_table: KeccakTable,
     pub(super) tx_circuit: TxCircuit<F>,
-    //sig_config: SigCircuitConfig<F>,
+}
+
+impl<F: Field> TxCircuitTester<F> {
+    /// Return a new TxCircuit
+    pub fn new(max_txs: usize, max_calldata: usize, chain_id: u64, txs: Vec<Transaction>) -> Self {
+        TxCircuitTester::<F> {
+            sig_circuit: SigCircuit {
+                max_verif: max_txs,
+                signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
+                _marker: PhantomData,
+            },
+            tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, txs),
+        }
+    }
 }
 
 impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
@@ -99,14 +112,7 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
         let max_txs = block.circuits_params.max_txs;
         let chain_id = block.chain_id.as_u64();
         let max_calldata = block.circuits_params.max_calldata;
-        TxCircuitTester::<F> {
-            sig_circuit: SigCircuit {
-                max_verif: max_txs,
-                signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
-                _marker: PhantomData,
-            },
-            tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, txs),
-        }
+        Self::new(max_txs, max_calldata, chain_id, txs)
     }
 
     fn synthesize_sub(
