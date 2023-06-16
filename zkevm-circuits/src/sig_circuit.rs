@@ -382,7 +382,7 @@ impl<F: Field> SigCircuit<F> {
 
         gate.assert_equal(
             ctx,
-            QuantumCell::Existing(&assigned_y_limb),
+            QuantumCell::Existing(assigned_y_limb),
             QuantumCell::Existing(&y_rec),
         );
 
@@ -391,8 +391,6 @@ impl<F: Field> SigCircuit<F> {
             .field_chip
             .range
             .range_check(ctx, &assigned_y_tmp, 88);
- 
-
 
         Ok(AssignedECDSA {
             pk: pk_assigned,
