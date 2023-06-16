@@ -2177,7 +2177,6 @@ dependencies = [
  "halo2_proofs",
  "hex",
  "lazy_static",
- "log",
  "num-bigint",
  "poseidon-circuit",
  "rand",

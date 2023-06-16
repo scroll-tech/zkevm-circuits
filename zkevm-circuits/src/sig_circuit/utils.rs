@@ -52,6 +52,8 @@ pub(super) type FpChip<F> = FpConfig<F, Fp>;
 pub(crate) struct AssignedECDSA<'v, F: Field, FC: FieldChip<F>> {
     pub(super) pk: EcPoint<F, FC::FieldPoint<'v>>,
     pub(super) msg_hash: CRTInteger<'v, F>,
+    pub(super) integer_r: CRTInteger<'v, F>,
+    pub(super) integer_s: CRTInteger<'v, F>,
     pub(super) sig_is_valid: AssignedValue<'v, F>,
 }
 
