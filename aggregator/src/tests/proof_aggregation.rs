@@ -10,7 +10,7 @@ use snark_verifier_sdk::{
     CircuitExt,
 };
 
-use crate::{AggregationCircuit, ChunkHash, CompressionCircuit, compression_layer_snark, layer_0};
+use crate::{compression_layer_snark, layer_0, AggregationCircuit, ChunkHash, CompressionCircuit};
 
 use super::mock_chunk::MockChunkCircuit;
 
@@ -34,7 +34,6 @@ fn test_aggregation_circuit() {
     let k2 = 26;
     // aggregation
     let k3 = 26;
-
 
     let mut rng = test_rng();
     let params = gen_srs(k2);
@@ -76,17 +75,12 @@ fn test_aggregation_circuit() {
             param.downsize(k3);
             param
         };
-        let aggregation_circuit = AggregationCircuit::new(
-            &param,
-            &layer_2_snarks,
-            &mut rng,
-            chunks.as_ref(),
-        );
+        let aggregation_circuit =
+            AggregationCircuit::new(&param, &layer_2_snarks, &mut rng, chunks.as_ref());
         let instance = aggregation_circuit.instances();
 
         let mock_prover = MockProver::<Fr>::run(k3, &aggregation_circuit, instance).unwrap();
-    
+
         mock_prover.assert_satisfied_par()
     }
-
 }

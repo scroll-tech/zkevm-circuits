@@ -1,11 +1,6 @@
-use ark_std::{ test_rng};
-use halo2_proofs::{
-    dev::MockProver,
-    halo2curves::bn256::{ Fr},
-};
-use snark_verifier_sdk::{
-    CircuitExt,
-};
+use ark_std::test_rng;
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use snark_verifier_sdk::CircuitExt;
 
 use crate::{ChunkHash, LOG_DEGREE};
 
