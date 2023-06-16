@@ -31,7 +31,7 @@ pub fn sign(
         Option::<secp256k1::Fq>::from(randomness.invert()).expect("cannot invert randomness");
     let generator = Secp256k1Affine::generator();
     let sig_point = generator * randomness;
-    let sig_v: bool = sig_point.y.is_odd().into();
+    let sig_v: bool = sig_point.to_affine().y.is_odd().into();
 
     let x = *Option::<Coordinates<_>>::from(sig_point.to_affine().coordinates())
         .expect("point is the identity")

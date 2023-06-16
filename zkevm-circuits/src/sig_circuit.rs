@@ -26,7 +26,7 @@ use eth_types::{
     Field,
 };
 use halo2_base::{
-    gates::{range::RangeConfig, GateInstructions},
+    gates::{range::RangeConfig, GateInstructions, RangeInstructions},
     utils::modulus,
     AssignedValue, Context, QuantumCell, SKIP_FIRST_PASS,
 };
@@ -348,86 +348,51 @@ impl<F: Field> SigCircuit<F> {
         // =======================================
         assert!(*v == 0 || *v == 1, "v is not boolean");
 
-        // we want to constrain assigned_y_tmp is 88 bits
-        // somehow the following range check API bugs
-        //
-        // ecc_chip
-        //     .field_chip
-        //     .range
-        //     .get_last_bit(ctx, &assigned_y_tmp, 88);
-        //
-        // so let's doit the old fashion
+        // we constrain:
+        // - v + 2*tmp = y where y is already range checked (88 bits)
+        // - v is a binary
+        // - tmp is also < 88 bits (this is crucial otherwise tmp may wrap around and break
+        //   soundness)
 
         let gate = ecdsa_chip.gate();
 
         let assigned_y_is_odd = gate.load_witness(ctx, Value::known(F::from(*v as u64)));
+        gate.assert_bit(ctx, &assigned_y_is_odd);
 
-        // decompose the last 88 bits of y
+        // the last 88 bits of y
         let assigned_y_limb = &y_coord.limbs()[0];
+        let mut y_value = F::zero();
+        assigned_y_limb.value().map(|&x| y_value = x);
 
-        let last_bit = {
-            let mut y_value = F::zero();
-            assigned_y_limb.value().map(|&x| y_value = x);
+        // y_tmp = (y_value - y_last_bit)/2
+        let y_tmp = (y_value - F::from(*v as u64)) * F::TWO_INV;
+        let assigned_y_tmp = gate.load_witness(ctx, Value::known(y_tmp));
 
-            let to_le_bits = |byte| -> Vec<bool> {
-                let mut res = vec![];
-                let mut b = byte;
-                for _ in 0..8 {
-                    res.push((b & 1) != 0);
-                    b >>= 1
-                }
-                res
-            };
+        // y_tmp_double = (y_value - y_last_bit)
+        let y_tmp_double = gate.mul(
+            ctx,
+            QuantumCell::Existing(&assigned_y_tmp),
+            QuantumCell::Constant(F::from(2)),
+        );
+        let y_rec = gate.add(
+            ctx,
+            QuantumCell::Existing(&y_tmp_double),
+            QuantumCell::Existing(&assigned_y_is_odd),
+        );
 
-            let a = y_value
-                .to_repr()
-                .iter()
-                .flat_map(|x| to_le_bits(*x))
-                .collect_vec();
-
-            let mut acc = gate.load_witness(ctx, Value::known(F::from(a[87] as u64)));
-            gate.assert_bit(ctx, &acc);
-            for ai in a.iter().take(87).skip(1).rev() {
-                acc = gate.add(
-                    ctx,
-                    QuantumCell::Existing(&acc),
-                    QuantumCell::Existing(&acc),
-                );
-                let tmp = gate.load_witness(ctx, Value::known(F::from(*ai as u64)));
-                gate.assert_bit(ctx, &tmp);
-                acc = gate.add(
-                    ctx,
-                    QuantumCell::Existing(&acc),
-                    QuantumCell::Existing(&tmp),
-                );
-            }
-            acc = gate.add(
-                ctx,
-                QuantumCell::Existing(&acc),
-                QuantumCell::Existing(&acc),
-            );
-            let last_bit = gate.load_witness(ctx, Value::known(F::from(a[0] as u64)));
-            gate.assert_bit(ctx, &last_bit);
-            acc = gate.add(
-                ctx,
-                QuantumCell::Existing(&acc),
-                QuantumCell::Existing(&last_bit),
-            );
-
-            gate.assert_equal(
-                ctx,
-                QuantumCell::Existing(&acc),
-                QuantumCell::Existing(&assigned_y_limb),
-            );
-            last_bit
-        };
-
-        // finished decomposition, now checks assigned_y_is_odd matches last bit
         gate.assert_equal(
             ctx,
-            QuantumCell::Existing(&assigned_y_is_odd),
-            QuantumCell::Existing(&last_bit),
+            QuantumCell::Existing(&assigned_y_limb),
+            QuantumCell::Existing(&y_rec),
         );
+
+        // last step we want to constrain assigned_y_tmp is 87 bits
+        ecc_chip
+            .field_chip
+            .range
+            .range_check(ctx, &assigned_y_tmp, 88);
+ 
+
 
         Ok(AssignedECDSA {
             pk: pk_assigned,
