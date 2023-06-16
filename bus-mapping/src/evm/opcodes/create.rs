@@ -347,22 +347,20 @@ fn handle_copy(
     let minimal_length = dst_end_slot as usize + 32;
     memory.extend_at_least(minimal_length);
     // collect all bytecode to memory with padding word
-    let create_slot_bytes =
-        memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+    let create_slot_len = (dst_end_slot + 32 - dst_begin_slot) as usize;
 
     let mut copy_start = 0u64;
     let mut first_set = true;
     let mut chunk_index = dst_begin_slot;
     // memory word writes to destination word
-    for chunk in create_slot_bytes.chunks(32) {
-        let dest_word = Word::from_big_endian(&chunk);
+    for _ in 0..create_slot_len / 32 {
         // read memory
-        state.memory_read_word(step, chunk_index.into(), dest_word)?;
+        state.memory_read_word(step, chunk_index.into())?;
         chunk_index = chunk_index + 32;
     }
 
     let mut copy_steps = Vec::with_capacity(length as usize);
-    for idx in 0..create_slot_bytes.len() {
+    for idx in 0..create_slot_len {
         let value = memory.0[dst_begin_slot as usize + idx];
         if idx as u64 + dst_begin_slot < offset as u64 {
             // front mask byte

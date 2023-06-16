@@ -55,13 +55,8 @@ impl Opcode for ErrorCreationCode {
             memory.0.len()
         );
 
-        let mut slot_bytes: [u8; 32] = [0; 32];
-        slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize + 32)]);
-
-        let addr_left_Word = Word::from_big_endian(&slot_bytes);
-
         //state.memory_read(&mut exec_step, offset.try_into()?, byte)?;
-        state.memory_read_word(&mut exec_step, slot.into(), addr_left_Word)?;
+        state.memory_read_word(&mut exec_step, slot.into())?;
 
         // refer to return_revert Case C
         state.handle_return(&mut exec_step, geth_steps, true)?;

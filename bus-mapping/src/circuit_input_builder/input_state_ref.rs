@@ -244,15 +244,17 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         step: &mut ExecStep,
         address: MemoryAddress,
-        value: Word,
-    ) -> Result<(), Error> {
+    ) -> Result<Word, Error> {
+        let mem = &self.call_ctx()?.memory;
+        let value = mem.read_word(address);
+
         let call_id = self.call()?.call_id;
         self.push_op(
             step,
             RW::READ,
             MemoryWordOp::new_read(call_id, address, value),
         );
-        Ok(())
+        Ok(value)
     }
 
     /// Push a write type [`MemoryOp`] into the
@@ -2007,16 +2009,14 @@ impl<'a> CircuitInputStateRef<'a> {
         let minimal_length = dst_end_slot as usize + 32;
         memory.extend_at_least(minimal_length);
         // collect all memory bytes with padding word
-        let log_slot_bytes =
-            memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+        let log_slot_len = (dst_end_slot + 32 - dst_begin_slot) as usize;
 
         let mut first_set = true;
         let mut chunk_index = dst_begin_slot;
         // memory word writes to destination word
-        for chunk in log_slot_bytes.chunks(32) {
-            let dest_word = Word::from_big_endian(&chunk);
+        for _ in 0..log_slot_len / 32 {
             // read memory
-            self.memory_read_word(exec_step, chunk_index.into(), dest_word)?;
+            let dest_word = self.memory_read_word(exec_step, chunk_index.into())?;
             // write log
             self.tx_log_write(
                 exec_step,
@@ -2029,7 +2029,7 @@ impl<'a> CircuitInputStateRef<'a> {
             chunk_index = chunk_index + 32;
         }
 
-        for idx in 0..log_slot_bytes.len() {
+        for idx in 0..log_slot_len {
             let value = memory.0[dst_begin_slot as usize + idx];
             if idx as u64 + dst_begin_slot < src_addr {
                 // front mask byte
