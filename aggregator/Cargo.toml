@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-eth-types = { git = "https://github.com/scroll-tech/zkevm-circuits.git", branch = "develop" }
-zkevm-circuits = { git = "https://github.com/scroll-tech/zkevm-circuits.git", branch = "develop" }
+eth-types = { path = "../eth-types" }
+zkevm-circuits = { path = "../zkevm-circuits" }
 
 
 ark-std = "0.4.0"
