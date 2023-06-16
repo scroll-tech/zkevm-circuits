@@ -16,6 +16,7 @@ mod test;
 
 use crate::{
     evm_circuit::util::{not, rlc},
+    sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
     table::{KeccakTable, SigTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
 };
@@ -25,19 +26,20 @@ use eth_types::{
     Field,
 };
 use halo2_base::{
-    gates::{range::RangeConfig, GateInstructions},
+    gates::{range::RangeConfig, GateInstructions, RangeInstructions},
     utils::modulus,
     AssignedValue, Context, QuantumCell, SKIP_FIRST_PASS,
 };
 use halo2_ecc::{
     bigint::CRTInteger,
-    ecc::{ecdsa::ecdsa_verify_no_pubkey_check, EccChip},
+    ecc::EccChip,
     fields::{
         fp::{FpConfig, FpStrategy},
         FieldChip,
     },
 };
 
+mod ecdsa;
 mod utils;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub(crate) use utils::*;
@@ -316,13 +318,8 @@ impl<F: Field> SigCircuit<F> {
         // build Fq chip from Fp chip
         let fq_chip = FqChip::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq>());
 
-        log::trace!("r: {:?}", sig_r);
-        log::trace!("s: {:?}", sig_s);
-        log::trace!("msg: {:?}", msg_hash);
-
         let integer_r =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_r)));
-        log::trace!("r: {:?}", integer_r);
 
         let integer_s =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_s)));
@@ -334,7 +331,7 @@ impl<F: Field> SigCircuit<F> {
         //
         // WARNING: this circuit does not enforce the returned value to be true
         // make sure the caller checks this result!
-        let ecdsa_is_valid = ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Secp256k1Affine>(
+        let (ecdsa_is_valid, y_coord) = ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Secp256k1Affine>(
             &ecc_chip.field_chip,
             ctx,
             &pk_assigned,
@@ -345,6 +342,55 @@ impl<F: Field> SigCircuit<F> {
             4,
         );
         log::trace!("ECDSA res {:?}", ecdsa_is_valid);
+
+        // =======================================
+        // constrains v == y.is_oddness()
+        // =======================================
+        assert!(*v == 0 || *v == 1, "v is not boolean");
+
+        // we constrain:
+        // - v + 2*tmp = y where y is already range checked (88 bits)
+        // - v is a binary
+        // - tmp is also < 88 bits (this is crucial otherwise tmp may wrap around and break
+        //   soundness)
+
+        let gate = ecdsa_chip.gate();
+
+        let assigned_y_is_odd = gate.load_witness(ctx, Value::known(F::from(*v as u64)));
+        gate.assert_bit(ctx, &assigned_y_is_odd);
+
+        // the last 88 bits of y
+        let assigned_y_limb = &y_coord.limbs()[0];
+        let mut y_value = F::zero();
+        assigned_y_limb.value().map(|&x| y_value = x);
+
+        // y_tmp = (y_value - y_last_bit)/2
+        let y_tmp = (y_value - F::from(*v as u64)) * F::TWO_INV;
+        let assigned_y_tmp = gate.load_witness(ctx, Value::known(y_tmp));
+
+        // y_tmp_double = (y_value - y_last_bit)
+        let y_tmp_double = gate.mul(
+            ctx,
+            QuantumCell::Existing(&assigned_y_tmp),
+            QuantumCell::Constant(F::from(2)),
+        );
+        let y_rec = gate.add(
+            ctx,
+            QuantumCell::Existing(&y_tmp_double),
+            QuantumCell::Existing(&assigned_y_is_odd),
+        );
+
+        gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(assigned_y_limb),
+            QuantumCell::Existing(&y_rec),
+        );
+
+        // last step we want to constrain assigned_y_tmp is 87 bits
+        ecc_chip
+            .field_chip
+            .range
+            .range_check(ctx, &assigned_y_tmp, 88);
 
         Ok(AssignedECDSA {
             pk: pk_assigned,
@@ -422,9 +468,9 @@ impl<F: Field> SigCircuit<F> {
 
         let zero = ecdsa_chip.range.gate.load_zero(ctx);
 
-        let (padding, sign_data) = match sign_data {
-            Some(sign_data) => (false, sign_data.clone()),
-            None => (true, SignData::default()),
+        let sign_data = match sign_data {
+            Some(sign_data) => sign_data.clone(),
+            None => SignData::default(),
         };
 
         // ================================================
