@@ -65,12 +65,11 @@ impl Opcode for Calldataload {
 
             let call_data_offset = state.call()?.call_data_offset;
             let call_data_length = state.call()?.call_data_length;
-            let (src_addr, src_addr_end, caller_id, call_data) = (
+            let (src_addr, src_addr_end, call_data) = (
                 // Set source start to the minimum value of offset and call data length for
                 // avoiding overflow.
                 call_data_offset + offset.min(call_data_length),
                 call_data_offset + call_data_length,
-                state.call()?.caller_id,
                 state.call_ctx()?.call_data.to_vec(),
             );
 
@@ -88,36 +87,10 @@ impl Opcode for Calldataload {
 
             // lookup memory word addr
             if !is_root {
-                let shift = src_addr % 32;
-                let slot = src_addr - shift;
-                let mut slot_bytes: [u8; 32] = [0; 32];
-                // pick up caller's memory
-                let mut memory = state.caller_ctx_mut()?.memory.clone();
-                println!("calldatload caller memory {:?}", memory);
-                // expand to offset + 64 to enusre addr_right_Word without out of boundary
-                let minimal_length = offset + 64;
-                memory.extend_at_least(minimal_length as usize);
-
-                slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize + 32)]);
-
-                let addr_left_Word = Word::from_big_endian(&slot_bytes);
+                let slot = src_addr - src_addr % 32;
+                state.memory_read_caller(&mut exec_step, slot.into())?;
+                state.memory_read_caller(&mut exec_step, (slot + 32).into())?;
                 // TODO: edge case: if shift = 0, skip to read right word ?
-                let mut word_right_bytes: [u8; 32] = [0; 32];
-                word_right_bytes
-                    .clone_from_slice(&memory.0[(slot + 32) as usize..(slot + 64) as usize]);
-
-                let addr_right_Word = Word::from_big_endian(&word_right_bytes);
-
-                state.push_op(
-                    &mut exec_step,
-                    RW::READ,
-                    MemoryWordOp::new_read(caller_id, slot.into(), addr_left_Word),
-                );
-                state.push_op(
-                    &mut exec_step,
-                    RW::READ,
-                    MemoryWordOp::new_read(caller_id, (slot + 32).into(), addr_right_Word),
-                );
             }
 
             U256::from_big_endian(&calldata)

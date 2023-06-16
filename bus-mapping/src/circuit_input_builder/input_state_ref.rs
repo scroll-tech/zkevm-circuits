@@ -257,6 +257,29 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(value)
     }
 
+    /// Push a read type [`MemoryOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter) by one.
+    pub fn memory_read_caller(
+        &mut self,
+        step: &mut ExecStep,
+        address: MemoryAddress,
+    ) -> Result<Word, Error> {
+        let mem = &self.caller_ctx()?.memory;
+        let value = mem.read_word(address);
+
+        let caller_id = self.caller()?.call_id;
+        self.push_op(
+            step,
+            RW::READ,
+            MemoryWordOp::new_read(caller_id, address, value),
+        );
+        Ok(value)
+    }
+
     /// Push a write type [`MemoryOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
@@ -1800,21 +1823,9 @@ impl<'a> CircuitInputStateRef<'a> {
         let mut src_chunk_index = src_begin_slot;
         let mut dst_chunk_index = dst_begin_slot;
         // memory word reads from source and writes to destination word
-        for (read_chunk, write_chunk) in read_slot_bytes.chunks(32).zip(write_slot_bytes.chunks(32))
-        {
-            self.push_op(
-                exec_step,
-                RW::READ,
-                MemoryWordOp::new_read(
-                    caller_id,
-                    src_chunk_index.into(),
-                    Word::from_big_endian(read_chunk),
-                ),
-            );
-            println!(
-                "read chunk: {} {} {:?}",
-                caller_id, src_chunk_index, read_chunk
-            );
+        for write_chunk in write_slot_bytes.chunks(32) {
+            self.memory_read_caller(exec_step, src_chunk_index.into())?;
+
             src_chunk_index = src_chunk_index + 32;
 
             let write_chunk_prev = write_chunk; // TODO: get previous value
@@ -1936,10 +1947,6 @@ impl<'a> CircuitInputStateRef<'a> {
                     src_chunk_index.into(),
                     Word::from_big_endian(read_chunk),
                 ),
-            );
-            println!(
-                "read chunk: {} {} {:?}",
-                last_callee_id, src_chunk_index, read_chunk
             );
             src_chunk_index = src_chunk_index + 32;
 

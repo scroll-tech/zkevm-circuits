@@ -184,10 +184,6 @@ fn handle_copy(
     destination: Destination,
 ) -> Result<(), Error> {
     let copy_length = std::cmp::min(source.length, destination.length);
-    let bytes: Vec<_> = state.call_ctx()?.memory.0[source.offset..source.offset + copy_length]
-        .iter()
-        .map(|byte| (*byte, false, false))
-        .collect();
 
     let rw_counter_start = state.block_ctx.rwc;
     let (_, src_begin_slot) = state.get_addr_shift_slot(source.offset as u64).unwrap();
@@ -211,23 +207,18 @@ fn handle_copy(
     let mut caller_memory = state.caller_ctx_mut()?.memory.clone();
     caller_memory.extend_at_least(dst_end_slot + 32);
 
-    let src_slot_bytes =
-        callee_memory.0[src_begin_slot as usize..(src_end_slot + 32) as usize].to_vec();
     let dst_slot_bytes =
         caller_memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
     let mut src_chunk_index = src_begin_slot;
     let mut dst_chunk_index = dst_begin_slot;
 
     // memory word read from src
-    for (read_chunk, write_chunk) in src_slot_bytes.chunks(32).zip(dst_slot_bytes.chunks(32)) {
-        let src_word = Word::from_big_endian(&read_chunk);
+    for write_chunk in dst_slot_bytes.chunks(32) {
         // read memory
-        state.push_op(
-            step,
-            RW::READ,
-            MemoryWordOp::new_read(source.id, src_chunk_index.into(), src_word),
-        );
+        state.memory_read_word(step, src_chunk_index.into())?;
 
+        // TODO: this must go before, or instead of the copy_from_slice from callee to caller above,
+        // or pass the previous memory somehow.
         let write_chunk_prev = write_chunk; // TODO: get previous value
 
         // write memory

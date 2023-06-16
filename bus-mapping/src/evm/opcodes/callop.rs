@@ -643,6 +643,7 @@ fn write_memory_words(
                 Word::from_big_endian(chunk_prev),
             ),
         );
+        // TODO: use state.memory_write_word instead.
     }
 
     Ok(())
