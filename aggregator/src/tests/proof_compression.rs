@@ -36,7 +36,7 @@ fn test_proof_compression() {
     let circuit = MockChunkCircuit::random(&mut rng);
     let layer_0_snark = layer_0!(circuit, MockChunkCircuit, layer_1_params, k0, path);
 
-    std::env::set_var("VERIFY_CONFIG", "./configs/compression_wide.config");
+    std::env::set_var("VERIFY_CONFIG", "./configs/compression_thin.config");
     compression_layer_evm!(layer_0_snark, layer_1_params, k1, path, 1)
 }
 
