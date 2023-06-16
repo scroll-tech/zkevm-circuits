@@ -16,6 +16,7 @@ mod test;
 
 use crate::{
     evm_circuit::util::{not, rlc},
+    sig_circuit::ecdsa::ecdsa_verify_no_pubkey_check,
     table::{KeccakTable, SigTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
 };
@@ -31,13 +32,14 @@ use halo2_base::{
 };
 use halo2_ecc::{
     bigint::CRTInteger,
-    ecc::{ecdsa::ecdsa_verify_no_pubkey_check, EccChip},
+    ecc::EccChip,
     fields::{
         fp::{FpConfig, FpStrategy},
         FieldChip,
     },
 };
 
+mod ecdsa;
 mod utils;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub(crate) use utils::*;
@@ -316,13 +318,8 @@ impl<F: Field> SigCircuit<F> {
         // build Fq chip from Fp chip
         let fq_chip = FqChip::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq>());
 
-        log::trace!("r: {:?}", sig_r);
-        log::trace!("s: {:?}", sig_s);
-        log::trace!("msg: {:?}", msg_hash);
-
         let integer_r =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_r)));
-        log::trace!("r: {:?}", integer_r);
 
         let integer_s =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_s)));
@@ -334,7 +331,7 @@ impl<F: Field> SigCircuit<F> {
         //
         // WARNING: this circuit does not enforce the returned value to be true
         // make sure the caller checks this result!
-        let ecdsa_is_valid = ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Secp256k1Affine>(
+        let (ecdsa_is_valid, y_coord) = ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Secp256k1Affine>(
             &ecc_chip.field_chip,
             ctx,
             &pk_assigned,
@@ -345,6 +342,92 @@ impl<F: Field> SigCircuit<F> {
             4,
         );
         log::trace!("ECDSA res {:?}", ecdsa_is_valid);
+
+        // =======================================
+        // constrains v == y.is_oddness()
+        // =======================================
+        assert!(*v == 0 || *v == 1, "v is not boolean");
+
+        // we want to constrain assigned_y_tmp is 88 bits
+        // somehow the following range check API bugs
+        //
+        // ecc_chip
+        //     .field_chip
+        //     .range
+        //     .get_last_bit(ctx, &assigned_y_tmp, 88);
+        //
+        // so let's doit the old fashion
+
+        let gate = ecdsa_chip.gate();
+
+        let assigned_y_is_odd = gate.load_witness(ctx, Value::known(F::from(*v as u64)));
+
+        // decompose the last 88 bits of y
+        let assigned_y_limb = &y_coord.limbs()[0];
+
+        let last_bit = {
+            let mut y_value = F::zero();
+            assigned_y_limb.value().map(|&x| y_value = x);
+
+            let to_le_bits = |byte| -> Vec<bool> {
+                let mut res = vec![];
+                let mut b = byte;
+                for _ in 0..8 {
+                    res.push((b & 1) != 0);
+                    b >>= 1
+                }
+                res
+            };
+
+            let a = y_value
+                .to_repr()
+                .iter()
+                .flat_map(|x| to_le_bits(*x))
+                .collect_vec();
+
+            let mut acc = gate.load_witness(ctx, Value::known(F::from(a[87] as u64)));
+            gate.assert_bit(ctx, &acc);
+            for ai in a.iter().take(87).skip(1).rev() {
+                acc = gate.add(
+                    ctx,
+                    QuantumCell::Existing(&acc),
+                    QuantumCell::Existing(&acc),
+                );
+                let tmp = gate.load_witness(ctx, Value::known(F::from(*ai as u64)));
+                gate.assert_bit(ctx, &tmp);
+                acc = gate.add(
+                    ctx,
+                    QuantumCell::Existing(&acc),
+                    QuantumCell::Existing(&tmp),
+                );
+            }
+            acc = gate.add(
+                ctx,
+                QuantumCell::Existing(&acc),
+                QuantumCell::Existing(&acc),
+            );
+            let last_bit = gate.load_witness(ctx, Value::known(F::from(a[0] as u64)));
+            gate.assert_bit(ctx, &last_bit);
+            acc = gate.add(
+                ctx,
+                QuantumCell::Existing(&acc),
+                QuantumCell::Existing(&last_bit),
+            );
+
+            gate.assert_equal(
+                ctx,
+                QuantumCell::Existing(&acc),
+                QuantumCell::Existing(&assigned_y_limb),
+            );
+            last_bit
+        };
+
+        // finished decomposition, now checks assigned_y_is_odd matches last bit
+        gate.assert_equal(
+            ctx,
+            QuantumCell::Existing(&assigned_y_is_odd),
+            QuantumCell::Existing(&last_bit),
+        );
 
         Ok(AssignedECDSA {
             pk: pk_assigned,
@@ -422,9 +505,9 @@ impl<F: Field> SigCircuit<F> {
 
         let zero = ecdsa_chip.range.gate.load_zero(ctx);
 
-        let (padding, sign_data) = match sign_data {
-            Some(sign_data) => (false, sign_data.clone()),
-            None => (true, SignData::default()),
+        let sign_data = match sign_data {
+            Some(sign_data) => sign_data.clone(),
+            None => SignData::default(),
         };
 
         // ================================================

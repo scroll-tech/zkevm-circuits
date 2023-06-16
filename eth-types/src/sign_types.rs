@@ -32,17 +32,16 @@ pub fn sign(
     let generator = Secp256k1Affine::generator();
     let sig_point = generator * randomness;
     let sig_v: bool = sig_point.y.is_odd().into();
+
     let x = *Option::<Coordinates<_>>::from(sig_point.to_affine().coordinates())
         .expect("point is the identity")
         .x();
 
-    let x_repr = &mut vec![0u8; 32];
-    x_repr.copy_from_slice(x.to_bytes().as_slice());
-
     let mut x_bytes = [0u8; 64];
-    x_bytes[..32].copy_from_slice(&x_repr[..]);
+    x_bytes[..32].copy_from_slice(&x.to_bytes());
 
     let sig_r = secp256k1::Fq::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
+
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
     (sig_r, sig_s, u8::from(sig_v))
 }
@@ -51,7 +50,7 @@ pub fn sign(
 /// signature.
 #[derive(Clone, Debug)]
 pub struct SignData {
-    /// Secp256k1 signature point
+    /// Secp256k1 signature point (r, s, v)
     /// v must be 0 or 1
     pub signature: (secp256k1::Fq, secp256k1::Fq, u8),
     /// Secp256k1 public key

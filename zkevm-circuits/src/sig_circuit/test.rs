@@ -22,7 +22,7 @@ fn sign_verify() {
     use rand_xorshift::XorShiftRng;
     use sha3::{Digest, Keccak256};
     let mut rng = XorShiftRng::seed_from_u64(1);
-    let max_sigs = [4];
+    let max_sigs = [16];
     for max_sig in max_sigs.iter() {
         log::debug!("testing for {} signatures", max_sig);
         let mut signatures = Vec::new();
