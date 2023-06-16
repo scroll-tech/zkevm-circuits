@@ -575,6 +575,40 @@ pub(crate) mod from_bytes {
     }
 }
 
+/// Decodes a field element from its binary representation
+pub(crate) mod from_bits {
+    use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bits: &[E]) -> Expression<F> {
+        debug_assert!(
+            bits.len() <= MAX_N_BYTES_INTEGER * 8,
+            "Too many bits to compose an integer in field"
+        );
+        let mut value = 0.expr();
+        let mut multiplier = F::one();
+        for bit in bits.iter() {
+            value = value + bit.expr() * multiplier;
+            multiplier *= F::from(2);
+        }
+        value
+    }
+
+    pub(crate) fn value<F: FieldExt>(bits: &[bool]) -> F {
+        debug_assert!(
+            bits.len() <= MAX_N_BYTES_INTEGER * 8,
+            "Too many bits to compose an integer in field"
+        );
+        let mut value = F::zero();
+        let mut multiplier = F::one();
+        for bit in bits.iter() {
+            value += F::from(*bit as u64) * multiplier;
+            multiplier *= F::from(2);
+        }
+        value
+    }
+}
+
 /// Returns the random linear combination of the inputs.
 /// Encoding is done as follows: v_0 * R^0 + v_1 * R^1 + ...
 pub(crate) mod rlc {

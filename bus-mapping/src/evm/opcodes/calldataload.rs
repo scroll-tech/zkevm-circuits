@@ -106,7 +106,7 @@ impl Opcode for Calldataload {
                 word_right_bytes
                     .clone_from_slice(&memory.0[(slot + 32) as usize..(slot + 64) as usize]);
 
-                let addr_right_Word = Word::from_little_endian(&word_right_bytes);
+                let addr_right_Word = Word::from_big_endian(&word_right_bytes);
 
                 state.push_op(
                     &mut exec_step,

@@ -28,57 +28,35 @@ impl Opcode for Mload {
         // Manage first stack read at latest stack position
         state.stack_read(&mut exec_step, stack_position, stack_value_read)?;
 
-        // Read the memory
-        let mut mem_read_addr: MemoryAddress = stack_value_read.try_into()?;
-        // Accesses to memory that hasn't been initialized are valid, and return
-        // 0.
+        // Read the memory value from the next step of the trace.
         let mem_read_value = geth_steps[1].stack.last()?;
 
-        // TODO: get two memory words (slot, slot + 32) at address if offset != 0, otherwise get one
-        // word at slot.
-        let mut memory = state.call_ctx_mut()?.memory.clone();
-        println!("before mload memory length is {}", memory.0.len());
-
         let offset = stack_value_read.as_u64();
-        // expand to offset + 64 to enusre addr_right_Word without out of boundary
-        let minimal_length = offset + 64;
-
-        memory.extend_at_least(minimal_length as usize);
-
         let shift = offset % 32;
         let slot = offset - shift;
-        println!(
-            "minimal_length {} , slot {},  shift {}, memory_length {}",
-            minimal_length,
-            slot,
-            shift,
-            memory.0.len()
-        );
+        println!("shift {}, slot {}", shift, slot);
 
-        let mut slot_bytes: [u8; 32] = [0; 32];
-        slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize + 32)]);
+        let (left_word, right_word) = {
+            // Get the memory chunk that contains the word, starting at an aligned slot address.
+            let slots_content = state.call_ctx()?.memory.read_chunk(slot.into(), 64.into());
 
-        let addr_left_Word = Word::from_big_endian(&slot_bytes);
-        // TODO: edge case: if shift = 0, skip to read right word ?
-        let mut word_right_bytes: [u8; 32] = [0; 32];
-        slot_bytes.clone_from_slice(&memory.0[(slot + 32) as usize..(slot + 64) as usize]);
-
-        let addr_right_Word = Word::from_little_endian(&word_right_bytes);
+            (
+                Word::from_big_endian(&slots_content[..32]),
+                Word::from_big_endian(&slots_content[32..64]),
+            )
+        };
 
         // First stack write
-        //
         state.stack_write(&mut exec_step, stack_position, mem_read_value)?;
 
-        // First mem read -> 32 MemoryOp generated.
-        state.memory_read_word(&mut exec_step, slot.into(), addr_left_Word)?;
-        state.memory_read_word(&mut exec_step, (slot + 32).into(), addr_right_Word)?;
+        state.memory_read_word(&mut exec_step, slot.into(), left_word)?;
+        state.memory_read_word(&mut exec_step, (slot + 32).into(), right_word)?;
 
-        // reconstruction
-        // "minimal_length - 32" subtract 32 as actual expansion size
+        // Expand memory if needed.
         state
             .call_ctx_mut()?
             .memory
-            .extend_at_least((minimal_length - 32) as usize);
+            .extend_at_least((offset + 32) as usize);
 
         Ok(vec![exec_step])
     }

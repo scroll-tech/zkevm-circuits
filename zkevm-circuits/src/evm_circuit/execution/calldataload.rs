@@ -1,5 +1,6 @@
+use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256};
+use eth_types::{Field, ToBigEndian, ToLittleEndian, U256};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -17,7 +18,8 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            memory_gadget::BufferReaderGadget,
+            from_bytes,
+            memory_gadget::{BufferReaderGadget, MemoryMask, MemoryWordAddress},
             not, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -53,7 +55,9 @@ pub(crate) struct CallDataLoadGadget<F> {
     buffer_reader: BufferReaderGadget<F, N_BYTES_WORD, N_BYTES_MEMORY_ADDRESS>,
     // read two memory words
     // memory_address: MemoryWordAddress<F>,
-    slot: Cell<F>,
+    address_align: MemoryWordAddress<F>,
+    mask: MemoryMask<F>,
+    value: Word<F>,
     value_left: Word<F>,
     value_right: Word<F>,
 }
@@ -69,7 +73,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let src_id = cb.query_cell();
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
-        let slot = cb.query_cell();
+
+        let value = cb.query_word_rlc();
         let value_left = cb.query_word_rlc();
         let value_right = cb.query_word_rlc();
 
@@ -138,6 +143,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         let buffer_reader = BufferReaderGadget::construct(cb, src_addr.expr(), src_addr_end);
 
+        // Read the call data word, potentially including trailing zeros
+        // when reading out-of-bound.
         let mut calldata_word: Vec<_> = (0..N_BYTES_WORD)
             .map(|idx| {
                 // For a root call, the call data comes from tx's data field.
@@ -159,38 +166,64 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 buffer_reader.byte(idx)
             })
             .collect();
+        // Since the stack is interpreted as MSB-first in CALLDATALOAD, we reverse the bytes here.
+        calldata_word.reverse();
+        let calldata_word: [Expression<F>; N_BYTES_WORD] = calldata_word.try_into().unwrap();
+        let calldata_word = cb.word_rlc(calldata_word);
+
+        // Now that we have the address in the caller’s memory, decompose it to work out the
+        // alignment.
+        let address = cb.query_word_rlc();
+        cb.require_equal(
+            "memory address decomposition",
+            from_bytes::expr(&address.cells),
+            src_addr,
+        );
+
+        let address_align = MemoryWordAddress::construct(cb, address.clone());
+        let mask = MemoryMask::construct(cb, &address_align.shift_bits(), 0.expr());
 
         // For an internal call, the call data comes from memory，read memory word
-        // TODO: unify slot within MemoryWordAddress type
         cb.condition(
             and::expr([
                 data_offset.not_overflow(),
                 not::expr(cb.curr.state.is_root.expr()),
             ]),
             |cb| {
+                // Compare calldata with the memory value, except for out-of-bound bytes set to
+                // zero. The MLOAD value is MSB-first, the reverse order of the buffer_reader.
+                let mem_calldata_overlap: [Expression<F>; N_BYTES_WORD] = array_init(|i| {
+                    let reversed_i = N_BYTES_WORD - 1 - i;
+                    value.cells[i].expr() * buffer_reader.read_flag(reversed_i)
+                });
+                cb.require_equal(
+                    "calldata equals memory data",
+                    calldata_word.clone(),
+                    cb.word_rlc(mem_calldata_overlap),
+                );
+
+                // Get the memory word the same way as MLOAD.
+                // Check the bytes that are read from the left and right memory words.
+                mask.require_equal_unaligned_word(cb, value.expr(), &value_left, &value_right);
+
+                // Read the left and right words.
                 cb.memory_lookup_word(
                     0.expr(),
-                    slot.expr(),
+                    address_align.addr_left(),
                     value_left.expr(),
                     Some(src_id.expr()),
                 );
                 cb.memory_lookup_word(
                     0.expr(),
-                    slot.expr() + 32.expr(),
+                    address_align.addr_right(),
                     value_right.expr(),
                     Some(src_id.expr()),
                 );
             },
         );
 
-        // Since the stack items are in little endian form, we reverse the bytes
-        // here.
-        calldata_word.reverse();
-
         // Add a lookup constraint for the 32-bytes that should have been pushed
         // to the stack.
-        let calldata_word: [Expression<F>; N_BYTES_WORD] = calldata_word.try_into().unwrap();
-        let calldata_word = cb.word_rlc(calldata_word);
         cb.require_zero(
             "Stack push result must be 0 if stack pop offset is Uint64 overflow",
             data_offset.overflow() * calldata_word.expr(),
@@ -215,7 +248,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             call_data_offset,
             data_offset,
             buffer_reader,
-            slot,
+            address_align,
+            mask,
+            value,
             value_left,
             value_right,
         }
@@ -262,28 +297,39 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             .min(src_addr_end);
 
         let shift = src_addr % 32;
-        let slot = src_addr - shift;
-        let mut value_left = U256::zero();
-        let mut value_right = U256::zero();
+        self.address_align.assign(region, offset, src_addr)?;
+        self.mask.assign(region, offset, shift, false)?;
 
-        self.slot
-            .assign(region, offset, Value::known(F::from(slot)))?;
+        // prepare to fetch from memory bytes
+        let mut value_left_bytes = [0u8; N_BYTES_WORD];
+        let mut value_right_bytes = [0u8; N_BYTES_WORD];
+
         if !call.is_root && offset_not_overflow {
             // assign value_left, value_right word
-            value_left = block.rws[step.rw_indices[4]].memory_word_value();
-            value_right = block.rws[step.rw_indices[5]].memory_word_value();
+            value_left_bytes = block.rws[step.rw_indices[4]]
+                .memory_word_value()
+                .to_le_bytes();
+            value_right_bytes = block.rws[step.rw_indices[5]]
+                .memory_word_value()
+                .to_le_bytes();
+
+            // Here we write exactly what is in the RW table.
             self.value_left
-                .assign(region, offset, Some(value_left.to_le_bytes()))?;
+                .assign(region, offset, Some(value_left_bytes))?;
             self.value_right
-                .assign(region, offset, Some(value_right.to_le_bytes()))?;
+                .assign(region, offset, Some(value_right_bytes))?;
+
+            // The RW values were BE order (see bus-mapping), so go back to normal memory order.
+            value_left_bytes.reverse();
+            value_right_bytes.reverse();
         }
 
+        // reconstruct the unaligned word.
+        let value_bytes =
+            MemoryMask::<F>::make_unaligned_word(shift, &value_left_bytes, &value_right_bytes);
+        self.value.assign(region, offset, Some(value_bytes))?;
+
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
-        // prepare to fetch from memory bytes
-        let mut value_left_bytes = value_left.to_le_bytes();
-        value_left_bytes.reverse();
-        let mut value_right_bytes = value_left.to_le_bytes();
-        value_right_bytes.reverse();
 
         if offset_not_overflow {
             for (i, byte) in calldata_bytes.iter_mut().enumerate() {
