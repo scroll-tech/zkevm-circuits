@@ -242,7 +242,7 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                     Value::known(current_block_number),
-                    randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
+                    Value::known(F::from(self.chain_id.as_u64())),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),
@@ -266,7 +266,7 @@ impl BlockContext {
         #[cfg(not(feature = "scroll"))]
         let history_hashes: &[U256] = &self.history_hashes;
         #[cfg(feature = "scroll")]
-        let history_hashes: &[U256] = &[self.eth_block.parent_hash.to_word()];
+        let history_hashes: &[U256] = &[]; // block_hash is computed as keccak256(chain_id || block_number)
 
         let len_history = history_hashes.len();
 
