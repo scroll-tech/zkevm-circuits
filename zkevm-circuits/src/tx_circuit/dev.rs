@@ -115,9 +115,9 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
 
     fn synthesize_sub(
         &self,
-        config: &Self::Config,
-        challenges: &Challenges<halo2_proofs::circuit::Value<F>>,
-        layouter: &mut impl Layouter<F>,
+        _config: &Self::Config,
+        _challenges: &Challenges<halo2_proofs::circuit::Value<F>>,
+        _layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         unimplemented!("not needed")
     }

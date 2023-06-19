@@ -55,13 +55,7 @@ impl<F: Field> Circuit<F> for SigCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = config.challenges.values(&layouter);
-        config.sign_verify.load_range(&mut layouter)?;
-        let _assigned_sig_verifs = self.assign(
-            &config.sign_verify,
-            &mut layouter,
-            &self.signatures,
-            &challenges,
-        )?;
+        self.synthesize_sub(&config.sign_verify, &challenges, &mut layouter)?;
         config.sign_verify.keccak_table.dev_load(
             &mut layouter,
             &keccak_inputs_sign_verify(&self.signatures),

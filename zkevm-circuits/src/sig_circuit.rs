@@ -51,8 +51,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
+use ethers_core::utils::keccak256;
 use itertools::Itertools;
-use keccak256::plain::Keccak;
 use log::error;
 use std::{iter, marker::PhantomData};
 
@@ -128,10 +128,6 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
             0,
             LOG_TOTAL_NUM_ROWS, // maximum k of the chip
         );
-
-        // we are not really using this instance column
-        let instance = meta.instance_column();
-        meta.enable_equality(instance);
 
         // we need one phase 2 column to store RLC results
         #[cfg(feature = "onephase")]
@@ -331,7 +327,7 @@ impl<F: Field> SigCircuit<F> {
         //
         // WARNING: this circuit does not enforce the returned value to be true
         // make sure the caller checks this result!
-        let (ecdsa_is_valid, y_coord) = ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Secp256k1Affine>(
+        let (sig_is_valid, y_coord) = ecdsa_verify_no_pubkey_check::<F, Fp, Fq, Secp256k1Affine>(
             &ecc_chip.field_chip,
             ctx,
             &pk_assigned,
@@ -341,7 +337,7 @@ impl<F: Field> SigCircuit<F> {
             4,
             4,
         );
-        log::trace!("ECDSA res {:?}", ecdsa_is_valid);
+        log::trace!("ECDSA res {:?}", sig_is_valid);
 
         // =======================================
         // constrains v == y.is_oddness()
@@ -397,7 +393,8 @@ impl<F: Field> SigCircuit<F> {
             msg_hash,
             integer_r,
             integer_s,
-            sig_is_valid: ecdsa_is_valid,
+            v: assigned_y_is_odd,
+            sig_is_valid,
         })
     }
 
@@ -487,13 +484,7 @@ impl<F: Field> SigCircuit<F> {
         // ================================================
         let pk_le = pk_bytes_le(&sign_data.pk);
         let pk_be = pk_bytes_swap_endianness(&pk_le);
-        let pk_hash = {
-            let mut keccak = Keccak::default();
-            keccak.update(&pk_be);
-            let hash: [_; 32] = keccak.digest().try_into().expect("vec to array of size 32");
-            hash
-        }
-        .map(|byte| Value::known(F::from(byte as u64)));
+        let pk_hash = keccak256(pk_be).map(|byte| Value::known(F::from(byte as u64)));
 
         log::trace!("pk hash {:0x?}", pk_hash);
         let pk_hash_cells = pk_hash
@@ -527,10 +518,9 @@ impl<F: Field> SigCircuit<F> {
                           crt_integer: &CRTInteger<'v, F>,
                           overriding: &Option<&QuantumCell<F>>|
          -> Result<_, Error> {
-            //let bytes: [u8; 32] = v.to_bytes();
             let byte_cells: Vec<QuantumCell<F>> = bytes
                 .iter()
-                .map(|&x| QuantumCell::Witness(Value::known(F::from_u128(x as u128))))
+                .map(|&x| QuantumCell::Witness(Value::known(F::from(x as u64))))
                 .collect_vec();
 
             self.assert_crt_int_byte_repr(
@@ -629,7 +619,7 @@ impl<F: Field> SigCircuit<F> {
         sign_data: Option<&SignData>,
         sign_data_decomposed: &SignDataDecomposed<'a, 'v, F>,
         challenges: &Challenges<Value<F>>,
-        sig_is_valid: &AssignedValue<'v, F>,
+        assigned_ecdsa: &AssignedECDSA<'v, F, FpChip<F>>,
     ) -> Result<([AssignedValue<'v, F>; 3], AssignedSignatureVerify<F>), Error> {
         let (_padding, sign_data) = match sign_data {
             Some(sign_data) => (false, sign_data.clone()),
@@ -717,9 +707,10 @@ impl<F: Field> SigCircuit<F> {
                 .keccak_input()
                 .map(|r| rlc::value(sign_data.msg.iter().rev(), r)),
             msg_hash_rlc: msg_hash_rlc.into(),
-            sig_is_valid: sig_is_valid.clone().into(),
+            sig_is_valid: assigned_ecdsa.sig_is_valid.clone().into(),
             r_rlc: r_rlc.into(),
             s_rlc: s_rlc.into(),
+            v: assigned_ecdsa.v.clone().into(),
         };
         Ok((to_be_keccak_checked, assigned_sig_verif))
     }
@@ -808,7 +799,7 @@ impl<F: Field> SigCircuit<F> {
                         sign_data,
                         sign_data_decomposed,
                         challenges,
-                        &e.sig_is_valid,
+                        e,
                     )?;
                     assigned_sig_verifs.push(assigned_sig_verif);
                     deferred_keccak_check.push(to_be_keccak_checked);
@@ -855,13 +846,8 @@ impl<F: Field> SigCircuit<F> {
                         || Value::known(F::one()),
                     )?;
 
-                    // FIXME: constrain v
-                    region.assign_advice(
-                        || "assign sig_table v",
-                        config.sig_table.sig_v,
-                        idx,
-                        || Value::known(F::from(signatures[idx].signature.2 as u64)),
-                    )?;
+                    let v: AssignedValue<_> = assigned_sig_verif.v.clone().into();
+                    v.copy_advice(&mut region, config.sig_table.sig_v, idx);
 
                     let r_rlc: AssignedValue<_> = assigned_sig_verif.r_rlc.clone().into();
                     r_rlc.copy_advice(&mut region, config.sig_table.sig_r_rlc, idx);

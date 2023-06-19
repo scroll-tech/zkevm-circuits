@@ -54,6 +54,7 @@ pub(crate) struct AssignedECDSA<'v, F: Field, FC: FieldChip<F>> {
     pub(super) msg_hash: CRTInteger<'v, F>,
     pub(super) integer_r: CRTInteger<'v, F>,
     pub(super) integer_s: CRTInteger<'v, F>,
+    pub(super) v: AssignedValue<'v, F>,
     pub(super) sig_is_valid: AssignedValue<'v, F>,
 }
 
@@ -127,6 +128,7 @@ pub(crate) struct AssignedSignatureVerify<F: Field> {
     pub(crate) msg_hash_rlc: AssignedValueNoTimer<F>,
     pub(crate) r_rlc: AssignedValueNoTimer<F>,
     pub(crate) s_rlc: AssignedValueNoTimer<F>,
+    pub(crate) v: AssignedValueNoTimer<F>,
     pub(crate) sig_is_valid: AssignedValueNoTimer<F>,
 }
 

@@ -141,12 +141,6 @@ pub struct TxCircuitConfig<F: Field> {
     /// Address recovered by SignVerifyChip
     sv_address: Column<Advice>,
 
-    /// A fixed column to store F::one, used to constraint signature_is_valid == one.
-    // FIXME: it is pretty wasteful to allocate a new fixed column just
-    // to store a constant value F::one.
-    // Since we will use lookup to constrain is_valid later, is the "constant one" fixed column
-    // still needed?
-    fixed_column: Column<Fixed>,
     sig_table: SigTable,
 
     // External tables
@@ -189,11 +183,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = tx_table.q_enable;
-
-        // not needed now?
-        // we will need one fixed column to check if ecdsa is valid
-        let fixed_column = meta.fixed_column();
-        meta.enable_equality(fixed_column);
 
         // tag, rlp_tag, tx_type, is_none
         let tx_type = meta.advice_column();
@@ -861,7 +850,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         Self {
             minimum_rows: meta.minimum_rows(),
-            fixed_column,
             tx_tag_bits: tag_bits,
             tx_type,
             tx_type_bits,
@@ -907,7 +895,7 @@ impl<F: Field> TxCircuitConfig<F> {
         tx_table: TxTable,
         keccak_table: KeccakTable,
         rlp_table: RlpTable,
-        sig_table: SigTable,
+        _sig_table: SigTable,
     ) {
         macro_rules! is_tx_type {
             ($var:ident, $type_variant:ident) => {
@@ -2108,13 +2096,6 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             )?;
         }
         Ok(())
-    }
-
-    // TODO: is this still needed since we switch from halo2wrong to halo2-ecc?
-    fn instance(&self) -> Vec<Vec<F>> {
-        // The maingate expects an instance column, but we don't use it, so we return an
-        // "empty" instance column
-        vec![vec![]]
     }
 }
 
