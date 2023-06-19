@@ -412,6 +412,14 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
                     0.expr(),
                     Some(reversion_info),
                 );
+                #[cfg(feature = "scroll")]
+                cb.account_write(
+                    receiver_address.clone(),
+                    AccountFieldTag::KeccakCodeHash,
+                    cb.empty_keccak_hash_rlc(),
+                    0.expr(),
+                    Some(reversion_info),
+                );
             },
         );
         // Skip transfer if value == 0
@@ -445,10 +453,11 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         // +1 Write Account (sender) Balance (Not Reversible tx fee)
         1.expr() +
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
             self.must_create.clone()]
-        ) * 1.expr() +
+        ) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -457,10 +466,11 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
         // NOTE: Write Account (sender) Balance (Not Reversible tx fee)
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
             self.must_create.clone()]
-        ) * 1.expr() +
+        ) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -542,8 +552,14 @@ impl<F: Field> TransferGadget<F> {
                     0.expr(),
                     Some(reversion_info),
                 );
-                // TODO: also write empty keccak code hash? codesize seems not need yet. write a
-                // test to verify this.
+                #[cfg(feature = "scroll")]
+                cb.account_write(
+                    receiver_address.clone(),
+                    AccountFieldTag::KeccakCodeHash,
+                    cb.empty_keccak_hash_rlc(),
+                    0.expr(),
+                    Some(reversion_info),
+                );
             },
         );
         // Skip transfer if value == 0
@@ -582,10 +598,11 @@ impl<F: Field> TransferGadget<F> {
 
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
             self.must_create.clone()]
-        ) * 1.expr() +
+        ) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -593,10 +610,11 @@ impl<F: Field> TransferGadget<F> {
 
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        // if feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
-            self.must_create.clone()]
-        ) * 1.expr() +
+            self.must_create.clone(),
+        ]) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()

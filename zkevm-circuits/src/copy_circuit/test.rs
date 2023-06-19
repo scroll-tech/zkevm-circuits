@@ -8,10 +8,10 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
-    evm::{gen_sha3_code, MemoryKind},
+    evm::{gen_sha3_code, MemoryKind, OpcodeId, PrecompileCallArgs},
     mock::BlockData,
 };
-use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
+use eth_types::{bytecode, geth_types::GethData, word, ToWord, Word};
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
@@ -304,6 +304,40 @@ fn copy_circuit_invalid_tx_log() {
         test_copy_circuit_from_block(10, block),
         vec!["Memory lookup", "TxLog lookup"],
     );
+}
+
+#[test]
+fn copy_circuit_precompile_call() {
+    // TODO: as we add support for more precompiles, we should populate those here as well.
+    let args = PrecompileCallArgs {
+        name: "multi-bytes success (more than 32 bytes)",
+        setup_code: bytecode! {
+            // place params in memory
+            PUSH30(word!("0x0123456789abcdef0f1e2d3c4b5a6978"))
+            PUSH1(0x00) // place from 0x00 in memory
+            MSTORE
+            PUSH30(word!("0xaabbccdd001122331039abcdefefef84"))
+            PUSH1(0x20) // place from 0x20 in memory
+            MSTORE
+        },
+        // copy 63 bytes from memory addr 0
+        call_data_offset: 0x00.into(),
+        call_data_length: 0x3f.into(),
+        // return only 35 bytes and write from memory addr 72
+        ret_offset: 0x48.into(),
+        ret_size: 0x23.into(),
+        address: PrecompileCalls::Identity.address().to_word(),
+        ..Default::default()
+    };
+    let bytecode = args.with_call_op(OpcodeId::STATICCALL);
+    let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
+    let block: GethData = test_ctx.into();
+    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    builder
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
+    let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
 }
 
 #[test]

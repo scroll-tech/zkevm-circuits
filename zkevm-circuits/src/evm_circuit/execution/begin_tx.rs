@@ -642,6 +642,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let must_create = tx.is_create;
         if (!callee_exists && !tx.value.is_zero()) || must_create {
             callee_code_hash = rws.next().account_codehash_pair().1;
+            #[cfg(feature = "scroll")]
+            let _callee_keccak_code_hash = rws.next();
         }
         let mut caller_balance_sub_value_pair = (zero, zero);
         let mut callee_balance_pair = (zero, zero);
