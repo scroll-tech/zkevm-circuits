@@ -93,7 +93,7 @@ fn run<F: Field>(k: u32, max_verif: usize, signatures: Vec<SignData>) {
         _marker: PhantomData,
     };
 
-    let prover = match MockProver::run(k, &circuit, vec![vec![]]) {
+    let prover = match MockProver::run(k, &circuit, vec![]) {
         Ok(prover) => prover,
         Err(e) => panic!("{:#?}", e),
     };

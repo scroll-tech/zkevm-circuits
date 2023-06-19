@@ -126,7 +126,7 @@ fn run<F: Field>(
         },
         tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, txs),
     };
-    let prover = match MockProver::run(k, &circuit, vec![vec![]]) {
+    let prover = match MockProver::run(k, &circuit, vec![]) {
         Ok(prover) => prover,
         Err(e) => panic!("{:#?}", e),
     };
