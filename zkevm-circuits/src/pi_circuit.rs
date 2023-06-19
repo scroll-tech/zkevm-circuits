@@ -3,6 +3,7 @@
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 /// Defines PiTestCircuit
 pub mod dev;
+mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
@@ -31,6 +32,11 @@ use halo2_proofs::plonk::SecondPhase;
 use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::{
     evm_circuit::{util::constraint_builder::BaseConstraintBuilder, EvmCircuitExports},
+    pi_circuit::param::{
+        BASE_FEE_OFFSET, BLOCK_HEADER_BYTES_NUM, BLOCK_LEN, BLOCK_NUM_OFFSET, BYTE_POW_BASE,
+        CHAIN_ID_OFFSET, GAS_LIMIT_OFFSET, KECCAK_DIGEST_SIZE, NUM_TXS_OFFSET, RPI_CELL_IDX,
+        RPI_LENGTH_ACC_CELL_IDX, RPI_RLC_ACC_CELL_IDX, TIMESTAMP_OFFSET,
+    },
     state_circuit::StateCircuitExports,
     witness::{self, Block, BlockContext, BlockContexts, Transaction},
 };
@@ -55,27 +61,6 @@ use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
 /// Fixed by the spec
-const BLOCK_LEN: usize = 9;
-const BYTE_POW_BASE: u64 = 256;
-const BLOCK_HEADER_BYTES_NUM: usize = 58;
-const KECCAK_DIGEST_SIZE: usize = 32;
-
-const RPI_CELL_IDX: usize = 0;
-const RPI_RLC_ACC_CELL_IDX: usize = 1;
-const RPI_LENGTH_ACC_CELL_IDX: usize = 2;
-
-const ZERO_BYTE_GAS_COST: u64 = 4;
-const NONZERO_BYTE_GAS_COST: u64 = 16;
-
-const COINBASE_OFFSET: usize = 0;
-const TIMESTAMP_OFFSET: usize = 1;
-const BLOCK_NUM_OFFSET: usize = 2;
-const DIFFICULTY_OFFSET: usize = 3;
-const GAS_LIMIT_OFFSET: usize = 4;
-const BASE_FEE_OFFSET: usize = 5;
-const CHAIN_ID_OFFSET: usize = 6;
-const NUM_TXS_OFFSET: usize = 7;
-const CUM_NUM_TXS_OFFSET: usize = 8;
 
 pub(crate) static CHAIN_ID: Lazy<Word> = Lazy::new(|| read_env_var("CHAIN_ID", Word::zero()));
 pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| read_env_var("COINBASE", Address::zero()));
