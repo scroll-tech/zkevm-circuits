@@ -28,3 +28,4 @@ url="2.2.2"
 [features]
 default = []
 benches = []
+scroll = ["bus-mapping/scroll", "eth-types/scroll", "mock/scroll", "zkevm-circuits/scroll"]

@@ -18,3 +18,4 @@ rand = "0.8"
 [features]
 default = []
 shanghai = ["eth-types/shanghai"]
+scroll = ["eth-types/scroll", "external-tracer/scroll"]

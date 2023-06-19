@@ -17,10 +17,12 @@ use crate::{
     },
     table::BlockContextFieldTag,
     util::Expr,
-    witness::NUM_PREV_BLOCK_ALLOWED,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, ToScalar};
+use eth_types::{
+    evm_types::block_utils::{is_valid_block_number, NUM_PREV_BLOCK_ALLOWED},
+    Field, ToLittleEndian, ToScalar,
+};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -29,7 +31,8 @@ pub(crate) struct BlockHashGadget<F> {
     same_context: SameContextGadget<F>,
     block_number: WordByteCapGadget<F, N_BYTES_U64>,
     current_block_number: Cell<F>,
-    block_hash: Word<F>,
+    block_hash: Cell<F>,
+    chain_id: Word<F>,
     diff_lt: LtGadget<F, N_BYTES_U64>,
 }
 
@@ -40,16 +43,21 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let current_block_number = cb.query_cell();
-        let block_number = WordByteCapGadget::construct(cb, current_block_number.expr());
-        cb.stack_pop(block_number.original_word());
-
         cb.block_lookup(
             BlockContextFieldTag::Number.expr(),
             cb.curr.state.block_number.expr(),
             current_block_number.expr(),
         );
 
-        let block_hash = cb.query_word_rlc();
+        let block_number = WordByteCapGadget::construct(cb, current_block_number.expr());
+        cb.stack_pop(block_number.original_word());
+
+        let chain_id = cb.query_word_rlc();
+        cb.block_lookup(
+            BlockContextFieldTag::ChainId.expr(),
+            cb.curr.state.block_number.expr(),
+            chain_id.expr(),
+        );
 
         let diff_lt = LtGadget::construct(
             cb,
@@ -59,10 +67,42 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 
         let is_valid = and::expr([block_number.lt_cap(), diff_lt.expr()]);
 
+        let block_hash = cb.query_cell_phase2();
         cb.condition(is_valid.expr(), |cb| {
+            // For non-scroll, lookup for the block hash.
+            #[cfg(not(feature = "scroll"))]
             cb.block_lookup(
                 BlockContextFieldTag::BlockHash.expr(),
                 block_number.valid_value(),
+                block_hash.expr(),
+            );
+
+            // For scroll, the block hash is calculated by Keccak256. The input
+            // is a 16-bytes array, the first 8-bytes are set to the big-endian
+            // of chain ID and the last 8-bytes are set to block number.
+            #[cfg(feature = "scroll")]
+            cb.keccak_table_lookup(
+                cb.keccak_rlc::<{ 2 * N_BYTES_U64 }>(
+                    chain_id
+                        .cells
+                        .iter()
+                        .take(N_BYTES_U64)
+                        .rev()
+                        .chain(
+                            block_number
+                                .original_ref()
+                                .cells
+                                .iter()
+                                .take(N_BYTES_U64)
+                                .rev(),
+                        )
+                        .rev()
+                        .map(Expr::expr)
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                ),
+                (2 * N_BYTES_U64).expr(),
                 block_hash.expr(),
             );
         });
@@ -90,6 +130,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             block_number,
             current_block_number,
             block_hash,
+            chain_id,
             diff_lt,
         }
     }
@@ -105,23 +146,32 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
+        let chain_id = block.chain_id;
         let current_block_number = block.context.ctxs[&tx.block_number].number;
+        let block_number = block.rws[step.rw_indices[0]].stack_value();
+        let block_hash = block.rws[step.rw_indices[1]].stack_value();
+
+        if is_valid_block_number(block_number, current_block_number) {
+            #[cfg(feature = "scroll")]
+            assert_eq!(
+                block_hash,
+                eth_types::evm_types::block_utils::calculate_block_hash(chain_id, block_number).1
+            );
+        } else {
+            assert_eq!(block_hash, 0.into());
+        }
+
         let current_block_number = current_block_number
             .to_scalar()
             .expect("unexpected U256 -> Scalar conversion failure");
-
-        let block_number = block.rws[step.rw_indices[0]].stack_value();
         self.block_number
             .assign(region, offset, block_number, current_block_number)?;
-
         self.current_block_number
             .assign(region, offset, Value::known(current_block_number))?;
-
-        self.block_hash.assign(
-            region,
-            offset,
-            Some(block.rws[step.rw_indices[1]].stack_value().to_le_bytes()),
-        )?;
+        self.block_hash
+            .assign(region, offset, region.word_rlc(block_hash))?;
+        self.chain_id
+            .assign(region, offset, Some(chain_id.to_le_bytes()))?;
 
         // Block number overflow should be constrained by WordByteCapGadget.
         let block_number: F = block_number
@@ -175,13 +225,10 @@ mod test {
 
     #[test]
     fn blockhash_gadget_simple() {
-        #[cfg(not(feature = "scroll"))]
-        {
-            test_ok(0.into(), 5);
-            test_ok(1.into(), 5);
-            test_ok(2.into(), 5);
-            test_ok(3.into(), 5);
-        }
+        test_ok(0.into(), 5);
+        test_ok(1.into(), 5);
+        test_ok(2.into(), 5);
+        test_ok(3.into(), 5);
         test_ok(4.into(), 5);
         test_ok(5.into(), 5);
         test_ok(6.into(), 5);
@@ -190,7 +237,6 @@ mod test {
     #[test]
     fn blockhash_gadget_large() {
         test_ok((0xcafe - 257).into(), 0xcafeu64);
-        #[cfg(not(feature = "scroll"))]
         test_ok((0xcafe - 256).into(), 0xcafeu64);
         test_ok((0xcafe - 1).into(), 0xcafeu64);
         test_ok(0xcafe.into(), 0xcafeu64);

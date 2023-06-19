@@ -619,6 +619,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             .assign_value(region, offset, code_hash_previous_rlc)?;
         let is_address_collision = !code_hash_previous.0.is_zero();
 
+        #[cfg(feature = "scroll")]
+        {
+            rw_offset += 1; // Write empty Keccak code hash.
+        }
+
         if is_precheck_ok == 1 && !is_address_collision {
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
                 let account_balance_pair = [16, 17]

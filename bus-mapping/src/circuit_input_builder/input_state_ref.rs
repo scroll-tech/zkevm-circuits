@@ -5,6 +5,8 @@ use super::{
     CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
     TransactionContext,
 };
+#[cfg(feature = "scroll")]
+use crate::util::KECCAK_CODE_HASH_ZERO;
 use crate::{
     error::{
         get_step_reported_error, ContractAddressCollisionError, DepthError, ExecError,
@@ -587,6 +589,16 @@ impl<'a> CircuitInputStateRef<'a> {
                     address: receiver,
                     field: AccountField::CodeHash,
                     value: CodeDB::empty_code_hash().to_word(),
+                    value_prev: Word::zero(),
+                },
+            )?;
+            #[cfg(feature = "scroll")]
+            self.push_op_reversible(
+                step,
+                AccountOp {
+                    address: receiver,
+                    field: AccountField::KeccakCodeHash,
+                    value: KECCAK_CODE_HASH_ZERO.to_word(),
                     value_prev: Word::zero(),
                 },
             )?;

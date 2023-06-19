@@ -18,13 +18,6 @@ use super::{
 };
 use crate::util::{Challenges, DEFAULT_RAND};
 
-/// max range of prev blocks allowed inside BLOCKHASH opcode
-#[cfg(feature = "scroll")]
-pub const NUM_PREV_BLOCK_ALLOWED: u64 = 1;
-/// max range of prev blocks allowed inside BLOCKHASH opcode
-#[cfg(not(feature = "scroll"))]
-pub const NUM_PREV_BLOCK_ALLOWED: u64 = 256;
-
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
