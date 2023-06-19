@@ -209,16 +209,21 @@ impl<F: Field> StateCircuitConfig<F> {
         layouter.assign_region(
             || "state circuit (StateCircuitConfig)",
             |mut region| {
+                // annotate columns
+                self.annotate_circuit_in_region(&mut region);
+                let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
                 let is_first_access_vec = self.assign_with_region(
                     &mut region,
-                    rows,
+                    &rows,
+                    0,
+                    padding_length,
                     updates,
                     n_rows,
                     challenges.evm_word(),
                 )?;
                 self.update_state_root(
                     &mut region,
-                    rows,
+                    &rows,
                     &is_first_access_vec,
                     updates,
                     n_rows,
@@ -233,182 +238,138 @@ impl<F: Field> StateCircuitConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         rows: &[Rw],
+        chunk_offsets: usize,
+        padding_length: usize,
         updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
         randomness: Value<F>,
     ) -> Result<Vec<bool>, Error> {
-        println!("assign_with_region n_rows: {:?}", n_rows);
-        println!("assign_with_region rows_len in {}", rows.len());
-
-        let part1_timer = Instant::now();
+        println!("assign_with_region chunk_offsets {}", chunk_offsets);
+        println!("    assign_with_region n_rows: {:?}", n_rows);
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
-        let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
-        println!(
-            "assign_with_region rows_len pad: {}, padding_length:{}",
-            rows.len(),
-            padding_length
-        );
-        log::info!(
-            "state circuit assign total rows {}, n_rows {}, padding_length {}",
-            rows.len(),
-            n_rows,
-            padding_length
-        );
-        let rows_len = rows.len();
-        println!("assign_with_region part1: {:?}", part1_timer.elapsed());
-
-        // annotate columns
-        self.annotate_circuit_in_region(region);
+        // let rows_len = rows.len();
 
         let part2_timer = Instant::now();
-        let num_threads = std::thread::available_parallelism()
-            .map(|e| e.get())
-            .unwrap_or(32);
-        let chunks_size = (rows.len() + num_threads - 1) / num_threads;
-        println!("rows.len() =  {}", rows.len());
-        println!(
-            "rows.len() + num_threads - 1 =  {}",
-            rows.len() + num_threads - 1
-        );
-        println!(
-            "assign_with_region num_threads: {}, chunks_size: {}",
-            num_threads, chunks_size
-        );
+        let mut is_first_access_vec = vec![false; n_rows];
+        let offsets = (0..n_rows).collect::<Vec<_>>();
+        for (offset, is_first_access) in offsets.iter().zip(is_first_access_vec.iter_mut()) {
+            let offset = *offset + chunk_offsets;
+            let row = &rows[offset];
+            if offset == 0 || offset + 1 >= padding_length {
+                log::trace!("state circuit assign offset:{} row:{:?}", offset, row);
+            }
 
-        let mut is_first_access_vec = vec![false; rows_len];
-        let offsets = (0..rows_len).collect::<Vec<_>>();
-        for (offsets, is_first_access_vec) in offsets
-            .chunks(chunks_size)
-            .zip(is_first_access_vec.chunks_mut(chunks_size))
-        {
-            for (offset, is_first_access) in offsets.iter().zip(is_first_access_vec.iter_mut()) {
-                let offset = *offset;
-                let row = &rows[offset];
-                if offset == 0 || offset + 1 >= padding_length {
-                    log::trace!("state circuit assign offset:{} row:{:?}", offset, row);
-                }
+            region.assign_fixed(
+                || "selector",
+                self.selector,
+                offset,
+                || Value::known(F::one()),
+            )?;
 
-                region.assign_fixed(
-                    || "selector",
-                    self.selector,
-                    offset,
-                    || Value::known(F::one()),
-                )?;
+            tag_chip.assign(region, offset, &row.tag())?;
 
-                tag_chip.assign(region, offset, &row.tag())?;
+            self.sort_keys
+                .rw_counter
+                .assign(region, offset, row.rw_counter() as u32)?;
 
+            if let Some(id) = row.id() {
+                self.sort_keys.id.assign(region, offset, id as u32)?;
+            }
+
+            if let Some(address) = row.address() {
+                self.sort_keys.address.assign(region, offset, address)?;
+            }
+
+            if let Some(storage_key) = row.storage_key() {
                 self.sort_keys
-                    .rw_counter
-                    .assign(region, offset, row.rw_counter() as u32)?;
+                    .storage_key
+                    .assign(region, offset, randomness, storage_key)?;
+            }
 
-                if let Some(id) = row.id() {
-                    self.sort_keys.id.assign(region, offset, id as u32)?;
-                }
+            if offset > 0 {
+                let prev_row = &rows[offset - 1];
+                let index = self
+                    .lexicographic_ordering
+                    .assign(region, offset, row, prev_row)?;
+                *is_first_access = !matches!(index, LimbIndex::RwCounter0 | LimbIndex::RwCounter1);
 
-                if let Some(address) = row.address() {
-                    self.sort_keys.address.assign(region, offset, address)?;
-                }
-
-                if let Some(storage_key) = row.storage_key() {
-                    self.sort_keys
-                        .storage_key
-                        .assign(region, offset, randomness, storage_key)?;
-                }
-
-                if offset > 0 {
-                    let prev_row = &rows[offset - 1];
-                    let index = self
-                        .lexicographic_ordering
-                        .assign(region, offset, row, prev_row)?;
-                    *is_first_access =
-                        !matches!(index, LimbIndex::RwCounter0 | LimbIndex::RwCounter1);
-
-                    region.assign_advice(
-                        || "not_first_access",
-                        self.not_first_access,
-                        offset,
-                        || {
-                            Value::known(if *is_first_access {
-                                F::zero()
-                            } else {
-                                F::one()
-                            })
-                        },
-                    )?;
-
-                    // if *is_first_access {
-                    //     println!(
-                    //         "    is_first_access[true]: offset: {} LimbIndex: {:?}",
-                    //         offset, index
-                    //     );
-                    // }
-                }
-
-                // The initial value can be determined from the mpt updates or is 0.
-                let initial_value = randomness.map(|randomness| {
-                    updates
-                        .get(row)
-                        .map(|u| u.value_assignments(randomness).1)
-                        .unwrap_or_default()
-                });
                 region.assign_advice(
-                    || "initial_value",
-                    self.initial_value,
+                    || "not_first_access",
+                    self.not_first_access,
                     offset,
-                    || initial_value,
-                )?;
-
-                // Identify non-existing if both committed value and new value are zero.
-                let is_non_exist_inputs = randomness.map(|randomness| {
-                    let (_, committed_value) = updates
-                        .get(row)
-                        .map(|u| u.value_assignments(randomness))
-                        .unwrap_or_default();
-                    let value = row.value_assignment(randomness);
-                    [
-                        F::from(row.field_tag().unwrap_or_default()),
-                        committed_value,
-                        value,
-                    ]
-                });
-                BatchedIsZeroChip::construct(self.is_non_exist.clone()).assign(
-                    region,
-                    offset,
-                    is_non_exist_inputs,
-                )?;
-                let mpt_proof_type =
-                    is_non_exist_inputs.map(|[_field_tag, committed_value, value]| {
-                        F::from(match row {
-                            Rw::AccountStorage { .. } => {
-                                if committed_value.is_zero_vartime() && value.is_zero_vartime() {
-                                    MPTProofType::NonExistingStorageProof as u64
-                                } else {
-                                    MPTProofType::StorageMod as u64
-                                }
-                            }
-                            Rw::Account { field_tag, .. } => {
-                                if committed_value.is_zero_vartime()
-                                    && value.is_zero_vartime()
-                                    && matches!(field_tag, AccountFieldTag::CodeHash)
-                                {
-                                    MPTProofType::NonExistingAccountProof as u64
-                                } else {
-                                    *field_tag as u64
-                                }
-                            }
-                            _ => 0,
+                    || {
+                        Value::known(if *is_first_access {
+                            F::zero()
+                        } else {
+                            F::one()
                         })
-                    });
-                region.assign_advice(
-                    || "mpt_proof_type",
-                    self.mpt_proof_type,
-                    offset,
-                    || mpt_proof_type,
+                    },
                 )?;
             }
-        }
-        println!("assign_with_region part2: {:?}", part2_timer.elapsed());
 
+            // The initial value can be determined from the mpt updates or is 0.
+            let initial_value = randomness.map(|randomness| {
+                updates
+                    .get(row)
+                    .map(|u| u.value_assignments(randomness).1)
+                    .unwrap_or_default()
+            });
+            region.assign_advice(
+                || "initial_value",
+                self.initial_value,
+                offset,
+                || initial_value,
+            )?;
+
+            // Identify non-existing if both committed value and new value are zero.
+            let is_non_exist_inputs = randomness.map(|randomness| {
+                let (_, committed_value) = updates
+                    .get(row)
+                    .map(|u| u.value_assignments(randomness))
+                    .unwrap_or_default();
+                let value = row.value_assignment(randomness);
+                [
+                    F::from(row.field_tag().unwrap_or_default()),
+                    committed_value,
+                    value,
+                ]
+            });
+            BatchedIsZeroChip::construct(self.is_non_exist.clone()).assign(
+                region,
+                offset,
+                is_non_exist_inputs,
+            )?;
+            let mpt_proof_type = is_non_exist_inputs.map(|[_field_tag, committed_value, value]| {
+                F::from(match row {
+                    Rw::AccountStorage { .. } => {
+                        if committed_value.is_zero_vartime() && value.is_zero_vartime() {
+                            MPTProofType::NonExistingStorageProof as u64
+                        } else {
+                            MPTProofType::StorageMod as u64
+                        }
+                    }
+                    Rw::Account { field_tag, .. } => {
+                        if committed_value.is_zero_vartime()
+                            && value.is_zero_vartime()
+                            && matches!(field_tag, AccountFieldTag::CodeHash)
+                        {
+                            MPTProofType::NonExistingAccountProof as u64
+                        } else {
+                            *field_tag as u64
+                        }
+                    }
+                    _ => 0,
+                })
+            });
+            region.assign_advice(
+                || "mpt_proof_type",
+                self.mpt_proof_type,
+                offset,
+                || mpt_proof_type,
+            )?;
+        }
+
+        println!("    assign_with_region part2: {:?}", part2_timer.elapsed());
         Ok(is_first_access_vec)
     }
 
@@ -684,14 +645,42 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     return Ok(vec![]);
                 }
 
+                // annotate columns
+                config.annotate_circuit_in_region(&mut region);
+
                 let part2_timer = Instant::now();
-                let is_first_access_vec: Vec<bool> = config.assign_with_region(
-                    &mut region,
-                    &self.rows,
-                    &self.updates,
-                    self.n_rows,
-                    randomness,
-                )?;
+
+                let (rows, padding_length) =
+                    RwMap::table_assignments_prepad(&self.rows, self.n_rows);
+                let rows_len = rows.len();
+                let num_threads = std::thread::available_parallelism()
+                    .map(|e| e.get())
+                    .unwrap_or(32);
+                let chunks_size = (rows_len + num_threads - 1) / num_threads;
+                println!("rows.len() =  {}", rows_len);
+                println!(
+                    "rows.len() + num_threads - 1 =  {}",
+                    rows_len + num_threads - 1
+                );
+                println!(
+                    "assign_with_region num_threads: {}, chunks_size: {}",
+                    num_threads, chunks_size
+                );
+                let offsets = (0..rows_len).collect::<Vec<_>>();
+                let mut is_first_access_vec = vec![];
+                for offsets in offsets.chunks(chunks_size) {
+                    let is_first_access_chunk: Vec<bool> = config.assign_with_region(
+                        &mut region,
+                        &rows,
+                        offsets[0],
+                        padding_length,
+                        &self.updates,
+                        offsets.len(),
+                        randomness,
+                    )?;
+                    is_first_access_vec.extend(is_first_access_chunk);
+                }
+
                 println!("part2_timer: {:?}", part2_timer.elapsed());
 
                 Ok(is_first_access_vec)
