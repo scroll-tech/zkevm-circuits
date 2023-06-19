@@ -140,7 +140,7 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         meta.enable_equality(sig_table.recovered_addr);
         meta.enable_equality(sig_table.sig_r_rlc);
         meta.enable_equality(sig_table.sig_s_rlc);
-        //meta.enable_equality(ec_recover_table.v);
+        meta.enable_equality(sig_table.sig_v);
         meta.enable_equality(sig_table.is_valid);
         meta.enable_equality(sig_table.msg_hash_rlc);
 

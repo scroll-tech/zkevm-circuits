@@ -117,7 +117,6 @@ fn run<F: Field>(
         19,
         log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)),
     );
-    // SignVerifyChip -> ECDSAChip -> MainGate instance column
     let circuit = TxCircuitTester::<F> {
         sig_circuit: SigCircuit {
             max_verif: max_txs,
