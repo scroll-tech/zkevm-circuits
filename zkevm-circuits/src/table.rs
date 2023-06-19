@@ -7,8 +7,8 @@ use crate::{
     impl_expr,
     util::{build_tx_log_address, Challenges},
     witness::{
-        Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpFsmWitnessGen,
-        Rw, RwMap, RwRow, Transaction,
+        Block, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpFsmWitnessGen, Rw, RwMap,
+        RwRow, Transaction,
     },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
@@ -1238,7 +1238,6 @@ impl BlockTable {
         layouter: &mut impl Layouter<F>,
         block_ctxs: &BlockContexts,
         txs: &[Transaction],
-        max_inner_blocks: usize,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -1257,11 +1256,7 @@ impl BlockTable {
                 offset += 1;
 
                 let mut cum_num_txs = 0usize;
-                let padding_blocks = (block_ctxs.ctxs.len()..max_inner_blocks)
-                    .into_iter()
-                    .map(|_| BlockContext::default())
-                    .collect::<Vec<_>>();
-                for block_ctx in block_ctxs.ctxs.values().chain(padding_blocks.iter()) {
+                for block_ctx in block_ctxs.ctxs.values() {
                     let num_txs = txs
                         .iter()
                         .filter(|tx| tx.block_number == block_ctx.number.as_u64())
