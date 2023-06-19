@@ -9,14 +9,30 @@ use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
-    plonk::{Circuit, ConstraintSystem, Error},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
 };
-use mpt_zktrie::mpt_circuits::mpt;
+use mpt_zktrie::mpt_circuits::{gadgets::poseidon::PoseidonLookup, mpt, types::Proof};
+
+impl PoseidonLookup for PoseidonTable {
+    fn lookup_columns_generic(&self) -> (Column<Fixed>, [Column<Advice>; 5]) {
+        (
+            self.q_enable,
+            [
+                self.hash_id,
+                self.input0,
+                self.input1,
+                self.control,
+                self.heading_mark,
+            ],
+        )
+    }
+}
 
 /// Circuit wrapped with mpt table data
 #[derive(Clone, Debug, Default)]
 pub struct MptCircuit<F: Field> {
-    base_circuit: mpt::MptCircuit,
+    row_limit: usize,
+    proofs: Vec<Proof>,
     mpt_updates: witness::MptUpdates,
     _phantom: std::marker::PhantomData<F>,
 }
@@ -50,17 +66,7 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig<Fr> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let poseidon_table = (
-            poseidon_table.q_enable,
-            [
-                poseidon_table.input0,
-                poseidon_table.input1,
-                poseidon_table.hash_id,
-                poseidon_table.control,
-                poseidon_table.heading_mark,
-            ],
-        );
-        let mpt_table_inp = //(
+        let _mpt_table_inp = //(
             //mpt_table.q_enable,
             [
                 mpt_table.address,
@@ -72,12 +78,7 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig<Fr> {
                 mpt_table.old_value,
             ];
 
-        let conf = mpt::MptCircuitConfig::create(
-            meta,
-            mpt_table_inp,
-            poseidon_table,
-            challenges.evm_word(),
-        );
+        let conf = mpt::MptCircuitConfig::configure(meta, challenges.evm_word(), &poseidon_table);
         Self(conf, mpt_table, Default::default())
     }
 }
@@ -98,7 +99,8 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
             .collect();
 
         Self {
-            base_circuit: mpt::MptCircuit::from_traces(traces, block.circuits_params.max_mpt_rows),
+            proofs: traces.into_iter().map(Proof::from).collect(),
+            row_limit: block.circuits_params.max_mpt_rows,
             mpt_updates: block.mpt_updates.clone(),
             ..Default::default()
         }
@@ -120,17 +122,11 @@ impl SubCircuit<Fr> for MptCircuit<Fr> {
         challenges: &Challenges<Value<Fr>>,
         layouter: &mut impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        let base = &self.base_circuit;
-        config.0.assign(
-            layouter,
-            challenges.evm_word(),
-            &base.proofs,
-            base.row_limit,
-        )?;
+        config.0.assign(layouter, &self.proofs, self.row_limit)?;
         config.1.load(
             layouter,
             &self.mpt_updates,
-            base.row_limit,
+            self.row_limit,
             challenges.evm_word(),
         )?;
         Ok(())
@@ -149,7 +145,7 @@ impl Circuit<Fr> for MptCircuit<Fr> {
 
     fn without_witnesses(&self) -> Self {
         Self {
-            base_circuit: self.base_circuit.without_witnesses(),
+            row_limit: self.row_limit,
             ..Default::default()
         }
     }

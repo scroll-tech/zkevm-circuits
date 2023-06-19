@@ -895,7 +895,7 @@ impl PoseidonTable {
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
-            hash_id: meta.advice_column_in(SecondPhase),
+            hash_id: meta.advice_column(),
             input0: meta.advice_column(),
             input1: meta.advice_column(),
             control: meta.advice_column(),
@@ -903,16 +903,9 @@ impl PoseidonTable {
         }
     }
 
-    /// Construct a new PoseidonTable for dev (no secondphase, mpt only)
+    /// Construct a new PoseidonTable for dev
     pub(crate) fn dev_construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            q_enable: meta.fixed_column(),
-            hash_id: meta.advice_column(),
-            input0: meta.advice_column(),
-            input1: meta.advice_column(),
-            control: meta.advice_column(),
-            heading_mark: meta.advice_column(),
-        }
+        Self::construct(meta)
     }
 
     pub(crate) fn assign<F: Field>(

@@ -410,7 +410,7 @@ dependencies = [
  "log",
  "mock",
  "once_cell",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0408)",
+ "poseidon-circuit",
  "pretty_assertions",
  "rand",
  "revm-precompile",
@@ -1427,7 +1427,7 @@ dependencies = [
  "libsecp256k1",
  "num",
  "num-bigint",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0619)",
+ "poseidon-circuit",
  "regex",
  "serde",
  "serde_json",
@@ -2172,7 +2172,7 @@ dependencies = [
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.4#f433ae7f8a808ab07cc004721e3ebacdca73643e"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=v0.4#901cb56f53770206a62503ed555ad747a52184ad"
 dependencies = [
  "ethers-core",
  "halo2_proofs",
@@ -2182,7 +2182,7 @@ dependencies = [
  "log",
  "num-bigint",
  "num-traits",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0408)",
+ "poseidon-circuit",
  "rand",
  "serde",
  "serde_json",
@@ -2220,7 +2220,7 @@ dependencies = [
 [[package]]
 name = "halo2curves"
 version = "0.3.1"
-source = "git+https://github.com/scroll-tech/halo2curves.git?branch=0.3.1-derive-serde#c0ac1935e5da2a620204b5b011be2c924b1e0155"
+source = "git+https://github.com/scroll-tech/halo2curves.git?branch=0.3.1-derive-serde#969f1e44d9713ee4cd552563bd0c762c5d53b56e"
 dependencies = [
  "ff",
  "group",
@@ -2923,7 +2923,7 @@ dependencies = [
  "lazy_static",
  "log",
  "num-bigint",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0408)",
+ "poseidon-circuit",
  "serde",
  "serde_json",
  "zktrie",
@@ -3479,17 +3479,6 @@ dependencies = [
  "group",
  "halo2curves",
  "subtle",
-]
-
-[[package]]
-name = "poseidon-circuit"
-version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0408#89e9c0456f0fa00d49cd7920c6b437c66b48db17"
-dependencies = [
- "bitvec 1.0.1",
- "halo2_proofs",
- "lazy_static",
- "thiserror",
 ]
 
 [[package]]
@@ -5414,7 +5403,7 @@ dependencies = [
  "num",
  "num-bigint",
  "once_cell",
- "poseidon-circuit 0.1.0 (git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0619)",
+ "poseidon-circuit",
  "pretty_assertions",
  "rand",
  "rand_chacha",

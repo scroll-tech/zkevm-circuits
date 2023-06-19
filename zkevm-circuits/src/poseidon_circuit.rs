@@ -145,7 +145,6 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         _challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-
         let chip = PoseidonHashChip::<_, HASH_BLOCK_STEP_SIZE>::construct(
             config.0.clone(),
             &self.0,
