@@ -264,6 +264,8 @@ pub(crate) fn extract_accumulators_and_proof(
                 &snark.instances,
                 &mut transcript_read,
             );
+            // wenqing: each accumulator has (lhs, rhs) based on Shplonk
+            // lhs and rhs are EC points
             Shplonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof)
         })
         .collect::<Vec<_>>();
@@ -272,6 +274,11 @@ pub(crate) fn extract_accumulators_and_proof(
         PoseidonTranscript::<NativeLoader, Vec<u8>>::from_spec(vec![], POSEIDON_SPEC.clone());
     // We always use SHPLONK for accumulation scheme when aggregating proofs
     let accumulator =
+        // wenqing: core step
+        // KzgAs does KZG accumulation scheme based on given accumulators and random number (for adding blinding)
+        // accumulated ec_pt = ec_pt_1 * 1 + ec_pt_2 * r + ... + ec_pt_n * r^{n-1}
+        // ec_pt can be lhs and rhs
+        // r is the challenge squeezed from proof
         KzgAs::<Kzg<Bn256, Bdfg21>>::create_proof::<PoseidonTranscript<NativeLoader, Vec<u8>>, _>(
             &Default::default(),
             &accumulators,
