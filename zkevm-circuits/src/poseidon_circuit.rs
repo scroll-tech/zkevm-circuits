@@ -5,7 +5,7 @@ use crate::{
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
-use bus_mapping::state_db::CodeDB;
+//use bus_mapping::state_db::CodeDB;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -145,18 +145,11 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         _challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        // for single codehash we sitll use keccak256(nil)
-        use eth_types::{ToScalar, ToWord};
-        // Note the Option(nil_hash) in construct has different meanings as the returning of
-        // `to_scalar` so we should not use the returning option here
-        let empty_hash = CodeDB::empty_code_hash().to_word().to_scalar().unwrap();
 
         let chip = PoseidonHashChip::<_, HASH_BLOCK_STEP_SIZE>::construct(
             config.0.clone(),
             &self.0,
             self.1,
-            false,
-            Some(empty_hash),
         );
 
         chip.load(layouter)
