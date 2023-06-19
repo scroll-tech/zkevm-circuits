@@ -120,7 +120,7 @@ impl<'v, F: Field> From<&AssignedValueNoTimer<F>> for AssignedValue<'v, F> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct AssignedSignatureVerify<F: Field> {
     pub(crate) address: AssignedValueNoTimer<F>,
     pub(crate) msg_len: usize,

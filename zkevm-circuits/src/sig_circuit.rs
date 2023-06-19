@@ -216,8 +216,7 @@ impl<F: Field> SubCircuit<F> for SigCircuit<F> {
         SigCircuit {
             // TODO: seperate max_verif with max_txs?
             max_verif: block.circuits_params.max_txs,
-            // TODO: better way than unwrap?
-            signatures: block.get_sign_data(true).unwrap(),
+            signatures: block.get_sign_data(true),
             _marker: Default::default(),
         }
     }
@@ -308,20 +307,24 @@ impl<F: Field> SigCircuit<F> {
             msg_hash,
         } = sign_data;
         let (sig_r, sig_s, v) = signature;
+        log::trace!("sig_r     : {:?}", sig_r);
+        log::trace!("sig_s     : {:?}", sig_s);
+        log::trace!("msg_hash  : {:?}", msg_hash);
 
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
+        let pk_assigned = ecc_chip.load_private(ctx, (Value::known(pk.x), Value::known(pk.y)));
+
         // build Fq chip from Fp chip
         let fq_chip = FqChip::construct(ecdsa_chip.range.clone(), 88, 3, modulus::<Fq>());
-
         let integer_r =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_r)));
-
         let integer_s =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*sig_s)));
         let msg_hash =
             fq_chip.load_private(ctx, FqChip::<F>::fe_to_witness(&Value::known(*msg_hash)));
-        let pk_assigned = ecc_chip.load_private(ctx, (Value::known(pk.x), Value::known(pk.y)));
+        log::trace!("integer_r : {:?}", integer_r);
+        log::trace!("integer_s : {:?}", integer_s);
 
         // returns the verification result of ecdsa signature
         //
@@ -337,7 +340,7 @@ impl<F: Field> SigCircuit<F> {
             4,
             4,
         );
-        log::trace!("ECDSA res {:?}", sig_is_valid);
+        log::trace!("ECDSA res : {:?}", sig_is_valid);
 
         // =======================================
         // constrains v == y.is_oddness()
@@ -402,7 +405,7 @@ impl<F: Field> SigCircuit<F> {
         &self,
         config: &SigCircuitConfig<F>,
         ctx: &mut Context<F>,
-        offset: &mut usize,
+        offset: usize,
         is_address_zero: &AssignedValue<F>,
         pk_rlc: &AssignedValue<F>,
         pk_hash_rlc: &AssignedValue<F>,
@@ -415,13 +418,13 @@ impl<F: Field> SigCircuit<F> {
         // |     1    | is_address_zero |
         // |          |    pk_rlc       |
         // |          |    pk_hash_rlc  |
-        config.q_keccak.enable(&mut ctx.region, *offset)?;
+        config.q_keccak.enable(&mut ctx.region, offset)?;
 
         // is_address_zero
         let tmp_cell = ctx.region.assign_advice(
             || "is_address_zero",
             config.rlc_column,
-            *offset,
+            offset,
             || is_address_zero.value,
         )?;
         ctx.region
@@ -431,7 +434,7 @@ impl<F: Field> SigCircuit<F> {
         let tmp_cell = ctx.region.assign_advice(
             || "pk_rlc",
             config.rlc_column,
-            *offset + 1,
+            offset + 1,
             || pk_rlc.value,
         )?;
         ctx.region.constrain_equal(pk_rlc.cell, tmp_cell.cell())?;
@@ -440,13 +443,12 @@ impl<F: Field> SigCircuit<F> {
         let tmp_cell = ctx.region.assign_advice(
             || "pk_hash_rlc",
             config.rlc_column,
-            *offset + 2,
+            offset + 2,
             || pk_hash_rlc.value,
         )?;
         ctx.region
             .constrain_equal(pk_hash_rlc.cell, tmp_cell.cell())?;
 
-        *offset += 3;
         log::trace!("finished keccak lookup");
         Ok(())
     }
@@ -457,18 +459,13 @@ impl<F: Field> SigCircuit<F> {
         &self,
         ctx: &mut Context<'v, F>,
         ecdsa_chip: &FpChip<F>,
-        sign_data: Option<&SignData>,
+        sign_data: &SignData,
         assigned_data: &AssignedECDSA<'v, F, FpChip<F>>,
     ) -> Result<SignDataDecomposed<'a, 'v, F>, Error> {
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
 
         let zero = ecdsa_chip.range.gate.load_zero(ctx);
-
-        let sign_data = match sign_data {
-            Some(sign_data) => sign_data.clone(),
-            None => SignData::default(),
-        };
 
         // ================================================
         // step 0. powers of aux parameters
@@ -616,16 +613,11 @@ impl<F: Field> SigCircuit<F> {
         &self,
         ctx: &mut Context<'v, F>,
         rlc_chip: &RangeConfig<F>,
-        sign_data: Option<&SignData>,
+        sign_data: &SignData,
         sign_data_decomposed: &SignDataDecomposed<'a, 'v, F>,
         challenges: &Challenges<Value<F>>,
         assigned_ecdsa: &AssignedECDSA<'v, F, FpChip<F>>,
     ) -> Result<([AssignedValue<'v, F>; 3], AssignedSignatureVerify<F>), Error> {
-        let (_padding, sign_data) = match sign_data {
-            Some(sign_data) => (false, sign_data.clone()),
-            None => (true, SignData::default()),
-        };
-
         // ================================================
         // step 0. powers of aux parameters
         // ================================================
@@ -715,6 +707,7 @@ impl<F: Field> SigCircuit<F> {
         Ok((to_be_keccak_checked, assigned_sig_verif))
     }
 
+    /// Assign witness data to the sig circuit.
     pub(crate) fn assign(
         &self,
         config: &SigCircuitConfig<F>,
@@ -744,35 +737,37 @@ impl<F: Field> SigCircuit<F> {
                 let mut ctx = ecdsa_chip.new_context(region);
 
                 // ================================================
-                // step 0: assert the signature is valid in circuit
+                // step 1: assert the signature is valid in circuit
                 // ================================================
-                let mut assigned_ecdsas = Vec::new();
 
-                for i in 0..self.max_verif {
-                    let signature = if i < signatures.len() {
-                        signatures[i].clone()
-                    } else {
-                        // padding (enabled when address == 0)
-                        SignData::default()
-                    };
-                    let assigned_ecdsa = self.assign_ecdsa(&mut ctx, ecdsa_chip, &signature)?;
-                    assigned_ecdsas.push(assigned_ecdsa);
-                }
+                let assigned_ecdsas = signatures
+                    .iter()
+                    .chain(
+                        std::iter::repeat(&SignData::default())
+                            .take(self.max_verif - signatures.len()),
+                    )
+                    .map(|sign_data| self.assign_ecdsa(&mut ctx, ecdsa_chip, sign_data))
+                    .collect::<Result<Vec<AssignedECDSA<F, FpChip<F>>>, Error>>()?;
 
                 // ================================================
-                // step 1: decompose the keys and messages
+                // step 2: decompose the keys and messages
                 // ================================================
-                let mut sign_data_decomposed_vec = Vec::new();
-                for (i, assigned_ecdsa) in assigned_ecdsas.iter().enumerate() {
-                    let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
-                    let sign_data_decomposed = self.sign_data_decomposition(
-                        &mut ctx,
-                        ecdsa_chip,
-                        sign_data,
-                        assigned_ecdsa,
-                    )?;
-                    sign_data_decomposed_vec.push(sign_data_decomposed);
-                }
+                let sign_data_decomposed = signatures
+                    .iter()
+                    .chain(
+                        std::iter::repeat(&SignData::default())
+                            .take(self.max_verif - signatures.len()),
+                    )
+                    .zip_eq(assigned_ecdsas.iter())
+                    .map(|(sign_data, assigned_ecdsa)| {
+                        self.sign_data_decomposition(
+                            &mut ctx,
+                            ecdsa_chip,
+                            sign_data,
+                            assigned_ecdsa,
+                        )
+                    })
+                    .collect::<Result<Vec<SignDataDecomposed<F>>, Error>>()?;
 
                 // IMPORTANT: Move to Phase2 before RLC
                 log::debug!("before proceeding to the next phase");
@@ -788,33 +783,43 @@ impl<F: Field> SigCircuit<F> {
                 // ================================================
                 // step 3: compute RLC of keys and messages
                 // ================================================
-                let mut assigned_sig_verifs: Vec<AssignedSignatureVerify<F>> = Vec::new();
-                let mut deferred_keccak_check = Vec::new();
-                for (i, e) in assigned_ecdsas.iter().enumerate() {
-                    let sign_data = signatures.get(i); // None when padding (enabled when address == 0)
-                    let sign_data_decomposed = &sign_data_decomposed_vec[i];
-                    let (to_be_keccak_checked, assigned_sig_verif) = self.assign_sig_verify(
-                        &mut ctx,
-                        &ecdsa_chip.range,
-                        sign_data,
-                        sign_data_decomposed,
-                        challenges,
-                        e,
-                    )?;
-                    assigned_sig_verifs.push(assigned_sig_verif);
-                    deferred_keccak_check.push(to_be_keccak_checked);
-                }
+                let assigned_keccak_values_and_sigs =
+                        signatures
+                            .iter()
+                            .chain(
+                                std::iter::repeat(&SignData::default())
+                                    .take(self.max_verif - signatures.len()),
+                            )
+                            .zip_eq(assigned_ecdsas.iter())
+                            .zip_eq(sign_data_decomposed.iter())
+                            .map(|((sign_data, assigned_ecdsa), sign_data_decomp)| {
+                                self.assign_sig_verify(
+                                    &mut ctx,
+                                    &ecdsa_chip.range,
+                                    sign_data,
+                                    sign_data_decomp,
+                                    challenges,
+                                    assigned_ecdsa,
+                                )
+                            })
+                            .collect::<Result<
+                                Vec<([AssignedValue<F>; 3], AssignedSignatureVerify<F>)>,
+                                Error,
+                            >>()?;
 
                 // ================================================
                 // step 4: deferred keccak checks
                 // ================================================
-                let mut offset = 0;
-                for e in deferred_keccak_check.iter() {
-                    let [is_address_zero, pk_rlc, pk_hash_rlc] = e;
+                for (i, [is_address_zero, pk_rlc, pk_hash_rlc]) in assigned_keccak_values_and_sigs
+                    .iter()
+                    .map(|a| &a.0)
+                    .enumerate()
+                {
+                    let offset = i * 3;
                     self.enable_keccak_lookup(
                         config,
                         &mut ctx,
-                        &mut offset,
+                        offset,
                         is_address_zero,
                         pk_rlc,
                         pk_hash_rlc,
@@ -829,7 +834,10 @@ impl<F: Field> SigCircuit<F> {
                 log::debug!("total number of lookup cells: {}", lookup_cells);
 
                 ctx.print_stats(&["Range"]);
-                Ok(assigned_sig_verifs)
+                Ok(assigned_keccak_values_and_sigs
+                    .iter()
+                    .map(|a| a.1.clone())
+                    .collect())
             },
         )?;
 

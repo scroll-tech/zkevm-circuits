@@ -2162,9 +2162,9 @@ impl SigTable {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "signature verification table",
+            || "sig table (dev load)",
             |mut region| {
-                let signatures: Vec<SignData> = block.get_sign_data(false)?;
+                let signatures: Vec<SignData> = block.get_sign_data(false);
 
                 for (offset, sign_data) in signatures.iter().enumerate() {
                     let addr: F = sign_data.get_addr().to_scalar().unwrap();

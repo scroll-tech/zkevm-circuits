@@ -102,10 +102,9 @@ impl<F: Field> Block<F> {
             }
         }
     }
-    pub(crate) fn get_sign_data(
-        &self,
-        padding: bool,
-    ) -> Result<Vec<SignData>, halo2_proofs::plonk::Error> {
+
+    /// Get signature (witness) from the block for tx signatures and ecRecover calls.
+    pub(crate) fn get_sign_data(&self, padding: bool) -> Vec<SignData> {
         let mut signatures: Vec<SignData> = self
             .txs
             .iter()
@@ -114,28 +113,17 @@ impl<F: Field> Block<F> {
                     // dummy signature
                     Ok(SignData::default())
                 } else {
-                    // TODO: map err or still use bus_mapping::err?
-                    tx.sign_data().map_err(|e| {
-                        log::error!("tx_to_sign_data error for tx {:?}", e);
-                        halo2_proofs::plonk::Error::Synthesis
-                    })
+                    tx.sign_data()
                 }
             })
-            .collect::<Result<Vec<SignData>, halo2_proofs::plonk::Error>>()?;
+            .filter_map(|res| res.ok())
+            .collect::<Vec<SignData>>();
         signatures.extend_from_slice(&self.ecrecover_events);
         if padding {
             let max_verif = self.circuits_params.max_txs;
-            if max_verif != 0 {
-                if signatures.len() > max_verif {
-                    log::error!("sig overflow {} > {}", signatures.len(), max_verif);
-                    return Err(halo2_proofs::plonk::Error::Synthesis);
-                }
-                for _ in signatures.len()..max_verif {
-                    signatures.push(SignData::default())
-                }
-            }
+            signatures.resize(max_verif, SignData::default())
         }
-        Ok(signatures)
+        signatures
     }
 }
 
