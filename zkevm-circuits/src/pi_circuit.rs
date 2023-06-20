@@ -599,7 +599,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut rpi_length_acc = 0u64;
         let mut rpi_rlc_acc = Value::known(F::zero());
 
-        let dummy_tx_hash = get_dummy_tx_hash(public_data.chain_id.as_u64());
+        let dummy_tx_hash = get_dummy_tx_hash();
 
         ///////////////////////////////////
         ///////  assign data bytes ////////
