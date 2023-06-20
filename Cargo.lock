@@ -397,18 +397,18 @@ version = "0.1.0"
 dependencies = [
  "ctor",
  "env_logger 0.9.3",
- "eth-types",
+ "eth-types 0.1.0",
  "ethers-core",
  "ethers-providers",
  "ethers-signers",
- "gadgets",
+ "gadgets 0.1.0",
  "halo2_proofs",
  "hex",
  "itertools",
- "keccak256",
+ "keccak256 0.1.0",
  "lazy_static",
  "log",
- "mock",
+ "mock 0.1.0",
  "once_cell",
  "poseidon-circuit",
  "pretty_assertions",
@@ -420,6 +420,33 @@ dependencies = [
  "strum_macros",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "bus-mapping"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop#6c6865f64dfbcc69431adf67361a4e49029a5f19"
+dependencies = [
+ "eth-types 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "ethers-core",
+ "ethers-providers",
+ "ethers-signers",
+ "gadgets 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "halo2_proofs",
+ "hex",
+ "itertools",
+ "keccak256 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "lazy_static",
+ "log",
+ "mock 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "once_cell",
+ "poseidon-circuit",
+ "rand",
+ "revm-precompile",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
 ]
 
 [[package]]
@@ -536,22 +563,22 @@ name = "circuit-benchmarks"
 version = "0.1.0"
 dependencies = [
  "ark-std",
- "bus-mapping",
+ "bus-mapping 0.1.0",
  "env_logger 0.9.3",
- "eth-types",
+ "eth-types 0.1.0",
  "ethers",
  "ethers-signers",
  "halo2_proofs",
  "itertools",
- "keccak256",
+ "keccak256 0.1.0",
  "log",
- "mock",
+ "mock 0.1.0",
  "rand",
  "rand_chacha",
  "rand_xorshift",
  "tokio",
  "url",
- "zkevm-circuits",
+ "zkevm-circuits 0.1.0",
 ]
 
 [[package]]
@@ -1440,6 +1467,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "eth-types"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop#6c6865f64dfbcc69431adf67361a4e49029a5f19"
+dependencies = [
+ "ethers-core",
+ "ethers-signers",
+ "halo2_proofs",
+ "hex",
+ "itertools",
+ "lazy_static",
+ "libsecp256k1",
+ "num",
+ "num-bigint",
+ "poseidon-circuit",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "sha3 0.10.7",
+ "strum",
+ "strum_macros",
+ "subtle",
+ "uint",
+]
+
+[[package]]
 name = "ethabi"
 version = "17.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1711,8 +1764,20 @@ dependencies = [
 name = "external-tracer"
 version = "0.1.0"
 dependencies = [
- "eth-types",
- "geth-utils",
+ "eth-types 0.1.0",
+ "geth-utils 0.1.0",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "external-tracer"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop#6c6865f64dfbcc69431adf67361a4e49029a5f19"
+dependencies = [
+ "eth-types 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "geth-utils 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
  "log",
  "serde",
  "serde_json",
@@ -2008,10 +2073,22 @@ name = "gadgets"
 version = "0.1.0"
 dependencies = [
  "digest 0.7.6",
- "eth-types",
+ "eth-types 0.1.0",
  "halo2_proofs",
  "rand",
  "rand_xorshift",
+ "sha3 0.7.3",
+ "strum",
+]
+
+[[package]]
+name = "gadgets"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop#6c6865f64dfbcc69431adf67361a4e49029a5f19"
+dependencies = [
+ "digest 0.7.6",
+ "eth-types 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "halo2_proofs",
  "sha3 0.7.3",
  "strum",
 ]
@@ -2047,6 +2124,16 @@ dependencies = [
 [[package]]
 name = "geth-utils"
 version = "0.1.0"
+dependencies = [
+ "env_logger 0.9.3",
+ "gobuild 0.1.0-alpha.2 (git+https://github.com/scroll-tech/gobuild.git)",
+ "log",
+]
+
+[[package]]
+name = "geth-utils"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop#6c6865f64dfbcc69431adf67361a4e49029a5f19"
 dependencies = [
  "env_logger 0.9.3",
  "gobuild 0.1.0-alpha.2 (git+https://github.com/scroll-tech/gobuild.git)",
@@ -2138,6 +2225,21 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2-base"
 version = "0.2.2"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#c2ea19569db5fedd85a7465ee3841f23be8e7b22"
+dependencies = [
+ "ff",
+ "halo2_proofs",
+ "itertools",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand_chacha",
+ "rustc-hash",
+]
+
+[[package]]
+name = "halo2-base"
+version = "0.2.2"
 source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-snark-verifier-0323#d24871338ade7dd56362de517b718ba14f3e7b90"
 dependencies = [
  "ff",
@@ -2153,11 +2255,30 @@ dependencies = [
 [[package]]
 name = "halo2-ecc"
 version = "0.2.2"
+source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#c2ea19569db5fedd85a7465ee3841f23be8e7b22"
+dependencies = [
+ "ff",
+ "group",
+ "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=develop)",
+ "itertools",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "rand_chacha",
+ "rand_core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "halo2-ecc"
+version = "0.2.2"
 source = "git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-snark-verifier-0323#d24871338ade7dd56362de517b718ba14f3e7b90"
 dependencies = [
  "ff",
  "group",
- "halo2-base",
+ "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-snark-verifier-0323)",
  "itertools",
  "num-bigint",
  "num-integer",
@@ -2177,7 +2298,6 @@ dependencies = [
  "halo2_proofs",
  "hex",
  "lazy_static",
- "log",
  "num-bigint",
  "poseidon-circuit",
  "rand",
@@ -2561,15 +2681,15 @@ dependencies = [
 name = "integration-tests"
 version = "0.1.0"
 dependencies = [
- "bus-mapping",
+ "bus-mapping 0.1.0",
  "env_logger 0.9.3",
- "eth-types",
+ "eth-types 0.1.0",
  "ethers",
  "halo2_proofs",
  "hex",
  "lazy_static",
  "log",
- "mock",
+ "mock 0.1.0",
  "paste",
  "pretty_assertions",
  "rand_chacha",
@@ -2580,7 +2700,7 @@ dependencies = [
  "strum",
  "tokio",
  "url",
- "zkevm-circuits",
+ "zkevm-circuits 0.1.0",
 ]
 
 [[package]]
@@ -2669,7 +2789,7 @@ name = "keccak256"
 version = "0.1.0"
 dependencies = [
  "env_logger 0.9.3",
- "eth-types",
+ "eth-types 0.1.0",
  "halo2_proofs",
  "itertools",
  "lazy_static",
@@ -2679,6 +2799,21 @@ dependencies = [
  "plotters",
  "pretty_assertions",
  "rand",
+]
+
+[[package]]
+name = "keccak256"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop#6c6865f64dfbcc69431adf67361a4e49029a5f19"
+dependencies = [
+ "env_logger 0.9.3",
+ "eth-types 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "halo2_proofs",
+ "itertools",
+ "lazy_static",
+ "log",
+ "num-bigint",
+ "num-traits",
 ]
 
 [[package]]
@@ -2895,10 +3030,25 @@ dependencies = [
 name = "mock"
 version = "0.1.0"
 dependencies = [
- "eth-types",
+ "eth-types 0.1.0",
  "ethers-core",
  "ethers-signers",
- "external-tracer",
+ "external-tracer 0.1.0",
+ "itertools",
+ "lazy_static",
+ "rand",
+ "rand_chacha",
+]
+
+[[package]]
+name = "mock"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop#6c6865f64dfbcc69431adf67361a4e49029a5f19"
+dependencies = [
+ "eth-types 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "ethers-core",
+ "ethers-signers",
+ "external-tracer 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
  "itertools",
  "lazy_static",
  "rand",
@@ -2909,9 +3059,9 @@ dependencies = [
 name = "mpt-zktrie"
 version = "0.1.0"
 dependencies = [
- "bus-mapping",
+ "bus-mapping 0.1.0",
  "env_logger 0.9.3",
- "eth-types",
+ "eth-types 0.1.0",
  "halo2-mpt-circuits",
  "halo2_proofs",
  "hex",
@@ -2920,6 +3070,22 @@ dependencies = [
  "num-bigint",
  "serde",
  "serde_json",
+ "zktrie",
+]
+
+[[package]]
+name = "mpt-zktrie"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop#6c6865f64dfbcc69431adf67361a4e49029a5f19"
+dependencies = [
+ "bus-mapping 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "eth-types 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "halo2-mpt-circuits",
+ "halo2_proofs",
+ "hex",
+ "lazy_static",
+ "log",
+ "num-bigint",
  "zktrie",
 ]
 
@@ -4411,12 +4577,36 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#a8b277a94b9b036495e35eb2843ae9d2f2d4d7ae"
+dependencies = [
+ "bytes",
+ "ethereum-types 0.14.1",
+ "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=develop)",
+ "halo2-ecc 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=develop)",
+ "hex",
+ "itertools",
+ "lazy_static",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "poseidon",
+ "rand",
+ "revm",
+ "rlp",
+ "rustc-hash",
+ "serde",
+ "sha3 0.10.7",
+]
+
+[[package]]
+name = "snark-verifier"
+version = "0.1.0"
 source = "git+https://github.com/scroll-tech/snark-verifier?branch=halo2-ecc-snark-verifier-0323#a3d0a5ab48522bc533686da3ea8400282c91f536"
 dependencies = [
  "bytes",
  "ethereum-types 0.14.1",
- "halo2-base",
- "halo2-ecc",
+ "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-snark-verifier-0323)",
+ "halo2-ecc 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-snark-verifier-0323)",
  "hex",
  "itertools",
  "lazy_static",
@@ -4435,12 +4625,13 @@ dependencies = [
 [[package]]
 name = "snark-verifier-sdk"
 version = "0.0.1"
-source = "git+https://github.com/scroll-tech/snark-verifier?branch=halo2-ecc-snark-verifier-0323#a3d0a5ab48522bc533686da3ea8400282c91f536"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=develop#a8b277a94b9b036495e35eb2843ae9d2f2d4d7ae"
 dependencies = [
  "bincode",
  "env_logger 0.10.0",
+ "eth-types 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
  "ethereum-types 0.14.1",
- "halo2-base",
+ "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=develop)",
  "hex",
  "itertools",
  "lazy_static",
@@ -4452,7 +4643,31 @@ dependencies = [
  "rand_chacha",
  "serde",
  "serde_json",
- "snark-verifier",
+ "snark-verifier 0.1.0 (git+https://github.com/scroll-tech/snark-verifier?branch=develop)",
+ "zkevm-circuits 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+]
+
+[[package]]
+name = "snark-verifier-sdk"
+version = "0.0.1"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=halo2-ecc-snark-verifier-0323#a3d0a5ab48522bc533686da3ea8400282c91f536"
+dependencies = [
+ "bincode",
+ "env_logger 0.10.0",
+ "ethereum-types 0.14.1",
+ "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-snark-verifier-0323)",
+ "hex",
+ "itertools",
+ "lazy_static",
+ "log",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "rand_chacha",
+ "serde",
+ "serde_json",
+ "snark-verifier 0.1.0 (git+https://github.com/scroll-tech/snark-verifier?branch=halo2-ecc-snark-verifier-0323)",
 ]
 
 [[package]]
@@ -4630,21 +4845,21 @@ name = "testool"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bus-mapping",
+ "bus-mapping 0.1.0",
  "clap 3.2.23",
  "ctor",
  "env_logger 0.9.3",
- "eth-types",
+ "eth-types 0.1.0",
  "ethers-core",
  "ethers-signers",
- "external-tracer",
+ "external-tracer 0.1.0",
  "glob",
  "halo2_proofs",
  "handlebars",
  "hex",
- "keccak256",
+ "keccak256 0.1.0",
  "log",
- "mock",
+ "mock 0.1.0",
  "once_cell",
  "prettytable-rs",
  "rand",
@@ -4659,7 +4874,7 @@ dependencies = [
  "toml",
  "urlencoding",
  "yaml-rust",
- "zkevm-circuits",
+ "zkevm-circuits 0.1.0",
 ]
 
 [[package]]
@@ -5373,27 +5588,27 @@ name = "zkevm-circuits"
 version = "0.1.0"
 dependencies = [
  "array-init",
- "bus-mapping",
+ "bus-mapping 0.1.0",
  "cli-table",
  "criterion",
  "ctor",
  "env_logger 0.9.3",
- "eth-types",
+ "eth-types 0.1.0",
  "ethers-core",
  "ethers-signers",
- "gadgets",
- "halo2-base",
- "halo2-ecc",
+ "gadgets 0.1.0",
+ "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=develop)",
+ "halo2-ecc 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=develop)",
  "halo2_proofs",
  "hex",
  "itertools",
- "keccak256",
+ "keccak256 0.1.0",
  "lazy_static",
  "libsecp256k1",
  "log",
  "maingate",
- "mock",
- "mpt-zktrie",
+ "mock 0.1.0",
+ "mpt-zktrie 0.1.0",
  "num",
  "num-bigint",
  "once_cell",
@@ -5405,8 +5620,47 @@ dependencies = [
  "serde",
  "serde_json",
  "sha3 0.10.7",
- "snark-verifier",
- "snark-verifier-sdk",
+ "snark-verifier 0.1.0 (git+https://github.com/scroll-tech/snark-verifier?branch=develop)",
+ "snark-verifier-sdk 0.0.1 (git+https://github.com/scroll-tech/snark-verifier?branch=develop)",
+ "strum",
+ "strum_macros",
+ "subtle",
+]
+
+[[package]]
+name = "zkevm-circuits"
+version = "0.1.0"
+source = "git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop#6c6865f64dfbcc69431adf67361a4e49029a5f19"
+dependencies = [
+ "array-init",
+ "bus-mapping 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "env_logger 0.9.3",
+ "eth-types 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "ethers-core",
+ "ethers-signers",
+ "gadgets 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "halo2-base 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-snark-verifier-0323)",
+ "halo2-ecc 0.2.2 (git+https://github.com/scroll-tech/halo2-lib?branch=halo2-ecc-snark-verifier-0323)",
+ "halo2_proofs",
+ "hex",
+ "itertools",
+ "keccak256 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "lazy_static",
+ "libsecp256k1",
+ "log",
+ "maingate",
+ "mock 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "mpt-zktrie 0.1.0 (git+https://github.com/scroll-tech/zkevm-circuits.git?branch=develop)",
+ "num",
+ "num-bigint",
+ "once_cell",
+ "rand",
+ "rand_chacha",
+ "rand_xorshift",
+ "rayon",
+ "sha3 0.10.7",
+ "snark-verifier 0.1.0 (git+https://github.com/scroll-tech/snark-verifier?branch=halo2-ecc-snark-verifier-0323)",
+ "snark-verifier-sdk 0.0.1 (git+https://github.com/scroll-tech/snark-verifier?branch=halo2-ecc-snark-verifier-0323)",
  "strum",
  "strum_macros",
  "subtle",
