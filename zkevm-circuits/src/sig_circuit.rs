@@ -682,7 +682,7 @@ impl<F: Field> SigCircuit<F> {
         let s_rlc = rlc_chip.gate.inner_product(
             ctx,
             sign_data_decomposed.s_cells.clone(),
-            evm_challenge_powers.clone(),
+            evm_challenge_powers,
         );
 
         log::trace!("pk hash rlc halo2ecc: {:?}", pk_hash_rlc.value());
@@ -693,16 +693,16 @@ impl<F: Field> SigCircuit<F> {
             pk_hash_rlc,
         ];
         let assigned_sig_verif = AssignedSignatureVerify {
-            address: sign_data_decomposed.address.clone().into(),
+            address: sign_data_decomposed.address,
             msg_len: sign_data.msg.len(),
             msg_rlc: challenges
                 .keccak_input()
                 .map(|r| rlc::value(sign_data.msg.iter().rev(), r)),
-            msg_hash_rlc: msg_hash_rlc.into(),
-            sig_is_valid: assigned_ecdsa.sig_is_valid.clone().into(),
-            r_rlc: r_rlc.into(),
-            s_rlc: s_rlc.into(),
-            v: assigned_ecdsa.v.clone().into(),
+            msg_hash_rlc,
+            sig_is_valid: assigned_ecdsa.sig_is_valid,
+            r_rlc,
+            s_rlc,
+            v: assigned_ecdsa.v,
         };
         Ok((to_be_keccak_checked, assigned_sig_verif))
     }
@@ -927,7 +927,7 @@ impl<F: Field> SigCircuit<F> {
                 QuantumCell::Existing(crt_int.truncation.limbs[0]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[0].clone(),
+            None => crt_int.truncation.limbs[0],
         };
         let limb2_value = match overriding {
             Some(p) => flex_gate_chip.select(
@@ -936,7 +936,7 @@ impl<F: Field> SigCircuit<F> {
                 QuantumCell::Existing(crt_int.truncation.limbs[1]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[1].clone(),
+            None => crt_int.truncation.limbs[1],
         };
         let limb3_value = match overriding {
             Some(p) => flex_gate_chip.select(
@@ -945,7 +945,7 @@ impl<F: Field> SigCircuit<F> {
                 QuantumCell::Existing(crt_int.truncation.limbs[2]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[2].clone(),
+            None => crt_int.truncation.limbs[2],
         };
 
         // assert the byte_repr is the right decomposition of overflow_int
