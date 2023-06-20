@@ -10,8 +10,9 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
+            from_bytes,
             math_gadget::LtGadget,
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell, U64Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -21,7 +22,7 @@ use crate::{
 use bus_mapping::evm::OpcodeId;
 use eth_types::{
     evm_types::block_utils::{is_valid_block_number, NUM_PREV_BLOCK_ALLOWED},
-    Field, ToLittleEndian, ToScalar,
+    Field, ToScalar,
 };
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -32,7 +33,7 @@ pub(crate) struct BlockHashGadget<F> {
     block_number: WordByteCapGadget<F, N_BYTES_U64>,
     current_block_number: Cell<F>,
     block_hash: Cell<F>,
-    chain_id: Word<F>,
+    chain_id: U64Word<F>,
     diff_lt: LtGadget<F, N_BYTES_U64>,
 }
 
@@ -56,7 +57,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         cb.block_lookup(
             BlockContextFieldTag::ChainId.expr(),
             cb.curr.state.block_number.expr(),
-            chain_id.expr(),
+            from_bytes::expr(&chain_id.cells),
         );
 
         let diff_lt = LtGadget::construct(
@@ -86,7 +87,6 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
                     chain_id
                         .cells
                         .iter()
-                        .take(N_BYTES_U64)
                         .rev()
                         .chain(
                             block_number

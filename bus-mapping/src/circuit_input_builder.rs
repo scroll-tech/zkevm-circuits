@@ -587,14 +587,14 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     let mut keccak_inputs = Vec::new();
     // Tx Circuit
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.into()).collect();
-    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id().as_u64())?);
+    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id())?);
     log::debug!(
         "keccak total len after txs: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
     // PI circuit
     keccak_inputs.push(keccak_inputs_pi_circuit(
-        block.chain_id().as_u64(),
+        block.chain_id(),
         block.prev_state_root,
         block.withdraw_root,
         &block.headers,
@@ -827,7 +827,7 @@ type EthBlock = eth_types::Block<eth_types::Transaction>;
 /// the necessary information and using the CircuitInputBuilder.
 pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
-    chain_id: Word,
+    chain_id: u64,
     circuits_params: CircuitsParams,
 }
 
@@ -895,7 +895,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         Ok(Self {
             cli: client,
-            chain_id: chain_id.into(),
+            chain_id,
             circuits_params,
         })
     }

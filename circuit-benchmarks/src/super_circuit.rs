@@ -43,13 +43,11 @@ mod tests {
 
         let mut rng = ChaChaRng::seed_from_u64(2);
 
-        let chain_id = (*MOCK_CHAIN_ID).as_u64();
-
         let bytecode = bytecode! {
             STOP
         };
 
-        let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+        let wallet_a = LocalWallet::new(&mut rng).with_chain_id(*MOCK_CHAIN_ID);
 
         let addr_a = wallet_a.address();
         let addr_b = address!("0x000000000000000000000000000000000000BBBB");

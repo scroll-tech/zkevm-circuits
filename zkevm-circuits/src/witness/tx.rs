@@ -787,7 +787,7 @@ impl From<MockTransaction> for Transaction {
                 .gas(mock_tx.gas)
                 .value(mock_tx.value)
                 .data(mock_tx.input.clone())
-                .chain_id(mock_tx.chain_id.as_u64());
+                .chain_id(mock_tx.chain_id);
             if !is_create {
                 legacy_tx = legacy_tx.to(mock_tx.to.as_ref().map(|to| to.address()).unwrap());
             }
@@ -813,7 +813,7 @@ impl From<MockTransaction> for Transaction {
             call_data_length: mock_tx.input.len(),
             call_data_gas_cost: tx_data_gas_cost(&mock_tx.input),
             tx_data_gas_cost: tx_data_gas_cost(&rlp_signed),
-            chain_id: mock_tx.chain_id.as_u64(),
+            chain_id: mock_tx.chain_id,
             rlp_unsigned,
             rlp_signed,
             v: sig.v,
