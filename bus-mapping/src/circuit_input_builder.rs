@@ -593,12 +593,12 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
     // PI circuit
-    keccak_inputs.push(keccak_inputs_pi_circuit(
+    keccak_inputs.extend(keccak_inputs_pi_circuit(
+        block.chain_id.as_u64(),
         block.prev_state_root,
         block.withdraw_root,
         &block.headers,
         block.txs(),
-        block.circuits_params.max_txs,
     ));
     // Bytecode Circuit
     for _bytecode in code_db.0.values() {
@@ -686,56 +686,44 @@ pub fn get_dummy_tx_hash() -> H256 {
 }
 
 fn keccak_inputs_pi_circuit(
+    chain_id: u64,
     prev_state_root: Word,
     withdraw_trie_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
-    max_txs: usize,
-) -> Vec<u8> {
-    let dummy_tx_hash = get_dummy_tx_hash();
-
-    let result = iter::empty()
-        // state roots
-        .chain(prev_state_root.to_be_bytes())
-        .chain(
-            block_headers
-                .last_key_value()
-                .map(|(_, blk)| blk.eth_block.state_root)
-                .unwrap_or(H256(prev_state_root.to_be_bytes()))
-                .to_fixed_bytes(),
-        )
-        // withdraw trie root
-        .chain(withdraw_trie_root.to_be_bytes())
+) -> Vec<Vec<u8>> {
+    let data_bytes = iter::empty()
         .chain(block_headers.iter().flat_map(|(block_num, block)| {
             let num_txs = transactions
                 .iter()
                 .filter(|tx| tx.block_num == *block_num)
                 .count() as u16;
-            let parent_hash = block.eth_block.parent_hash;
-            let block_hash = block.eth_block.hash.unwrap_or(H256::zero());
-            let num_l1_msgs = 0_u16; // 0 for now
 
             iter::empty()
                 // Block Values
-                .chain(block_hash.to_fixed_bytes())
-                .chain(parent_hash.to_fixed_bytes()) // parent hash
                 .chain(block.number.as_u64().to_be_bytes())
                 .chain(block.timestamp.as_u64().to_be_bytes())
                 .chain(block.base_fee.to_be_bytes())
                 .chain(block.gas_limit.to_be_bytes())
                 .chain(num_txs.to_be_bytes())
-                .chain(num_l1_msgs.to_be_bytes())
         }))
         // Tx Hashes
         .chain(transactions.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
-        .chain(
-            (0..(max_txs - transactions.len()))
-                .into_iter()
-                .flat_map(|_| dummy_tx_hash.to_fixed_bytes()),
-        )
+        .collect::<Vec<u8>>();
+    let data_hash = H256(keccak256(&data_bytes));
+    let after_state_root = block_headers
+        .last_key_value()
+        .map(|(_, blk)| blk.eth_block.state_root)
+        .unwrap_or(H256(prev_state_root.to_be_bytes()));
+    let pi_bytes = iter::empty()
+        .chain(chain_id.to_be_bytes())
+        .chain(prev_state_root.to_be_bytes())
+        .chain(after_state_root.to_fixed_bytes())
+        .chain(withdraw_trie_root.to_be_bytes())
+        .chain(data_hash.to_fixed_bytes())
         .collect::<Vec<u8>>();
 
-    result
+    vec![data_bytes, pi_bytes]
 }
 
 /// Generate the keccak inputs required by the Tx Circuit from the transactions.
