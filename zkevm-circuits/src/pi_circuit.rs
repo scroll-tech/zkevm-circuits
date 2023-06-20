@@ -14,7 +14,6 @@ use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{Address, Field, Hash, ToBigEndian, Word, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
-// Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
 
 use crate::{
     table::{BlockTable, LookupTable, TxTable},
@@ -38,7 +37,7 @@ use crate::{
     witness::{self, Block, BlockContext, BlockContexts, Transaction},
 };
 use bus_mapping::util::read_env_var;
-use gadgets::util::{not, select, Expr};
+use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector},
@@ -197,8 +196,11 @@ pub struct PiCircuitConfig<F: Field> {
     rpi_rlc_acc: Column<Advice>, // RLC(rpi) as the input to Keccak table
     rpi_length_acc: Column<Advice>,
 
+    // columns for padding in block context and tx hashes
     is_rpi_padding: Column<Advice>,
     real_rpi: Column<Advice>,
+    q_tx_hashes: Column<Fixed>,
+    q_block_context: Column<Fixed>,
 
     // columns for assertion about cum_num_txs in block table
     cum_num_txs: Column<Advice>,
@@ -294,6 +296,9 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_field_step = meta.complex_selector();
         let is_field_rlc = meta.fixed_column();
 
+        let q_block_context = meta.fixed_column();
+        let q_tx_hashes = meta.fixed_column();
+
         let q_not_end = meta.complex_selector();
         // We are accumulating bytes for three different purposes
         // 1. input_rlc for hashing data bytes using keccak_input_rand
@@ -373,15 +378,32 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             },
         );
 
-        meta.create_gate("real rpi", |meta| {
+        meta.create_gate("padding block context", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // TODO: add constraints on is_rpi_padding
             cb.require_boolean(
                 "is_rpi_padding is boolean",
                 meta.query_advice(is_rpi_padding, Rotation::cur()),
             );
 
+            // if is_rpi_padding == true, then is_rpi_padding' is true too.
+            cb.condition(
+                and::expr([
+                    meta.query_fixed(q_block_context, Rotation::next()),
+                    meta.query_advice(is_rpi_padding, Rotation::cur()),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "is_rpi_padding' == true if is_rpi_padding is true",
+                        meta.query_advice(is_rpi_padding, Rotation::next()),
+                        true.expr(),
+                    )
+                },
+            );
+
+            // real_rpi = not(is_rpi_padding) * rpi
+            // real_rpi is the column which has valid block context fields that copied to block
+            // table
             cb.require_equal(
                 "real_rpi == not(is_rpi_padding) * rpi",
                 meta.query_advice(real_rpi, Rotation::cur()),
@@ -389,9 +411,43 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                     * meta.query_advice(rpi, Rotation::cur()),
             );
 
-            // TODO: add constraints on rpi when is_rpi_padding == true for Tx Hashes
+            // is_rpi_padding cannot go from
+            cb.gate(meta.query_fixed(q_block_context, Rotation::cur()))
+        });
 
-            cb.gate(meta.query_selector(q_not_end))
+        meta.create_gate("padding tx hashes", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_boolean(
+                "is_rpi_padding is boolean",
+                meta.query_advice(is_rpi_padding, Rotation::cur()),
+            );
+
+            // if is_rpi_padding == true, then is_rpi_padding' is true too.
+            cb.condition(
+                and::expr([
+                    meta.query_fixed(q_tx_hashes, Rotation::next()),
+                    meta.query_advice(is_rpi_padding, Rotation::cur()),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "is_rpi_padding' == true if is_rpi_padding is true",
+                        meta.query_advice(is_rpi_padding, Rotation::next()),
+                        true.expr(),
+                    )
+                },
+            );
+
+            // if_rpi_padding == true, then rpi == dummy_tx_hash
+            cb.condition(meta.query_advice(is_rpi_padding, Rotation::cur()), |_cb| {
+                // cb.require_equal(
+                //     "rpi == dummy_tx_hash",
+                //     meta.query_advice(rpi, Rotation::cur()),
+                //     get_dummy_tx_hash(1).
+                // );
+            });
+
+            cb.gate(meta.query_fixed(q_tx_hashes, Rotation::cur()))
         });
 
         // We reuse the layout for rpi to compute the keccak output.
@@ -489,6 +545,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             rpi_length_acc,
             is_rpi_padding,
             real_rpi,
+            q_tx_hashes,
             q_field_step,
             is_field_rlc,
             q_not_end,
@@ -499,6 +556,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             is_block_num_txs,
             pi,
             _marker: PhantomData,
+            q_block_context,
         }
     }
 }
@@ -565,6 +623,13 @@ impl<F: Field> PiCircuitConfig<F> {
                 .filter(|tx| tx.block_number == block.number.as_u64())
                 .count() as u16;
 
+            // assign q_block_context
+            region.assign_fixed(
+                || "q_block_context",
+                self.q_block_context,
+                offset,
+                || Value::known(F::one()),
+            )?;
             // Assign fields in pi columns and connect them to block table
             let fields = vec![
                 (
@@ -615,6 +680,13 @@ impl<F: Field> PiCircuitConfig<F> {
             .enumerate()
         {
             let is_rpi_padding = i >= num_txs;
+
+            region.assign_fixed(
+                || "q_tx_hashes",
+                self.q_tx_hashes,
+                offset,
+                || Value::known(F::one()),
+            )?;
             let cells = self.assign_field_in_pi(
                 region,
                 &mut offset,
