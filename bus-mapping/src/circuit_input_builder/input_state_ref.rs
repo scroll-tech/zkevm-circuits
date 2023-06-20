@@ -279,6 +279,7 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         address: MemoryAddress, //Caution: make sure this address = slot passing
         value: Word,
+        // TODO: take value_prev as parameter.
     ) -> Result<(), Error> {
         let call_id = self.call()?.call_id;
         self.push_op(step, RW::WRITE, MemoryWordOp::new(call_id, address, value));

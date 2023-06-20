@@ -481,7 +481,7 @@ mod test {
         let memory_bytes = [0x60; 6];
         let memory_address = 0;
         let memory_value = Word::from_big_endian(&memory_bytes);
-        let mut code = bytecode! {
+        let mut code: Bytecode = bytecode! {
             PUSH6(memory_value)
             PUSH1(memory_address)
             MSTORE

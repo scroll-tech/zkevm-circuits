@@ -238,8 +238,8 @@ fn gen_tx_log_data() -> CircuitInputBuilder {
         MSTORE
         PUSH32(Word::MAX)   // topic
         PUSH1(32)           // length
-        PUSH1(0)            // offset
-        LOG1
+        PUSH1(0x20)         // offset
+        LOG0
         STOP
     };
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();

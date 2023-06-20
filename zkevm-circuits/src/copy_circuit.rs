@@ -285,8 +285,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 - meta.query_advice(is_last, Rotation::cur())
                 - meta.query_advice(is_last, Rotation::next());
 
-
-
             cb.condition(
                 and::expr([
                     is_word_continue.is_lt(meta, None),
@@ -748,6 +746,9 @@ impl<F: Field> CopyCircuitConfig<F> {
         challenges: Challenges<Value<F>>,
         copy_event: &CopyEvent,
     ) -> Result<(), Error> {
+        let mut src_first_non_mask = 0u64;
+        let mut src_first_non_mask_stop = false;
+
         for (step_idx, (tag, table_row, circuit_row)) in
             CopyTable::assignments(copy_event, challenges)
                 .iter()
@@ -820,12 +821,36 @@ impl<F: Field> CopyCircuitConfig<F> {
             // tag
             tag_chip.assign(region, *offset, tag)?;
 
+            let mut pad = F::zero();
+            circuit_row[6].0.map(|f: F| pad = f);
+            let mut mask = F::zero();
+            circuit_row[8].0.map(|f: F| mask = f);
+
+            if is_read {
+                if mask == F::one() && !src_first_non_mask_stop {
+                    src_first_non_mask += 1;
+                } else {
+                    src_first_non_mask_stop = true
+                }
+            }
+
             // lt chip
             if is_read {
+                // for bytecode, front mask rows not increase addr
+                let src_addr_increase = if tag.eq(&CopyDataType::Bytecode) {
+                    if step_idx as u64 <= 2 * src_first_non_mask {
+                        0
+                    } else {
+                        u64::try_from(step_idx).unwrap() / 2u64 - src_first_non_mask
+                    }
+                } else {
+                    u64::try_from(step_idx).unwrap() / 2u64
+                };
+
                 lt_chip.assign(
                     region,
                     *offset,
-                    F::from(copy_event.src_addr + u64::try_from(step_idx).unwrap() / 2u64),
+                    F::from(copy_event.src_addr + src_addr_increase),
                     F::from(copy_event.src_addr_end),
                 )?;
             }
@@ -836,15 +861,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                 F::from((step_idx as u64 / 2) % 32), // word index
                 F::from(31u64),
             )?;
-
-            let mut pad = F::zero();
-            circuit_row[6].0.map(|f: F| pad = f);
-            let mut mask = F::zero();
-            circuit_row[8].0.map(|f: F| mask = f);
-
-            // todo: debug info will remove it later
-            let sum: F = pad + mask;
-            //println!("pad + sum: {:?} offset : {}", sum, offset);
 
             non_pad_non_mask_chip.assign(
                 region,

@@ -106,7 +106,7 @@ impl Opcode for Calldataload {
                 word_right_bytes
                     .clone_from_slice(&memory.0[(slot + 32) as usize..(slot + 64) as usize]);
 
-                let addr_right_Word = Word::from_little_endian(&word_right_bytes);
+                let addr_right_Word = Word::from_big_endian(&word_right_bytes);
 
                 state.push_op(
                     &mut exec_step,
@@ -179,6 +179,10 @@ mod calldataload_tests {
             memory_a.resize(call_data_length, 0);
         }
 
+        let mut memory_bytes = vec![];
+        memory_bytes.resize(32 - pushdata.clone().len(), 0);
+        let mut pushdata_mut = pushdata.clone();
+        memory_bytes.append(&mut pushdata_mut);
         // let code_a = bytecode! {
         //     // populate memory in A's context.
         //     PUSH32(Word::from_big_endian(&pushdata))
@@ -295,11 +299,6 @@ mod calldataload_tests {
         let minimal_length = offset + 64;
         let mut slot_bytes: [u8; 32] = [0; 32];
         let mut right_word_bytes: [u8; 32] = [0; 32];
-        // let mut memory_bytes: [u8; 32] = [0; 32];
-        let mut memory_bytes = vec![];
-        memory_bytes.resize(32 - pushdata.len(), 0);
-        let mut pushdata_mut = pushdata.clone();
-        memory_bytes.append(&mut pushdata_mut);
 
         if memory_bytes.len() < slot + minimal_length {
             memory_bytes.resize(slot + minimal_length, 0);

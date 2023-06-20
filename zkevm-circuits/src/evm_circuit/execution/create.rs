@@ -539,6 +539,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         } else {
             U256::zero()
         };
+        rw_offset += usize::from(is_create2);
 
         let shift = init_code_start.low_u64() % 32;
         let memory_start_slot = init_code_start.low_u64() - shift;
@@ -550,8 +551,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             (memory_end_slot - memory_start_slot) / 32 + 1
         };
 
-        let padded_bytes: Vec<u8> = (4 + usize::from(is_create2)
-            ..4 + usize::from(is_create2) + copy_rwc_inc as usize)
+        let padded_bytes: Vec<u8> = (4 + rw_offset..4 + rw_offset + copy_rwc_inc as usize)
             .map(|i| {
                 let mut bytes = block.rws[step.rw_indices[i]]
                     .memory_word_value()
@@ -603,8 +603,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             call.is_persistent,
         )?;
 
-        let tx_access_rw =
-            block.rws[step.rw_indices[7 + usize::from(is_create2) + copy_rwc_inc as usize]];
+        let tx_access_rw = block.rws[step.rw_indices[7 + rw_offset + copy_rwc_inc as usize]];
         self.was_warm.assign(
             region,
             offset,
@@ -617,13 +616,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             ),
         )?;
 
-        let caller_balance = block.rws
-            [step.rw_indices[10 + usize::from(is_create2) + copy_rwc_inc as usize]]
+        let caller_balance = block.rws[step.rw_indices[10 + rw_offset + copy_rwc_inc as usize]]
             .account_balance_pair()
             .1;
 
         let caller_nonce = block.rws
-            [step.rw_indices[11 + usize::from(is_create2) + copy_rwc_inc as usize]]
+            [step.rw_indices[11 + rw_offset + usize::from(is_create2) + copy_rwc_inc as usize]]
             .account_nonce_pair()
             .1
             .low_u64();
@@ -636,8 +634,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             };
         rw_offset += is_precheck_ok;
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [12, 13].map(|i| {
-            let rw = block.rws[step.rw_indices
-                [i + usize::from(is_create2) + copy_rwc_inc as usize + is_precheck_ok]];
+            let rw = block.rws[step.rw_indices[i + rw_offset + copy_rwc_inc as usize]];
             rw.call_context_value()
         });
 
@@ -652,8 +649,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         )?;
 
         // retrieve code_hash for creating address
-        let code_hash_previous = block.rws[step.rw_indices
-            [14 + usize::from(is_create2) + copy_rwc_inc as usize + is_precheck_ok]]
+        let code_hash_previous = block.rws[step.rw_indices[14 + rw_offset + copy_rwc_inc as usize]]
             .account_codehash_pair();
         let code_hash_previous_rlc = region.code_hash(code_hash_previous.0);
         self.code_hash_previous
@@ -664,14 +660,17 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
 
         if is_precheck_ok == 1 && !is_address_collision {
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
-                let account_balance_pair = [16, 17]
-                    .map(|i| block.rws[step.rw_indices[i + rw_offset]].account_balance_pair());
-                rw_offset += 2;
-                [16, 17].map(|i| {
-                    block.rws[step.rw_indices
-                        [i + usize::from(is_create2) + copy_rwc_inc as usize + is_precheck_ok]]
+                let account_balance_pair = [16, 17].map(|i| {
+                    block.rws[step.rw_indices[i + rw_offset + copy_rwc_inc as usize]]
                         .account_balance_pair()
-                })
+                });
+                rw_offset += 2;
+                account_balance_pair
+                // [16, 17].map(|i| {
+                //     block.rws[step.rw_indices
+                //         [i + usize::from(is_create2) + copy_rwc_inc as usize + is_precheck_ok]]
+                //         .account_balance_pair()
+                // })
             } else {
                 [(0.into(), 0.into()), (0.into(), 0.into())]
             };
@@ -714,11 +713,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Value::known(if is_precheck_ok == 0 || is_address_collision {
                 F::zero()
             } else {
-                block.rws[step.rw_indices[23
-                    + rw_offset
-                    + usize::from(is_create2)
-                    + copy_rwc_inc as usize
-                    + is_precheck_ok]]
+                block.rws[step.rw_indices[23 + rw_offset + copy_rwc_inc as usize]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap()
@@ -769,16 +764,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             offset,
             region.word_rlc(U256::from_big_endian(&keccak_code_hash)),
         )?;
-
-        let shift = init_code_start.low_u64() % 32;
-        let memory_start_slot = init_code_start.low_u64() - shift;
-        let memory_end = init_code_start.low_u64() + init_code_length.low_u64();
-        let memory_end_slot = memory_end - memory_end % 32;
-        let copy_rwc_inc = if init_code_length.low_u64() == 0 {
-            0
-        } else {
-            (memory_end_slot - memory_start_slot) / 32 + 1
-        };
 
         self.copy_rwc_inc.assign(
             region,
