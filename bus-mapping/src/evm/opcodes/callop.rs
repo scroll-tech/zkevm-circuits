@@ -357,7 +357,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 if call.call_data_length > 0 {
                     let copy_steps = state.gen_copy_steps_for_precompile_calldata(
                         &mut exec_step,
-                        call.call_id,
+                        call.caller_id,
                         call.call_data_offset,
                         call.call_data_length,
                         &caller_memory,
