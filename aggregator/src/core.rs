@@ -8,6 +8,7 @@ use halo2_proofs::{
 };
 use rand::Rng;
 use snark_verifier::{
+    loader::native::NativeLoader,
     pcs::{
         kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
         AccumulationSchemeProver,
@@ -15,8 +16,8 @@ use snark_verifier::{
     verifier::PlonkVerifier,
 };
 use snark_verifier_sdk::{
-    halo2::{aggregation::Shplonk, PoseidonTranscript, POSEIDON_SPEC},
-    NativeLoader, Snark,
+    types::{PoseidonTranscript, Shplonk, POSEIDON_SPEC},
+    Snark,
 };
 use zkevm_circuits::{
     keccak_circuit::{keccak_packed_multi::multi_keccak, KeccakCircuitConfig},

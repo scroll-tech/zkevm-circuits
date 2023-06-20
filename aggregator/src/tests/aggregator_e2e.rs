@@ -8,10 +8,8 @@ use snark_verifier::{
     pcs::kzg::{Bdfg21, Kzg},
 };
 use snark_verifier_sdk::{
-    evm::{evm_verify, gen_evm_proof_shplonk, gen_evm_verifier},
-    gen_pk,
-    halo2::{gen_snark_shplonk, verify_snark_shplonk},
-    CircuitExt,
+    evm_verify, gen_evm_proof_shplonk, gen_evm_verifier, gen_pk, gen_snark_shplonk,
+    verify_snark_shplonk, CircuitExt,
 };
 
 use crate::{

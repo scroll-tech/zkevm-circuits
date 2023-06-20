@@ -37,7 +37,7 @@ use halo2_proofs::plonk::FirstPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 use halo2_proofs::{
-    circuit::{Cell, Layouter, Value},
+    circuit::{Layouter, Value},
     halo2curves::secp256k1::{Fp, Fq, Secp256k1Affine},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
@@ -62,7 +62,7 @@ fn calc_required_advices(num_verif: usize) -> usize {
     let total_cells = num_verif * CELLS_PER_SIG;
     while num_adv < 150 {
         if num_adv << TOTAL_NUM_ROWS > total_cells {
-            log::debug!(
+            log::info!(
                 "ecdsa chip uses {} advice columns for {} signatures",
                 num_adv,
                 num_verif
@@ -116,7 +116,7 @@ impl<F: Field> SignVerifyChip<F> {
                 CELLS_PER_SIG
             )
         } else {
-            log::debug!(
+            log::info!(
                 "ecdsa chip: rows: {}, advice {}, num of sigs {}, cells per sig {}",
                 TOTAL_NUM_ROWS,
                 calc_required_advices(num_verif),
@@ -164,9 +164,9 @@ impl<F: Field> SignVerifyConfig<F> {
         let num_advice = [calc_required_advices(MAX_NUM_SIG), 1];
 
         #[cfg(feature = "onephase")]
-        log::debug!("configuring ECDSA chip with single phase");
+        log::info!("configuring ECDSA chip with single phase");
         #[cfg(not(feature = "onephase"))]
-        log::debug!("configuring ECDSA chip with multiple phases");
+        log::info!("configuring ECDSA chip with multiple phases");
 
         // halo2-ecc's ECDSA config
         //
@@ -258,89 +258,27 @@ impl<F: Field> SignVerifyConfig<F> {
     }
 }
 
-pub(crate) struct AssignedECDSA<'v, F: Field, FC: FieldChip<F>> {
-    pk: EcPoint<F, FC::FieldPoint<'v>>,
-    msg_hash: CRTInteger<'v, F>,
-    sig_is_valid: AssignedValue<'v, F>,
-}
-
-/// Temp struct to hold the intermediate data; removing life timer.
-// Issue with life timer:
-//
-// Suppose we have two piece of codes, that request different regions/contexts from the layouter.
-// The first piece of the code will return an `assigned_cell` that is to be used by the second code
-// piece. With halo2 we can safely pass this `assigned_cell` around. They are bounded by a life
-// timer `'v` which is when the field element is created.
-//
-// Now in halo2-lib, there is an additional life timer which says an `assigned_cell` cannot outlive
-// the `region` for which this cell is created. (is this understanding correct?)
-// That means the output cells of the first region cannot be passed to the second region.
-//
-// To temporary resolve this issue, we create a temp struct without life timer.
-// This works with halo2-lib/pse but not halo2-lib/axiom.
-// We do not support halo2-lib/axiom.
-//
-// NOTE: this is a temp issue with halo2-lib v0.2.2.
-// with halo2-lib v0.3.0 the timers are already removed.
-// So we don't need this temp fix once we sync with halo2-lib audited version.
-#[derive(Debug, Clone)]
-pub(crate) struct AssignedValueNoTimer<F: Field> {
-    pub cell: Cell,
-    pub value: Value<F>,
-    pub row_offset: usize,
-    pub context_id: usize,
-}
-
-impl<'v, F: Field> From<AssignedValue<'v, F>> for AssignedValueNoTimer<F> {
-    fn from(input: AssignedValue<'v, F>) -> Self {
-        Self {
-            cell: input.cell(),
-            value: input.value,
-            row_offset: input.row_offset,
-            context_id: input.context_id,
-        }
-    }
-}
-
-impl<'v, F: Field> From<AssignedValueNoTimer<F>> for AssignedValue<'v, F> {
-    fn from(input: AssignedValueNoTimer<F>) -> Self {
-        Self {
-            cell: input.cell,
-            value: input.value,
-            row_offset: input.row_offset,
-            _marker: PhantomData::default(),
-            context_id: input.context_id,
-        }
-    }
-}
-
-impl<'v, F: Field> From<&AssignedValueNoTimer<F>> for AssignedValue<'v, F> {
-    fn from(input: &AssignedValueNoTimer<F>) -> Self {
-        Self {
-            cell: input.cell,
-            value: input.value,
-            row_offset: input.row_offset,
-            _marker: PhantomData::default(),
-            context_id: input.context_id,
-        }
-    }
+pub(crate) struct AssignedECDSA<F: Field, FC: FieldChip<F>> {
+    pk: EcPoint<F, FC::FieldPoint>,
+    msg_hash: CRTInteger<F>,
+    sig_is_valid: AssignedValue<F>,
 }
 
 #[derive(Debug)]
 pub(crate) struct AssignedSignatureVerify<F: Field> {
-    pub(crate) address: AssignedValueNoTimer<F>,
+    pub(crate) address: AssignedValue<F>,
     pub(crate) msg_len: usize,
     pub(crate) msg_rlc: Value<F>,
-    pub(crate) msg_hash_rlc: AssignedValueNoTimer<F>,
-    pub(crate) sig_is_valid: AssignedValueNoTimer<F>,
+    pub(crate) msg_hash_rlc: AssignedValue<F>,
+    pub(crate) sig_is_valid: AssignedValue<F>,
 }
 
-struct SignDataDecomposed<'a: 'v, 'v, F: Field> {
-    pk_hash_cells: Vec<QuantumCell<'a, 'v, F>>,
-    msg_hash_cells: Vec<QuantumCell<'a, 'v, F>>,
-    pk_cells: Vec<QuantumCell<'a, 'v, F>>,
-    address: AssignedValue<'v, F>,
-    is_address_zero: AssignedValue<'v, F>,
+struct SignDataDecomposed<F: Field> {
+    pk_hash_cells: Vec<QuantumCell<F>>,
+    msg_hash_cells: Vec<QuantumCell<F>>,
+    pk_cells: Vec<QuantumCell<F>>,
+    address: AssignedValue<F>,
+    is_address_zero: AssignedValue<F>,
 }
 
 impl<F: Field> SignVerifyChip<F> {
@@ -355,12 +293,12 @@ impl<F: Field> SignVerifyChip<F> {
     ///
     /// WARNING: this circuit does not enforce the returned value to be true
     /// make sure the caller checks this result!
-    fn assign_ecdsa<'v>(
+    fn assign_ecdsa(
         &self,
-        ctx: &mut Context<'v, F>,
+        ctx: &mut Context<F>,
         ecdsa_chip: &FpChip<F>,
         sign_data: &SignData,
-    ) -> Result<AssignedECDSA<'v, F, FpChip<F>>, Error> {
+    ) -> Result<AssignedECDSA<F, FpChip<F>>, Error> {
         log::trace!("start ecdsa assignment");
         let SignData {
             signature,
@@ -467,12 +405,12 @@ impl<F: Field> SignVerifyChip<F> {
 
     /// Input the signature data,
     /// Output the cells for byte decomposition of the keys and messages
-    fn sign_data_decomposition<'a: 'v, 'v>(
+    fn sign_data_decomposition(
         &self,
-        ctx: &mut Context<'v, F>,
+        ctx: &mut Context<F>,
         ecdsa_chip: &FpChip<F>,
         sign_data: Option<&SignData>,
-    ) -> Result<SignDataDecomposed<'a, 'v, F>, Error> {
+    ) -> Result<SignDataDecomposed<F>, Error> {
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
 
@@ -525,10 +463,10 @@ impl<F: Field> SignVerifyChip<F> {
 
         let is_address_zero = ecdsa_chip.range.gate.is_equal(
             ctx,
-            QuantumCell::Existing(&address),
-            QuantumCell::Existing(&zero),
+            QuantumCell::Existing(address),
+            QuantumCell::Existing(zero),
         );
-        let is_address_zero_cell = QuantumCell::Existing(&is_address_zero);
+        let is_address_zero_cell = QuantumCell::Existing(is_address_zero);
 
         // ================================================
         // message hash cells
@@ -609,15 +547,15 @@ impl<F: Field> SignVerifyChip<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn assign_sig_verify<'a: 'v, 'v>(
+    fn assign_sig_verify(
         &self,
-        ctx: &mut Context<'v, F>,
+        ctx: &mut Context<F>,
         rlc_chip: &RangeConfig<F>,
         sign_data: Option<&SignData>,
-        sign_data_decomposed: &SignDataDecomposed<'a, 'v, F>,
+        sign_data_decomposed: &SignDataDecomposed<F>,
         challenges: &Challenges<Value<F>>,
-        sig_is_valid: &AssignedValue<'v, F>,
-    ) -> Result<([AssignedValue<'v, F>; 3], AssignedSignatureVerify<F>), Error> {
+        sig_is_valid: &AssignedValue<F>,
+    ) -> Result<([AssignedValue<F>; 3], AssignedSignatureVerify<F>), Error> {
         let (_padding, sign_data) = match sign_data {
             Some(sign_data) => (false, sign_data.clone()),
             None => (true, SignData::default()),
@@ -675,25 +613,21 @@ impl<F: Field> SignVerifyChip<F> {
         let pk_hash_rlc = rlc_chip.gate.inner_product(
             ctx,
             sign_data_decomposed.pk_hash_cells.clone(),
-            evm_challenge_powers.clone(),
+            evm_challenge_powers,
         );
 
         log::trace!("pk hash rlc halo2ecc: {:?}", pk_hash_rlc.value());
         log::trace!("finished sign verify");
         Ok((
-            [
-                sign_data_decomposed.is_address_zero.clone(),
-                pk_rlc,
-                pk_hash_rlc,
-            ],
+            [sign_data_decomposed.is_address_zero, pk_rlc, pk_hash_rlc],
             AssignedSignatureVerify {
-                address: sign_data_decomposed.address.clone().into(),
+                address: sign_data_decomposed.address,
                 msg_len: sign_data.msg.len(),
                 msg_rlc: challenges
                     .keccak_input()
                     .map(|r| rlc::value(sign_data.msg.iter().rev(), r)),
-                msg_hash_rlc: msg_hash_rlc.into(),
-                sig_is_valid: sig_is_valid.clone().into(),
+                msg_hash_rlc,
+                sig_is_valid: *sig_is_valid,
             },
         ))
     }
@@ -754,7 +688,7 @@ impl<F: Field> SignVerifyChip<F> {
                 }
 
                 // IMPORTANT: Move to Phase2 before RLC
-                log::debug!("before proceeding to the next phase");
+                log::info!("before proceeding to the next phase");
                 ctx.print_stats(&["Range"]);
 
                 #[cfg(not(feature = "onephase"))]
@@ -805,7 +739,7 @@ impl<F: Field> SignVerifyChip<F> {
                 // check lookups
                 // This is not optional.
                 let lookup_cells = ecdsa_chip.finalize(&mut ctx);
-                log::debug!("total number of lookup cells: {}", lookup_cells);
+                log::info!("total number of lookup cells: {}", lookup_cells);
 
                 ctx.print_stats(&["Range"]);
                 Ok(assigned_sig_verifs)
@@ -837,35 +771,35 @@ impl<F: Field> SignVerifyChip<F> {
 
         let flex_gate_chip = &range_chip.gate;
         let zero = flex_gate_chip.load_zero(ctx);
-        let zero_cell = QuantumCell::Existing(&zero);
+        let zero_cell = QuantumCell::Existing(zero);
 
         // apply the overriding flag
         let limb1_value = match overriding {
             Some(p) => flex_gate_chip.select(
                 ctx,
                 zero_cell.clone(),
-                QuantumCell::Existing(&crt_int.truncation.limbs[0]),
+                QuantumCell::Existing(crt_int.truncation.limbs[0]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[0].clone(),
+            None => crt_int.truncation.limbs[0],
         };
         let limb2_value = match overriding {
             Some(p) => flex_gate_chip.select(
                 ctx,
                 zero_cell.clone(),
-                QuantumCell::Existing(&crt_int.truncation.limbs[1]),
+                QuantumCell::Existing(crt_int.truncation.limbs[1]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[1].clone(),
+            None => crt_int.truncation.limbs[1],
         };
         let limb3_value = match overriding {
             Some(p) => flex_gate_chip.select(
                 ctx,
                 zero_cell,
-                QuantumCell::Existing(&crt_int.truncation.limbs[2]),
+                QuantumCell::Existing(crt_int.truncation.limbs[2]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[2].clone(),
+            None => crt_int.truncation.limbs[2],
         };
 
         // assert the byte_repr is the right decomposition of overflow_int
@@ -889,18 +823,18 @@ impl<F: Field> SignVerifyChip<F> {
         );
         flex_gate_chip.assert_equal(
             ctx,
-            QuantumCell::Existing(&limb1_value),
-            QuantumCell::Existing(&limb1_recover),
+            QuantumCell::Existing(limb1_value),
+            QuantumCell::Existing(limb1_recover),
         );
         flex_gate_chip.assert_equal(
             ctx,
-            QuantumCell::Existing(&limb2_value),
-            QuantumCell::Existing(&limb2_recover),
+            QuantumCell::Existing(limb2_value),
+            QuantumCell::Existing(limb2_recover),
         );
         flex_gate_chip.assert_equal(
             ctx,
-            QuantumCell::Existing(&limb3_value),
-            QuantumCell::Existing(&limb3_recover),
+            QuantumCell::Existing(limb3_value),
+            QuantumCell::Existing(limb3_recover),
         );
         log::trace!(
             "limb 1 \ninput {:?}\nreconstructed {:?}",
@@ -1104,7 +1038,7 @@ mod sign_verify_tests {
         let mut rng = XorShiftRng::seed_from_u64(1);
         let max_sigs = [4];
         for max_sig in max_sigs.iter() {
-            log::debug!("testing for {} signatures", max_sig);
+            log::info!("testing for {} signatures", max_sig);
             let mut signatures = Vec::new();
             for _ in 0..*max_sig {
                 let (sk, pk) = gen_key_pair(&mut rng);
@@ -1127,7 +1061,7 @@ mod sign_verify_tests {
             let k = TOTAL_NUM_ROWS as u32;
             run::<Fr>(k, *max_sig, signatures);
 
-            log::debug!("end of testing for {} signatures", max_sig);
+            log::info!("end of testing for {} signatures", max_sig);
         }
     }
 }

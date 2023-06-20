@@ -1593,8 +1593,7 @@ impl<F: Field> TxCircuit<F> {
                             CallerAddress => {
                                 #[cfg(feature = "enable-sign-verify")]
                                 {
-                                    let address: AssignedValue<_> =
-                                        assigned_sig_verif.address.clone().into();
+                                    let address: AssignedValue<_> = assigned_sig_verif.address;
                                     address.copy_advice(&mut region, config.sv_address, offset - 1);
                                 }
                                 #[cfg(not(feature = "enable-sign-verify"))]
@@ -1616,7 +1615,7 @@ impl<F: Field> TxCircuit<F> {
                                 #[cfg(feature = "enable-sign-verify")]
                                 {
                                     region.constrain_equal(
-                                        assigned_sig_verif.msg_hash_rlc.clone().cell,
+                                        assigned_sig_verif.msg_hash_rlc.cell,
                                         Cell {
                                             // FIXME
                                             region_index: RegionIndex(1),

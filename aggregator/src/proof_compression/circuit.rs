@@ -10,24 +10,24 @@ use halo2_proofs::{
 };
 use rand::Rng;
 use snark_verifier::{
-    loader::halo2::{
-        halo2_ecc::halo2_base::{
-            self,
-            halo2_proofs::{
-                halo2curves::bn256::{Bn256, Fr},
-                poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+    loader::{
+        halo2::{
+            halo2_ecc::halo2_base::{
+                self,
+                halo2_proofs::{
+                    halo2curves::bn256::{Bn256, Fr},
+                    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+                },
+                Context, ContextParams,
             },
-            Context, ContextParams,
+            Halo2Loader,
         },
-        Halo2Loader,
+        native::NativeLoader,
     },
     pcs::kzg::{Bdfg21, Kzg, KzgAccumulator, KzgSuccinctVerifyingKey},
     util::arithmetic::fe_to_limbs,
 };
-use snark_verifier_sdk::{
-    halo2::aggregation::{aggregate, flatten_accumulator, Svk},
-    NativeLoader, Snark, SnarkWitness,
-};
+use snark_verifier_sdk::{aggregate, flatten_accumulator, types::Svk, Snark, SnarkWitness};
 
 use crate::{
     core::extract_accumulators_and_proof,

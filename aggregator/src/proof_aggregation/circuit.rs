@@ -8,16 +8,18 @@ use halo2_proofs::{
 use itertools::Itertools;
 use rand::Rng;
 use snark_verifier::{
-    loader::halo2::{
-        halo2_ecc::halo2_base::{self, AssignedValue, Context, ContextParams},
-        Halo2Loader,
+    loader::{
+        halo2::{
+            halo2_ecc::halo2_base::{self, AssignedValue, Context, ContextParams},
+            Halo2Loader,
+        },
+        native::NativeLoader,
     },
     pcs::kzg::{Bdfg21, Kzg, KzgAccumulator, KzgSuccinctVerifyingKey},
     util::arithmetic::fe_to_limbs,
 };
 use snark_verifier_sdk::{
-    halo2::aggregation::{aggregate, flatten_accumulator, Svk},
-    CircuitExt, NativeLoader, Snark, SnarkWitness,
+    aggregate, flatten_accumulator, types::Svk, CircuitExt, Snark, SnarkWitness,
 };
 use zkevm_circuits::util::Challenges;
 
