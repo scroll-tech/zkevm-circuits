@@ -8,7 +8,6 @@ mod param;
 mod test;
 
 use std::{iter, marker::PhantomData};
-use std::io::Read;
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -995,12 +994,10 @@ impl<F: Field> PiCircuitConfig<F> {
             chain_id_byte_cells,
             pi_hash_hi_byte_cells,
             pi_hash_lo_byte_cells,
-        ].concat();
+        ]
+        .concat();
 
-        Ok((
-            instance_byte_cells,
-            connections,
-        ))
+        Ok((instance_byte_cells, connections))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1466,15 +1463,18 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
         let public_inputs = iter::empty()
             .chain(
-                self.public_data.chain_id.as_u64().to_be_bytes()
+                self.public_data
+                    .chain_id
+                    .as_u64()
+                    .to_be_bytes()
                     .into_iter()
-                    .map(|byte| F::from(byte as u64))
+                    .map(|byte| F::from(byte as u64)),
             )
             .chain(
                 pi_hash
                     .to_fixed_bytes()
                     .into_iter()
-                    .map(|byte| F::from(byte as u64))
+                    .map(|byte| F::from(byte as u64)),
             )
             .collect::<Vec<F>>();
 
