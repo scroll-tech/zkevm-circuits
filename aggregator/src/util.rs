@@ -31,7 +31,9 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
 
     for preimage in preimages.iter() {
         let num_rounds = 1 + preimage.len() / 136;
-        for (i, round) in preimage.chunks(136).enumerate() {
+        let mut preimage_padded = preimage.clone();
+        preimage_padded.resize(136 * num_rounds, 0);
+        for (i, round) in preimage_padded.chunks(136).enumerate() {
             // indices for preimages
             for (j, _chunk) in round.chunks(8).into_iter().enumerate() {
                 for k in 0..8 {

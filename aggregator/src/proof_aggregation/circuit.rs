@@ -27,7 +27,7 @@ use crate::{
     core::{assign_batch_hashes, extract_accumulators_and_proof},
     param::{ConfigParams, BITS, LIMBS},
     proof_aggregation::config::AggregationConfig,
-    BatchHashCircuit, ChunkHash,
+    BatchHashCircuit, ChunkHash, CHAIN_ID_LEN,
 };
 
 /// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
@@ -329,19 +329,19 @@ impl Circuit<Fr> for AggregationCircuit {
             for i in 0..32 {
                 // first_chunk_prev_state_root
                 layouter.constrain_instance(
-                    hash_input_cells[2][4 + i].cell(),
+                    hash_input_cells[2][CHAIN_ID_LEN + i].cell(),
                     config.instance,
                     i + acc_len,
                 )?;
                 // last_chunk_post_state_root
                 layouter.constrain_instance(
-                    hash_input_cells.last().unwrap()[36 + i].cell(),
+                    hash_input_cells.last().unwrap()[CHAIN_ID_LEN + 32 + i].cell(),
                     config.instance,
                     i + 32 + acc_len,
                 )?;
                 // last_chunk_withdraw_root
                 layouter.constrain_instance(
-                    hash_input_cells.last().unwrap()[68 + i].cell(),
+                    hash_input_cells.last().unwrap()[CHAIN_ID_LEN + 64 + i].cell(),
                     config.instance,
                     i + 64 + acc_len,
                 )?;
@@ -357,8 +357,8 @@ impl Circuit<Fr> for AggregationCircuit {
                     )?;
                 }
             }
-            // last 4 inputs are the chain id
-            for i in 0..4 {
+            // last 8 inputs are the chain id
+            for i in 0..CHAIN_ID_LEN {
                 layouter.constrain_instance(
                     hash_input_cells[0][i].cell(),
                     config.instance,

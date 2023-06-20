@@ -9,7 +9,7 @@ use halo2_proofs::{
 
 use zkevm_circuits::util::{Challenges, SubCircuitConfig};
 
-use crate::{core::assign_batch_hashes, BatchHash, ChunkHash};
+use crate::{core::assign_batch_hashes, BatchHash, ChunkHash, CHAIN_ID_LEN};
 
 use super::config::{BatchCircuitConfig, BatchCircuitConfigArgs};
 
@@ -19,7 +19,7 @@ use super::config::{BatchCircuitConfig, BatchCircuitConfigArgs};
 /// generate the circuit.
 #[derive(Clone, Debug, Default)]
 pub struct BatchHashCircuit<F: Field> {
-    pub(crate) chain_id: u32,
+    pub(crate) chain_id: u64,
     pub(crate) chunks: Vec<ChunkHash>,
     pub(crate) batch: BatchHash,
     _phantom: PhantomData<F>,
@@ -28,7 +28,7 @@ pub struct BatchHashCircuit<F: Field> {
 /// Public input to a batch circuit.
 /// In raw format. I.e., before converting to field elements.
 pub struct BatchHashCircuitPublicInput {
-    pub(crate) chain_id: u32,
+    pub(crate) chain_id: u64,
     pub(crate) first_chunk_prev_state_root: H256,
     pub(crate) last_chunk_post_state_root: H256,
     pub(crate) last_chunk_withdraw_root: H256,
@@ -184,19 +184,19 @@ impl<F: Field> Circuit<F> for BatchHashCircuit<F> {
             for i in 0..32 {
                 // first_chunk_prev_state_root
                 layouter.constrain_instance(
-                    hash_input_cells[2][4 + i].cell(),
+                    hash_input_cells[2][CHAIN_ID_LEN + i].cell(),
                     config.hash_digest_column,
                     i,
                 )?;
                 // last_chunk_post_state_root
                 layouter.constrain_instance(
-                    hash_input_cells.last().unwrap()[36 + i].cell(),
+                    hash_input_cells.last().unwrap()[CHAIN_ID_LEN + 32 + i].cell(),
                     config.hash_digest_column,
                     i + 32,
                 )?;
                 // last_chunk_withdraw_root
                 layouter.constrain_instance(
-                    hash_input_cells.last().unwrap()[68 + i].cell(),
+                    hash_input_cells.last().unwrap()[CHAIN_ID_LEN + 64 + i].cell(),
                     config.hash_digest_column,
                     i + 64,
                 )?;
@@ -212,8 +212,8 @@ impl<F: Field> Circuit<F> for BatchHashCircuit<F> {
                     )?;
                 }
             }
-            // last 4 inputs are the chain id
-            for i in 0..4 {
+            // last 8 inputs are the chain id
+            for i in 0..CHAIN_ID_LEN {
                 layouter.constrain_instance(
                     hash_input_cells[0][i].cell(),
                     config.hash_digest_column,

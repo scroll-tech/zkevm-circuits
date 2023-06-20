@@ -34,7 +34,7 @@
 //! - last_chunk_post_state_root: 32 Field elements
 //! - last_chunk_withdraw_root: 32 Field elements
 //! - batch_public_input_hash: 32 Field elements
-//! - chain_id: 4 Field elements
+//! - chain_id: 8 Field elements
 //!
 //! ## Constraints
 //! The circuit attests the following statements:
@@ -65,6 +65,9 @@ pub use config::{BatchCircuitConfig, BatchCircuitConfigArgs};
 
 // TODO(ZZ): update to the right degree
 pub(crate) const LOG_DEGREE: u32 = 19;
+
+// A chain_id is u64 and uses 8 bytes
+pub(crate) const CHAIN_ID_LEN: usize = 8;
 
 // Each round requires (NUM_ROUNDS+1) * DEFAULT_KECCAK_ROWS = 300 rows.
 // This library is hard coded for this parameter.

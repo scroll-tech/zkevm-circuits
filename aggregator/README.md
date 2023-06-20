@@ -49,7 +49,7 @@ It also performs public input aggregation, i.e., reducing the `64k` public eleme
     - last_chunk_post_state_root: 32 Field elements
     - last_chunk_withdraw_root: 32 Field elements
     - batch_public_input_hash: 32 Field elements
-    - chain_id: 4 Field elements
+    - chain_id: 8 Field elements
 
 In addition, it attests that, for chunks indexed from `0` to `k-1`,
 - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash) where chunk_i.data_hash is a public input to the i-th batch snark circuit

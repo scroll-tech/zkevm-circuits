@@ -29,7 +29,7 @@ pub struct AggregationConfig {
     pub keccak_circuit_config: KeccakCircuitConfig<Fr>,
     /// Instance for public input; stores
     /// - accumulator from aggregation (12 elements)
-    /// - aggregated public inputs (132 elements):
+    /// - aggregated public inputs (136 elements):
     ///     chain_id ||
     ///     chunk\[0\].prev_state_root ||
     ///     chunk\[k-1\].post_state_root ||

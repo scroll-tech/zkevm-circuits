@@ -27,7 +27,7 @@ use zkevm_circuits::{
 
 use crate::{
     util::{assert_equal, capacity, get_indices},
-    LOG_DEGREE,
+    CHAIN_ID_LEN, LOG_DEGREE,
 };
 
 /// Input the hash input bytes,
@@ -127,12 +127,12 @@ pub(crate) fn assign_batch_hashes<F: Field>(
                 for j in 0..8 {
                     // sanity check
                     assert_equal(
-                        &hash_input_cells[0][i * 8 + j + 100],
+                        &hash_input_cells[0][i * 8 + j + 96 + CHAIN_ID_LEN],
                         &hash_output_cells[1][(3 - i) * 8 + j],
                     );
                     region.constrain_equal(
                         // preimage and digest has different endianness
-                        hash_input_cells[0][i * 8 + j + 100].cell(),
+                        hash_input_cells[0][i * 8 + j + 96 + CHAIN_ID_LEN].cell(),
                         hash_output_cells[1][(3 - i) * 8 + j].cell(),
                     )?;
                 }
@@ -158,29 +158,32 @@ pub(crate) fn assign_batch_hashes<F: Field>(
             for i in 0..32 {
                 // 2.2.1 chunk[0].prev_state_root
                 // sanity check
-                assert_equal(&hash_input_cells[0][i + 4], &hash_input_cells[2][i + 4]);
+                assert_equal(
+                    &hash_input_cells[0][i + CHAIN_ID_LEN],
+                    &hash_input_cells[2][i + CHAIN_ID_LEN],
+                );
                 region.constrain_equal(
-                    hash_input_cells[0][i + 4].cell(),
-                    hash_input_cells[2][i + 4].cell(),
+                    hash_input_cells[0][i + CHAIN_ID_LEN].cell(),
+                    hash_input_cells[2][i + CHAIN_ID_LEN].cell(),
                 )?;
                 // 2.2.2 chunk[k-1].post_state_root
                 // sanity check
                 assert_equal(
-                    &hash_input_cells[0][i + 36],
-                    &hash_input_cells[hash_num - 1][i + 36],
+                    &hash_input_cells[0][i + CHAIN_ID_LEN + 32],
+                    &hash_input_cells[hash_num - 1][i + CHAIN_ID_LEN + 32],
                 );
                 region.constrain_equal(
-                    hash_input_cells[0][i + 36].cell(),
-                    hash_input_cells[hash_num - 1][i + 36].cell(),
+                    hash_input_cells[0][i + CHAIN_ID_LEN + 32].cell(),
+                    hash_input_cells[hash_num - 1][i + CHAIN_ID_LEN + 32].cell(),
                 )?;
                 // 2.2.3 chunk[k-1].withdraw_root
                 assert_equal(
-                    &hash_input_cells[0][i + 68],
-                    &hash_input_cells[hash_num - 1][i + 68],
+                    &hash_input_cells[0][i + CHAIN_ID_LEN + 64],
+                    &hash_input_cells[hash_num - 1][i + CHAIN_ID_LEN + 64],
                 );
                 region.constrain_equal(
-                    hash_input_cells[0][i + 68].cell(),
-                    hash_input_cells[hash_num - 1][i + 68].cell(),
+                    hash_input_cells[0][i + CHAIN_ID_LEN + 64].cell(),
+                    hash_input_cells[hash_num - 1][i + CHAIN_ID_LEN + 64].cell(),
                 )?;
             }
 
@@ -198,8 +201,11 @@ pub(crate) fn assign_batch_hashes<F: Field>(
             for (i, chunk) in hash_input_cells[1].chunks(32).enumerate().take(num_chunks) {
                 for (j, cell) in chunk.iter().enumerate() {
                     // sanity check
-                    assert_equal(cell, &hash_input_cells[2 + i][j + 100]);
-                    region.constrain_equal(cell.cell(), hash_input_cells[2 + i][j + 100].cell())?;
+                    assert_equal(cell, &hash_input_cells[2 + i][j + CHAIN_ID_LEN + 96]);
+                    region.constrain_equal(
+                        cell.cell(),
+                        hash_input_cells[2 + i][j + CHAIN_ID_LEN + 96].cell(),
+                    )?;
                 }
             }
 
@@ -208,21 +214,21 @@ pub(crate) fn assign_batch_hashes<F: Field>(
                 for j in 0..32 {
                     // sanity check
                     assert_equal(
-                        &hash_input_cells[i + 3][4 + j],
-                        &hash_input_cells[i + 2][36 + j],
+                        &hash_input_cells[i + 3][CHAIN_ID_LEN + j],
+                        &hash_input_cells[i + 2][CHAIN_ID_LEN + 32 + j],
                     );
                     region.constrain_equal(
                         // chunk[i+1].prevStateRoot
-                        hash_input_cells[i + 3][4 + j].cell(),
+                        hash_input_cells[i + 3][CHAIN_ID_LEN + j].cell(),
                         // chunk[i].postStateRoot
-                        hash_input_cells[i + 2][36 + j].cell(),
+                        hash_input_cells[i + 2][CHAIN_ID_LEN + 32 + j].cell(),
                     )?;
                 }
             }
 
             // 2.5 assert hashes use a same chain id
             for i in 0..num_chunks {
-                for j in 0..4 {
+                for j in 0..CHAIN_ID_LEN {
                     // sanity check
                     assert_equal(&hash_input_cells[0][j], &hash_input_cells[i + 2][j]);
                     region.constrain_equal(

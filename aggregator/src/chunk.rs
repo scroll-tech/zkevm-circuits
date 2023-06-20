@@ -12,7 +12,7 @@ use ethers_core::utils::keccak256;
 /// - the data hash of this chunk
 pub struct ChunkHash {
     /// Chain identifier
-    pub(crate) chain_id: u32,
+    pub(crate) chain_id: u64,
     /// state root before this chunk
     pub(crate) prev_state_root: H256,
     /// state root after this chunk
