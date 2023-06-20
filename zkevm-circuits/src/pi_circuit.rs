@@ -439,12 +439,21 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             );
 
             // if_rpi_padding == true, then rpi == dummy_tx_hash
-            cb.condition(meta.query_advice(is_rpi_padding, Rotation::cur()), |_cb| {
-                // cb.require_equal(
-                //     "rpi == dummy_tx_hash",
-                //     meta.query_advice(rpi, Rotation::cur()),
-                //     get_dummy_tx_hash(1).
-                // );
+            cb.condition(meta.query_advice(is_rpi_padding, Rotation::cur()), |cb| {
+                cb.require_equal(
+                    "rpi == dummy_tx_hash",
+                    meta.query_advice(rpi, Rotation::cur()),
+                    iter::once(1.expr())
+                        .chain(challenges.evm_word_powers_of_randomness::<31>().into_iter())
+                        .rev()
+                        .zip(
+                            get_dummy_tx_hash()
+                                .to_fixed_bytes()
+                                .into_iter()
+                                .map(|byte| byte.expr()),
+                        )
+                        .fold(0.expr(), |acc, (rand_pow, byte)| acc + rand_pow * byte),
+                );
             });
 
             cb.gate(meta.query_fixed(q_tx_hashes, Rotation::cur()))
@@ -623,13 +632,6 @@ impl<F: Field> PiCircuitConfig<F> {
                 .filter(|tx| tx.block_number == block.number.as_u64())
                 .count() as u16;
 
-            // assign q_block_context
-            region.assign_fixed(
-                || "q_block_context",
-                self.q_block_context,
-                offset,
-                || Value::known(F::one()),
-            )?;
             // Assign fields in pi columns and connect them to block table
             let fields = vec![
                 (
@@ -664,9 +666,20 @@ impl<F: Field> PiCircuitConfig<F> {
 
             block_table_offset += BLOCK_LEN;
         }
+        for i in 0..offset {
+            // assign q_block_context
+            region.assign_fixed(
+                || "q_block_context",
+                self.q_block_context,
+                i,
+                || Value::known(F::one()),
+            )?;
+        }
+
         debug_assert_eq!(offset, BLOCK_HEADER_BYTES_NUM * self.max_inner_blocks);
 
         // assign tx hashes
+        let block_context_row = offset;
         let num_txs = tx_hashes.len();
         let mut data_bytes_rlc = None;
         let mut data_bytes_length = None;
@@ -681,12 +694,6 @@ impl<F: Field> PiCircuitConfig<F> {
         {
             let is_rpi_padding = i >= num_txs;
 
-            region.assign_fixed(
-                || "q_tx_hashes",
-                self.q_tx_hashes,
-                offset,
-                || Value::known(F::one()),
-            )?;
             let cells = self.assign_field_in_pi(
                 region,
                 &mut offset,
@@ -704,6 +711,14 @@ impl<F: Field> PiCircuitConfig<F> {
                 data_bytes_rlc = Some(cells[RPI_RLC_ACC_CELL_IDX].clone());
                 data_bytes_length = Some(cells[RPI_LENGTH_ACC_CELL_IDX].clone());
             }
+        }
+        for i in block_context_row..offset {
+            region.assign_fixed(
+                || "q_tx_hashes",
+                self.q_tx_hashes,
+                i,
+                || Value::known(F::one()),
+            )?;
         }
 
         debug_assert_eq!(
