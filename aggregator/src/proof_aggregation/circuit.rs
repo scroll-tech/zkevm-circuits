@@ -81,6 +81,8 @@ impl AggregationCircuit {
         // extract the accumulators and proofs
         let svk = params.get_g()[0].into();
 
+        // wenqing: this aggregates MULTIPLE snarks 
+        //  (instead of ONE as in proof compression)
         let (accumulator, as_proof) = extract_accumulators_and_proof(params, snarks, rng);
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
         let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
@@ -162,7 +164,7 @@ impl Circuit<Fr> for AggregationCircuit {
         //   re-export all the public input of the snarks, denoted by [snarks_instances], and the
         //   accumulator [acc_instances]
         // - 2. use public input aggregation circuit to aggregate the chunks; expose the instance
-        //   dentoed by [pi_agg_instances]
+        //   denoted by [pi_agg_instances]
         // - 3. assert [snarks_instances] are private inputs used for public input aggregation
         //   circuit
 

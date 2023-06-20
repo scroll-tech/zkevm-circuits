@@ -49,6 +49,20 @@ pub(crate) fn assign_batch_hashes<F: Field>(
     let num_rows = 1 << LOG_DEGREE;
 
     let timer = start_timer!(|| ("multi keccak").to_string());
+    // wenqing: preimages consists of the following parts
+    // (1) batchPiHash preimage =
+    //      (chain_id ||
+    //      chunk[0].prev_state_root ||
+    //      chunk[k-1].post_state_root ||
+    //      chunk[k-1].withdraw_root ||
+    //      batch_data_hash)
+    // (2) batchDataHash preimage = 
+    //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
+    // (3) chunk[i].piHash preimage =
+    //      (chain id ||
+    //      chunk[i].prevStateRoot || chunk[i].postStateRoot || 
+    //      chunk[i].withdrawRoot || chunk[i].datahash)
+    // each part of the preimage is mapped to image by Keccak256
     let witness = multi_keccak(preimages, challenges, capacity(num_rows))?;
     end_timer!(timer);
 
@@ -83,10 +97,12 @@ pub(crate) fn assign_batch_hashes<F: Field>(
                 let row = config.set_row(&mut region, offset, keccak_row)?;
 
                 if cur_preimage_index.is_some() && *cur_preimage_index.unwrap() == offset {
+                    // wenqing: 7-th column is Keccak input in Keccak circuit
                     current_hash_input_cells.push(row[6].clone());
                     cur_preimage_index = preimage_indices_iter.next();
                 }
                 if cur_digest_index.is_some() && *cur_digest_index.unwrap() == offset {
+                    // wenqing: last column is Keccak output in Keccak circuit
                     current_hash_output_cells.push(row.last().unwrap().clone());
                     cur_digest_index = digest_indices_iter.next();
                 }
@@ -126,6 +142,8 @@ pub(crate) fn assign_batch_hashes<F: Field>(
                 for j in 0..8 {
                     // sanity check
                     assert_equal(
+                        // wenqing: 100 is the starting bit position for 
+                        //  batch_data_hash in batchPiHash preimage
                         &hash_input_cells[0][i * 8 + j + 100],
                         &hash_output_cells[1][(3 - i) * 8 + j],
                     );
@@ -154,6 +172,8 @@ pub(crate) fn assign_batch_hashes<F: Field>(
             //        chunk[i].postStateRoot ||
             //        chunk[i].withdrawRoot  ||
             //        chunk[i].datahash)
+            // wenqing: 4, 36, 68 used below are bit positions for 
+            //          prev_state_root, post_state_root, withdraw_root
             for i in 0..32 {
                 // 2.2.1 chunk[0].prev_state_root
                 // sanity check

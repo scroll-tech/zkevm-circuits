@@ -30,6 +30,12 @@ pub(crate) fn get_indices(preimages: &[Vec<u8>]) -> (Vec<usize>, Vec<usize>) {
     let mut round_ctr = 0;
 
     for preimage in preimages.iter() {
+        // wenqing: 136 = 17 * 8 is the size in bits of each 
+        //  input chunk that can be processed by Keccak circuit using absorb
+        //  each chunk of size 136 needs 300 Keccak circuit rows to prove
+        //  which consists of 12 Keccak rows for each of 24 + 1 Keccak cicuit rounds
+        //  digest only happens at the end of the last input chunk with 
+        //  4 Keccak circuit rounds, so 48 Keccak rows, and 300 - 48 = 256
         let num_rounds = 1 + preimage.len() / 136;
         for (i, round) in preimage.chunks(136).enumerate() {
             // indices for preimages
