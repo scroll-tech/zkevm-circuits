@@ -8,6 +8,7 @@ mod param;
 mod test;
 
 use std::{iter, marker::PhantomData};
+use std::io::Read;
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -571,7 +572,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 }
 
 // (hi cell, lo cell)
-type PiHashExport<F> = (AssignedCell<F, F>, AssignedCell<F, F>, AssignedCell<F, F>);
+type PiHashExport<F> = Vec<AssignedCell<F, F>>;
 
 #[derive(Debug, Clone)]
 struct Connections<F: Field> {
@@ -798,6 +799,7 @@ impl<F: Field> PiCircuitConfig<F> {
             challenges,
         )?;
         let chain_id_cell = cells[RPI_CELL_IDX].clone();
+        let chain_id_byte_cells = cells[3..].to_vec();
         for block_idx in 0..self.max_inner_blocks {
             region.constrain_equal(
                 chain_id_cell.cell(),
@@ -915,7 +917,8 @@ impl<F: Field> PiCircuitConfig<F> {
             true,
             challenges,
         )?;
-        let pi_hash_hi_cell = cells[RPI_CELL_IDX].clone();
+        let pi_hash_hi_byte_cells = cells[3..].to_vec();
+        // let pi_hash_hi_cell = cells[RPI_CELL_IDX].clone();
 
         // the low 16 bytes of keccak output
         let cells = self.assign_field_in_pi(
@@ -929,7 +932,8 @@ impl<F: Field> PiCircuitConfig<F> {
             true,
             challenges,
         )?;
-        let pi_hash_lo_cell = cells[RPI_CELL_IDX].clone();
+        let pi_hash_lo_byte_cells = cells[3..].to_vec();
+        // let pi_hash_lo_cell = cells[RPI_CELL_IDX].clone();
 
         // copy pi hash down here
         region.constrain_equal(pi_hash_rlc_cell.cell(), cells[RPI_RLC_ACC_CELL_IDX].cell())?;
@@ -987,8 +991,14 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
         }
 
+        let instance_byte_cells = [
+            chain_id_byte_cells,
+            pi_hash_hi_byte_cells,
+            pi_hash_lo_byte_cells,
+        ].concat();
+
         Ok((
-            (chain_id_cell, pi_hash_hi_cell, pi_hash_lo_cell),
+            instance_byte_cells,
             connections,
         ))
     }
@@ -1453,27 +1463,21 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     /// Compute the public inputs for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
         let pi_hash = self.public_data.get_pi();
-        let keccak_hi = pi_hash
-            .to_fixed_bytes()
-            .iter()
-            .take(16)
-            .fold(F::zero(), |acc, byte| {
-                acc * F::from(BYTE_POW_BASE) + F::from(*byte as u64)
-            });
 
-        let keccak_lo = pi_hash
-            .to_fixed_bytes()
-            .iter()
-            .skip(16)
-            .fold(F::zero(), |acc, byte| {
-                acc * F::from(BYTE_POW_BASE) + F::from(*byte as u64)
-            });
+        let public_inputs = iter::empty()
+            .chain(
+                self.public_data.chain_id.as_u64().to_be_bytes()
+                    .into_iter()
+                    .map(|byte| F::from(byte as u64))
+            )
+            .chain(
+                pi_hash
+                    .to_fixed_bytes()
+                    .into_iter()
+                    .map(|byte| F::from(byte as u64))
+            )
+            .collect::<Vec<F>>();
 
-        let public_inputs = vec![
-            F::from(self.public_data.chain_id.as_u64()),
-            keccak_hi,
-            keccak_lo,
-        ];
         vec![public_inputs]
     }
 
@@ -1499,7 +1503,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     challenges,
                 )?;
                 // assign pi cols
-                let ((chain_id_cell, keccak_hi_cell, keccak_lo_cell), conn) = config.assign(
+                let (inst_byte_cells, conn) = config.assign(
                     &mut region,
                     &self.public_data,
                     &block_value_cells,
@@ -1508,7 +1512,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
                 self.connections.borrow_mut().replace(conn);
 
-                Ok(vec![chain_id_cell, keccak_hi_cell, keccak_lo_cell])
+                Ok(inst_byte_cells)
             },
         )?;
 
