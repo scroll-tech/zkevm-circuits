@@ -34,6 +34,7 @@ use halo2_proofs::{
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use itertools::Itertools;
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
@@ -593,6 +594,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
         let (rows, padding_length) = RwMap::table_assignments_prepad(&self.rows, self.n_rows);
         let rows_len = rows.len();
+        let offsets = (0..rows_len).collect::<Vec<_>>();
         let num_threads = std::thread::available_parallelism()
             .map(|e| e.get())
             .unwrap_or(32);
@@ -613,41 +615,48 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         // Here we use one single region to assign `overrides` to both rw table and
         // other parts.
         let part1_timer = Instant::now();
-        let mut is_first_time = true;
-        layouter.assign_region(
+        let column = config.rw_table.rw_counter;
+        let mut is_first_time_vec = vec![true; chunk_num];
+        layouter.assign_regions(
             || "state circuit (synthesize_sub) part1",
-            |mut region| {
-                if is_first_time {
-                    is_first_time = false;
-                    region.assign_advice(
-                        || "step selector",
-                        config.rw_table.rw_counter,
-                        self.n_rows - 1,
-                        || Value::known(F::zero()),
-                    )?;
-                    return Ok(());
-                }
+            offsets
+                .chunks(chunk_size)
+                .zip(rows.chunks(chunk_size))
+                .zip(is_first_time_vec.iter_mut())
+                .map(|((offsets, rows), is_first_time)| {
+                    move |region: Region<'_, F>| {
+                        let mut region = region;
 
-                config.rw_table.load_with_region(
-                    &mut region,
-                    &self.rows,
-                    self.n_rows,
-                    randomness,
-                )?;
+                        if *is_first_time {
+                            *is_first_time = false;
+                            region.assign_advice(
+                                || "dummy offset",
+                                column,
+                                offsets.len() - 1,
+                                || Value::known(F::zero()),
+                            )?;
+                            return Ok(());
+                        }
 
-                Ok(())
-            },
+                        config.rw_table.load_with_region_padded_row(
+                            &mut region,
+                            &rows,
+                            offsets.len(),
+                            randomness,
+                        )?;
+
+                        Ok(())
+                    }
+                })
+                .collect_vec(),
         )?;
         log::debug!("part1_timer: {:?}", part1_timer.elapsed());
 
         let part2_timer = Instant::now();
-        
-
-        let offsets = (0..rows_len).collect::<Vec<_>>();
         let mut is_first_time_vec = vec![true; chunk_num];
         let column = config.initial_value;
         let is_first_access_chunks = layouter.assign_regions(
-            || "state circuit (synthesize_sub) part2(regions)",
+            || "state circuit (synthesize_sub) part2",
             offsets
                 .chunks(chunk_size)
                 .zip(is_first_time_vec.iter_mut())
@@ -693,7 +702,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         log::debug!("part2_timer: {:?}", part2_timer.elapsed());
 
         let part3_timer = Instant::now();
-        is_first_time = true;
+        let mut is_first_time = true;
         layouter.assign_region(
             || "state circuit (synthesize_sub) part3",
             |mut region| {
