@@ -33,24 +33,18 @@ fn test_state_circuit_ok(
     stack_ops: Vec<Operation<StackOp>>,
     storage_ops: Vec<Operation<StorageOp>>,
 ) {
-    println!("test_state_circuit_ok 0");
     let rw_map = RwMap::from(&OperationContainer {
         memory: memory_ops,
         stack: stack_ops,
         storage: storage_ops,
         ..Default::default()
     });
-    println!("test_state_circuit_ok 1");
 
     let circuit = StateCircuit::<Fr>::new(rw_map, N_ROWS);
-    println!("test_state_circuit_ok 2");
     let instance = circuit.instance();
-    println!("test_state_circuit_ok 3");
 
     let prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
-    println!("test_state_circuit_ok 4");
     let verify_result = prover.verify();
-    println!("test_state_circuit_ok 5");
     assert_eq!(verify_result, Ok(()));
 }
 

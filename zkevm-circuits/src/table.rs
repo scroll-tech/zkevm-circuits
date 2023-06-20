@@ -638,6 +638,19 @@ impl RwTable {
         }
         Ok(())
     }
+
+    pub(crate) fn load_with_region_padded_row<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        rws: &[Rw],
+        _n_rows: usize,
+        challenges: Value<F>,
+    ) -> Result<(), Error> {
+        for (offset, row) in rws.iter().enumerate() {
+            self.assign(region, offset, &row.table_assignment(challenges))?;
+        }
+        Ok(())
+    }
 }
 
 /// The types of proofs in the MPT table
