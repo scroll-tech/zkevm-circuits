@@ -16,6 +16,7 @@ mod config;
 /// - data hash
 /// - public input hash
 pub struct MockChunkCircuit {
+    pub(crate) chain_id: u64,
     pub(crate) chunk: ChunkHash,
 }
 

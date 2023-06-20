@@ -43,7 +43,7 @@ fn test_aggregation_circuit() {
     // Proof for test circuit
     let circuits = chunks
         .iter()
-        .map(|&chunk| MockChunkCircuit { chunk })
+        .map(|&chunk| MockChunkCircuit { chain_id: 0, chunk })
         .collect_vec();
     let layer_0_snarks = circuits
         .iter()

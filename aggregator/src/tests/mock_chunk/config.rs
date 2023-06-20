@@ -14,7 +14,7 @@ use zkevm_circuits::{
 
 use crate::{
     util::{capacity, get_indices},
-    LOG_DEGREE,
+    CHAIN_ID_LEN, LOG_DEGREE,
 };
 
 /// Config for MockChunkCircuit
@@ -152,9 +152,9 @@ impl MockChunkCircuitConfig {
         // chunk's data hash
         for i in 0..32 {
             layouter.constrain_instance(
-                hash_input_cells[i + 100].cell(),
+                hash_input_cells[i + 96 + CHAIN_ID_LEN].cell(),
                 self.hash_digest_column,
-                i,
+                i + CHAIN_ID_LEN,
             )?;
         }
         // chunk's public_input_hash
@@ -164,10 +164,15 @@ impl MockChunkCircuitConfig {
                 layouter.constrain_instance(
                     hash_output_cells[(3 - i) * 8 + j].cell(),
                     self.hash_digest_column,
-                    i * 8 + j + 32,
+                    i * 8 + j + 32 + CHAIN_ID_LEN,
                 )?;
             }
         }
+        // chain id
+        for i in 0..CHAIN_ID_LEN {
+            layouter.constrain_instance(hash_input_cells[i].cell(), self.hash_digest_column, i)?;
+        }
+
         Ok(hash_output_cells)
     }
 }

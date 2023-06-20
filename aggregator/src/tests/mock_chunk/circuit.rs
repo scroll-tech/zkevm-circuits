@@ -16,6 +16,7 @@ use super::{
 impl MockChunkCircuit {
     pub(crate) fn random<R: rand::RngCore>(r: &mut R) -> Self {
         Self {
+            chain_id: 0,
             chunk: ChunkHash::mock_chunk_hash(r),
         }
     }

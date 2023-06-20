@@ -13,15 +13,17 @@ impl CircuitExt<Fr> for MockChunkCircuit {
 
     /// return vec![data hash | public input hash]
     fn instances(&self) -> Vec<Vec<Fr>> {
-        vec![
-            self.chain_id.to_le_bytes().iter().zip(
-            
-            self
-            .chunk
-            .data_hash
-            .as_bytes()
+        vec![self
+            .chain_id
+            .to_le_bytes()
             .iter()
-            .chain(self.chunk.public_input_hash().as_bytes().iter()))
+            .chain(
+                self.chunk
+                    .data_hash
+                    .as_bytes()
+                    .iter()
+                    .chain(self.chunk.public_input_hash().as_bytes().iter()),
+            )
             .map(|&x| Fr::from(x as u64))
             .collect()]
     }
