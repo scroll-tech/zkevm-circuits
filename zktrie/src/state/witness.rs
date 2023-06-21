@@ -288,7 +288,7 @@ impl WitnessGenerator {
             self.trace_storage_update(address, key, new_val, old_val)
         } else {
             self.trace_account_update(address, |acc_before| {
-                let mut acc_data = acc_before.map(|r| *r).unwrap_or_default();
+                let mut acc_data = acc_before.copied().unwrap_or_default();
                 match proof_type {
                     MPTProofType::NonceChanged => {
                         assert_eq!(old_val.as_u64(), acc_data.nonce);
