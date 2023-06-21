@@ -78,6 +78,8 @@ use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstructio
 pub const TX_LEN: usize = 22;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
+/// Offset of ChainID tag in the tx table
+pub const CHAIN_ID_OFFSET: usize = 12;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum LookupCondition {

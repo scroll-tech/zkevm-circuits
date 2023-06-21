@@ -24,8 +24,6 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
-#[cfg(feature = "reject-eip2718")]
-use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::{
     evm_circuit::{util::constraint_builder::BaseConstraintBuilder, EvmCircuitExports},
     pi_circuit::param::{
@@ -34,6 +32,7 @@ use crate::{
         RPI_LENGTH_ACC_CELL_IDX, RPI_RLC_ACC_CELL_IDX, TIMESTAMP_OFFSET,
     },
     state_circuit::StateCircuitExports,
+    tx_circuit::{CHAIN_ID_OFFSET as CHAIN_ID_OFFSET_IN_TX, TX_HASH_OFFSET, TX_LEN},
     witness::{self, Block, BlockContext, BlockContexts, Transaction},
 };
 use bus_mapping::util::read_env_var;
@@ -52,6 +51,7 @@ use crate::{
     },
     util::rlc_be_bytes,
 };
+use halo2_proofs::circuit::{Cell, RegionIndex};
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
@@ -739,9 +739,7 @@ impl<F: Field> PiCircuitConfig<F> {
             )?;
         }
         // copy tx_hashes to tx table
-        #[cfg(feature = "reject-eip2718")]
         for (i, tx_hash_cell) in tx_copy_cells.into_iter().enumerate() {
-            use halo2_proofs::circuit::{Cell, RegionIndex};
             region.constrain_equal(
                 tx_hash_cell.cell(),
                 Cell {
@@ -798,10 +796,22 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         let chain_id_cell = cells[RPI_CELL_IDX].clone();
         let chain_id_byte_cells = cells[3..].to_vec();
+        // copy chain_id to block table
         for block_idx in 0..self.max_inner_blocks {
             region.constrain_equal(
                 chain_id_cell.cell(),
                 block_value_cells[block_idx * BLOCK_LEN + CHAIN_ID_OFFSET].cell(),
+            )?;
+        }
+        // copy chain_id to tx table
+        for tx_id in 0..self.max_txs {
+            region.constrain_equal(
+                chain_id_cell.cell(),
+                Cell {
+                    region_index: RegionIndex(1), // FIXME: this is not safe
+                    row_offset: tx_id * TX_LEN + CHAIN_ID_OFFSET_IN_TX,
+                    column: self.tx_table.value.into(),
+                },
             )?;
         }
 
