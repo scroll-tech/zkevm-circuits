@@ -78,6 +78,8 @@ use gadgets::comparator::{ComparatorChip, ComparatorConfig, ComparatorInstructio
 pub const TX_LEN: usize = 22;
 /// Offset of TxHash tag in the tx table
 pub const TX_HASH_OFFSET: usize = 21;
+/// Offset of ChainID tag in the tx table
+pub const CHAIN_ID_OFFSET: usize = 12;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum LookupCondition {
@@ -1942,7 +1944,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         for tx in &block.txs {
-            if tx.chain_id != block.chain_id.as_u64() {
+            if tx.chain_id != block.chain_id {
                 panic!(
                     "inconsistent chain id, block chain id {}, tx {:?}",
                     block.chain_id, tx.chain_id
@@ -1952,7 +1954,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         Self::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            block.chain_id.as_u64(),
+            block.chain_id,
             block.txs.clone(),
         )
     }

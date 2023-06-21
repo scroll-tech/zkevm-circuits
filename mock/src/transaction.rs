@@ -160,7 +160,7 @@ pub struct MockTransaction {
     pub access_list: AccessList,
     pub max_priority_fee_per_gas: Word,
     pub max_fee_per_gas: Word,
-    pub chain_id: Word,
+    pub chain_id: u64,
 }
 
 impl Default for MockTransaction {
@@ -210,7 +210,7 @@ impl From<MockTransaction> for Transaction {
             access_list: Some(mock.access_list),
             max_priority_fee_per_gas: Some(mock.max_priority_fee_per_gas),
             max_fee_per_gas: Some(mock.max_fee_per_gas),
-            chain_id: Some(mock.chain_id),
+            chain_id: Some(mock.chain_id.into()),
             other: OtherFields::default(),
         }
     }
@@ -323,7 +323,7 @@ impl MockTransaction {
     }
 
     /// Set chain_id field for the MockTransaction.
-    pub fn chain_id(&mut self, chain_id: Word) -> &mut Self {
+    pub fn chain_id(&mut self, chain_id: u64) -> &mut Self {
         self.chain_id = chain_id;
         self
     }
@@ -339,7 +339,7 @@ impl MockTransaction {
             .data(self.input.clone())
             .gas(self.gas)
             .gas_price(self.gas_price)
-            .chain_id(self.chain_id.low_u64());
+            .chain_id(self.chain_id);
 
         match (self.v, self.r, self.s) {
             (None, None, None) => {
@@ -348,7 +348,7 @@ impl MockTransaction {
                     let sig = self
                         .from
                         .as_wallet()
-                        .with_chain_id(self.chain_id.low_u64())
+                        .with_chain_id(self.chain_id)
                         .sign_transaction_sync(&tx.into());
                     // Set sig parameters
                     self.sig_data((sig.v, sig.r, sig.s));

@@ -442,7 +442,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             &block.txs,
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            block.chain_id.as_u64(),
+            block.chain_id,
             &challenges,
         )?;
         block.rws.check_rw_counter_sanity();
@@ -457,7 +457,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             .dev_load(&mut layouter, block.bytecodes.values(), &challenges)?;
         config
             .block_table
-            .dev_load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
+            .dev_load(&mut layouter, &block.context, &block.txs, &challenges)?;
         config
             .copy_table
             .dev_load(&mut layouter, block, &challenges)?;

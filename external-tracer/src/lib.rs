@@ -11,7 +11,7 @@ use std::collections::HashMap;
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct TraceConfig {
     /// chain id
-    pub chain_id: Word,
+    pub chain_id: u64,
     /// history hashes contains most recent 256 block hashes in history, where
     /// the lastest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,

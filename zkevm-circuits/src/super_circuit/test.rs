@@ -28,11 +28,9 @@ fn test_super_circuit<
     block: GethData,
     circuits_params: CircuitsParams,
 ) {
+    set_var("CHAIN_ID", MOCK_CHAIN_ID.to_string());
     let mut difficulty_be_bytes = [0u8; 32];
-    let mut chain_id_be_bytes = [0u8; 32];
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
-    MOCK_CHAIN_ID.to_big_endian(&mut chain_id_be_bytes);
-    set_var("CHAIN_ID", hex::encode(chain_id_be_bytes));
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
     let (k, circuit, instance, _) =
@@ -72,7 +70,7 @@ fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
 fn block_1tx_deploy() -> GethData {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = (*MOCK_CHAIN_ID).as_u64();
+    let chain_id = *MOCK_CHAIN_ID;
 
     let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let addr_a = wallet_a.address();
@@ -100,7 +98,7 @@ fn block_1tx_deploy() -> GethData {
 pub(crate) fn block_1tx() -> GethData {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = (*MOCK_CHAIN_ID).as_u64();
+    let chain_id = *MOCK_CHAIN_ID;
 
     let bytecode = bytecode! {
         GAS
@@ -138,10 +136,10 @@ pub(crate) fn block_1tx() -> GethData {
     block
 }
 
-fn block_2tx() -> GethData {
+pub(crate) fn block_2tx() -> GethData {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = (*MOCK_CHAIN_ID).as_u64();
+    let chain_id = *MOCK_CHAIN_ID;
 
     let bytecode = bytecode! {
         GAS

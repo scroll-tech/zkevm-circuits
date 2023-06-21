@@ -80,9 +80,8 @@ mod tests {
 
         let max_txs: usize = 2_usize.pow(degree) / ROWS_PER_TX;
 
-        let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
         let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
-        let circuit = TxCircuit::<Fr>::new(max_txs, MAX_CALLDATA, chain_id, txs);
+        let circuit = TxCircuit::<Fr>::new(max_txs, MAX_CALLDATA, *mock::MOCK_CHAIN_ID, txs);
         (degree as usize, circuit)
     }
 

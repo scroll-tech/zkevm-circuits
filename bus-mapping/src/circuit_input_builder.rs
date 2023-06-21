@@ -48,7 +48,9 @@ use std::{
     collections::{BTreeMap, HashMap},
     iter,
 };
-pub use transaction::{Transaction, TransactionContext, TxL1Fee, TX_L1_FEE_PRECISION};
+pub use transaction::{
+    Transaction, TransactionContext, TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION,
+};
 
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
@@ -587,19 +589,18 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     let mut keccak_inputs = Vec::new();
     // Tx Circuit
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.into()).collect();
-    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id().as_u64())?);
+    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs)?);
     log::debug!(
         "keccak total len after txs: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
     // PI circuit
-    keccak_inputs.push(keccak_inputs_pi_circuit(
-        block.chain_id().as_u64(),
+    keccak_inputs.extend(keccak_inputs_pi_circuit(
+        block.chain_id,
         block.prev_state_root,
         block.withdraw_root,
         &block.headers,
         block.txs(),
-        block.circuits_params.max_txs,
     ));
     // Bytecode Circuit
     for _bytecode in code_db.0.values() {
@@ -645,10 +646,10 @@ pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
     inputs
 }
 
-/// Generate a dummy tx in which
-/// (nonce=0, gas=0, gas_price=0, to=0, value=0, data="", chain_id)
+/// Generate a dummy pre-eip155 tx in which
+/// (nonce=0, gas=0, gas_price=0, to=0, value=0, data="")
 /// using the dummy private key = 1
-pub fn get_dummy_tx(chain_id: u64) -> (TransactionRequest, Signature) {
+pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
     let mut sk_be_scalar = [0u8; 32];
     sk_be_scalar[31] = 1_u8;
 
@@ -661,21 +662,27 @@ pub fn get_dummy_tx(chain_id: u64) -> (TransactionRequest, Signature) {
         .gas_price(U256::zero())
         .to(Address::zero())
         .value(U256::zero())
-        .data(Bytes::default())
-        .chain_id(chain_id);
+        .data(Bytes::default());
+    let sighash: H256 = keccak256(tx.rlp_unsigned()).into();
 
     // FIXME: need to check if this is deterministic which means sig is fixed.
-    let sig = wallet.sign_transaction_sync(&tx.clone().into());
+    let sig = wallet.sign_hash(sighash);
+    assert_eq!(sig.v, 28);
 
     (tx, sig)
 }
 
 /// Get the tx hash of the dummy tx (nonce=0, gas=0, gas_price=0, to=0, value=0,
-/// data="") for any chain_id
-pub fn get_dummy_tx_hash(chain_id: u64) -> H256 {
-    let (tx, sig) = get_dummy_tx(chain_id);
+/// data="")
+pub fn get_dummy_tx_hash() -> H256 {
+    let (tx, sig) = get_dummy_tx();
 
     let tx_hash = keccak256(tx.rlp_signed(&sig));
+
+    assert_eq!(
+        hex::encode(tx_hash),
+        "137c41d53f2e633af81c75e938f6ccf7298ad6d2fa698b19a50545c1ae5b2b85"
+    );
 
     H256(tx_hash)
 }
@@ -686,59 +693,43 @@ fn keccak_inputs_pi_circuit(
     withdraw_trie_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
-    max_txs: usize,
-) -> Vec<u8> {
-    let dummy_tx_hash = get_dummy_tx_hash(chain_id);
-
-    let result = iter::empty()
-        // state roots
-        .chain(prev_state_root.to_be_bytes())
-        .chain(
-            block_headers
-                .last_key_value()
-                .map(|(_, blk)| blk.eth_block.state_root)
-                .unwrap_or(H256(prev_state_root.to_be_bytes()))
-                .to_fixed_bytes(),
-        )
-        // withdraw trie root
-        .chain(withdraw_trie_root.to_be_bytes())
+) -> Vec<Vec<u8>> {
+    let data_bytes = iter::empty()
         .chain(block_headers.iter().flat_map(|(block_num, block)| {
             let num_txs = transactions
                 .iter()
                 .filter(|tx| tx.block_num == *block_num)
                 .count() as u16;
-            let parent_hash = block.eth_block.parent_hash;
-            let block_hash = block.eth_block.hash.unwrap_or(H256::zero());
-            let num_l1_msgs = 0_u16; // 0 for now
 
             iter::empty()
                 // Block Values
-                .chain(block_hash.to_fixed_bytes())
-                .chain(parent_hash.to_fixed_bytes()) // parent hash
                 .chain(block.number.as_u64().to_be_bytes())
                 .chain(block.timestamp.as_u64().to_be_bytes())
                 .chain(block.base_fee.to_be_bytes())
                 .chain(block.gas_limit.to_be_bytes())
                 .chain(num_txs.to_be_bytes())
-                .chain(num_l1_msgs.to_be_bytes())
         }))
         // Tx Hashes
         .chain(transactions.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
-        .chain(
-            (0..(max_txs - transactions.len()))
-                .into_iter()
-                .flat_map(|_| dummy_tx_hash.to_fixed_bytes()),
-        )
+        .collect::<Vec<u8>>();
+    let data_hash = H256(keccak256(&data_bytes));
+    let after_state_root = block_headers
+        .last_key_value()
+        .map(|(_, blk)| blk.eth_block.state_root)
+        .unwrap_or(H256(prev_state_root.to_be_bytes()));
+    let pi_bytes = iter::empty()
+        .chain(chain_id.to_be_bytes())
+        .chain(prev_state_root.to_be_bytes())
+        .chain(after_state_root.to_fixed_bytes())
+        .chain(withdraw_trie_root.to_be_bytes())
+        .chain(data_hash.to_fixed_bytes())
         .collect::<Vec<u8>>();
 
-    result
+    vec![data_bytes, pi_bytes]
 }
 
 /// Generate the keccak inputs required by the Tx Circuit from the transactions.
-pub fn keccak_inputs_tx_circuit(
-    txs: &[geth_types::Transaction],
-    chain_id: u64,
-) -> Result<Vec<Vec<u8>>, Error> {
+pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<Vec<u8>>, Error> {
     let mut inputs = Vec::new();
 
     let hash_datas = txs
@@ -747,7 +738,7 @@ pub fn keccak_inputs_tx_circuit(
         .collect::<Vec<Vec<u8>>>();
     let dummy_hash_data = {
         // dummy tx is a legacy tx.
-        let (dummy_tx, dummy_sig) = get_dummy_tx(chain_id);
+        let (dummy_tx, dummy_sig) = get_dummy_tx();
         dummy_tx.rlp_signed(&dummy_sig).to_vec()
     };
     inputs.extend_from_slice(&hash_datas);
@@ -783,8 +774,9 @@ pub fn keccak_inputs_tx_circuit(
     // one that we use in get_dummy_tx, so we only need to include the tx sign
     // hash of the dummy tx.
     let dummy_sign_input = {
-        let (dummy_tx, _) = get_dummy_tx(chain_id);
-        dummy_tx.rlp().to_vec()
+        let (dummy_tx, _) = get_dummy_tx();
+        // dummy tx is of type pre-eip155
+        dummy_tx.rlp_unsigned().to_vec()
     };
     inputs.push(dummy_sign_input);
 
@@ -827,7 +819,7 @@ type EthBlock = eth_types::Block<eth_types::Transaction>;
 /// the necessary information and using the CircuitInputBuilder.
 pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
-    chain_id: Word,
+    chain_id: u64,
     circuits_params: CircuitsParams,
 }
 
@@ -895,7 +887,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         Ok(Self {
             cli: client,
-            chain_id: chain_id.into(),
+            chain_id,
             circuits_params,
         })
     }

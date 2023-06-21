@@ -1843,7 +1843,7 @@ impl<F: Field> SubCircuit<F> for RlpCircuit<F, Transaction> {
         let padding_txs = (block.txs.len()..max_txs)
             .into_iter()
             .map(|i| {
-                let mut tx = Transaction::dummy(block.chain_id.as_u64());
+                let mut tx = Transaction::dummy(block.chain_id);
                 tx.id = i + 1;
                 tx
             })
