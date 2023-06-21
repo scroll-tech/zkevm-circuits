@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use eth_types::Field;
 use halo2_base::{AssignedValue, QuantumCell};
 use halo2_ecc::{
@@ -8,7 +6,7 @@ use halo2_ecc::{
     fields::{fp::FpConfig, FieldChip},
 };
 use halo2_proofs::{
-    circuit::{Cell, Value},
+    circuit::Value,
     halo2curves::secp256k1::{Fp, Fq},
 };
 
@@ -49,97 +47,35 @@ pub(super) type FqChip<F> = FpConfig<F, Fq>;
 /// Chip to handle ECDSA::Fp, the base field
 pub(super) type FpChip<F> = FpConfig<F, Fp>;
 
-pub(crate) struct AssignedECDSA<'v, F: Field, FC: FieldChip<F>> {
-    pub(super) pk: EcPoint<F, FC::FieldPoint<'v>>,
-    pub(super) msg_hash: CRTInteger<'v, F>,
-    pub(super) integer_r: CRTInteger<'v, F>,
-    pub(super) integer_s: CRTInteger<'v, F>,
-    pub(super) v: AssignedValue<'v, F>,
-    pub(super) sig_is_valid: AssignedValue<'v, F>,
-}
-
-/// Temp struct to hold the intermediate data; removing life timer.
-// Issue with life timer:
-//
-// Suppose we have two piece of codes, that request different regions/contexts from the layouter.
-// The first piece of the code will return an `assigned_cell` that is to be used by the second code
-// piece. With halo2 we can safely pass this `assigned_cell` around. They are bounded by a life
-// timer `'v` which is when the field element is created.
-//
-// Now in halo2-lib, there is an additional life timer which says an `assigned_cell` cannot outlive
-// the `region` for which this cell is created. (is this understanding correct?)
-// That means the output cells of the first region cannot be passed to the second region.
-//
-// To temporary resolve this issue, we create a temp struct without life timer.
-// This works with halo2-lib/pse but not halo2-lib/axiom.
-// We do not support halo2-lib/axiom.
-//
-// NOTE: this is a temp issue with halo2-lib v0.2.2.
-// with halo2-lib v0.3.0 the timers are already removed.
-// So we don't need this temp fix once we sync with halo2-lib audited version.
-#[derive(Debug, Clone)]
-pub(crate) struct AssignedValueNoTimer<F: Field> {
-    pub cell: Cell,
-    pub value: Value<F>,
-    pub row_offset: usize,
-    pub context_id: usize,
-}
-
-impl<'v, F: Field> From<AssignedValue<'v, F>> for AssignedValueNoTimer<F> {
-    fn from(input: AssignedValue<'v, F>) -> Self {
-        Self {
-            cell: input.cell(),
-            value: input.value,
-            row_offset: input.row_offset,
-            context_id: input.context_id,
-        }
-    }
-}
-
-impl<'v, F: Field> From<AssignedValueNoTimer<F>> for AssignedValue<'v, F> {
-    fn from(input: AssignedValueNoTimer<F>) -> Self {
-        Self {
-            cell: input.cell,
-            value: input.value,
-            row_offset: input.row_offset,
-            _marker: PhantomData::default(),
-            context_id: input.context_id,
-        }
-    }
-}
-
-impl<'v, F: Field> From<&AssignedValueNoTimer<F>> for AssignedValue<'v, F> {
-    fn from(input: &AssignedValueNoTimer<F>) -> Self {
-        Self {
-            cell: input.cell,
-            value: input.value,
-            row_offset: input.row_offset,
-            _marker: PhantomData::default(),
-            context_id: input.context_id,
-        }
-    }
+pub(crate) struct AssignedECDSA<F: Field, FC: FieldChip<F>> {
+    pub(super) pk: EcPoint<F, FC::FieldPoint>,
+    pub(super) msg_hash: CRTInteger<F>,
+    pub(super) integer_r: CRTInteger<F>,
+    pub(super) integer_s: CRTInteger<F>,
+    pub(super) v: AssignedValue<F>,
+    pub(super) sig_is_valid: AssignedValue<F>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct AssignedSignatureVerify<F: Field> {
-    pub(crate) address: AssignedValueNoTimer<F>,
+    pub(crate) address: AssignedValue<F>,
     pub(crate) msg_len: usize,
     pub(crate) msg_rlc: Value<F>,
-    pub(crate) msg_hash_rlc: AssignedValueNoTimer<F>,
-    pub(crate) r_rlc: AssignedValueNoTimer<F>,
-    pub(crate) s_rlc: AssignedValueNoTimer<F>,
-    pub(crate) v: AssignedValueNoTimer<F>,
-    pub(crate) sig_is_valid: AssignedValueNoTimer<F>,
+    pub(crate) msg_hash_rlc: AssignedValue<F>,
+    pub(crate) r_rlc: AssignedValue<F>,
+    pub(crate) s_rlc: AssignedValue<F>,
+    pub(crate) v: AssignedValue<F>,
+    pub(crate) sig_is_valid: AssignedValue<F>,
 }
 
-pub(super) struct SignDataDecomposed<'a: 'v, 'v, F: Field> {
-    pub(super) pk_hash_cells: Vec<QuantumCell<'a, 'v, F>>,
-    pub(super) msg_hash_cells: Vec<QuantumCell<'a, 'v, F>>,
-    pub(super) pk_cells: Vec<QuantumCell<'a, 'v, F>>,
-    pub(super) address: AssignedValue<'v, F>,
-    pub(super) is_address_zero: AssignedValue<'v, F>,
-    pub(super) r_cells: Vec<QuantumCell<'a, 'v, F>>,
-    pub(super) s_cells: Vec<QuantumCell<'a, 'v, F>>,
+pub(super) struct SignDataDecomposed<F: Field> {
+    pub(super) pk_hash_cells: Vec<QuantumCell<F>>,
+    pub(super) msg_hash_cells: Vec<QuantumCell<F>>,
+    pub(super) pk_cells: Vec<QuantumCell<F>>,
+    pub(super) address: AssignedValue<F>,
+    pub(super) is_address_zero: AssignedValue<F>,
+    pub(super) r_cells: Vec<QuantumCell<F>>,
+    pub(super) s_cells: Vec<QuantumCell<F>>,
     //v:  AssignedValue<'v, F>, // bool
 }
 

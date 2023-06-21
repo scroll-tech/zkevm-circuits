@@ -293,12 +293,12 @@ impl<F: Field> SigCircuit<F> {
     ///
     /// WARNING: this circuit does not enforce the returned value to be true
     /// make sure the caller checks this result!
-    fn assign_ecdsa<'v>(
+    fn assign_ecdsa(
         &self,
-        ctx: &mut Context<'v, F>,
+        ctx: &mut Context<F>,
         ecdsa_chip: &FpChip<F>,
         sign_data: &SignData,
-    ) -> Result<AssignedECDSA<'v, F, FpChip<F>>, Error> {
+    ) -> Result<AssignedECDSA<F, FpChip<F>>, Error> {
         log::trace!("start ecdsa assignment");
         let SignData {
             signature,
@@ -356,7 +356,7 @@ impl<F: Field> SigCircuit<F> {
         let gate = ecdsa_chip.gate();
 
         let assigned_y_is_odd = gate.load_witness(ctx, Value::known(F::from(*v as u64)));
-        gate.assert_bit(ctx, &assigned_y_is_odd);
+        gate.assert_bit(ctx, assigned_y_is_odd);
 
         // the last 88 bits of y
         let assigned_y_limb = &y_coord.limbs()[0];
@@ -370,19 +370,19 @@ impl<F: Field> SigCircuit<F> {
         // y_tmp_double = (y_value - y_last_bit)
         let y_tmp_double = gate.mul(
             ctx,
-            QuantumCell::Existing(&assigned_y_tmp),
+            QuantumCell::Existing(assigned_y_tmp),
             QuantumCell::Constant(F::from(2)),
         );
         let y_rec = gate.add(
             ctx,
-            QuantumCell::Existing(&y_tmp_double),
-            QuantumCell::Existing(&assigned_y_is_odd),
+            QuantumCell::Existing(y_tmp_double),
+            QuantumCell::Existing(assigned_y_is_odd),
         );
 
         gate.assert_equal(
             ctx,
-            QuantumCell::Existing(assigned_y_limb),
-            QuantumCell::Existing(&y_rec),
+            QuantumCell::Existing(*assigned_y_limb),
+            QuantumCell::Existing(y_rec),
         );
 
         // last step we want to constrain assigned_y_tmp is 87 bits
@@ -455,13 +455,13 @@ impl<F: Field> SigCircuit<F> {
 
     /// Input the signature data,
     /// Output the cells for byte decomposition of the keys and messages
-    fn sign_data_decomposition<'a: 'v, 'v>(
+    fn sign_data_decomposition(
         &self,
-        ctx: &mut Context<'v, F>,
+        ctx: &mut Context<F>,
         ecdsa_chip: &FpChip<F>,
         sign_data: &SignData,
-        assigned_data: &AssignedECDSA<'v, F, FpChip<F>>,
-    ) -> Result<SignDataDecomposed<'a, 'v, F>, Error> {
+        assigned_data: &AssignedECDSA<F, FpChip<F>>,
+    ) -> Result<SignDataDecomposed<F>, Error> {
         // build ecc chip from Fp chip
         let ecc_chip = EccChip::<F, FpChip<F>>::construct(ecdsa_chip.clone());
 
@@ -501,10 +501,10 @@ impl<F: Field> SigCircuit<F> {
 
         let is_address_zero = ecdsa_chip.range.gate.is_equal(
             ctx,
-            QuantumCell::Existing(&address),
-            QuantumCell::Existing(&zero),
+            QuantumCell::Existing(address),
+            QuantumCell::Existing(zero),
         );
-        let is_address_zero_cell = QuantumCell::Existing(&is_address_zero);
+        let is_address_zero_cell = QuantumCell::Existing(is_address_zero);
 
         // ================================================
         // message hash cells
@@ -512,7 +512,7 @@ impl<F: Field> SigCircuit<F> {
 
         let assert_crt = |ctx: &mut Context<F>,
                           bytes: [u8; 32],
-                          crt_integer: &CRTInteger<'v, F>,
+                          crt_integer: &CRTInteger<F>,
                           overriding: &Option<&QuantumCell<F>>|
          -> Result<_, Error> {
             let byte_cells: Vec<QuantumCell<F>> = bytes
@@ -609,15 +609,15 @@ impl<F: Field> SigCircuit<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn assign_sig_verify<'a: 'v, 'v>(
+    fn assign_sig_verify(
         &self,
-        ctx: &mut Context<'v, F>,
+        ctx: &mut Context<F>,
         rlc_chip: &RangeConfig<F>,
         sign_data: &SignData,
-        sign_data_decomposed: &SignDataDecomposed<'a, 'v, F>,
+        sign_data_decomposed: &SignDataDecomposed<F>,
         challenges: &Challenges<Value<F>>,
-        assigned_ecdsa: &AssignedECDSA<'v, F, FpChip<F>>,
-    ) -> Result<([AssignedValue<'v, F>; 3], AssignedSignatureVerify<F>), Error> {
+        assigned_ecdsa: &AssignedECDSA<F, FpChip<F>>,
+    ) -> Result<([AssignedValue<F>; 3], AssignedSignatureVerify<F>), Error> {
         // ================================================
         // step 0. powers of aux parameters
         // ================================================
@@ -682,27 +682,27 @@ impl<F: Field> SigCircuit<F> {
         let s_rlc = rlc_chip.gate.inner_product(
             ctx,
             sign_data_decomposed.s_cells.clone(),
-            evm_challenge_powers.clone(),
+            evm_challenge_powers,
         );
 
         log::trace!("pk hash rlc halo2ecc: {:?}", pk_hash_rlc.value());
         log::trace!("finished sign verify");
         let to_be_keccak_checked = [
-            sign_data_decomposed.is_address_zero.clone(),
+            sign_data_decomposed.is_address_zero,
             pk_rlc,
             pk_hash_rlc,
         ];
         let assigned_sig_verif = AssignedSignatureVerify {
-            address: sign_data_decomposed.address.clone().into(),
+            address: sign_data_decomposed.address,
             msg_len: sign_data.msg.len(),
             msg_rlc: challenges
                 .keccak_input()
                 .map(|r| rlc::value(sign_data.msg.iter().rev(), r)),
-            msg_hash_rlc: msg_hash_rlc.into(),
-            sig_is_valid: assigned_ecdsa.sig_is_valid.clone().into(),
-            r_rlc: r_rlc.into(),
-            s_rlc: s_rlc.into(),
-            v: assigned_ecdsa.v.clone().into(),
+            msg_hash_rlc,
+            sig_is_valid: assigned_ecdsa.sig_is_valid,
+            r_rlc,
+            s_rlc,
+            v: assigned_ecdsa.v,
         };
         Ok((to_be_keccak_checked, assigned_sig_verif))
     }
@@ -854,23 +854,39 @@ impl<F: Field> SigCircuit<F> {
                         || Value::known(F::one()),
                     )?;
 
-                    let v: AssignedValue<_> = assigned_sig_verif.v.clone().into();
-                    v.copy_advice(&mut region, config.sig_table.sig_v, idx);
+                    assigned_sig_verif
+                        .v
+                        .copy_advice(&mut region, config.sig_table.sig_v, idx);
 
-                    let r_rlc: AssignedValue<_> = assigned_sig_verif.r_rlc.clone().into();
-                    r_rlc.copy_advice(&mut region, config.sig_table.sig_r_rlc, idx);
+                    assigned_sig_verif.r_rlc.copy_advice(
+                        &mut region,
+                        config.sig_table.sig_r_rlc,
+                        idx,
+                    );
 
-                    let s_rlc: AssignedValue<_> = assigned_sig_verif.s_rlc.clone().into();
-                    s_rlc.copy_advice(&mut region, config.sig_table.sig_s_rlc, idx);
+                    assigned_sig_verif.s_rlc.copy_advice(
+                        &mut region,
+                        config.sig_table.sig_s_rlc,
+                        idx,
+                    );
 
-                    let address: AssignedValue<_> = assigned_sig_verif.address.clone().into();
-                    address.copy_advice(&mut region, config.sig_table.recovered_addr, idx);
+                    assigned_sig_verif.address.copy_advice(
+                        &mut region,
+                        config.sig_table.recovered_addr,
+                        idx,
+                    );
 
-                    let is_valid: AssignedValue<_> = assigned_sig_verif.sig_is_valid.clone().into();
-                    is_valid.copy_advice(&mut region, config.sig_table.is_valid, idx);
+                    assigned_sig_verif.sig_is_valid.copy_advice(
+                        &mut region,
+                        config.sig_table.is_valid,
+                        idx,
+                    );
 
-                    let hash_rlc: AssignedValue<_> = assigned_sig_verif.msg_hash_rlc.clone().into();
-                    hash_rlc.copy_advice(&mut region, config.sig_table.msg_hash_rlc, idx);
+                    assigned_sig_verif.msg_hash_rlc.copy_advice(
+                        &mut region,
+                        config.sig_table.msg_hash_rlc,
+                        idx,
+                    );
                 }
                 Ok(())
             },
@@ -901,35 +917,35 @@ impl<F: Field> SigCircuit<F> {
 
         let flex_gate_chip = &range_chip.gate;
         let zero = flex_gate_chip.load_zero(ctx);
-        let zero_cell = QuantumCell::Existing(&zero);
+        let zero_cell = QuantumCell::Existing(zero);
 
         // apply the overriding flag
         let limb1_value = match overriding {
             Some(p) => flex_gate_chip.select(
                 ctx,
                 zero_cell.clone(),
-                QuantumCell::Existing(&crt_int.truncation.limbs[0]),
+                QuantumCell::Existing(crt_int.truncation.limbs[0]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[0].clone(),
+            None => crt_int.truncation.limbs[0],
         };
         let limb2_value = match overriding {
             Some(p) => flex_gate_chip.select(
                 ctx,
                 zero_cell.clone(),
-                QuantumCell::Existing(&crt_int.truncation.limbs[1]),
+                QuantumCell::Existing(crt_int.truncation.limbs[1]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[1].clone(),
+            None => crt_int.truncation.limbs[1],
         };
         let limb3_value = match overriding {
             Some(p) => flex_gate_chip.select(
                 ctx,
                 zero_cell,
-                QuantumCell::Existing(&crt_int.truncation.limbs[2]),
+                QuantumCell::Existing(crt_int.truncation.limbs[2]),
                 (*p).clone(),
             ),
-            None => crt_int.truncation.limbs[2].clone(),
+            None => crt_int.truncation.limbs[2],
         };
 
         // assert the byte_repr is the right decomposition of overflow_int
@@ -953,18 +969,18 @@ impl<F: Field> SigCircuit<F> {
         );
         flex_gate_chip.assert_equal(
             ctx,
-            QuantumCell::Existing(&limb1_value),
-            QuantumCell::Existing(&limb1_recover),
+            QuantumCell::Existing(limb1_value),
+            QuantumCell::Existing(limb1_recover),
         );
         flex_gate_chip.assert_equal(
             ctx,
-            QuantumCell::Existing(&limb2_value),
-            QuantumCell::Existing(&limb2_recover),
+            QuantumCell::Existing(limb2_value),
+            QuantumCell::Existing(limb2_recover),
         );
         flex_gate_chip.assert_equal(
             ctx,
-            QuantumCell::Existing(&limb3_value),
-            QuantumCell::Existing(&limb3_recover),
+            QuantumCell::Existing(limb3_value),
+            QuantumCell::Existing(limb3_recover),
         );
         log::trace!(
             "limb 1 \ninput {:?}\nreconstructed {:?}",
