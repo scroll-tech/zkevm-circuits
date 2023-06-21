@@ -631,6 +631,9 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             is_none,
             &lookup_conditions,
             is_final,
+            is_chain_id,
+            is_l1_msg,
+            sv_address,
             calldata_gas_cost_acc,
             tx_table.clone(),
             keccak_table.clone(),
@@ -892,11 +895,12 @@ impl<F: Field> TxCircuitConfig<F> {
         is_final: Column<Advice>,
         is_chain_id: Column<Advice>,
         is_l1_msg_col: Column<Advice>,
+        sv_address: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
         tx_table: TxTable,
         keccak_table: KeccakTable,
         rlp_table: RlpTable,
-        _sig_table: SigTable,
+        sig_table: SigTable,
     ) {
         macro_rules! is_tx_type {
             ($var:ident, $type_variant:ident) => {
@@ -1080,22 +1084,32 @@ impl<F: Field> TxCircuitConfig<F> {
             let enabled = and::expr([
                 // use is_l1_msg_col instead of is_l1_msg(meta) because it has lower degree
                 not::expr(meta.query_advice(is_l1_msg_col, Rotation::cur())),
-                // lookup to sig table on the ChainID row because we have an indicator of degree 1 for ChainID
-                // and ChainID is not far from
+                // lookup to sig table on the ChainID row because we have an indicator of degree 1
+                // for ChainID and ChainID is not far from (msg_hash_rlc, sig_v,
+                // ...)
                 meta.query_advice(is_chain_id, Rotation::cur()),
             ]);
 
-            let value = meta.query_advice(tx_table.value, Rotation::cur());
+            let msg_hash_rlc = meta.query_advice(tx_table.value, Rotation(6));
+            let chain_id = meta.query_advice(tx_table.value, Rotation::cur());
+            let sig_v = meta.query_advice(tx_table.value, Rotation(1));
+            let sig_r = meta.query_advice(tx_table.value, Rotation(2));
+            let sig_s = meta.query_advice(tx_table.value, Rotation(3));
+            let sv_address = meta.query_advice(sv_address, Rotation::cur());
+
+            let v = is_eip155(meta) * (sig_v.expr() - 2.expr() * chain_id - 35.expr())
+                + is_pre_eip155(meta) * (sig_v.expr() - 27.expr());
 
             let input_exprs = vec![
-                1.expr(), // q_enable = true
-                value, // msg_hash_rlc
-                // sig_v
-                // sig_r
-                // sig_s
+                1.expr(),     // q_enable = true
+                msg_hash_rlc, // msg_hash_rlc
+                v,            // sig_v
+                sig_r,        // sig_r
+                sig_s,        // sig_s
                 sv_address,
-                // is_valid
+                1.expr(), // is_valid
             ];
+
             // LookupTable::table_exprs is not used here since `is_valid` not used by evm circuit.
             let table_exprs = vec![
                 meta.query_fixed(sig_table.q_enable, Rotation::cur()),
@@ -1105,12 +1119,13 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(sig_table.sig_r_rlc, Rotation::cur()),
                 meta.query_advice(sig_table.sig_s_rlc, Rotation::cur()),
                 meta.query_advice(sig_table.recovered_addr, Rotation::cur()),
+                meta.query_advice(sig_table.is_valid, Rotation::cur()),
             ];
 
             input_exprs
                 .into_iter()
                 .zip(table_exprs.into_iter())
-                .map(|(input, table)| (input*enabled.expr(), table))
+                .map(|(input, table)| (input * enabled.expr(), table))
                 .collect()
         });
 
@@ -1458,18 +1473,10 @@ impl<F: Field> TxCircuitConfig<F> {
 
         Ok(())
     }
-
-    /// Get number of rows required.
-    pub fn get_num_rows_required(num_tx: usize) -> usize {
-        let num_rows_range_table = 1 << 18;
-        // Number of rows required to verify a transaction.
-        let num_rows_per_tx = 140436;
-        (num_tx * num_rows_per_tx).max(num_rows_range_table)
-    }
 }
 
-/// Tx Circuit for verifying transaction signatures and tx table. (**legacy tx
-/// only right now**) PI circuit ensures that each tx's hash in the tx table is
+/// Tx Circuit for verifying transaction signatures and tx table.
+/// PI circuit ensures that each tx's hash in the tx table is
 /// equal to the one in public input. Then we can use RLP circuit to decode each
 /// tx field's value from RLP-encoded tx bytes.
 #[derive(Clone, Default, Debug)]
@@ -1478,8 +1485,6 @@ pub struct TxCircuit<F: Field> {
     pub max_txs: usize,
     /// Max number of supported calldata bytes
     pub max_calldata: usize,
-    /// SignVerify chip
-    //pub sign_verify: SignVerifyChip<F>,
     /// List of Transactions
     pub txs: Vec<Transaction>,
     /// Chain ID
@@ -1503,7 +1508,6 @@ impl<F: Field> TxCircuit<F> {
         TxCircuit::<F> {
             max_txs,
             max_calldata,
-            //sign_verify: SignVerifyChip::new(max_txs),
             txs,
             size: Self::min_num_rows(max_txs, max_calldata),
             chain_id,
@@ -1554,12 +1558,7 @@ impl<F: Field> TxCircuit<F> {
     /// Return the minimum number of rows required to prove an input of a
     /// particular size.
     pub fn min_num_rows(txs_len: usize, call_data_len: usize) -> usize {
-        let tx_table_len = txs_len * TX_LEN + call_data_len;
-        #[cfg(feature = "enable-sign-verify")]
-        let min_rows = std::cmp::max(tx_table_len, SigCircuit::<F>::min_num_rows(txs_len));
-        #[cfg(not(feature = "enable-sign-verify"))]
-        let min_rows = tx_table_len;
-        min_rows
+        txs_len * TX_LEN + call_data_len
     }
 
     fn assign_dev_block_table(
@@ -1620,7 +1619,6 @@ impl<F: Field> TxCircuit<F> {
         config: &TxCircuitConfig<F>,
         challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
-        //assigned_sig_verifs: Vec<AssignedSignatureVerify<F>>,
         sign_datas: Vec<SignData>,
         padding_txs: &[Transaction],
     ) -> Result<(), Error> {
@@ -1629,12 +1627,7 @@ impl<F: Field> TxCircuit<F> {
             |mut region| {
                 let mut offset = 0;
 
-                //#[cfg(feature = "enable-sign-verify")]
-                //let sigs = &assigned_sig_verifs;
-                //#[cfg(not(feature = "enable-sign-verify"))]
                 let sigs = &sign_datas;
-
-                //debug_assert_eq!(assigned_sig_verifs.len() + sign_datas.len(), sigs.len());
 
                 debug_assert_eq!(padding_txs.len() + self.txs.len(), sigs.len());
 
@@ -1658,7 +1651,7 @@ impl<F: Field> TxCircuit<F> {
                 )?;
 
                 // Assign all tx fields except for call data
-                for (i, assigned_sig_verif) in sigs.iter().enumerate() {
+                for (i, sign_data) in sigs.iter().enumerate() {
                     let tx = if i < self.txs.len() {
                         &self.txs[i]
                     } else {
@@ -1678,12 +1671,9 @@ impl<F: Field> TxCircuit<F> {
                         is_padding_tx = true;
                     }
 
-                    //#[cfg(feature = "enable-sign-verify")]
-                    //let tx_sign_hash = assigned_sig_verif.msg_hash_rlc.value;
-                    //#[cfg(not(feature = "enable-sign-verify"))]
                     let tx_sign_hash = {
                         challenges.evm_word().map(|rand| {
-                            assigned_sig_verif
+                            sign_data
                                 .msg
                                 .to_vec()
                                 .into_iter()
@@ -1874,31 +1864,13 @@ impl<F: Field> TxCircuit<F> {
                             None,
                             None,
                         )?;
-                        // Ref. spec 0. Copy constraints using fixed offsets
-                        // between the tx rows and the SignVerifyChip
-                        match tag {
-                            CallerAddress => {
-                                #[cfg(feature = "enable-sign-verify")]
-                                {
-                                    // TODO: do lookup to SignVerify table instead.
-                                }
-                                let sv_address: F =
-                                    assigned_sig_verif.get_addr().to_scalar().unwrap();
-                                region.assign_advice(
-                                    || "sv_address",
-                                    config.sv_address,
-                                    offset - 1,
-                                    || Value::known(sv_address),
-                                )?;
-                            }
-                            TxSignHash | SigV | SigR | SigS => {
-                                #[cfg(feature = "enable-sign-verify")]
-                                {
-                                    // TODO: do lookup to SignVerify table instead.
-                                }
-                            }
-                            _ => {}
-                        }
+                        let sv_address: F = sign_data.get_addr().to_scalar().unwrap();
+                        region.assign_advice(
+                            || "sv_address",
+                            config.sv_address,
+                            offset - 1,
+                            || Value::known(sv_address),
+                        )?;
                     }
                 }
 
@@ -2013,12 +1985,9 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                 block.txs.len(),
                 block.txs.iter().map(|tx| tx.call_data.len()).sum(),
             ),
-            std::cmp::max(
-                1 << 18,
-                Self::min_num_rows(
-                    block.circuits_params.max_txs,
-                    block.circuits_params.max_calldata,
-                ),
+            Self::min_num_rows(
+                block.circuits_params.max_txs,
+                block.circuits_params.max_calldata,
             ),
         )
     }
@@ -2082,38 +2051,9 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
                 )
             }
         }
-        /*
-        #[cfg(feature = "enable-sign-verify")]
-        {
-            let assigned_sig_verifs =
-                self.sign_verify
-                    .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
-            self.sign_verify.assert_sig_is_valid(
-                &config.sign_verify,
-                layouter,
-                assigned_sig_verifs.as_slice(),
-            )?;
-            self.assign(
-                config,
-                challenges,
-                layouter,
-                assigned_sig_verifs,
-                Vec::new(),
-                &padding_txs,
-            )?;
-        }
-        */
-        //#[cfg(not(feature = "enable-sign-verify"))]
-        {
-            self.assign(
-                config,
-                challenges,
-                layouter,
-                //Vec::new(),
-                sign_datas,
-                &padding_txs,
-            )?;
-        }
+
+        self.assign(config, challenges, layouter, sign_datas, &padding_txs)?;
+
         Ok(())
     }
 }
