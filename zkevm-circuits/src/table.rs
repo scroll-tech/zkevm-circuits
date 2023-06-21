@@ -7,13 +7,13 @@ use crate::{
     impl_expr,
     util::{build_tx_log_address, Challenges},
     witness::{
-        Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpFsmWitnessGen,
-        Rw, RwMap, RwRow, Transaction,
+        Block, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpFsmWitnessGen, Rw, RwMap,
+        RwRow, Transaction,
     },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
-use eth_types::{Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
+use eth_types::{sign_types::SignData, Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{split_u256, split_u256_limb64},
@@ -135,10 +135,10 @@ pub enum TxFieldTag {
     CallDataGasCost,
     /// Gas cost for rlp-encoded bytes of unsigned transaction (4 for byte == 0, 16 otherwise)
     TxDataGasCost,
-    /// Signature field V.
-    SigV,
     /// Chain ID
     ChainID,
+    /// Signature field V.
+    SigV,
     /// Signature field R.
     SigR,
     /// Signature field S.
@@ -1238,7 +1238,6 @@ impl BlockTable {
         layouter: &mut impl Layouter<F>,
         block_ctxs: &BlockContexts,
         txs: &[Transaction],
-        max_inner_blocks: usize,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -1257,11 +1256,7 @@ impl BlockTable {
                 offset += 1;
 
                 let mut cum_num_txs = 0usize;
-                let padding_blocks = (block_ctxs.ctxs.len()..max_inner_blocks)
-                    .into_iter()
-                    .map(|_| BlockContext::default())
-                    .collect::<Vec<_>>();
-                for block_ctx in block_ctxs.ctxs.values().chain(padding_blocks.iter()) {
+                for block_ctx in block_ctxs.ctxs.values() {
                     let num_txs = txs
                         .iter()
                         .filter(|tx| tx.block_number == block_ctx.number.as_u64())
@@ -2117,5 +2112,136 @@ impl RlpFsmRlpTable {
         )?;
 
         Ok(())
+    }
+}
+
+/// The sig table is used to verify signatures, used in tx circuit and ecrecover precompile.
+#[derive(Clone, Copy, Debug)]
+pub struct SigTable {
+    /// Indicates whether or not the gates are enabled on the current row.
+    pub q_enable: Column<Fixed>,
+    /// Random-linear combination of the Keccak256 hash of the message that's signed.
+    pub msg_hash_rlc: Column<Advice>,
+    /// should be in range [0, 1]
+    /// TODO: we need to constrain v <=> pub.y oddness
+    pub sig_v: Column<Advice>,
+    /// Random-linear combination of the signature's `r` component.
+    pub sig_r_rlc: Column<Advice>,
+    /// Random-linear combination of the signature's `s` component.
+    pub sig_s_rlc: Column<Advice>,
+    /// The recovered address, i.e. the 20-bytes address that must have signed the message.
+    pub recovered_addr: Column<Advice>,
+    /// Indicates whether or not the signature is valid or not upon signature verification.
+    pub is_valid: Column<Advice>,
+}
+
+impl SigTable {
+    /// Construct the SigTable.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            q_enable: meta.fixed_column(),
+            msg_hash_rlc: meta.advice_column_in(SecondPhase),
+            sig_v: meta.advice_column(),
+            sig_s_rlc: meta.advice_column_in(SecondPhase),
+            sig_r_rlc: meta.advice_column_in(SecondPhase),
+            recovered_addr: meta.advice_column(),
+            is_valid: meta.advice_column(),
+        }
+    }
+
+    /// Assign witness data from a block to the verification table.
+    pub fn dev_load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        block: &Block<F>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "sig table (dev load)",
+            |mut region| {
+                let signatures: Vec<SignData> = block.get_sign_data(false);
+
+                for (offset, sign_data) in signatures.iter().enumerate() {
+                    let addr: F = sign_data.get_addr().to_scalar().unwrap();
+
+                    let msg_hash_rlc = challenges
+                        .keccak_input()
+                        .map(|challenge| rlc::value(&sign_data.msg_hash.to_bytes(), challenge));
+                    let sig_r_rlc = challenges
+                        .keccak_input()
+                        .map(|challenge| rlc::value(&sign_data.signature.0.to_bytes(), challenge));
+                    let sig_s_rlc = challenges
+                        .keccak_input()
+                        .map(|challenge| rlc::value(&sign_data.signature.1.to_bytes(), challenge));
+                    let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
+
+                    region.assign_fixed(
+                        || format!("sig table q_enable {offset}"),
+                        self.q_enable,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
+                    for (column_name, column, value) in [
+                        ("msg_hash_rlc", self.msg_hash_rlc, msg_hash_rlc),
+                        ("sig_v", self.sig_v, sig_v),
+                        ("sig_r_rlc", self.sig_r_rlc, sig_r_rlc),
+                        ("sig_s_rlc", self.sig_s_rlc, sig_s_rlc),
+                        ("recovered_addr", self.recovered_addr, Value::known(addr)),
+                        ("is_valid", self.is_valid, Value::known(F::one())),
+                    ] {
+                        region.assign_advice(
+                            || format!("sig table {column_name} {offset}"),
+                            column,
+                            offset,
+                            || value,
+                        )?;
+                    }
+                }
+
+                Ok(())
+            },
+        )?;
+
+        Ok(())
+    }
+}
+
+impl<F: Field> LookupTable<F> for SigTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_enable.into(),
+            self.msg_hash_rlc.into(),
+            self.sig_v.into(),
+            self.sig_r_rlc.into(),
+            self.sig_s_rlc.into(),
+            self.recovered_addr.into(),
+            self.is_valid.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("q_enable"),
+            String::from("msg_hash_rlc"),
+            String::from("sig_v"),
+            String::from("sig_r_rlc"),
+            String::from("sig_s_rlc"),
+            String::from("recovered_addr"),
+            String::from("is_valid"),
+        ]
+    }
+
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            // ignore the is_valid field as the EVM circuit's use-case (Ecrecover precompile) does
+            // not care whether the signature is valid or not. It only cares about the recovered
+            // address.
+            meta.query_fixed(self.q_enable, Rotation::cur()),
+            meta.query_advice(self.msg_hash_rlc, Rotation::cur()),
+            meta.query_advice(self.sig_v, Rotation::cur()),
+            meta.query_advice(self.sig_r_rlc, Rotation::cur()),
+            meta.query_advice(self.sig_s_rlc, Rotation::cur()),
+            meta.query_advice(self.recovered_addr, Rotation::cur()),
+        ]
     }
 }

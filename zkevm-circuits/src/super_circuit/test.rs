@@ -136,7 +136,7 @@ pub(crate) fn block_1tx() -> GethData {
     block
 }
 
-fn block_2tx() -> GethData {
+pub(crate) fn block_2tx() -> GethData {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
     let chain_id = *MOCK_CHAIN_ID;

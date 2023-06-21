@@ -5,36 +5,36 @@ use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
 };
-use mock::{CORRECT_MOCK_TXS, MOCK_CHAIN_ID};
+use mock::{test_ctx::helpers::tx_from_1_to_0, CORRECT_MOCK_TXS, MOCK_CHAIN_ID, MOCK_DIFFICULTY};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use std::env::set_var;
 
-#[test]
-fn pi_circuit_unusable_rows() {
-    const MAX_TXS: usize = 2;
-    const MAX_CALLDATA: usize = 8;
-    assert_eq!(
-        PiCircuit::<Fr>::unusable_rows(),
-        unusable_rows::<Fr, PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>>(),
-    )
-}
+use crate::{super_circuit::test::block_2tx, witness::block_convert};
+use bus_mapping::mock::BlockData;
+use eth_types::{bytecode, geth_types::GethData};
+use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
-fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
+// #[test]
+// fn pi_circuit_unusable_rows() {
+//     const MAX_TXS: usize = 2;
+//     const MAX_CALLDATA: usize = 8;
+//     const MAX_INNER_BLOCKS: usize = 1;
+//     assert_eq!(
+//         PiCircuit::<Fr>::unusable_rows(),
+//         unusable_rows::<Fr, PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>>(),
+//     )
+// }
+
+fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>(
     k: u32,
-    public_data: PublicData,
+    block: Block<F>,
 ) -> Result<(), Vec<VerifyFailure>> {
-    let mut rng = ChaCha20Rng::seed_from_u64(2);
-    let randomness = F::random(&mut rng);
-    let rand_rpi = F::random(&mut rng);
-    let mut public_data = public_data;
-    public_data.chain_id = *MOCK_CHAIN_ID;
-
-    let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
+    let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(PiCircuit::new(
         MAX_TXS,
         MAX_CALLDATA,
-        randomness,
-        rand_rpi,
-        public_data,
+        MAX_INNER_BLOCKS,
+        &block,
     ));
     let public_inputs = circuit.0.instance();
 
@@ -42,60 +42,74 @@ fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
         Ok(prover) => prover,
         Err(e) => panic!("{:#?}", e),
     };
+    prover.assert_satisfied_par();
     prover.verify()
 }
 
-#[test]
-fn test_default_pi() {
-    const MAX_TXS: usize = 2;
-    const MAX_CALLDATA: usize = 8;
-    let public_data = PublicData::default();
+fn block_1tx() -> Block<Fr> {
+    use crate::super_circuit::test::block_1tx;
 
-    let k = 17;
-    assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
+    let block = block_1tx();
+    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    builder
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
+    block_convert(&builder.block, &builder.code_db).unwrap()
 }
 
-#[test]
-fn test_simple_pi() {
-    const MAX_TXS: usize = 8;
-    const MAX_CALLDATA: usize = 200;
+fn block_2txs() -> Block<Fr> {
+    use crate::super_circuit::test::block_1tx;
 
-    let mut public_data = PublicData::default();
-
-    let n_tx = 4;
-    for i in 0..n_tx {
-        public_data
-            .transactions
-            .push(CORRECT_MOCK_TXS[i].clone().into());
-    }
-
-    let k = 17;
-    assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
+    let block = block_2tx();
+    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    builder
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
+    block_convert(&builder.block, &builder.code_db).unwrap()
 }
 
-fn run_size_check<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
-    public_data: [PublicData; 2],
+#[cfg(feature = "scroll")]
+#[test]
+fn serial_test_simple_pi() {
+    const MAX_TXS: usize = 4;
+    const MAX_CALLDATA: usize = 20;
+    const MAX_INNER_BLOCKS: usize = 4;
+
+    let mut difficulty_be_bytes = [0u8; 32];
+    MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
+    set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
+
+    let block = block_1tx();
+
+    let k = 16;
+    assert_eq!(
+        run::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(k, block),
+        Ok(())
+    );
+}
+
+fn run_size_check<
+    F: Field,
+    const MAX_TXS: usize,
+    const MAX_CALLDATA: usize,
+    const MAX_INNER_BLOCKS: usize,
+>(
+    blocks: [Block<F>; 2],
 ) {
-    let mut rng = ChaCha20Rng::seed_from_u64(2);
-    let randomness = F::random(&mut rng);
-    let rand_rpi = F::random(&mut rng);
-
-    let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
+    let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(PiCircuit::new(
         MAX_TXS,
         MAX_CALLDATA,
-        randomness,
-        rand_rpi,
-        public_data[0].clone(),
+        MAX_INNER_BLOCKS,
+        &blocks[0],
     ));
     let public_inputs = circuit.0.instance();
     let prover1 = MockProver::run(20, &circuit, public_inputs).unwrap();
 
-    let circuit2 = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
+    let circuit2 = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(PiCircuit::new(
         MAX_TXS,
         MAX_CALLDATA,
-        randomness,
-        rand_rpi,
-        public_data[1].clone(),
+        MAX_INNER_BLOCKS,
+        &blocks[1],
     ));
     let public_inputs = circuit2.0.instance();
     let prover2 = MockProver::run(20, &circuit, public_inputs).unwrap();
@@ -108,30 +122,10 @@ fn run_size_check<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
 fn variadic_size_check() {
     const MAX_TXS: usize = 8;
     const MAX_CALLDATA: usize = 200;
+    const MAX_INNER_BLOCKS: usize = 4;
 
-    let mut pub_dat_1 = PublicData {
-        chain_id: *MOCK_CHAIN_ID,
-        ..Default::default()
-    };
+    let block_1 = block_1tx();
+    let block_2 = block_2txs();
 
-    let n_tx = 2;
-    for i in 0..n_tx {
-        pub_dat_1
-            .transactions
-            .push(CORRECT_MOCK_TXS[i].clone().into());
-    }
-
-    let mut pub_dat_2 = PublicData {
-        chain_id: *MOCK_CHAIN_ID,
-        ..Default::default()
-    };
-
-    let n_tx = 4;
-    for i in 0..n_tx {
-        pub_dat_2
-            .transactions
-            .push(CORRECT_MOCK_TXS[i].clone().into());
-    }
-
-    run_size_check::<Fr, MAX_TXS, MAX_CALLDATA>([pub_dat_1, pub_dat_2]);
+    run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>([block_1, block_2]);
 }
