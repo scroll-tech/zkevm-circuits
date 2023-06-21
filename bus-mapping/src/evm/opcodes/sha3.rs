@@ -69,7 +69,6 @@ impl Opcode for Sha3 {
                 memory_clone.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
 
             // Read step
-            let mut copy_start = 0u64;
             let mut first_set = true;
             let mut chunk_index = dst_begin_slot;
             for chunk in memory_slot_bytes.chunks(32) {
@@ -88,7 +87,6 @@ impl Opcode for Sha3 {
                 } else {
                     // real copy byte
                     if first_set {
-                        copy_start = idx as u64;
                         first_set = false;
                     }
                     copy_steps.push((value, false, false));
@@ -135,7 +133,7 @@ pub mod sha3_tests {
     use crate::{
         circuit_input_builder::{CircuitsParams, ExecState},
         mock::BlockData,
-        operation::{MemoryOp, StackOp, RW},
+        operation::{StackOp, RW},
     };
 
     /// Generate bytecode for SHA3 opcode after having populated sufficient

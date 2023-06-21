@@ -1,8 +1,8 @@
-use super::{MemoryKind, Opcode};
+use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
     evm::opcodes::ExecStep,
-    operation::{AccountField, AccountOp, CallContextField, MemoryOp, MemoryWordOp, RW},
+    operation::{AccountField, AccountOp, CallContextField, MemoryWordOp, RW},
     state_db::CodeDB,
     Error,
 };

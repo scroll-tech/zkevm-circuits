@@ -292,9 +292,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     is_word_continue.is_lt(meta, None),
                     not_last_two_rows.expr(),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-                        meta,
-                    )),
+                    non_pad_non_mask.is_lt(meta, None),
                 ]),
                 |cb| {
                     cb.require_equal(
@@ -309,9 +307,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     not::expr(is_word_continue.is_lt(meta, None)),
                     not_last_two_rows.expr(),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-                        meta,
-                    )),
+                    non_pad_non_mask.is_lt(meta, None),
                 ]),
                 |cb| {
                     cb.require_equal(
@@ -327,13 +323,66 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
 
+            // for all cases, rw_counter + rwc_inc_left keeps same
+            cb.condition(
+                and::expr([
+                    not::expr(meta.query_advice(is_last, Rotation::cur())),
+                    non_pad_non_mask.is_lt(meta, None),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "rows[0].rw_counter + rows[0].rwc_inc_left == rows[1].rw_counter + rows[1].rwc_inc_left",
+                        meta.query_advice(rw_counter, Rotation::cur()) + meta.query_advice(rwc_inc_left, Rotation::cur()),
+                        meta.query_advice(rw_counter, Rotation::next()) + meta.query_advice(rwc_inc_left, Rotation::next()),
+                    );
+                }
+            );
+            // for all cases, rows[0].rw_counter + diff == rows[1].rw_counter
+            cb.condition(
+                and::expr([
+                    is_word_continue.is_lt(meta, None),
+                    not_last_two_rows.expr(),
+                    non_pad_non_mask.is_lt(meta, None),
+                ]),
+                |cb| {
+                    let is_memory2memory = and::expr([
+                        meta.query_advice(is_memory, Rotation::cur()),
+                        meta.query_advice(is_memory, Rotation::next()),
+                    ]);
+                    let diff = select::expr(
+                        is_memory2memory,
+                        select::expr(meta.query_selector(q_step), 1.expr(), -1.expr()),
+                        0.expr(),
+                    );
+                    cb.require_equal(
+                        "rows[0].rw_counter + diff == rows[1].rw_counter",
+                        meta.query_advice(rw_counter, Rotation::cur()) + diff.expr(),
+                        meta.query_advice(rw_counter, Rotation::next()),
+                    );
+                }
+            );
+            // for all cases, rw_counter increase by 1 on word end for write step
+            cb.condition(
+                and::expr([
+                    not::expr(is_word_continue.is_lt(meta, None)),
+                    not::expr(meta.query_advice(is_last, Rotation::cur())),
+                    not::expr(meta.query_selector(q_step)),
+                    non_pad_non_mask.is_lt(meta, None)
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "rows[0].rw_counter + 1 == rows[1].rw_counter",
+                        meta.query_advice(rw_counter, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(rw_counter, Rotation::next()),
+                    );
+                }
+            );
+
             // addr change: for tx log, addr use addr_slot as index, not increase by 1
             cb.condition(
                 and::expr([
                     not_last_two_rows.expr(),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-                        meta,
-                    )),
+                    non_pad_non_mask.is_lt(meta, None),
                     not::expr(tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)),
                 ]),
                 |cb| {
@@ -346,10 +395,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             );
 
             cb.condition(
-                not_last_two_rows
-                    * (not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-                        meta,
-                    ))),
+                not_last_two_rows.expr() * non_pad_non_mask.is_lt(meta, None),
                 |cb| {
                     cb.require_equal(
                         "rows[0].id == rows[2].id",
@@ -380,16 +426,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::cur())),
                 |cb| {
-                    // cb.require_equal(
-                    //     "rows[0].rw_counter + rw_diff == rows[1].rw_counter",
-                    //     meta.query_advice(rw_counter, Rotation::cur()) + rw_diff.clone(),
-                    //     meta.query_advice(rw_counter, Rotation::next()),
-                    // );
-                    // cb.require_equal(
-                    //     "rows[0].rwc_inc_left - rw_diff == rows[1].rwc_inc_left",
-                    //     meta.query_advice(rwc_inc_left, Rotation::cur()) - rw_diff.clone(),
-                    //     meta.query_advice(rwc_inc_left, Rotation::next()),
-                    // );
                     cb.require_equal(
                         "rows[0].rlc_acc == rows[1].rlc_acc",
                         meta.query_advice(rlc_acc, Rotation::cur()),
@@ -502,9 +538,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             );
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::next()))
-                    * (not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-                        meta,
-                    ))),
+                    * (non_pad_non_mask.is_lt(meta, None)),
                 |cb| {
                     cb.require_equal(
                         "bytes_left == bytes_left_next + 1 for non-last step",
@@ -515,19 +549,19 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             );
             // we use rlc to constraint the write == read specially for memory to memory case
             // here only handle non memory to memory cases
-            let non_memory_to_memory =
-                not::expr(tag.value_equals(CopyDataType::Memory, Rotation::cur())(
-                    meta,
-                )) * not::expr(tag.value_equals(CopyDataType::Memory, Rotation::next())(
-                    meta,
-                ));
-            cb.condition(non_memory_to_memory, |cb| {
-                cb.require_equal(
-                    "write value == read value",
-                    meta.query_advice(value, Rotation::cur()),
-                    meta.query_advice(value, Rotation::next()),
-                );
-            });
+            cb.condition(
+                not::expr(and::expr([
+                    meta.query_advice(is_memory, Rotation::cur()),
+                    meta.query_advice(is_memory, Rotation::next()),
+                ])),
+                |cb| {
+                    cb.require_equal(
+                        "write value == read value",
+                        meta.query_advice(value, Rotation::cur()),
+                        meta.query_advice(value, Rotation::next()),
+                    );
+                },
+            );
 
             cb.require_equal(
                 "value_acc is same for read-write rows",
@@ -538,15 +572,15 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     not::expr(meta.query_advice(is_last, Rotation::next())),
                     not::expr(meta.query_advice(is_pad, Rotation::cur())),
-                    not::expr(meta.query_advice(mask, Rotation::cur())),
+                    not::expr(meta.query_advice(mask, Rotation(2))),
                 ]),
                 |cb| {
-                    // cb.require_equal(
-                    //     "value_acc(2) == value_acc(0) * r + value(2)",
-                    //     meta.query_advice(value_acc, Rotation(2)),
-                    //     meta.query_advice(value_acc, Rotation::cur()) * challenges.keccak_input()
-                    //         + meta.query_advice(value, Rotation(2)),
-                    // );
+                    cb.require_equal(
+                        "value_acc(2) == value_acc(0) * r + value(2)",
+                        meta.query_advice(value_acc, Rotation(2)),
+                        meta.query_advice(value_acc, Rotation::cur()) * challenges.keccak_input()
+                            + meta.query_advice(value, Rotation(2)),
+                    );
                 },
             );
             cb.condition(not::expr(meta.query_advice(mask, Rotation::cur())), |cb| {
@@ -648,7 +682,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Tx calldata lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * meta.query_advice(is_tx_calldata, Rotation::cur())
-                * not::expr(meta.query_advice(is_pad, Rotation::cur()));
+                * non_pad_non_mask.is_lt(meta, None);
 
             vec![
                 1.expr(),
@@ -706,6 +740,9 @@ impl<F: Field> CopyCircuitConfig<F> {
         challenges: Challenges<Value<F>>,
         copy_event: &CopyEvent,
     ) -> Result<(), Error> {
+        let mut src_first_non_mask = 0u64;
+        let mut src_first_non_mask_stop = false;
+
         for (step_idx, (tag, table_row, circuit_row)) in
             CopyTable::assignments(copy_event, challenges)
                 .iter()
@@ -779,12 +816,37 @@ impl<F: Field> CopyCircuitConfig<F> {
             // tag
             tag_chip.assign(region, *offset, tag)?;
 
+            let mut pad = F::zero();
+            circuit_row[6].0.map(|f: F| pad = f);
+            let mut mask = F::zero();
+            circuit_row[8].0.map(|f: F| mask = f);
+
+            if is_read {
+                if mask == F::one() && !src_first_non_mask_stop {
+                    src_first_non_mask += 1;
+                } else {
+                    src_first_non_mask_stop = true
+                }
+            }
+
             // lt chip
             if is_read {
+                // for bytecode, front mask rows not increase addr
+                let src_addr_increase =
+                    if tag.eq(&CopyDataType::Bytecode) || tag.eq(&CopyDataType::TxCalldata) {
+                        if step_idx as u64 <= 2 * src_first_non_mask {
+                            0
+                        } else {
+                            u64::try_from(step_idx).unwrap() / 2u64 - src_first_non_mask
+                        }
+                    } else {
+                        u64::try_from(step_idx).unwrap() / 2u64
+                    };
+
                 lt_chip.assign(
                     region,
                     *offset,
-                    F::from(copy_event.src_addr + u64::try_from(step_idx).unwrap() / 2u64),
+                    F::from(copy_event.src_addr + src_addr_increase),
                     F::from(copy_event.src_addr_end),
                 )?;
             }
@@ -795,15 +857,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                 F::from((step_idx as u64 / 2) % 32), // word index
                 F::from(31u64),
             )?;
-
-            let mut pad = F::zero();
-            circuit_row[6].0.map(|f: F| pad = f);
-            let mut mask = F::zero();
-            circuit_row[8].0.map(|f: F| mask = f);
-
-            // todo: debug info will remove it later
-            let sum: F = pad + mask;
-            //println!("pad + sum: {:?} offset : {}", sum, offset);
 
             non_pad_non_mask_chip.assign(
                 region,
@@ -1089,6 +1142,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             *offset,
             || Value::known(F::zero()),
         )?;
+
         // rwc_inc_left
         region.assign_advice(
             || format!("assign rwc_inc_left {}", *offset),

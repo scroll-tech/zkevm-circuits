@@ -169,7 +169,17 @@ fn gen_returndatacopy_data() -> CircuitInputBuilder {
     .unwrap();
 
     let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    let mut builder = BlockData::new_from_geth_data_with_params(
+        block.clone(),
+        CircuitsParams {
+            max_rws: 8192,
+            max_copy_rows: 8192 + 2,
+            max_calldata: 5000,
+            ..Default::default()
+        },
+    )
+    .new_circuit_input_builder();
+
     builder
         .handle_block(&block.eth_block, &block.geth_traces)
         .unwrap();
@@ -238,8 +248,8 @@ fn gen_tx_log_data() -> CircuitInputBuilder {
         MSTORE
         PUSH32(Word::MAX)   // topic
         PUSH1(32)           // length
-        PUSH1(0)            // offset
-        LOG1
+        PUSH1(0x20)         // offset
+        LOG0
         STOP
     };
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
@@ -311,7 +321,7 @@ fn copy_circuit_valid_codecopy() {
 fn copy_circuit_valid_returndatacopy() {
     let builder = gen_returndatacopy_data();
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-    assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
+    assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
 }
 
 #[test]

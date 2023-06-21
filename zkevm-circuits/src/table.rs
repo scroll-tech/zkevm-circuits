@@ -1693,15 +1693,13 @@ impl CopyTable {
                 } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
 
             let addr = if tag == CopyDataType::TxLog {
-                Value::known(
-                    build_tx_log_address(
-                        read_addr_slot,
-                        TxLogFieldTag::Data,
-                        copy_event.log_id.unwrap(),
-                    )
-                    .to_scalar()
-                    .unwrap(),
+                build_tx_log_address(
+                    write_addr_slot,
+                    TxLogFieldTag::Data,
+                    copy_event.log_id.unwrap(),
                 )
+                .to_scalar()
+                .unwrap()
             } else if tag == CopyDataType::Bytecode && copy_event.dst_type == CopyDataType::Bytecode
             {
                 // get real bytecode addr
@@ -1710,9 +1708,17 @@ impl CopyTable {
                 } else {
                     0
                 };
-                Value::known(F::from(copy_event.dst_addr + bytecode_addr_increase))
+                F::from(copy_event.dst_addr + bytecode_addr_increase)
+            } else if tag == CopyDataType::Bytecode || tag == CopyDataType::TxCalldata {
+                // get real bytecode or tx calldata addr
+                let bytecode_addr_increase = if step_idx > non_mask_pos * 2 {
+                    step_idx as u64 / 2 - non_mask_pos as u64
+                } else {
+                    0
+                };
+                F::from(copy_event.src_addr + bytecode_addr_increase)
             } else {
-                Value::known(F::from(copy_step_addr))
+                F::from(copy_step_addr)
             };
 
             // bytes_left (final padding word length )
@@ -1728,7 +1734,7 @@ impl CopyTable {
             }
             // is_pad
             let is_pad = Value::known(F::from(
-                is_read_step && copy_step_addr >= copy_event.src_addr_end,
+                is_read_step && addr >= F::from(copy_event.src_addr_end),
             ));
 
             // is_code
@@ -1737,19 +1743,18 @@ impl CopyTable {
             // debug info
             let rw_count = F::from(copy_event.rw_counter_step(step_idx));
             let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
-            // println!(
-            //     "step_idx: {}, rw_count {:?}, tag {:?}, addr {:?} id {:?} mask {:?}, is_code
-            // {:?}",     step_idx, rw_count, tag, addr, id, is_mask, is_code,
-            // );
-
+            // todo: rm
             println!(
-                "log: {}\t{} \t{} \t{:?}\t{}\t{:?}\t{:?}",
+                "log: step_idx {}\t tag {:?} \t rw_count {:?} id {:?}, bytes_left {}, addr {:?}, 
+                rwc_inc_left {:?}, value_word_write_rlc {:?}, mask {}",
                 step_idx,
-                is_read_step,
-                copy_step_addr,
+                tag,
+                rw_count,
                 id,
-                copy_step.is_code.unwrap_or(false),
-                copy_step.value,
+                bytes_left,
+                addr,
+                rwc_inc_left,
+                value_word_write_rlc,
                 copy_step.mask,
             );
 
@@ -1758,7 +1763,7 @@ impl CopyTable {
                 [
                     (is_first, "is_first"),
                     (id, "id"),
-                    (addr, "addr"),
+                    (Value::known(addr), "addr"),
                     (
                         Value::known(F::from(copy_event.src_addr_end)),
                         "src_addr_end",
@@ -1891,6 +1896,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             self.addr.into(),
             self.src_addr_end.into(),
             self.bytes_left.into(),
+            //self.value_wrod_rlc.into(),
             self.rlc_acc.into(),
             self.rw_counter.into(),
             self.rwc_inc_left.into(),
