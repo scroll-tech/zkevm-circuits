@@ -823,7 +823,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        //let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone());
         //#[cfg(feature = "reject-eip2718")]
         meta.create_gate(
             "caller address == sv_address if it's not zero and tx_type != L1Msg",
@@ -891,6 +890,8 @@ impl<F: Field> TxCircuitConfig<F> {
         is_none: Column<Advice>,
         lookup_conditions: &HashMap<LookupCondition, Column<Advice>>,
         is_final: Column<Advice>,
+        is_chain_id: Column<Advice>,
+        is_l1_msg_col: Column<Advice>,
         calldata_gas_cost_acc: Column<Advice>,
         tx_table: TxTable,
         keccak_table: KeccakTable,
@@ -1075,25 +1076,43 @@ impl<F: Field> TxCircuitConfig<F> {
         ////////////////////////////////////////////////////////////////////
         /////////////////    Sig table lookups     //////////////////////
         ///////////////// //////////////////////////////////////////////////
-        /*
         meta.lookup_any("Sig table lookup", |meta| {
+            let enabled = and::expr([
+                // use is_l1_msg_col instead of is_l1_msg(meta) because it has lower degree
+                not::expr(meta.query_advice(is_l1_msg_col, Rotation::cur())),
+                // lookup to sig table on the ChainID row because we have an indicator of degree 1 for ChainID
+                // and ChainID is not far from
+                meta.query_advice(is_chain_id, Rotation::cur()),
+            ]);
 
-            let enabled = 0.expr(); // TODO: enabled == !is_l1_tx
+            let value = meta.query_advice(tx_table.value, Rotation::cur());
+
             let input_exprs = vec![
-                sv_address
+                1.expr(), // q_enable = true
+                value, // msg_hash_rlc
+                // sig_v
+                // sig_r
+                // sig_s
+                sv_address,
+                // is_valid
             ];
             // LookupTable::table_exprs is not used here since `is_valid` not used by evm circuit.
             let table_exprs = vec![
-            meta.query_fixed(sig_table.q_enable, Rotation::cur()),
-            // msg_hash_rlc not needed to be looked up for tx circuit?
-            meta.query_advice(sig_table.msg_hash_rlc, Rotation::cur()),
-            meta.query_advice(sig_table.sig_v, Rotation::cur()),
-            meta.query_advice(sig_table.sig_r_rlc, Rotation::cur()),
-            meta.query_advice(sig_table.sig_s_rlc, Rotation::cur()),
-            meta.query_advice(sig_table.recovered_addr, Rotation::cur()),
-        ]
+                meta.query_fixed(sig_table.q_enable, Rotation::cur()),
+                // msg_hash_rlc not needed to be looked up for tx circuit?
+                meta.query_advice(sig_table.msg_hash_rlc, Rotation::cur()),
+                meta.query_advice(sig_table.sig_v, Rotation::cur()),
+                meta.query_advice(sig_table.sig_r_rlc, Rotation::cur()),
+                meta.query_advice(sig_table.sig_s_rlc, Rotation::cur()),
+                meta.query_advice(sig_table.recovered_addr, Rotation::cur()),
+            ];
+
+            input_exprs
+                .into_iter()
+                .zip(table_exprs.into_iter())
+                .map(|(input, table)| (input*enabled.expr(), table))
+                .collect()
         });
-        */
 
         ////////////////////////////////////////////////////////////////////
         /////////////////    Keccak table lookups     //////////////////////

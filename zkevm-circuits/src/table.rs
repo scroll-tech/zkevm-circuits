@@ -135,10 +135,10 @@ pub enum TxFieldTag {
     CallDataGasCost,
     /// Gas cost for rlp-encoded bytes of unsigned transaction (4 for byte == 0, 16 otherwise)
     TxDataGasCost,
-    /// Signature field V.
-    SigV,
     /// Chain ID
     ChainID,
+    /// Signature field V.
+    SigV,
     /// Signature field R.
     SigR,
     /// Signature field S.
