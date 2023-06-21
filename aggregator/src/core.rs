@@ -142,7 +142,7 @@ pub(crate) fn assign_batch_hashes<F: Field>(
                 for j in 0..8 {
                     // sanity check
                     assert_equal(
-                        // wenqing: 100 is the starting bit position for 
+                        // wenqing: 100 is the starting byte position for 
                         //  batch_data_hash in batchPiHash preimage
                         &hash_input_cells[0][i * 8 + j + 100],
                         &hash_output_cells[1][(3 - i) * 8 + j],
@@ -172,7 +172,7 @@ pub(crate) fn assign_batch_hashes<F: Field>(
             //        chunk[i].postStateRoot ||
             //        chunk[i].withdrawRoot  ||
             //        chunk[i].datahash)
-            // wenqing: 4, 36, 68 used below are bit positions for 
+            // wenqing: 4, 36, 68 used below are byte positions for 
             //          prev_state_root, post_state_root, withdraw_root
             for i in 0..32 {
                 // 2.2.1 chunk[0].prev_state_root
