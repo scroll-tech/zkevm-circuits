@@ -50,6 +50,20 @@ pub(crate) fn assign_batch_hashes<F: Field>(
     let num_rows = 1 << LOG_DEGREE;
 
     let timer = start_timer!(|| ("multi keccak").to_string());
+    // wenqing: preimages consists of the following parts
+    // (1) batchPiHash preimage =
+    //      (chain_id ||
+    //      chunk[0].prev_state_root ||
+    //      chunk[k-1].post_state_root ||
+    //      chunk[k-1].withdraw_root ||
+    //      batch_data_hash)
+    // (2) batchDataHash preimage = 
+    //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
+    // (3) chunk[i].piHash preimage =
+    //      (chain id ||
+    //      chunk[i].prevStateRoot || chunk[i].postStateRoot || 
+    //      chunk[i].withdrawRoot || chunk[i].datahash)
+    // each part of the preimage is mapped to image by Keccak256
     let witness = multi_keccak(preimages, challenges, capacity(num_rows))?;
     end_timer!(timer);
 
@@ -84,10 +98,12 @@ pub(crate) fn assign_batch_hashes<F: Field>(
                 let row = config.set_row(&mut region, offset, keccak_row)?;
 
                 if cur_preimage_index.is_some() && *cur_preimage_index.unwrap() == offset {
+                    // wenqing: 7-th column is Keccak input in Keccak circuit
                     current_hash_input_cells.push(row[6].clone());
                     cur_preimage_index = preimage_indices_iter.next();
                 }
                 if cur_digest_index.is_some() && *cur_digest_index.unwrap() == offset {
+                    // wenqing: last column is Keccak output in Keccak circuit
                     current_hash_output_cells.push(row.last().unwrap().clone());
                     cur_digest_index = digest_indices_iter.next();
                 }
@@ -126,6 +142,7 @@ pub(crate) fn assign_batch_hashes<F: Field>(
             for i in 0..4 {
                 for j in 0..8 {
                     // sanity check
+                    // wenqing: 96 + CHAIN_ID_LEN is the byte position for batch_data_hash
                     assert_equal(
                         &hash_input_cells[0][i * 8 + j + 96 + CHAIN_ID_LEN],
                         &hash_output_cells[1][(3 - i) * 8 + j],
@@ -155,6 +172,10 @@ pub(crate) fn assign_batch_hashes<F: Field>(
             //        chunk[i].postStateRoot ||
             //        chunk[i].withdrawRoot  ||
             //        chunk[i].datahash)
+            // wenqing: CHAIN_ID_LEN, 
+            //          CHAIN_ID_LEN+32, 
+            //          CHAIN_ID_LEN+64 used below are byte positions for 
+            //          prev_state_root, post_state_root, withdraw_root
             for i in 0..32 {
                 // 2.2.1 chunk[0].prev_state_root
                 // sanity check
@@ -271,6 +292,8 @@ pub(crate) fn extract_accumulators_and_proof(
                 &snark.instances,
                 &mut transcript_read,
             );
+            // wenqing: each accumulator has (lhs, rhs) based on Shplonk
+            // lhs and rhs are EC points
             Shplonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof)
         })
         .collect::<Vec<_>>();
@@ -279,6 +302,11 @@ pub(crate) fn extract_accumulators_and_proof(
         PoseidonTranscript::<NativeLoader, Vec<u8>>::from_spec(vec![], POSEIDON_SPEC.clone());
     // We always use SHPLONK for accumulation scheme when aggregating proofs
     let accumulator =
+        // wenqing: core step
+        // KzgAs does KZG accumulation scheme based on given accumulators and random number (for adding blinding)
+        // accumulated ec_pt = ec_pt_1 * 1 + ec_pt_2 * r + ... + ec_pt_n * r^{n-1}
+        // ec_pt can be lhs and rhs
+        // r is the challenge squeezed from proof
         KzgAs::<Kzg<Bn256, Bdfg21>>::create_proof::<PoseidonTranscript<NativeLoader, Vec<u8>>, _>(
             &Default::default(),
             &accumulators,
