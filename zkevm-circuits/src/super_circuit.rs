@@ -406,9 +406,11 @@ impl<
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
         let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block);
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
-        let num_rows_tx_circuit =
-            TxCircuitConfig::<F>::get_num_rows_required(block.circuits_params.max_txs);
-        num_rows_evm_circuit.max(num_rows_tx_circuit)
+        // FIXME: need to call the SigCircuit::get_num_rows_required instead
+        // let num_rows_tx_circuit =
+        //     TxCircuitConfig::<F>::get_num_rows_required(block.circuits_params.max_txs);
+        // num_rows_evm_circuit.max(num_rows_tx_circuit)
+        num_rows_evm_circuit
     }
     /// Return the minimum number of rows required to prove the block
     pub fn min_num_rows_block_subcircuits(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
