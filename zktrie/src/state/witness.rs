@@ -307,7 +307,7 @@ impl WitnessGenerator {
         if let Some(key) = key {
             self.trace_storage_update(address, key, new_val, old_val)
         } else {
-            self.trace_account_update(address, |acc_before: &AccountData| {
+            self.trace_account_update(address, |acc_before: Option<&AccountData>| {
                 let mut acc_data = acc_before.copied().unwrap_or_default();
                 match proof_type {
                     MPTProofType::NonceChanged => {
