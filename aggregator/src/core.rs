@@ -64,6 +64,20 @@ pub(crate) fn assign_batch_hashes<F: Field>(
     //      chunk[i].prevStateRoot || chunk[i].postStateRoot || 
     //      chunk[i].withdrawRoot || chunk[i].datahash)
     // each part of the preimage is mapped to image by Keccak256
+    // wenqing: preimages consists of the following parts
+    // (1) batchPiHash preimage =
+    //      (chain_id ||
+    //      chunk[0].prev_state_root ||
+    //      chunk[k-1].post_state_root ||
+    //      chunk[k-1].withdraw_root ||
+    //      batch_data_hash)
+    // (2) batchDataHash preimage = 
+    //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
+    // (3) chunk[i].piHash preimage =
+    //      (chain id ||
+    //      chunk[i].prevStateRoot || chunk[i].postStateRoot || 
+    //      chunk[i].withdrawRoot || chunk[i].datahash)
+    // each part of the preimage is mapped to image by Keccak256
     let witness = multi_keccak(preimages, challenges, capacity(num_rows))?;
     end_timer!(timer);
 

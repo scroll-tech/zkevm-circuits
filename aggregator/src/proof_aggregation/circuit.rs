@@ -73,6 +73,11 @@ impl AggregationCircuit {
                 //  next 32 elements are data hash (44=12+32)
                 //  next 32 elements are public_input_hash
                 //  data hash + public_input_hash = snark public input
+                // wenqing: for each snark, 
+                //  first 12 elements are accumulator
+                //  next 32 elements are data hash (44=12+32)
+                //  next 32 elements are public_input_hash
+                //  data hash + public_input_hash = snark public input
                 assert_eq!(
                     Fr::from(chunk.data_hash.as_bytes()[i] as u64),
                     snark_hash_bytes[i + 12]
@@ -88,6 +93,8 @@ impl AggregationCircuit {
         // extract the accumulators and proofs
         let svk = params.get_g()[0].into();
 
+        // wenqing: this aggregates MULTIPLE snarks 
+        //  (instead of ONE as in proof compression)
         // wenqing: this aggregates MULTIPLE snarks 
         //  (instead of ONE as in proof compression)
         let (accumulator, as_proof) = extract_accumulators_and_proof(params, snarks, rng);
@@ -171,6 +178,7 @@ impl Circuit<Fr> for AggregationCircuit {
         //   re-export all the public input of the snarks, denoted by [snarks_instances], and the
         //   accumulator [acc_instances]
         // - 2. use public input aggregation circuit to aggregate the chunks; expose the instance
+        //   denoted by [pi_agg_instances]
         //   denoted by [pi_agg_instances]
         // - 3. assert [snarks_instances] are private inputs used for public input aggregation
         //   circuit
