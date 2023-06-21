@@ -670,7 +670,7 @@ impl<F: Field> SigCircuit<F> {
         let pk_hash_rlc = rlc_chip.gate.inner_product(
             ctx,
             sign_data_decomposed.pk_hash_cells.clone(),
-            evm_challenge_powers,
+            evm_challenge_powers.clone(),
         );
 
         // step 4: r,s rlc
