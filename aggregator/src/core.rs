@@ -171,7 +171,7 @@ pub(crate) fn assign_batch_hashes<F: Field>(
             //        chunk[i].postStateRoot ||
             //        chunk[i].withdrawRoot  ||
             //        chunk[i].datahash)
-            // wenqing: 4, 36, 68 used below are bit positions for 
+            // wenqing: 4, 36, 68 used below are byte positions for 
             //          prev_state_root, post_state_root, withdraw_root
             for i in 0..32 {
                 // 2.2.1 chunk[0].prev_state_root

@@ -68,6 +68,11 @@ impl AggregationCircuit {
             let snark_hash_bytes = &snark.instances[0];
 
             for i in 0..32 {
+                // wenqing: for each snark, 
+                //  first 12 elements are accumulator
+                //  next 32 elements are data hash (44=12+32)
+                //  next 32 elements are public_input_hash
+                //  data hash + public_input_hash = snark public input
                 assert_eq!(
                     Fr::from(chunk.data_hash.as_bytes()[i] as u64),
                     snark_hash_bytes[i + 12]
@@ -197,7 +202,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 //
                 // extract the assigned values for
                 // - instances which are the public inputs of each chunk (prefixed with 12 instances
-                //   from previous accumualtors)
+                //   from previous accumulators)
                 // - new accumulator to be verified on chain
                 //
                 let (assigned_aggregation_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
@@ -352,6 +357,7 @@ impl Circuit<Fr> for AggregationCircuit {
             for i in 0..4 {
                 for j in 0..8 {
                     // digest in circuit has a different endianness
+                    // wenqing: 96 is the byte position for batch data hash
                     layouter.constrain_instance(
                         hash_output_cells[0][(3 - i) * 8 + j].cell(),
                         config.instance,
