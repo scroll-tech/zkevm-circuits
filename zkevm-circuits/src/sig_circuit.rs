@@ -688,7 +688,7 @@ impl<F: Field> SigCircuit<F> {
         log::trace!("pk hash rlc halo2ecc: {:?}", pk_hash_rlc.value());
         log::trace!("finished sign verify");
         let to_be_keccak_checked = [
-            sign_data_decomposed.is_address_zero.clone(),
+            sign_data_decomposed.is_address_zero,
             pk_rlc,
             pk_hash_rlc,
         ];
