@@ -172,7 +172,6 @@ impl Circuit<Fr> for AggregationCircuit {
         //   accumulator [acc_instances]
         // - 2. use public input aggregation circuit to aggregate the chunks; expose the instance
         //   denoted by [pi_agg_instances]
-        //   denoted by [pi_agg_instances]
         // - 3. assert [snarks_instances] are private inputs used for public input aggregation
         //   circuit
 
