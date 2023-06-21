@@ -5,7 +5,7 @@ use crate::{
     },
     evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
     operation::{
-        AccountField, CallContextField, MemoryOp, MemoryWordOp, TxAccessListAccountOp, RW,
+        AccountField, CallContextField, MemoryWordOp, TxAccessListAccountOp, RW,
     },
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
