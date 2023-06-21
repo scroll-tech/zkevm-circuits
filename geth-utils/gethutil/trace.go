@@ -115,7 +115,7 @@ type Transaction struct {
 }
 
 type TraceConfig struct {
-	ChainID *hexutil.Big `json:"chain_id"`
+	ChainID uint64 `json:"chain_id"`
 	// HistoryHashes contains most recent 256 block hashes in history,
 	// where the lastest one is at HistoryHashes[len(HistoryHashes)-1].
 	HistoryHashes []*hexutil.Big             `json:"history_hashes"`
@@ -130,7 +130,7 @@ func newUint64(val uint64) *uint64 { return &val }
 
 func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 	chainConfig := params.ChainConfig{
-		ChainID:             toBigInt(config.ChainID),
+		ChainID:             new(big.Int).SetUint64(config.ChainID),
 		HomesteadBlock:      big.NewInt(0),
 		DAOForkBlock:        big.NewInt(0),
 		DAOForkSupport:      true,

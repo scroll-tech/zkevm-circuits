@@ -34,7 +34,7 @@ pub struct MockBlock {
     // This field is handled here as we assume that all block txs have the same ChainId.
     // Also, the field is stored in the block_table since we don't have a chain_config
     // structure/table.
-    pub(crate) chain_id: Word,
+    pub(crate) chain_id: u64,
 }
 
 impl Default for MockBlock {
@@ -275,7 +275,7 @@ impl MockBlock {
     }
 
     /// Set chain_id field for the MockBlock.
-    pub fn chain_id(&mut self, chain_id: Word) -> &mut Self {
+    pub fn chain_id(&mut self, chain_id: u64) -> &mut Self {
         self.chain_id = chain_id;
         self
     }
