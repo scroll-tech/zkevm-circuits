@@ -27,7 +27,8 @@ use zkevm_circuits::{
 
 use crate::{
     util::{assert_equal, capacity, get_indices},
-    CHAIN_ID_LEN, LOG_DEGREE,
+    CHAIN_ID_LEN, CHUNK_DATA_HASH_INDEX, LOG_DEGREE, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX,
+    WITHDRAW_ROOT_INDEX,
 };
 
 /// Input the hash input bytes,
@@ -50,18 +51,18 @@ pub(crate) fn assign_batch_hashes<F: Field>(
     let num_rows = 1 << LOG_DEGREE;
 
     let timer = start_timer!(|| ("multi keccak").to_string());
-    // wenqing: preimages consists of the following parts
+    // preimages consists of the following parts
     // (1) batchPiHash preimage =
     //      (chain_id ||
     //      chunk[0].prev_state_root ||
     //      chunk[k-1].post_state_root ||
     //      chunk[k-1].withdraw_root ||
     //      batch_data_hash)
-    // (2) batchDataHash preimage = 
+    // (2) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
     // (3) chunk[i].piHash preimage =
     //      (chain id ||
-    //      chunk[i].prevStateRoot || chunk[i].postStateRoot || 
+    //      chunk[i].prevStateRoot || chunk[i].postStateRoot ||
     //      chunk[i].withdrawRoot || chunk[i].datahash)
     // each part of the preimage is mapped to image by Keccak256
     let witness = multi_keccak(preimages, challenges, capacity(num_rows))?;
@@ -98,12 +99,12 @@ pub(crate) fn assign_batch_hashes<F: Field>(
                 let row = config.set_row(&mut region, offset, keccak_row)?;
 
                 if cur_preimage_index.is_some() && *cur_preimage_index.unwrap() == offset {
-                    // wenqing: 7-th column is Keccak input in Keccak circuit
+                    // 7-th column is Keccak input in Keccak circuit
                     current_hash_input_cells.push(row[6].clone());
                     cur_preimage_index = preimage_indices_iter.next();
                 }
                 if cur_digest_index.is_some() && *cur_digest_index.unwrap() == offset {
-                    // wenqing: last column is Keccak output in Keccak circuit
+                    // last column is Keccak output in Keccak circuit
                     current_hash_output_cells.push(row.last().unwrap().clone());
                     cur_digest_index = digest_indices_iter.next();
                 }
@@ -142,14 +143,14 @@ pub(crate) fn assign_batch_hashes<F: Field>(
             for i in 0..4 {
                 for j in 0..8 {
                     // sanity check
-                    // wenqing: 96 + CHAIN_ID_LEN is the byte position for batch_data_hash
+                    // CHUNK_DATA_HASH_INDEX is the byte position for batch_data_hash
                     assert_equal(
-                        &hash_input_cells[0][i * 8 + j + 96 + CHAIN_ID_LEN],
+                        &hash_input_cells[0][i * 8 + j + CHUNK_DATA_HASH_INDEX],
                         &hash_output_cells[1][(3 - i) * 8 + j],
                     );
                     region.constrain_equal(
                         // preimage and digest has different endianness
-                        hash_input_cells[0][i * 8 + j + 96 + CHAIN_ID_LEN].cell(),
+                        hash_input_cells[0][i * 8 + j + CHUNK_DATA_HASH_INDEX].cell(),
                         hash_output_cells[1][(3 - i) * 8 + j].cell(),
                     )?;
                 }
@@ -172,39 +173,39 @@ pub(crate) fn assign_batch_hashes<F: Field>(
             //        chunk[i].postStateRoot ||
             //        chunk[i].withdrawRoot  ||
             //        chunk[i].datahash)
-            // wenqing: CHAIN_ID_LEN, 
-            //          CHAIN_ID_LEN+32, 
-            //          CHAIN_ID_LEN+64 used below are byte positions for 
-            //          prev_state_root, post_state_root, withdraw_root
+            //
+            // PREV_STATE_ROOT_INDEX, POST_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX
+            // used below are byte positions for
+            // prev_state_root, post_state_root, withdraw_root
             for i in 0..32 {
                 // 2.2.1 chunk[0].prev_state_root
                 // sanity check
                 assert_equal(
-                    &hash_input_cells[0][i + CHAIN_ID_LEN],
-                    &hash_input_cells[2][i + CHAIN_ID_LEN],
+                    &hash_input_cells[0][i + PREV_STATE_ROOT_INDEX],
+                    &hash_input_cells[2][i + PREV_STATE_ROOT_INDEX],
                 );
                 region.constrain_equal(
-                    hash_input_cells[0][i + CHAIN_ID_LEN].cell(),
-                    hash_input_cells[2][i + CHAIN_ID_LEN].cell(),
+                    hash_input_cells[0][i + PREV_STATE_ROOT_INDEX].cell(),
+                    hash_input_cells[2][i + PREV_STATE_ROOT_INDEX].cell(),
                 )?;
                 // 2.2.2 chunk[k-1].post_state_root
                 // sanity check
                 assert_equal(
-                    &hash_input_cells[0][i + CHAIN_ID_LEN + 32],
-                    &hash_input_cells[hash_num - 1][i + CHAIN_ID_LEN + 32],
+                    &hash_input_cells[0][i + POST_STATE_ROOT_INDEX],
+                    &hash_input_cells[hash_num - 1][i + POST_STATE_ROOT_INDEX],
                 );
                 region.constrain_equal(
-                    hash_input_cells[0][i + CHAIN_ID_LEN + 32].cell(),
-                    hash_input_cells[hash_num - 1][i + CHAIN_ID_LEN + 32].cell(),
+                    hash_input_cells[0][i + POST_STATE_ROOT_INDEX].cell(),
+                    hash_input_cells[hash_num - 1][i + POST_STATE_ROOT_INDEX].cell(),
                 )?;
                 // 2.2.3 chunk[k-1].withdraw_root
                 assert_equal(
-                    &hash_input_cells[0][i + CHAIN_ID_LEN + 64],
-                    &hash_input_cells[hash_num - 1][i + CHAIN_ID_LEN + 64],
+                    &hash_input_cells[0][i + WITHDRAW_ROOT_INDEX],
+                    &hash_input_cells[hash_num - 1][i + WITHDRAW_ROOT_INDEX],
                 );
                 region.constrain_equal(
-                    hash_input_cells[0][i + CHAIN_ID_LEN + 64].cell(),
-                    hash_input_cells[hash_num - 1][i + CHAIN_ID_LEN + 64].cell(),
+                    hash_input_cells[0][i + WITHDRAW_ROOT_INDEX].cell(),
+                    hash_input_cells[hash_num - 1][i + WITHDRAW_ROOT_INDEX].cell(),
                 )?;
             }
 
@@ -222,10 +223,10 @@ pub(crate) fn assign_batch_hashes<F: Field>(
             for (i, chunk) in hash_input_cells[1].chunks(32).enumerate().take(num_chunks) {
                 for (j, cell) in chunk.iter().enumerate() {
                     // sanity check
-                    assert_equal(cell, &hash_input_cells[2 + i][j + CHAIN_ID_LEN + 96]);
+                    assert_equal(cell, &hash_input_cells[2 + i][j + CHUNK_DATA_HASH_INDEX]);
                     region.constrain_equal(
                         cell.cell(),
-                        hash_input_cells[2 + i][j + CHAIN_ID_LEN + 96].cell(),
+                        hash_input_cells[2 + i][j + CHUNK_DATA_HASH_INDEX].cell(),
                     )?;
                 }
             }
@@ -235,14 +236,14 @@ pub(crate) fn assign_batch_hashes<F: Field>(
                 for j in 0..32 {
                     // sanity check
                     assert_equal(
-                        &hash_input_cells[i + 3][CHAIN_ID_LEN + j],
-                        &hash_input_cells[i + 2][CHAIN_ID_LEN + 32 + j],
+                        &hash_input_cells[i + 3][PREV_STATE_ROOT_INDEX + j],
+                        &hash_input_cells[i + 2][POST_STATE_ROOT_INDEX + j],
                     );
                     region.constrain_equal(
                         // chunk[i+1].prevStateRoot
-                        hash_input_cells[i + 3][CHAIN_ID_LEN + j].cell(),
+                        hash_input_cells[i + 3][PREV_STATE_ROOT_INDEX + j].cell(),
                         // chunk[i].postStateRoot
-                        hash_input_cells[i + 2][CHAIN_ID_LEN + 32 + j].cell(),
+                        hash_input_cells[i + 2][POST_STATE_ROOT_INDEX + j].cell(),
                     )?;
                 }
             }
@@ -292,7 +293,7 @@ pub(crate) fn extract_accumulators_and_proof(
                 &snark.instances,
                 &mut transcript_read,
             );
-            // wenqing: each accumulator has (lhs, rhs) based on Shplonk
+            // each accumulator has (lhs, rhs) based on Shplonk
             // lhs and rhs are EC points
             Shplonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof)
         })
@@ -302,7 +303,7 @@ pub(crate) fn extract_accumulators_and_proof(
         PoseidonTranscript::<NativeLoader, Vec<u8>>::from_spec(vec![], POSEIDON_SPEC.clone());
     // We always use SHPLONK for accumulation scheme when aggregating proofs
     let accumulator =
-        // wenqing: core step
+        // core step
         // KzgAs does KZG accumulation scheme based on given accumulators and random number (for adding blinding)
         // accumulated ec_pt = ec_pt_1 * 1 + ec_pt_2 * r + ... + ec_pt_n * r^{n-1}
         // ec_pt can be lhs and rhs

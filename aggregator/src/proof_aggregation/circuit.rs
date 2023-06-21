@@ -27,7 +27,8 @@ use crate::{
     core::{assign_batch_hashes, extract_accumulators_and_proof},
     param::{ConfigParams, BITS, LIMBS},
     proof_aggregation::config::AggregationConfig,
-    BatchHashCircuit, ChunkHash, CHAIN_ID_LEN,
+    BatchHashCircuit, ChunkHash, CHAIN_ID_LEN, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX,
+    WITHDRAW_ROOT_INDEX,
 };
 
 /// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
@@ -68,7 +69,7 @@ impl AggregationCircuit {
             let snark_hash_bytes = &snark.instances[0];
 
             for i in 0..32 {
-                // wenqing: for each snark, 
+                // for each snark,
                 //  first 12 elements are accumulator
                 //  next 32 elements are data hash (44=12+32)
                 //  next 32 elements are public_input_hash
@@ -88,7 +89,7 @@ impl AggregationCircuit {
         // extract the accumulators and proofs
         let svk = params.get_g()[0].into();
 
-        // wenqing: this aggregates MULTIPLE snarks 
+        // this aggregates MULTIPLE snarks
         //  (instead of ONE as in proof compression)
         let (accumulator, as_proof) = extract_accumulators_and_proof(params, snarks, rng);
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
@@ -336,19 +337,19 @@ impl Circuit<Fr> for AggregationCircuit {
             for i in 0..32 {
                 // first_chunk_prev_state_root
                 layouter.constrain_instance(
-                    hash_input_cells[2][CHAIN_ID_LEN + i].cell(),
+                    hash_input_cells[2][PREV_STATE_ROOT_INDEX + i].cell(),
                     config.instance,
                     i + acc_len,
                 )?;
                 // last_chunk_post_state_root
                 layouter.constrain_instance(
-                    hash_input_cells.last().unwrap()[CHAIN_ID_LEN + 32 + i].cell(),
+                    hash_input_cells.last().unwrap()[POST_STATE_ROOT_INDEX + i].cell(),
                     config.instance,
                     i + 32 + acc_len,
                 )?;
                 // last_chunk_withdraw_root
                 layouter.constrain_instance(
-                    hash_input_cells.last().unwrap()[CHAIN_ID_LEN + 64 + i].cell(),
+                    hash_input_cells.last().unwrap()[WITHDRAW_ROOT_INDEX + i].cell(),
                     config.instance,
                     i + 64 + acc_len,
                 )?;
@@ -357,7 +358,7 @@ impl Circuit<Fr> for AggregationCircuit {
             for i in 0..4 {
                 for j in 0..8 {
                     // digest in circuit has a different endianness
-                    // wenqing: 96 is the byte position for batch data hash
+                    // 96 is the byte position for batch data hash
                     layouter.constrain_instance(
                         hash_output_cells[0][(3 - i) * 8 + j].cell(),
                         config.instance,
@@ -366,7 +367,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 }
             }
             // last 8 inputs are the chain id
-            // wenqing: chain_id is put at last here
+            // chain_id is put at last here
             for i in 0..CHAIN_ID_LEN {
                 layouter.constrain_instance(
                     hash_input_cells[0][i].cell(),

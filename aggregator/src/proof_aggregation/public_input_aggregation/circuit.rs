@@ -9,7 +9,10 @@ use halo2_proofs::{
 
 use zkevm_circuits::util::{Challenges, SubCircuitConfig};
 
-use crate::{core::assign_batch_hashes, BatchHash, ChunkHash, CHAIN_ID_LEN};
+use crate::{
+    core::assign_batch_hashes, BatchHash, ChunkHash, CHAIN_ID_LEN, POST_STATE_ROOT_INDEX,
+    PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
+};
 
 use super::config::{BatchCircuitConfig, BatchCircuitConfigArgs};
 
@@ -184,19 +187,19 @@ impl<F: Field> Circuit<F> for BatchHashCircuit<F> {
             for i in 0..32 {
                 // first_chunk_prev_state_root
                 layouter.constrain_instance(
-                    hash_input_cells[2][CHAIN_ID_LEN + i].cell(),
+                    hash_input_cells[2][PREV_STATE_ROOT_INDEX + i].cell(),
                     config.hash_digest_column,
                     i,
                 )?;
                 // last_chunk_post_state_root
                 layouter.constrain_instance(
-                    hash_input_cells.last().unwrap()[CHAIN_ID_LEN + 32 + i].cell(),
+                    hash_input_cells.last().unwrap()[POST_STATE_ROOT_INDEX + i].cell(),
                     config.hash_digest_column,
                     i + 32,
                 )?;
                 // last_chunk_withdraw_root
                 layouter.constrain_instance(
-                    hash_input_cells.last().unwrap()[CHAIN_ID_LEN + 64 + i].cell(),
+                    hash_input_cells.last().unwrap()[WITHDRAW_ROOT_INDEX + i].cell(),
                     config.hash_digest_column,
                     i + 64,
                 )?;

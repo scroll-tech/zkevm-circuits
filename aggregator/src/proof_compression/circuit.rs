@@ -84,7 +84,7 @@ impl Circuit<Fr> for CompressionCircuit {
         )
         .unwrap();
 
-        // wenqing: circuit configuration is built from config with given num columns etc
+        // circuit configuration is built from config with given num columns etc
         // can be wide or thin circuit
         Self::Config::configure(meta, params)
     }
@@ -168,9 +168,9 @@ impl CompressionCircuit {
     ) -> Self {
         let svk = params.get_g()[0].into();
 
-        // wenqing: for the proof compression, only ONE snark is under accumulation
+        // for the proof compression, only ONE snark is under accumulation
         // it is turned into an accumulator via KzgAs accumulation scheme
-        // in case not first time: 
+        // in case not first time:
         // (old_accumulator, public inputs) -> (new_accumulator, public inputs)
         let (accumulator, as_proof) = extract_accumulators_and_proof(params, &[snark.clone()], rng);
 

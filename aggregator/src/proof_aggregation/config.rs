@@ -35,7 +35,7 @@ pub struct AggregationConfig {
     ///     chunk\[k-1\].withdraw_root ||
     ///     batch_data_hash ||
     ///     chain_id
-    /// wenqing: chain_id is put at last here for instance
+    /// chain_id is put at last here for instance
     pub instance: Column<Instance>,
 }
 

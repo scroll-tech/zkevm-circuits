@@ -66,8 +66,22 @@ pub use config::{BatchCircuitConfig, BatchCircuitConfigArgs};
 // TODO(ZZ): update to the right degree
 pub(crate) const LOG_DEGREE: u32 = 19;
 
+// ================================
+// indices for hash bytes
+//
+// the preimages are arranged as
+// - chain_id:          8 bytes
+// - prev_state_root    32 bytes
+// - post_state_root    32 bytes
+// - withdraw_root      32 bytes
+// - chunk_data_hash    32 bytes
+//
 // A chain_id is u64 and uses 8 bytes
 pub(crate) const CHAIN_ID_LEN: usize = 8;
+pub(crate) const PREV_STATE_ROOT_INDEX: usize = 8;
+pub(crate) const POST_STATE_ROOT_INDEX: usize = 40;
+pub(crate) const WITHDRAW_ROOT_INDEX: usize = 72;
+pub(crate) const CHUNK_DATA_HASH_INDEX: usize = 104;
 
 // Each round requires (NUM_ROUNDS+1) * DEFAULT_KECCAK_ROWS = 300 rows.
 // This library is hard coded for this parameter.
