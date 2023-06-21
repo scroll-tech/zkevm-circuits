@@ -95,7 +95,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
             &self.0.public_data.transactions,
             self.0.max_txs,
             self.0.max_calldata,
-            self.0.public_data.chain_id.as_u64(),
+            self.0.public_data.chain_id,
             &challenges,
         )?;
         // assign keccak table

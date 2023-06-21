@@ -76,10 +76,7 @@ fn serial_test_simple_pi() {
     const MAX_INNER_BLOCKS: usize = 4;
 
     let mut difficulty_be_bytes = [0u8; 32];
-    let mut chain_id_be_bytes = [0u8; 32];
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
-    MOCK_CHAIN_ID.to_big_endian(&mut chain_id_be_bytes);
-    set_var("CHAIN_ID", hex::encode(chain_id_be_bytes));
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
     let block = block_1tx();

@@ -135,7 +135,7 @@ impl PublicData {
             .unwrap_or(self.prev_state_root);
 
         iter::empty()
-            .chain(self.chain_id.as_u64().to_be_bytes())
+            .chain(self.chain_id.to_be_bytes())
             // state roots
             .chain(self.prev_state_root.to_fixed_bytes())
             .chain(after_state_root.to_fixed_bytes())
@@ -155,7 +155,7 @@ impl PublicData {
 }
 
 impl BlockContext {
-    fn padding(chain_id: Word) -> Self {
+    fn padding(chain_id: u64) -> Self {
         Self {
             chain_id,
             coinbase: *COINBASE,
@@ -172,7 +172,7 @@ impl BlockContext {
 
 impl Default for BlockContext {
     fn default() -> Self {
-        Self::padding(Word::zero())
+        Self::padding(0)
     }
 }
 
@@ -592,7 +592,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let chain_id = block_values
             .ctxs
             .first_key_value()
-            .map_or(Word::zero(), |(_, context)| context.chain_id);
+            .map_or(0, |(_, context)| context.chain_id);
         let tx_hashes = public_data
             .transactions
             .iter()
@@ -788,7 +788,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let cells = self.assign_field_in_pi(
             region,
             &mut offset,
-            &public_data.chain_id.as_u64().to_be_bytes(),
+            &public_data.chain_id.to_be_bytes(),
             &mut rpi_rlc_acc,
             &mut rpi_length_acc,
             false,
@@ -1363,7 +1363,7 @@ impl<F: Field> PiCircuit<F> {
             .ctxs
             .iter()
             .next()
-            .map_or(Word::zero(), |(_k, v)| v.chain_id);
+            .map_or(0, |(_k, v)| v.chain_id);
         let public_data = PublicData {
             chain_id,
             transactions: block.txs.clone(),
@@ -1464,7 +1464,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             .chain(
                 self.public_data
                     .chain_id
-                    .as_u64()
                     .to_be_bytes()
                     .into_iter()
                     .map(|byte| F::from(byte as u64)),
