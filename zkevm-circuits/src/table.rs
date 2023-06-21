@@ -1707,8 +1707,8 @@ impl CopyTable {
                     0
                 };
                 F::from(copy_event.dst_addr + bytecode_addr_increase)
-            } else if tag == CopyDataType::Bytecode {
-                // get real bytecode addr
+            } else if tag == CopyDataType::Bytecode || tag == CopyDataType::TxCalldata {
+                // get real bytecode or tx calldata addr
                 let bytecode_addr_increase = if step_idx > non_mask_pos * 2 {
                     step_idx as u64 / 2 - non_mask_pos as u64
                 } else {

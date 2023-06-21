@@ -1695,7 +1695,7 @@ impl<'a> CircuitInputStateRef<'a> {
             if idx as u64 + dst_begin_slot < dst_addr {
                 // front mask byte
                 copy_steps.push((value, false, true));
-            } else if idx as u64 + dst_begin_slot > dst_addr + bytes_left {
+            } else if idx as u64 + dst_begin_slot >= dst_addr + bytes_left {
                 // back mask byte
                 copy_steps.push((value, false, true));
             } else {
@@ -1706,7 +1706,6 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let mut chunk_index = dst_begin_slot;
         // memory word writes to destination word
-        chunk_index = dst_begin_slot;
         for chunk in calldata_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(&chunk);
             // memory word reads if it is an internal call
@@ -1991,7 +1990,6 @@ impl<'a> CircuitInputStateRef<'a> {
         let log_slot_bytes =
             memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
 
-        let mut copy_start = 0u64;
         let mut first_set = true;
         let mut chunk_index = dst_begin_slot;
         // memory word writes to destination word
@@ -2022,7 +2020,6 @@ impl<'a> CircuitInputStateRef<'a> {
             } else {
                 // real copy byte
                 if first_set {
-                    copy_start = idx as u64;
                     first_set = false;
                 }
                 copy_steps.push((value, false, false));

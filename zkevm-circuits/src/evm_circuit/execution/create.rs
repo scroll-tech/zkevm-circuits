@@ -620,8 +620,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             .account_balance_pair()
             .1;
 
-        let caller_nonce = block.rws
-            [step.rw_indices[11 + rw_offset + usize::from(is_create2) + copy_rwc_inc as usize]]
+        let caller_nonce = block.rws[step.rw_indices[11 + rw_offset + copy_rwc_inc as usize]]
             .account_nonce_pair()
             .1
             .low_u64();

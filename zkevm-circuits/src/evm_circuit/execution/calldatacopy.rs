@@ -398,6 +398,7 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_large() {
+        test_root_ok(0x204, 0x1, 0x102.into(), 0x101.into());
         test_root_ok(0x204, 0x101, 0x102.into(), 0x103.into());
         test_internal_ok(0x30, 0x204, 0x101, 0x102.into(), 0x103.into());
     }

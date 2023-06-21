@@ -382,13 +382,13 @@ impl CopyEvent {
         //     rw_counter_increase =
         //         rw_counter_increase - rw_counter_increase_log + rw_counter_increase_log / 2
         // }
-        rw_counter = rw_counter + rw_counter_increase;
+        rw_counter += rw_counter_increase;
 
         // // step_index == self.bytes.len() when caculate total rw increasing.
         if self.dst_type == CopyDataType::TxLog && step_index != self.bytes.len() * 2 {
             if step_index % 64 == 63 {
                 // log writing
-                rw_counter = rw_counter + 1;
+                rw_counter += 1;
             }
         }
 
