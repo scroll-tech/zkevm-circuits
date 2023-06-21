@@ -255,6 +255,7 @@ mod tests {
     fn codecopy_gadget_simple() {
         test_ok(0x00.into(), 0x00.into(), 0x20, false);
         test_ok(0x30.into(), 0x20.into(), 0x30, false);
+        test_ok(0x20.into(), 0x10.into(), 0x12, false);
         test_ok(0x20.into(), 0x10.into(), 0x42, false);
     }
 

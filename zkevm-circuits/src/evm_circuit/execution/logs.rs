@@ -44,8 +44,7 @@ pub(crate) struct LogGadget<F> {
     copy_rwc_inc: Cell<F>,
     /// include actual and padding to word bytes
     bytes_length_word: Cell<F>,
-    /// start slot for log word lookup
-    log_word_slot: Cell<F>,
+
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
@@ -58,7 +57,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let mstart_word = WordByteRangeGadget::construct(cb);
         let msize = cb.query_word_rlc();
         let bytes_length_word = cb.query_cell();
-        let log_word_slot = cb.query_cell();
 
         // Pop mstart_address, msize from stack
         cb.stack_pop(mstart_word.original_word());
@@ -144,7 +142,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         let dst_addr = build_tx_log_expression(
-            log_word_slot.expr(),
+            0.expr(),
             TxLogFieldTag::Data.expr(),
             cb.curr.state.log_id.expr() + 1.expr(),
         );
@@ -179,7 +177,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),
-            //rw_counter: Delta(41.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr() + topic_count),
             memory_word_size: To(memory_expansion.next_memory_word_size()),
@@ -201,7 +198,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             is_persistent,
             tx_id,
             copy_rwc_inc,
-            log_word_slot,
             bytes_length_word,
             memory_expansion,
         }
@@ -292,8 +288,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
-        self.log_word_slot
-            .assign(region, offset, Value::known(F::from(memory_start_slot)))?;
 
         let bytes_length_to_word = copy_rwc_inc * 32;
         self.bytes_length_word.assign(

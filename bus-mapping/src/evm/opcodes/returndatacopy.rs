@@ -3,7 +3,7 @@ use crate::{
         CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     evm::Opcode,
-    operation::{CallContextField, MemoryOp, RW},
+    operation::CallContextField,
     Error,
 };
 use eth_types::GethExecStep;
