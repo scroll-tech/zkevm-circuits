@@ -30,11 +30,12 @@ pub struct AggregationConfig {
     /// Instance for public input; stores
     /// - accumulator from aggregation (12 elements)
     /// - aggregated public inputs (136 elements):
-    ///     chain_id ||
     ///     chunk\[0\].prev_state_root ||
     ///     chunk\[k-1\].post_state_root ||
     ///     chunk\[k-1\].withdraw_root ||
-    ///     batch_data_hash
+    ///     batch_data_hash ||
+    ///     chain_id
+    /// wenqing: chain_id is put at last here for instance
     pub instance: Column<Instance>,
 }
 

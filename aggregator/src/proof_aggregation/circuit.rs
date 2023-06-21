@@ -73,11 +73,6 @@ impl AggregationCircuit {
                 //  next 32 elements are data hash (44=12+32)
                 //  next 32 elements are public_input_hash
                 //  data hash + public_input_hash = snark public input
-                // wenqing: for each snark, 
-                //  first 12 elements are accumulator
-                //  next 32 elements are data hash (44=12+32)
-                //  next 32 elements are public_input_hash
-                //  data hash + public_input_hash = snark public input
                 assert_eq!(
                     Fr::from(chunk.data_hash.as_bytes()[i] as u64),
                     snark_hash_bytes[i + 12]
@@ -93,8 +88,6 @@ impl AggregationCircuit {
         // extract the accumulators and proofs
         let svk = params.get_g()[0].into();
 
-        // wenqing: this aggregates MULTIPLE snarks 
-        //  (instead of ONE as in proof compression)
         // wenqing: this aggregates MULTIPLE snarks 
         //  (instead of ONE as in proof compression)
         let (accumulator, as_proof) = extract_accumulators_and_proof(params, snarks, rng);
@@ -374,6 +367,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 }
             }
             // last 8 inputs are the chain id
+            // wenqing: chain_id is put at last here
             for i in 0..CHAIN_ID_LEN {
                 layouter.constrain_instance(
                     hash_input_cells[0][i].cell(),
