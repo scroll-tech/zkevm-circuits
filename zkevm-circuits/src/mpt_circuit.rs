@@ -1,17 +1,17 @@
 #![allow(missing_docs)]
 //! wrapping of mpt-circuit
 use crate::{
-    table::{MptTable, PoseidonTable, LookupTable},
+    table::{LookupTable, MptTable, PoseidonTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
-use itertools::Itertools;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
 };
+use itertools::Itertools;
 use mpt_zktrie::mpt_circuits::{gadgets::poseidon::PoseidonLookup, mpt, types::Proof};
 
 impl PoseidonLookup for PoseidonTable {
