@@ -549,6 +549,8 @@ impl<
             .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
         self.tx_circuit
             .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
+        self.sig_circuit
+            .synthesize_sub(&config.sig_circuit, challenges, layouter)?;
         self.state_circuit
             .synthesize_sub(&config.state_circuit, challenges, layouter)?;
         self.copy_circuit
