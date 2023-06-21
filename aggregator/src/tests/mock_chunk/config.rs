@@ -169,8 +169,8 @@ impl MockChunkCircuitConfig {
             }
         }
         // chain id
-        for i in 0..CHAIN_ID_LEN {
-            layouter.constrain_instance(hash_input_cells[i].cell(), self.hash_digest_column, i)?;
+        for (i, cell) in hash_input_cells.iter().enumerate().take(CHAIN_ID_LEN) {
+            layouter.constrain_instance(cell.cell(), self.hash_digest_column, i)?;
         }
 
         Ok(hash_output_cells)
