@@ -20,6 +20,8 @@ use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecS
 
 /// Precision of transaction L1 fee
 pub const TX_L1_FEE_PRECISION: u64 = 1_000_000_000;
+/// Extra cost as the bytes of rlped tx commited to L1 (assume to non-zero, overestimated a bit)
+pub const TX_L1_COMMIT_EXTRA_COST: u64 = 64;
 
 #[derive(Debug, Default)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
@@ -460,7 +462,7 @@ impl TxL1Fee {
     /// Calculate L1 fee and remainder of transaction.
     pub fn tx_l1_fee(&self, tx_data_gas_cost: u64) -> (u64, u64) {
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
-        let tx_l1_gas = tx_data_gas_cost + self.fee_overhead;
+        let tx_l1_gas = tx_data_gas_cost + self.fee_overhead + TX_L1_COMMIT_EXTRA_COST;
         let tx_l1_fee = self.fee_scalar as u128 * self.base_fee as u128 * tx_l1_gas as u128;
 
         (
