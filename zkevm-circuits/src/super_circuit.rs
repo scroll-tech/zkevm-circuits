@@ -609,7 +609,7 @@ impl<
             &block.txs,
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            block.chain_id.as_u64(),
+            block.chain_id,
             &challenges,
         )?;
 

@@ -56,7 +56,6 @@ use crate::{
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
-pub(crate) static CHAIN_ID: Lazy<Word> = Lazy::new(|| read_env_var("CHAIN_ID", Word::zero()));
 pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| read_env_var("COINBASE", Address::zero()));
 pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
 
@@ -64,7 +63,7 @@ pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY
 #[derive(Debug, Clone)]
 pub struct PublicData {
     /// chain id
-    pub chain_id: Word,
+    pub chain_id: u64,
     /// Block Transactions
     pub transactions: Vec<Transaction>,
     /// Block contexts
@@ -78,7 +77,7 @@ pub struct PublicData {
 impl Default for PublicData {
     fn default() -> Self {
         PublicData {
-            chain_id: Word::default(),
+            chain_id: 0,
             transactions: vec![],
             prev_state_root: H256::zero(),
             withdraw_trie_root: H256::zero(),

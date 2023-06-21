@@ -594,7 +594,7 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     );
     // PI circuit
     keccak_inputs.extend(keccak_inputs_pi_circuit(
-        block.chain_id.as_u64(),
+        block.chain_id,
         block.prev_state_root,
         block.withdraw_root,
         &block.headers,
@@ -817,7 +817,7 @@ type EthBlock = eth_types::Block<eth_types::Transaction>;
 /// the necessary information and using the CircuitInputBuilder.
 pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
-    chain_id: Word,
+    chain_id: u64,
     circuits_params: CircuitsParams,
 }
 
@@ -885,7 +885,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         Ok(Self {
             cli: client,
-            chain_id: chain_id.into(),
+            chain_id,
             circuits_params,
         })
     }
