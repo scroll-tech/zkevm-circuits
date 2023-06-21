@@ -289,9 +289,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     is_word_continue.is_lt(meta, None),
                     not_last_two_rows.expr(),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-                        meta,
-                    )),
+                    non_pad_non_mask.is_lt(meta, None),
                 ]),
                 |cb| {
                     cb.require_equal(
@@ -306,9 +304,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     not::expr(is_word_continue.is_lt(meta, None)),
                     not_last_two_rows.expr(),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-                        meta,
-                    )),
+                    non_pad_non_mask.is_lt(meta, None),
                 ]),
                 |cb| {
                     cb.require_equal(
@@ -328,7 +324,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.condition(
                 and::expr([
                     not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
+                    non_pad_non_mask.is_lt(meta, None),
                 ]),
                 |cb| {
                     cb.require_equal(
@@ -343,7 +339,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     is_word_continue.is_lt(meta, None),
                     not_last_two_rows.expr(),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
+                    non_pad_non_mask.is_lt(meta, None),
                 ]),
                 |cb| {
                     let is_memory2memory = and::expr([
@@ -368,7 +364,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     not::expr(is_word_continue.is_lt(meta, None)),
                     not::expr(meta.query_advice(is_last, Rotation::cur())),
                     not::expr(meta.query_selector(q_step)),
-                    not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
+                    non_pad_non_mask.is_lt(meta, None)
                 ]),
                 |cb| {
                     cb.require_equal(
@@ -398,10 +394,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // );
 
             cb.condition(
-                not_last_two_rows.expr()
-                    * (not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-                        meta,
-                    ))),
+                not_last_two_rows.expr() * non_pad_non_mask.is_lt(meta, None),
                 |cb| {
                     cb.require_equal(
                         "rows[0].id == rows[2].id",
@@ -544,9 +537,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             );
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::next()))
-                    * (not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
-                        meta,
-                    ))),
+                    * (non_pad_non_mask.is_lt(meta, None)),
                 |cb| {
                     cb.require_equal(
                         "bytes_left == bytes_left_next + 1 for non-last step",
