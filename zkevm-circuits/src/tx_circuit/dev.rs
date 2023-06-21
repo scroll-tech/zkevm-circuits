@@ -108,7 +108,7 @@ impl<F: Field> SubCircuit<F> for TxCircuitTester<F> {
     fn new_from_block(block: &crate::witness::Block<F>) -> Self {
         let txs = block.txs.clone();
         let max_txs = block.circuits_params.max_txs;
-        let chain_id = block.chain_id.as_u64();
+        let chain_id = block.chain_id;
         let max_calldata = block.circuits_params.max_calldata;
         Self::new(max_txs, max_calldata, chain_id, txs)
     }
