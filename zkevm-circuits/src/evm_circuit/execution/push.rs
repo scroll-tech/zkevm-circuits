@@ -1,15 +1,17 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
+            and,
             common_gadget::SameContextGadget,
             constraint_builder::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            math_gadget::IsZeroGadget,
-            not, select, sum, CachedRegion, Cell, Word,
+            math_gadget::{IsZeroGadget, LtGadget},
+            not, or, select, sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -24,7 +26,10 @@ pub(crate) struct PushGadget<F> {
     same_context: SameContextGadget<F>,
     is_push0: IsZeroGadget<F>,
     value: Word<F>,
-    selectors: [Cell<F>; 32],
+    is_pushed: [Cell<F>; 32],
+    is_padding: [Cell<F>; 32],
+    code_length: Cell<F>,
+    is_out_of_bound: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
 }
 
 impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
@@ -38,19 +43,25 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         let is_push0 = IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::PUSH0.expr());
 
         let value = cb.query_word_rlc();
-        cb.condition(not::expr(is_push0.expr()), |cb| cb.stack_push(value.expr()));
+        cb.stack_push(value.expr());
 
-        // Query selectors for each opcode_lookup
-        let selectors = array_init(|_| cb.query_bool());
+        // Query selectors for each opcode_lookup whether byte in value needs to be pushed
+        let is_pushed = array_init(|_| cb.query_bool());
+        let is_padding = array_init(|_| cb.query_bool());
 
-        // TODO:
-        // The below constraints are failed when running test case
-        // `push_gadget_out_of_range`. It seems that we cannot check the exact
-        // length of `n` data bytes followed by `PUSHn` opcode. Since even if the
-        // code ends with PUSH32 should succeed to run.
-        // <https://github.com/ethereum/go-ethereum/blob/master/core/vm/analysis.go#L66>
-        // <https://github.com/privacy-scaling-explorations/zkevm-circuits/blob/43c67c91ca566fd2b7f3588979c537006090f185/eth-types/src/bytecode.rs#L288>
-        //
+        let code_length = cb.query_cell();
+        let code_length_left = code_length.expr() - cb.curr.state.program_counter.expr() - 1.expr();
+        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
+
+        let num_bytes_needed = opcode.expr() - OpcodeId::PUSH0.expr();
+        let is_out_of_bound =
+            LtGadget::construct(cb, code_length_left.expr(), num_bytes_needed.expr());
+        let num_bytes_padding = select::expr(
+            is_out_of_bound.expr(),
+            num_bytes_needed.expr() - code_length_left.expr(),
+            0.expr(),
+        );
+
         // The pushed bytes are viewed as left-padded big-endian, but our random
         // linear combination uses little-endian, so we lookup from the LSB
         // which has index (program_counter + num_pushed), and then move left
@@ -64,45 +75,57 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         //                           ▼                     ▼
         //   [byte31,     ...,     byte2,     byte1,     byte0]
         //
-        // for idx in 0..32 {
-        //     let byte = &value.cells[idx];
-        //     let index = cb.curr.state.program_counter.expr() + opcode.expr()
-        //         - (OpcodeId::PUSH0.as_u8() + idx as u8).expr();
+        let mut is_pushed_cell_prev = true.expr();
+        let mut is_padding_cell_prev = true.expr();
+        for (idx, (is_pushed_cell, is_padding_cell)) in
+            is_pushed.iter().zip(is_padding.iter()).enumerate()
+        {
+            let byte = &value.cells[idx];
+            let index =
+                cb.curr.state.program_counter.expr() + num_bytes_needed.clone() - idx.expr();
 
-        //     cb.condition(selectors[idx].expr(), |cb| {
-        //         cb.opcode_lookup_at(index, byte.expr(), 0.expr())
-        //     });
-        // }
-
-        for idx in 0..32 {
-            let selector_prev = if idx == 0 {
-                // First selector will always be 1
-                1.expr()
-            } else {
-                selectors[idx - 1].expr()
-            };
-            // selector can transit from 1 to 0 only once as [1, 1, 1, ...,
-            // 0, 0, 0]
             cb.require_boolean(
-                "Constrain selector can only transit from 1 to 0",
-                selector_prev - selectors[idx].expr(),
+                "Constrain is_pushed can only transit from 1 to 0",
+                is_pushed_cell_prev - is_pushed_cell.expr(),
             );
-            // byte should be 0 when selector is 0
-            cb.require_zero(
-                "Constrain byte == 0 when selector == 0",
-                value.cells[idx].expr() * (1.expr() - selectors[idx].expr()),
+            cb.require_boolean(
+                "Constrain is_padding can only transit from 1 to 0",
+                is_padding_cell_prev - is_padding_cell.expr(),
             );
+
+            // byte is 0 if it is either not pushed or padding
+            cb.condition(
+                not::expr(or::expr(&[is_pushed_cell.expr(), is_padding_cell.expr()])),
+                |cb| {
+                    cb.require_zero(
+                        "Constrain byte == 0 when is_pushed == 0 or is_padding == 0",
+                        byte.expr(),
+                    );
+                },
+            );
+            cb.condition(
+                and::expr(&[is_pushed_cell.expr(), not::expr(is_padding_cell.expr())]),
+                |cb| {
+                    cb.opcode_lookup_at(index, byte.expr(), 0.expr());
+                },
+            );
+            is_pushed_cell_prev = is_pushed_cell.expr();
+            is_padding_cell_prev = is_padding_cell.expr();
         }
 
-        // Deduce the number of additional bytes to push than PUSH0. Note that
-        // num_additional_pushed = n where n is the suffix number of PUSH*.
-        let num_additional_pushed = opcode.expr() - OpcodeId::PUSH0.as_u64().expr();
-        // Sum of selectors needs to be exactly the number of additional bytes
-        // that needs to be pushed.
+        // Sum of selectors is_pushed needs to be exactly the number of bytes
+        // that needs to be pushed
         cb.require_equal(
-            "Constrain sum of selectors equal to num_additional_pushed",
-            sum::expr(&selectors),
-            num_additional_pushed,
+            "Constrain sum of is_pushed equal to num_bytes_needed",
+            sum::expr(&is_pushed),
+            num_bytes_needed.expr(),
+        );
+
+        // Sum of selectors is_padding needs to be exactly the number of padded bytes
+        cb.require_equal(
+            "Constrain sum of is_padding equal to num_padding",
+            sum::expr(&is_padding),
+            num_bytes_padding.expr(),
         );
 
         // State transition
@@ -123,7 +146,10 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             same_context,
             is_push0,
             value,
-            selectors,
+            is_pushed,
+            is_padding,
+            code_length,
+            is_out_of_bound,
         }
     }
 
@@ -133,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -142,8 +168,16 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.is_push0.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::PUSH0.as_u64()),
+            F::from(opcode.as_u64() - OpcodeId::PUSH0.as_u64()),
         )?;
+
+        let bytecode = block
+            .bytecodes
+            .get(&call.code_hash)
+            .expect("could not find current environment's bytecode");
+        let code_length = bytecode.bytes.len() as u64;
+        self.code_length
+            .assign(region, offset, Value::known(F::from(code_length)))?;
 
         let value = if opcode.is_push_with_data() {
             block.rws[step.rw_indices[0]].stack_value()
@@ -153,12 +187,32 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        let num_additional_pushed = opcode.postfix().expect("opcode with postfix");
-        for (idx, selector) in self.selectors.iter().enumerate() {
-            selector.assign(
+        let code_length_left = code_length
+            .checked_sub(step.program_counter + 1)
+            .expect("unexpected underflow");
+        let num_bytes_needed = opcode.postfix().unwrap() as u64;
+        let num_padding = num_bytes_needed.saturating_sub(code_length_left);
+        self.is_out_of_bound.assign(
+            region,
+            offset,
+            F::from(code_length_left),
+            F::from(num_bytes_needed),
+        )?;
+        for (idx, (is_pushed_cell, is_padding_cell)) in self
+            .is_pushed
+            .iter()
+            .zip(self.is_padding.iter())
+            .enumerate()
+        {
+            is_pushed_cell.assign(
                 region,
                 offset,
-                Value::known(F::from((idx < num_additional_pushed as usize) as u64)),
+                Value::known(F::from(((idx as u64) < num_bytes_needed) as u64)),
+            )?;
+            is_padding_cell.assign(
+                region,
+                offset,
+                Value::known(F::from(((idx as u64) < num_padding) as u64)),
             )?;
         }
 
@@ -169,12 +223,10 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::{bytecode, evm_types::OpcodeId, Bytecode};
+    use eth_types::{bytecode, evm_types::OpcodeId};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
-        assert!(bytes.len() == opcode.data_len());
-
         let mut bytecode = bytecode! {
             .write_op(opcode)
         };
@@ -209,20 +261,13 @@ mod test {
                 24, 25, 26, 27, 28, 29, 30, 31, 32,
             ],
         );
-    }
 
-    #[ignore]
-    #[test]
-    fn push_gadget_out_of_range() {
-        let bytecode = Bytecode::from(vec![0x61, 0x00]);
-        CircuitTestBuilder::new_from_test_ctx(
-            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-        )
-        .run();
+        // out of bounds
+        test_ok(OpcodeId::PUSH2, &[1]);
+        test_ok(OpcodeId::PUSH16, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     }
 
     #[test]
-    #[ignore]
     fn push_gadget_rand() {
         for (idx, opcode) in vec![
             OpcodeId::PUSH1,
