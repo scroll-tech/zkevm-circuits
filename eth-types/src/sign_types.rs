@@ -74,6 +74,7 @@ impl SignData {
 }
 
 lazy_static! {
+    // FIXME: use Transaction::dummy().sign_data() instead when we merged the develop branch
     static ref SIGN_DATA_DEFAULT: SignData = {
         let generator = Secp256k1Affine::generator();
         let sk = secp256k1::Fq::one();

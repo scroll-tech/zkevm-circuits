@@ -121,7 +121,7 @@ impl<F: Field> Block<F> {
         signatures.extend_from_slice(&self.ecrecover_events);
         if padding {
             let max_verif = self.circuits_params.max_txs;
-            signatures.resize(max_verif, SignData::default())
+            signatures.resize(max_verif, Transaction::dummy(self.chain_id).sign_data().unwrap())
         }
         signatures
     }
