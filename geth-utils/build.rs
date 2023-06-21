@@ -8,10 +8,13 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
 
     // Build
-    if let Err(e) = gobuild::Build::new()
-        .file("./lib/lib.go")
-        .try_compile(lib_name)
-    {
+    let mut build = gobuild::Build::new();
+
+    // Replace to a custom go-ethereum for scroll.
+    #[cfg(feature = "scroll")]
+    build.modfile("scroll.mod");
+
+    if let Err(e) = build.file("./lib/lib.go").try_compile(lib_name) {
         // The error type is private so have to check the error string
         if format!("{}", e).starts_with("Failed to find tool.") {
             fail(
@@ -31,6 +34,7 @@ fn main() {
         "./gethutil/trace.go",
         "./gethutil/util.go",
         "./go.mod",
+        "./scroll.mod",
     ];
     for file in dep_files {
         println!("cargo:rerun-if-changed={}", file);

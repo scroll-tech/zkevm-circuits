@@ -1,7 +1,7 @@
 pub use super::TxCircuit;
 
 use crate::{
-    table::{BlockTable, KeccakTable, RlpTable, TxTable},
+    table::{BlockTable, KeccakTable, RlpFsmRlpTable as RlpTable, TxTable},
     tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::Transaction,
@@ -72,11 +72,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
         )?;
         config.rlp_table.dev_load(
             &mut layouter,
-            self.txs
-                .iter()
-                .chain(padding_txs.iter())
-                .map(|tx| tx.into())
-                .collect(),
+            self.txs.iter().chain(padding_txs.iter()).cloned().collect(),
             &challenges,
         )?;
         self.assign_dev_block_table(config.clone(), &mut layouter)?;

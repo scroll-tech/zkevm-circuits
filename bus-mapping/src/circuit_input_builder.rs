@@ -32,7 +32,7 @@ use eth_types::{
 };
 use ethers_core::{
     k256::ecdsa::SigningKey,
-    types::{Bytes, NameOrAddress, Signature, TransactionRequest},
+    types::{Bytes, Signature, TransactionRequest},
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
@@ -62,6 +62,8 @@ pub struct CircuitsParams {
     pub max_txs: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
+    /// Maximum number of rows that the RLP Circuit can have
+    pub max_rlp_rows: usize,
     /// Max amount of rows that the CopyCircuit can have.
     pub max_copy_rows: usize,
     /// Maximum number of inner blocks in a batch
@@ -103,6 +105,7 @@ impl Default for CircuitsParams {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_rlp_rows: 1000,
         }
     }
 }
@@ -584,14 +587,14 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     let mut keccak_inputs = Vec::new();
     // Tx Circuit
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.into()).collect();
-    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id().as_u64())?);
+    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id())?);
     log::debug!(
         "keccak total len after txs: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
     // PI circuit
     keccak_inputs.push(keccak_inputs_pi_circuit(
-        block.chain_id().as_u64(),
+        block.chain_id(),
         block.prev_state_root,
         block.withdraw_root,
         &block.headers,
@@ -740,27 +743,7 @@ pub fn keccak_inputs_tx_circuit(
 
     let hash_datas = txs
         .iter()
-        .map(|tx| {
-            let sig = Signature {
-                r: tx.r,
-                s: tx.s,
-                v: tx.v,
-            };
-            let mut tx: TransactionRequest = tx.into();
-            if tx.to.is_some() {
-                let to = tx.to.clone().unwrap();
-                match to {
-                    NameOrAddress::Name(_) => {}
-                    NameOrAddress::Address(addr) => {
-                        // the rlp of zero addr is 0x80
-                        if addr == Address::zero() {
-                            tx.to = None;
-                        }
-                    }
-                }
-            }
-            tx.rlp_signed(&sig).to_vec()
-        })
+        .map(|tx| tx.rlp_bytes.clone())
         .collect::<Vec<Vec<u8>>>();
     let dummy_hash_data = {
         // dummy tx is a legacy tx.
@@ -774,14 +757,23 @@ pub fn keccak_inputs_tx_circuit(
         .iter()
         .enumerate()
         .filter(|(i, tx)| {
-            if tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
-                warn!("tx {} is not signed, skipping tx circuit keccak input", i);
+            if !tx.tx_type.is_l1_msg() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
+                warn!(
+                    "tx {} is not signed and is not L1Msg, skipping tx circuit keccak input",
+                    i
+                );
                 false
             } else {
                 true
             }
         })
-        .map(|(_, tx)| tx.sign_data(chain_id))
+        .map(|(_, tx)| {
+            if tx.tx_type.is_l1_msg() {
+                Ok(SignData::default())
+            } else {
+                tx.sign_data()
+            }
+        })
         .try_collect()?;
     // Keccak inputs from SignVerify Chip
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
@@ -795,8 +787,7 @@ pub fn keccak_inputs_tx_circuit(
         dummy_tx.rlp().to_vec()
     };
     inputs.push(dummy_sign_input);
-    // NOTE: We don't verify the Tx Hash in the circuit yet, so we don't have more
-    // hash inputs.
+
     Ok(inputs)
 }
 
@@ -836,7 +827,7 @@ type EthBlock = eth_types::Block<eth_types::Transaction>;
 /// the necessary information and using the CircuitInputBuilder.
 pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
-    chain_id: Word,
+    chain_id: u64,
     circuits_params: CircuitsParams,
 }
 
@@ -904,7 +895,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         Ok(Self {
             cli: client,
-            chain_id: chain_id.into(),
+            chain_id,
             circuits_params,
         })
     }

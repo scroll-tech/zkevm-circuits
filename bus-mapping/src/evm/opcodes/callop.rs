@@ -1,15 +1,18 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep},
+    circuit_input_builder::{
+        CallKind, CircuitInputStateRef, CodeSource, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
+    evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
     operation::{AccountField, CallContextField, MemoryOp, TxAccessListAccountOp, RW},
-    precompile::{execute_precompiled, is_precompiled},
+    precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
 };
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        GasCost, OpcodeId,
+        Gas, GasCost, OpcodeId,
     },
     GethExecStep, ToWord, Word,
 };
@@ -136,7 +139,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 (call.is_persistent as u64).into(),
             ),
         ] {
-            state.call_context_write(&mut exec_step, call.clone().call_id, field, value);
+            state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
         let (found, sender_account) = state.sdb.get_account(&call.caller_address);
@@ -148,13 +151,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         // Precheck is OK when depth is in range and caller balance is sufficient.
         let is_precheck_ok =
             geth_step.depth < 1025 && (!is_call_or_callcode || caller_balance >= call.value);
-
-        // log::debug!(
-        //    "is_precheck_ok: {}, call type: {:?}, sender_account: {:?} ",
-        //    is_precheck_ok,
-        //    call.kind,
-        //    call.caller_address
-        //);
 
         // read balance of caller to compare to value for insufficient_balance checking
         // in circuit, also use for callcode successful case check balance is
@@ -257,31 +253,87 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         match (!is_precheck_ok, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
             (false, true, _) => {
-                assert!(call.is_success, "call to precompile should not fail");
-                let caller_ctx = state.caller_ctx_mut()?;
                 let code_address = code_address.unwrap();
+                let precompile_call: PrecompileCalls = code_address.0[19].into();
+
+                // get the result of the precompile call.
+                let caller_ctx = state.caller_ctx()?;
+                let caller_memory = caller_ctx.memory.0.clone();
                 let (result, contract_gas_cost) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
-                        &caller_ctx.memory.0[args_offset..args_offset + args_length]
+                        &caller_memory[args_offset..args_offset + args_length]
                     } else {
                         &[]
                     },
                     callee_gas_left,
                 );
+
                 log::trace!(
-                    "precompile return data len {} gas {}",
+                    "precompile returned data len {} gas {}",
                     result.len(),
                     contract_gas_cost
                 );
-                caller_ctx.return_data = result.clone();
+
+                // mutate the caller memory.
+                let caller_ctx_mut = state.caller_ctx_mut()?;
+                caller_ctx_mut.return_data = result.clone();
                 let length = min(result.len(), ret_length);
-                if length != 0 {
-                    caller_ctx.memory.extend_at_least(ret_offset + length);
+                if length > 0 {
+                    caller_ctx_mut.memory.extend_at_least(ret_offset + length);
+                    caller_ctx_mut.memory.0[ret_offset..ret_offset + length]
+                        .copy_from_slice(&result[..length]);
                 }
-                caller_ctx.memory.0[ret_offset..ret_offset + length]
-                    .copy_from_slice(&result[..length]);
+
                 for (field, value) in [
+                    (
+                        CallContextField::IsSuccess,
+                        Word::from(call.is_success as u64),
+                    ),
+                    (
+                        CallContextField::CalleeAddress,
+                        call.code_address().unwrap().to_word(),
+                    ),
+                    (CallContextField::CallerId, call.caller_id.into()),
+                    (
+                        CallContextField::CallDataOffset,
+                        call.call_data_offset.into(),
+                    ),
+                    (
+                        CallContextField::CallDataLength,
+                        call.call_data_length.into(),
+                    ),
+                    (
+                        CallContextField::ReturnDataOffset,
+                        call.return_data_offset.into(),
+                    ),
+                    (
+                        CallContextField::ReturnDataLength,
+                        call.return_data_length.into(),
+                    ),
+                ] {
+                    state.call_context_write(&mut exec_step, call.call_id, field, value);
+                }
+
+                // return while restoring some of caller's context.
+                for (field, value) in [
+                    (
+                        CallContextField::ProgramCounter,
+                        (geth_step.pc.0 + 1).into(),
+                    ),
+                    (
+                        CallContextField::StackPointer,
+                        (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
+                    ),
+                    (
+                        CallContextField::GasLeft,
+                        (geth_steps[0].gas.0 - gas_cost - contract_gas_cost).into(),
+                    ),
+                    (CallContextField::MemorySize, next_memory_word_size.into()),
+                    (
+                        CallContextField::ReversibleWriteCounter,
+                        (exec_step.reversible_write_counter + 1).into(),
+                    ),
                     (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                     (
@@ -291,25 +343,124 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                for (i, value) in result.iter().enumerate() {
-                    state.push_op(
+
+                // insert a copy event (input) for this step
+                let rw_counter_start = state.block_ctx.rwc;
+                if call.call_data_length > 0 {
+                    let bytes: Vec<(u8, bool)> = caller_memory
+                        .iter()
+                        .skip(call.call_data_offset as usize)
+                        .take(call.call_data_length as usize)
+                        .map(|b| (*b, false))
+                        .collect();
+                    for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
+                        // push caller memory read
+                        state.push_op(
+                            &mut exec_step,
+                            RW::READ,
+                            MemoryOp::new(
+                                call.caller_id,
+                                (call.call_data_offset + i as u64).into(),
+                                byte,
+                            ),
+                        );
+                    }
+                    state.push_copy(
                         &mut exec_step,
-                        RW::WRITE,
-                        MemoryOp::new(call.call_id, (i).into(), *value),
-                    );
-                }
-                for (i, value) in result[..length].iter().enumerate() {
-                    state.push_op(
-                        &mut exec_step,
-                        RW::WRITE,
-                        MemoryOp::new(call.caller_id, (ret_offset + i).into(), *value),
+                        CopyEvent {
+                            src_id: NumberOrHash::Number(call.caller_id),
+                            src_type: CopyDataType::Memory,
+                            src_addr: call.call_data_offset,
+                            src_addr_end: call.call_data_offset + call.call_data_length,
+                            dst_id: NumberOrHash::Number(call.call_id),
+                            dst_type: CopyDataType::Precompile(precompile_call),
+                            dst_addr: 0,
+                            log_id: None,
+                            rw_counter_start,
+                            bytes,
+                        },
                     );
                 }
 
-                state.handle_return(&mut exec_step, geth_steps, false)?;
+                // write the result in the callee's memory.
+                let rw_counter_start = state.block_ctx.rwc;
+                if call.is_success() && call.call_data_length > 0 && !result.is_empty() {
+                    let bytes: Vec<(u8, bool)> = result.iter().map(|b| (*b, false)).collect();
+                    for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
+                        // push callee memory write
+                        state.push_op(
+                            &mut exec_step,
+                            RW::WRITE,
+                            MemoryOp::new(call.call_id, i.into(), byte),
+                        );
+                    }
+                    state.push_copy(
+                        &mut exec_step,
+                        CopyEvent {
+                            src_id: NumberOrHash::Number(call.call_id),
+                            src_type: CopyDataType::Precompile(precompile_call),
+                            src_addr: 0,
+                            src_addr_end: result.len() as u64,
+                            dst_id: NumberOrHash::Number(call.call_id),
+                            dst_type: CopyDataType::Memory,
+                            dst_addr: 0,
+                            log_id: None,
+                            rw_counter_start,
+                            bytes,
+                        },
+                    );
+                }
+
+                // insert another copy event (output) for this step.
+                let rw_counter_start = state.block_ctx.rwc;
+                if call.is_success() && call.call_data_length > 0 && length > 0 {
+                    let bytes: Vec<(u8, bool)> =
+                        result.iter().take(length).map(|b| (*b, false)).collect();
+                    for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
+                        // push caller memory write
+                        state.push_op(
+                            &mut exec_step,
+                            RW::WRITE,
+                            MemoryOp::new(
+                                call.caller_id,
+                                (call.return_data_offset + i as u64).into(),
+                                byte,
+                            ),
+                        );
+                    }
+                    state.push_copy(
+                        &mut exec_step,
+                        CopyEvent {
+                            src_id: NumberOrHash::Number(call.call_id),
+                            src_type: CopyDataType::Precompile(precompile_call),
+                            src_addr: 0,
+                            src_addr_end: length as u64,
+                            dst_id: NumberOrHash::Number(call.caller_id),
+                            dst_type: CopyDataType::Memory,
+                            dst_addr: call.return_data_offset,
+                            log_id: None,
+                            rw_counter_start,
+                            bytes,
+                        },
+                    );
+                }
+
+                // TODO: when more precompiles are supported and each have their own different
+                // behaviour, we can separate out the logic specified here.
+                let mut precompile_step = precompile_associated_ops(
+                    state,
+                    geth_steps[1].clone(),
+                    call.clone(),
+                    precompile_call,
+                )?;
+
+                // Make the Precompile execution step to handle return logic and restore to caller
+                // context (similar as STOP and RETURN).
+                state.handle_return(&mut precompile_step, geth_steps, true)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
-                // debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
+                debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
+                exec_step.gas_cost = GasCost(gas_cost + contract_gas_cost);
                 if real_cost != exec_step.gas_cost.0 {
                     log::warn!(
                         "precompile gas fixed from {} to {}, step {:?}",
@@ -318,8 +469,12 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         geth_steps[0]
                     );
                 }
-                exec_step.gas_cost = GasCost(real_cost);
-                Ok(vec![exec_step])
+
+                // Set gas left and gas cost for precompile step.
+                precompile_step.gas_left = Gas(callee_gas_left);
+                precompile_step.gas_cost = GasCost(contract_gas_cost);
+
+                Ok(vec![exec_step, precompile_step])
             }
             // 2. Call to account with empty code.
             (false, _, true) => {
@@ -435,82 +590,97 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::{circuit_input_builder::CircuitsParams, mock::BlockData};
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Bytecode, Word};
-    use mock::{
-        test_ctx::{
-            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
-            LoggerConfig,
-        },
-        TestContext,
-    };
+#[cfg(any(test, feature = "test"))]
+pub mod tests {
+    use eth_types::{evm_types::OpcodeId, Bytecode, Word};
+
+    /// Precompile call args
+    pub struct PrecompileCallArgs {
+        /// description for the instance of a precompile call.
+        pub name: &'static str,
+        /// the bytecode that when call can produce the desired precompile call.
+        pub setup_code: Bytecode,
+        /// the call's return data size.
+        pub ret_size: Word,
+        /// the call's return data offset.
+        pub ret_offset: Word,
+        /// the call's calldata offset.
+        pub call_data_offset: Word,
+        /// the call's calldata length.
+        pub call_data_length: Word,
+        /// the address to which the call is made, i.e. callee address.
+        pub address: Word,
+        /// the optional value sent along with the call.
+        pub value: Word,
+        /// the gas limit for the call.
+        pub gas: Word,
+        /// stack values during the call.
+        pub stack_value: Vec<(Word, Word)>,
+        /// maximum number of RW entries for the call.
+        pub max_rws: usize,
+    }
+
+    impl Default for PrecompileCallArgs {
+        fn default() -> Self {
+            PrecompileCallArgs {
+                name: "precompiled call",
+                setup_code: Bytecode::default(),
+                ret_size: Word::zero(),
+                ret_offset: Word::zero(),
+                call_data_offset: Word::zero(),
+                call_data_length: Word::zero(),
+                address: Word::zero(),
+                value: Word::zero(),
+                gas: Word::from(0xFFFFFFF),
+                stack_value: vec![],
+                max_rws: 1000,
+            }
+        }
+    }
+
+    impl PrecompileCallArgs {
+        /// Get the setup bytecode for call to a precompiled contract.
+        pub fn with_call_op(&self, call_op: OpcodeId) -> Bytecode {
+            assert!(
+                call_op.is_call(),
+                "invalid setup, {:?} is not a call op",
+                call_op
+            );
+            let mut code = self.setup_code.clone();
+            code.push(32, self.ret_size)
+                .push(32, self.ret_offset)
+                .push(32, self.call_data_length)
+                .push(32, self.call_data_offset);
+            if call_op == OpcodeId::CALL || call_op == OpcodeId::CALLCODE {
+                code.push(32, self.value);
+            }
+            code.push(32, self.address)
+                .push(32, self.gas)
+                .write_op(call_op)
+                .write_op(OpcodeId::POP);
+            for (offset, _) in self.stack_value.iter().rev() {
+                code.push(32, *offset).write_op(OpcodeId::MLOAD);
+            }
+
+            code
+        }
+    }
 
     // move this to circuit after circuit part is complete
     #[test]
     fn test_precompiled_call() {
-        struct PrecompileCall {
-            name: &'static str,
-            setup_code: Bytecode,
-            ret_size: Word,
-            ret_offset: Word,
-            call_data_offset: Word,
-            call_data_length: Word,
-            address: Word,
-            value: Word,
-            gas: Word,
-            stack_value: Vec<(Word, Word)>,
-            max_rws: usize,
-        }
-
-        impl Default for PrecompileCall {
-            fn default() -> Self {
-                PrecompileCall {
-                    name: "precompiled call",
-                    setup_code: Bytecode::default(),
-                    ret_size: Word::from(0),
-                    ret_offset: Word::from(0),
-                    call_data_offset: Word::from(0),
-                    call_data_length: Word::from(0),
-                    address: Word::from(0),
-                    value: Word::from(0),
-                    gas: Word::from(0xFFFFFFF),
-                    stack_value: vec![],
-                    max_rws: 500,
-                }
-            }
-        }
-
-        impl PrecompileCall {
-            fn with_call_op(&self, call_op: OpcodeId) -> Bytecode {
-                assert!(
-                    call_op.is_call(),
-                    "invalid setup, {:?} is not a call op",
-                    call_op
-                );
-                let mut code = self.setup_code.clone();
-                code.push(32, self.ret_size)
-                    .push(32, self.ret_offset)
-                    .push(32, self.call_data_length)
-                    .push(32, self.call_data_offset);
-                if call_op == OpcodeId::CALL || call_op == OpcodeId::CALLCODE {
-                    code.push(32, self.value);
-                }
-                code.push(32, self.address)
-                    .push(32, self.gas)
-                    .write_op(call_op)
-                    .write_op(OpcodeId::POP);
-                for (offset, _) in self.stack_value.iter().rev() {
-                    code.push(32, *offset).write_op(OpcodeId::MLOAD);
-                }
-
-                code
-            }
-        }
+        use crate::{circuit_input_builder::CircuitsParams, mock::BlockData};
+        use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Word};
+        use mock::{
+            test_ctx::{
+                helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+                LoggerConfig,
+            },
+            TestContext,
+        };
 
         let test_vector = [
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "ecRecover",
                 setup_code: bytecode! {
                     PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3")) // hash
@@ -536,7 +706,7 @@ mod tests {
                 )],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "SHA2-256",
                 setup_code: bytecode! {
                     PUSH1(0xFF) // data
@@ -554,7 +724,7 @@ mod tests {
                 )],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "RIPEMD-160",
                 setup_code: bytecode! {
                     PUSH1(0xFF) // data
@@ -572,7 +742,7 @@ mod tests {
                 )],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "identity",
                 setup_code: bytecode! {
                     PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
@@ -586,7 +756,7 @@ mod tests {
                 stack_value: vec![(Word::from(0x20), word!("0123456789ABCDEF0123456789ABCDEF"))],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "modexp",
                 setup_code: bytecode! {
                     PUSH1(1) // Bsize
@@ -609,7 +779,7 @@ mod tests {
                 stack_value: vec![(Word::from(0x80), Word::from(8))],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "ecAdd",
                 setup_code: bytecode! {
                     PUSH1(1) // x1
@@ -641,7 +811,7 @@ mod tests {
                 ],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "ecMul",
                 setup_code: bytecode! {
                     PUSH1(1) // x1
@@ -670,7 +840,7 @@ mod tests {
                 ],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "ecPairing",
                 setup_code: bytecode! {
                     PUSH32(word!("0x23a8eb0b0996252cb548a4487da97b02422ebc0e834613f954de6c7e0afdc1fc"))
@@ -716,7 +886,7 @@ mod tests {
                 max_rws: 3000,
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "blake2f",
                 setup_code: bytecode! {
                     PUSH32(word!("0000000003000000000000000000000000000000010000000000000000000000"))
@@ -764,7 +934,7 @@ mod tests {
                         word!("8c9bcf367e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5"),
                     ),
                 ],
-                max_rws: 1500,
+                max_rws: 3000,
                 ..Default::default()
             },
         ];
@@ -812,7 +982,8 @@ mod tests {
                 assert_eq!(
                     *stack_value,
                     step.stack.nth_last(offset).expect("stack value not found"),
-                    "stack output mismatch"
+                    "stack output mismatch {}",
+                    test_call.name
                 );
             }
         }

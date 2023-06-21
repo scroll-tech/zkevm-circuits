@@ -772,9 +772,12 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "convert_case"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb4a24b1aaf0fd0ce8b45161144d6f42cd91677fd5940fd431183eb023b3a2b8"
+checksum = "ec182b0ca2f35d8fc196cf3404988fd8b8c739a4d270ff118a398feb0cbec1ca"
+dependencies = [
+ "unicode-segmentation",
+]
 
 [[package]]
 name = "core-foundation"
@@ -1558,13 +1561,12 @@ dependencies = [
 [[package]]
 name = "ethers-core"
 version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ebdd63c828f58aa067f40f9adcbea5e114fb1f90144b3a1e2858e0c9b1ff4e8"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v0.17.0#739ec9a0df8daf536937739c87e85612bd73212f"
 dependencies = [
  "arrayvec",
  "bytes",
  "chrono",
- "convert_case 0.5.0",
+ "convert_case 0.6.0",
  "elliptic-curve",
  "ethabi",
  "fastrlp",
@@ -1588,8 +1590,7 @@ dependencies = [
 [[package]]
 name = "ethers-etherscan"
 version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b279a3d00bd219caa2f9a34451b4accbfa9a1eaafc26dcda9d572591528435f0"
+source = "git+https://github.com/scroll-tech/ethers-rs.git?branch=v0.17.0#739ec9a0df8daf536937739c87e85612bd73212f"
 dependencies = [
  "ethers-core",
  "getrandom",
@@ -2064,7 +2065,7 @@ name = "geth-utils"
 version = "0.1.0"
 dependencies = [
  "env_logger 0.9.3",
- "gobuild",
+ "gobuild 0.1.0-alpha.2 (git+https://github.com/scroll-tech/gobuild.git)",
  "log",
 ]
 
@@ -2102,6 +2103,14 @@ name = "gobuild"
 version = "0.1.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71e156a4ddbf3deb5e8116946c111413bd9a5679bdc1536c78a60618a7a9ac9e"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "gobuild"
+version = "0.1.0-alpha.2"
+source = "git+https://github.com/scroll-tech/gobuild.git#8b84111fc3b58e2134e4794a06d1f199412cf2b0"
 dependencies = [
  "cc",
 ]
@@ -4237,9 +4246,9 @@ dependencies = [
 
 [[package]]
 name = "serde-aux"
-version = "3.1.0"
+version = "4.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0a77223b653fa95f3f9864f3eb25b93e4ed170687eb42d85b6b98af21d5e1de"
+checksum = "c3dfe1b7eb6f9dcf011bd6fad169cdeaae75eda0d61b1a99a3f015b41b0cae39"
 dependencies = [
  "serde",
  "serde_json",
@@ -5002,6 +5011,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "unicode-segmentation"
+version = "1.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dd624098567895118886609431a7c3b8f516e41d30e0643f03d94592a147e36"
+
+[[package]]
 name = "unicode-width"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5454,5 +5469,5 @@ name = "zktrie"
 version = "0.1.2"
 source = "git+https://github.com/scroll-tech/zktrie.git?branch=scroll-dev-0226#1a5562f663a81ff903383db69dc6c9404b63e69d"
 dependencies = [
- "gobuild",
+ "gobuild 0.1.0-alpha.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

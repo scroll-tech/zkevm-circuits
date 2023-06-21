@@ -1,8 +1,10 @@
 //! Execution step related module.
 
+use std::marker::PhantomData;
+
 use crate::{
     circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
-    operation::RWCounter,
+    operation::RWCounter, precompile::PrecompileCalls,
 };
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
@@ -10,7 +12,7 @@ use eth_types::{
 };
 use gadgets::impl_expr;
 use halo2_proofs::plonk::Expression;
-use strum_macros::EnumIter;
+use strum::IntoEnumIterator;
 
 /// An execution step of the EVM.
 #[derive(Clone, Debug)]
@@ -86,6 +88,11 @@ impl ExecStep {
             Some(ExecError::OutOfGas(_) | ExecError::StackOverflow | ExecError::StackUnderflow)
         )
     }
+
+    /// Returns `true` if this is an execution step of Precompile.
+    pub fn is_precompiled(&self) -> bool {
+        matches!(self.exec_state, ExecState::Precompile(_))
+    }
 }
 
 impl Default for ExecStep {
@@ -115,6 +122,8 @@ impl Default for ExecStep {
 pub enum ExecState {
     /// EVM Opcode ID
     Op(OpcodeId),
+    /// Precompile call
+    Precompile(PrecompileCalls),
     /// Virtual step Begin Tx
     BeginTx,
     /// Virtual step End Tx
@@ -162,11 +171,11 @@ impl ExecState {
 }
 
 /// Defines the various source/destination types for a copy event.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CopyDataType {
     /// When we need to pad the Copy rows of the circuit up to a certain maximum
     /// with rows that are not "useful".
-    Padding = 0,
+    Padding,
     /// When the source for the copy event is the bytecode table.
     Bytecode,
     /// When the source/destination for the copy event is memory.
@@ -179,11 +188,121 @@ pub enum CopyDataType {
     /// scenario where we wish to accumulate the value (RLC) over all rows.
     /// This is used for Copy Lookup from SHA3 opcode verification.
     RlcAcc,
+    /// When the source of the copy is a call to a precompiled contract.
+    Precompile(PrecompileCalls),
+}
+impl CopyDataType {
+    /// Get variants that represent a precompile call.
+    pub fn precompile_types() -> Vec<Self> {
+        PrecompileCalls::iter().map(Self::Precompile).collect()
+    }
+}
+const NUM_COPY_DATA_TYPES: usize = 15usize;
+pub struct CopyDataTypeIter {
+    idx: usize,
+    back_idx: usize,
+    marker: PhantomData<()>,
+}
+impl CopyDataTypeIter {
+    fn get(&self, idx: usize) -> Option<CopyDataType> {
+        match idx {
+            0usize => Some(CopyDataType::Padding),
+            1usize => Some(CopyDataType::Bytecode),
+            2usize => Some(CopyDataType::Memory),
+            3usize => Some(CopyDataType::TxCalldata),
+            4usize => Some(CopyDataType::TxLog),
+            5usize => Some(CopyDataType::RlcAcc),
+            6usize => Some(CopyDataType::Precompile(PrecompileCalls::ECRecover)),
+            7usize => Some(CopyDataType::Precompile(PrecompileCalls::Sha256)),
+            8usize => Some(CopyDataType::Precompile(PrecompileCalls::Ripemd160)),
+            9usize => Some(CopyDataType::Precompile(PrecompileCalls::Identity)),
+            10usize => Some(CopyDataType::Precompile(PrecompileCalls::Modexp)),
+            11usize => Some(CopyDataType::Precompile(PrecompileCalls::Bn128Add)),
+            12usize => Some(CopyDataType::Precompile(PrecompileCalls::Bn128Mul)),
+            13usize => Some(CopyDataType::Precompile(PrecompileCalls::Bn128Pairing)),
+            14usize => Some(CopyDataType::Precompile(PrecompileCalls::Blake2F)),
+            _ => None,
+        }
+    }
+}
+impl strum::IntoEnumIterator for CopyDataType {
+    type Iterator = CopyDataTypeIter;
+    fn iter() -> CopyDataTypeIter {
+        CopyDataTypeIter {
+            idx: 0,
+            back_idx: 0,
+            marker: PhantomData,
+        }
+    }
+}
+impl Iterator for CopyDataTypeIter {
+    type Item = CopyDataType;
+    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
+        #[allow(clippy::iter_nth_zero)]
+        self.nth(0)
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let t = if self.idx + self.back_idx >= NUM_COPY_DATA_TYPES {
+            0
+        } else {
+            NUM_COPY_DATA_TYPES - self.idx - self.back_idx
+        };
+        (t, Some(t))
+    }
+    fn nth(&mut self, n: usize) -> Option<<Self as Iterator>::Item> {
+        let idx = self.idx + n + 1;
+        if idx + self.back_idx > NUM_COPY_DATA_TYPES {
+            self.idx = NUM_COPY_DATA_TYPES;
+            None
+        } else {
+            self.idx = idx;
+            self.get(idx - 1)
+        }
+    }
+}
+impl ExactSizeIterator for CopyDataTypeIter {
+    fn len(&self) -> usize {
+        self.size_hint().0
+    }
+}
+impl DoubleEndedIterator for CopyDataTypeIter {
+    fn next_back(&mut self) -> Option<<Self as Iterator>::Item> {
+        let back_idx = self.back_idx + 1;
+        if self.idx + back_idx > NUM_COPY_DATA_TYPES {
+            self.back_idx = NUM_COPY_DATA_TYPES;
+            None
+        } else {
+            self.back_idx = back_idx;
+            self.get(NUM_COPY_DATA_TYPES - self.back_idx)
+        }
+    }
 }
 
 impl From<CopyDataType> for usize {
     fn from(t: CopyDataType) -> Self {
-        t as usize
+        match t {
+            CopyDataType::Padding => 0,
+            CopyDataType::Bytecode => 1,
+            CopyDataType::Memory => 2,
+            CopyDataType::TxCalldata => 3,
+            CopyDataType::TxLog => 4,
+            CopyDataType::RlcAcc => 5,
+            CopyDataType::Precompile(prec_call) => 5 + usize::from(prec_call),
+        }
+    }
+}
+
+impl From<&CopyDataType> for u64 {
+    fn from(t: &CopyDataType) -> Self {
+        match t {
+            CopyDataType::Padding => 0,
+            CopyDataType::Bytecode => 1,
+            CopyDataType::Memory => 2,
+            CopyDataType::TxCalldata => 3,
+            CopyDataType::TxLog => 4,
+            CopyDataType::RlcAcc => 5,
+            CopyDataType::Precompile(prec_call) => 5 + u64::from(*prec_call),
+        }
     }
 }
 
@@ -193,7 +312,7 @@ impl Default for CopyDataType {
     }
 }
 
-impl_expr!(CopyDataType);
+impl_expr!(CopyDataType, u64::from);
 
 /// Defines a single copy step in a copy event. This type is unified over the
 /// source/destination row in the copy table.
@@ -262,7 +381,7 @@ impl CopyEvent {
     // increase in rw counter from the start of the copy event to step index
     fn rw_counter_increase(&self, step_index: usize) -> u64 {
         let source_rw_increase = match self.src_type {
-            CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
+            CopyDataType::Bytecode | CopyDataType::TxCalldata | CopyDataType::Precompile(_) => 0,
             CopyDataType::Memory => std::cmp::min(
                 u64::try_from(step_index + 1).unwrap() / 2,
                 self.src_addr_end
@@ -272,9 +391,11 @@ impl CopyEvent {
             CopyDataType::RlcAcc | CopyDataType::TxLog | CopyDataType::Padding => unreachable!(),
         };
         let destination_rw_increase = match self.dst_type {
-            CopyDataType::RlcAcc | CopyDataType::Bytecode => 0,
+            CopyDataType::RlcAcc | CopyDataType::Bytecode | CopyDataType::Precompile(_) => 0,
             CopyDataType::TxLog | CopyDataType::Memory => u64::try_from(step_index).unwrap() / 2,
-            CopyDataType::TxCalldata | CopyDataType::Padding => unreachable!(),
+            CopyDataType::TxCalldata | CopyDataType::Padding => {
+                unreachable!()
+            }
         };
         source_rw_increase + destination_rw_increase
     }

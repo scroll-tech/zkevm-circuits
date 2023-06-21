@@ -83,11 +83,11 @@ use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, PoseidonTable,
-        RlpTable, RwTable, TxTable,
+        RlpFsmRlpTable as RlpTable, RwTable, TxTable,
     },
 };
 
-use crate::{util::circuit_stats, witness::SignedTransaction};
+use crate::util::circuit_stats;
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     mock::BlockData,
@@ -102,7 +102,8 @@ use snark_verifier_sdk::CircuitExt;
 
 use crate::{
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
-    rlp_circuit::{RlpCircuit, RlpCircuitConfig},
+    rlp_circuit_fsm::{RlpCircuit, RlpCircuitConfig, RlpCircuitConfigArgs},
+    witness::Transaction,
 };
 
 /// Configuration of the Super Circuit
@@ -200,7 +201,13 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             PoseidonCircuitConfig::new(meta, PoseidonCircuitConfigArgs { poseidon_table });
         log_circuit_info(meta, "poseidon circuit");
 
-        let rlp_circuit = RlpCircuitConfig::configure(meta, &rlp_table, &challenges);
+        let rlp_circuit = RlpCircuitConfig::new(
+            meta,
+            RlpCircuitConfigArgs {
+                rlp_table,
+                challenges: challenges.clone(),
+            },
+        );
         log_circuit_info(meta, "rlp circuit");
 
         let pi_circuit = PiCircuitConfig::new(
@@ -361,7 +368,7 @@ pub struct SuperCircuit<
     /// Poseidon hash Circuit
     pub poseidon_circuit: PoseidonCircuit<F>,
     /// Rlp Circuit
-    pub rlp_circuit: RlpCircuit<F, SignedTransaction>,
+    pub rlp_circuit: RlpCircuit<F, Transaction>,
     /// Mpt Circuit
     #[cfg(feature = "zktrie")]
     pub mpt_circuit: MptCircuit<F>,
@@ -602,7 +609,7 @@ impl<
             &block.txs,
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            block.chain_id.as_u64(),
+            block.chain_id,
             &challenges,
         )?;
 

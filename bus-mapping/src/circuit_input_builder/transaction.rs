@@ -4,9 +4,11 @@ use std::collections::BTreeMap;
 
 use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, Memory},
-    geth_types, Address, GethExecTrace, Signature, Word, H256,
+    geth_types,
+    geth_types::{get_rlp_unsigned, TxType},
+    Address, GethExecTrace, Signature, Word, H256,
 };
-use ethers_core::{types::TransactionRequest, utils::get_contract_address};
+use ethers_core::utils::get_contract_address;
 
 use crate::{
     l2_predeployed::l1_gas_price_oracle,
@@ -191,6 +193,8 @@ impl TransactionContext {
 pub struct Transaction {
     /// ..
     pub block_num: u64,
+    /// Type
+    pub tx_type: TxType,
     /// Nonce
     pub nonce: u64,
     /// Hash
@@ -199,6 +203,10 @@ pub struct Transaction {
     pub gas: u64,
     /// Gas price
     pub gas_price: Word,
+    /// Gas fee cap
+    pub gas_fee_cap: Word,
+    /// Gas tip cap
+    pub gas_tip_cap: Word,
     /// From / Caller Address
     pub from: Address,
     /// To / Callee Address
@@ -211,6 +219,10 @@ pub struct Transaction {
     pub chain_id: u64,
     /// Signature
     pub signature: Signature,
+    /// RLP bytes
+    pub rlp_bytes: Vec<u8>,
+    /// RLP bytes for signing
+    pub rlp_unsigned_bytes: Vec<u8>,
     /// Current values of L1 fee
     pub l1_fee: TxL1Fee,
     /// Committed values of L1 fee
@@ -235,14 +247,12 @@ impl From<&Transaction> for geth_types::Transaction {
             v: tx.signature.v,
             r: tx.signature.r,
             s: tx.signature.s,
+            gas_fee_cap: tx.gas_fee_cap,
+            gas_tip_cap: tx.gas_tip_cap,
+            rlp_unsigned_bytes: tx.rlp_unsigned_bytes.clone(),
+            rlp_bytes: tx.rlp_bytes.clone(),
             ..Default::default()
         }
-    }
-}
-
-impl From<&Transaction> for TransactionRequest {
-    fn from(tx: &Transaction) -> TransactionRequest {
-        (&Into::<geth_types::Transaction>::into(tx)).into()
     }
 }
 
@@ -253,6 +263,8 @@ impl Transaction {
             nonce: 0,
             gas: 0,
             gas_price: Word::zero(),
+            gas_fee_cap: Word::zero(),
+            gas_tip_cap: Word::zero(),
             from: Address::zero(),
             to: Address::zero(),
             value: Word::zero(),
@@ -263,10 +275,13 @@ impl Transaction {
                 s: Word::zero(),
                 v: 0,
             },
+            rlp_bytes: vec![],
+            rlp_unsigned_bytes: vec![],
             calls: Vec::new(),
             steps: Vec::new(),
             block_num: Default::default(),
             hash: Default::default(),
+            tx_type: Default::default(),
             l1_fee: Default::default(),
             l1_fee_committed: Default::default(),
         }
@@ -352,9 +367,14 @@ impl Transaction {
         Ok(Self {
             block_num: eth_tx.block_number.unwrap().as_u64(),
             hash: eth_tx.hash,
+            tx_type: TxType::get_tx_type(eth_tx),
+            rlp_bytes: eth_tx.rlp().to_vec(),
+            rlp_unsigned_bytes: get_rlp_unsigned(eth_tx),
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
+            gas_fee_cap: eth_tx.max_fee_per_gas.unwrap_or_default(),
+            gas_tip_cap: eth_tx.max_priority_fee_per_gas.unwrap_or_default(),
             from: eth_tx.from,
             to: eth_tx.to.unwrap_or_default(),
             value: eth_tx.value,
@@ -419,8 +439,7 @@ impl Transaction {
 
     /// Calculate L1 fee of this transaction.
     pub fn l1_fee(&self) -> u64 {
-        let tx_data_gas_cost =
-            tx_data_gas_cost(&Into::<TransactionRequest>::into(self).rlp_unsigned());
+        let tx_data_gas_cost = tx_data_gas_cost(&self.rlp_bytes);
 
         self.l1_fee.tx_l1_fee(tx_data_gas_cost).0
     }
@@ -441,7 +460,7 @@ impl TxL1Fee {
     /// Calculate L1 fee and remainder of transaction.
     pub fn tx_l1_fee(&self, tx_data_gas_cost: u64) -> (u64, u64) {
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
-        let tx_l1_gas = tx_data_gas_cost + 1088 + self.fee_overhead;
+        let tx_l1_gas = tx_data_gas_cost + self.fee_overhead;
         let tx_l1_fee = self.fee_scalar as u128 * self.base_fee as u128 * tx_l1_gas as u128;
 
         (

@@ -54,6 +54,7 @@ mod tests {
             max_keccak_rows: 0, // FIXME: can this be none?
             max_exp_steps: 100_000,
             max_evm_rows: 4_000_000,
+            max_rlp_rows: 4_000_000,
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
@@ -79,9 +80,8 @@ mod tests {
 
         let max_txs: usize = 2_usize.pow(degree) / ROWS_PER_TX;
 
-        let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
         let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
-        let circuit = TxCircuit::<Fr>::new(max_txs, MAX_CALLDATA, chain_id, txs);
+        let circuit = TxCircuit::<Fr>::new(max_txs, MAX_CALLDATA, *mock::MOCK_CHAIN_ID, txs);
         (degree as usize, circuit)
     }
 

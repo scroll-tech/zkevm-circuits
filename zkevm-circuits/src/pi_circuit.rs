@@ -52,7 +52,7 @@ const NUM_HISTORY_HASHES: usize = 1;
 const BYTE_POW_BASE: u64 = 256;
 const BLOCK_HEADER_BYTES_NUM: usize = 124;
 // chain_id || coinbase || difficulty
-const BLOCK_HEADER_CONST_BYTES_NUM: usize = 84;
+const BLOCK_HEADER_CONST_BYTES_NUM: usize = 60;
 const KECCAK_DIGEST_SIZE: usize = 32;
 const RPI_CELL_IDX: usize = 0;
 const RPI_RLC_ACC_CELL_IDX: usize = 1;
@@ -70,7 +70,7 @@ const CHAIN_ID_OFFSET: usize = 6;
 const COINBASE_OFFSET: usize = 0;
 const DIFFICULTY_OFFSET: usize = 3;
 
-pub(crate) static CHAIN_ID: Lazy<Word> = Lazy::new(|| read_env_var("CHAIN_ID", Word::zero()));
+pub(crate) static CHAIN_ID: Lazy<u64> = Lazy::new(|| read_env_var("CHAIN_ID", 0));
 pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| read_env_var("COINBASE", Address::zero()));
 pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
 
@@ -78,7 +78,7 @@ pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY
 #[derive(Debug, Clone)]
 pub struct PublicData {
     /// chain id
-    pub chain_id: Word,
+    pub chain_id: u64,
     /// Block Transactions
     pub transactions: Vec<Transaction>,
     /// Block contexts
@@ -92,7 +92,7 @@ pub struct PublicData {
 impl Default for PublicData {
     fn default() -> Self {
         PublicData {
-            chain_id: Word::default(),
+            chain_id: 0,
             transactions: vec![],
             prev_state_root: H256::zero(),
             withdraw_trie_root: H256::zero(),
@@ -104,7 +104,7 @@ impl Default for PublicData {
 impl PublicData {
     /// Compute the raw_public_inputs bytes from the verifier's perspective.
     fn raw_public_input_bytes(&self, max_txs: usize) -> Vec<u8> {
-        let dummy_tx_hash = get_dummy_tx_hash(self.chain_id.as_u64());
+        let dummy_tx_hash = get_dummy_tx_hash(self.chain_id);
         let withdraw_trie_root = self.withdraw_trie_root;
 
         let result = iter::empty()
@@ -553,7 +553,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut tx_copy_cells = vec![];
         let mut block_table_offset = 1; // first row of block is all-zeros.
         let mut rpi_rlc_acc = Value::known(F::zero());
-        let dummy_tx_hash = get_dummy_tx_hash(public_data.chain_id.as_u64());
+        let dummy_tx_hash = get_dummy_tx_hash(public_data.chain_id);
 
         self.q_start.enable(region, offset)?;
 
@@ -1501,7 +1501,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
             &self.0.public_data.transactions,
             self.0.max_txs,
             self.0.max_calldata,
-            self.0.public_data.chain_id.as_u64(),
+            self.0.public_data.chain_id,
             &challenges,
         )?;
         // assign keccak table
@@ -1578,11 +1578,9 @@ mod pi_circuit_test {
         const MAX_CALLDATA: usize = 20;
         const MAX_INNER_BLOCKS: usize = 4;
 
+        set_var("CHAIN_ID", MOCK_CHAIN_ID.to_string());
         let mut difficulty_be_bytes = [0u8; 32];
-        let mut chain_id_be_bytes = [0u8; 32];
         MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
-        MOCK_CHAIN_ID.to_big_endian(&mut chain_id_be_bytes);
-        set_var("CHAIN_ID", hex::encode(chain_id_be_bytes));
         set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
         let bytecode = bytecode! {
