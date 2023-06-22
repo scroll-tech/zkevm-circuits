@@ -149,12 +149,14 @@ impl MockChunkCircuitConfig {
         // ====================================================
         // Step 2. check the cells match the public input
         // ====================================================
+        let acc_len = if self.is_fresh { 0 } else { 12 };
+
         // chunk's data hash
         for i in 0..32 {
             layouter.constrain_instance(
                 hash_input_cells[i + 96 + CHAIN_ID_LEN].cell(),
                 self.hash_digest_column,
-                i + CHAIN_ID_LEN,
+                i + CHAIN_ID_LEN + acc_len,
             )?;
         }
         // chunk's public_input_hash
@@ -164,13 +166,13 @@ impl MockChunkCircuitConfig {
                 layouter.constrain_instance(
                     hash_output_cells[(3 - i) * 8 + j].cell(),
                     self.hash_digest_column,
-                    i * 8 + j + 32 + CHAIN_ID_LEN,
+                    i * 8 + j + 32 + CHAIN_ID_LEN + acc_len,
                 )?;
             }
         }
         // chain id
         for (i, cell) in hash_input_cells.iter().enumerate().take(CHAIN_ID_LEN) {
-            layouter.constrain_instance(cell.cell(), self.hash_digest_column, i)?;
+            layouter.constrain_instance(cell.cell(), self.hash_digest_column, i + acc_len)?;
         }
 
         Ok(hash_output_cells)

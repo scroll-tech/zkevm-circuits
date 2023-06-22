@@ -12,6 +12,57 @@ use super::mock_chunk::MockChunkCircuit;
 
 const CHUNKS_PER_BATCH: usize = 2;
 
+#[test]
+fn test_mock_aggregation() {
+    let process_id = process::id();
+
+    let dir = format!("data/{}", process_id);
+    let path = Path::new(dir.as_str());
+    fs::create_dir(path).unwrap();
+
+    // inner circuit: Mock circuit
+    let k0 = 19;
+    // aggregation
+    let k1 = 26;
+
+    let mut rng = test_rng();
+    let params = gen_srs(k2);
+
+    let mut chunks = (0..CHUNKS_PER_BATCH)
+        .map(|_| ChunkHash::mock_chunk_hash(&mut rng))
+        .collect_vec();
+    for i in 0..CHUNKS_PER_BATCH - 1 {
+        chunks[i + 1].prev_state_root = chunks[i].post_state_root;
+    }
+    // Proof for test circuit
+    let circuits = chunks
+        .iter()
+        .map(|&chunk| MockChunkCircuit::new(false, 0, chunk))
+        .collect_vec();
+    let layer_0_snarks = circuits
+        .iter()
+        .map(|&circuit| layer_0!(circuit, MockChunkCircuit, params, k0, path))
+        .collect_vec();
+
+    // layer 1 proof aggregation
+    {
+        let param = {
+            let mut param = params;
+            param.downsize(k1);
+            param
+        };
+        let aggregation_circuit =
+            AggregationCircuit::new(&param, &layer_0_snarks, &mut rng, chunks.as_ref());
+        let instance = aggregation_circuit.instances();
+
+        let mock_prover = MockProver::<Fr>::run(k1, &aggregation_circuit, instance).unwrap();
+
+        mock_prover.assert_satisfied_par()
+    }
+}
+
+
+
 // This test takes about 1 hour on CPU
 #[ignore = "it takes too much time"]
 #[test]
@@ -43,7 +94,7 @@ fn test_aggregation_circuit() {
     // Proof for test circuit
     let circuits = chunks
         .iter()
-        .map(|&chunk| MockChunkCircuit { chain_id: 0, chunk })
+        .map(|&chunk| MockChunkCircuit::new(true, 0, chunk))
         .collect_vec();
     let layer_0_snarks = circuits
         .iter()

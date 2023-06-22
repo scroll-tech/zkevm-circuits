@@ -15,9 +15,20 @@ mod config;
 /// It's public inputs consists of 64 elements:
 /// - data hash
 /// - public input hash
-pub struct MockChunkCircuit {
+pub(crate) struct MockChunkCircuit {
+    pub(crate) is_fresh: bool,
     pub(crate) chain_id: u64,
     pub(crate) chunk: ChunkHash,
+}
+
+impl MockChunkCircuit {
+    pub(crate) fn new(is_fresh: bool, chain_id: u64, chunk: ChunkHash) -> Self {
+        MockChunkCircuit {
+            is_fresh,
+            chain_id,
+            chunk,
+        }
+    }
 }
 
 #[test]
