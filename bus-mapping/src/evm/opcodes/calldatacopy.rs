@@ -97,7 +97,14 @@ fn gen_copy_event(
     // Copy from calldata to memory.
     let call_ctx = state.call_ctx_mut()?;
     let memory = &mut call_ctx.memory;
-    memory.copy_from(memory_offset, data_offset, length, &call_ctx.call_data);
+    let minimal_length = memory_offset.as_usize() + length.as_usize();
+    memory.extend_at_least(minimal_length);
+
+    let memory_updated = {
+        let mut memory_updated = memory.clone();
+        memory_updated.copy_from(memory_offset, data_offset, length, &call_ctx.call_data);
+        memory_updated
+    };
 
     let memory_offset = memory_offset.low_u64();
     let length = length.as_u64();
@@ -122,6 +129,7 @@ fn gen_copy_event(
             dst_addr,
             src_addr_end,
             length,
+            memory_updated,
         )?;
 
         Ok(CopyEvent {
@@ -144,6 +152,7 @@ fn gen_copy_event(
             src_addr_end,
             dst_addr,
             length,
+            memory_updated,
         )?;
 
         Ok(CopyEvent {
