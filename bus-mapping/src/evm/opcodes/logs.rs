@@ -53,19 +53,8 @@ fn gen_log_step(
     let msize = geth_step.stack.nth_last(1)?;
 
     let call_id = state.call()?.call_id;
-    let mut stack_index = 0;
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(stack_index),
-        mstart,
-    )?;
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(stack_index + 1),
-        msize,
-    )?;
-
-    stack_index += 1;
+    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), mstart)?;
+    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), msize)?;
 
     state.call_context_read(
         &mut exec_step,
@@ -113,10 +102,9 @@ fn gen_log_step(
         let topic = geth_step.stack.nth_last(2 + i)?;
         state.stack_read(
             &mut exec_step,
-            geth_step.stack.nth_last_filled(stack_index + 1),
+            geth_step.stack.nth_last_filled(2 + i),
             topic,
         )?;
-        stack_index += 1;
 
         if state.call()?.is_persistent {
             state.tx_log_write(
