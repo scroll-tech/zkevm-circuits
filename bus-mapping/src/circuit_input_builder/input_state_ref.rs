@@ -1965,12 +1965,13 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let (_, dst_begin_slot) = self.get_addr_shift_slot(src_addr).unwrap();
         let (_, dst_end_slot) = self.get_addr_shift_slot(src_addr + bytes_left).unwrap();
-        let mut memory = self.call_ctx_mut()?.memory.clone();
+        // TODO: should be src_addr + bytes_left - 1?
 
-        let minimal_length = dst_end_slot as usize + 32;
-        memory.extend_at_least(minimal_length);
-        // collect all memory bytes with padding word
         let log_slot_len = (dst_end_slot + 32 - dst_begin_slot) as usize;
+        let log_slot_bytes = self
+            .call_ctx()?
+            .memory
+            .read_chunk(dst_begin_slot.into(), log_slot_len.into());
 
         let mut first_set = true;
         let mut chunk_index = dst_begin_slot;
@@ -1990,20 +1991,19 @@ impl<'a> CircuitInputStateRef<'a> {
             chunk_index = chunk_index + 32;
         }
 
-        for idx in 0..log_slot_len {
-            let value = memory.0[dst_begin_slot as usize + idx];
+        for (idx, value) in log_slot_bytes.iter().enumerate() {
             if idx as u64 + dst_begin_slot < src_addr {
                 // front mask byte
-                copy_steps.push((value, false, true));
+                copy_steps.push((*value, false, true));
             } else if idx as u64 + dst_begin_slot >= src_addr + bytes_left {
                 // back mask byte
-                copy_steps.push((value, false, true));
+                copy_steps.push((*value, false, true));
             } else {
                 // real copy byte
                 if first_set {
                     first_set = false;
                 }
-                copy_steps.push((value, false, false));
+                copy_steps.push((*value, false, false));
             }
         }
 
