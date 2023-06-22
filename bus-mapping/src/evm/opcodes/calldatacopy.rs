@@ -7,6 +7,7 @@ use crate::{
     Error,
 };
 use eth_types::GethExecStep;
+use revm_precompile::primitives::bitvec::macros::internal::funty::Fundamental;
 use std::cmp::min;
 
 #[derive(Clone, Copy, Debug)]
@@ -19,16 +20,6 @@ impl Opcode for Calldatacopy {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
-
-        // reconstruction
-        let memory_offset = geth_step.stack.nth_last(0)?;
-        let data_offset = geth_step.stack.nth_last(1)?;
-        let length = geth_step.stack.nth_last(2)?;
-        let call_ctx = state.call_ctx_mut()?;
-        let memory = &mut call_ctx.memory;
-
-        memory.copy_from(memory_offset, data_offset, length, &call_ctx.call_data);
-
         let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
@@ -99,9 +90,17 @@ fn gen_copy_event(
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
-    let memory_offset = geth_step.stack.nth_last(0)?.low_u64();
+    let memory_offset = geth_step.stack.nth_last(0)?;
     let data_offset = geth_step.stack.nth_last(1)?;
-    let length = geth_step.stack.nth_last(2)?.as_u64();
+    let length = geth_step.stack.nth_last(2)?;
+
+    // Copy from calldata to memory.
+    let call_ctx = state.call_ctx_mut()?;
+    let memory = &mut call_ctx.memory;
+    memory.copy_from(memory_offset, data_offset, length, &call_ctx.call_data);
+
+    let memory_offset = memory_offset.low_u64();
+    let length = length.as_u64();
 
     let call_data_offset = state.call()?.call_data_offset;
     let call_data_length = state.call()?.call_data_length;

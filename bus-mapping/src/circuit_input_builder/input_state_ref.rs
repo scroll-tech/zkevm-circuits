@@ -1857,16 +1857,9 @@ impl<'a> CircuitInputStateRef<'a> {
 
             let write_chunk_prev = write_chunk; // TODO: get previous value
 
-            self.push_op(
-                exec_step,
-                RW::WRITE,
-                MemoryWordOp::new_write(
-                    current_call_id,
-                    dst_chunk_index.into(),
-                    Word::from_big_endian(write_chunk),
-                    Word::from_big_endian(write_chunk_prev),
-                ),
-            );
+            let write_word = Word::from_big_endian(write_chunk);
+            self.memory_write_word(exec_step, dst_chunk_index.into(), write_word)?;
+
             println!(
                 "write chunk: {} {} {:?}",
                 current_call_id, dst_chunk_index, write_chunk
