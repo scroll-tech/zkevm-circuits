@@ -5388,6 +5388,7 @@ dependencies = [
  "num",
  "num-bigint",
  "once_cell",
+ "paste",
  "pretty_assertions",
  "rand",
  "rand_chacha",

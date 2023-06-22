@@ -1,3 +1,4 @@
+use std::cmp::{max, min};
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -24,9 +25,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, precompile::is_precompiled};
-use eth_types::{
-    evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToLittleEndian, ToScalar, U256,
-};
+use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
@@ -71,6 +70,9 @@ pub(crate) struct CallOpGadget<F> {
     input_bytes_rlc: Cell<F>,  // input bytes to precompile call.
     output_bytes_rlc: Cell<F>, // output bytes from precompile call.
     return_bytes_rlc: Cell<F>, // bytes returned to caller from precompile call.
+    precompile_input_rws: Cell<F>,
+    precompile_output_rws: Cell<F>,
+    precompile_return_rws: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
@@ -208,21 +210,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_return_length.expr(),
             call_gadget.rd_address.length(),
         );
-        let precompile_memory_rws = select::expr(
-            call_gadget.cd_address.has_length(),
-            select::expr(
-                and::expr([
-                    call_gadget.is_success.expr(),
-                    call_gadget.rd_address.has_length(),
-                    not::expr(precompile_return_length_zero.expr()),
-                ]),
-                call_gadget.cd_address.length()
-                    + precompile_return_length.expr()
-                    + return_data_copy_size.min(),
-                call_gadget.cd_address.length(),
-            ),
-            0.expr(),
-        );
+        // FIXME: soundness problem
+        let precompile_input_rws = cb.query_cell();
+        let precompile_output_rws = cb.query_cell();
+        let precompile_return_rws = cb.query_cell();
 
         // Verify transfer only for CALL opcode in the successful case.  If value == 0,
         // skip the transfer (this is necessary for non-existing accounts, which
@@ -377,9 +368,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             call_gadget.cd_address.offset(),
                             call_gadget.cd_address.address(),
                             0.expr(),
-                            call_gadget.cd_address.length(),
+                            precompile_input_rws.expr() * 32.expr(),
                             input_bytes_rlc.expr(),
-                            call_gadget.cd_address.length(), // reads
+                            precompile_input_rws.expr(), // reads
                         ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
                         input_bytes_rlc
                     });
@@ -404,9 +395,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                                 0.expr(),
                                 precompile_return_length.expr(),
                                 0.expr(),
-                                precompile_return_length.expr(),
+                                precompile_output_rws.expr() * 32.expr(),
                                 output_bytes_rlc.expr(),
-                                precompile_return_length.expr(), // writes.
+                                precompile_output_rws.expr(), // writes.
                             ); // rwc_delta += `precompile_return_length` for precompile
                             output_bytes_rlc
                         },
@@ -428,15 +419,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             let return_bytes_rlc = cb.query_cell_phase2();
                             cb.copy_table_lookup(
                                 callee_call_id.expr(),
-                                5.expr() + call_gadget.callee_address_expr(), // refer u64::from(CopyDataType)
+                                CopyDataType::Memory.expr(), // refer u64::from(CopyDataType)
                                 cb.curr.state.call_id.expr(),
                                 CopyDataType::Memory.expr(),
                                 0.expr(),
                                 return_data_copy_size.min(),
                                 call_gadget.rd_address.offset(),
-                                return_data_copy_size.min(),
-                                return_bytes_rlc.expr(),
-                                return_data_copy_size.min(), // writes
+                                precompile_return_rws.expr() * 16.expr(),
+                                0.expr(),
+                                precompile_return_rws.expr(), // writes
                             ); // rwc_delta += `return_data_copy_size.min()` for precompile
                             return_bytes_rlc
                         },
@@ -450,7 +441,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         + transfer_rwc_delta
                         + is_callcode.expr()
                         + is_delegatecall.expr() * 2.expr()
-                        + precompile_memory_rws;
+                        + precompile_input_rws.expr()
+                        + precompile_output_rws.expr()
+                        + precompile_return_rws.expr();
 
                     cb.require_step_state_transition(StepStateTransition {
                         rw_counter: Delta(rw_counter_delta),
@@ -721,6 +714,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             input_bytes_rlc,
             output_bytes_rlc,
             return_bytes_rlc,
+            precompile_input_rws,
+            precompile_output_rws,
+            precompile_return_rws,
         }
     }
 
@@ -973,51 +969,110 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_length.to_scalar().unwrap(),
         )?;
 
-        let (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc) =
+        let (
+            input_bytes_rlc,
+            output_bytes_rlc,
+            return_bytes_rlc,
+            input_rws,
+            output_rws,
+            return_rws,
+        ) =
             if is_precompiled(&callee_address.to_address()) {
-                let input_length = cd_length.as_usize();
-                let (input_bytes_start, input_bytes_end) =
-                    (33usize + rw_offset, 33usize + rw_offset + input_length);
-                let [output_bytes_start, output_bytes_end, return_bytes_start, return_bytes_end] =
-                    if input_length > 0 {
-                        let (output_start, output_end) = (
-                            input_bytes_end,
-                            input_bytes_end + precompile_return_length.as_usize(),
-                        );
-                        [
-                            output_start,
-                            output_end,
-                            output_end,
-                            output_end + rd_length.min(precompile_return_length).as_usize(),
-                        ]
-                    } else {
-                        [input_bytes_end; 4]
-                    };
-                let input_bytes: Vec<u8> = (input_bytes_start..input_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
-                let output_bytes: Vec<u8> = (output_bytes_start..output_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
-                let return_bytes: Vec<u8> = (return_bytes_start..return_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
+                for (idx, idx_rw) in step.rw_indices.iter().enumerate() {
+                    println!("{idx} {:?}", block.rws[*idx_rw])
+                }
+
+                let input_bytes_begin = cd_offset.as_usize();
+                let input_bytes_end = cd_offset.as_usize() + cd_length.as_usize();
+                let input_bytes_begin_slot = input_bytes_begin - input_bytes_begin % 32;
+                let input_bytes_end_slot = input_bytes_end - input_bytes_end % 32;
+                let input_bytes_word_count = (input_bytes_end_slot - input_bytes_begin_slot + 32) / 32;
+                // input may not be aligned to 32 bytes. actual input is [start_offset..end_offset]
+                let input_bytes_start_offset = input_bytes_begin - input_bytes_begin_slot;
+                let input_bytes_end_offset = input_bytes_end - input_bytes_begin_slot;
+
+                let output_bytes_end = precompile_return_length.as_usize();
+                let output_bytes_end_slot = output_bytes_end - output_bytes_end % 32;
+                let output_bytes_word_count = (output_bytes_end_slot + 32) / 32;
+
+                let return_bytes_length = min(rd_length.as_usize(), output_bytes_end);
+                let callee_memory_end_slot = return_bytes_length - return_bytes_length % 32;
+                let return_bytes_begin = rd_offset.as_usize();
+                let return_bytes_end = return_bytes_begin + return_bytes_length;
+                let return_bytes_begin_slot = return_bytes_begin - return_bytes_begin % 32;
+                let return_bytes_end_slot = return_bytes_end - return_bytes_end % 32;
+                let return_bytes_slot_count = max(callee_memory_end_slot, return_bytes_end_slot - return_bytes_begin_slot);
+                let return_bytes_word_count = return_bytes_slot_count / 32 + 1;
+                // return data may not be aligned to 32 bytes. actual return data is [start_offset..end_offset]
+                let return_bytes_start_offset = return_bytes_begin - return_bytes_begin_slot;
+                let return_bytes_end_offset = return_bytes_end - return_bytes_begin_slot;
+
+
+                println!("rw_offset {rw_offset}");
+                println!(
+                    "input_bytes rws [{},{})",
+                    33 + rw_offset,
+                    33 + rw_offset + input_bytes_word_count
+                );
+                println!(
+                    "output_bytes rws [{},{})",
+                    33 + rw_offset + input_bytes_word_count,
+                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count
+                );
+                println!(
+                    "return_bytes copy [{},{})",
+                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count,
+                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count + return_bytes_word_count * 2
+                );
+
+                let input_bytes_rw_start = 33 + rw_offset;
+                let input_bytes = (input_bytes_rw_start..input_bytes_rw_start + input_bytes_word_count)
+                    .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                    .flat_map(|word| word.to_be_bytes())
+                    .collect::<Vec<_>>();
+                let output_bytes_rw_start = input_bytes_rw_start + input_bytes_word_count;
+                let output_bytes = (output_bytes_rw_start..output_bytes_rw_start + output_bytes_word_count)
+                    .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                    .flat_map(|word| word.to_be_bytes())
+                    .collect::<Vec<_>>();
+                let return_bytes_rw_start = output_bytes_rw_start + output_bytes_word_count;
+                let return_bytes = (return_bytes_rw_start..return_bytes_rw_start + return_bytes_word_count * 2)
+                    .step_by(2)
+                    .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                    .flat_map(|word| word.to_be_bytes())
+                    .collect::<Vec<_>>();
+
+                println!("input_bytes: {:x?}", input_bytes);
+                println!("output_bytes: {:x?}", output_bytes);
+                println!("return_bytes: {:x?}", return_bytes);
 
                 let input_bytes_rlc = region
                     .challenges()
                     .keccak_input()
-                    .map(|randomness| rlc::value(input_bytes.iter().rev(), randomness));
+                    .map(|randomness| rlc::value(input_bytes[input_bytes_start_offset..input_bytes_end_offset].iter().rev(), randomness));
                 let output_bytes_rlc = region
                     .challenges()
                     .keccak_input()
-                    .map(|randomness| rlc::value(output_bytes.iter().rev(), randomness));
+                    .map(|randomness| rlc::value(output_bytes[..output_bytes_end].iter().rev(), randomness));
                 let return_bytes_rlc = region
                     .challenges()
                     .keccak_input()
-                    .map(|randomness| rlc::value(return_bytes.iter().rev(), randomness));
-                (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc)
+                    .map(|randomness| rlc::value(return_bytes[return_bytes_start_offset..return_bytes_end_offset].iter().rev(), randomness));
+                println!("input_bytes_rlc: {:?}", input_bytes_rlc);
+                println!("output_bytes_rlc: {:?}", output_bytes_rlc);
+                println!("return_bytes_rlc: {:?}", return_bytes_rlc);
+                let input_rws = Value::known(F::from(input_bytes_word_count as u64));
+                let output_rws = Value::known(F::from(output_bytes_word_count as u64));
+                let return_rws = Value::known(F::from((return_bytes_word_count * 2) as u64));
+                println!("input_rws: {:?}", input_rws);
+                println!("output_rws: {:?}", output_rws);
+                println!("return_rws: {:?}", return_rws);
+                (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc, input_rws, output_rws, return_rws)
             } else {
                 (
+                    Value::known(F::zero()),
+                    Value::known(F::zero()),
+                    Value::known(F::zero()),
                     Value::known(F::zero()),
                     Value::known(F::zero()),
                     Value::known(F::zero()),
@@ -1030,6 +1085,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, output_bytes_rlc)?;
         self.return_bytes_rlc
             .assign(region, offset, return_bytes_rlc)?;
+        self.precompile_input_rws
+            .assign(region, offset, input_rws)?;
+        self.precompile_output_rws
+            .assign(region, offset, output_rws)?;
+        self.precompile_return_rws
+            .assign(region, offset, return_rws)?;
 
         Ok(())
     }
@@ -1039,14 +1100,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 mod test {
     use super::*;
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::PrecompileCallArgs};
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word,
     };
 
     use itertools::Itertools;
     use mock::{
-        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        test_ctx::helpers::account_0_code_account_1_no_code,
         TestContext,
     };
 
@@ -1456,311 +1517,343 @@ mod test {
             })
             .run();
     }
+}
 
-    #[test]
-    fn test_precompiled_call() {
-        let test_vector = [
-            PrecompileCallArgs {
-                name: "ecRecover",
-                setup_code: bytecode! {
-                    PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3")) // hash
-                    PUSH1(0x0)
-                    MSTORE
-                    PUSH1(28) // v
-                    PUSH1(0x20)
-                    MSTORE
-                    PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608")) // r
-                    PUSH1(0x40)
-                    MSTORE
-                    PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada")) // s
-                    PUSH1(0x60)
-                    MSTORE
-                },
-                ret_size: Word::from(0x20),
-                ret_offset: Word::from(0x80),
-                call_data_length: Word::from(0x80),
-                address: Word::from(0x1),
-                stack_value: vec![(
-                    Word::from(0x80),
-                    word!("7156526fbd7a3c72969b54f64e42c10fbb768c8a"),
-                )],
-                ..Default::default()
-            },
-            PrecompileCallArgs {
-                name: "SHA2-256",
-                setup_code: bytecode! {
-                    PUSH1(0xFF) // data
-                    PUSH1(0)
-                    MSTORE
-                },
-                ret_size: Word::from(0x20),
-                ret_offset: Word::from(0x20),
-                call_data_length: Word::from(0x1),
-                call_data_offset: Word::from(0x1F),
-                address: Word::from(0x2),
-                stack_value: vec![(
-                    Word::from(0x20),
-                    word!("a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
-                )],
-                ..Default::default()
-            },
-            PrecompileCallArgs {
-                name: "RIPEMD-160",
-                setup_code: bytecode! {
-                    PUSH1(0xFF) // data
-                    PUSH1(0)
-                    MSTORE
-                },
-                ret_size: Word::from(0x20),
-                ret_offset: Word::from(0x20),
-                call_data_length: Word::from(0x1),
-                call_data_offset: Word::from(0x1F),
-                address: Word::from(0x3),
-                stack_value: vec![(
-                    Word::from(0x20),
-                    word!("2c0c45d3ecab80fe060e5f1d7057cd2f8de5e557"),
-                )],
-                ..Default::default()
-            },
-            PrecompileCallArgs {
-                name: "identity",
-                setup_code: bytecode! {
-                    PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
-                    PUSH1(0x00)
-                    MSTORE
-                },
-                ret_size: Word::from(0x20),
-                ret_offset: Word::from(0x20),
-                call_data_length: Word::from(0x20),
-                address: Word::from(0x4),
-                stack_value: vec![(Word::from(0x20), word!("0123456789ABCDEF0123456789ABCDEF"))],
-                ..Default::default()
-            },
-            PrecompileCallArgs {
-                name: "modexp",
-                setup_code: bytecode! {
-                    PUSH1(1) // Bsize
-                    PUSH1(0)
-                    MSTORE
-                    PUSH1(1) // Esize
-                    PUSH1(0x20)
-                    MSTORE
-                    PUSH1(1) // Msize
-                    PUSH1(0x40)
-                    MSTORE
-                    PUSH32(word!("0x08090A0000000000000000000000000000000000000000000000000000000000")) // B, E and M
-                    PUSH1(0x60)
-                    MSTORE
-                },
-                ret_size: Word::from(0x01),
-                ret_offset: Word::from(0x9F),
-                call_data_length: Word::from(0x63),
-                address: Word::from(0x5),
-                stack_value: vec![(Word::from(0x80), Word::from(8))],
-                ..Default::default()
-            },
-            PrecompileCallArgs {
-                name: "ecAdd",
-                setup_code: bytecode! {
-                    PUSH1(1) // x1
-                    PUSH1(0)
-                    MSTORE
-                    PUSH1(2) // y1
-                    PUSH1(0x20)
-                    MSTORE
-                    PUSH1(1) // x2
-                    PUSH1(0x40)
-                    MSTORE
-                    PUSH1(2) // y2
-                    PUSH1(0x60)
-                    MSTORE
-                },
-                ret_size: Word::from(0x40),
-                ret_offset: Word::from(0x80),
-                call_data_length: Word::from(0x80),
-                address: Word::from(0x6),
-                stack_value: vec![
-                    (
-                        Word::from(0x80),
-                        word!("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd3"),
-                    ),
-                    (
-                        Word::from(0xA0),
-                        word!("15ed738c0e0a7c92e7845f96b2ae9c0a68a6a449e3538fc7ff3ebf7a5a18a2c4"),
-                    ),
-                ],
-                ..Default::default()
-            },
-            PrecompileCallArgs {
-                name: "ecMul",
-                setup_code: bytecode! {
-                    PUSH1(1) // x1
-                    PUSH1(0)
-                    MSTORE
-                    PUSH1(2) // y1
-                    PUSH1(0x20)
-                    MSTORE
-                    PUSH1(2) // s
-                    PUSH1(0x40)
-                    MSTORE
-                },
-                ret_size: Word::from(0x40),
-                ret_offset: Word::from(0x60),
-                call_data_length: Word::from(0x60),
-                address: Word::from(0x7),
-                stack_value: vec![
-                    (
-                        Word::from(0x60),
-                        word!("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd3"),
-                    ),
-                    (
-                        Word::from(0x80),
-                        word!("15ed738c0e0a7c92e7845f96b2ae9c0a68a6a449e3538fc7ff3ebf7a5a18a2c4"),
-                    ),
-                ],
-                ..Default::default()
-            },
-            PrecompileCallArgs {
-                name: "ecPairing",
-                setup_code: bytecode! {
-                    PUSH32(word!("0x23a8eb0b0996252cb548a4487da97b02422ebc0e834613f954de6c7e0afdc1fc"))
-                    PUSH32(word!("0x2a23af9a5ce2ba2796c1f4e453a370eb0af8c212d9dc9acd8fc02c2e907baea2"))
-                    PUSH32(word!("0x091058a3141822985733cbdddfed0fd8d6c104e9e9eff40bf5abfef9ab163bc7"))
-                    PUSH32(word!("0x1971ff0471b09fa93caaf13cbf443c1aede09cc4328f5a62aad45f40ec133eb4"))
-                    PUSH32(word!("0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45"))
-                    PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000001"))
-                    PUSH32(word!("0x2fe02e47887507adf0ff1743cbac6ba291e66f59be6bd763950bb16041a0a85e"))
-                    PUSH32(word!("0x2bd368e28381e8eccb5fa81fc26cf3f048eea9abfdd85d7ed3ab3698d63e4f90"))
-                    PUSH32(word!("0x22606845ff186793914e03e21df544c34ffe2f2f3504de8a79d9159eca2d98d9"))
-                    PUSH32(word!("0x1fb19bb476f6b9e44e2a32234da8212f61cd63919354bc06aef31e3cfaff3ebc"))
-                    PUSH32(word!("0x2c0f001f52110ccfe69108924926e45f0b0c868df0e7bde1fe16d3242dc715f6"))
-                    PUSH32(word!("0x2cf44499d5d27bb186308b7af7af02ac5bc9eeb6a3d147c186b21fb1b76e18da"))
+#[cfg(test)]
+mod test_precompiles {
+    use crate::test_util::CircuitTestBuilder;
+    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::PrecompileCallArgs};
+    use eth_types::{
+        bytecode, evm_types::OpcodeId, word, Word,
+    };
 
-                    PUSH1(12)
-                    PUSH2(0x200)
-                    MSTORE
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
+    use paste::paste;
 
-                    JUMPDEST
-
-                    PUSH2(0x200)
-                    MLOAD
-                    PUSH1(12)
-                    SUB
-                    PUSH1(0x20)
-                    MUL
-                    MSTORE
-                    PUSH1(1)
-                    PUSH2(0x200)
-                    MLOAD
-                    SUB
-                    DUP1
-                    PUSH2(0x200)
-                    MSTORE
-                    PUSH2(0x192)
-                    JUMPI
-                },
-                ret_size: Word::from(0x20),
-                call_data_length: Word::from(0x180),
-                address: Word::from(0x8),
-                stack_value: vec![(Word::from(0x0), Word::from(1))],
-                max_rws: 3000,
-                ..Default::default()
-            },
-            PrecompileCallArgs {
-                name: "blake2f",
-                setup_code: bytecode! {
-                    PUSH32(word!("0000000003000000000000000000000000000000010000000000000000000000"))
-                    PUSH32(word!("0000000000000000000000000000000000000000000000000000000000000000"))
-                    PUSH32(word!("0000000000000000000000000000000000000000000000000000000000000000"))
-                    PUSH32(word!("0000000000000000000000000000000000000000000000000000000000000000"))
-                    PUSH32(word!("19cde05b61626300000000000000000000000000000000000000000000000000"))
-                    PUSH32(word!("3af54fa5d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e13"))
-                    PUSH32(word!("0000000048c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f"))
-
-                    PUSH1(7)
-                    PUSH2(0x160)
-                    MSTORE
-
-                    JUMPDEST
-
-                    PUSH2(0x160)
-                    MLOAD
-                    PUSH1(7)
-                    SUB
-                    PUSH1(0x20)
-                    MUL
-                    MSTORE
-                    PUSH1(1)
-                    PUSH2(0x160)
-                    MLOAD
-                    SUB
-                    DUP1
-                    PUSH2(0x160)
-                    MSTORE
-                    PUSH2(0xed)
-                    JUMPI
-                },
-                ret_size: Word::from(0x40),
-                ret_offset: Word::from(0x0),
-                call_data_length: Word::from(0xd5),
-                address: Word::from(0x9),
-                stack_value: vec![
-                    (
-                        Word::from(0x20),
-                        word!("d282e6ad7f520e511f6c3e2b8c68059b9442be0454267ce079217e1319cde05b"),
-                    ),
-                    (
-                        Word::from(0x0),
-                        word!("8c9bcf367e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5"),
-                    ),
-                ],
-                max_rws: 2000,
-                ..Default::default()
-            },
-        ];
-
-        let call_ops = [
-            OpcodeId::CALL,
-            OpcodeId::CALLCODE,
-            OpcodeId::DELEGATECALL,
-            OpcodeId::STATICCALL,
-        ];
-
-        for (test_call, call_op) in itertools::iproduct!(test_vector.iter(), call_ops.iter()) {
-            let code = test_call.with_call_op(*call_op);
-            let ctx = TestContext::<2, 1>::new(
-                None,
-                account_0_code_account_1_no_code(code),
-                tx_from_1_to_0,
-                |block, _tx| block.number(0xcafeu64),
-            )
+    fn test_precompile_inner(arg: PrecompileCallArgs, call_op: &OpcodeId) {
+        let code = arg.with_call_op(*call_op);
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
             .unwrap();
 
-            let step = ctx.geth_traces[0]
-                .struct_logs
-                .last()
-                .expect("at least one step");
-            log::debug!("{:?}", step.stack);
-            for (offset, (_, stack_value)) in test_call.stack_value.iter().enumerate() {
-                assert_eq!(
-                    *stack_value,
-                    step.stack.nth_last(offset).expect("stack value not found"),
-                    "stack output mismatch"
-                );
-            }
-
-            log::debug!(
-                "testing {} on {:?}, max_rws = {}",
-                test_call.name,
-                call_op,
-                test_call.max_rws
+        let step = ctx.geth_traces[0]
+            .struct_logs
+            .last()
+            .expect("at least one step");
+        log::debug!("{:?}", step.stack);
+        for (offset, (_, stack_value)) in arg.stack_value.iter().enumerate() {
+            assert_eq!(
+                *stack_value,
+                step.stack.nth_last(offset).expect("stack value not found"),
+                "stack output mismatch"
             );
-            CircuitTestBuilder::new_from_test_ctx(ctx)
-                .params(CircuitsParams {
-                    max_rws: test_call.max_rws,
-                    ..Default::default()
-                })
-                .run();
         }
+
+        log::debug!(
+            "testing {} on {:?}, max_rws = {}",
+            arg.name,
+            call_op,
+            arg.max_rws
+        );
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: arg.max_rws,
+                max_copy_rows: 1100,
+                ..Default::default()
+            })
+            .run();
     }
+
+    macro_rules! test_precompile {
+        ($($test_name:ident: $test:expr,)*) => {
+            $(
+                paste! {
+                    #[test]
+                    fn [<$test_name _call>]() {
+                        test_precompile_inner($test, &OpcodeId::CALL);
+                    }
+                    #[test]
+                    fn [<$test_name _callcode>]() {
+                        test_precompile_inner($test, &OpcodeId::CALLCODE);
+                    }
+                    #[test]
+                    fn [<$test_name _delegatecall>]() {
+                        test_precompile_inner($test, &OpcodeId::DELEGATECALL);
+                    }
+                    #[test]
+                    fn [<$test_name _staticcall>]() {
+                        test_precompile_inner($test, &OpcodeId::STATICCALL);
+                    }
+                }
+            )*
+        };
+    }
+
+    test_precompile!(
+        ec_recover: PrecompileCallArgs {
+            name: "ecRecover",
+            setup_code: bytecode! {
+                PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3")) // hash
+                PUSH1(0x0)
+                MSTORE
+                PUSH1(28) // v
+                PUSH1(0x20)
+                MSTORE
+                PUSH32(word!("0x9242685bf161793cc25603c231bc2f568eb630ea16aa137d2664ac8038825608")) // r
+                PUSH1(0x40)
+                MSTORE
+                PUSH32(word!("0x4f8ae3bd7535248d0bd448298cc2e2071e56992d0774dc340c368ae950852ada")) // s
+                PUSH1(0x60)
+                MSTORE
+            },
+            ret_size: Word::from(0x20),
+            ret_offset: Word::from(0x80),
+            call_data_length: Word::from(0x80),
+            address: Word::from(0x1),
+            stack_value: vec![(
+                Word::from(0x80),
+                word!("7156526fbd7a3c72969b54f64e42c10fbb768c8a"),
+            )],
+            ..Default::default()
+        },
+        sha2_256: PrecompileCallArgs {
+            name: "SHA2-256",
+            setup_code: bytecode! {
+                PUSH1(0xFF) // data
+                PUSH1(0)
+                MSTORE
+            },
+            ret_size: Word::from(0x20),
+            ret_offset: Word::from(0x20),
+            call_data_length: Word::from(0x1),
+            call_data_offset: Word::from(0x1F),
+            address: Word::from(0x2),
+            stack_value: vec![(
+                Word::from(0x20),
+                word!("a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
+            )],
+            ..Default::default()
+        },
+        ripemd_160: PrecompileCallArgs {
+            name: "RIPEMD-160",
+            setup_code: bytecode! {
+                PUSH1(0xFF) // data
+                PUSH1(0)
+                MSTORE
+            },
+            ret_size: Word::from(0x20),
+            ret_offset: Word::from(0x20),
+            call_data_length: Word::from(0x1),
+            call_data_offset: Word::from(0x1F),
+            address: Word::from(0x3),
+            stack_value: vec![(
+                Word::from(0x20),
+                word!("2c0c45d3ecab80fe060e5f1d7057cd2f8de5e557"),
+            )],
+            ..Default::default()
+        },
+        identity: PrecompileCallArgs {
+            name: "identity",
+            setup_code: bytecode! {
+                PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
+                PUSH1(0x00)
+                MSTORE
+            },
+            ret_size: Word::from(0x20),
+            ret_offset: Word::from(0x20),
+            call_data_length: Word::from(0x20),
+            address: Word::from(0x4),
+            stack_value: vec![(Word::from(0x20), word!("0123456789ABCDEF0123456789ABCDEF"))],
+            ..Default::default()
+        },
+        modexp: PrecompileCallArgs {
+            name: "modexp",
+            setup_code: bytecode! {
+                PUSH1(1) // Bsize
+                PUSH1(0)
+                MSTORE
+                PUSH1(1) // Esize
+                PUSH1(0x20)
+                MSTORE
+                PUSH1(1) // Msize
+                PUSH1(0x40)
+                MSTORE
+                PUSH32(word!("0x08090A0000000000000000000000000000000000000000000000000000000000")) // B, E and M
+                PUSH1(0x60)
+                MSTORE
+            },
+            ret_size: Word::from(0x01),
+            ret_offset: Word::from(0x9F),
+            call_data_length: Word::from(0x63),
+            address: Word::from(0x5),
+            stack_value: vec![(Word::from(0x80), Word::from(8))],
+            ..Default::default()
+        },
+        ec_add: PrecompileCallArgs {
+            name: "ecAdd",
+            setup_code: bytecode! {
+                PUSH1(1) // x1
+                PUSH1(0)
+                MSTORE
+                PUSH1(2) // y1
+                PUSH1(0x20)
+                MSTORE
+                PUSH1(1) // x2
+                PUSH1(0x40)
+                MSTORE
+                PUSH1(2) // y2
+                PUSH1(0x60)
+                MSTORE
+            },
+            ret_size: Word::from(0x40),
+            ret_offset: Word::from(0x80),
+            call_data_length: Word::from(0x80),
+            address: Word::from(0x6),
+            stack_value: vec![
+                (
+                    Word::from(0x80),
+                    word!("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd3"),
+                ),
+                (
+                    Word::from(0xA0),
+                    word!("15ed738c0e0a7c92e7845f96b2ae9c0a68a6a449e3538fc7ff3ebf7a5a18a2c4"),
+                ),
+            ],
+            ..Default::default()
+        },
+        ec_mul: PrecompileCallArgs {
+            name: "ecMul",
+            setup_code: bytecode! {
+                PUSH1(1) // x1
+                PUSH1(0)
+                MSTORE
+                PUSH1(2) // y1
+                PUSH1(0x20)
+                MSTORE
+                PUSH1(2) // s
+                PUSH1(0x40)
+                MSTORE
+            },
+            ret_size: Word::from(0x40),
+            ret_offset: Word::from(0x60),
+            call_data_length: Word::from(0x60),
+            address: Word::from(0x7),
+            stack_value: vec![
+                (
+                    Word::from(0x60),
+                    word!("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd3"),
+                ),
+                (
+                    Word::from(0x80),
+                    word!("15ed738c0e0a7c92e7845f96b2ae9c0a68a6a449e3538fc7ff3ebf7a5a18a2c4"),
+                ),
+            ],
+            ..Default::default()
+        },
+        ec_pairing: PrecompileCallArgs {
+            name: "ecPairing",
+            setup_code: bytecode! {
+                PUSH32(word!("0x23a8eb0b0996252cb548a4487da97b02422ebc0e834613f954de6c7e0afdc1fc"))
+                PUSH32(word!("0x2a23af9a5ce2ba2796c1f4e453a370eb0af8c212d9dc9acd8fc02c2e907baea2"))
+                PUSH32(word!("0x091058a3141822985733cbdddfed0fd8d6c104e9e9eff40bf5abfef9ab163bc7"))
+                PUSH32(word!("0x1971ff0471b09fa93caaf13cbf443c1aede09cc4328f5a62aad45f40ec133eb4"))
+                PUSH32(word!("0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45"))
+                PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000001"))
+                PUSH32(word!("0x2fe02e47887507adf0ff1743cbac6ba291e66f59be6bd763950bb16041a0a85e"))
+                PUSH32(word!("0x2bd368e28381e8eccb5fa81fc26cf3f048eea9abfdd85d7ed3ab3698d63e4f90"))
+                PUSH32(word!("0x22606845ff186793914e03e21df544c34ffe2f2f3504de8a79d9159eca2d98d9"))
+                PUSH32(word!("0x1fb19bb476f6b9e44e2a32234da8212f61cd63919354bc06aef31e3cfaff3ebc"))
+                PUSH32(word!("0x2c0f001f52110ccfe69108924926e45f0b0c868df0e7bde1fe16d3242dc715f6"))
+                PUSH32(word!("0x2cf44499d5d27bb186308b7af7af02ac5bc9eeb6a3d147c186b21fb1b76e18da"))
+
+                PUSH1(12)
+                PUSH2(0x200)
+                MSTORE
+
+                JUMPDEST
+
+                PUSH2(0x200)
+                MLOAD
+                PUSH1(12)
+                SUB
+                PUSH1(0x20)
+                MUL
+                MSTORE
+                PUSH1(1)
+                PUSH2(0x200)
+                MLOAD
+                SUB
+                DUP1
+                PUSH2(0x200)
+                MSTORE
+                PUSH2(0x192)
+                JUMPI
+            },
+            ret_size: Word::from(0x20),
+            call_data_length: Word::from(0x180),
+            address: Word::from(0x8),
+            stack_value: vec![(Word::from(0x0), Word::from(1))],
+            max_rws: 3000,
+            ..Default::default()
+        },
+        blake2f: PrecompileCallArgs {
+            name: "blake2f",
+            setup_code: bytecode! {
+                PUSH32(word!("0000000003000000000000000000000000000000010000000000000000000000"))
+                PUSH32(word!("0000000000000000000000000000000000000000000000000000000000000000"))
+                PUSH32(word!("0000000000000000000000000000000000000000000000000000000000000000"))
+                PUSH32(word!("0000000000000000000000000000000000000000000000000000000000000000"))
+                PUSH32(word!("19cde05b61626300000000000000000000000000000000000000000000000000"))
+                PUSH32(word!("3af54fa5d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e13"))
+                PUSH32(word!("0000000048c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f"))
+
+                PUSH1(7)
+                PUSH2(0x160)
+                MSTORE
+
+                JUMPDEST
+
+                PUSH2(0x160)
+                MLOAD
+                PUSH1(7)
+                SUB
+                PUSH1(0x20)
+                MUL
+                MSTORE
+                PUSH1(1)
+                PUSH2(0x160)
+                MLOAD
+                SUB
+                DUP1
+                PUSH2(0x160)
+                MSTORE
+                PUSH2(0xed)
+                JUMPI
+            },
+            ret_size: Word::from(0x40),
+            ret_offset: Word::from(0x0),
+            call_data_length: Word::from(0xd5),
+            address: Word::from(0x9),
+            stack_value: vec![
+                (
+                    Word::from(0x20),
+                    word!("d282e6ad7f520e511f6c3e2b8c68059b9442be0454267ce079217e1319cde05b"),
+                ),
+                (
+                    Word::from(0x0),
+                    word!("8c9bcf367e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5"),
+                ),
+            ],
+            max_rws: 2000,
+            ..Default::default()
+        },
+    );
 }
+
