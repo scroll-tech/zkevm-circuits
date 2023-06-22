@@ -86,6 +86,7 @@ impl MockChunkCircuitConfig {
         layouter: &mut impl Layouter<Fr>,
         challenges: Challenges<Value<Fr>>,
         preimages: &[u8],
+        is_fresh: bool,
     ) -> Result<
         Vec<AssignedCell<Fr, Fr>>, // digest cells
         Error,
@@ -149,7 +150,7 @@ impl MockChunkCircuitConfig {
         // ====================================================
         // Step 2. check the cells match the public input
         // ====================================================
-        let acc_len = if self.is_fresh { 0 } else { 12 };
+        let acc_len = if is_fresh { 0 } else { 12 };
 
         // chunk's data hash
         for i in 0..32 {

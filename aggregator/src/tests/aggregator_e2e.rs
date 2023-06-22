@@ -53,7 +53,11 @@ fn test_e2e() {
     // Proof for test circuit
     let circuits = chunks
         .iter()
-        .map(|&chunk| MockChunkCircuit { chain_id: 0, chunk })
+        .map(|&chunk| MockChunkCircuit {
+            is_fresh: true,
+            chain_id: 0,
+            chunk,
+        })
         .collect_vec();
     let layer_0_snarks = circuits
         .iter()

@@ -26,7 +26,7 @@ fn test_mock_aggregation() {
     let k1 = 26;
 
     let mut rng = test_rng();
-    let params = gen_srs(k2);
+    let params = gen_srs(k1);
 
     let mut chunks = (0..CHUNKS_PER_BATCH)
         .map(|_| ChunkHash::mock_chunk_hash(&mut rng))
@@ -60,8 +60,6 @@ fn test_mock_aggregation() {
         mock_prover.assert_satisfied_par()
     }
 }
-
-
 
 // This test takes about 1 hour on CPU
 #[ignore = "it takes too much time"]

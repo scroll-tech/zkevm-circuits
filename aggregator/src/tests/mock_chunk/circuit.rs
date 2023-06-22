@@ -68,7 +68,7 @@ impl Circuit<Fr> for MockChunkCircuit {
         end_timer!(timer);
 
         let timer = start_timer!(|| ("assign cells").to_string());
-        config.assign(&mut layouter, challenges, &preimages)?;
+        config.assign(&mut layouter, challenges, &preimages, self.is_fresh)?;
         end_timer!(timer);
         Ok(())
     }

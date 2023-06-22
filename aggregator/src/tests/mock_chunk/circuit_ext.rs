@@ -20,15 +20,19 @@ impl CircuitExt<Fr> for MockChunkCircuit {
         vec![iter::repeat(0)
             .take(acc_len)
             .chain(
-                self.chain_id.to_be_bytes().iter().chain(
-                    self.chunk
-                        .data_hash
-                        .as_bytes()
-                        .iter()
-                        .chain(self.chunk.public_input_hash().as_bytes().iter()),
-                ),
+                self.chain_id
+                    .to_be_bytes()
+                    .iter()
+                    .chain(
+                        self.chunk
+                            .data_hash
+                            .as_bytes()
+                            .iter()
+                            .chain(self.chunk.public_input_hash().as_bytes().iter()),
+                    )
+                    .copied(),
             )
-            .map(|&x| Fr::from(x as u64))
+            .map(|x| Fr::from(x as u64))
             .collect()]
     }
 }
