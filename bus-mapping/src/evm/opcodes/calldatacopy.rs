@@ -489,7 +489,7 @@ mod calldatacopy_tests {
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
         let begin_slot = dst_offset - dst_offset % 32;
-        let end_slot = dst_offset + size - (dst_offset + size) % 32;
+        let end_slot = (dst_offset + size - 1) - (dst_offset + size - 1) % 32;
         assert_eq!(copy_events[0].bytes.len(), end_slot - begin_slot + 32);
         assert_eq!(
             builder.block.container.memory_word.len(),

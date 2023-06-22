@@ -1732,13 +1732,8 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok(copy_steps);
         }
 
-        // dest memory slot
-        let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
-        let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + copy_length).unwrap();
-        // TODO: Should this be `dst_addr + bytes_left - 1` ?
+        let (dst_begin_slot, full_length, _) = Memory::align_range(dst_addr, copy_length);
 
-        // collect all bytes to calldata with padding word
-        let full_length = dst_end_slot - dst_begin_slot + 32;
         let calldata_slot_bytes =
             memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
 
@@ -1784,14 +1779,10 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok((read_steps, write_steps));
         }
 
-        let (_, src_begin_slot) = self.get_addr_shift_slot(src_addr).unwrap();
-        let (_, src_end_slot) = self.get_addr_shift_slot(src_addr_end).unwrap();
-        let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
-        let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + copy_length).unwrap();
-        // TODO: Should this be `dst_addr + bytes_left - 1` ?
-
-        let full_length =
-            max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize + 32;
+        let (src_begin_slot, src_length, _) =
+            Memory::align_range(src_addr, src_addr_end - src_addr);
+        let (dst_begin_slot, dst_length, _) = Memory::align_range(dst_addr, copy_length);
+        let full_length = max(src_length, dst_length);
 
         let read_slot_bytes = self
             .caller_ctx()?
@@ -1803,7 +1794,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Self::gen_memory_copy_steps(
             &mut read_steps,
             &read_slot_bytes,
-            full_length,
+            full_length as usize,
             src_addr as usize,
             src_begin_slot as usize,
             copy_length as usize,
@@ -1812,7 +1803,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Self::gen_memory_copy_steps(
             &mut write_steps,
             &write_slot_bytes,
-            full_length,
+            full_length as usize,
             dst_addr as usize,
             dst_begin_slot as usize,
             copy_length as usize,
@@ -1878,16 +1869,12 @@ impl<'a> CircuitInputStateRef<'a> {
         let last_callee_id = self.call()?.last_callee_id;
         let current_call_id = self.call()?.call_id;
 
-        let (_, src_begin_slot) = self.get_addr_shift_slot(src_addr).unwrap();
-        let (_, src_end_slot) = self.get_addr_shift_slot(src_addr + copy_length).unwrap();
         // won't be copy out of bound, it should be handle by geth error ReturnDataOutOfBounds
         assert!(src_addr + copy_length <= src_addr_end);
-        let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
-        let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + copy_length).unwrap();
-        // TODO: Should this be `dst_addr + bytes_left - 1` ?
 
-        let full_length =
-            max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize + 32;
+        let (src_begin_slot, src_length, _) = Memory::align_range(src_addr, copy_length);
+        let (dst_begin_slot, dst_length, _) = Memory::align_range(dst_addr, copy_length);
+        let full_length = max(src_length, dst_length);
 
         let read_slot_bytes = self
             .call()?
@@ -1899,7 +1886,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Self::gen_memory_copy_steps(
             &mut read_steps,
             &read_slot_bytes,
-            full_length,
+            full_length as usize,
             src_addr as usize,
             src_begin_slot as usize,
             copy_length as usize,
@@ -1908,7 +1895,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Self::gen_memory_copy_steps(
             &mut write_steps,
             &write_slot_bytes,
-            full_length,
+            full_length as usize,
             dst_addr as usize,
             dst_begin_slot as usize,
             copy_length as usize,
