@@ -7,10 +7,8 @@ impl CircuitExt<Fr> for AggregationCircuit {
     fn num_instance(&self) -> Vec<usize> {
         // accumulator [..lhs, ..rhs]
         let acc_len = 4 * LIMBS;
-        // public input
-        let public_input_agg_instance_len = self.batch_hash_circuit.num_instance()[0];
-
-        vec![public_input_agg_instance_len + acc_len]
+        // 32 elements for batch's public_input_hash
+        vec![acc_len + 32]
     }
 
     fn instances(&self) -> Vec<Vec<Fr>> {

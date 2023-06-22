@@ -27,7 +27,7 @@ use crate::{
     core::{assign_batch_hashes, extract_accumulators_and_proof},
     param::{ConfigParams, BITS, LIMBS},
     proof_aggregation::config::AggregationConfig,
-    BatchHashCircuit, ChunkHash, CHAIN_ID_LEN, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX,
+    BatchHash, ChunkHash, CHAIN_ID_LEN, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX,
     WITHDRAW_ROOT_INDEX,
 };
 
@@ -43,7 +43,7 @@ pub struct AggregationCircuit {
     // accumulation scheme proof, private input
     pub(crate) as_proof: Value<Vec<u8>>,
     // batch hash circuit for which the snarks are generated
-    pub(crate) batch_hash_circuit: BatchHashCircuit<Fr>,
+    pub(crate) batch_hash: BatchHash,
 }
 
 impl AggregationCircuit {
@@ -98,8 +98,8 @@ impl AggregationCircuit {
             .concat();
 
         // extract the pi aggregation circuit's instances
-        let batch_hash_circuit = BatchHashCircuit::construct(chunk_hashes);
-        let pi_aggregation_instances = &batch_hash_circuit.instances()[0];
+        let batch_hash = BatchHash::construct(chunk_hashes);
+        let pi_aggregation_instances = &batch_hash.instances()[0];
 
         let flattened_instances: Vec<Fr> = [
             acc_instances.as_slice(),
@@ -117,7 +117,7 @@ impl AggregationCircuit {
             snarks: snarks.iter().cloned().map_into().collect(),
             flattened_instances,
             as_proof: Value::known(as_proof),
-            batch_hash_circuit,
+            batch_hash,
         }
     }
 
@@ -177,7 +177,7 @@ impl Circuit<Fr> for AggregationCircuit {
         //   circuit
 
         // ==============================================
-        // Step 1: aggregation circuit
+        // Step 1: snark aggregation circuit
         // ==============================================
         let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
         let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
@@ -253,7 +253,7 @@ impl Circuit<Fr> for AggregationCircuit {
         let challenges = challenge.values(&layouter);
 
         let timer = start_timer!(|| ("extract hash").to_string());
-        let preimages = self.batch_hash_circuit.extract_hash_preimages();
+        let preimages = self.batch_hash.extract_hash_preimages();
         end_timer!(timer);
 
         let timer = start_timer!(|| ("load aux table").to_string());
@@ -330,50 +330,20 @@ impl Circuit<Fr> for AggregationCircuit {
         )?;
 
         // ====================================================
-        // Last step: Constraint the hash data matches the raw public input
+        // Last step: Constraint the hash data matches the public input
         // ====================================================
         let acc_len = 12;
         {
-            for i in 0..32 {
-                // first_chunk_prev_state_root
-                layouter.constrain_instance(
-                    hash_input_cells[2][PREV_STATE_ROOT_INDEX + i].cell(),
-                    config.instance,
-                    i + acc_len,
-                )?;
-                // last_chunk_post_state_root
-                layouter.constrain_instance(
-                    hash_input_cells.last().unwrap()[POST_STATE_ROOT_INDEX + i].cell(),
-                    config.instance,
-                    i + 32 + acc_len,
-                )?;
-                // last_chunk_withdraw_root
-                layouter.constrain_instance(
-                    hash_input_cells.last().unwrap()[WITHDRAW_ROOT_INDEX + i].cell(),
-                    config.instance,
-                    i + 64 + acc_len,
-                )?;
-            }
             // batch_public_input_hash
             for i in 0..4 {
                 for j in 0..8 {
                     // digest in circuit has a different endianness
-                    // 96 is the byte position for batch data hash
                     layouter.constrain_instance(
                         hash_output_cells[0][(3 - i) * 8 + j].cell(),
                         config.instance,
-                        i * 8 + j + 96 + acc_len,
+                        i * 8 + j + acc_len,
                     )?;
                 }
-            }
-            // last 8 inputs are the chain id
-            // chain_id is put at last here
-            for i in 0..CHAIN_ID_LEN {
-                layouter.constrain_instance(
-                    hash_input_cells[0][i].cell(),
-                    config.instance,
-                    128 + acc_len + i,
-                )?;
             }
         }
 

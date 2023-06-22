@@ -1,5 +1,3 @@
-RUST_LOG=trace MODE=greeter cargo test --release --features=print-trace test_pi_aggregation_mock_prover -- --nocapture 2>&1 | tee pi_mock.log
-RUST_LOG=trace MODE=greeter cargo test --release --features=print-trace test_pi_aggregation_real_prover -- --nocapture 2>&1 | tee pi_real.log
 RUST_LOG=trace MODE=greeter cargo test --release --features=print-trace test_mock_chunk_prover -- --nocapture 2>&1 | tee mock_chunk.log
 
 # the following 4 tests takes super long time
