@@ -1642,6 +1642,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    // TODO: remove in favor of Memory::align_range.
     // get word slot and shift pair for a memory address.
     pub(crate) fn get_addr_shift_slot(&mut self, addr: u64) -> Result<(u64, u64), Error> {
         let shift = addr % 32;
@@ -1664,26 +1665,22 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok(copy_steps);
         }
 
-        let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
-        let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + bytes_left).unwrap();
-        let mut memory = self.call_ctx_mut()?.memory.clone();
+        let (dst_begin_slot, full_length, _) = Memory::align_range(dst_addr, bytes_left);
 
-        let minimal_length = dst_end_slot as usize + 32;
-        memory.extend_at_least(minimal_length);
-        // collect all bytecode to memory with padding word
-        let code_slot_bytes =
-            memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+        let code_slot_bytes = self
+            .call_ctx()?
+            .memory
+            .read_chunk(dst_begin_slot.into(), full_length.into());
 
         let mut copy_start = 0u64;
         let mut first_set = true;
-        for idx in 0..code_slot_bytes.len() {
-            let value = memory.0[dst_begin_slot as usize + idx];
+        for (idx, value) in code_slot_bytes.iter().enumerate() {
             if idx as u64 + dst_begin_slot < dst_addr {
                 // front mask byte
-                copy_steps.push((value, false, true));
+                copy_steps.push((*value, false, true));
             } else if idx as u64 + dst_begin_slot >= dst_addr + bytes_left {
                 // back mask byte
-                copy_steps.push((value, false, true));
+                copy_steps.push((*value, false, true));
             } else {
                 // real copy byte
                 if first_set {

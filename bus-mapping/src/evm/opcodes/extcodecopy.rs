@@ -35,6 +35,7 @@ impl Opcode for Extcodecopy {
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
 
+        // TODO: move to the "memory_updated" approach.
         memory.copy_from(dst_offset, code_offset, length, &code);
 
         let copy_event = gen_copy_event(state, geth_step)?;
