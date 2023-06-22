@@ -126,21 +126,21 @@ impl Opcode for ReturnRevert {
                 state.call_context_read(&mut exec_step, call.call_id, field, value.into());
             }
 
-            let callee_memory = state.call_ctx()?.memory.clone();
-            let caller_ctx = state.caller_ctx_mut()?;
-            caller_ctx.return_data = callee_memory
+            let return_data = state
+                .call_ctx()?
+                .memory
                 .0
                 .get(offset..offset + length)
                 .unwrap_or_default()
                 .to_vec();
+
+            state.caller_ctx_mut()?.return_data = return_data;
 
             let return_data_length = usize::try_from(call.return_data_length).unwrap();
             let copy_length = std::cmp::min(return_data_length, length);
             if copy_length > 0 {
                 // reconstruction
                 let return_offset = call.return_data_offset.try_into().unwrap();
-                caller_ctx.memory.0[return_offset..return_offset + copy_length]
-                    .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
 
                 handle_copy(
                     state,
@@ -186,52 +186,54 @@ fn handle_copy(
     let copy_length = std::cmp::min(source.length, destination.length);
 
     let rw_counter_start = state.block_ctx.rwc;
-    let (_, src_begin_slot) = state.get_addr_shift_slot(source.offset as u64).unwrap();
+
+    let (src_shift, src_begin_slot) = state.get_addr_shift_slot(source.offset as u64).unwrap();
     let (_, src_end_slot) = state
-        .get_addr_shift_slot((source.offset + copy_length) as u64)
+        .get_addr_shift_slot((source.offset + copy_length - 1) as u64)
         .unwrap();
-    let (_, dst_begin_slot) = state
+    let src_shift = src_shift as usize;
+
+    let (dst_shift, dst_begin_slot) = state
         .get_addr_shift_slot(destination.offset as u64)
         .unwrap();
     let (_, dst_end_slot) = state
-        .get_addr_shift_slot((destination.offset + copy_length) as u64)
+        .get_addr_shift_slot((destination.offset + copy_length - 1) as u64)
         .unwrap();
+    let dst_shift = dst_shift as usize;
 
-    let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize;
-    let src_end_slot = src_begin_slot as usize + slot_count;
-    let dst_end_slot = dst_begin_slot as usize + slot_count;
-    // callee‘s memory
-    let mut callee_memory = state.call_ctx_mut()?.memory.clone();
-    callee_memory.extend_at_least(src_end_slot + 32);
-    // caller's memory
-    let mut caller_memory = state.caller_ctx_mut()?.memory.clone();
-    caller_memory.extend_at_least(dst_end_slot + 32);
+    let full_length =
+        max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize + 32;
 
-    let dst_slot_bytes =
-        caller_memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+    let src_data = state
+        .call_ctx()?
+        .memory
+        .read_chunk(src_begin_slot.into(), full_length.into());
+
+    let dst_data_prev = state
+        .caller_ctx()?
+        .memory
+        .read_chunk(dst_begin_slot.into(), full_length.into());
+
+    let dst_data = {
+        // Copy src_data into dst_data
+        let mut dst_data = dst_data_prev.clone();
+        dst_data[dst_shift..dst_shift + copy_length]
+            .copy_from_slice(&src_data[src_shift..src_shift + copy_length]);
+        dst_data
+    };
+
     let mut src_chunk_index = src_begin_slot;
     let mut dst_chunk_index = dst_begin_slot;
 
     // memory word read from src
-    for write_chunk in dst_slot_bytes.chunks(32) {
+    for write_chunk in dst_data.chunks(32) {
         // read memory
         state.memory_read_word(step, src_chunk_index.into())?;
 
-        // TODO: this must go before, or instead of the copy_from_slice from callee to caller above,
-        // or pass the previous memory somehow.
-        let write_chunk_prev = write_chunk; // TODO: get previous value
-
         // write memory
-        state.push_op(
-            step,
-            RW::WRITE,
-            MemoryWordOp::new_write(
-                destination.id,
-                dst_chunk_index.into(),
-                Word::from_big_endian(&write_chunk),
-                Word::from_big_endian(&write_chunk_prev),
-            ),
-        );
+        let write_word = Word::from_big_endian(&write_chunk);
+        state.memory_write_caller(step, dst_chunk_index.into(), write_word)?;
+
         dst_chunk_index += 32;
         src_chunk_index += 32;
     }
@@ -240,8 +242,8 @@ fn handle_copy(
     let mut read_steps = Vec::with_capacity(source.length as usize);
     CircuitInputStateRef::gen_memory_copy_steps(
         &mut read_steps,
-        &callee_memory.0,
-        slot_count + 32,
+        &src_data,
+        full_length,
         source.offset,
         src_begin_slot as usize,
         copy_length as usize,
@@ -250,8 +252,8 @@ fn handle_copy(
     let mut write_steps = Vec::with_capacity(destination.length as usize);
     CircuitInputStateRef::gen_memory_copy_steps(
         &mut write_steps,
-        &caller_memory.0,
-        slot_count + 32,
+        &dst_data, // TODO: this should be dst_data_prev.
+        full_length,
         destination.offset,
         dst_begin_slot as usize,
         copy_length as usize,

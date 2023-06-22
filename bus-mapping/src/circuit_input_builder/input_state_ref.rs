@@ -271,7 +271,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let mem = &self.caller_ctx()?.memory;
         let value = mem.read_word(address);
 
-        let caller_id = self.caller()?.call_id;
+        let caller_id = self.call()?.caller_id;
         self.push_op(
             step,
             RW::READ,
@@ -316,6 +316,33 @@ impl<'a> CircuitInputStateRef<'a> {
         mem.write_chunk(address, &value_bytes);
 
         let call_id = self.call()?.call_id;
+        self.push_op(
+            step,
+            RW::WRITE,
+            MemoryWordOp::new_write(call_id, address, value, value_prev),
+        );
+        Ok(())
+    }
+
+    /// Push a write type [`MemoryWordOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    pub fn memory_write_caller(
+        &mut self,
+        step: &mut ExecStep,
+        address: MemoryAddress, //Caution: make sure this address = slot passing
+        value: Word,
+    ) -> Result<(), Error> {
+        let mem = &mut self.caller_ctx_mut()?.memory;
+        let value_prev = mem.read_word(address);
+
+        let value_bytes = value.to_be_bytes();
+        mem.write_chunk(address, &value_bytes);
+
+        let call_id = self.call()?.caller_id;
         self.push_op(
             step,
             RW::WRITE,
@@ -1803,7 +1830,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         Self::gen_memory_copy_steps(
             &mut read_steps,
-            &caller_memory.0,
+            &caller_memory.0[src_begin_slot as usize..],
             slot_count + 32,
             src_addr as usize,
             src_begin_slot as usize,
@@ -1812,7 +1839,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         Self::gen_memory_copy_steps(
             &mut write_steps,
-            &call_memory.0,
+            &call_memory.0[dst_begin_slot as usize..],
             slot_count + 32,
             dst_addr as usize,
             dst_begin_slot as usize,
@@ -1917,7 +1944,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         Self::gen_memory_copy_steps(
             &mut read_steps,
-            &last_callee_memory.0,
+            &last_callee_memory.0[src_begin_slot as usize..],
             slot_count + 32,
             src_addr as usize,
             src_begin_slot as usize,
@@ -1926,7 +1953,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         Self::gen_memory_copy_steps(
             &mut write_steps,
-            &call_memory.0,
+            &call_memory.0[dst_begin_slot as usize..],
             slot_count + 32,
             dst_addr as usize,
             dst_begin_slot as usize,
@@ -2059,14 +2086,14 @@ impl<'a> CircuitInputStateRef<'a> {
     // TODO: add new gen_copy_steps for common use
     pub(crate) fn gen_memory_copy_steps(
         steps: &mut Vec<(u8, bool, bool)>,
-        memory: &[u8],
+        memory_at_begin: &[u8],
         slot_bytes_len: usize,
         offset_addr: usize,
         begin_slot: usize,
         length: usize,
     ) {
         for idx in 0..slot_bytes_len {
-            let value = memory[begin_slot as usize + idx];
+            let value = memory_at_begin[idx];
             // padding unaligned copy of 32 bytes
             if idx + begin_slot < offset_addr {
                 // front mask byte
