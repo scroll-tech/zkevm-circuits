@@ -106,7 +106,7 @@ impl BatchHash {
         //      chunk[k-1].withdraw_root ||
         //      batch_data_hash )
         let preimage = [
-            chunk_hashes[0].chain_id.to_le_bytes().as_ref(),
+            chunk_hashes[0].chain_id.to_be_bytes().as_ref(),
             chunk_hashes[0].prev_state_root.as_bytes(),
             chunk_hashes.last().unwrap().post_state_root.as_bytes(),
             chunk_hashes.last().unwrap().withdraw_root.as_bytes(),
@@ -139,7 +139,7 @@ impl BatchHash {
         //      chunk[k-1].withdraw_root ||
         //      batch_data_hash )
         let batch_public_input_hash_preimage = [
-            self.chain_id.to_le_bytes().as_ref(),
+            self.chain_id.to_be_bytes().as_ref(),
             self.chunks[0].prev_state_root.as_bytes(),
             self.chunks.last().unwrap().post_state_root.as_bytes(),
             self.chunks.last().unwrap().withdraw_root.as_bytes(),
@@ -165,7 +165,7 @@ impl BatchHash {
         //        chunk[i].datahash)
         for chunk in self.chunks.iter() {
             let chunk_pi_hash_preimage = [
-                self.chain_id.to_le_bytes().as_ref(),
+                self.chain_id.to_be_bytes().as_ref(),
                 chunk.prev_state_root.as_bytes(),
                 chunk.post_state_root.as_bytes(),
                 chunk.withdraw_root.as_bytes(),

@@ -55,7 +55,7 @@ impl ChunkHash {
     ///  chain id || prev state root || post state root || withdraw root || data hash
     pub fn extract_hash_preimage(&self) -> Vec<u8> {
         [
-            self.chain_id.to_le_bytes().as_ref(),
+            self.chain_id.to_be_bytes().as_ref(),
             self.prev_state_root.as_bytes(),
             self.post_state_root.as_bytes(),
             self.withdraw_root.as_bytes(),

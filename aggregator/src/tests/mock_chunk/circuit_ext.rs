@@ -15,7 +15,7 @@ impl CircuitExt<Fr> for MockChunkCircuit {
     fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self
             .chain_id
-            .to_le_bytes()
+            .to_be_bytes()
             .iter()
             .chain(
                 self.chunk
