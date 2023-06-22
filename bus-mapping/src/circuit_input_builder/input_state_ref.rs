@@ -1752,11 +1752,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.push_op(
                 exec_step,
                 RW::READ,
-                MemoryWordOp::new(
-                    call_id,
-                    chunk_index.into(),
-                    Word::from_big_endian(&chunk)
-                ),
+                MemoryWordOp::new(call_id, chunk_index.into(), Word::from_big_endian(&chunk)),
             );
             chunk_index += 32;
         }
@@ -1796,11 +1792,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.push_op(
                 exec_step,
                 RW::WRITE,
-                MemoryWordOp::new(
-                    call_id,
-                    chunk_index.into(),
-                    Word::from_big_endian(&chunk)
-                )
+                MemoryWordOp::new(call_id, chunk_index.into(), Word::from_big_endian(&chunk)),
             );
             chunk_index += 32;
         }
@@ -1827,7 +1819,9 @@ impl<'a> CircuitInputStateRef<'a> {
         let (_, src_end_slot) = self.get_addr_shift_slot(copy_length as u64).unwrap();
         assert!(copy_length <= result.len());
         let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
-        let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + copy_length as u64).unwrap();
+        let (_, dst_end_slot) = self
+            .get_addr_shift_slot(dst_addr + copy_length as u64)
+            .unwrap();
 
         let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize;
         let src_end_slot = src_begin_slot as usize + slot_count;
@@ -1865,21 +1859,19 @@ impl<'a> CircuitInputStateRef<'a> {
             copy_length as usize,
         );
 
-
         let mut src_chunk_index = src_begin_slot;
         let mut dst_chunk_index = dst_begin_slot;
 
         for (read_chunk, write_chunk) in read_slot_bytes.chunks(32).zip(write_slot_bytes.chunks(32))
         {
-
             self.push_op(
                 exec_step,
                 RW::READ,
                 MemoryWordOp::new(
                     call_id,
                     src_chunk_index.into(),
-                    Word::from_big_endian(&read_chunk)
-                )
+                    Word::from_big_endian(&read_chunk),
+                ),
             );
             src_chunk_index += 32;
 
@@ -1889,7 +1881,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 MemoryWordOp::new(
                     caller_id,
                     dst_chunk_index.into(),
-                    Word::from_big_endian(&write_chunk)
+                    Word::from_big_endian(&write_chunk),
                 ),
             );
             dst_chunk_index += 32;

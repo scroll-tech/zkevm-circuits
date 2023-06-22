@@ -4,9 +4,7 @@ use crate::{
         CallKind, CircuitInputStateRef, CodeSource, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
-    operation::{
-        AccountField, CallContextField, MemoryWordOp, TxAccessListAccountOp, RW,
-    },
+    operation::{AccountField, CallContextField, MemoryWordOp, TxAccessListAccountOp, RW},
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
@@ -14,11 +12,11 @@ use crate::{
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        Gas, GasCost, OpcodeId,
+        Gas, GasCost, Memory, OpcodeId,
     },
     GethExecStep, ToWord, Word,
 };
-use std::cmp::min;
+use std::{cmp::min, fmt::DebugStruct};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL`, `OpcodeId::CALLCODE`,
@@ -410,14 +408,15 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 // insert another copy event (output) for this step.
                 let rw_counter_start = state.block_ctx.rwc;
                 if call.is_success() && call.call_data_length > 0 && length > 0 {
-                    let (read_steps, write_steps) = state.gen_copy_steps_for_precompile_returndata(
-                        &mut exec_step,
-                        call.call_id,
-                        call.caller_id,
-                        call.return_data_offset,
-                        length,
-                        &result,
-                    )?;
+                    let (read_steps, write_steps) = state
+                        .gen_copy_steps_for_precompile_returndata(
+                            &mut exec_step,
+                            call.call_id,
+                            call.caller_id,
+                            call.return_data_offset,
+                            length,
+                            &result,
+                        )?;
                     state.push_copy(
                         &mut exec_step,
                         CopyEvent {
@@ -589,37 +588,39 @@ fn write_memory_words(
     length: usize,
     is_caller: bool,
 ) -> Result<(), Error> {
-    let (call_id, memory) = if is_caller {
-        (state.call()?.caller_id, &mut state.caller_ctx_mut()?.memory)
+    if length == 0 {
+        return Ok(());
+    }
+
+    let memory = if is_caller {
+        &mut state.caller_ctx_mut()?.memory
     } else {
-        (state.call()?.call_id, &mut state.call_ctx_mut()?.memory)
+        &mut state.call_ctx_mut()?.memory
     };
 
-    // Copy data to memory (special for current code of precompile).
     memory.extend_at_least(offset + length);
-    memory.0[offset..offset + length].copy_from_slice(&data[..length]);
+
+    // Reconstruct memory (special for current code of precompile).
+    let memory_updated = {
+        let mut memory_updated = memory.clone();
+        memory_updated.copy_from(offset.into(), 0.into(), length.into(), &data);
+        memory_updated
+    };
 
     // Generate aligned slot bytes for MemoryWordOp.
-    let begin_slot = offset - offset % 32;
-    let end_slot = offset + length - (offset + length) % 32 + 32;
-    let mut slot_bytes = vec![0; end_slot - begin_slot];
-    let end_copy = end_slot.min(memory.len());
-    slot_bytes[..end_copy - begin_slot].copy_from_slice(&memory[begin_slot..end_copy]);
+    let (begin_slot, full_length, _) = Memory::align_range(offset as u64, length as u64);
+    let slot_bytes = memory_updated.read_chunk(begin_slot.into(), full_length.into());
 
     // Add memory word write ops.
     for (i, chunk) in slot_bytes.chunks(32).enumerate() {
-        let chunk_prev = chunk; // TODO: get previous value
-        state.push_op(
-            exec_step,
-            RW::WRITE,
-            MemoryWordOp::new_write(
-                call_id,
-                (begin_slot + 32 * i).into(),
-                Word::from_big_endian(chunk),
-                Word::from_big_endian(chunk_prev),
-            ),
-        );
-        // TODO: use state.memory_write_word instead.
+        let address = (begin_slot + 32 * i as u64).into();
+        let write_word = Word::from_big_endian(chunk);
+
+        if is_caller {
+            state.memory_write_caller(exec_step, address, write_word)?;
+        } else {
+            state.memory_write_word(exec_step, address, write_word)?;
+        }
     }
 
     Ok(())
