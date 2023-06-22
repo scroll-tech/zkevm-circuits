@@ -337,11 +337,40 @@ impl Memory {
         self.0.len() / 32
     }
 
+    /// Find the aligned range that contains an unaligned range.
+    ///
+    /// Given a range `[offset; offset+length)`, return:
+    /// - the `slot` offset, aligned to 32 bytes, at or just before `offset`.
+    /// - the `full_length` as a multiple of 32 bytes, such that `[slot, slot+full_length)` contains
+    ///   the given range. If `length=0`, then `full_length=0` too.
+    /// - the `shift` of the offset into the slot, such that `offset = slot + shift`.
+    pub fn align_offset(offset: usize, length: usize) -> (usize, usize, usize) {
+        let shift = offset % 32;
+        let slot = offset - shift;
+
+        let slot_end = (offset + length + 31) / 32 * 32;
+        let full_length = if length == 0 { 0 } else { slot_end - slot };
+
+        (slot, full_length, shift)
+    }
+
     /// Resize the memory for at least length and align to 32 bytes.
     pub fn extend_at_least(&mut self, minimal_length: usize) {
         let memory_size = (minimal_length + 31) / 32 * 32;
         if memory_size > self.0.len() {
             self.0.resize(memory_size, 0);
+        }
+    }
+
+    /// Resize the memory for at least `offset+length` and align to 32 bytes, except if `length=0`
+    /// then do nothing.
+    pub fn extend_for_range(&mut self, offset: Word, length: Word) {
+        // `length` should be checked for overflow during gas cost calculation.
+        let length = length.as_usize();
+        if length != 0 {
+            // `dst_offset` should be within range if length is non-zero.
+            let offset = offset.as_usize();
+            self.extend_at_least(offset + length);
         }
     }
 

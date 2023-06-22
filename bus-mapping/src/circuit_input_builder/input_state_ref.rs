@@ -1788,6 +1788,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let (_, src_end_slot) = self.get_addr_shift_slot(src_addr_end).unwrap();
         let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
         let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + copy_length).unwrap();
+        // TODO: Should this be `dst_addr + bytes_left - 1` ?
 
         let full_length =
             max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize + 32;
@@ -1865,6 +1866,7 @@ impl<'a> CircuitInputStateRef<'a> {
         src_addr_end: u64,
         dst_addr: u64,    // memory dest starting addr
         copy_length: u64, // number of bytes to copy, with padding
+        memory_updated: Memory,
     ) -> Result<(Vec<(u8, bool, bool)>, Vec<(u8, bool, bool)>), Error> {
         let mut read_steps = Vec::with_capacity(copy_length as usize);
         let mut write_steps = Vec::with_capacity(copy_length as usize);
@@ -1882,25 +1884,22 @@ impl<'a> CircuitInputStateRef<'a> {
         assert!(src_addr + copy_length <= src_addr_end);
         let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
         let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + copy_length).unwrap();
+        // TODO: Should this be `dst_addr + bytes_left - 1` ?
 
-        let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize;
-        let src_end_slot = src_begin_slot as usize + slot_count;
-        let dst_end_slot = dst_begin_slot as usize + slot_count;
+        let full_length =
+            max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize + 32;
 
-        let mut last_callee_memory = self.call()?.last_callee_memory.clone();
-        last_callee_memory.extend_at_least(src_end_slot as usize + 32);
-        let mut call_memory = self.call_ctx()?.memory.clone();
-        call_memory.extend_at_least(dst_end_slot as usize + 32);
-        let read_slot_bytes =
-            last_callee_memory.0[src_begin_slot as usize..(src_end_slot + 32) as usize].to_vec();
-        let write_slot_bytes =
-            call_memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
-        debug_assert_eq!(write_slot_bytes.len(), slot_count + 32);
+        let read_slot_bytes = self
+            .call()?
+            .last_callee_memory
+            .read_chunk(src_begin_slot.into(), full_length.into());
+
+        let write_slot_bytes = memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
 
         Self::gen_memory_copy_steps(
             &mut read_steps,
-            &last_callee_memory.0[src_begin_slot as usize..],
-            slot_count + 32,
+            &read_slot_bytes,
+            full_length,
             src_addr as usize,
             src_begin_slot as usize,
             copy_length as usize,
@@ -1908,8 +1907,8 @@ impl<'a> CircuitInputStateRef<'a> {
 
         Self::gen_memory_copy_steps(
             &mut write_steps,
-            &call_memory.0[dst_begin_slot as usize..],
-            slot_count + 32,
+            &write_slot_bytes,
+            full_length,
             dst_addr as usize,
             dst_begin_slot as usize,
             copy_length as usize,
@@ -1932,18 +1931,9 @@ impl<'a> CircuitInputStateRef<'a> {
             );
             src_chunk_index = src_chunk_index + 32;
 
-            let write_chunk_prev = write_chunk; // TODO: get previous value
+            let write_word = Word::from_big_endian(write_chunk);
+            self.memory_write_word(exec_step, dst_chunk_index.into(), write_word)?;
 
-            self.push_op(
-                exec_step,
-                RW::WRITE,
-                MemoryWordOp::new_write(
-                    current_call_id,
-                    dst_chunk_index.into(),
-                    Word::from_big_endian(write_chunk),
-                    Word::from_big_endian(write_chunk_prev),
-                ),
-            );
             println!(
                 "write chunk: {} {} {:?}",
                 current_call_id, dst_chunk_index, write_chunk
@@ -1963,10 +1953,8 @@ impl<'a> CircuitInputStateRef<'a> {
             dst_end = {}
 
             src_begin_slot = {src_begin_slot}
-            src_end_slot = {src_end_slot}
             dst_begin_slot = {dst_begin_slot}
-            dst_end_slot = {dst_end_slot}
-            slot_count = {slot_count}
+            full_length = {full_length}
 
             len(read_slot_bytes) = {}
             len(write_slot_bytes) = {}

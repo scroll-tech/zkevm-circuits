@@ -94,11 +94,9 @@ fn gen_copy_event(
     let data_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?;
 
-    // Copy from calldata to memory.
     let call_ctx = state.call_ctx_mut()?;
     let memory = &mut call_ctx.memory;
-    let minimal_length = memory_offset.as_usize() + length.as_usize();
-    memory.extend_at_least(minimal_length);
+    memory.extend_for_range(memory_offset, length);
 
     let memory_updated = {
         let mut memory_updated = memory.clone();
@@ -106,8 +104,7 @@ fn gen_copy_event(
         memory_updated
     };
 
-    let memory_offset = memory_offset.low_u64();
-    let length = length.as_u64();
+    let (memory_offset, length) = (memory_offset.low_u64(), length.as_u64());
 
     let call_data_offset = state.call()?.call_data_offset;
     let call_data_length = state.call()?.call_data_length;
@@ -120,6 +117,7 @@ fn gen_copy_event(
         .min(src_addr_end);
     let dst_addr = memory_offset;
 
+    // Work on a temporary ExecStep. The references to new RW ops will be discarded.
     let mut exec_step = state.new_step(geth_step)?;
 
     if state.call()?.is_root {
