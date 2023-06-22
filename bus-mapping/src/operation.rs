@@ -226,7 +226,7 @@ impl fmt::Debug for MemoryWordOp {
 
 impl MemoryWordOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub fn new_read(call_id: usize, address: MemoryAddress, value: Word) -> MemoryWordOp {
+    pub fn new(call_id: usize, address: MemoryAddress, value: Word) -> MemoryWordOp {
         Self::new_write(call_id, address, value, value)
     }
 

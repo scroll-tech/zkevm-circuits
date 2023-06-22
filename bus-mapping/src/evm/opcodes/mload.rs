@@ -128,11 +128,11 @@ mod mload_tests {
             vec![
                 (
                     RW::READ,
-                    MemoryWordOp::new_read(1, MemoryAddress(slot), Word::from(0x80u64))
+                    MemoryWordOp::new(1, MemoryAddress(slot), Word::from(0x80u64))
                 ),
                 (
                     RW::READ,
-                    MemoryWordOp::new_read(1, MemoryAddress(slot + 32), Word::from(0x00))
+                    MemoryWordOp::new(1, MemoryAddress(slot + 32), Word::from(0x00))
                 ),
             ]
         )

@@ -295,11 +295,11 @@ mod calldataload_tests {
             vec![
                 (
                     RW::READ,
-                    MemoryWordOp::new_read(caller_id, slot.into(), addr_left_Word,),
+                    MemoryWordOp::new(caller_id, slot.into(), addr_left_Word,),
                 ),
                 (
                     RW::READ,
-                    MemoryWordOp::new_read(caller_id, (slot + 32).into(), addr_right_Word,),
+                    MemoryWordOp::new(caller_id, (slot + 32).into(), addr_right_Word,),
                 ),
             ]
         );

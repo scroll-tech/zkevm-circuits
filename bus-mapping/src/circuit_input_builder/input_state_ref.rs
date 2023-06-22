@@ -249,11 +249,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let value = mem.read_word(address);
 
         let call_id = self.call()?.call_id;
-        self.push_op(
-            step,
-            RW::READ,
-            MemoryWordOp::new_read(call_id, address, value),
-        );
+        self.push_op(step, RW::READ, MemoryWordOp::new(call_id, address, value));
         Ok(value)
     }
 
@@ -272,11 +268,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let value = mem.read_word(address);
 
         let caller_id = self.call()?.caller_id;
-        self.push_op(
-            step,
-            RW::READ,
-            MemoryWordOp::new_read(caller_id, address, value),
-        );
+        self.push_op(step, RW::READ, MemoryWordOp::new(caller_id, address, value));
         Ok(value)
     }
 
@@ -1728,7 +1720,7 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         exec_step: &mut ExecStep,
         _src_addr: u64,
-        dst_addr: u64,     // memory dest starting addr
+        dst_addr: u64,      // memory dest starting addr
         _src_addr_end: u64, // for internal call, memory dest ending addr
         copy_length: u64,   // number of bytes to copy, without padding
         memory_updated: Memory,
@@ -1932,7 +1924,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.push_op(
                 exec_step,
                 RW::READ,
-                MemoryWordOp::new_read(
+                MemoryWordOp::new(
                     last_callee_id,
                     src_chunk_index.into(),
                     Word::from_big_endian(read_chunk),
