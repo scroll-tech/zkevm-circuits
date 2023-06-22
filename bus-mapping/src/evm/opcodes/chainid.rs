@@ -54,7 +54,7 @@ mod chainid_tests {
             },
             (
                 RW::WRITE,
-                &StackOp::new(1, StackAddress::from(1023), *MOCK_CHAIN_ID)
+                &StackOp::new(1, StackAddress::from(1023), (*MOCK_CHAIN_ID).into())
             )
         );
     }

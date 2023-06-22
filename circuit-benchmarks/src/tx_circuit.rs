@@ -24,7 +24,9 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use std::env::var;
-    use zkevm_circuits::{tx_circuit::TxCircuit, util::SubCircuit, witness::block_convert};
+    use zkevm_circuits::{
+        tx_circuit::TestTxCircuit as TxCircuit, util::SubCircuit, witness::block_convert,
+    };
 
     use bus_mapping::rpc::GethClient;
     use ethers::providers::Http;
@@ -80,9 +82,8 @@ mod tests {
 
         let max_txs: usize = 2_usize.pow(degree) / ROWS_PER_TX;
 
-        let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
         let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
-        let circuit = TxCircuit::<Fr>::new(max_txs, MAX_CALLDATA, chain_id, txs);
+        let circuit = TxCircuit::<Fr>::new(max_txs, MAX_CALLDATA, *mock::MOCK_CHAIN_ID, txs);
         (degree as usize, circuit)
     }
 

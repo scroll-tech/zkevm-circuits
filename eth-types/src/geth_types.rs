@@ -333,7 +333,7 @@ impl Transaction {
             .try_into()
             .expect("hash length isn't 32 bytes");
         let v = self.tx_type.get_recovery_id(self.v);
-        let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
+        let pk = recover_pk(v as u8, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());
         let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
@@ -343,7 +343,7 @@ impl Transaction {
             libsecp256k1::Error::InvalidMessage,
         )?;
         Ok(SignData {
-            signature: (sig_r, sig_s),
+            signature: (sig_r, sig_s, v as u8),
             pk,
             msg,
             msg_hash,
@@ -355,7 +355,7 @@ impl Transaction {
 #[derive(Debug, Clone)]
 pub struct GethData {
     /// chain id
-    pub chain_id: Word,
+    pub chain_id: u64,
     /// history hashes contains most recent 256 block hashes in history, where
     /// the lastest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
@@ -372,10 +372,10 @@ impl GethData {
     pub fn sign(&mut self, wallets: &HashMap<Address, LocalWallet>) {
         for tx in self.eth_block.transactions.iter_mut() {
             let wallet = wallets.get(&tx.from).unwrap();
-            assert_eq!(Word::from(wallet.chain_id()), self.chain_id);
+            assert_eq!(wallet.chain_id(), self.chain_id);
             let geth_tx: Transaction = (&*tx).into();
             let req: TransactionRequest = (&geth_tx).into();
-            let sig = wallet.sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into());
+            let sig = wallet.sign_transaction_sync(&req.chain_id(self.chain_id).into());
             tx.v = U64::from(sig.v);
             tx.r = sig.r;
             tx.s = sig.s;

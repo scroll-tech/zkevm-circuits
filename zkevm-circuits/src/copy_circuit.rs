@@ -59,7 +59,7 @@ pub struct CopyCircuitConfig<F> {
     pub value_word_rlc: Column<Advice>,
     /// The word value for memory lookup, before the write.
     pub value_word_rlc_prev: Column<Advice>,
-    /// The index of a word [0..31].
+    /// The index of the current byte within a word [0..31].
     pub word_index: Column<Advice>,
     /// address for slot memory src or dest, review if can reuse `addr` .
     pub addr_slot: Column<Advice>,
@@ -86,6 +86,8 @@ pub struct CopyCircuitConfig<F> {
     pub is_bytecode: Column<Advice>,
     /// Booleans to indicate what copy data type exists at the current row.
     pub is_memory: Column<Advice>,
+    /// Booleans to indicate what copy data type exists at the current row.
+    pub is_tx_log: Column<Advice>,
     /// Whether the row is enabled or not.
     pub q_enable: Column<Fixed>,
     /// The Copy Table contains the columns that are exposed via the lookup
@@ -150,7 +152,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         let value_acc = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
-        let (is_precompiled, is_tx_calldata, is_bytecode, is_memory) = (
+        let (is_precompiled, is_tx_calldata, is_bytecode, is_memory, is_tx_log) = (
+            meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
@@ -519,8 +522,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(is_last, Rotation::next()),
                     and::expr([
-                        tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta),
-                        tag.value_equals(CopyDataType::Memory, Rotation::next())(meta),
+                        meta.query_advice(is_memory, Rotation::cur()),
+                        meta.query_advice(is_memory, Rotation::next()),
                     ]),
                 ]))
             },
@@ -613,7 +616,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         // memory word lookup
         meta.lookup_any("Memory word lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
-                * tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)
+                * meta.query_advice(is_memory, Rotation::cur())
                 * not::expr(is_word_continue.is_lt(meta, None));
             vec![
                 1.expr(),
@@ -637,7 +640,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         meta.lookup_any("TxLog word lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
-                * tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)
+                * meta.query_advice(is_tx_log, Rotation::cur())
                 * not::expr(is_word_continue.is_lt(meta, None));
 
             vec![
@@ -662,7 +665,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         meta.lookup_any("Bytecode lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
-                * tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)
+                * meta.query_advice(is_bytecode, Rotation::cur())
                 * non_pad_non_mask.is_lt(meta, None);
 
             vec![
@@ -715,6 +718,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             is_tx_calldata,
             is_bytecode,
             is_memory,
+            is_tx_log,
             q_enable,
             addr_lt_addr_end,
             is_word_continue,
@@ -889,6 +893,12 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.is_memory,
                 *offset,
                 || Value::known(F::from(tag.eq(&CopyDataType::Memory))),
+            )?;
+            region.assign_advice(
+                || format!("is_tx_log at row: {}", *offset),
+                self.is_tx_log,
+                *offset,
+                || Value::known(F::from(tag.eq(&CopyDataType::TxLog))),
             )?;
 
             *offset += 1;
@@ -1161,6 +1171,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             self.is_tx_calldata,
             self.is_bytecode,
             self.is_memory,
+            self.is_tx_log,
         ] {
             region.assign_advice(
                 || format!("assigning padding row: {}", *offset),

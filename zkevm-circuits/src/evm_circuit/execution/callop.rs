@@ -1,4 +1,3 @@
-use std::cmp::{max, min};
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -25,8 +24,12 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, precompile::is_precompiled};
-use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256};
+use eth_types::{
+    evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToBigEndian, ToLittleEndian,
+    ToScalar, U256,
+};
 use halo2_proofs::{circuit::Value, plonk::Error};
+use std::cmp::{max, min};
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
@@ -976,108 +979,129 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             input_rws,
             output_rws,
             return_rws,
-        ) =
-            if is_precompiled(&callee_address.to_address()) {
-                for (idx, idx_rw) in step.rw_indices.iter().enumerate() {
-                    println!("{idx} {:?}", block.rws[*idx_rw])
-                }
+        ) = if is_precompiled(&callee_address.to_address()) {
+            for (idx, idx_rw) in step.rw_indices.iter().enumerate() {
+                println!("{idx} {:?}", block.rws[*idx_rw])
+            }
 
-                let input_bytes_begin = cd_offset.as_usize();
-                let input_bytes_end = cd_offset.as_usize() + cd_length.as_usize();
-                let input_bytes_begin_slot = input_bytes_begin - input_bytes_begin % 32;
-                let input_bytes_end_slot = input_bytes_end - input_bytes_end % 32;
-                let input_bytes_word_count = (input_bytes_end_slot - input_bytes_begin_slot + 32) / 32;
-                // input may not be aligned to 32 bytes. actual input is [start_offset..end_offset]
-                let input_bytes_start_offset = input_bytes_begin - input_bytes_begin_slot;
-                let input_bytes_end_offset = input_bytes_end - input_bytes_begin_slot;
+            let input_bytes_begin = cd_offset.as_usize();
+            let input_bytes_end = cd_offset.as_usize() + cd_length.as_usize();
+            let input_bytes_begin_slot = input_bytes_begin - input_bytes_begin % 32;
+            let input_bytes_end_slot = input_bytes_end - input_bytes_end % 32;
+            let input_bytes_word_count = (input_bytes_end_slot - input_bytes_begin_slot + 32) / 32;
+            // input may not be aligned to 32 bytes. actual input is [start_offset..end_offset]
+            let input_bytes_start_offset = input_bytes_begin - input_bytes_begin_slot;
+            let input_bytes_end_offset = input_bytes_end - input_bytes_begin_slot;
 
-                let output_bytes_end = precompile_return_length.as_usize();
-                let output_bytes_end_slot = output_bytes_end - output_bytes_end % 32;
-                let output_bytes_word_count = (output_bytes_end_slot + 32) / 32;
+            let output_bytes_end = precompile_return_length.as_usize();
+            let output_bytes_end_slot = output_bytes_end - output_bytes_end % 32;
+            let output_bytes_word_count = (output_bytes_end_slot + 32) / 32;
 
-                let return_bytes_length = min(rd_length.as_usize(), output_bytes_end);
-                let callee_memory_end_slot = return_bytes_length - return_bytes_length % 32;
-                let return_bytes_begin = rd_offset.as_usize();
-                let return_bytes_end = return_bytes_begin + return_bytes_length;
-                let return_bytes_begin_slot = return_bytes_begin - return_bytes_begin % 32;
-                let return_bytes_end_slot = return_bytes_end - return_bytes_end % 32;
-                let return_bytes_slot_count = max(callee_memory_end_slot, return_bytes_end_slot - return_bytes_begin_slot);
-                let return_bytes_word_count = return_bytes_slot_count / 32 + 1;
-                // return data may not be aligned to 32 bytes. actual return data is [start_offset..end_offset]
-                let return_bytes_start_offset = return_bytes_begin - return_bytes_begin_slot;
-                let return_bytes_end_offset = return_bytes_end - return_bytes_begin_slot;
+            let return_bytes_length = min(rd_length.as_usize(), output_bytes_end);
+            let callee_memory_end_slot = return_bytes_length - return_bytes_length % 32;
+            let return_bytes_begin = rd_offset.as_usize();
+            let return_bytes_end = return_bytes_begin + return_bytes_length;
+            let return_bytes_begin_slot = return_bytes_begin - return_bytes_begin % 32;
+            let return_bytes_end_slot = return_bytes_end - return_bytes_end % 32;
+            let return_bytes_slot_count = max(
+                callee_memory_end_slot,
+                return_bytes_end_slot - return_bytes_begin_slot,
+            );
+            let return_bytes_word_count = return_bytes_slot_count / 32 + 1;
+            // return data may not be aligned to 32 bytes. actual return data is
+            // [start_offset..end_offset]
+            let return_bytes_start_offset = return_bytes_begin - return_bytes_begin_slot;
+            let return_bytes_end_offset = return_bytes_end - return_bytes_begin_slot;
 
+            println!("rw_offset {rw_offset}");
+            println!(
+                "input_bytes rws [{},{})",
+                33 + rw_offset,
+                33 + rw_offset + input_bytes_word_count
+            );
+            println!(
+                "output_bytes rws [{},{})",
+                33 + rw_offset + input_bytes_word_count,
+                33 + rw_offset + input_bytes_word_count + output_bytes_word_count
+            );
+            println!(
+                "return_bytes copy [{},{})",
+                33 + rw_offset + input_bytes_word_count + output_bytes_word_count,
+                33 + rw_offset
+                    + input_bytes_word_count
+                    + output_bytes_word_count
+                    + return_bytes_word_count * 2
+            );
 
-                println!("rw_offset {rw_offset}");
-                println!(
-                    "input_bytes rws [{},{})",
-                    33 + rw_offset,
-                    33 + rw_offset + input_bytes_word_count
-                );
-                println!(
-                    "output_bytes rws [{},{})",
-                    33 + rw_offset + input_bytes_word_count,
-                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count
-                );
-                println!(
-                    "return_bytes copy [{},{})",
-                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count,
-                    33 + rw_offset + input_bytes_word_count + output_bytes_word_count + return_bytes_word_count * 2
-                );
+            let input_bytes_rw_start = 33 + rw_offset;
+            let input_bytes = (input_bytes_rw_start..input_bytes_rw_start + input_bytes_word_count)
+                .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                .flat_map(|word| word.to_be_bytes())
+                .collect::<Vec<_>>();
+            let output_bytes_rw_start = input_bytes_rw_start + input_bytes_word_count;
+            let output_bytes = (output_bytes_rw_start
+                ..output_bytes_rw_start + output_bytes_word_count)
+                .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                .flat_map(|word| word.to_be_bytes())
+                .collect::<Vec<_>>();
+            let return_bytes_rw_start = output_bytes_rw_start + output_bytes_word_count;
+            let return_bytes = (return_bytes_rw_start
+                ..return_bytes_rw_start + return_bytes_word_count * 2)
+                .step_by(2)
+                .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                .flat_map(|word| word.to_be_bytes())
+                .collect::<Vec<_>>();
 
-                let input_bytes_rw_start = 33 + rw_offset;
-                let input_bytes = (input_bytes_rw_start..input_bytes_rw_start + input_bytes_word_count)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
-                    .flat_map(|word| word.to_be_bytes())
-                    .collect::<Vec<_>>();
-                let output_bytes_rw_start = input_bytes_rw_start + input_bytes_word_count;
-                let output_bytes = (output_bytes_rw_start..output_bytes_rw_start + output_bytes_word_count)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
-                    .flat_map(|word| word.to_be_bytes())
-                    .collect::<Vec<_>>();
-                let return_bytes_rw_start = output_bytes_rw_start + output_bytes_word_count;
-                let return_bytes = (return_bytes_rw_start..return_bytes_rw_start + return_bytes_word_count * 2)
-                    .step_by(2)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
-                    .flat_map(|word| word.to_be_bytes())
-                    .collect::<Vec<_>>();
+            println!("input_bytes: {:x?}", input_bytes);
+            println!("output_bytes: {:x?}", output_bytes);
+            println!("return_bytes: {:x?}", return_bytes);
 
-                println!("input_bytes: {:x?}", input_bytes);
-                println!("output_bytes: {:x?}", output_bytes);
-                println!("return_bytes: {:x?}", return_bytes);
-
-                let input_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(input_bytes[input_bytes_start_offset..input_bytes_end_offset].iter().rev(), randomness));
-                let output_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(output_bytes[..output_bytes_end].iter().rev(), randomness));
-                let return_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(return_bytes[return_bytes_start_offset..return_bytes_end_offset].iter().rev(), randomness));
-                println!("input_bytes_rlc: {:?}", input_bytes_rlc);
-                println!("output_bytes_rlc: {:?}", output_bytes_rlc);
-                println!("return_bytes_rlc: {:?}", return_bytes_rlc);
-                let input_rws = Value::known(F::from(input_bytes_word_count as u64));
-                let output_rws = Value::known(F::from(output_bytes_word_count as u64));
-                let return_rws = Value::known(F::from((return_bytes_word_count * 2) as u64));
-                println!("input_rws: {:?}", input_rws);
-                println!("output_rws: {:?}", output_rws);
-                println!("return_rws: {:?}", return_rws);
-                (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc, input_rws, output_rws, return_rws)
-            } else {
-                (
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
+            let input_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
+                rlc::value(
+                    input_bytes[input_bytes_start_offset..input_bytes_end_offset]
+                        .iter()
+                        .rev(),
+                    randomness,
                 )
-            };
+            });
+            let output_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
+                rlc::value(output_bytes[..output_bytes_end].iter().rev(), randomness)
+            });
+            let return_bytes_rlc = region.challenges().keccak_input().map(|randomness| {
+                rlc::value(
+                    return_bytes[return_bytes_start_offset..return_bytes_end_offset]
+                        .iter()
+                        .rev(),
+                    randomness,
+                )
+            });
+            println!("input_bytes_rlc: {:?}", input_bytes_rlc);
+            println!("output_bytes_rlc: {:?}", output_bytes_rlc);
+            println!("return_bytes_rlc: {:?}", return_bytes_rlc);
+            let input_rws = Value::known(F::from(input_bytes_word_count as u64));
+            let output_rws = Value::known(F::from(output_bytes_word_count as u64));
+            let return_rws = Value::known(F::from((return_bytes_word_count * 2) as u64));
+            println!("input_rws: {:?}", input_rws);
+            println!("output_rws: {:?}", output_rws);
+            println!("return_rws: {:?}", return_rws);
+            (
+                input_bytes_rlc,
+                output_bytes_rlc,
+                return_bytes_rlc,
+                input_rws,
+                output_rws,
+                return_rws,
+            )
+        } else {
+            (
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+            )
+        };
 
         self.input_bytes_rlc
             .assign(region, offset, input_bytes_rlc)?;
@@ -1106,10 +1130,7 @@ mod test {
     };
 
     use itertools::Itertools;
-    use mock::{
-        test_ctx::helpers::account_0_code_account_1_no_code,
-        TestContext,
-    };
+    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
     use rayon::prelude::{ParallelBridge, ParallelIterator};
     use std::default::Default;
@@ -1523,9 +1544,7 @@ mod test {
 mod test_precompiles {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::{circuit_input_builder::CircuitsParams, evm::PrecompileCallArgs};
-    use eth_types::{
-        bytecode, evm_types::OpcodeId, word, Word,
-    };
+    use eth_types::{bytecode, evm_types::OpcodeId, word, Word};
 
     use mock::{
         test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
@@ -1541,7 +1560,7 @@ mod test_precompiles {
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
         )
-            .unwrap();
+        .unwrap();
 
         let step = ctx.geth_traces[0]
             .struct_logs
@@ -1856,4 +1875,3 @@ mod test_precompiles {
         },
     );
 }
-

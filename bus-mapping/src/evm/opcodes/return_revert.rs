@@ -231,7 +231,7 @@ fn handle_copy(
         state.memory_read_word(step, src_chunk_index.into())?;
 
         // write memory
-        let write_word = Word::from_big_endian(&write_chunk);
+        let write_word = Word::from_big_endian(write_chunk);
         state.memory_write_caller(step, dst_chunk_index.into(), write_word)?;
 
         dst_chunk_index += 32;
@@ -322,7 +322,7 @@ fn handle_create(
     for _ in 0..create_slot_len / 32 {
         // read memory
         state.memory_read_word(step, chunk_index.into())?;
-        chunk_index = chunk_index + 32;
+        chunk_index += 32;
     }
 
     let mut copy_steps = Vec::with_capacity(source.length as usize);

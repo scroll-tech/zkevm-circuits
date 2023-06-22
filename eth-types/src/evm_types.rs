@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+pub mod block_utils;
 pub mod gas_utils;
 pub mod memory;
 pub mod opcode_ids;

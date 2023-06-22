@@ -28,6 +28,7 @@ pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
 mod address;
 mod balance;
+mod blockhash;
 mod calldatacopy;
 mod calldataload;
 mod calldatasize;
@@ -84,6 +85,7 @@ use self::sha3::Sha3;
 use crate::precompile::is_precompiled;
 use address::Address;
 use balance::Balance;
+use blockhash::Blockhash;
 use calldatacopy::Calldatacopy;
 use calldataload::Calldataload;
 use calldatasize::Calldatasize;
@@ -207,7 +209,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::RETURNDATASIZE => Returndatasize::gen_associated_ops,
         OpcodeId::RETURNDATACOPY => Returndatacopy::gen_associated_ops,
         OpcodeId::EXTCODEHASH => Extcodehash::gen_associated_ops,
-        OpcodeId::BLOCKHASH => StackOnlyOpcode::<1, 1>::gen_associated_ops,
+        OpcodeId::BLOCKHASH => Blockhash::gen_associated_ops,
         OpcodeId::COINBASE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::TIMESTAMP => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::NUMBER => StackOnlyOpcode::<0, 1>::gen_associated_ops,

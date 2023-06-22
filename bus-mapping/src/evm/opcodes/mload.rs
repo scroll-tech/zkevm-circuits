@@ -3,7 +3,7 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     Error,
 };
-use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian, Word};
+use eth_types::{evm_types::MemoryAddress, GethExecStep, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
@@ -57,7 +57,7 @@ mod mload_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{MemoryOp, MemoryWordOp, StackOp, RW},
+        operation::{MemoryWordOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,

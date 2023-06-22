@@ -392,7 +392,7 @@ impl CopyEvent {
             }
         }
 
-        return rw_counter;
+        rw_counter
     }
 
     /// rw counter increase left at step index

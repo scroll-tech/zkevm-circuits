@@ -7,7 +7,7 @@ use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{Address, Hash, ToWord, Word, U256};
+use eth_types::{sign_types::SignData, Address, Hash, ToWord, Word};
 use std::collections::{BTreeMap, HashMap};
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -70,7 +70,7 @@ impl Default for BlockSteps {
 #[derive(Debug, Clone)]
 pub struct BlockHead {
     /// chain id
-    pub chain_id: Word,
+    pub chain_id: u64,
     /// history hashes contains most recent 256 block hashes in history, where
     /// the lastest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
@@ -92,7 +92,7 @@ pub struct BlockHead {
 impl BlockHead {
     /// Create a new block.
     pub fn new(
-        chain_id: Word,
+        chain_id: u64,
         history_hashes: Vec<Word>,
         eth_block: &eth_types::Block<eth_types::Transaction>,
     ) -> Result<Self, Error> {
@@ -153,6 +153,8 @@ pub struct Block {
     pub code: HashMap<Hash, Vec<u8>>,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
+    /// IO to/from the precompile Ecrecover calls.
+    pub ecrecover_events: Vec<SignData>,
     /// Block-wise steps
     pub block_steps: BlockSteps,
     /// Exponentiation events in the block.
@@ -160,7 +162,7 @@ pub struct Block {
     /// Circuits Setup Paramteres
     pub circuits_params: CircuitsParams,
     /// chain id
-    pub chain_id: Word,
+    pub chain_id: u64,
 }
 
 impl Block {
@@ -187,7 +189,7 @@ impl Block {
     }
     /// Create a new block.
     pub fn new<TX>(
-        chain_id: Word,
+        chain_id: u64,
         history_hashes: Vec<Word>,
         eth_block: &eth_types::Block<eth_types::Transaction>,
         circuits_params: CircuitsParams,
@@ -219,7 +221,7 @@ impl Block {
     }
 
     /// Return the chain id.
-    pub fn chain_id(&self) -> U256 {
+    pub fn chain_id(&self) -> u64 {
         self.chain_id
     }
 
@@ -245,5 +247,9 @@ impl Block {
     /// Push an exponentiation event to the block.
     pub fn add_exp_event(&mut self, event: ExpEvent) {
         self.exp_events.push(event);
+    }
+    /// Push an ecrecover event to the block.
+    pub fn add_ecrecover_event(&mut self, event: SignData) {
+        self.ecrecover_events.push(event);
     }
 }

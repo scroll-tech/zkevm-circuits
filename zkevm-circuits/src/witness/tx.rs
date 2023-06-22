@@ -18,7 +18,7 @@ use crate::{
 use bus_mapping::circuit_input_builder::{self, get_dummy_tx, get_dummy_tx_hash, TxL1Fee};
 use eth_types::{
     evm_types::gas_utils::tx_data_gas_cost,
-    geth_types::{TxType, TxType::Eip155},
+    geth_types::{TxType, TxType::PreEip155},
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
 };
@@ -90,18 +90,16 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    /// Assignments for tx table, split into tx_data (all fields except
-    /// calldata) and tx_calldata
-    /// Return a fixed dummy tx for chain_id
+    /// Return a fixed dummy pre-eip155 tx
     pub fn dummy(chain_id: u64) -> Self {
-        let (dummy_tx, dummy_sig) = get_dummy_tx(chain_id);
-        let dummy_tx_hash = get_dummy_tx_hash(chain_id);
+        let (dummy_tx, dummy_sig) = get_dummy_tx();
+        let dummy_tx_hash = get_dummy_tx_hash();
         let rlp_signed = dummy_tx.rlp_signed(&dummy_sig).to_vec();
-        let rlp_unsigned = dummy_tx.rlp().to_vec();
+        let rlp_unsigned = dummy_tx.rlp_unsigned().to_vec();
 
         Self {
-            block_number: 0, // FIXME
-            id: 0,           // need to be changed to correct value
+            block_number: 0,
+            id: 0, // need to be changed to correct value
             caller_address: Address::zero(),
             callee_address: Some(Address::zero()),
             is_create: false, // callee_address != None
@@ -112,7 +110,7 @@ impl Transaction {
             rlp_signed,
             rlp_unsigned,
             hash: dummy_tx_hash,
-            tx_type: Eip155,
+            tx_type: PreEip155,
 
             ..Default::default()
         }
@@ -120,6 +118,9 @@ impl Transaction {
 
     /// Sign data
     pub fn sign_data(&self) -> Result<SignData, Error> {
+        if self.r.is_zero() && self.s.is_zero() && self.v == 0 {
+            return Ok(SignData::default());
+        }
         let sig_r_le = self.r.to_le_bytes();
         let sig_s_le = self.s.to_le_bytes();
         let sig_r = ct_option_ok_or(
@@ -143,12 +144,15 @@ impl Transaction {
             libsecp256k1::Error::InvalidMessage,
         )?;
         Ok(SignData {
-            signature: (sig_r, sig_s),
+            signature: (sig_r, sig_s, v),
             pk,
             msg,
             msg_hash,
         })
     }
+
+    /// Assignments for tx table, split into tx_data (all fields except
+    /// calldata) and tx_calldata
 
     /// Assignments for tx table
     pub fn table_assignments_fixed<F: Field>(
@@ -787,7 +791,7 @@ impl From<MockTransaction> for Transaction {
                 .gas(mock_tx.gas)
                 .value(mock_tx.value)
                 .data(mock_tx.input.clone())
-                .chain_id(mock_tx.chain_id.as_u64());
+                .chain_id(mock_tx.chain_id);
             if !is_create {
                 legacy_tx = legacy_tx.to(mock_tx.to.as_ref().map(|to| to.address()).unwrap());
             }
@@ -813,7 +817,7 @@ impl From<MockTransaction> for Transaction {
             call_data_length: mock_tx.input.len(),
             call_data_gas_cost: tx_data_gas_cost(&mock_tx.input),
             tx_data_gas_cost: tx_data_gas_cost(&rlp_signed),
-            chain_id: mock_tx.chain_id.as_u64(),
+            chain_id: mock_tx.chain_id,
             rlp_unsigned,
             rlp_signed,
             v: sig.v,

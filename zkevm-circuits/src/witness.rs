@@ -3,10 +3,7 @@
 //! used to generate witnesses for circuits.
 
 mod block;
-pub use block::{
-    block_apply_mpt_state, block_convert, Block, BlockContext, BlockContexts,
-    NUM_PREV_BLOCK_ALLOWED,
-};
+pub use block::{block_apply_mpt_state, block_convert, Block, BlockContext, BlockContexts};
 
 mod bytecode;
 pub use bytecode::Bytecode;

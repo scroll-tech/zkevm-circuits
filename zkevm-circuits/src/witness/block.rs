@@ -9,7 +9,7 @@ use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 
 use super::{
@@ -17,13 +17,6 @@ use super::{
     MptUpdates, RwMap, Transaction,
 };
 use crate::util::{Challenges, DEFAULT_RAND};
-
-/// max range of prev blocks allowed inside BLOCKHASH opcode
-#[cfg(feature = "scroll")]
-pub const NUM_PREV_BLOCK_ALLOWED: u64 = 1;
-/// max range of prev blocks allowed inside BLOCKHASH opcode
-#[cfg(not(feature = "scroll"))]
-pub const NUM_PREV_BLOCK_ALLOWED: u64 = 256;
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -57,6 +50,8 @@ pub struct Block<F> {
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
+    /// IO to/from precompile Ecrecover calls.
+    pub ecrecover_events: Vec<SignData>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
     /// Withdraw root
@@ -68,7 +63,7 @@ pub struct Block<F> {
     /// Mpt updates
     pub mpt_updates: MptUpdates,
     /// Chain ID
-    pub chain_id: Word,
+    pub chain_id: u64,
 }
 
 /// ...
@@ -106,6 +101,32 @@ impl<F: Field> Block<F> {
                 }
             }
         }
+    }
+
+    /// Get signature (witness) from the block for tx signatures and ecRecover calls.
+    pub(crate) fn get_sign_data(&self, padding: bool) -> Vec<SignData> {
+        let mut signatures: Vec<SignData> = self
+            .txs
+            .iter()
+            .map(|tx| {
+                if tx.tx_type.is_l1_msg() {
+                    // dummy signature
+                    Ok(SignData::default())
+                } else {
+                    tx.sign_data()
+                }
+            })
+            .filter_map(|res| res.ok())
+            .collect::<Vec<SignData>>();
+        signatures.extend_from_slice(&self.ecrecover_events);
+        if padding {
+            let max_verif = self.circuits_params.max_txs;
+            signatures.resize(
+                max_verif,
+                Transaction::dummy(self.chain_id).sign_data().unwrap(),
+            )
+        }
+        signatures
     }
 }
 
@@ -191,7 +212,7 @@ pub struct BlockContext {
     /// The hash of previous blocks
     pub history_hashes: Vec<Word>,
     /// The chain id
-    pub chain_id: Word,
+    pub chain_id: u64,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
@@ -242,7 +263,7 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                     Value::known(current_block_number),
-                    randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
+                    Value::known(F::from(self.chain_id)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),
@@ -266,7 +287,7 @@ impl BlockContext {
         #[cfg(not(feature = "scroll"))]
         let history_hashes: &[U256] = &self.history_hashes;
         #[cfg(feature = "scroll")]
-        let history_hashes: &[U256] = &[self.eth_block.parent_hash.to_word()];
+        let history_hashes: &[U256] = &[]; // block_hash is computed as keccak256(chain_id || block_number)
 
         let len_history = history_hashes.len();
 
@@ -399,7 +420,7 @@ pub fn block_convert<F: Field>(
                 } else {
                     last_block_num + 1
                 };
-                tx_convert(tx, idx + 1, chain_id.as_u64(), next_block_num)
+                tx_convert(tx, idx + 1, chain_id, next_block_num)
             })
             .collect(),
         sigs: block.txs().iter().map(|tx| tx.signature).collect(),
@@ -422,6 +443,7 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
+        ecrecover_events: block.ecrecover_events.clone(),
         circuits_params: CircuitsParams {
             max_rws,
             ..block.circuits_params

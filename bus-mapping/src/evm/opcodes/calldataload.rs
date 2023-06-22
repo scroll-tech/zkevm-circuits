@@ -153,7 +153,7 @@ mod calldataload_tests {
         }
 
         let mut memory_bytes = vec![];
-        memory_bytes.resize(32 - pushdata.clone().len(), 0);
+        memory_bytes.resize(32 - pushdata.len(), 0);
         let mut pushdata_mut = pushdata.clone();
         memory_bytes.append(&mut pushdata_mut);
         // let code_a = bytecode! {
@@ -174,7 +174,7 @@ mod calldataload_tests {
         // };
         let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
             address: addr_b,
-            pushdata: pushdata.clone(),
+            pushdata: pushdata,
             call_data_length,
             call_data_offset,
             ..MockCallBytecodeParams::default()

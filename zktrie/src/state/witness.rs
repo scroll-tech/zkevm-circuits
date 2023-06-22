@@ -173,17 +173,23 @@ impl WitnessGenerator {
         );
 
         let mut out = self.trace_account_update(address, |acc| {
-            // sanity check
-            assert_eq!(
-                smt_hash_from_bytes(acc.storage_root.as_bytes()),
-                storage_before_path
-                    .as_ref()
-                    .map(|p| p.root)
-                    .unwrap_or(HexBytes([0; 32]))
-            );
-            let mut acc = *acc;
-            acc.storage_root = storage_root_after;
-            Some(acc)
+            if let Some(acc) = acc {
+                // sanity check
+                assert_eq!(
+                    smt_hash_from_bytes(acc.storage_root.as_bytes()),
+                    storage_before_path
+                        .as_ref()
+                        .map(|p| p.root)
+                        .unwrap_or(HexBytes([0; 32]))
+                );
+                let mut acc = *acc;
+                acc.storage_root = storage_root_after;
+                Some(acc)
+            } else {
+                // sanity check
+                assert!(old_value.is_zero() && new_value.is_zero());
+                None
+            }
         });
 
         out.common_state_root = None; // clear common state root
@@ -196,7 +202,7 @@ impl WitnessGenerator {
 
     fn trace_account_update<U>(&mut self, address: Address, update_account_data: U) -> SMTTrace
     where
-        U: FnOnce(&AccountData) -> Option<AccountData>,
+        U: FnOnce(Option<&AccountData>) -> Option<AccountData>,
     {
         let account_data_before = self.accounts.get(&address).copied();
 
@@ -205,7 +211,7 @@ impl WitnessGenerator {
 
         let account_path_before = decode_proof_for_mpt_path(address_key, proofs).unwrap();
 
-        let account_data_after = update_account_data(&account_data_before.unwrap_or_default());
+        let account_data_after = update_account_data(account_data_before.as_ref());
 
         if let Some(account_data_after) = account_data_after {
             let mut nonce_codesize = [0u8; 32];
@@ -282,7 +288,7 @@ impl WitnessGenerator {
             self.trace_storage_update(address, key, new_val, old_val)
         } else {
             self.trace_account_update(address, |acc_before| {
-                let mut acc_data = *acc_before;
+                let mut acc_data = acc_before.copied().unwrap_or_default();
                 match proof_type {
                     MPTProofType::NonceChanged => {
                         assert_eq!(old_val.as_u64(), acc_data.nonce);
@@ -338,6 +344,7 @@ impl WitnessGenerator {
                     }
                     MPTProofType::AccountDoesNotExist => {
                         // for proof NotExist, the account_before must be empty
+                        assert!(acc_before.is_none());
                         assert!(
                             acc_data.balance.is_zero(),
                             "not-exist proof on existed account balance: {address}"

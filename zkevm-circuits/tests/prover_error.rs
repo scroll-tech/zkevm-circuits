@@ -40,7 +40,7 @@ fn prover_error() {
     const MAX_CALLDATA: usize = 256;
     const MOCK_RANDOMNESS: u64 = 0x100;
     let k = 19;
-    let chain_id = Word::from(99);
+    let chain_id = 99;
     let circuit_params = CircuitsParams {
         max_txs: MAX_TXS,
         max_calldata: MAX_CALLDATA,

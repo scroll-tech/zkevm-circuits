@@ -356,7 +356,7 @@ fn handle_copy(
     for _ in 0..create_slot_len / 32 {
         // read memory
         state.memory_read_word(step, chunk_index.into())?;
-        chunk_index = chunk_index + 32;
+        chunk_index += 32;
     }
 
     let mut copy_steps = Vec::with_capacity(length as usize);

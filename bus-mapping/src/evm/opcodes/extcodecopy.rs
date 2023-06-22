@@ -179,8 +179,8 @@ mod extcodecopy_tests {
         circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
         operation::{
-            AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, MemoryWordOp,
-            StackOp, TxAccessListAccountOp, RW,
+            AccountField, AccountOp, CallContextField, CallContextOp, MemoryWordOp, StackOp,
+            TxAccessListAccountOp, RW,
         },
         state_db::CodeDB,
     };

@@ -10,7 +10,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{
-    circuit_input_builder::{TxL1Fee, TX_L1_FEE_PRECISION},
+    circuit_input_builder::{TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION},
     l2_predeployed::l1_gas_price_oracle,
 };
 use eth_types::{Field, ToLittleEndian, ToScalar};
@@ -153,7 +153,7 @@ impl<F: Field> TxL1FeeGadget<F> {
         .map(|word| from_bytes::expr(&word.cells[..N_BYTES_U64]));
 
         // <https://github.com/scroll-tech/go-ethereum/blob/49192260a177f1b63fc5ea3b872fb904f396260c/rollup/fees/rollup_fee.go#L118>
-        let tx_l1_gas = tx_data_gas_cost + 1088.expr() + fee_overhead;
+        let tx_l1_gas = tx_data_gas_cost + TX_L1_COMMIT_EXTRA_COST.expr() + fee_overhead;
         cb.require_equal(
             "fee_scalar * base_fee * tx_l1_gas == tx_l1_fee * 10e9 + remainder",
             fee_scalar * base_fee * tx_l1_gas,
@@ -192,9 +192,8 @@ mod tests {
     const TEST_FEE_OVERHEAD: u64 = 100;
     const TEST_FEE_SCALAR: u64 = 10;
     const TEST_TX_DATA_GAS_COST: u64 = 40; // 2 (zeros) * 4 + 2 (non-zeros) * 16
-    const TEST_TX_L1_FEE: u128 = 184;
+    const TEST_TX_L1_FEE: u128 = 30;
 
-    #[ignore]
     #[test]
     fn test_tx_l1_fee_with_right_values() {
         let witnesses = [
@@ -209,7 +208,6 @@ mod tests {
         try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, true);
     }
 
-    #[ignore]
     #[test]
     fn test_tx_l1_fee_with_wrong_values() {
         let witnesses = [

@@ -25,7 +25,7 @@ fn get_tx(is_eip155: bool) -> Transaction {
         .gas(word!("0x77320"))
         .nonce(word!("0x7f"));
     if is_eip155 {
-        tx = tx.chain_id(MOCK_CHAIN_ID.as_u64());
+        tx = tx.chain_id(*MOCK_CHAIN_ID);
     }
     let (tx_type, unsigned_bytes) = if is_eip155 {
         (TxType::Eip155, tx.rlp().to_vec())

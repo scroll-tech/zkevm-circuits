@@ -180,8 +180,6 @@ mod log_tests {
         Bytecode, ToWord, Word,
     };
 
-    use crate::operation::MemoryWordOp;
-    use eth_types::evm_types::MemoryAddress;
     use mock::test_ctx::{helpers::*, TestContext};
     use pretty_assertions::assert_eq;
 

@@ -1,5 +1,3 @@
-use std::mem;
-
 use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
@@ -76,17 +74,16 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
 
 #[cfg(test)]
 mod mstore_tests {
-    use super::*;
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{MemoryOp, MemoryWordOp, StackOp, RW},
+        operation::{MemoryWordOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,
         evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
-        Word, U256,
+        Word,
     };
     use itertools::Itertools;
     use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};

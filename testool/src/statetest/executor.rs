@@ -166,7 +166,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     (
         st.id,
         TraceConfig {
-            chain_id: U256::one(),
+            chain_id: 1,
             history_hashes: vec![U256::from_big_endian(st.env.previous_hash.as_bytes())],
             block_constants: geth_types::BlockConstants {
                 coinbase: st.env.current_coinbase,
@@ -284,7 +284,7 @@ pub fn run_test(
             s: tx.s,
             v: U64::from(tx.v),
             block_number: Some(U64::from(trace_config.block_constants.number.as_u64())),
-            chain_id: Some(trace_config.chain_id),
+            chain_id: Some(trace_config.chain_id.into()),
             ..eth_types::Transaction::default()
         })
         .collect();
@@ -305,7 +305,7 @@ pub fn run_test(
     let mut wallets = HashMap::new();
     wallets.insert(
         wallet.address(),
-        wallet.with_chain_id(trace_config.chain_id.as_u64()),
+        wallet.with_chain_id(trace_config.chain_id),
     );
 
     // process the transaction

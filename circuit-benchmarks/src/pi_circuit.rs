@@ -25,7 +25,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use zkevm_circuits::{
-        pi_circuit::{PiCircuit, PiTestCircuit},
+        pi_circuit::{dev::PiTestCircuit, PiCircuit},
         util::SubCircuit,
         witness::{block_convert, Block},
     };
