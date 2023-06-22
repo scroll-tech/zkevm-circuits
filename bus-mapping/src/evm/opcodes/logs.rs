@@ -369,15 +369,19 @@ mod log_tests {
             { log_topic_ops },
         );
 
-        let length = mstart + msize;
         let copy_start = mstart - mstart % 32;
-        let copy_end = length - length % 32;
+        let copy_last = mstart + msize - 1;
+        let copy_end = copy_last - copy_last % 32;
         let word_ops = (copy_end + 32 - copy_start) / 32;
         let copied_bytes = builder.block.copy_events[0]
             .bytes
             .iter()
             .map(|(b, _, _)| *b)
             .collect::<Vec<_>>();
+        assert_eq!(
+            builder.block.container.tx_log.len(),
+            word_ops + (1 + topic_count)
+        );
         assert_eq!(
             ((1 + topic_count)..word_ops + (1 + topic_count))
                 .map(|idx| &builder.block.container.tx_log[idx])

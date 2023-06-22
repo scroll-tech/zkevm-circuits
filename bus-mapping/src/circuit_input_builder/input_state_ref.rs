@@ -1963,11 +1963,8 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok(copy_steps);
         }
 
-        let (_, dst_begin_slot) = self.get_addr_shift_slot(src_addr).unwrap();
-        let (_, dst_end_slot) = self.get_addr_shift_slot(src_addr + bytes_left).unwrap();
-        // TODO: should be src_addr + bytes_left - 1?
+        let (dst_begin_slot, log_slot_len, _) = Memory::align_range(src_addr, bytes_left);
 
-        let log_slot_len = (dst_end_slot + 32 - dst_begin_slot) as usize;
         let log_slot_bytes = self
             .call_ctx()?
             .memory
