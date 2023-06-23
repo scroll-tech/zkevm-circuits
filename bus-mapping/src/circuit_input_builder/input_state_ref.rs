@@ -2151,55 +2151,61 @@ impl<'a> CircuitInputStateRef<'a> {
         exec_step: &mut ExecStep,
         src_addr: u64,
         bytes_left: u64,
-    ) -> Result<Vec<(u8, bool, bool)>, Error> {
-        let mut copy_steps = Vec::with_capacity(bytes_left as usize);
+    ) -> Result<(Vec<(u8, bool, bool)>, Vec<(u8, bool, bool)>), Error> {
         if bytes_left == 0 {
-            return Ok(copy_steps);
+            return Ok((vec![], vec![]));
         }
 
-        let (dst_begin_slot, log_slot_len, _) = Memory::align_range(src_addr, bytes_left);
+        let (src_begin_slot, full_length, _) = Memory::align_range(src_addr, bytes_left);
 
-        let log_slot_bytes = self
-            .call_ctx()?
-            .memory
-            .read_chunk(dst_begin_slot.into(), log_slot_len.into());
+        // Read the aligned memory content.
+        let memory = &self.call_ctx()?.memory;
+        let read_slot_bytes = memory.read_chunk(src_begin_slot.into(), full_length.into());
 
-        let mut first_set = true;
-        let mut chunk_index = dst_begin_slot;
+        // Read the actual log data and pad it with zeros.
+        let mut log_slot_bytes = memory.read_chunk(src_addr.into(), bytes_left.into());
+        log_slot_bytes.resize(full_length as usize, 0);
+
+        let mut chunk_index = src_begin_slot;
         // memory word writes to destination word
         for chunk in log_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(chunk);
             // read memory
-            let dest_word = self.memory_read_word(exec_step, chunk_index.into())?;
+            self.memory_read_word(exec_step, chunk_index.into())?;
             // write log
+            // TODO: this write an empty log slot when memory was not aligned. Should we skip it?
             self.tx_log_write(
                 exec_step,
                 self.tx_ctx.id(),
                 self.tx_ctx.log_id + 1,
                 TxLogField::Data,
-                (chunk_index - dst_begin_slot) as usize,
+                (chunk_index - src_begin_slot) as usize,
                 dest_word,
             )?;
             chunk_index += 32;
         }
 
-        for (idx, value) in log_slot_bytes.iter().enumerate() {
-            if idx as u64 + dst_begin_slot < src_addr {
-                // front mask byte
-                copy_steps.push((*value, false, true));
-            } else if idx as u64 + dst_begin_slot >= src_addr + bytes_left {
-                // back mask byte
-                copy_steps.push((*value, false, true));
-            } else {
-                // real copy byte
-                if first_set {
-                    first_set = false;
-                }
-                copy_steps.push((*value, false, false));
-            }
-        }
+        let mut read_steps = Vec::with_capacity(full_length as usize);
+        Self::gen_memory_copy_steps(
+            &mut read_steps,
+            &read_slot_bytes,
+            full_length as usize,
+            src_addr as usize,
+            src_begin_slot as usize,
+            bytes_left as usize,
+        );
 
-        Ok(copy_steps)
+        let mut write_steps = Vec::with_capacity(full_length as usize);
+        Self::gen_memory_copy_steps(
+            &mut write_steps,
+            &log_slot_bytes,
+            full_length as usize,
+            0,
+            0,
+            bytes_left as usize,
+        );
+
+        Ok((read_steps, write_steps))
     }
 
     // TODO: add new gen_copy_steps for common use

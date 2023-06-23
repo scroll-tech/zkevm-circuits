@@ -137,7 +137,7 @@ fn gen_copy_event(
     let msize = geth_step.stack.nth_last(1)?.as_u64();
 
     let (src_addr, src_addr_end) = (memory_start, memory_start.checked_add(msize).unwrap());
-    let steps = state.gen_copy_steps_for_log(exec_step, src_addr, msize)?;
+    let (read_steps, write_steps) = state.gen_copy_steps_for_log(exec_step, src_addr, msize)?;
 
     Ok(CopyEvent {
         src_type: CopyDataType::Memory,
@@ -149,8 +149,8 @@ fn gen_copy_event(
         dst_addr: 0,
         log_id: Some(state.tx_ctx.log_id as u64 + 1),
         rw_counter_start,
-        bytes: steps,
-        aux_bytes: None,
+        bytes: read_steps,
+        aux_bytes: Some(write_steps),
     })
 }
 
