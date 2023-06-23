@@ -30,7 +30,7 @@ fn test_e2e() {
     fs::create_dir(path).unwrap();
 
     // inner circuit: Mock circuit
-    let k0 = 19;
+    let k0 = 8;
     // wide compression
     let k1 = 21;
     // thin compression

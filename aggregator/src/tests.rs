@@ -1,7 +1,7 @@
+pub(crate) mod aggregation;
 pub(crate) mod aggregator_e2e;
+pub(crate) mod compression;
 pub(crate) mod mock_chunk;
-pub(crate) mod proof_aggregation;
-pub(crate) mod proof_compression;
 
 #[macro_export]
 macro_rules! layer_0 {

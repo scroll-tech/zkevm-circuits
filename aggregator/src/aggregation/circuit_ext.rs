@@ -1,7 +1,9 @@
 use halo2_proofs::{halo2curves::bn256::Fr, plonk::Selector};
 use snark_verifier_sdk::CircuitExt;
 
-use crate::{param::LIMBS, AggregationCircuit};
+use crate::param::LIMBS;
+
+use super::AggregationCircuit;
 
 impl CircuitExt<Fr> for AggregationCircuit {
     fn num_instance(&self) -> Vec<usize> {

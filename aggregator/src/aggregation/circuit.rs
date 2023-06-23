@@ -24,9 +24,9 @@ use snark_verifier_sdk::{
 use zkevm_circuits::util::Challenges;
 
 use crate::{
+    aggregation::config::AggregationConfig,
     core::{assign_batch_hashes, extract_accumulators_and_proof},
     param::{ConfigParams, BITS, LIMBS},
-    proof_aggregation::config::AggregationConfig,
     BatchHash, ChunkHash, CHAIN_ID_LEN, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX,
     WITHDRAW_ROOT_INDEX,
 };
@@ -55,6 +55,7 @@ impl AggregationCircuit {
         rng: impl Rng + Send,
         chunk_hashes: &[ChunkHash],
     ) -> Self {
+        let timer = start_timer!(|| "generate aggregation circuit");
         // sanity: for each chunk we have a snark
         assert_eq!(
             snarks.len(),
@@ -102,17 +103,14 @@ impl AggregationCircuit {
         let batch_hash = BatchHash::construct(chunk_hashes);
         let public_input_hash = &batch_hash.instances()[0];
 
-        let flattened_instances: Vec<Fr> = [
-            acc_instances.as_slice(),
-            public_input_hash.as_slice(),
-        ]
-        .concat();
+        let flattened_instances: Vec<Fr> =
+            [acc_instances.as_slice(), public_input_hash.as_slice()].concat();
 
         log::trace!("flattened instances during construction");
         for (i, e) in flattened_instances.iter().enumerate() {
             log::trace!("{}-th: {:?}", i, e);
         }
-
+        end_timer!(timer);
         Self {
             svk,
             snarks: snarks.iter().cloned().map_into().collect(),
@@ -147,7 +145,7 @@ impl Circuit<Fr> for AggregationCircuit {
         let challenges = Challenges::construct(meta);
         let config = AggregationConfig::configure(meta, &params, challenges);
         log::info!(
-            "aggregation circuit configured with k = {}  and {:?} advice columns",
+            "aggregation circuit configured with k = {} and {:?} advice columns",
             params.degree,
             params.num_advice
         );

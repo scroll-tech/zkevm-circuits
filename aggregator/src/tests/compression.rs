@@ -17,25 +17,39 @@ use crate::{
 };
 
 #[test]
-fn test_proof_compression() {
+fn test_mock_compression() {
     env_logger::init();
 
     let dir = format!("data/{}", process::id());
     let path = Path::new(dir.as_str());
     fs::create_dir(path).unwrap();
 
-    let k0 = 19;
-    let k1 = 25;
+    let k0 = 8;
+    let k1 = 22;
 
     let mut rng = test_rng();
-    let layer_1_params = gen_srs(k1);
+    let params = gen_srs(k1);
 
     // Proof for test circuit
     let circuit = MockChunkCircuit::random(&mut rng, true);
-    let layer_0_snark = layer_0!(circuit, MockChunkCircuit, layer_1_params, k0, path);
+    let layer_0_snark = layer_0!(circuit, MockChunkCircuit, params, k0, path);
 
-    std::env::set_var("VERIFY_CONFIG", "./configs/compression_thin.config");
-    compression_layer_evm!(layer_0_snark, layer_1_params, k1, path, 1)
+    std::env::set_var("VERIFY_CONFIG", "./configs/compression_wide.config");
+    // layer 1 proof compression
+    {
+        let param = {
+            let mut param = params;
+            param.downsize(k1);
+            param
+        };
+        let compression_circuit = CompressionCircuit::new(&param, &layer_0_snarks, true, &mut rng);
+        let instance = compression_circuit.instances();
+        println!("instance length {:?}", instance.len());
+
+        let mock_prover = MockProver::<Fr>::run(k1, &compression_circuit, instance).unwrap();
+
+        mock_prover.assert_satisfied_par()
+    }
 }
 
 // This test takes about 1 hour on CPU

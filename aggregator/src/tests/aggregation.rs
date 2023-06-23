@@ -22,9 +22,9 @@ fn test_mock_aggregation() {
     fs::create_dir(path).unwrap();
 
     // inner circuit: Mock circuit
-    let k0 = 19;
+    let k0 = 8;
     // aggregation
-    let k1 = 26;
+    let k1 = 22;
 
     let mut rng = test_rng();
     let params = gen_srs(k1);
@@ -74,7 +74,7 @@ fn test_aggregation_circuit() {
     fs::create_dir(path).unwrap();
 
     // inner circuit: Mock circuit
-    let k0 = 19;
+    let k0 = 8;
     // wide compression
     let k1 = 26;
     // thin compression

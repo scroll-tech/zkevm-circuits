@@ -1,6 +1,8 @@
+use std::iter;
+
 use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
@@ -8,10 +10,7 @@ use zkevm_circuits::util::{Challenges, SubCircuitConfig};
 
 use crate::ChunkHash;
 
-use super::{
-    config::{MockChunkCircuitConfig, MockChunkCircuitConfigArgs},
-    MockChunkCircuit,
-};
+use super::{config::MockPlonkConfig, MockChunkCircuit};
 
 impl MockChunkCircuit {
     pub(crate) fn random<R: rand::RngCore>(r: &mut R, is_fresh: bool) -> Self {
@@ -21,31 +20,19 @@ impl MockChunkCircuit {
             chunk: ChunkHash::mock_chunk_hash(r),
         }
     }
-
-    /// Public input hash for a given chunk is defined as
-    ///  keccak( chain id || prev state root || post state root || withdraw root || data hash )
-    fn extract_hash_preimages(&self) -> Vec<u8> {
-        self.chunk.extract_hash_preimage()
-    }
 }
 
 impl Circuit<Fr> for MockChunkCircuit {
+    type Config = MockPlonkConfig;
     type FloorPlanner = SimpleFloorPlanner;
-
-    type Config = (MockChunkCircuitConfig, Challenges);
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        let challenges = Challenges::construct(meta);
-        let challenges_exprs = challenges.exprs(meta);
-        let args = MockChunkCircuitConfigArgs {
-            challenges: challenges_exprs,
-        };
-        let config = MockChunkCircuitConfig::new(meta, args);
-        (config, challenges)
+        meta.set_minimum_degree(4);
+        MockPlonkConfig::configure(meta)
     }
 
     fn synthesize(
@@ -53,23 +40,54 @@ impl Circuit<Fr> for MockChunkCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        let (config, challenge) = config;
-        let challenges = challenge.values(&layouter);
+        layouter.assign_region(
+            || "mock circuit",
+            |mut region| {
+                let acc_len = if self.is_fresh { 0 } else { 12 };
 
-        // extract all the hashes and load them to the hash table
-        let timer = start_timer!(|| ("extract hash").to_string());
-        let preimages = self.extract_hash_preimages();
-        end_timer!(timer);
+                for (i, byte) in iter::repeat(0)
+                    .take(acc_len)
+                    .chain(
+                        self.chunk
+                            .chain_id
+                            .to_be_bytes()
+                            .iter()
+                            .chain(
+                                self.chunk
+                                    .data_hash
+                                    .as_bytes()
+                                    .iter()
+                                    .chain(self.chunk.public_input_hash().as_bytes().iter()),
+                            )
+                            .copied(),
+                    )
+                    .enumerate()
+                {
+                    // "q_a·a + q_b·b + q_c·c + q_ab·a·b + constant + instance = 0",
+                    region.assign_advice(
+                        || "a",
+                        config.a,
+                        i,
+                        || Value::known(Fr::from(byte as u64)),
+                    )?;
+                    region.assign_advice(|| "b", config.b, i, || Value::known(Fr::zero()))?;
+                    region.assign_advice(|| "c", config.c, i, || Value::known(Fr::zero()))?;
 
-        let timer = start_timer!(|| ("load aux table").to_string());
-        config
-            .keccak_circuit_config
-            .load_aux_tables(&mut layouter)?;
-        end_timer!(timer);
+                    region.assign_fixed(|| "q_a", config.q_a, i, || Value::known(-Fr::one()))?;
+                    region.assign_fixed(|| "q_b", config.q_b, i, || Value::known(Fr::zero()))?;
+                    region.assign_fixed(|| "q_c", config.q_c, i, || Value::known(Fr::zero()))?;
+                    region.assign_fixed(|| "q_ab", config.q_ab, i, || Value::known(Fr::zero()))?;
+                    region.assign_fixed(
+                        || "constant",
+                        config.constant,
+                        i,
+                        || Value::known(Fr::zero()),
+                    )?;
+                }
+                Ok(())
+            },
+        )?;
 
-        let timer = start_timer!(|| ("assign cells").to_string());
-        config.assign(&mut layouter, challenges, &preimages, self.is_fresh)?;
-        end_timer!(timer);
         Ok(())
     }
 }
