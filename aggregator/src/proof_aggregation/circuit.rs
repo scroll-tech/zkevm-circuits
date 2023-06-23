@@ -38,7 +38,7 @@ pub struct AggregationCircuit {
     pub(crate) snarks: Vec<SnarkWitness>,
     // the public instance for this circuit consists of
     // - an accumulator (12 elements)
-    // - batch hash circuit's public inputs, 132 elements
+    // - the batch's public_input_hash (32 elements)
     pub(crate) flattened_instances: Vec<Fr>,
     // accumulation scheme proof, private input
     pub(crate) as_proof: Value<Vec<u8>>,
@@ -71,17 +71,18 @@ impl AggregationCircuit {
             for i in 0..32 {
                 // for each snark,
                 //  first 12 elements are accumulator
-                //  next 32 elements are data hash (44=12+32)
+                //  next 8 elements are chain id
+                //  next 32 elements are data hash (52=20+32)
                 //  next 32 elements are public_input_hash
                 //  data hash + public_input_hash = snark public input
                 assert_eq!(
                     Fr::from(chunk.data_hash.as_bytes()[i] as u64),
-                    snark_hash_bytes[i + 12]
+                    snark_hash_bytes[i + 20]
                 );
 
                 assert_eq!(
                     Fr::from(chunk_hash_bytes[i] as u64),
-                    snark_hash_bytes[i + 44]
+                    snark_hash_bytes[i + 52]
                 );
             }
         }
@@ -99,11 +100,11 @@ impl AggregationCircuit {
 
         // extract the pi aggregation circuit's instances
         let batch_hash = BatchHash::construct(chunk_hashes);
-        let pi_aggregation_instances = &batch_hash.instances()[0];
+        let public_input_hash = &batch_hash.instances()[0];
 
         let flattened_instances: Vec<Fr> = [
             acc_instances.as_slice(),
-            pi_aggregation_instances.as_slice(),
+            public_input_hash.as_slice(),
         ]
         .concat();
 
@@ -226,7 +227,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 snark_inputs.extend(
                     assigned_aggregation_instances
                         .iter()
-                        .flat_map(|instance_column| instance_column.iter().skip(12)),
+                        .flat_map(|instance_column| instance_column.iter().skip(20)),
                 );
 
                 config.range().finalize(&mut loader.ctx_mut());
@@ -255,6 +256,11 @@ impl Circuit<Fr> for AggregationCircuit {
         let timer = start_timer!(|| ("extract hash").to_string());
         let preimages = self.batch_hash.extract_hash_preimages();
         end_timer!(timer);
+
+        log::trace!("hash preimages");
+        for (i, e) in preimages.iter().enumerate() {
+            log::trace!("{}-th hash preimage {:02x?}", i, e)
+        }
 
         let timer = start_timer!(|| ("load aux table").to_string());
         config

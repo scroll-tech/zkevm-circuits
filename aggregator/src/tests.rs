@@ -17,8 +17,9 @@ macro_rules! layer_0 {
         };
 
         let pk = gen_pk(
-            &param, &$circuit, None,
-            // Some(&$path.join(Path::new("layer_0.pkey"))),
+            &param,
+            &$circuit,
+            Some(&$path.join(Path::new("layer_0.pkey"))),
         );
         log::trace!("finished layer 0 pk generation for circuit");
 

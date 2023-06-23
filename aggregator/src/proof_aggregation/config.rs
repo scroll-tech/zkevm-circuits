@@ -89,11 +89,10 @@ impl AggregationConfig {
         // digest column
         meta.enable_equality(columns.last().unwrap().advice);
 
-        // Instance column stores
+        // Instance column stores public input column
         // - the accumulator
-        // - the output of the hash
+        // - the batch public input hash
         let instance = meta.instance_column();
-        // public input column
         meta.enable_equality(instance);
 
         Self {

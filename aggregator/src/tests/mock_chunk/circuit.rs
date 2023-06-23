@@ -14,9 +14,9 @@ use super::{
 };
 
 impl MockChunkCircuit {
-    pub(crate) fn random<R: rand::RngCore>(r: &mut R) -> Self {
+    pub(crate) fn random<R: rand::RngCore>(r: &mut R, is_fresh: bool) -> Self {
         Self {
-            is_fresh: true,
+            is_fresh,
             chain_id: 0,
             chunk: ChunkHash::mock_chunk_hash(r),
         }

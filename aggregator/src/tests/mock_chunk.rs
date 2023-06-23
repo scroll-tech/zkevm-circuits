@@ -37,7 +37,14 @@ fn test_mock_chunk_prover() {
 
     let mut rng = test_rng();
 
-    let circuit = MockChunkCircuit::random(&mut rng);
+    let circuit = MockChunkCircuit::random(&mut rng, true);
+    let instance = circuit.instances();
+
+    let mock_prover = MockProver::<Fr>::run(LOG_DEGREE, &circuit, instance).unwrap();
+
+    mock_prover.assert_satisfied_par();
+
+    let circuit = MockChunkCircuit::random(&mut rng, false);
     let instance = circuit.instances();
 
     let mock_prover = MockProver::<Fr>::run(LOG_DEGREE, &circuit, instance).unwrap();

@@ -14,6 +14,7 @@ const CHUNKS_PER_BATCH: usize = 2;
 
 #[test]
 fn test_mock_aggregation() {
+    env_logger::init();
     let process_id = process::id();
 
     let dir = format!("data/{}", process_id);
@@ -54,6 +55,7 @@ fn test_mock_aggregation() {
         let aggregation_circuit =
             AggregationCircuit::new(&param, &layer_0_snarks, &mut rng, chunks.as_ref());
         let instance = aggregation_circuit.instances();
+        println!("instance length {:?}", instance.len());
 
         let mock_prover = MockProver::<Fr>::run(k1, &aggregation_circuit, instance).unwrap();
 
