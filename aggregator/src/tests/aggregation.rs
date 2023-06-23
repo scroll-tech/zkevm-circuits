@@ -24,7 +24,7 @@ fn test_mock_aggregation() {
     // inner circuit: Mock circuit
     let k0 = 8;
     // aggregation
-    let k1 = 22;
+    let k1 = 23;
 
     let mut rng = test_rng();
     let params = gen_srs(k1);
