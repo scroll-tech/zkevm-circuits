@@ -1035,20 +1035,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
             let input_bytes_rw_start = 33 + rw_offset;
             let input_bytes = (input_bytes_rw_start..input_bytes_rw_start + input_bytes_word_count)
-                .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                .map(|i| block.rws[step.rw_indices[i]].memory_word_pair().0)
                 .flat_map(|word| word.to_be_bytes())
                 .collect::<Vec<_>>();
             let output_bytes_rw_start = input_bytes_rw_start + input_bytes_word_count;
             let output_bytes = (output_bytes_rw_start
                 ..output_bytes_rw_start + output_bytes_word_count)
-                .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                .map(|i| block.rws[step.rw_indices[i]].memory_word_pair().0)
                 .flat_map(|word| word.to_be_bytes())
                 .collect::<Vec<_>>();
             let return_bytes_rw_start = output_bytes_rw_start + output_bytes_word_count;
             let return_bytes = (return_bytes_rw_start
                 ..return_bytes_rw_start + return_bytes_word_count * 2)
                 .step_by(2)
-                .map(|i| block.rws[step.rw_indices[i]].memory_word_value())
+                .map(|i| block.rws[step.rw_indices[i]].memory_word_pair().0)
                 .flat_map(|word| word.to_be_bytes())
                 .collect::<Vec<_>>();
 
