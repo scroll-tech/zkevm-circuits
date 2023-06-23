@@ -821,9 +821,9 @@ impl<F: Field> CopyCircuitConfig<F> {
             tag_chip.assign(region, *offset, tag)?;
 
             let mut pad = F::zero();
-            circuit_row[6].0.map(|f: F| pad = f);
+            circuit_row[7].0.map(|f: F| pad = f);
             let mut mask = F::zero();
-            circuit_row[8].0.map(|f: F| mask = f);
+            circuit_row[9].0.map(|f: F| mask = f);
 
             if is_read {
                 if mask == F::one() && !src_first_non_mask_stop {
