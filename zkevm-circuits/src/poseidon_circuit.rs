@@ -61,7 +61,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
     type Config = PoseidonCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        let max_hashes = block.circuits_params.max_evm_rows / F::hash_block_size();
+        let max_hashes = block.circuits_params.max_mpt_rows / F::hash_block_size();
         #[allow(unused_mut)]
         let mut poseidon_table_data: PoseidonHashTable<F> = PoseidonHashTable::default();
         // without any feature we just synthesis an empty poseidon circuit
@@ -134,7 +134,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
             cnt
         };
         let acc = acc * F::hash_block_size();
-        (acc, block.circuits_params.max_evm_rows.max(acc))
+        (acc, block.circuits_params.max_mpt_rows.max(acc))
     }
 
     /// Make the assignments to the MptCircuit, notice it fill mpt table
