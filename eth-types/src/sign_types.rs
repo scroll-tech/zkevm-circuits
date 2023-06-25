@@ -1,8 +1,12 @@
 //! secp256k1 signature types and helper functions.
 
-use crate::{ToBigEndian, ToWord, Word};
+use crate::{
+    geth_types::{Transaction, TxType},
+    ToBigEndian, ToWord, Word, H256,
+};
 use ethers_core::{
-    types::{Address, Bytes},
+    k256::ecdsa::SigningKey,
+    types::{Address, Bytes, Signature, TransactionRequest, U256},
     utils::keccak256,
 };
 use halo2_proofs::{
@@ -18,7 +22,6 @@ use halo2_proofs::{
 };
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
-use sha3::{Digest, Keccak256};
 use subtle::CtOption;
 
 /// Do a secp256k1 signature with a given randomness value.
@@ -61,6 +64,32 @@ pub struct SignData {
     pub msg_hash: secp256k1::Fq,
 }
 
+/// Generate a dummy pre-eip155 tx in which
+/// (nonce=0, gas=0, gas_price=0, to=0, value=0, data="")
+/// using the dummy private key = 1
+pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
+    let mut sk_be_scalar = [0u8; 32];
+    sk_be_scalar[31] = 1_u8;
+
+    let sk = SigningKey::from_bytes(&sk_be_scalar).expect("sign key = 1");
+    let wallet = ethers_signers::Wallet::from(sk);
+
+    let tx = TransactionRequest::new()
+        .nonce(0)
+        .gas(0)
+        .gas_price(U256::zero())
+        .to(Address::zero())
+        .value(U256::zero())
+        .data(Bytes::default());
+    let sighash: H256 = keccak256(tx.rlp_unsigned()).into();
+
+    // FIXME: need to check if this is deterministic which means sig is fixed.
+    let sig = wallet.sign_hash(sighash);
+    assert_eq!(sig.v, 28);
+
+    (tx, sig)
+}
+
 impl SignData {
     /// Recover address of the signature
     pub fn get_addr(&self) -> Word {
@@ -74,37 +103,21 @@ impl SignData {
 }
 
 lazy_static! {
-    // FIXME: use Transaction::dummy().sign_data() instead when we merged the develop branch
+    /// This is the sign data of default padding tx
     static ref SIGN_DATA_DEFAULT: SignData = {
-        let generator = Secp256k1Affine::generator();
-        let sk = secp256k1::Fq::one();
-        let pk = generator * sk;
-        let pk = pk.to_affine();
-        let msg = b"1";
-        // let msg = TransactionRequest::new()
-        //     .nonce(0)
-        //     .gas(0)
-        //     .gas_price(U256::zero())
-        //     .to(Address::zero())
-        //     .value(U256::zero())
-        //     .data(Bytes::default())
-        //     .chain_id(1)
-        //     .rlp().to_vec();
-        let msg_hash: [u8; 32] = Keccak256::digest(msg)
-            .as_slice()
-            .to_vec()
-            .try_into()
-            .expect("hash length isn't 32 bytes");
-        let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
-        let randomness = secp256k1::Fq::one();
-        let (sig_r, sig_s, v) = sign(randomness, sk, msg_hash);
+        let (tx_req, sig) = get_dummy_tx();
+        let tx = Transaction {
+            tx_type: TxType::PreEip155,
+            rlp_unsigned_bytes: tx_req.rlp_unsigned().to_vec(),
+            rlp_bytes: tx_req.rlp_signed(&sig).to_vec(),
+            v: sig.v,
+            r: sig.r,
+            s: sig.s,
+            /// other fields are irrelevant to get the sign_data()
+            ..Default::default()
+        };
 
-        SignData {
-            signature: (sig_r, sig_s, v),
-            pk,
-            msg: msg.into(),
-            msg_hash,
-        }
+        tx.sign_data().unwrap()
     };
 }
 
