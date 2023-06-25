@@ -116,6 +116,7 @@ impl PrecompileCalls {
             Self::Ecrecover | Self::Bn128Add => Some(128),
             Self::Bn128Mul => Some(96),
             Self::Blake2F => Some(213),
+            Self::Modexp => Some(192),
             _ => None,
         }
     }
@@ -160,11 +161,78 @@ impl EcrecoverAuxData {
     }
 }
 
+const MODEXP_SIZE_LIMIT: usize = 32;
+
+/// Auxiliary data for Modexp
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ModExpAuxData {
+    /// The specified len of inputs: [base, exp, modulus]
+    pub input_lens: [Word;3],
+    /// Input value [base, exp, modulus], limited to SIZE_LIMIT
+    pub inputs: [[u8;MODEXP_SIZE_LIMIT];3], 
+    /// Input valid.
+    pub valid: bool,
+    /// len of output, limited to lens of moduls, but can be 0
+    pub output_len: usize,
+    /// output of modexp.
+    pub output: [u8;MODEXP_SIZE_LIMIT],
+}
+
+impl ModExpAuxData {
+
+    fn parse_memory_to_value(mem: &[u8]) -> [u8;MODEXP_SIZE_LIMIT] {
+        let mut value_bytes = [0u8; MODEXP_SIZE_LIMIT];
+        if mem.len() > 0 {
+            value_bytes.as_mut_slice()[(MODEXP_SIZE_LIMIT - mem.len())..].copy_from_slice(mem);
+        }
+        value_bytes    
+    }
+
+    /// Create a new instance of modexp auxiliary data.
+    pub fn new(mut mem_input: Vec<u8>, output: Vec<u8>) -> Self {
+        // extended to minimum size (3x U256)
+        mem_input.resize(96, 0);
+        let base_len = Word::from_big_endian(&mem_input[..32]);
+        let exp_len = Word::from_big_endian(&mem_input[32..64]);
+        let modulus_len = Word::from_big_endian(&mem_input[64..96]);
+    
+        let limit = Word::from(MODEXP_SIZE_LIMIT);
+    
+        let input_valid = base_len <= limit &&
+            exp_len <= limit &&
+            modulus_len <= limit;
+    
+        let base_mem_len = if input_valid {base_len.as_usize()} else {MODEXP_SIZE_LIMIT};
+        let exp_mem_len = if input_valid {exp_len.as_usize()} else {MODEXP_SIZE_LIMIT};
+        let modulus_mem_len = if input_valid {modulus_len.as_usize()} else {MODEXP_SIZE_LIMIT};
+    
+        mem_input.resize(96+base_mem_len+exp_mem_len+modulus_mem_len, 0);
+        let mut cur_input_begin = &mem_input[96..];
+    
+        let base = Self::parse_memory_to_value(&cur_input_begin[..base_mem_len]);
+        cur_input_begin = &cur_input_begin[base_mem_len..];
+        let exp = Self::parse_memory_to_value(&cur_input_begin[..exp_mem_len]);
+        cur_input_begin = &cur_input_begin[exp_mem_len..];
+        let modulus = Self::parse_memory_to_value(&cur_input_begin[..modulus_mem_len]);
+        
+
+        Self {
+            valid: input_valid,
+            input_lens: [base_len, exp_len, modulus_len],
+            inputs: [base, exp, modulus],
+            output: Self::parse_memory_to_value(&output),
+            output_len: output.len(),
+        }   
+    }
+}
+
 /// Auxiliary data attached to an internal state for precompile verification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrecompileAuxData {
     /// Ecrecover.
     Ecrecover(EcrecoverAuxData),
+    /// Modexp.
+    Modexp(ModExpAuxData)
 }
 
 impl Default for PrecompileAuxData {

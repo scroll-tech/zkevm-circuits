@@ -7,7 +7,7 @@ use halo2_proofs::halo2curves::secp256k1::Fq;
 use crate::{
     circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep},
     operation::CallContextField,
-    precompile::{EcrecoverAuxData, PrecompileAuxData, PrecompileCalls},
+    precompile::{EcrecoverAuxData, ModExpAuxData, PrecompileAuxData, PrecompileCalls},
     Error,
 };
 
@@ -59,6 +59,12 @@ pub fn gen_associated_ops(
         }
 
         exec_step.aux_data = Some(PrecompileAuxData::Ecrecover(aux_data));
+    } else if precompile == PrecompileCalls::Modexp {
+        let aux_data = ModExpAuxData::new(
+            input_bytes.unwrap_or_default(),
+            output_bytes.unwrap_or_default(),
+        );
+        exec_step.aux_data = Some(PrecompileAuxData::Modexp(aux_data));
     }
 
     Ok(exec_step)
