@@ -741,16 +741,6 @@ pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<V
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
     inputs.extend_from_slice(&sign_verify_inputs);
 
-    // Since the SignData::default() already includes pk = [1]G which is also the
-    // one that we use in get_dummy_tx, so we only need to include the tx sign
-    // hash of the dummy tx.
-    let dummy_sign_input = {
-        let (dummy_tx, _) = get_dummy_tx();
-        // dummy tx is of type pre-eip155
-        dummy_tx.rlp_unsigned().to_vec()
-    };
-    inputs.push(dummy_sign_input);
-
     Ok(inputs)
 }
 
