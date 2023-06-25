@@ -160,6 +160,8 @@ pub enum TxFieldTag {
     TxHashRLC,
     /// TxHash: Hash of the transaction with the signature
     TxHash,
+    /// Gas cost of the transaction charged in L1
+    TxGasCostInL1,
     /// The block number in which this tx is included.
     BlockNumber,
 }
