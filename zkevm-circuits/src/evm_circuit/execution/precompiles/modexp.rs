@@ -2,6 +2,7 @@ use eth_types::{Field, ToScalar, U256};
 use gadgets::{binary_number::AsBits, util::{self, Expr}};
 use halo2_proofs::{circuit::Value, plonk::{Expression, Error}};
 
+use bus_mapping::precompile::{PrecompileAuxData, MODEXP_SIZE_LIMIT};
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -122,8 +123,8 @@ impl<F: Field, const EXP: usize, const BIT_LIMIT: usize> AsRef<RandPowRepresent<
     fn as_ref(&self) -> &RandPowRepresent<F, BIT_LIMIT>{&self.0}
 }
 
+const SIZE_LIMIT: usize = MODEXP_SIZE_LIMIT;
 const SIZE_REPRESENT_BITS: usize = 6;
-const SIZE_LIMIT: usize = 32;
 const SIZE_REPRESENT_BYTES: usize = SIZE_LIMIT/256 + 1;
 const INPUT_LIMIT: usize = 32*6;
 
@@ -190,47 +191,7 @@ type RandPow<F> = RandPowRepresent<F, SIZE_REPRESENT_BITS>;
 
 // parse as (valid, len, value: [base, exp, modulus])
 type InputParsedResult = (bool, [U256;3], [[u8;SIZE_LIMIT];3]);
-
-fn parse_memory_to_value(mem: &[u8]) -> [u8;SIZE_LIMIT] {
-    let mut value_bytes = [0u8; SIZE_LIMIT];
-    if mem.len() > 0 {
-        value_bytes.as_mut_slice()[(SIZE_LIMIT - mem.len())..].copy_from_slice(mem);
-    }
-    value_bytes    
-}
-
-
-fn parse_input_memory(mem: &[u8]) -> InputParsedResult {
-
-    let mut mem_input : Vec<_> = mem.iter().copied().collect();
-    mem_input.resize(96, 0);
-    let base_len = U256::from_big_endian(&mem_input[..32]);
-    let exp_len = U256::from_big_endian(&mem_input[32..64]);
-    let modulus_len = U256::from_big_endian(&mem_input[64..96]);
-
-    let limit = U256::from(SIZE_LIMIT);
-
-    let input_valid = base_len <= limit &&
-        exp_len <= limit &&
-        modulus_len <= limit;
-
-    let base_mem_len = if input_valid {base_len.as_usize()} else {SIZE_LIMIT};
-    let exp_mem_len = if input_valid {exp_len.as_usize()} else {SIZE_LIMIT};
-    let modulus_mem_len = if input_valid {modulus_len.as_usize()} else {SIZE_LIMIT};
-
-    mem_input.resize(96+base_mem_len+exp_mem_len+modulus_mem_len, 0);
-    let mut cur_input_begin = &mem_input[96..];
-
-    let base = parse_memory_to_value(&cur_input_begin[..base_mem_len]);
-    cur_input_begin = &cur_input_begin[base_mem_len..];
-    let exp = parse_memory_to_value(&cur_input_begin[..exp_mem_len]);
-    cur_input_begin = &cur_input_begin[exp_mem_len..];
-    let modulus = parse_memory_to_value(&cur_input_begin[..modulus_mem_len]);
-    
-    (input_valid, [base_len, exp_len, modulus_len], [base, exp, modulus])
-
-}
-
+type OutputParsedResult = (usize, [u8;SIZE_LIMIT]);
 
 #[derive(Clone, Debug)]
 struct ModExpInputs<F> {
@@ -333,16 +294,16 @@ impl<F: Field> ModExpInputs<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        (input_valid, lens, values): &InputParsedResult,
+        (input_valid, lens, values): InputParsedResult,
     ) -> Result<(), Error> {
-        self.input_valid.assign(region, offset, Value::known(if *input_valid {F::one()} else {F::zero()}))?;
+        self.input_valid.assign(region, offset, Value::known(if input_valid {F::one()} else {F::zero()}))?;
 
         for (len, len_represent) in lens.iter().zip([&self.base_len, &self.exp_len, &self.modulus_len]){
             len_represent.assign(region, offset, len)?;
         }
 
         for (len, pow) in lens.iter().zip([&self.base_pow, &self.exp_pow, &self.modulus_pow]){
-            pow.assign(region, offset, if *input_valid {len.as_usize()} else {SIZE_LIMIT})?;
+            pow.assign(region, offset, if input_valid {len.as_usize()} else {SIZE_LIMIT})?;
         }
 
         for (val, input_bytes) in values.zip([&self.base, &self.exp, &self.modulus]){
@@ -410,15 +371,15 @@ impl<F: Field> ModExpOutputs<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        mem: &[u8],
+        (output_len, data): OutputParsedResult,
     ) -> Result<(), Error> {
         self.result_pow_prefix.assign(region, offset, 
             region.challenges().keccak_input().map(
                 |rand|rand.pow_vartime(&[32]).invert().unwrap()
             ))?;
-        self.is_result_zero.assign(region, offset, F::from(mem.len() as u64))?;
-        self.result_pow.assign(region, offset, mem.len())?;
-        self.result.assign(region, offset, Some(parse_memory_to_value(mem)))?;
+        self.is_result_zero.assign(region, offset, F::from(output_len as u64))?;
+        self.result_pow.assign(region, offset, output_len)?;
+        self.result.assign(region, offset, Some(data))?;
         Ok(())
     }
 
@@ -512,8 +473,27 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
         _block: &Block<F>,
         _tx: &Transaction,
         call: &Call,
-        _step: &ExecStep,
+        step: &ExecStep,
     ) -> Result<(), Error> {
+
+        if let Some(PrecompileAuxData::Modexp(data)) = &step.aux_data {
+
+            self.input.assign(region, offset, (
+                data.valid,
+                data.input_lens,
+                data.inputs,
+            ))?;
+
+            self.output.assign(region, offset, (
+                data.output_len,
+                data.output,
+            ))?;
+
+        } else {
+            log::error!("unexpected aux_data {:?} for modexp", step.aux_data);
+            return Err(Error::Synthesis);
+        }
+
         self.is_success.assign(
             region,
             offset,

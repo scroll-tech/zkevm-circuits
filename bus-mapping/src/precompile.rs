@@ -161,7 +161,8 @@ impl EcrecoverAuxData {
     }
 }
 
-const MODEXP_SIZE_LIMIT: usize = 32;
+/// size limit of modexp
+pub const MODEXP_SIZE_LIMIT: usize = 32;
 
 /// Auxiliary data for Modexp
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
