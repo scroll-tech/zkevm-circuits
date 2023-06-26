@@ -68,6 +68,14 @@ fn block_2txs() -> Block<Fr> {
     block_convert(&builder.block, &builder.code_db).unwrap()
 }
 
+fn empty_block() -> Block<Fr> {
+    Block::<Fr> {
+        txs: vec![],
+        sigs: vec![],
+        ..Default::default()
+    }
+}
+
 #[cfg(feature = "scroll")]
 #[test]
 fn serial_test_simple_pi() {
@@ -124,8 +132,10 @@ fn variadic_size_check() {
     const MAX_CALLDATA: usize = 200;
     const MAX_INNER_BLOCKS: usize = 4;
 
+    let block_0 = empty_block();
     let block_1 = block_1tx();
     let block_2 = block_2txs();
 
-    run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>([block_1, block_2]);
+    run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>([block_1, block_2.clone()]);
+    run_size_check::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>([block_0, block_2]);
 }
