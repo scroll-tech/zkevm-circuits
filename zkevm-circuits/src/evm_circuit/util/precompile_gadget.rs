@@ -59,7 +59,7 @@ impl<F: Field> PrecompileGadget<F> {
                     "input bytes (RLC) = [msg_hash | sig_v | sig_r | sig_s]",
                     input_bytes_rlc.expr(),
                     (msg_hash.expr() * r_pow_96)
-                        + (sig_v.expr() * r_pow_64)
+                        + ((sig_v.expr() + 27.expr()) * r_pow_64)
                         + (sig_r.expr() * r_pow_32)
                         + sig_s.expr(),
                 );

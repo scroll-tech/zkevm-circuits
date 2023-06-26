@@ -349,18 +349,17 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 // insert a copy event (input) for this step
                 let rw_counter_start = state.block_ctx.rwc;
                 let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
-                    input_len
+                    std::cmp::min(input_len, call.call_data_length as usize)
                 } else {
                     call.call_data_length as usize
                 };
                 let input_bytes = if call.call_data_length > 0 {
-                    let mut bytes: Vec<(u8, bool)> = caller_memory
+                    let bytes: Vec<(u8, bool)> = caller_memory
                         .iter()
                         .skip(call.call_data_offset as usize)
                         .take(n_input_bytes)
                         .map(|b| (*b, false))
                         .collect();
-                    bytes.resize(n_input_bytes, (0u8, false));
                     for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
                         // push caller memory read
                         state.push_op(

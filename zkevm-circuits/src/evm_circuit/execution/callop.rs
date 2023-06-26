@@ -984,7 +984,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         {
             let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
             let input_len = if let Some(input_len) = precompile_call.input_len() {
-                input_len
+                std::cmp::min(input_len, cd_length.as_usize())
             } else {
                 cd_length.as_usize()
             };

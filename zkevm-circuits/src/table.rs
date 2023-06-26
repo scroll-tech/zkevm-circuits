@@ -2162,18 +2162,26 @@ impl SigTable {
                 let signatures: Vec<SignData> = block.get_sign_data(false);
 
                 for (offset, sign_data) in signatures.iter().enumerate() {
-                    let addr: F = sign_data.get_addr().to_scalar().unwrap();
-
-                    let msg_hash_rlc = challenges
-                        .keccak_input()
-                        .map(|challenge| rlc::value(&sign_data.msg_hash.to_bytes(), challenge));
-                    let sig_r_rlc = challenges
-                        .keccak_input()
-                        .map(|challenge| rlc::value(&sign_data.signature.0.to_bytes(), challenge));
-                    let sig_s_rlc = challenges
-                        .keccak_input()
-                        .map(|challenge| rlc::value(&sign_data.signature.1.to_bytes(), challenge));
+                    let msg_hash_rlc = challenges.keccak_input().map(|challenge| {
+                        rlc::value(
+                            sign_data.msg_hash.to_bytes().iter().rev().collect_vec(),
+                            challenge,
+                        )
+                    });
+                    let sig_r_rlc = challenges.keccak_input().map(|challenge| {
+                        rlc::value(
+                            sign_data.signature.0.to_bytes().iter().rev().collect_vec(),
+                            challenge,
+                        )
+                    });
+                    let sig_s_rlc = challenges.keccak_input().map(|challenge| {
+                        rlc::value(
+                            sign_data.signature.1.to_bytes().iter().rev().collect_vec(),
+                            challenge,
+                        )
+                    });
                     let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
+                    let recovered_addr = Value::known(sign_data.get_addr().to_scalar().unwrap());
 
                     region.assign_fixed(
                         || format!("sig table q_enable {offset}"),
@@ -2186,7 +2194,7 @@ impl SigTable {
                         ("sig_v", self.sig_v, sig_v),
                         ("sig_r_rlc", self.sig_r_rlc, sig_r_rlc),
                         ("sig_s_rlc", self.sig_s_rlc, sig_s_rlc),
-                        ("recovered_addr", self.recovered_addr, Value::known(addr)),
+                        ("recovered_addr", self.recovered_addr, recovered_addr),
                         ("is_valid", self.is_valid, Value::known(F::one())),
                     ] {
                         region.assign_advice(

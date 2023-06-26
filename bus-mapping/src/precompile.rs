@@ -144,7 +144,7 @@ impl EcrecoverAuxData {
 
         // assert that sig v is a byte, which indirectly means the other 31 bytes are 0.
         assert!(input[0x20..0x3f].iter().all(|&b| b == 0));
-        let sig_v = input[0x3f];
+        let sig_v = input[0x3f] - 27;
 
         // assert that recovered address is 20 bytes.
         assert!(output[0x00..0x0c].iter().all(|&b| b == 0));
