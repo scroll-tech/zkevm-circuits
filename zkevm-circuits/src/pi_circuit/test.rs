@@ -113,14 +113,14 @@ fn run_size_check<
     let public_inputs = circuit.0.instance();
     let prover1 = MockProver::run(20, &circuit, public_inputs).unwrap();
 
-    let circuit2 = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(PiCircuit::new(
+    let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(PiCircuit::new(
         MAX_TXS,
         MAX_CALLDATA,
         MAX_INNER_BLOCKS,
         &blocks[1],
     ));
-    let public_inputs = circuit2.0.instance();
-    let prover2 = MockProver::run(20, &circuit2, public_inputs).unwrap();
+    let public_inputs = circuit.0.instance();
+    let prover2 = MockProver::run(20, &circuit, public_inputs).unwrap();
 
     assert_eq!(prover1.fixed(), prover2.fixed());
     assert_eq!(prover1.permutation(), prover2.permutation());
