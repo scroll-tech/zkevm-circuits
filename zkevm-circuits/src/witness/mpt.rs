@@ -1385,7 +1385,7 @@ mod test {
         );
     }
 
-    #[ignore="TODO(mason): is it valid to put these storage writes on empty acc?"]
+    #[ignore = "TODO(mason): is it valid to put these storage writes on empty acc?"]
     #[test]
     fn empty_account_empty_storage_proof() {
         assert!(*HASH_SCHEME_DONE);
@@ -1432,7 +1432,7 @@ mod test {
         );
     }
 
-    #[ignore="TODO(mason): is it valid to put these storage writes on empty acc?"]
+    #[ignore = "TODO(mason): is it valid to put these storage writes on empty acc?"]
     #[test]
     fn empty_account_storage_write() {
         assert!(*HASH_SCHEME_DONE);
