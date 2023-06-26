@@ -7,7 +7,7 @@ use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{Address, Hash, ToWord, Word};
+use eth_types::{sign_types::SignData, Address, Hash, ToWord, Word};
 use std::collections::{BTreeMap, HashMap};
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -153,6 +153,8 @@ pub struct Block {
     pub code: HashMap<Hash, Vec<u8>>,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
+    /// IO to/from the precompile Ecrecover calls.
+    pub ecrecover_events: Vec<SignData>,
     /// Block-wise steps
     pub block_steps: BlockSteps,
     /// Exponentiation events in the block.
@@ -245,5 +247,9 @@ impl Block {
     /// Push an exponentiation event to the block.
     pub fn add_exp_event(&mut self, event: ExpEvent) {
         self.exp_events.push(event);
+    }
+    /// Push an ecrecover event to the block.
+    pub fn add_ecrecover_event(&mut self, event: SignData) {
+        self.ecrecover_events.push(event);
     }
 }

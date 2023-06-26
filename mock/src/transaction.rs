@@ -12,7 +12,7 @@ use ethers_core::{
 use ethers_signers::{LocalWallet, Signer};
 use lazy_static::lazy_static;
 use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
+use rand_chacha::{rand_core::OsRng, ChaCha20Rng};
 
 lazy_static! {
     /// Collection of correctly hashed and signed Transactions which can be used to test circuits or opcodes that have to check integrity of the Tx itself.
@@ -171,7 +171,8 @@ impl Default for MockTransaction {
             block_hash: Hash::zero(),
             block_number: U64::zero(),
             transaction_index: U64::zero(),
-            from: AddrOrWallet::Addr(MOCK_ACCOUNTS[0]),
+            //from: AddrOrWallet::Addr(MOCK_ACCOUNTS[0]),
+            from: AddrOrWallet::random(&mut OsRng),
             to: None,
             value: Word::zero(),
             gas_price: *MOCK_GASPRICE,

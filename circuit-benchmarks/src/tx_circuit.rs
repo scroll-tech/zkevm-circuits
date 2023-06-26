@@ -24,7 +24,9 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use std::env::var;
-    use zkevm_circuits::{tx_circuit::TxCircuit, util::SubCircuit, witness::block_convert};
+    use zkevm_circuits::{
+        tx_circuit::TestTxCircuit as TxCircuit, util::SubCircuit, witness::block_convert,
+    };
 
     use bus_mapping::rpc::GethClient;
     use ethers::providers::Http;

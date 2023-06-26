@@ -9,7 +9,7 @@ use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 
 use super::{
@@ -50,6 +50,8 @@ pub struct Block<F> {
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
+    /// IO to/from precompile Ecrecover calls.
+    pub ecrecover_events: Vec<SignData>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
     /// Withdraw root
@@ -99,6 +101,32 @@ impl<F: Field> Block<F> {
                 }
             }
         }
+    }
+
+    /// Get signature (witness) from the block for tx signatures and ecRecover calls.
+    pub(crate) fn get_sign_data(&self, padding: bool) -> Vec<SignData> {
+        let mut signatures: Vec<SignData> = self
+            .txs
+            .iter()
+            .map(|tx| {
+                if tx.tx_type.is_l1_msg() {
+                    // dummy signature
+                    Ok(SignData::default())
+                } else {
+                    tx.sign_data()
+                }
+            })
+            .filter_map(|res| res.ok())
+            .collect::<Vec<SignData>>();
+        signatures.extend_from_slice(&self.ecrecover_events);
+        if padding {
+            let max_verif = self.circuits_params.max_txs;
+            signatures.resize(
+                max_verif,
+                Transaction::dummy(self.chain_id).sign_data().unwrap(),
+            )
+        }
+        signatures
     }
 }
 
@@ -415,6 +443,7 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
+        ecrecover_events: block.ecrecover_events.clone(),
         circuits_params: CircuitsParams {
             max_rws,
             ..block.circuits_params

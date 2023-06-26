@@ -1,7 +1,10 @@
 //! secp256k1 signature types and helper functions.
 
-use crate::{ToBigEndian, Word};
-use ethers_core::types::Bytes;
+use crate::{ToBigEndian, ToWord, Word};
+use ethers_core::{
+    types::{Address, Bytes},
+    utils::keccak256,
+};
 use halo2_proofs::{
     arithmetic::{CurveAffine, FieldExt},
     halo2curves::{
@@ -23,32 +26,33 @@ pub fn sign(
     randomness: secp256k1::Fq,
     sk: secp256k1::Fq,
     msg_hash: secp256k1::Fq,
-) -> (secp256k1::Fq, secp256k1::Fq) {
+) -> (secp256k1::Fq, secp256k1::Fq, u8) {
     let randomness_inv =
         Option::<secp256k1::Fq>::from(randomness.invert()).expect("cannot invert randomness");
     let generator = Secp256k1Affine::generator();
     let sig_point = generator * randomness;
+    let sig_v: bool = sig_point.to_affine().y.is_odd().into();
+
     let x = *Option::<Coordinates<_>>::from(sig_point.to_affine().coordinates())
         .expect("point is the identity")
         .x();
 
-    let x_repr = &mut vec![0u8; 32];
-    x_repr.copy_from_slice(x.to_bytes().as_slice());
-
     let mut x_bytes = [0u8; 64];
-    x_bytes[..32].copy_from_slice(&x_repr[..]);
+    x_bytes[..32].copy_from_slice(&x.to_bytes());
 
     let sig_r = secp256k1::Fq::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
+
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
-    (sig_r, sig_s)
+    (sig_r, sig_s, u8::from(sig_v))
 }
 
 /// Signature data required by the SignVerify Chip as input to verify a
 /// signature.
 #[derive(Clone, Debug)]
 pub struct SignData {
-    /// Secp256k1 signature point
-    pub signature: (secp256k1::Fq, secp256k1::Fq),
+    /// Secp256k1 signature point (r, s, v)
+    /// v must be 0 or 1
+    pub signature: (secp256k1::Fq, secp256k1::Fq, u8),
     /// Secp256k1 public key
     pub pk: Secp256k1Affine,
     /// Message being hashed before signing.
@@ -57,7 +61,20 @@ pub struct SignData {
     pub msg_hash: secp256k1::Fq,
 }
 
+impl SignData {
+    /// Recover address of the signature
+    pub fn get_addr(&self) -> Word {
+        let pk_le = pk_bytes_le(&self.pk);
+        let pk_be = pk_bytes_swap_endianness(&pk_le);
+        let pk_hash = keccak256(pk_be);
+        let mut addr_bytes = [0u8; 20];
+        addr_bytes.copy_from_slice(&pk_hash[12..]);
+        Address::from(addr_bytes).to_word()
+    }
+}
+
 lazy_static! {
+    // FIXME: use Transaction::dummy().sign_data() instead when we merged the develop branch
     static ref SIGN_DATA_DEFAULT: SignData = {
         let generator = Secp256k1Affine::generator();
         let sk = secp256k1::Fq::one();
@@ -80,10 +97,10 @@ lazy_static! {
             .expect("hash length isn't 32 bytes");
         let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
         let randomness = secp256k1::Fq::one();
-        let (sig_r, sig_s) = sign(randomness, sk, msg_hash);
+        let (sig_r, sig_s, v) = sign(randomness, sk, msg_hash);
 
         SignData {
-            signature: (sig_r, sig_s),
+            signature: (sig_r, sig_s, v),
             pk,
             msg: msg.into(),
             msg_hash,
@@ -92,12 +109,12 @@ lazy_static! {
 }
 
 impl Default for SignData {
+    // Hardcoded valid signature corresponding to a hardcoded private key and
+    // message hash generated from "nothing up my sleeve" values to make the
+    // ECDSA chip pass the constraints, to be use for padding signature
+    // verifications (where the constraints pass, but we don't care about the
+    // message hash and public key).
     fn default() -> Self {
-        // Hardcoded valid signature corresponding to a hardcoded private key and
-        // message hash generated from "nothing up my sleeve" values to make the
-        // ECDSA chip pass the constraints, to be use for padding signature
-        // verifications (where the constraints pass, but we don't care about the
-        // message hash and public key).
         SIGN_DATA_DEFAULT.clone()
     }
 }

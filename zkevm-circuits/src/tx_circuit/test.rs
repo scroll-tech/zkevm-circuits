@@ -7,7 +7,10 @@ use ethers_core::{
 use std::cmp::max;
 
 use super::*;
-use crate::util::{log2_ceil, unusable_rows};
+use crate::{
+    tx_circuit::{dev::TxCircuitTester, get_sign_data},
+    util::{log2_ceil, unusable_rows},
+};
 use eth_types::{address, evm_types::gas_utils::tx_data_gas_cost, word, H256, U256, U64};
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
@@ -18,7 +21,7 @@ use mock::{AddrOrWallet, MockTransaction};
 fn tx_circuit_unusable_rows() {
     assert_eq!(
         TxCircuit::<Fr>::unusable_rows(),
-        unusable_rows::<Fr, TxCircuit::<Fr>>(),
+        unusable_rows::<Fr, TxCircuitTester::<Fr>>(),
     )
 }
 
@@ -114,10 +117,15 @@ fn run<F: Field>(
         19,
         log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)),
     );
-    // SignVerifyChip -> ECDSAChip -> MainGate instance column
-    let circuit = TxCircuit::<F>::new(max_txs, max_calldata, chain_id, txs);
-
-    let prover = match MockProver::run(k, &circuit, vec![vec![]]) {
+    let circuit = TxCircuitTester::<F> {
+        sig_circuit: SigCircuit {
+            max_verif: max_txs,
+            signatures: get_sign_data(&txs, max_txs, chain_id as usize).unwrap(),
+            _marker: PhantomData,
+        },
+        tx_circuit: TxCircuit::new(max_txs, max_calldata, chain_id, txs),
+    };
+    let prover = match MockProver::run(k, &circuit, vec![]) {
         Ok(prover) => prover,
         Err(e) => panic!("{:#?}", e),
     };

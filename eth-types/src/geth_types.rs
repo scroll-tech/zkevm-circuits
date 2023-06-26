@@ -333,7 +333,7 @@ impl Transaction {
             .try_into()
             .expect("hash length isn't 32 bytes");
         let v = self.tx_type.get_recovery_id(self.v);
-        let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
+        let pk = recover_pk(v as u8, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());
         let msg_hash = msg_hash.mod_floor(&*SECP256K1_Q);
@@ -343,7 +343,7 @@ impl Transaction {
             libsecp256k1::Error::InvalidMessage,
         )?;
         Ok(SignData {
-            signature: (sig_r, sig_s),
+            signature: (sig_r, sig_s, v as u8),
             pk,
             msg,
             msg_hash,
