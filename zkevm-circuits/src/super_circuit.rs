@@ -296,7 +296,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             SigCircuitConfigArgs {
                 keccak_table: keccak_table.clone(),
                 sig_table,
-                challenges: challenges.clone(),
+                challenges: challenges_expr.clone(),
             },
         );
         log_circuit_info(meta, "sig circuit");
