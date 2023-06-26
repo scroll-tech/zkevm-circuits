@@ -24,7 +24,7 @@ pub struct EcrecoverGadget<F> {
     sig_v: Cell<F>,
     sig_r_rlc: Cell<F>,
     sig_s_rlc: Cell<F>,
-    recovered_addr: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    recovered_addr_rlc: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -42,7 +42,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
     const NAME: &'static str = "ECRECOVER";
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (recovered, msg_hash_rlc, sig_v, sig_r_rlc, sig_s_rlc, recovered_addr) = (
+        let (recovered, msg_hash_rlc, sig_v, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
             cb.query_bool(),
             cb.query_cell_phase2(),
             cb.query_byte(),
@@ -59,7 +59,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                 sig_v.expr(),
                 sig_r_rlc.expr(),
                 sig_s_rlc.expr(),
-                from_bytes::expr(&recovered_addr.cells),
+                from_bytes::expr(&recovered_addr_rlc.cells),
             );
         });
 
@@ -97,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
             sig_v,
             sig_r_rlc,
             sig_s_rlc,
-            recovered_addr,
+            recovered_addr_rlc,
             is_success,
             callee_address,
             caller_id,
@@ -151,7 +151,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(&aux_data.sig_s.to_le_bytes(), r)),
             )?;
-            self.recovered_addr.assign(
+            self.recovered_addr_rlc.assign(
                 region,
                 offset,
                 Some({

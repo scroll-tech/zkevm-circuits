@@ -1,6 +1,6 @@
 use bus_mapping::precompile::PrecompileCalls;
 use eth_types::Field;
-use gadgets::util::Expr;
+use gadgets::util::{not, Expr};
 use halo2_proofs::plonk::Expression;
 
 use crate::evm_circuit::{param::N_BYTES_ACCOUNT_ADDRESS, step::ExecutionState};
@@ -39,7 +39,7 @@ impl<F: Field> PrecompileGadget<F> {
 
         cb.condition(address.value_equals(PrecompileCalls::Ecrecover), |cb| {
             cb.constrain_next_step(ExecutionState::PrecompileEcrecover, None, |cb| {
-                let (_recovered, msg_hash, sig_v, sig_r, sig_s, recovered_addr) = (
+                let (recovered, msg_hash_rlc, sig_v, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
                     cb.query_bool(),
                     cb.query_cell_phase2(),
                     cb.query_byte(),
@@ -58,16 +58,22 @@ impl<F: Field> PrecompileGadget<F> {
                 cb.require_equal(
                     "input bytes (RLC) = [msg_hash | sig_v | sig_r | sig_s]",
                     input_bytes_rlc.expr(),
-                    (msg_hash.expr() * r_pow_96)
+                    (msg_hash_rlc.expr() * r_pow_96)
                         + ((sig_v.expr() + 27.expr()) * r_pow_64)
-                        + (sig_r.expr() * r_pow_32)
-                        + sig_s.expr(),
+                        + (sig_r_rlc.expr() * r_pow_32)
+                        + sig_s_rlc.expr(),
                 );
-                cb.require_equal(
-                    "output bytes (RLC) = recovered address",
-                    output_bytes_rlc.expr(),
-                    recovered_addr.expr(),
-                );
+                cb.condition(recovered.expr(), |cb| {
+                    cb.require_equal(
+                        "output bytes (RLC) = recovered address",
+                        output_bytes_rlc.expr(),
+                        recovered_addr_rlc.expr(),
+                    );
+                });
+                cb.condition(not::expr(recovered.expr()), |cb| {
+                    cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
+                    cb.require_zero("recovered addr == 0", recovered_addr_rlc.expr());
+                });
             });
         });
 
