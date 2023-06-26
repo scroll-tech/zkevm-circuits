@@ -192,9 +192,8 @@ mod tests {
     const TEST_FEE_OVERHEAD: u64 = 100;
     const TEST_FEE_SCALAR: u64 = 10;
     const TEST_TX_DATA_GAS_COST: u64 = 40; // 2 (zeros) * 4 + 2 (non-zeros) * 16
-    const TEST_TX_L1_FEE: u128 = 184;
+    const TEST_TX_L1_FEE: u128 = 30;
 
-    #[ignore]
     #[test]
     fn test_tx_l1_fee_with_right_values() {
         let witnesses = [
@@ -209,7 +208,6 @@ mod tests {
         try_test!(TxL1FeeGadgetTestContainer<Fr>, witnesses, true);
     }
 
-    #[ignore]
     #[test]
     fn test_tx_l1_fee_with_wrong_values() {
         let witnesses = [
