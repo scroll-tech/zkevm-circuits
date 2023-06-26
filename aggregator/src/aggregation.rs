@@ -4,6 +4,8 @@ mod circuit;
 mod circuit_ext;
 /// Config for aggregation circuit
 mod config;
+///
+mod dynamic;
 
 pub use circuit::AggregationCircuit;
 pub use config::AggregationConfig;
@@ -36,3 +38,9 @@ pub(crate) const CHUNK_DATA_HASH_INDEX: usize = 104;
 pub(crate) const DEFAULT_KECCAK_ROWS: usize = 12;
 // Adopted from keccak circuit
 pub(crate) const NUM_ROUNDS: usize = 24;
+
+/// Max number of snarks to be aggregated in a chunk.
+/// If the input size is less than this, dummy snarks
+/// will be padded.
+// TODO: update me
+pub const MAX_AGG_SNARKS: usize = 4;

@@ -1,7 +1,11 @@
 use std::{fs, path::Path, process};
 
 use ark_std::{end_timer, start_timer, test_rng};
-use halo2_proofs::{halo2curves::bn256::{Bn256, Fr}, poly::commitment::Params, dev::MockProver};
+use halo2_proofs::{
+    dev::MockProver,
+    halo2curves::bn256::{Bn256, Fr},
+    poly::commitment::Params,
+};
 use snark_verifier::{
     loader::halo2::halo2_ecc::halo2_base::{halo2_proofs, utils::fs::gen_srs},
     pcs::kzg::{Bdfg21, Kzg},

@@ -10,8 +10,10 @@ use rand::Rng;
 use snark_verifier::{
     loader::{
         halo2::{
-            halo2_ecc::halo2_base::{self, AssignedValue, Context, ContextParams},
-            Halo2Loader,
+            halo2_ecc::halo2_base::{
+                self, gates::GateInstructions, AssignedValue, Context, ContextParams, QuantumCell,
+            },
+            Halo2Loader, IntegerInstructions,
         },
         native::NativeLoader,
     },
@@ -19,7 +21,7 @@ use snark_verifier::{
     util::arithmetic::fe_to_limbs,
 };
 use snark_verifier_sdk::{
-    aggregate, flatten_accumulator, types::Svk, CircuitExt, Snark, SnarkWitness,
+    aggregate, flatten_accumulator, gen_dummy_snark, types::Svk, CircuitExt, Snark, SnarkWitness,
 };
 use zkevm_circuits::util::Challenges;
 
@@ -27,8 +29,8 @@ use crate::{
     aggregation::config::AggregationConfig,
     core::{assign_batch_hashes, extract_accumulators_and_proof},
     param::{ConfigParams, BITS, LIMBS},
-    BatchHash, ChunkHash, CHAIN_ID_LEN, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX,
-    WITHDRAW_ROOT_INDEX,
+    BatchHash, ChunkHash, CompressionCircuit, CHAIN_ID_LEN, MAX_AGG_SNARKS, POST_STATE_ROOT_INDEX,
+    PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
 };
 
 /// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
@@ -39,6 +41,7 @@ pub struct AggregationCircuit {
     // the public instance for this circuit consists of
     // - an accumulator (12 elements)
     // - the batch's public_input_hash (32 elements)
+    // - the number of snarks that is aggregated (1 element)
     pub(crate) flattened_instances: Vec<Fr>,
     // accumulation scheme proof, private input
     pub(crate) as_proof: Value<Vec<u8>>,
@@ -57,6 +60,7 @@ impl AggregationCircuit {
     ) -> Self {
         let timer = start_timer!(|| "generate aggregation circuit");
         // sanity: for each chunk we have a snark
+        let snarks_len = snarks.len();
         assert_eq!(
             snarks.len(),
             chunk_hashes.len(),
@@ -68,6 +72,8 @@ impl AggregationCircuit {
         for (chunk, snark) in chunk_hashes.iter().zip(snarks.iter()) {
             let chunk_hash_bytes = chunk.public_input_hash();
             let snark_hash_bytes = &snark.instances[0];
+
+            assert_eq!(snark_hash_bytes.len(), 84);
 
             for i in 0..32 {
                 // for each snark,
@@ -88,23 +94,37 @@ impl AggregationCircuit {
             }
         }
 
+        // pad the snarks with dummy snarks
+        let dummy_snarks = if snarks.len() < MAX_AGG_SNARKS {
+            let dummy_snark =
+                gen_dummy_snark::<CompressionCircuit, Kzg<Bn256, Bdfg21>>(params, None, vec![84]);
+            vec![dummy_snark; MAX_AGG_SNARKS - snarks.len()]
+        } else {
+            vec![]
+        };
+        let snarks = [snarks, dummy_snarks.as_ref()].concat();
+
         // extract the accumulators and proofs
         let svk = params.get_g()[0].into();
 
         // this aggregates MULTIPLE snarks
         //  (instead of ONE as in proof compression)
-        let (accumulator, as_proof) = extract_accumulators_and_proof(params, snarks, rng);
+        let (accumulator, as_proof) = extract_accumulators_and_proof(params, &snarks, rng);
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
         let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
             .map(fe_to_limbs::<Fq, Fr, LIMBS, BITS>)
             .concat();
 
-        // extract the pi aggregation circuit's instances
+        // extract batch's public input hash
         let batch_hash = BatchHash::construct(chunk_hashes);
         let public_input_hash = &batch_hash.instances()[0];
 
-        let flattened_instances: Vec<Fr> =
-            [acc_instances.as_slice(), public_input_hash.as_slice()].concat();
+        let flattened_instances: Vec<Fr> = [
+            acc_instances.as_slice(),
+            public_input_hash.as_slice(),
+            &[Fr::from(snarks_len as u64)],
+        ]
+        .concat();
 
         log::trace!("flattened instances during construction");
         for (i, e) in flattened_instances.iter().enumerate() {
@@ -297,6 +317,7 @@ impl Circuit<Fr> for AggregationCircuit {
         //      - data hash
         //      - public input hash
         // Those are used as private inputs to the public input aggregation circuit
+        let mut assigned_num_snarks = vec![];
         layouter.assign_region(
             || "glue circuits",
             |mut region| {
@@ -305,28 +326,60 @@ impl Circuit<Fr> for AggregationCircuit {
                     return Ok(());
                 }
 
-                for chunk_idx in 0..self.snarks.len() {
-                    // step 3.1, data hash
-                    // - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
-                    // where batch_data_hash is the second hash for pi aggregation
-                    for i in 0..32 {
-                        region.constrain_equal(
-                            // the first 32 inputs for the snark
-                            snark_inputs[64 * chunk_idx + i].cell(),
-                            hash_input_cells[1][chunk_idx * 32 + i].cell(),
-                        )?;
-                    }
-                    // step 3.2, public input hash
-                    // the public input hash for the i-th snark is the (i+2)-th hash
-                    for i in 0..4 {
-                        for j in 0..8 {
-                            region.constrain_equal(
-                                // the second 32 inputs for the snark
-                                snark_inputs[64 * chunk_idx + i * 8 + j + 32].cell(),
-                                hash_output_cells[chunk_idx + 2][(3 - i) * 8 + j].cell(),
-                            )?;
+                // last element within flattened instance is encodes the number of snarks
+                let num_snarks = Value::known(*self.flattened_instances.last().unwrap());
+
+                let mut ctx = Context::new(
+                    region,
+                    ContextParams {
+                        max_rows: config.gate().max_rows,
+                        num_context_ids: 1,
+                        fixed_columns: config.gate().constants.clone(),
+                    },
+                );
+
+                let flex_gate = &config.base_field_config.range.gate;
+
+                assigned_num_snarks.push(flex_gate.assign_witnesses(&mut ctx, vec![num_snarks])[0]);
+                let mut current_snark_indexer =
+                flex_gate.assign_constant(&mut ctx, Fr::zero())?;
+                let one = flex_gate.assign_constant(&mut ctx, Fr::one())?;
+
+                for chunk_idx in 0..MAX_AGG_SNARKS {
+                    // real data
+                    if chunk_idx < self.snarks.len() {
+                        // step 3.1, data hash
+                        // - batch_data_hash := keccak(chunk_0.data_hash || ... ||
+                        //   chunk_k-1.data_hash)
+                        // where batch_data_hash is the second hash for pi aggregation
+                        for i in 0..32 {
+                            // region.constrain_equal(
+                            //     // the first 32 inputs for the snark
+                            //     snark_inputs[64 * chunk_idx + i].cell(),
+                            //     hash_input_cells[1][chunk_idx * 32 + i].cell(),
+                            // )?;
                         }
+                        // step 3.2, public input hash
+                        // the public input hash for the i-th snark is the (i+2)-th hash
+                        for i in 0..4 {
+                            for j in 0..8 {
+                                // region.constrain_equal(
+                                //     // the second 32 inputs for the snark
+                                //     snark_inputs[64 * chunk_idx + i * 8 + j + 32].cell(),
+                                //     hash_output_cells[chunk_idx + 2][(3 - i) * 8 + j].cell(),
+                                // )?;
+                            }
+                        }
+                    } else
+                    // padded data
+                    {
                     }
+
+                    current_snark_indexer = flex_gate.add(
+                        &mut ctx,
+                        QuantumCell::Existing(current_snark_indexer),
+                        QuantumCell::Existing(one),
+                    );
                 }
 
                 Ok(())
@@ -334,11 +387,13 @@ impl Circuit<Fr> for AggregationCircuit {
         )?;
 
         // ====================================================
-        // Last step: Constraint the hash data matches the public input
+        // Last step: public inputs
+        // - Constrain the hash data matches the public input hash
+        // - Constrain the number of snarks matches public input
         // ====================================================
         let acc_len = 12;
         {
-            // batch_public_input_hash
+            // Constrain the hash data matches the public input hash
             for i in 0..4 {
                 for j in 0..8 {
                     // digest in circuit has a different endianness
@@ -349,6 +404,12 @@ impl Circuit<Fr> for AggregationCircuit {
                     )?;
                 }
             }
+            // Constrain the number of snarks matches public input
+            layouter.constrain_instance(
+                assigned_num_snarks[0].cell(),
+                config.instance,
+                32 + acc_len,
+            )?;
         }
 
         end_timer!(witness_time);

@@ -1,6 +1,6 @@
 pub(crate) mod aggregation;
-pub(crate) mod end_to_end;
 pub(crate) mod compression;
+pub(crate) mod end_to_end;
 pub(crate) mod mock_chunk;
 
 #[macro_export]
