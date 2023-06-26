@@ -120,7 +120,7 @@ fn run_size_check<
         &blocks[1],
     ));
     let public_inputs = circuit2.0.instance();
-    let prover2 = MockProver::run(20, &circuit, public_inputs).unwrap();
+    let prover2 = MockProver::run(20, &circuit2, public_inputs).unwrap();
 
     assert_eq!(prover1.fixed(), prover2.fixed());
     assert_eq!(prover1.permutation(), prover2.permutation());
