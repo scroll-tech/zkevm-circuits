@@ -1463,8 +1463,8 @@ impl<F: Field> PiCircuit<F> {
                 if let Some(state_roots) = state_roots {
                     log::debug!(
                         "constrain_equal of state root: {:?} <-> {:?}",
-                        (local_conn.start_state_root, local_conn.end_state_root),
-                        (state_roots.start_state_root, state_roots.end_state_root)
+                        (&local_conn.start_state_root, &local_conn.end_state_root),
+                        (&state_roots.start_state_root, &state_roots.end_state_root)
                     );
 
                     #[cfg(feature = "scroll-trace")]
@@ -1485,8 +1485,8 @@ impl<F: Field> PiCircuit<F> {
                 if let Some(withdraw_roots) = withdraw_roots {
                     log::debug!(
                         "constrain_equal of withdraw root: {:?} <-> {:?}",
-                        local_conn.withdraw_root,
-                        withdraw_roots.withdraw_root
+                        &local_conn.withdraw_root,
+                        &withdraw_roots.withdraw_root
                     );
                     region.constrain_equal(
                         local_conn.withdraw_root.cell(),
