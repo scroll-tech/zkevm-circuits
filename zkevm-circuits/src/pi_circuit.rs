@@ -8,6 +8,7 @@ mod param;
 mod test;
 
 use std::{iter, marker::PhantomData};
+use std::str::FromStr;
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
