@@ -76,11 +76,10 @@ impl Opcode for Sha3 {
 
             for idx in 0..memory_slot_len {
                 let value = *memory.0.get(dst_begin_slot as usize + idx).unwrap_or(&0);
-                if idx as u64 + dst_begin_slot < offset.low_u64() {
-                    // front mask byte
-                    copy_steps.push((value, false, true));
-                } else if idx as u64 + dst_begin_slot >= offset.low_u64() + size.low_u64() {
-                    // back mask byte
+                if (idx as u64 + dst_begin_slot < offset.low_u64())
+                    || (idx as u64 + dst_begin_slot >= offset.low_u64() + size.low_u64())
+                {
+                    // front and back mask byte
                     copy_steps.push((value, false, true));
                 } else {
                     // real copy byte
@@ -204,7 +203,6 @@ pub mod sha3_tests {
 
     fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
         let (code, memory) = gen_sha3_code(offset, size, mem_kind);
-        let memory_len = memory.len();
 
         // The memory that is hashed.
         let mut memory_view = memory

@@ -2,7 +2,7 @@ use super::{
     param::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
-        N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
     EvmCircuitExports,
@@ -913,7 +913,7 @@ impl<F: Field> ExecutionConfig<F> {
     ) {
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
-                let name = format!("{:?}", table);
+                let name = format!("{table:?}");
                 meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                     let table_expressions = match table {
                         Table::Fixed => fixed_table,
@@ -1224,6 +1224,7 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
+            ("EVM_lookup_sig", SIG_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),
             ("EVM_copy", N_COPY_COLUMNS),
             ("EVM_lookup_byte", N_BYTE_LOOKUPS),
@@ -1233,7 +1234,7 @@ impl<F: Field> ExecutionConfig<F> {
         let mut index = 0;
         for col in self.advices {
             let (name, length) = groups[group_index];
-            region.name_column(|| format!("{}_{}", name, index), col);
+            region.name_column(|| format!("{name}_{index}"), col);
             index += 1;
             if index >= length {
                 index = 0;

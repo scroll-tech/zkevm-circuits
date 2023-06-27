@@ -144,7 +144,7 @@ impl Default for ExecutionState {
 
 impl Display for ExecutionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -384,7 +384,7 @@ impl ExecutionState {
 
     pub fn get_step_height(&self) -> usize {
         self.get_step_height_option()
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
+            .unwrap_or_else(|| panic!("Execution state unknown: {self:?}"))
     }
 }
 

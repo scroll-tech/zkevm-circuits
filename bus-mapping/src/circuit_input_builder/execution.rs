@@ -320,7 +320,7 @@ impl_expr!(CopyDataType, u64::from);
 pub struct CopyStep {
     /// Byte value copied in this step.
     pub value: u8,
-    /// mask indicates
+    /// mask indicates this byte won't be copied.
     pub mask: bool,
     /// Optional field which is enabled only for the source being `bytecode`,
     /// and represents whether or not the byte is an opcode.
@@ -397,6 +397,8 @@ pub struct CopyEvent {
     pub copy_bytes: CopyBytes,
 }
 
+pub type CopyEventSteps = Vec<(u8, bool, bool)>;
+
 impl CopyEvent {
     /// rw counter at step index
     pub fn rw_counter(&self, step_index: usize) -> u64 {
@@ -406,7 +408,7 @@ impl CopyEvent {
     /// rw counter at step index
     pub fn rw_counter_step(&self, step_index: usize) -> u64 {
         let mut rw_counter = u64::try_from(self.rw_counter_start.0).unwrap();
-        let mut rw_counter_increase = self.rw_counter_increase(step_index);
+        let rw_counter_increase = self.rw_counter_increase(step_index);
         // let mut rw_counter_increase_log = 0u64;
         // if self.dst_type == CopyDataType::TxLog {
         //     rw_counter_increase_log = self.rw_counter_increase_log(step_index);
@@ -416,11 +418,12 @@ impl CopyEvent {
         rw_counter += rw_counter_increase;
 
         // // step_index == self.bytes.len() when caculate total rw increasing.
-        if self.dst_type == CopyDataType::TxLog && step_index != self.copy_bytes.bytes.len() * 2 {
-            if step_index % 64 == 63 {
-                // log writing
-                rw_counter += 1;
-            }
+        if self.dst_type == CopyDataType::TxLog
+            && step_index != self.copy_bytes.bytes.len() * 2
+            && step_index % 64 == 63
+        {
+            // log writing
+            rw_counter += 1;
         }
 
         rw_counter
@@ -430,8 +433,6 @@ impl CopyEvent {
     pub fn rw_counter_increase_left(&self, step_index: usize) -> u64 {
         if self.rw_counter_step(self.copy_bytes.bytes.len() * 2) < self.rw_counter_step(step_index)
         {
-            let rw_counter = self.rw_counter_step(self.copy_bytes.bytes.len() * 2);
-            let rw_prevous = self.rw_counter_step(step_index);
             panic!("prev rw_counter_step > total tw_counter");
         }
         // self.rw_counter_step(self.bytes.len() * 2) - self.rw_counter_step(step_index)
@@ -445,11 +446,8 @@ impl CopyEvent {
 
     // increase in rw counter from the start of the copy event to step index
     fn rw_counter_increase(&self, step_index: usize) -> u64 {
-        match (self.src_type, self.dst_type) {
-            (CopyDataType::Memory, CopyDataType::Memory) => {
-                return step_index as u64 % 2 + 2 * (step_index as f32 / 64.0).floor() as u64;
-            }
-            _ => {}
+        if let (CopyDataType::Memory, CopyDataType::Memory) = (self.src_type, self.dst_type) {
+            return step_index as u64 % 2 + 2 * (step_index as f32 / 64.0).floor() as u64;
         }
         let source_rw_increase = match self.src_type {
             CopyDataType::Bytecode | CopyDataType::TxCalldata | CopyDataType::Precompile(_) => 0,
@@ -474,12 +472,10 @@ impl CopyEvent {
 
     // increase in rw counter for tx log specially
     fn rw_counter_increase_log(&self, step_index: usize) -> u64 {
-        let destination_rw_increase = match self.dst_type {
+        match self.dst_type {
             CopyDataType::TxLog => u64::try_from(step_index).unwrap() / 2,
             _ => unreachable!(),
-        };
-
-        destination_rw_increase
+        }
     }
 }
 

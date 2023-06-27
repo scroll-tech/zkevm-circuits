@@ -464,7 +464,7 @@ impl<F: FieldExt> CellManager<F> {
             Some(index) => index,
             // If we reach this case, it means that all the columns of cell_type have assignments
             // taking self.height rows, so there's no more space.
-            None => panic!("not enough cells for query: {:?}", cell_type),
+            None => panic!("not enough cells for query: {cell_type:?}"),
         }
     }
 

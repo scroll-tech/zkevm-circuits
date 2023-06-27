@@ -118,7 +118,7 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
 
         meta.annotate_lookup_any_column(byte_table[0], || "byte_range");
         fixed_table.iter().enumerate().for_each(|(idx, &col)| {
-            meta.annotate_lookup_any_column(col, || format!("fix_table_{}", idx))
+            meta.annotate_lookup_any_column(col, || format!("fix_table_{idx}"))
         });
         tx_table.annotate_columns(meta);
         rw_table.annotate_columns(meta);

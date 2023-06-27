@@ -29,8 +29,6 @@ pub(crate) struct Sha3Gadget<F> {
     sha3_rlc: Word<F>,
     copy_rwc_inc: Cell<F>,
     rlc_acc: Cell<F>,
-    /// include actual and padding to word bytes
-    bytes_length_word: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY_SHA3 }>,
 }
@@ -46,7 +44,6 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         let offset = cb.query_cell_phase2();
         let size = cb.query_word_rlc();
         let sha3_rlc = cb.query_word_rlc();
-        let bytes_length_word = cb.query_cell();
 
         cb.stack_pop(offset.expr());
         cb.stack_pop(size.expr());
@@ -66,8 +63,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 memory_address.offset(),
                 memory_address.address(),
                 0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
-                // memory_address.length(),
-                bytes_length_word.expr(),
+                memory_address.length(),
                 rlc_acc.expr(),
                 copy_rwc_inc.expr(),
             );
@@ -104,7 +100,6 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             sha3_rlc,
             copy_rwc_inc,
             rlc_acc,
-            bytes_length_word,
             memory_expansion,
             memory_copier_gas,
         }
@@ -150,13 +145,6 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             ),
         )?;
 
-        let bytes_length_to_word = copy_rwc_inc * 32;
-        self.bytes_length_word.assign(
-            region,
-            offset,
-            Value::known(F::from(bytes_length_to_word)),
-        )?;
-
         // read real bytes from padded memory words
         let padded_bytes: Vec<u8> = (3..3 + (copy_rwc_inc as usize))
             .map(|i| {
@@ -168,7 +156,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 bytes
             })
             .into_iter()
-            .flat_map(|byte| byte)
+            .flatten()
             .collect();
 
         let values: Vec<u8> = if size.is_zero() {

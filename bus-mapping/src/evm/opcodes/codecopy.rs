@@ -118,7 +118,7 @@ fn gen_copy_event(
 mod codecopy_tests {
     use eth_types::{
         bytecode,
-        evm_types::{MemoryAddress, OpcodeId, StackAddress},
+        evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
         Word,
     };

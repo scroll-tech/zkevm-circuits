@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_CHUNK, N_BYTES_MEMORY_WORD_SIZE},
+        param::N_BYTES_MEMORY_WORD_SIZE,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -12,15 +12,15 @@ use crate::{
             from_bytes,
             math_gadget::IsEqualGadget,
             memory_gadget::{MemoryExpansionGadget, MemoryMask, MemoryWordAddress},
-            not, CachedRegion, Cell, MemoryAddress, Word,
+            not, CachedRegion, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
-use array_init::array_init;
+
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 // TODO:
 // change MemoryAddress(slot + offset),
@@ -239,6 +239,7 @@ mod test {
         evm_types::{GasCost, OpcodeId},
         Word,
     };
+    use log::trace;
     use mock::test_ctx::{helpers::*, TestContext};
     use std::iter;
 
@@ -272,7 +273,7 @@ mod test {
     #[test]
     fn memory_gadget_simple() {
         let val = Word::from_big_endian(&(1..33).collect::<Vec<_>>());
-        println!("value is {}", val);
+        trace!("value is {val}");
         test_ok(
             OpcodeId::MSTORE,
             Word::from(0x12FFFF),

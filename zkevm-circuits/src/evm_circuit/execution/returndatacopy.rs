@@ -26,6 +26,7 @@ use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
+use log::trace;
 use std::cmp::max;
 
 #[derive(Clone, Debug)]
@@ -54,8 +55,6 @@ pub(crate) struct ReturnDataCopyGadget<F> {
     copy_rwc_inc: Cell<F>,
     /// Out of bound check circuit.
     in_bound_check: RangeCheckGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
-    /// include actual and padding to word bytes
-    bytes_length_word: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
@@ -69,7 +68,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let dest_offset = cb.query_cell_phase2();
         let data_offset = cb.query_word_rlc();
         let size = cb.query_word_rlc();
-        let bytes_length_word = cb.query_cell();
 
         // 1. Pop dest_offset, offset, length from stack
         cb.stack_pop(dest_offset.expr());
@@ -131,7 +129,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
                 return_data_offset.expr() + from_bytes::expr(&data_offset.cells),
                 return_data_offset.expr() + return_data_size.expr(),
                 dst_memory_addr.offset(),
-                bytes_length_word.expr(),
+                dst_memory_addr.length(),
                 0.expr(), // for RETURNDATACOPY rlc_acc is 0
                 copy_rwc_inc.expr(),
             );
@@ -168,7 +166,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             memory_copier_gas,
             copy_rwc_inc,
             in_bound_check,
-            bytes_length_word,
         }
     }
 
@@ -273,7 +270,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             2 * (slot_count / 32 + 1)
         };
 
-        println!(
+        trace!(
             r#"circuit:
         src_addr = {src_begin}
         dst_addr = {dst_begin}
@@ -302,14 +299,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             ),
         )?;
 
-        let bytes_length_to_word = (copy_rwc_inc / 2) * 32;
-
-        self.bytes_length_word.assign(
-            region,
-            offset,
-            Value::known(F::from(bytes_length_to_word)),
-        )?;
-
         self.in_bound_check.assign(
             region,
             offset,
@@ -318,14 +307,14 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
                 .expect("unexpected U256 -> Scalar conversion failure"),
         )?;
 
-        println!(
+        trace!(
             "copytable lookup: src_id: 0x{:x}, src_addr: 0x{:x}, src_addr_end: 0x{:x}, dst_id: 0x{:x}, dst_addr: 0x{:x}, length: 0x{:x}, rw_counter: 0x{:x}, rwc_inc: 0x{:x}",
             last_callee_id.low_u64(),
             return_data_offset.low_u64() + data_offset.low_u64(),
             return_data_offset.low_u64() + return_data_size.low_u64(),
             call.id,
             dest_offset.low_u64(),
-            bytes_length_to_word,
+            size.low_u64(),
             step.rw_counter,
             copy_rwc_inc
         );

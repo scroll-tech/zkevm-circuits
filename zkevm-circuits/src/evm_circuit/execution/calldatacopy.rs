@@ -22,10 +22,11 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToScalar};
-use ethers_core::k256::U256;
+
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-use std::cmp::{max, min};
+use log::trace;
+use std::cmp::max;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataCopyGadget<F> {
@@ -36,8 +37,6 @@ pub(crate) struct CallDataCopyGadget<F> {
     call_data_length: Cell<F>,
     call_data_offset: Cell<F>, // Only used in the internal call
     copy_rwc_inc: Cell<F>,
-    // include actual and padding to word bytes
-    bytes_length_word: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
 }
@@ -53,7 +52,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let src_id = cb.query_cell();
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
-        let bytes_length_word = cb.query_cell();
 
         let length = cb.query_word_rlc();
         let memory_offset = cb.query_cell_phase2();
@@ -135,7 +133,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 src_addr,
                 src_addr_end,
                 memory_address.offset(),
-                bytes_length_word.expr(),
+                memory_address.length(),
                 0.expr(), // for CALLDATACOPY rlc_acc is 0
                 copy_rwc_inc.expr(),
             );
@@ -178,7 +176,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             call_data_length,
             call_data_offset,
             copy_rwc_inc,
-            bytes_length_word,
             memory_expansion,
             memory_copier_gas,
         }
@@ -231,7 +228,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             let memory_start_slot = memory_offset.low_u64() - memory_offset.low_u64() % 32;
             let memory_end = memory_offset.low_u64() + length_u64;
             let memory_end_slot = memory_end - memory_end % 32;
-            println!(
+            trace!(
                 "memory_start {}, length {}",
                 memory_offset.low_u64(),
                 length.low_u64()
@@ -265,19 +262,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
-        )?;
-
-        let bytes_length_to_word = if call.is_root {
-            copy_rwc_inc * 32
-        } else {
-            // read/write
-            (copy_rwc_inc / 2) * 32
-        };
-
-        self.bytes_length_word.assign(
-            region,
-            offset,
-            Value::known(F::from(bytes_length_to_word)),
         )?;
 
         // Memory expansion

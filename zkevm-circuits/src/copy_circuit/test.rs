@@ -506,7 +506,7 @@ fn variadic_size_check() {
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, names: Vec<&str>) {
     let errors = result.expect_err("result is not an error");
-    assert_eq!(errors.len(), names.len(), "{:?}", errors);
+    assert_eq!(errors.len(), names.len(), "{errors:?}");
     for i in 0..names.len() {
         match &errors[i] {
             VerifyFailure::Lookup {
