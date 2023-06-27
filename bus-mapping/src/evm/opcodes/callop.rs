@@ -227,8 +227,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             && geth_steps[1].gas.0 != callee_gas_left + if has_value { 2300 } else { 0 }
         {
             // panic with full info
-            let info1 = format!("callee_gas_left {} gas_specified {} gas_cost {} is_warm {} has_value {} current_memory_word_size {} next_memory_word_size {}, memory_expansion_gas_cost {}",
-                    callee_gas_left, gas_specified, gas_cost, is_warm, has_value, curr_memory_word_size, next_memory_word_size, memory_expansion_gas_cost);
+            let info1 = format!("callee_gas_left {callee_gas_left} gas_specified {gas_specified} gas_cost {gas_cost} is_warm {is_warm} has_value {has_value} current_memory_word_size {curr_memory_word_size} next_memory_word_size {next_memory_word_size}, memory_expansion_gas_cost {memory_expansion_gas_cost}");
             let info2 = format!("args gas:{:?} addr:{:?} value:{:?} cd_pos:{:?} cd_len:{:?} rd_pos:{:?} rd_len:{:?}",
                         geth_step.stack.nth_last(0),
                         geth_step.stack.nth_last(1),
@@ -245,8 +244,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             debug_assert_eq!(
                 geth_steps[1].gas.0,
                 callee_gas_left + if has_value { 2300 } else { 0 },
-                "{}",
-                full_ctx
+                "{full_ctx}"
             );
         }
 
@@ -679,8 +677,7 @@ pub mod tests {
         pub fn with_call_op(&self, call_op: OpcodeId) -> Bytecode {
             assert!(
                 call_op.is_call(),
-                "invalid setup, {:?} is not a call op",
-                call_op
+                "invalid setup, {call_op:?} is not a call op",
             );
             let mut code = self.setup_code.clone();
             code.push(32, self.ret_size)

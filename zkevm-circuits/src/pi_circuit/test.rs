@@ -40,7 +40,7 @@ fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNE
 
     let prover = match MockProver::run(k, &circuit, public_inputs) {
         Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
+        Err(e) => panic!("{e:#?}"),
     };
     prover.assert_satisfied_par();
     prover.verify()
@@ -86,6 +86,7 @@ fn serial_test_simple_pi() {
     let mut difficulty_be_bytes = [0u8; 32];
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
+    set_var("COINBASE", "0x0000000000000000000000000000000000000000");
 
     let block = block_1tx();
 

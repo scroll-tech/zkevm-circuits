@@ -93,7 +93,7 @@ impl<F: Field> Block<F> {
     /// and all the rw operations of the step.
     pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
         for (tx_idx, tx) in self.txs.iter().enumerate() {
-            println!("tx {}", tx_idx);
+            println!("tx {tx_idx}");
             for step in &tx.steps {
                 println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
                 for rw_ref in &step.rw_indices {

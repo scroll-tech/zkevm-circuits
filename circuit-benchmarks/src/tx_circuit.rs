@@ -88,6 +88,7 @@ mod tests {
     }
 
     #[cfg_attr(not(feature = "benches"), ignore)]
+    #[cfg_attr(not(feature = "print-trace"), allow(unused_variables))] // FIXME: remove this after ark-std upgrade
     #[tokio::test]
     async fn bench_tx_circuit_prover() {
         env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
@@ -107,7 +108,7 @@ mod tests {
         };
 
         // Bench setup generation
-        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
+        let setup_message = format!("{BENCHMARK_ID} {setup_prfx} with degree = {degree}");
         let start1 = start_timer!(|| setup_message);
         let general_params = ParamsKZG::<Bn256>::setup(degree as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
@@ -120,10 +121,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!(
-            "{} {} with degree = {}",
-            BENCHMARK_ID, proof_gen_prfx, degree
-        );
+        let proof_message = format!("{BENCHMARK_ID} {proof_gen_prfx} with degree = {degree}");
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -145,7 +143,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| format!("{} {}", BENCHMARK_ID, proof_ver_prfx));
+        let start3 = start_timer!(|| format!("{BENCHMARK_ID} {proof_ver_prfx}"));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

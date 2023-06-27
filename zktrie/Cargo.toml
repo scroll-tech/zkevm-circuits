@@ -8,8 +8,10 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
-mpt-circuits = { package = "halo2-mpt-circuits", git = "https://github.com/scroll-tech/mpt-circuit.git", branch = "scroll-dev-0411" }
+#mpt-circuits = { package = "halo2-mpt-circuits", path = "../../mpt-circuit" }
+mpt-circuits = { package = "halo2-mpt-circuits", git = "https://github.com/scroll-tech/mpt-circuit.git", branch = "v0.4" }
 zktrie = { git = "https://github.com/scroll-tech/zktrie.git", branch = "scroll-dev-0226", features = ["dual_codehash"] }
+hash-circuit = { package = "poseidon-circuit", git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0619", features=['short']}
 bus-mapping = { path = "../bus-mapping" }
 eth-types = { path = "../eth-types" }
 lazy_static = "1.4"

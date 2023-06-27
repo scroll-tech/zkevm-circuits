@@ -1,15 +1,12 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_U64},
+        param::N_BYTES_MEMORY_ADDRESS,
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget,
-            constraint_builder::EVMConstraintBuilder,
-            from_bytes,
-            math_gadget::IsEqualGadget,
-            memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget, MemoryWordAddress},
-            CachedRegion, Cell, RandomLinearCombination, Word,
+            common_gadget::CommonErrorGadget, constraint_builder::EVMConstraintBuilder, from_bytes,
+            math_gadget::IsEqualGadget, memory_gadget::MemoryWordAddress, CachedRegion, Cell,
+            RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },

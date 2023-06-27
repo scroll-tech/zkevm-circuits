@@ -34,6 +34,7 @@ use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
+use log::trace;
 use std::iter::once;
 
 /// Gadget for CREATE and CREATE2 opcodes
@@ -69,8 +70,6 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     // if code_hash_previous is zero, then no collision
     not_address_collision: IsZeroGadget<F>,
     copy_rwc_inc: Cell<F>,
-    /// include actual and padding to word bytes
-    bytes_length_word: Cell<F>,
 }
 
 impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<F>
@@ -86,7 +85,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let code_hash_previous = cb.query_cell();
         let opcode = cb.query_cell();
         let copy_rwc_inc = cb.query_cell();
-        let bytes_length_word = cb.query_cell();
 
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
@@ -160,8 +158,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 init_code.offset(),
                 init_code.address(),
                 0.expr(),
-                //init_code.length(),
-                bytes_length_word.expr(),
+                init_code.length(),
                 init_code_rlc.expr(),
                 //init_code.length(),
                 copy_rwc_inc.expr(),
@@ -510,7 +507,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             code_hash_previous,
             not_address_collision,
             copy_rwc_inc,
-            bytes_length_word,
         }
     }
 
@@ -561,7 +557,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 bytes
             })
             .into_iter()
-            .flat_map(|byte| byte)
+            .flatten()
             .collect();
 
         let values: Vec<u8> = if init_code_length.is_zero() {
@@ -576,7 +572,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             self.init_code
                 .assign(region, offset, init_code_start, init_code_length)?;
         let rlc_acc = region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>());
-        println!("rlc_acc of assign {:?}", rlc_acc);
+        trace!("rlc_acc of assign {rlc_acc:?}");
         self.init_code_rlc.assign(
             region,
             offset,
@@ -778,13 +774,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
-        )?;
-
-        let bytes_length_to_word = copy_rwc_inc * 32;
-        self.bytes_length_word.assign(
-            region,
-            offset,
-            Value::known(F::from(bytes_length_to_word)),
         )?;
 
         Ok(())

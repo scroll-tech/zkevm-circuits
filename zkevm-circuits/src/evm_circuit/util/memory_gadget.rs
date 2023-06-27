@@ -534,7 +534,7 @@ impl<F: Field> MemoryMask<F> {
         // Compute powers of the RLC challenge. These are used to shift bytes in equations below.
         let x = cb.challenges().evm_word();
         let x32 = MemoryMask::make_x32(x.clone());
-        let x31_shift = MemoryMask::make_x31_off(x.clone(), &shift_bits);
+        let x31_shift = MemoryMask::make_x31_off(x.clone(), shift_bits);
         let x32_shift = x * x31_shift.clone();
 
         Self {
@@ -551,8 +551,8 @@ impl<F: Field> MemoryMask<F> {
         value_left: &Word<F>,
         value_left_prev: &Word<F>,
     ) {
-        let a = self.left_rlc(cb, &value_left);
-        let a_prev = self.left_rlc(cb, &value_left_prev);
+        let a = self.left_rlc(cb, value_left);
+        let a_prev = self.left_rlc(cb, value_left_prev);
         cb.require_equal("unchanged left bytes: L' & M == L & M", a, a_prev);
     }
 
@@ -562,8 +562,8 @@ impl<F: Field> MemoryMask<F> {
         value_right: &Word<F>,
         value_right_prev: &Word<F>,
     ) {
-        let d = self.right_rlc(cb, &value_right);
-        let d_prev = self.right_rlc(cb, &value_right_prev);
+        let d = self.right_rlc(cb, value_right);
+        let d_prev = self.right_rlc(cb, value_right_prev);
         cb.require_equal("unchanged right bytes: R' & !M == R & !M", d, d_prev);
     }
 
@@ -573,7 +573,7 @@ impl<F: Field> MemoryMask<F> {
         byte: Expression<F>,
         value_left: &Word<F>,
     ) {
-        let b = self.right_rlc(cb, &value_left);
+        let b = self.right_rlc(cb, value_left);
 
         cb.require_equal("W[0] * X³¹⁻ˢʰⁱᶠᵗ = B(X)", byte * self.x31_shift.clone(), b);
     }
@@ -589,8 +589,8 @@ impl<F: Field> MemoryMask<F> {
         value_left: &Word<F>,
         value_right: &Word<F>,
     ) {
-        let b = self.right_rlc(cb, &value_left);
-        let c = self.left_rlc(cb, &value_right);
+        let b = self.right_rlc(cb, value_left);
+        let c = self.left_rlc(cb, value_right);
 
         cb.require_equal(
             "W(X) * X³²⁻ˢʰⁱᶠᵗ  =  B(X) * X³² + C(X)",

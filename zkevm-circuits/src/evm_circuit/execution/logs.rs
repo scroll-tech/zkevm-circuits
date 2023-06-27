@@ -42,8 +42,6 @@ pub(crate) struct LogGadget<F> {
     is_persistent: Cell<F>,
     tx_id: Cell<F>,
     copy_rwc_inc: Cell<F>,
-    /// include actual and padding to word bytes
-    bytes_length_word: Cell<F>,
 
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
 }
@@ -56,7 +54,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let mstart_word = WordByteRangeGadget::construct(cb);
         let msize = cb.query_word_rlc();
-        let bytes_length_word = cb.query_cell();
 
         // Pop mstart_address, msize from stack
         cb.stack_pop(mstart_word.original_word());
@@ -156,8 +153,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 memory_address.offset(),
                 memory_address.address(),
                 dst_addr,
-                //memory_address.length(),
-                bytes_length_word.expr(),
+                memory_address.length(),
                 0.expr(), // for LOGN, rlc_acc is 0
                 copy_rwc_inc.expr(),
             );
@@ -198,7 +194,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             is_persistent,
             tx_id,
             copy_rwc_inc,
-            bytes_length_word,
             memory_expansion,
         }
     }
@@ -287,13 +282,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
-        )?;
-
-        let bytes_length_to_word = copy_rwc_inc * 32;
-        self.bytes_length_word.assign(
-            region,
-            offset,
-            Value::known(F::from(bytes_length_to_word)),
         )?;
 
         Ok(())

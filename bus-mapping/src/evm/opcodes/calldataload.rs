@@ -1,11 +1,10 @@
-use std::mem;
-
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{CallContextField, MemoryOp, MemoryWordOp, RW},
+    operation::{CallContextField, MemoryWordOp, RW},
     Error,
 };
 use eth_types::{GethExecStep, Word, U256};
+use log::trace;
 
 use super::Opcode;
 
@@ -77,8 +76,7 @@ impl Opcode for Calldataload {
                 .map(|idx| {
                     let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
                     if addr < src_addr_end {
-                        let byte = call_data[(addr - call_data_offset) as usize];
-                        byte
+                        call_data[(addr - call_data_offset) as usize]
                     } else {
                         0
                     }
@@ -174,7 +172,7 @@ mod calldataload_tests {
         // };
         let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
             address: addr_b,
-            pushdata: pushdata,
+            pushdata,
             call_data_length,
             call_data_offset,
             ..MockCallBytecodeParams::default()
@@ -276,7 +274,7 @@ mod calldataload_tests {
         if memory_bytes.len() < slot + minimal_length {
             memory_bytes.resize(slot + minimal_length, 0);
         }
-        println!("calldatload memory_bytes {:?}", memory_bytes);
+        trace!("calldatload memory_bytes {:?}", memory_bytes);
 
         //memory_a.reverse();
         slot_bytes.clone_from_slice(&memory_bytes[slot..slot + 32]);

@@ -188,6 +188,5 @@ mod return_tests {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let copy_events = builder.block.copy_events.clone();
     }
 }

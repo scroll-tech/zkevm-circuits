@@ -165,6 +165,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let addr = copy_table.addr;
         let src_addr_end = copy_table.src_addr_end;
         let bytes_left = copy_table.bytes_left;
+        let real_bytes_left = copy_table.real_bytes_left;
         let word_index = meta.advice_column();
         let addr_slot = meta.advice_column();
         let mask = meta.advice_column();
@@ -191,7 +192,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             meta,
             |meta| meta.query_selector(q_step),
             |meta| meta.query_advice(word_index, Rotation::cur()),
-            |meta| 31.expr(),
+            |_meta| 31.expr(),
         );
 
         let non_pad_non_mask = LtChip::configure(
@@ -201,7 +202,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(is_pad, Rotation::cur())
                     + meta.query_advice(mask, Rotation::cur())
             },
-            |meta| 1.expr(),
+            |_meta| 1.expr(),
         );
         meta.create_gate("is precompile", |meta| {
             let enabled = meta.query_fixed(q_enable, Rotation::cur());
@@ -354,7 +355,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     ]);
                     let diff = select::expr(
                         is_memory2memory,
-                        select::expr(meta.query_selector(q_step), 1.expr(), -1.expr()),
+                        select::expr(meta.query_selector(q_step), 1.expr(), -(1.expr())),
                         0.expr(),
                     );
                     cb.require_equal(
@@ -419,7 +420,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
 
-            let rw_diff = and::expr([
+            let _rw_diff = and::expr([
                 or::expr([
                     meta.query_advice(is_memory, Rotation::cur()),
                     tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta),
@@ -436,7 +437,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     );
                 },
             );
-            cb.condition(meta.query_advice(is_last, Rotation::cur()), |cb| {
+            cb.condition(meta.query_advice(is_last, Rotation::cur()), |_cb| {
                 // cb.require_equal(
                 //     "rwc_inc_left == rw_diff for last row in the copy slot",
                 //     meta.query_advice(rwc_inc_left, Rotation::cur()),
@@ -538,6 +539,27 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     meta.query_advice(is_last, Rotation::next()),
                     1.expr() - meta.query_advice(bytes_left, Rotation::cur()),
                 ]),
+            );
+            cb.require_zero(
+                "real_bytes_left == 0 for last step",
+                and::expr([
+                    meta.query_advice(is_last, Rotation::next()),
+                    meta.query_advice(real_bytes_left, Rotation::cur()),
+                ]),
+            );
+            cb.condition(
+                and::expr([
+                    not::expr(meta.query_advice(is_last, Rotation::cur())),
+                    not::expr(meta.query_advice(is_last, Rotation::next())),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "real_bytes_left[0] == real_bytes_left[2] + !mask",
+                        meta.query_advice(real_bytes_left, Rotation::cur()),
+                        meta.query_advice(real_bytes_left, Rotation(2))
+                            + not::expr(meta.query_advice(mask, Rotation::cur())),
+                    );
+                },
             );
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::next()))
@@ -733,6 +755,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
 impl<F: Field> CopyCircuitConfig<F> {
     /// Assign an individual copy event to the Copy Circuit.
+    #[allow(clippy::too_many_arguments)]
     pub fn assign_copy_event(
         &self,
         region: &mut Region<F>,
@@ -755,7 +778,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             let is_read = step_idx % 2 == 0;
 
             region.assign_fixed(
-                || format!("q_enable at row: {}", offset),
+                || format!("q_enable at row: {offset}"),
                 self.q_enable,
                 *offset,
                 || Value::known(F::one()),
@@ -767,11 +790,15 @@ impl<F: Field> CopyCircuitConfig<F> {
                     .iter()
                     .zip_eq(table_row)
             {
-                // Leave sr_addr_end and bytes_left unassigned when !is_read
-                if !is_read && (label == "src_addr_end" || label == "bytes_left") {
+                // Leave sr_addr_end and bytes_left and real_bytes_left unassigned when !is_read
+                if !is_read
+                    && (label == "src_addr_end"
+                        || label == "bytes_left"
+                        || label == "real_bytes_left")
+                {
                 } else {
                     region.assign_advice(
-                        || format!("{} at row: {}", label, offset),
+                        || format!("{label} at row: {offset}"),
                         column,
                         *offset,
                         || value,
@@ -923,9 +950,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         // Accumulation gate.
         assert!(
             copy_rows_needed + 2 <= max_copy_rows,
-            "copy rows not enough {} vs {}",
-            copy_rows_needed,
-            max_copy_rows
+            "copy rows not enough {copy_rows_needed} vs {max_copy_rows}"
         );
 
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
@@ -1008,6 +1033,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn assign_padding_row(
         &self,
         region: &mut Region<F>,
@@ -1071,6 +1097,13 @@ impl<F: Field> CopyCircuitConfig<F> {
         region.assign_advice(
             || format!("assign bytes_left {}", *offset),
             self.copy_table.bytes_left,
+            *offset,
+            || Value::known(F::zero()),
+        )?;
+        // real_bytes_left
+        region.assign_advice(
+            || format!("assign bytes_left {}", *offset),
+            self.copy_table.real_bytes_left,
             *offset,
             || Value::known(F::zero()),
         )?;

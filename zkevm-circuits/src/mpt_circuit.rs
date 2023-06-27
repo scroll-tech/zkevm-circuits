@@ -1,109 +1,116 @@
+#![allow(missing_docs)]
 //! wrapping of mpt-circuit
 use crate::{
-    table::{MptTable, PoseidonTable},
+    table::{LookupTable, MptTable, PoseidonTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Expression},
+    halo2curves::bn256::Fr,
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
 };
-use mpt_zktrie::{hash::Hashable, operation::AccountOp, EthTrie, EthTrieCircuit, EthTrieConfig};
+use itertools::Itertools;
+use mpt_zktrie::mpt_circuits::{gadgets::poseidon::PoseidonLookup, mpt, types::Proof};
 
-/// re-wrapping for mpt circuit
-#[derive(Default, Clone, Debug)]
-pub struct MptCircuit<F: Field>(pub(crate) EthTrieCircuit<F, false>);
+impl PoseidonLookup for PoseidonTable {
+    fn lookup_columns_generic(&self) -> (Column<Fixed>, [Column<Advice>; 5]) {
+        (
+            self.q_enable,
+            [
+                self.hash_id,
+                self.input0,
+                self.input1,
+                self.control,
+                self.heading_mark,
+            ],
+        )
+    }
+}
+
+/// Circuit wrapped with mpt table data
+#[derive(Clone, Debug, Default)]
+pub struct MptCircuit<F: Field> {
+    row_limit: usize,
+    proofs: Vec<Proof>,
+    mpt_updates: witness::MptUpdates,
+    _phantom: std::marker::PhantomData<F>,
+}
 
 /// Circuit configuration argument ts
-pub struct MptCircuitConfigArgs<F: Field> {
+pub struct MptCircuitConfigArgs {
     /// PoseidonTable
     pub poseidon_table: PoseidonTable,
     /// MptTable
     pub mpt_table: MptTable,
     /// Challenges
-    pub challenges: Challenges<Expression<F>>,
+    pub challenges: Challenges,
 }
 
 /// re-wrapping for mpt config
-#[derive(Debug, Clone)]
-pub struct MptCircuitConfig(pub(crate) EthTrieConfig);
+#[derive(Clone)]
+pub struct MptCircuitConfig<F: Field>(
+    pub(crate) mpt::MptCircuitConfig,
+    pub(crate) MptTable,
+    std::marker::PhantomData<F>,
+);
 
-impl<F: Field> SubCircuitConfig<F> for MptCircuitConfig {
-    type ConfigArgs = MptCircuitConfigArgs<F>;
+impl SubCircuitConfig<Fr> for MptCircuitConfig<Fr> {
+    type ConfigArgs = MptCircuitConfigArgs;
 
     fn new(
-        meta: &mut ConstraintSystem<F>,
+        meta: &mut ConstraintSystem<Fr>,
         Self::ConfigArgs {
             poseidon_table,
             mpt_table,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let poseidon_table = (
-            poseidon_table.q_enable,
-            [
-                poseidon_table.hash_id,
-                poseidon_table.input0,
-                poseidon_table.input1,
-                poseidon_table.control,
-                poseidon_table.heading_mark,
-            ],
-        );
-        let mpt_table = (
-            mpt_table.q_enable,
-            [
-                mpt_table.address,
-                mpt_table.storage_key,
-                mpt_table.proof_type,
-                mpt_table.new_root,
-                mpt_table.old_root,
-                mpt_table.new_value,
-                mpt_table.old_value,
-            ],
-        );
+        let conf = mpt::MptCircuitConfig::configure(meta, challenges.evm_word(), &poseidon_table);
 
-        let conf =
-            EthTrieConfig::configure_sub(meta, mpt_table, poseidon_table, challenges.evm_word());
-        Self(conf)
+        // TODO: re-enable this after we can generate full scroll block trace in local tracer
+        // when feature="scroll"
+        #[cfg(feature = "scroll-trace")]
+        meta.lookup_any("updates in mpt table proven in mpt circuit", |meta| {
+            mpt_table
+                .table_exprs(meta)
+                .into_iter()
+                .zip_eq(conf.lookup_exprs(meta))
+                .collect()
+        });
+
+        Self(conf, mpt_table, Default::default())
     }
 }
 
 #[cfg(any(feature = "test", test))]
-impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
-    type Config = MptCircuitConfig;
+impl SubCircuit<Fr> for MptCircuit<Fr> {
+    type Config = MptCircuitConfig<Fr>;
 
-    fn new_from_block(block: &witness::Block<F>) -> Self {
-        let mut eth_trie: EthTrie<F> = Default::default();
-        eth_trie.add_ops(
-            block
-                .mpt_updates
-                .smt_traces
-                .iter()
-                .map(|tr| AccountOp::try_from(tr).unwrap()),
-        );
-        let (circuit, _) = eth_trie.to_circuits(
-            (
-                // notice we do not use the accompanied hash circuit so just assign any size
-                100usize,
-                Some(block.circuits_params.max_mpt_rows),
-            ),
-            &block.mpt_updates.proof_types,
-        );
-        MptCircuit(circuit)
+    fn new_from_block(block: &witness::Block<Fr>) -> Self {
+        let traces: Vec<_> = block
+            .mpt_updates
+            .proof_types
+            .iter()
+            .cloned()
+            .zip_eq(block.mpt_updates.smt_traces.iter().cloned())
+            .collect();
+
+        Self {
+            proofs: traces.into_iter().map(Proof::from).collect(),
+            row_limit: block.circuits_params.max_mpt_rows,
+            mpt_updates: block.mpt_updates.clone(),
+            ..Default::default()
+        }
     }
 
-    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let mut eth_trie: EthTrie<F> = Default::default();
-        eth_trie.add_ops(
-            block
-                .mpt_updates
-                .smt_traces
-                .iter()
-                .map(|tr| AccountOp::try_from(tr).unwrap()),
-        );
-        let (mpt_rows, _) = eth_trie.use_rows();
-        (mpt_rows, block.circuits_params.max_rws.max(mpt_rows))
+    fn min_num_rows_block(block: &witness::Block<Fr>) -> (usize, usize) {
+        // FIXME
+        (
+            block.circuits_params.max_mpt_rows,
+            block.circuits_params.max_mpt_rows,
+        )
     }
 
     /// Make the assignments to the MptCircuit, notice it fill mpt table
@@ -111,47 +118,43 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        challenges: &Challenges<Value<F>>,
-        layouter: &mut impl Layouter<F>,
+        challenges: &Challenges<Value<Fr>>,
+        layouter: &mut impl Layouter<Fr>,
     ) -> Result<(), Error> {
-        config.0.load_mpt_table(
+        config.0.assign(layouter, &self.proofs, self.row_limit)?;
+        config.1.load(
             layouter,
-            crate::test_util::escape_value(challenges.evm_word()),
-            self.0.ops.as_slice(),
-            self.0.mpt_table.iter().copied(),
-            self.0.calcs,
+            &self.mpt_updates,
+            self.row_limit,
+            challenges.evm_word(),
         )?;
-        config
-            .0
-            .synthesize_core(layouter, self.0.ops.iter(), self.0.calcs)?;
         Ok(())
     }
 
     /// powers of randomness for instance columns
-    fn instance(&self) -> Vec<Vec<F>> {
+    fn instance(&self) -> Vec<Vec<Fr>> {
         vec![]
     }
 }
 
 #[cfg(any(feature = "test", test))]
-impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
-    type Config = (MptCircuitConfig, Challenges);
+impl Circuit<Fr> for MptCircuit<Fr> {
+    type Config = (MptCircuitConfig<Fr>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        let mut out = Self::default();
-        out.0.calcs = self.0.calcs;
-        out
+        Self {
+            row_limit: self.row_limit,
+            ..Default::default()
+        }
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         let challenges = Challenges::construct(meta);
         let poseidon_table = PoseidonTable::dev_construct(meta);
         let mpt_table = MptTable::construct(meta);
 
         let config = {
-            let challenges = challenges.exprs(meta);
-
             MptCircuitConfig::new(
                 meta,
                 MptCircuitConfigArgs {
@@ -168,14 +171,9 @@ impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
     fn synthesize(
         &self,
         (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
+        mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&layouter);
-        config.0.dev_load_hash_table(
-            &mut layouter,
-            self.0.ops.iter().flat_map(|op| op.hash_traces()),
-            self.0.calcs,
-        )?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

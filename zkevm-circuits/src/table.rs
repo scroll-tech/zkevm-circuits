@@ -24,8 +24,8 @@ use halo2_proofs::{
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use rand::seq::index;
-use std::{io::copy, iter::repeat};
+
+use std::iter::repeat;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -34,6 +34,7 @@ use halo2_proofs::plonk::SecondPhase;
 
 use itertools::Itertools;
 use keccak256::plain::Keccak;
+use log::trace;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
@@ -134,7 +135,7 @@ pub enum TxFieldTag {
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
-    /// Gas cost for rlp-encoded bytes of unsigned transaction (4 for byte == 0, 16 otherwise)
+    /// Gas cost of the transaction data charged in L1
     TxDataGasCost,
     /// Chain ID
     ChainID,
@@ -224,9 +225,7 @@ impl TxTable {
         let sum_txs_calldata: usize = txs.iter().map(|tx| tx.call_data.len()).sum();
         assert!(
             sum_txs_calldata <= max_calldata,
-            "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
-            sum_txs_calldata,
-            max_calldata,
+            "sum_txs_calldata <= max_calldata: sum_txs_calldata={sum_txs_calldata}, max_calldata={max_calldata}",
         );
 
         fn assign_row<F: Field>(
@@ -240,20 +239,20 @@ impl TxTable {
         ) -> Result<(), Error> {
             for (index, column) in advice_columns.iter().enumerate() {
                 region.assign_advice(
-                    || format!("tx table {} row {}", msg, offset),
+                    || format!("tx table {msg} row {offset}"),
                     *column,
                     offset,
                     || row[if index > 0 { index + 1 } else { index }],
                 )?;
             }
             region.assign_fixed(
-                || format!("tx table q_enable row {}", offset),
+                || format!("tx table q_enable row {offset}"),
                 q_enable,
                 offset,
                 || Value::known(F::one()),
             )?;
             region.assign_fixed(
-                || format!("tx table {} row {}", msg, offset),
+                || format!("tx table {msg} row {offset}"),
                 *tag,
                 offset,
                 || row[1],
@@ -373,8 +372,6 @@ pub enum RwTableTag {
     Memory,
     /// Memory word operation
     MemoryWord,
-    /// Account Storage operation
-    AccountStorage,
     /// Tx Access List Account operation
     TxAccessListAccount,
     /// Tx Access List Account Storage operation
@@ -383,6 +380,8 @@ pub enum RwTableTag {
     TxRefund,
     /// Account operation
     Account,
+    /// Account Storage operation
+    AccountStorage,
     /// Call Context operation
     CallContext,
     /// Tx Log operation
@@ -415,15 +414,14 @@ impl From<RwTableTag> for usize {
 /// Tag for an AccountField in RwTable
 #[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccountFieldTag {
-    /// Variant representing the poseidon hash of an account's code.
-    CodeHash = 0, /* we need this to match to the field tag of AccountStorage, which is
-                   * always 0 */
     /// Nonce field
     Nonce,
     /// Balance field
     Balance,
     /// Variant representing the keccak hash of an account's code.
     KeccakCodeHash,
+    /// Variant representing the poseidon hash of an account's code.
+    CodeHash,
     /// Variant representing the code size, i.e. length of account's code.
     CodeSize,
     /// NonExisting field
@@ -658,36 +656,16 @@ impl RwTable {
     }
 }
 
-/// The types of proofs in the MPT table
-#[derive(Clone, Copy, Debug)]
-pub enum MPTProofType {
-    /// Nonce updated
-    NonceMod = AccountFieldTag::Nonce as isize,
-    /// Balance updated
-    BalanceMod = AccountFieldTag::Balance as isize,
-    /// Keccak Code hash exists
-    KeccakCodeHashExists = AccountFieldTag::KeccakCodeHash as isize,
-    /// Poseidon Code hash exits
-    PoseidonCodeHashExists = AccountFieldTag::CodeHash as isize,
-    /// Code size exists
-    CodeSizeExists = AccountFieldTag::CodeSize as isize,
-    /// Account does not exist
-    NonExistingAccountProof = AccountFieldTag::NonExisting as isize,
-    /// Storage updated
-    StorageMod,
-    /// Storage does not exist
-    NonExistingStorageProof,
-}
-impl_expr!(MPTProofType);
+pub use mpt_zktrie::mpt_circuits::MPTProofType;
 
 impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
         match tag {
-            AccountFieldTag::Nonce => Self::NonceMod,
-            AccountFieldTag::Balance => Self::BalanceMod,
-            AccountFieldTag::KeccakCodeHash => Self::KeccakCodeHashExists,
+            AccountFieldTag::Nonce => Self::NonceChanged,
+            AccountFieldTag::Balance => Self::BalanceChanged,
+            AccountFieldTag::KeccakCodeHash => Self::CodeHashExists,
             AccountFieldTag::CodeHash => Self::PoseidonCodeHashExists,
-            AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
+            AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
             AccountFieldTag::CodeSize => Self::CodeSizeExists,
         }
     }
@@ -865,7 +843,7 @@ impl PoseidonTable {
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
-            hash_id: meta.advice_column_in(SecondPhase),
+            hash_id: meta.advice_column(),
             input0: meta.advice_column(),
             input1: meta.advice_column(),
             control: meta.advice_column(),
@@ -873,16 +851,9 @@ impl PoseidonTable {
         }
     }
 
-    /// Construct a new PoseidonTable for dev (no secondphase, mpt only)
+    /// Construct a new PoseidonTable for dev
     pub(crate) fn dev_construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            q_enable: meta.fixed_column(),
-            hash_id: meta.advice_column(),
-            input0: meta.advice_column(),
-            input1: meta.advice_column(),
-            control: meta.advice_column(),
-            heading_mark: meta.advice_column(),
-        }
+        Self::construct(meta)
     }
 
     pub(crate) fn assign<F: Field>(
@@ -944,7 +915,7 @@ impl PoseidonTable {
             unroll_to_hash_input_default, HASHBLOCK_BYTES_IN_FIELD,
         };
         use bus_mapping::state_db::CodeDB;
-        use mpt_zktrie::hash::HASHABLE_DOMAIN_SPEC;
+        use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
 
         layouter.assign_region(
             || "poseidon table",
@@ -1011,7 +982,7 @@ impl PoseidonTable {
                             F::from_u128(HASHABLE_DOMAIN_SPEC * control_len as u128);
 
                         region.assign_fixed(
-                            || format!("poseidon table row {}", offset),
+                            || format!("poseidon table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
@@ -1027,7 +998,7 @@ impl PoseidonTable {
                                 }))),
                         ) {
                             region.assign_advice(
-                                || format!("poseidon table row {}", offset),
+                                || format!("poseidon table row {offset}"),
                                 *column,
                                 offset,
                                 || value,
@@ -1130,14 +1101,14 @@ impl BytecodeTable {
                 for bytecode in bytecodes.clone() {
                     for row in bytecode.table_assignments(challenges) {
                         region.assign_fixed(
-                            || format!("bytecode table row {}", offset),
+                            || format!("bytecode table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, value) in bytecode_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("bytecode table row {}", offset),
+                                || format!("bytecode table row {offset}"),
                                 column,
                                 offset,
                                 || value,
@@ -1267,14 +1238,14 @@ impl BlockTable {
                     cum_num_txs += num_txs;
                     for row in block_ctx.table_assignments(num_txs, cum_num_txs, challenges) {
                         region.assign_fixed(
-                            || format!("block table row {}", offset),
+                            || format!("block table row {offset}"),
                             self.tag,
                             offset,
                             || row[0],
                         )?;
                         for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                             region.assign_advice(
-                                || format!("block table row {}", offset),
+                                || format!("block table row {offset}"),
                                 *column,
                                 offset,
                                 || *value,
@@ -1394,7 +1365,7 @@ impl KeccakTable {
             .iter()
             .zip(values.iter())
         {
-            region.assign_advice(|| format!("assign {}", offset), column, offset, || *value)?;
+            region.assign_advice(|| format!("assign {offset}"), column, offset, || *value)?;
         }
         Ok(())
     }
@@ -1431,14 +1402,14 @@ impl KeccakTable {
                 for input in inputs.clone() {
                     for row in Self::assignments(input, challenges) {
                         region.assign_fixed(
-                            || format!("keccak table row {}", offset),
+                            || format!("keccak table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("keccak table row {}", offset),
+                                || format!("keccak table row {offset}"),
                                 column,
                                 offset,
                                 || value,
@@ -1492,6 +1463,8 @@ pub struct CopyTable {
     pub src_addr_end: Column<Advice>,
     /// The number of bytes left to be copied.
     pub bytes_left: Column<Advice>,
+    /// The number of non-masked bytes left to be copied.
+    pub real_bytes_left: Column<Advice>,
     /// mask indicates the byte is actual coped or padding to memory word
     pub value_wrod_rlc: Column<Advice>,
     /// mask indicates the byte is actual coped or padding to memory word
@@ -1511,7 +1484,7 @@ pub struct CopyTable {
     pub tag: BinaryNumberConfig<CopyDataType, 4>,
 }
 
-type CopyTableRow<F> = [(Value<F>, &'static str); 8];
+type CopyTableRow<F> = [(Value<F>, &'static str); 9];
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 12];
 
 impl CopyTable {
@@ -1525,6 +1498,7 @@ impl CopyTable {
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
+            real_bytes_left: meta.advice_column(),
             value_wrod_rlc: meta.advice_column(),
             //mask: meta.advice_column(),
             rlc_acc: meta.advice_column_in(SecondPhase),
@@ -1538,7 +1512,7 @@ impl CopyTable {
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
-        println!("assignments CopyEvent challenge  {:?} ", challenges);
+        trace!("assignments CopyEvent challenge  {challenges:?} ");
         let mut assignments = Vec::new();
         // rlc_acc
         let rlc_acc = {
@@ -1549,13 +1523,13 @@ impl CopyTable {
                 .map(|(value, _, _)| *value)
                 .collect::<Vec<u8>>();
 
-            println!("rlc_acc bytes are {:?}", values);
+            trace!("rlc_acc bytes are {values:?}");
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
         };
 
-        println!("rlc_acc of bytecode bytes {:?} ", rlc_acc);
+        trace!("rlc_acc of bytecode bytes {rlc_acc:?} ");
         let mut value_word_read_rlc = Value::known(F::zero());
         let mut value_word_write_rlc = Value::known(F::zero());
         let mut value_word_write_rlc_prev = Value::known(F::zero());
@@ -1568,7 +1542,8 @@ impl CopyTable {
             .iter()
             .position(|&step| !step.2)
             .unwrap_or(0);
-        let mut word_index = 0u64;
+        let mut real_length_left = copy_event.bytes.iter().filter(|&step| !step.2).count();
+        let mut word_index;
         let mut read_addr_slot = if copy_event.src_type == CopyDataType::Memory {
             copy_event.src_addr - copy_event.src_addr % 32
         } else {
@@ -1733,24 +1708,6 @@ impl CopyTable {
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
 
-            // debug info
-            let rw_count = F::from(copy_event.rw_counter_step(step_idx));
-            let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
-            // todo: rm
-            println!(
-                "log: step_idx {}\t tag {:?} \t rw_count {:?} id {:?}, bytes_left {}, addr {:?}, 
-                rwc_inc_left {:?}, value_word_write_rlc {:?}, mask {}",
-                step_idx,
-                tag,
-                rw_count,
-                id,
-                bytes_left,
-                addr,
-                rwc_inc_left,
-                value_word_write_rlc,
-                copy_step.mask,
-            );
-
             assignments.push((
                 tag,
                 [
@@ -1762,6 +1719,10 @@ impl CopyTable {
                         "src_addr_end",
                     ),
                     (Value::known(F::from(bytes_left)), "bytes_left"),
+                    (
+                        Value::known(F::from(real_length_left as u64)),
+                        "real_bytes_left",
+                    ),
                     (
                         match (copy_event.src_type, copy_event.dst_type) {
                             (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
@@ -1817,6 +1778,10 @@ impl CopyTable {
                     ),
                 ],
             ));
+
+            if is_read_step && !copy_step.mask {
+                real_length_left -= 1;
+            }
         }
         rlc_acc_read
             .zip(rlc_acc_write)
@@ -1856,14 +1821,14 @@ impl CopyTable {
                 for copy_event in block.copy_events.iter() {
                     for (tag, row, _) in Self::assignments(copy_event, *challenges) {
                         region.assign_fixed(
-                            || format!("q_enable at row: {}", offset),
+                            || format!("q_enable at row: {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("{} at row: {}", label, offset),
+                                || format!("{label} at row: {offset}"),
                                 column,
                                 offset,
                                 || value,
@@ -1889,6 +1854,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             self.addr.into(),
             self.src_addr_end.into(),
             self.bytes_left.into(),
+            self.real_bytes_left.into(),
             //self.value_wrod_rlc.into(),
             self.rlc_acc.into(),
             self.rw_counter.into(),
@@ -1904,6 +1870,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             String::from("addr"),
             String::from("src_addr_end"),
             String::from("bytes_left"),
+            String::from("real_bytes_left"),
             String::from("mask"),
             String::from("rlc_acc"),
             String::from("rw_counter"),
@@ -1922,10 +1889,11 @@ impl<F: Field> LookupTable<F> for CopyTable {
             meta.query_advice(self.addr, Rotation::cur()), // src_addr
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
             meta.query_advice(self.addr, Rotation::next()), // dst_addr
-            meta.query_advice(self.bytes_left, Rotation::cur()), // length
-            meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
-            meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
-            meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
+            //meta.query_advice(self.bytes_left, Rotation::cur()), // length
+            meta.query_advice(self.real_bytes_left, Rotation::cur()), // real_length
+            meta.query_advice(self.rlc_acc, Rotation::cur()),         // rlc_acc
+            meta.query_advice(self.rw_counter, Rotation::cur()),      // rw_counter
+            meta.query_advice(self.rwc_inc_left, Rotation::cur()),    // rwc_inc_left
         ]
     }
 }
@@ -2053,14 +2021,14 @@ impl ExpTable {
                 for exp_event in block.exp_events.iter() {
                     for row in Self::assignments::<F>(exp_event) {
                         region.assign_fixed(
-                            || format!("exponentiation table row {}", offset),
+                            || format!("exponentiation table row {offset}"),
                             self.q_enable,
                             offset,
                             || Value::known(F::one()),
                         )?;
                         for (&column, value) in exp_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
-                                || format!("exponentiation table row {}", offset),
+                                || format!("exponentiation table row {offset}"),
                                 column,
                                 offset,
                                 || Value::known(value),
@@ -2072,7 +2040,7 @@ impl ExpTable {
                             F::zero()
                         };
                         region.assign_fixed(
-                            || format!("exponentiation table row {}", offset),
+                            || format!("exponentiation table row {offset}"),
                             self.is_step,
                             offset,
                             || Value::known(is_step),
@@ -2084,14 +2052,14 @@ impl ExpTable {
                 // pad an empty row
                 let row = [F::from_u128(0); 5];
                 region.assign_fixed(
-                    || format!("exponentiation table row {}", offset),
+                    || format!("exponentiation table row {offset}"),
                     self.q_enable,
                     offset,
                     || Value::known(F::one()),
                 )?;
                 for (column, value) in exp_table_columns.iter().zip_eq(row) {
                     region.assign_advice(
-                        || format!("exponentiation table row {}", offset),
+                        || format!("exponentiation table row {offset}"),
                         *column,
                         offset,
                         || Value::known(value),

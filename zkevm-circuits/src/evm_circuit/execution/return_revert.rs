@@ -50,8 +50,6 @@ pub(crate) struct ReturnRevertGadget<F> {
     caller_id: Cell<F>,
     address: Cell<F>,
     reversion_info: ReversionInfo<F>,
-    /// include actual and padding to word bytes
-    bytes_length_word: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
@@ -61,7 +59,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let bytes_length_word = cb.query_cell();
 
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
@@ -94,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let memory_expansion = MemoryExpansionGadget::construct(cb, [range.address()]);
 
         // Case A in the specs.
-        cb.condition(is_create.clone() * is_success.expr(), |cb| {
+        cb.condition(is_create.clone() * is_success.expr(), |_cb| {
             // cb.require_equal(
             //     "increase rw counter once for each memory to bytecode byte copied",
             //     copy_rw_increase.expr(),
@@ -133,8 +130,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 range.offset(),
                 range.address(),
                 0.expr(),
-                //range.length(),
-                bytes_length_word.expr(),
+                range.length(),
                 init_code_rlc.expr(),
                 copy_rw_increase.expr(),
             );
@@ -260,12 +256,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     range.offset(),
                     range.address(),
                     return_data_offset.expr(),
-                    //copy_length.min(),
-                    bytes_length_word.expr(),
-                    //64.expr(),
+                    copy_length.min(),
                     0.expr(),
                     copy_rw_increase.expr(),
-                    //4.expr(),
                 );
             },
         );
@@ -297,7 +290,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             address,
             caller_id,
             reversion_info,
-            bytes_length_word,
         }
     }
 
@@ -368,7 +360,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     bytes
                 })
                 .into_iter()
-                .flat_map(|byte| byte)
+                .flatten()
                 .collect();
 
             let values: Vec<u8> = if valid_length == 0 {
@@ -416,8 +408,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             .assign(region, offset, Value::known(F::from(copy_rw_increase)))?;
         self.copy_rw_increase_is_zero
             .assign(region, offset, F::from(copy_rw_increase))?;
-        self.bytes_length_word
-            .assign(region, offset, Value::known(F::from(copy_rwc_inc * 32)))?;
 
         let is_contract_deployment = call.is_create && call.is_success && !length.is_zero();
         if !call.is_root {

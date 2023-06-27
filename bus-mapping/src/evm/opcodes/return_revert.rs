@@ -239,24 +239,24 @@ fn handle_copy(
     }
 
     // memory word write to destination
-    let mut read_steps = Vec::with_capacity(source.length as usize);
+    let mut read_steps = Vec::with_capacity(source.length);
     CircuitInputStateRef::gen_memory_copy_steps(
         &mut read_steps,
         &src_data,
         full_length,
         source.offset,
         src_begin_slot as usize,
-        copy_length as usize,
+        copy_length,
     );
 
-    let mut write_steps = Vec::with_capacity(destination.length as usize);
+    let mut write_steps = Vec::with_capacity(destination.length);
     CircuitInputStateRef::gen_memory_copy_steps(
         &mut write_steps,
         &dst_data, // TODO: this should be dst_data_prev.
         full_length,
         destination.offset,
         dst_begin_slot as usize,
-        copy_length as usize,
+        copy_length,
     );
 
     state.push_copy(
@@ -325,14 +325,13 @@ fn handle_create(
         chunk_index += 32;
     }
 
-    let mut copy_steps = Vec::with_capacity(source.length as usize);
+    let mut copy_steps = Vec::with_capacity(source.length);
     for idx in 0..create_slot_len {
         let value = memory.0[dst_begin_slot as usize + idx];
-        if idx as u64 + dst_begin_slot < source.offset as u64 {
-            // front mask byte
-            copy_steps.push((value, false, true));
-        } else if idx as u64 + dst_begin_slot >= (source.offset + source.length) as u64 {
-            // back mask byte
+        if (idx as u64 + dst_begin_slot < source.offset as u64)
+            || (idx as u64 + dst_begin_slot >= (source.offset + source.length) as u64)
+        {
+            // front and back mask byte
             copy_steps.push((value, false, true));
         } else {
             // real copy byte
