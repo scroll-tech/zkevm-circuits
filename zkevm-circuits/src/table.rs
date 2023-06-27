@@ -35,6 +35,7 @@ use halo2_proofs::plonk::SecondPhase;
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use std::array;
+use halo2_proofs::dev::unwrap_value;
 use strum_macros::{EnumCount, EnumIter};
 
 /// Trait used to define lookup tables
@@ -1492,6 +1493,8 @@ pub struct CopyTable {
     pub src_addr_end: Column<Advice>,
     /// The number of bytes left to be copied.
     pub bytes_left: Column<Advice>,
+    /// The number of non-padding bytes left to be copied.
+    pub real_bytes_left: Column<Advice>,
     /// mask indicates the byte is actual coped or padding to memory word
     pub value_wrod_rlc: Column<Advice>,
     /// mask indicates the byte is actual coped or padding to memory word
@@ -1511,7 +1514,7 @@ pub struct CopyTable {
     pub tag: BinaryNumberConfig<CopyDataType, 4>,
 }
 
-type CopyTableRow<F> = [(Value<F>, &'static str); 8];
+type CopyTableRow<F> = [(Value<F>, &'static str); 9];
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
 
 impl CopyTable {
@@ -1525,6 +1528,7 @@ impl CopyTable {
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
+            real_bytes_left: meta.advice_column(),
             value_wrod_rlc: meta.advice_column(),
             //mask: meta.advice_column(),
             rlc_acc: meta.advice_column_in(SecondPhase),
@@ -1567,6 +1571,11 @@ impl CopyTable {
             .iter()
             .position(|&step| !step.2)
             .unwrap_or(0);
+        let mut real_length_left = copy_event
+            .bytes
+            .iter()
+            .filter(|&step| !step.2)
+            .count();
         let mut word_index = 0u64;
         let mut read_addr_slot = if copy_event.src_type == CopyDataType::Memory {
             copy_event.src_addr - copy_event.src_addr % 32
@@ -1735,19 +1744,21 @@ impl CopyTable {
             let rw_count = F::from(copy_event.rw_counter_step(step_idx));
             let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
             // todo: rm
+            //if is_read_step {
             println!(
-                "log: step_idx {}\t tag {:?} \t rw_count {:?} id {:?}, bytes_left {}, addr {:?}, 
-                rwc_inc_left {:?}, value_word_write_rlc {:?}, mask {}",
+                "#{}\ttag {:?}\taddr 0x{:X}\taddr_end 0x{:X}\trw_count 0x{:X}\tid 0x{:X}\tbytes_left 0x{:X}\treal_bytes_left 0x{:X}\tmask {}\tis_pad {}",
                 step_idx,
                 tag,
-                rw_count,
-                id,
+                addr.get_lower_32(),
+                copy_event.src_addr_end,
+                rw_count.get_lower_32(),
+                unwrap_value(id).get_lower_32(),
                 bytes_left,
-                addr,
-                rwc_inc_left,
-                value_word_write_rlc,
+                real_length_left,
                 copy_step.mask,
+                is_read_step && addr >= F::from(copy_event.src_addr_end),
             );
+            //}
 
             assignments.push((
                 tag,
@@ -1760,6 +1771,7 @@ impl CopyTable {
                         "src_addr_end",
                     ),
                     (Value::known(F::from(bytes_left)), "bytes_left"),
+                    (Value::known(F::from(real_length_left as u64)), "real_bytes_left"),
                     (
                         match (copy_event.src_type, copy_event.dst_type) {
                             (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
@@ -1807,6 +1819,10 @@ impl CopyTable {
                     ),
                 ],
             ));
+
+            if is_read_step && !copy_step.mask {
+                real_length_left -= 1;
+            }
         }
         rlc_acc_read
             .zip(rlc_acc_write)
@@ -1879,6 +1895,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             self.addr.into(),
             self.src_addr_end.into(),
             self.bytes_left.into(),
+            self.real_bytes_left.into(),
             //self.value_wrod_rlc.into(),
             self.rlc_acc.into(),
             self.rw_counter.into(),
@@ -1894,6 +1911,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             String::from("addr"),
             String::from("src_addr_end"),
             String::from("bytes_left"),
+            String::from("real_bytes_left"),
             String::from("mask"),
             String::from("rlc_acc"),
             String::from("rw_counter"),
@@ -1912,7 +1930,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
             meta.query_advice(self.addr, Rotation::cur()), // src_addr
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
             meta.query_advice(self.addr, Rotation::next()), // dst_addr
-            meta.query_advice(self.bytes_left, Rotation::cur()), // length
+            //meta.query_advice(self.bytes_left, Rotation::cur()), // length
+            meta.query_advice(self.real_bytes_left, Rotation::cur()), // real_length
             meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
             meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
             meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left

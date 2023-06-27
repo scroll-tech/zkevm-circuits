@@ -66,8 +66,8 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 memory_address.offset(),
                 memory_address.address(),
                 0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
-                // memory_address.length(),
-                bytes_length_word.expr(),
+                memory_address.length(),
+                //bytes_length_word.expr(),
                 rlc_acc.expr(),
                 copy_rwc_inc.expr(),
             );

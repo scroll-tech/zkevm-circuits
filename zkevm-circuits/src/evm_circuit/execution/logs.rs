@@ -156,8 +156,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 memory_address.offset(),
                 memory_address.address(),
                 dst_addr,
-                //memory_address.length(),
-                bytes_length_word.expr(),
+                memory_address.length(),
+                //bytes_length_word.expr(),
                 0.expr(), // for LOGN, rlc_acc is 0
                 copy_rwc_inc.expr(),
             );

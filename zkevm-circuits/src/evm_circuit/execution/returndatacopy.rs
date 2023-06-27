@@ -54,8 +54,6 @@ pub(crate) struct ReturnDataCopyGadget<F> {
     copy_rwc_inc: Cell<F>,
     /// Out of bound check circuit.
     in_bound_check: RangeCheckGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
-    /// include actual and padding to word bytes
-    bytes_length_word: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
@@ -69,7 +67,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let dest_offset = cb.query_cell_phase2();
         let data_offset = cb.query_word_rlc();
         let size = cb.query_word_rlc();
-        let bytes_length_word = cb.query_cell();
 
         // 1. Pop dest_offset, offset, length from stack
         cb.stack_pop(dest_offset.expr());
@@ -131,7 +128,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
                 return_data_offset.expr() + from_bytes::expr(&data_offset.cells),
                 return_data_offset.expr() + return_data_size.expr(),
                 dst_memory_addr.offset(),
-                bytes_length_word.expr(),
+                dst_memory_addr.length(),
                 0.expr(), // for RETURNDATACOPY rlc_acc is 0
                 copy_rwc_inc.expr(),
             );
@@ -168,7 +165,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             memory_copier_gas,
             copy_rwc_inc,
             in_bound_check,
-            bytes_length_word,
         }
     }
 
@@ -302,14 +298,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             ),
         )?;
 
-        let bytes_length_to_word = (copy_rwc_inc / 2) * 32;
-
-        self.bytes_length_word.assign(
-            region,
-            offset,
-            Value::known(F::from(bytes_length_to_word)),
-        )?;
-
         self.in_bound_check.assign(
             region,
             offset,
@@ -325,7 +313,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             return_data_offset.low_u64() + return_data_size.low_u64(),
             call.id,
             dest_offset.low_u64(),
-            bytes_length_to_word,
+            size.low_u64(),
             step.rw_counter,
             copy_rwc_inc
         );

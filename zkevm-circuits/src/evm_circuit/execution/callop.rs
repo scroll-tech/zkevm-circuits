@@ -371,7 +371,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             call_gadget.cd_address.offset(),
                             call_gadget.cd_address.address(),
                             0.expr(),
-                            precompile_input_rws.expr() * 32.expr(),
+                            call_gadget.cd_address.length(),
                             input_bytes_rlc.expr(),
                             precompile_input_rws.expr(), // reads
                         ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
@@ -398,7 +398,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                                 0.expr(),
                                 precompile_return_length.expr(),
                                 0.expr(),
-                                precompile_output_rws.expr() * 32.expr(),
+                                precompile_return_length.expr(),
                                 output_bytes_rlc.expr(),
                                 precompile_output_rws.expr(), // writes.
                             ); // rwc_delta += `precompile_return_length` for precompile
@@ -428,7 +428,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                                 0.expr(),
                                 return_data_copy_size.min(),
                                 call_gadget.rd_address.offset(),
-                                precompile_return_rws.expr() * 16.expr(),
+                                return_data_copy_size.min(),
                                 0.expr(),
                                 precompile_return_rws.expr(), // writes
                             ); // rwc_delta += `return_data_copy_size.min()` for precompile

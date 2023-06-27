@@ -135,7 +135,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 src_addr,
                 src_addr_end,
                 memory_address.offset(),
-                bytes_length_word.expr(),
+                memory_address.length(),
                 0.expr(), // for CALLDATACOPY rlc_acc is 0
                 copy_rwc_inc.expr(),
             );

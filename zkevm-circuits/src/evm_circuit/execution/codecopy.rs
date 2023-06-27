@@ -104,7 +104,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 src_addr,
                 code_size.expr(),
                 dst_memory_addr.offset(),
-                bytes_length_word.expr(),
+                dst_memory_addr.length(),
                 0.expr(), // for CODECOPY, rlc_acc is 0
                 copy_rwc_inc.expr(),
             );

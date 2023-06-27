@@ -122,7 +122,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 src_addr,
                 code_size.expr(),
                 memory_address.offset(),
-                bytes_length_word.expr(),
+                memory_address.length(),
                 0.expr(),
                 copy_rwc_inc.expr(),
             );
