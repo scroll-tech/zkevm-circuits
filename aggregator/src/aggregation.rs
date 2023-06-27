@@ -4,9 +4,7 @@ mod circuit;
 mod circuit_ext;
 /// Config for aggregation circuit
 mod config;
-///
-mod dynamic;
-///
+/// utilities
 mod util;
 
 pub use circuit::AggregationCircuit;

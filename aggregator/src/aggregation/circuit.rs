@@ -37,7 +37,9 @@ use crate::{
 #[derive(Clone)]
 pub struct AggregationCircuit {
     pub(crate) svk: KzgSuccinctVerifyingKey<G1Affine>,
-    pub(crate) snarks: Vec<SnarkWitness>,
+    // the input snarks for the aggregation circuit
+    // it is padded already so it will have a fixed length of MAX_AGG_SNARKS
+    pub(crate) snarks_with_padding: Vec<SnarkWitness>,
     // the public instance for this circuit consists of
     // - an accumulator (12 elements)
     // - the batch's public_input_hash (32 elements)
@@ -54,22 +56,22 @@ impl AggregationCircuit {
     /// Requires the chunk hashes that are used for the __fresh__ snark
     pub fn new(
         params: &ParamsKZG<Bn256>,
-        snarks: &[Snark],
+        snarks_without_padding: &[Snark],
         rng: impl Rng + Send,
         chunk_hashes: &[ChunkHash],
     ) -> Self {
         let timer = start_timer!(|| "generate aggregation circuit");
         // sanity: for each chunk we have a snark
-        let snarks_len = snarks.len();
+        let snarks_len = snarks_without_padding.len();
         assert_eq!(
-            snarks.len(),
+            snarks_len,
             chunk_hashes.len(),
             "num of snarks ({}) does not match number of chunks ({})",
-            snarks.len(),
+            snarks_len,
             chunk_hashes.len(),
         );
         // sanity check: snarks's public input matches chunk_hashes
-        for (chunk, snark) in chunk_hashes.iter().zip(snarks.iter()) {
+        for (chunk, snark) in chunk_hashes.iter().zip(snarks_without_padding.iter()) {
             let chunk_hash_bytes = chunk.public_input_hash();
             let snark_hash_bytes = &snark.instances[0];
 
@@ -94,22 +96,23 @@ impl AggregationCircuit {
             }
         }
 
-        // pad the snarks with dummy snarks
-        let dummy_snarks = if snarks.len() < MAX_AGG_SNARKS {
+        // pad the input snarks with dummy snarks
+        let dummy_snarks = if snarks_len < MAX_AGG_SNARKS {
             let dummy_snark =
                 gen_dummy_snark::<CompressionCircuit, Kzg<Bn256, Bdfg21>>(params, None, vec![84]);
-            vec![dummy_snark; MAX_AGG_SNARKS - snarks.len()]
+            vec![dummy_snark; MAX_AGG_SNARKS - snarks_len]
         } else {
             vec![]
         };
-        let snarks = [snarks, dummy_snarks.as_ref()].concat();
+        let snarks_with_padding = [snarks_without_padding, dummy_snarks.as_ref()].concat();
 
         // extract the accumulators and proofs
         let svk = params.get_g()[0].into();
 
         // this aggregates MULTIPLE snarks
         //  (instead of ONE as in proof compression)
-        let (accumulator, as_proof) = extract_accumulators_and_proof(params, &snarks, rng);
+        let (accumulator, as_proof) =
+            extract_accumulators_and_proof(params, &snarks_with_padding, rng);
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
         let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
             .map(fe_to_limbs::<Fq, Fr, LIMBS, BITS>)
@@ -133,7 +136,7 @@ impl AggregationCircuit {
         end_timer!(timer);
         Self {
             svk,
-            snarks: snarks.iter().cloned().map_into().collect(),
+            snarks_with_padding: snarks_with_padding.iter().cloned().map_into().collect(),
             flattened_instances,
             as_proof: Value::known(as_proof),
             batch_hash,
@@ -144,8 +147,12 @@ impl AggregationCircuit {
         &self.svk
     }
 
-    pub fn snarks(&self) -> &[SnarkWitness] {
-        &self.snarks
+    pub fn snarks_without_padding(&self) -> &[SnarkWitness] {
+        &self.snarks_with_padding[0..self.batch_hash.chunks.len()]
+    }
+
+    pub fn snarks_with_padding(&self) -> &[SnarkWitness] {
+        &self.snarks_with_padding
     }
 
     pub fn as_proof(&self) -> Value<&[u8]> {
@@ -198,8 +205,11 @@ impl Circuit<Fr> for AggregationCircuit {
         // ==============================================
         // Step 1: snark aggregation circuit
         // ==============================================
+        // stores accumulators for all snarks, including the padded ones
         let mut accumulator_instances: Vec<AssignedValue<Fr>> = vec![];
+        // stores public inputs for all snarks, including the padded ones
         let mut snark_inputs: Vec<AssignedValue<Fr>> = vec![];
+
         layouter.assign_region(
             || "aggregation",
             |region| {
@@ -228,7 +238,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 let (assigned_aggregation_instances, acc) = aggregate::<Kzg<Bn256, Bdfg21>>(
                     &self.svk,
                     &loader,
-                    &self.snarks,
+                    &self.snarks_with_padding,
                     self.as_proof(),
                 );
                 log::trace!("aggregation circuit during assigning");
@@ -240,8 +250,8 @@ impl Circuit<Fr> for AggregationCircuit {
                 // - the accumulators
                 // - the public input from snark
                 accumulator_instances.extend(flatten_accumulator(acc).iter().copied());
-                // - the snark is not a fresh one, assigned_instances already contains an
-                //   accumulator so we want to skip the first 12 elements from the public input
+                // the snark is not a fresh one, assigned_instances already contains an
+                // accumulator so we want to skip the first 12 elements from the public input
                 snark_inputs.extend(
                     assigned_aggregation_instances
                         .iter()
@@ -317,6 +327,8 @@ impl Circuit<Fr> for AggregationCircuit {
         //      - data hash
         //      - public input hash
         // Those are used as private inputs to the public input aggregation circuit
+
+        // stores assigned_num_snark_without_padding cell
         let mut assigned_num_snarks = vec![];
         layouter.assign_region(
             || "glue circuits",
@@ -326,8 +338,10 @@ impl Circuit<Fr> for AggregationCircuit {
                     return Ok(());
                 }
 
-                // last element within flattened instance is encodes the number of snarks
-                let num_snarks = Value::known(*self.flattened_instances.last().unwrap());
+                // last element within flattened instance encodes the number of snarks
+                // (this will be be checked against aggregation circuit's public inputs later)
+                let num_snarks_without_padding =
+                    Value::known(*self.flattened_instances.last().unwrap());
 
                 let mut ctx = Context::new(
                     region,
@@ -341,10 +355,15 @@ impl Circuit<Fr> for AggregationCircuit {
                 let flex_gate = &config.base_field_config.range.gate;
 
                 // =================================================
-                // step 3.1.
-                // before processing, we need to convert halo2proof's AssignedCells
-                // to halo2-lib's AssignedValues.
+                // step 3.1. before processing, we need to convert halo2proof's AssignedCells to
+                // halo2-lib's AssignedValues.
                 // =================================================
+                //
+                // Note that this is a bit overkill since not all cells in halo2proof's
+                // hash_input_cells and hash_output_cells needs to be extracted for
+                // halo2-lib. A future optimization may cherry pick the right cells
+                // for conversion.
+                //
                 let hash_input_cells = hash_input_cells
                     .iter()
                     .map(|cells| {
@@ -378,20 +397,24 @@ impl Circuit<Fr> for AggregationCircuit {
                     .collect_vec();
                 // =================================================
                 // step 3.2
-                // aggregation circuit and public input aggregation circuit
-                // share common inputs
+                // the actual circuit logics
                 // =================================================
-                let assigned_num_snark = flex_gate.assign_witnesses(&mut ctx, vec![num_snarks])[0];
+                let assigned_num_snark_without_padding =
+                    flex_gate.load_witness(&mut ctx, num_snarks_without_padding);
                 let mut current_snark_indexer = flex_gate.load_constant(&mut ctx, Fr::zero());
-                assigned_num_snarks.push(assigned_num_snark);
+                assigned_num_snarks.push(assigned_num_snark_without_padding);
                 let one = flex_gate.load_constant(&mut ctx, Fr::one());
 
                 for chunk_idx in 0..MAX_AGG_SNARKS {
+                    // this loop is invariant w.r.t. num_snark_without_padding
+                    // it firstly derive a boolean cell to check whether the snark is a dummy one
+                    // and use this boolean cell to override equality checks if the snark is dummy
+
                     let is_padding = is_smaller_than(
                         &flex_gate,
                         &mut ctx,
                         &current_snark_indexer,
-                        &assigned_num_snark,
+                        &assigned_num_snark_without_padding,
                     );
 
                     // step 3.2.1, data hash
@@ -404,7 +427,7 @@ impl Circuit<Fr> for AggregationCircuit {
                             QuantumCell::Existing(snark_inputs[64 * chunk_idx + i]),
                             QuantumCell::Existing(hash_input_cells[1][chunk_idx * 32 + i]),
                         );
-                        let enforced_result = flex_gate.mul(
+                        let enforced_result = flex_gate.or(
                             &mut ctx,
                             QuantumCell::Existing(byte_is_equal),
                             QuantumCell::Existing(is_padding),
@@ -429,7 +452,7 @@ impl Circuit<Fr> for AggregationCircuit {
                                     hash_output_cells[chunk_idx + 2][(3 - i) * 8 + j],
                                 ),
                             );
-                            let enforced_result = flex_gate.mul(
+                            let enforced_result = flex_gate.or(
                                 &mut ctx,
                                 QuantumCell::Existing(byte_is_equal),
                                 QuantumCell::Existing(is_padding),
