@@ -653,62 +653,8 @@ impl RwTable {
         Ok(())
     }
 }
-/*
-/// The types of proofs in the MPT table
-#[derive(Clone, Copy, Debug)]
-pub enum MPTProofType {
-    /// Nonce updated
-    NonceMod = AccountFieldTag::Nonce as isize,
-    /// Balance updated
-    BalanceMod = AccountFieldTag::Balance as isize,
-    /// Keccak Code hash exists
-    KeccakCodeHashExists = AccountFieldTag::KeccakCodeHash as isize,
-    /// Poseidon Code hash exits
-    PoseidonCodeHashExists = AccountFieldTag::CodeHash as isize,
-    /// Code size exists
-    CodeSizeExists = AccountFieldTag::CodeSize as isize,
-    /// Account does not exist
-    NonExistingAccountProof = AccountFieldTag::NonExisting as isize,
-    /// Storage updated
-    StorageMod,
-    /// Storage does not exist
-    NonExistingStorageProof,
-}
-*/
-pub use mpt_zktrie::mpt_circuits::MPTProofType;
-/*
-impl<F: halo2_proofs::arithmetic::FieldExt> crate::util::Expr<F> for MPTProofType {
-    #[inline]
-    fn expr(&self) -> Expression<F> {
-        Expression::Constant(F::from(*self as u64))
-    }
-}
-*/
 
-/*
-/// The defination is greped from state-circuit
-#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, Hash)]
-pub enum MPTProofType {
-    /// non exist proof for account
-    AccountDoesNotExist = 0, // we want this to be zero so the default assigment of 0 everywhere is valid.
-    /// nonce
-    NonceChanged,
-    /// balance
-    BalanceChanged,
-    /// keccak codehash updated
-    CodeHashExists,
-    /// poseidon codehash updated
-    PoseidonCodeHashExists,
-    /// code size updated
-    CodeSizeExists,
-    /// account destructed
-    AccountDestructed,
-    /// storage
-    StorageChanged,
-    /// non exist proof for storage
-    StorageDoesNotExist,
-}
-*/
+pub use mpt_zktrie::mpt_circuits::MPTProofType;
 
 impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
