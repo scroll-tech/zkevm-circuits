@@ -32,10 +32,10 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
+use halo2_proofs::dev::unwrap_value;
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use std::array;
-use halo2_proofs::dev::unwrap_value;
 use strum_macros::{EnumCount, EnumIter};
 
 /// Trait used to define lookup tables
@@ -1571,11 +1571,7 @@ impl CopyTable {
             .iter()
             .position(|&step| !step.2)
             .unwrap_or(0);
-        let mut real_length_left = copy_event
-            .bytes
-            .iter()
-            .filter(|&step| !step.2)
-            .count();
+        let mut real_length_left = copy_event.bytes.iter().filter(|&step| !step.2).count();
         let mut word_index = 0u64;
         let mut read_addr_slot = if copy_event.src_type == CopyDataType::Memory {
             copy_event.src_addr - copy_event.src_addr % 32
@@ -1771,7 +1767,10 @@ impl CopyTable {
                         "src_addr_end",
                     ),
                     (Value::known(F::from(bytes_left)), "bytes_left"),
-                    (Value::known(F::from(real_length_left as u64)), "real_bytes_left"),
+                    (
+                        Value::known(F::from(real_length_left as u64)),
+                        "real_bytes_left",
+                    ),
                     (
                         match (copy_event.src_type, copy_event.dst_type) {
                             (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
@@ -1932,9 +1931,9 @@ impl<F: Field> LookupTable<F> for CopyTable {
             meta.query_advice(self.addr, Rotation::next()), // dst_addr
             //meta.query_advice(self.bytes_left, Rotation::cur()), // length
             meta.query_advice(self.real_bytes_left, Rotation::cur()), // real_length
-            meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
-            meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
-            meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
+            meta.query_advice(self.rlc_acc, Rotation::cur()),         // rlc_acc
+            meta.query_advice(self.rw_counter, Rotation::cur()),      // rw_counter
+            meta.query_advice(self.rwc_inc_left, Rotation::cur()),    // rwc_inc_left
         ]
     }
 }

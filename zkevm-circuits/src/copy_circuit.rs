@@ -556,7 +556,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         meta.query_advice(real_bytes_left, Rotation(2))
                             + not::expr(meta.query_advice(mask, Rotation::cur())),
                     );
-                }
+                },
             );
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::next()))
@@ -786,7 +786,11 @@ impl<F: Field> CopyCircuitConfig<F> {
                     .zip_eq(table_row)
             {
                 // Leave sr_addr_end and bytes_left and real_bytes_left unassigned when !is_read
-                if !is_read && (label == "src_addr_end" || label == "bytes_left" || label == "real_bytes_left") {
+                if !is_read
+                    && (label == "src_addr_end"
+                        || label == "bytes_left"
+                        || label == "real_bytes_left")
+                {
                 } else {
                     region.assign_advice(
                         || format!("{} at row: {}", label, offset),
