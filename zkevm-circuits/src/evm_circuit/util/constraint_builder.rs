@@ -20,8 +20,9 @@ use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
-        Error,
+        Advice, Error,
         Expression::{self, Constant},
+        SecondPhase,
     },
 };
 
@@ -446,7 +447,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_cell_phase2(&mut self) -> Cell<F> {
-        self.query_cell_with_type(CellType::StoragePhase2)
+        let cell = self.query_cell_with_type(CellType::StoragePhase2);
+        assert_eq!(cell.column.column_type(), &Advice::new(SecondPhase));
+        cell
     }
 
     pub(crate) fn query_copy_cell(&mut self) -> Cell<F> {
