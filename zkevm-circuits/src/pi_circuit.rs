@@ -57,7 +57,12 @@ use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
-pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| read_env_var("COINBASE", Address::zero()));
+pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| {
+    read_env_var(
+        "COINBASE",
+        Address::from_str("0x5300000000000000000000000000000000000005").unwrap(),
+    )
+});
 pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
 
 /// PublicData contains all the values that the PiCircuit receives as input
