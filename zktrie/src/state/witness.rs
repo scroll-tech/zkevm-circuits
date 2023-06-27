@@ -10,7 +10,7 @@ use mpt_circuits::serde::{
     AccountData as SMTAccount, Hash as SMTHash, HexBytes, SMTNode, SMTPath, SMTTrace, StateData,
 };
 use std::collections::HashMap;
-use zktrie::{ZkTrie, ZkTrieNode};
+use zktrie::{Hash as ZkTrieHash, ZkTrie, ZkTrieNode};
 
 use num_bigint::BigUint;
 use std::io::{Error as IoError, Read};
@@ -112,6 +112,23 @@ impl WitnessGenerator {
             key.to_big_endian(word_buf.as_mut_slice());
             (hash_zktrie_key(&word_buf), HexBytes(word_buf))
         };
+
+        // Handle corner case where the account doesn't exist at all. In this case we produce an
+        // non-existing account proof, but with the state_key field set.
+        if new_value.is_zero() && !self.accounts.contains_key(&address) {
+            let mut trace = self.trace_account_update(address, |_| None);
+            trace.state_key = Some(key);
+            return trace;
+        }
+
+        self.storages.entry(address).or_insert_with(|| {
+            ZktrieState::default()
+                .zk_db
+                .borrow_mut()
+                .new_trie(&ZkTrieHash::default())
+                .unwrap()
+        });
+
         let trie = self.storages.get_mut(&address).unwrap();
 
         let store_before = {
@@ -243,6 +260,9 @@ impl WitnessGenerator {
             }
 
             self.accounts.insert(address, account_data_after);
+            // if account_data_before.is_none() {
+            //     self.storages.insert(address, ZkTrie::new());
+            // }
         } else if account_data_before.is_some() {
             log::warn!("trace update try delete account {address:?} trie while we have no SELFDESTRUCT yet");
             self.trie.delete(address.as_bytes());
@@ -287,10 +307,12 @@ impl WitnessGenerator {
         if let Some(key) = key {
             self.trace_storage_update(address, key, new_val, old_val)
         } else {
-            self.trace_account_update(address, |acc_before| {
+            self.trace_account_update(address, |acc_before: Option<&AccountData>| {
                 let mut acc_data = acc_before.copied().unwrap_or_default();
                 match proof_type {
                     MPTProofType::NonceChanged => {
+                        assert!(old_val < u64::MAX.into());
+                        assert!(new_val < u64::MAX.into());
                         assert_eq!(old_val.as_u64(), acc_data.nonce);
                         acc_data.nonce = new_val.as_u64();
                     }
@@ -332,6 +354,8 @@ impl WitnessGenerator {
                         acc_data.poseidon_code_hash = H256::from(code_hash);
                     }
                     MPTProofType::CodeSizeExists => {
+                        assert!(old_val < u64::MAX.into());
+                        assert!(new_val < u64::MAX.into());
                         // code size can only change from 0
                         debug_assert_eq!(old_val.as_u64(), acc_data.code_size);
                         debug_assert!(
@@ -361,7 +385,11 @@ impl WitnessGenerator {
                     }
                     _ => unreachable!("invalid proof type: {:?}", proof_type),
                 }
-                Some(acc_data)
+                if acc_data == AccountData::default() {
+                    None
+                } else {
+                    Some(acc_data)
+                }
             })
         }
     }
@@ -381,7 +409,7 @@ fn smt_hash_from_bytes(bt: &[u8]) -> SMTHash {
 
 fn hash_zktrie_key(key_buf: &[u8; 32]) -> Word {
     use halo2_proofs::{arithmetic::FieldExt, halo2curves::bn256::Fr};
-    use mpt_circuits::hash::Hashable;
+    use hash_circuit::hash::Hashable;
 
     let first_16bytes: [u8; 16] = key_buf[..16].try_into().expect("expect first 16 bytes");
     let last_16bytes: [u8; 16] = key_buf[16..].try_into().expect("expect last 16 bytes");

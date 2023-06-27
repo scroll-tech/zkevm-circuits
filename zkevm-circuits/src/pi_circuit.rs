@@ -7,7 +7,7 @@ mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
-use std::{iter, marker::PhantomData};
+use std::{iter, marker::PhantomData, str::FromStr};
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -57,7 +57,12 @@ use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
-pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| read_env_var("COINBASE", Address::zero()));
+pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| {
+    read_env_var(
+        "COINBASE",
+        Address::from_str("0x5300000000000000000000000000000000000005").unwrap(),
+    )
+});
 pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
 
 /// PublicData contains all the values that the PiCircuit receives as input
@@ -1456,19 +1461,33 @@ impl<F: Field> PiCircuit<F> {
             || "pi connecting region",
             |mut region| {
                 if let Some(state_roots) = state_roots {
-                    region.constrain_equal(
-                        local_conn.start_state_root.cell(),
-                        state_roots.start_state_root.0,
-                    )?;
-                    region.constrain_equal(
-                        local_conn.end_state_root.cell(),
-                        state_roots.end_state_root.0,
-                    )?;
+                    log::debug!(
+                        "constrain_equal of state root: {:?} <-> {:?}",
+                        (&local_conn.start_state_root, &local_conn.end_state_root),
+                        (&state_roots.start_state_root, &state_roots.end_state_root)
+                    );
+
+                    #[cfg(feature = "scroll-trace")]
+                    {
+                        region.constrain_equal(
+                            local_conn.start_state_root.cell(),
+                            state_roots.start_state_root.0,
+                        )?;
+                        region.constrain_equal(
+                            local_conn.end_state_root.cell(),
+                            state_roots.end_state_root.0,
+                        )?;
+                    }
                 } else {
                     log::warn!("state roots are not set, skip connection with state circuit");
                 }
 
                 if let Some(withdraw_roots) = withdraw_roots {
+                    log::debug!(
+                        "constrain_equal of withdraw root: {:?} <-> {:?}",
+                        &local_conn.withdraw_root,
+                        &withdraw_roots.withdraw_root
+                    );
                     region.constrain_equal(
                         local_conn.withdraw_root.cell(),
                         withdraw_roots.withdraw_root.0,

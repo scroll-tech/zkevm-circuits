@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::not},
-    table::{MPTProofType as ProofType, RwTableTag},
+    table::{AccountFieldTag, MPTProofType as ProofType, RwTableTag},
     util::Expr,
 };
 use eth_types::Field;
@@ -290,7 +290,13 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
         // TODO: cold VS warm
         // ref. spec 4.0. Unused keys are 0
-        self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
+        // See comment above configure for is_non_exist in state_circuit.rs for a explanation of why
+        // this is required.
+        self.require_equal(
+            "field_tag is AccountFieldTag::CodeHash for AccountStorage",
+            q.field_tag(),
+            AccountFieldTag::CodeHash.expr(),
+        );
 
         // value = 0 means the leaf doesn't exist. 0->0 transition requires a
         // non-existing proof.
@@ -298,8 +304,8 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_equal(
             "mpt_proof_type is field_tag or NonExistingStorageProof",
             q.mpt_proof_type(),
-            is_non_exist.expr() * ProofType::NonExistingStorageProof.expr()
-                + (1.expr() - is_non_exist) * ProofType::StorageMod.expr(),
+            is_non_exist.expr() * (ProofType::StorageDoesNotExist as u64).expr()
+                + (1.expr() - is_non_exist) * (ProofType::StorageChanged as u64).expr(),
         );
 
         // ref. spec 4.1. MPT lookup for last access to (address, storage_key)
@@ -431,7 +437,7 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_equal(
             "mpt_proof_type is field_tag or NonExistingAccountProofs",
             q.mpt_proof_type(),
-            q.is_non_exist() * ProofType::NonExistingAccountProof.expr()
+            q.is_non_exist() * (ProofType::AccountDoesNotExist as u64).expr()
                 + (1.expr() - q.is_non_exist()) * q.field_tag(),
         );
 
@@ -440,6 +446,7 @@ impl<F: Field> ConstraintBuilder<F> {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for Account last access",
                 vec![
+                    (1.expr(), q.mpt_update_table.q_enable.clone()),
                     (
                         q.rw_table.address.clone(),
                         q.mpt_update_table.address.clone(),

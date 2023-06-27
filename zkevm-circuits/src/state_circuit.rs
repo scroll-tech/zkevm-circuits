@@ -12,6 +12,7 @@ mod dev;
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::StateCircuit as TestStateCircuit;
+use mpt_zktrie::mpt_circuits::MPTProofType;
 
 use self::{
     constraint_builder::{MptUpdateTableQueries, RwTableQueries},
@@ -19,7 +20,7 @@ use self::{
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
-    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, RwTableTag},
+    table::{AccountFieldTag, LookupTable, MptTable, RwTable, RwTableTag},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
@@ -126,13 +127,20 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         );
 
         let initial_value = meta.advice_column_in(SecondPhase);
+        // If the rw lookup is for an Account with field tag = CodeHash and both values are 0, we
+        // actually want to do an mpt lookup for an non-existing account instead of an mpt lookup
+        // for the code hash. Similarly, if the rw lookup is for an storage key with both values =
+        // 0, we instead want to do an mpt lookup for a non-existing storage slot, instead of for a
+        // changed storage value. (This is why the field tag for Rw::Storage is
+        // Some(AccountFieldTag::CodeHash as u64) instead of None.)
         let is_non_exist = BatchedIsZeroChip::configure(
             meta,
             (SecondPhase, SecondPhase),
             |meta| meta.query_fixed(selector, Rotation::cur()),
             |meta| {
                 [
-                    meta.query_advice(rw_table.field_tag, Rotation::cur()),
+                    meta.query_advice(rw_table.field_tag, Rotation::cur())
+                        - AccountFieldTag::CodeHash.expr(),
                     meta.query_advice(initial_value, Rotation::cur()),
                     meta.query_advice(rw_table.value, Rotation::cur()),
                 ]
@@ -296,7 +304,11 @@ impl<F: Field> StateCircuitConfig<F> {
                         .map(|(randomness, mut state_root)| {
                             if let Some(update) = updates.get(prev_row) {
                                 let (new_root, old_root) = update.root_assignments(randomness);
-                                assert_eq!(state_root, old_root);
+                                if state_root != old_root {
+                                    log::error!("invalid root randomness {:?}, state_root {:?}, prev_row {:?} update {:?}", 
+                                    randomness, state_root, prev_row, update);
+                                    assert_eq!(state_root, old_root);
+                                }
                                 state_root = new_root;
                             }
                             if matches!(row.tag(), RwTableTag::CallContext)
@@ -324,7 +336,8 @@ impl<F: Field> StateCircuitConfig<F> {
                 || initial_value,
             )?;
 
-            // Identify non-existing if both committed value and new value are zero.
+            // Identify non-existing if both committed value and new value are zero and field tag is
+            // CodeHash
             let is_non_exist_inputs = randomness.map(|randomness| {
                 let (_, committed_value) = updates
                     .get(row)
@@ -332,7 +345,8 @@ impl<F: Field> StateCircuitConfig<F> {
                     .unwrap_or_default();
                 let value = row.value_assignment(randomness);
                 [
-                    F::from(row.field_tag().unwrap_or_default()),
+                    F::from(row.field_tag().unwrap_or_default())
+                        - F::from(AccountFieldTag::CodeHash as u64),
                     committed_value,
                     value,
                 ]
@@ -346,9 +360,9 @@ impl<F: Field> StateCircuitConfig<F> {
                 F::from(match row {
                     Rw::AccountStorage { .. } => {
                         if committed_value.is_zero_vartime() && value.is_zero_vartime() {
-                            MPTProofType::NonExistingStorageProof as u64
+                            MPTProofType::StorageDoesNotExist as u64
                         } else {
-                            MPTProofType::StorageMod as u64
+                            MPTProofType::StorageChanged as u64
                         }
                     }
                     Rw::Account { field_tag, .. } => {
@@ -356,7 +370,7 @@ impl<F: Field> StateCircuitConfig<F> {
                             && value.is_zero_vartime()
                             && matches!(field_tag, AccountFieldTag::CodeHash)
                         {
-                            MPTProofType::NonExistingAccountProof as u64
+                            MPTProofType::AccountDoesNotExist as u64
                         } else {
                             *field_tag as u64
                         }

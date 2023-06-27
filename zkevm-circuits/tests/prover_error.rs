@@ -104,7 +104,7 @@ fn prover_error() {
         block.randomness = Fr::from(MOCK_RANDOMNESS);
         block
     };
-    let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, 64, MOCK_RANDOMNESS>::new_from_block(
+    let circuit = SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 64, MOCK_RANDOMNESS>::new_from_block(
         &block_witness,
     );
     let res = MockProver::run(k, &circuit, circuit.instance())
