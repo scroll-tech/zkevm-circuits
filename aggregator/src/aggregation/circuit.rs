@@ -340,10 +340,51 @@ impl Circuit<Fr> for AggregationCircuit {
 
                 let flex_gate = &config.base_field_config.range.gate;
 
+                // =================================================
+                // step 3.1.
+                // before processing, we need to convert halo2proof's AssignedCells
+                // to halo2-lib's AssignedValues.
+                // =================================================
+                let hash_input_cells = hash_input_cells
+                    .iter()
+                    .map(|cells| {
+                        cells
+                            .iter()
+                            .map(|assigned_cell| {
+                                let value = assigned_cell.value().copied();
+                                let assigned_value = flex_gate.load_witness(&mut ctx, value);
+                                ctx.region
+                                    .constrain_equal(assigned_cell.cell(), assigned_value.cell);
+                                assigned_value
+                            })
+                            .collect_vec()
+                    })
+                    .collect_vec();
+
+                let hash_output_cells = hash_output_cells
+                    .iter()
+                    .map(|cells| {
+                        cells
+                            .iter()
+                            .map(|assigned_cell| {
+                                let value = assigned_cell.value().copied();
+                                let assigned_value = flex_gate.load_witness(&mut ctx, value);
+                                ctx.region
+                                    .constrain_equal(assigned_cell.cell(), assigned_value.cell);
+                                assigned_value
+                            })
+                            .collect_vec()
+                    })
+                    .collect_vec();
+                // =================================================
+                // step 3.2
+                // aggregation circuit and public input aggregation circuit
+                // share common inputs
+                // =================================================
                 let assigned_num_snark = flex_gate.assign_witnesses(&mut ctx, vec![num_snarks])[0];
-                let mut current_snark_indexer = flex_gate.assign_constant(&mut ctx, Fr::zero())?;
+                let mut current_snark_indexer = flex_gate.load_constant(&mut ctx, Fr::zero());
                 assigned_num_snarks.push(assigned_num_snark);
-                let one = flex_gate.assign_constant(&mut ctx, Fr::one())?;
+                let one = flex_gate.load_constant(&mut ctx, Fr::one());
 
                 for chunk_idx in 0..MAX_AGG_SNARKS {
                     let is_padding = is_smaller_than(
@@ -353,7 +394,7 @@ impl Circuit<Fr> for AggregationCircuit {
                         &assigned_num_snark,
                     );
 
-                    // step 3.1, data hash
+                    // step 3.2.1, data hash
                     // - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
                     // where batch_data_hash is the second hash for pi aggregation
                     for i in 0..32 {
@@ -374,7 +415,7 @@ impl Circuit<Fr> for AggregationCircuit {
                             QuantumCell::Existing(one),
                         );
                     }
-                    // step 3.2, public input hash
+                    // step 3.2.2, public input hash
                     // the public input hash for the i-th snark is the (i+2)-th hash
                     for i in 0..4 {
                         for j in 0..8 {
