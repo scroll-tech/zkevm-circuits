@@ -133,7 +133,7 @@ pub enum TxFieldTag {
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
-    /// Gas cost for rlp-encoded bytes of unsigned transaction (4 for byte == 0, 16 otherwise)
+    /// Gas cost of the transaction data charged in L1
     TxDataGasCost,
     /// Chain ID
     ChainID,
@@ -160,8 +160,6 @@ pub enum TxFieldTag {
     TxHashRLC,
     /// TxHash: Hash of the transaction with the signature
     TxHash,
-    /// Gas cost of the transaction charged in L1
-    TxGasCostInL1,
     /// The block number in which this tx is included.
     BlockNumber,
 }

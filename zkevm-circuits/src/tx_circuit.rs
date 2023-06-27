@@ -62,7 +62,7 @@ use crate::{
     util::rlc_be_bytes,
     witness::{
         Format::{L1MsgHash, TxHashEip155, TxHashPreEip155, TxSignEip155, TxSignPreEip155},
-        RlpTag::{Len, Null, RLC},
+        RlpTag::{GasCost, Len, Null, RLC},
         Tag::TxType as RLPTxType,
     },
 };
@@ -347,6 +347,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_hash_length(meta), Len),
                 (is_hash_rlc(meta), RLC),
                 (is_caller_addr(meta), Tag::Sender.into()),
+                (is_tx_gas_cost(meta), GasCost),
                 // tx tags which correspond to Null
                 (is_null(meta), Null),
                 (is_create(meta), Null),
@@ -355,7 +356,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 (is_sign_hash(meta), Null),
                 (is_hash(meta), Null),
                 (is_data(meta), Null),
-                (is_tx_gas_cost(meta), Null),
                 (is_block_num(meta), Null),
                 (is_chain_id_expr(meta), Null),
             ];
@@ -554,6 +554,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                 is_gas(meta),
                 is_to(meta),
                 is_value(meta),
+                is_tx_gas_cost(meta),
                 is_data_rlc(meta),
                 is_sig_v(meta),
                 is_sig_r(meta),
@@ -642,6 +643,22 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             rlp_table,
             sig_table,
         );
+
+        meta.create_gate("tx_gas_cost == 0 for L1 msg", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.condition(is_tx_gas_cost(meta), |cb| {
+                cb.require_zero(
+                    "tx_gas_cost == 0",
+                    meta.query_advice(tx_table.value, Rotation::cur()),
+                );
+            });
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_advice(is_l1_msg, Rotation::cur()),
+            ]))
+        });
 
         ///////////////////////////////////////////////////////////////////////
         ///////////////  constraints on BlockNum  /////////////////////////////
@@ -1268,6 +1285,7 @@ impl<F: Field> TxCircuitConfig<F> {
                     CalleeAddress,
                     TxFieldTag::Value,
                     CallDataRLC,
+                    TxDataGasCost,
                     SigV,
                     SigR,
                     SigS,
@@ -1756,7 +1774,7 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             TxDataGasCost,
-                            None,
+                            Some(GasCost),
                             None,
                             Value::known(F::from(tx.tx_data_gas_cost)),
                         ),

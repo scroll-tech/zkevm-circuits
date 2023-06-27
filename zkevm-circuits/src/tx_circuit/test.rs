@@ -99,7 +99,8 @@ fn build_l1_msg_tx() -> Transaction {
     tx.is_create = eth_tx.to.is_none();
     tx.call_data_length = tx.call_data.len();
     tx.call_data_gas_cost = tx_data_gas_cost(&tx.call_data);
-    tx.tx_data_gas_cost = tx_data_gas_cost(&tx.rlp_signed);
+    // l1 msg's data has been charged in L1
+    tx.tx_data_gas_cost = 0;
     tx.v = eth_tx.v.as_u64();
     tx.r = eth_tx.r;
     tx.s = eth_tx.s;

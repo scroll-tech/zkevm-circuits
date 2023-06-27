@@ -104,6 +104,7 @@ impl Transaction {
             callee_address: Some(Address::zero()),
             is_create: false, // callee_address != None
             chain_id,
+            tx_data_gas_cost: tx_data_gas_cost(&rlp_signed),
             v: dummy_sig.v,
             r: dummy_sig.r,
             s: dummy_sig.s,
@@ -868,6 +869,11 @@ pub(super) fn tx_convert(
         chain_id, tx.chain_id
     );
     let callee_address = if tx.is_create() { None } else { Some(tx.to) };
+    let tx_gas_cost = if tx.tx_type.is_l1_msg() {
+        0
+    } else {
+        tx_data_gas_cost(&tx.rlp_bytes)
+    };
 
     Transaction {
         block_number: tx.block_num,
@@ -884,7 +890,7 @@ pub(super) fn tx_convert(
         call_data: tx.input.clone(),
         call_data_length: tx.input.len(),
         call_data_gas_cost: tx_data_gas_cost(&tx.input),
-        tx_data_gas_cost: tx_data_gas_cost(&tx.rlp_bytes),
+        tx_data_gas_cost: tx_gas_cost,
         chain_id,
         rlp_unsigned: tx.rlp_unsigned_bytes.clone(),
         rlp_signed: tx.rlp_bytes.clone(),
