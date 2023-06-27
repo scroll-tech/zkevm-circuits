@@ -11,7 +11,7 @@ pub enum Tag {
     #[default]
     /// Tag that marks the beginning of a list
     /// whose value gives the length of bytes of this list.
-    BeginList = 3,
+    BeginList = 4,
     /// Tag that marks the ending of a list and
     /// it does not consume any byte.
     EndList,
@@ -108,6 +108,8 @@ pub enum RlpTag {
     Len,
     /// RLC of RLP bytes
     RLC,
+    /// GasCost of RLP bytes
+    GasCost,
     /// Null never occurs in RLP table
     Null,
     /// Tag
@@ -127,6 +129,7 @@ impl From<RlpTag> for usize {
             RlpTag::Len => 0,
             RlpTag::RLC => 1,
             RlpTag::Null => 2,
+            RlpTag::GasCost => 3,
             RlpTag::Tag(tag) => usize::from(tag),
         }
     }
@@ -259,8 +262,13 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
             vec![14, 15],
         ),
         (BeginVector, EndVector, N_BYTES_LIST, vec![18]), /* access_list.storage_keys
-                                                * is none */
-        (BeginVector, AccessListStorageKey, N_BYTES_LIST, vec![16, 17]),
+                                                           * is none */
+        (
+            BeginVector,
+            AccessListStorageKey,
+            N_BYTES_LIST,
+            vec![16, 17],
+        ),
         (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![18]), // finished parsing storage keys
         (
             AccessListStorageKey,
@@ -306,7 +314,12 @@ pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
             vec![13, 14],
         ),
         (BeginVector, EndVector, N_BYTES_LIST, vec![17]), /* access_list.storage_keys is none */
-        (BeginVector, AccessListStorageKey, N_BYTES_LIST, vec![15, 16]),
+        (
+            BeginVector,
+            AccessListStorageKey,
+            N_BYTES_LIST,
+            vec![15, 16],
+        ),
         (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![17]), // finished parsing storage keys
         (
             AccessListStorageKey,
@@ -454,6 +467,8 @@ pub struct DataTable<F: FieldExt> {
     pub byte_value: u8,
     /// RLC of raw RLP bytes up to `byte_idx`
     pub bytes_rlc: Value<F>,
+    /// GasCost of raw RLP bytes up to `byte_idx`
+    pub gas_cost_acc: Value<F>,
 }
 
 impl<F: FieldExt> DataTable<F> {
@@ -466,6 +481,7 @@ impl<F: FieldExt> DataTable<F> {
             Value::known(F::from(self.byte_rev_idx as u64)),
             Value::known(F::from(self.byte_value as u64)),
             self.bytes_rlc,
+            self.gas_cost_acc,
         ]
     }
 }
@@ -517,6 +533,8 @@ pub struct StateMachine<F: FieldExt> {
     pub depth: usize,
     /// The RLC of bytes up to `byte_idx`
     pub bytes_rlc: Value<F>,
+    /// The gas cost of bytes up to `byte_idx`
+    pub gas_cost_acc: Value<F>,
 }
 
 /// Represents the witness in a single row of the RLP circuit.

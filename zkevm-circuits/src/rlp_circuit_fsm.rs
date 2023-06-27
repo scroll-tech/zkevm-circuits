@@ -91,6 +91,8 @@ pub struct RlpFsmDataTable {
     pub byte_value: Column<Advice>,
     /// The accumulated Random Linear Combination up until (including) the current byte.
     pub bytes_rlc: Column<Advice>,
+    /// The accumulated gas cost up until (including) the current byte.
+    pub gas_cost_acc: Column<Advice>,
 }
 
 impl<F: Field> LookupTable<F> for RlpFsmDataTable {
@@ -102,6 +104,7 @@ impl<F: Field> LookupTable<F> for RlpFsmDataTable {
             self.byte_rev_idx.into(),
             self.byte_value.into(),
             self.bytes_rlc.into(),
+            self.gas_cost_acc.into(),
         ]
     }
 
@@ -127,6 +130,7 @@ impl RlpFsmDataTable {
             byte_rev_idx: meta.advice_column(),
             byte_value: meta.advice_column(),
             bytes_rlc: meta.advice_column_in(SecondPhase),
+            gas_cost_acc: meta.advice_column(),
         }
     }
 }
@@ -243,6 +247,8 @@ pub struct RlpCircuitConfig<F> {
     byte_value: Column<Advice>,
     /// The RLC accumulator of all the bytes of this RLP instance.
     bytes_rlc: Column<Advice>,
+    /// The gas cost accumulator of all the bytes of this RLP instance.
+    gas_cost_acc: Column<Advice>,
     /// When the tag occupies several bytes, this index denotes the
     /// incremental index of the byte within this tag instance.
     tag_idx: Column<Advice>,
@@ -275,7 +281,7 @@ pub struct RlpCircuitConfig<F> {
     /// is_case3 = (0xc0 <= byte_value < 0xf8) && (is_tag_end == false)
     is_case3: Column<Advice>,
     /// Boolean to reduce the circuit's degree
-    /// transit_to_new_rlp_instance = (is_tag_end == true) && (depth == 1) && (state' != End)
+    /// transit_to_new_rlp_instance = (is_tag_end == true) && (depth == 0) && (state' != End)
     transit_to_new_rlp_instance: Column<Advice>,
     /// Boolean to reduce the circuit's degree
     is_same_rlp_instance: Column<Advice>,
@@ -331,6 +337,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             byte_idx,
             byte_rev_idx,
             byte_value,
+            gas_cost_acc,
             state,
             tag,
             tag_next,
@@ -346,6 +353,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             is_same_rlp_instance,
         ) = (
             meta.fixed_column(),
+            meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
@@ -597,6 +605,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 meta.query_advice(byte_rev_idx, Rotation::cur()),
                 meta.query_advice(byte_value, Rotation::cur()),
                 meta.query_advice(bytes_rlc, Rotation::cur()),
+                meta.query_advice(gas_cost_acc, Rotation::cur()),
             ];
             let mut table_exprs = vec![q_enabled];
             table_exprs.extend(data_table.table_exprs(meta));
@@ -809,11 +818,11 @@ impl<F: Field> RlpCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
-                "transit_to_new = (is_tag_end == true) && (depth == 1) && (state' != End)",
+                "transit_to_new = (is_tag_end == true) && (depth == 0) && (state' != End)",
                 meta.query_advice(transit_to_new_rlp_instance, Rotation::cur()),
                 and::expr([
                     meta.query_advice(is_tag_end, Rotation::cur()),
-                    depth_eq_one.is_equal_expression.expr(),
+                    depth_check.is_equal_expression.expr(),
                     not::expr(is_next_end(meta)),
                 ]),
             );
@@ -993,6 +1002,16 @@ impl<F: Field> RlpCircuitConfig<F> {
                     },
                 );
                 cb.condition(
+                    and::expr([case_4.expr(), depth_check.is_equal_expression.expr()]),
+                    |cb| {
+                        let gas_cost = meta.query_advice(gas_cost_acc, Rotation::cur());
+
+                        // assertions
+                        emit_rlp_tag!(meta, cb, RlpTag::GasCost, false);
+                        constrain_eq!(meta, cb, rlp_table.tag_value, gas_cost);
+                    },
+                );
+                cb.condition(
                     meta.query_advice(transit_to_new_rlp_instance, Rotation::cur()),
                     |cb| {
                         let tx_id = meta.query_advice(rlp_table.tx_id, Rotation::cur());
@@ -1019,7 +1038,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 cb.condition(
                     and::expr([
                         case_4.expr(),
-                        not::expr(depth_eq_one.is_equal_expression.expr()),
+                        not::expr(depth_check.is_equal_expression.expr()), // depth > 0
                     ]),
                     |cb| {
                         update_state!(meta, cb, tag, tag_next_expr(meta));
@@ -1298,8 +1317,8 @@ impl<F: Field> RlpCircuitConfig<F> {
 
             // condition.
             cb.require_equal(
-                "depth == 1",
-                depth_eq_one.is_equal_expression.expr(),
+                "depth == 0",
+                depth_check.is_equal_expression.expr(),
                 true.expr(),
             );
             cb.require_equal("is_tag_end == true", is_tag_end_expr(meta), true.expr());
@@ -1340,6 +1359,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             byte_rev_idx,
             byte_value,
             bytes_rlc,
+            gas_cost_acc,
             tag_idx,
             tag_length,
             tag_value_acc,
@@ -1517,12 +1537,18 @@ impl<F: Field> RlpCircuitConfig<F> {
             row,
             || witness.state_machine.bytes_rlc,
         )?;
+        region.assign_advice(
+            || "gas_cost_acc",
+            self.gas_cost_acc,
+            row,
+            || witness.state_machine.gas_cost_acc,
+        )?;
 
         // assign to intermediates
         let byte_value = witness.state_machine.byte_value;
         let is_case3 = (0xc0..0xf8).contains(&byte_value) && !witness.state_machine.tag.is_end();
         let transit_to_new = witness.state_machine.tag.is_end()
-            && (witness.state_machine.depth == 1)
+            && (witness.state_machine.depth == 0)
             && witness_next.is_some();
         region.assign_advice(
             || "is_tag_begin",

@@ -1,13 +1,13 @@
 use crate::{
     evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
     witness::{
+        rlp_fsm::{N_BYTES_CALLDATA, N_BYTES_LIST},
         Format::L1MsgHash,
         RomTableRow,
         Tag::{BeginList, Data, EndList, Gas, Nonce, Sender, To, TxType, Value as TxValue},
     },
 };
 use ethers_core::utils::rlp::Encodable;
-use crate::witness::rlp_fsm::{N_BYTES_CALLDATA, N_BYTES_LIST};
 
 #[derive(Clone, Debug)]
 pub struct L1MsgTx;
@@ -30,7 +30,7 @@ pub fn rom_table_rows() -> Vec<RomTableRow> {
         (Sender, EndList, N_BYTES_ACCOUNT_ADDRESS, vec![8]),
         (EndList, EndList, 0, vec![9]),
         // used to emit TxGasCostInL1
-        (EndList, BeginList, 0, vec![])
+        (EndList, BeginList, 0, vec![]),
     ];
 
     rows.into_iter()
