@@ -333,19 +333,20 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         }
 
         let shift = memory_offset.low_u64() % 32;
-        let memory_start_slot = memory_offset.low_u64() - shift;
-        let memory_end = memory_offset.low_u64() + length.low_u64();
-        let memory_end_slot = memory_end - memory_end % 32;
         let valid_length = if call.is_root || (call.is_create && call.is_success) {
             length.as_u64()
         } else {
-            std::cmp::min(call.return_data_length, length.as_u64())
+            call.return_data_length.min(length.as_u64())
         };
 
         let copy_rwc_inc = if valid_length == 0 {
             0
         } else {
-            (memory_end_slot - memory_start_slot) / 32 + 1
+            let begin_slot = memory_offset.low_u64() - shift;
+            let end = memory_offset.low_u64() + valid_length;
+            let end_slot = end - end % 32;
+
+            (end_slot - begin_slot) / 32 + 1
         };
 
         if call.is_create && call.is_success {
