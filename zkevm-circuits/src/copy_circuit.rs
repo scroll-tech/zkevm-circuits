@@ -537,28 +537,27 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     1.expr() - meta.query_advice(bytes_left, Rotation::cur()),
                 ]),
             );
-            // cb.condition(
-            //     and::expr([
-            //         not::expr(meta.query_advice(is_pad, Rotation::cur())),
-            //         meta.query_advice(is_pad, Rotation::next())
-            //     ]),
-            //     |cb| {
-            //         cb.require_equal(
-            //             "real_bytes_left == 1 for last non pad step",
-            //             1.expr(),
-            //             meta.query_advice(real_bytes_left, Rotation::cur()),
-            //         )
-            //     }
-            // );
-            // cb.condition(
-            //     meta.query_advice(is_pad, Rotation::cur()),
-            //     |cb| {
-            //         cb.require_zero(
-            //             "real_bytes_left == 0 for last step",
-            //             meta.query_advice(real_bytes_left, Rotation::cur()),
-            //         )
-            //     }
-            // );
+            cb.require_zero(
+                "real_bytes_left == 0 for last step",
+                and::expr([
+                    meta.query_advice(is_last, Rotation::next()),
+                    meta.query_advice(real_bytes_left, Rotation::cur()),
+                ]),
+            );
+            cb.condition(
+                and::expr([
+                    not::expr(meta.query_advice(is_last, Rotation::cur())),
+                    not::expr(meta.query_advice(is_last, Rotation::next())),
+                ]),
+                |cb| {
+                    cb.require_equal(
+                        "real_bytes_left[0] == real_bytes_left[2] + !mask",
+                        meta.query_advice(real_bytes_left, Rotation::cur()),
+                        meta.query_advice(real_bytes_left, Rotation(2))
+                            + not::expr(meta.query_advice(mask, Rotation::cur())),
+                    );
+                }
+            );
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::next()))
                     * (non_pad_non_mask.is_lt(meta, None)),
