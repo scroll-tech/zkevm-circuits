@@ -565,9 +565,7 @@ impl<
 
         self.pi_circuit.connect_export(
             layouter,
-            // TODO: enable this after zktrie deletion deployed inside l2geth and
-            // test data regenerated.
-            None,
+            self.state_circuit.exports.borrow().as_ref(),
             self.evm_circuit.exports.borrow().as_ref(),
         )?;
 

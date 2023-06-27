@@ -186,11 +186,8 @@ fn bytecode_push() {
 
 /// Test invalid code_hash data
 /// There is only one case where this test should be disabled:
-///   "poseidon-codehash" enabled, but "poseidon-codehash-lookup" disabled.
-#[cfg(any(
-    not(feature = "poseidon-codehash"),
-    feature = "poseidon-codehash-lookup"
-))]
+///   "poseidon-codehash" enabled, but "scroll-trace" disabled.
+#[cfg(any(not(feature = "poseidon-codehash"), feature = "scroll-trace"))]
 #[test]
 fn bytecode_invalid_hash_data() {
     let k = 9;
@@ -234,11 +231,8 @@ fn bytecode_invalid_index() {
 
 /// Test invalid byte data
 /// There is only one case where this test should be disabled:
-///   "poseidon-codehash" enabled, but "poseidon-codehash-lookup" disabled.
-#[cfg(any(
-    not(feature = "poseidon-codehash"),
-    feature = "poseidon-codehash-lookup"
-))]
+///   "poseidon-codehash" enabled, but "scroll-trace" disabled.
+#[cfg(any(not(feature = "poseidon-codehash"), feature = "scroll-trace"))]
 fn bytecode_invalid_byte_data() {
     let k = 9;
     let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];

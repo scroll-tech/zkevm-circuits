@@ -16,7 +16,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
-#[cfg(feature = "poseidon-codehash-lookup")]
+#[cfg(feature = "scroll-trace")]
 use itertools::Itertools;
 use log::trace;
 use std::vec;
@@ -322,7 +322,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         //  * PoseidonTable::INPUT_WIDTH lookups for each input field
         //  * PoseidonTable::INPUT_WIDTH -1 lookups for the padded zero input
         //  so we have 2*PoseidonTable::INPUT_WIDTH -1 lookups
-        #[cfg(feature = "poseidon-codehash-lookup")]
+        #[cfg(feature = "scroll-trace")]
         for i in 0..PoseidonTable::INPUT_WIDTH {
             meta.lookup_any("poseidon input", |meta| {
                 // Conditions:
@@ -352,7 +352,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         }
 
         // the canonical form should be `for i in 1..PoseidonTable::INPUT_WIDTH{...}`
-        #[cfg(feature = "poseidon-codehash-lookup")]
+        #[cfg(feature = "scroll-trace")]
         meta.lookup_any("poseidon input padding zero for final", |meta| {
             // Conditions:
             // - On the row with the last byte (`is_byte_to_header == 1`)

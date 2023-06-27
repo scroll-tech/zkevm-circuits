@@ -1461,19 +1461,33 @@ impl<F: Field> PiCircuit<F> {
             || "pi connecting region",
             |mut region| {
                 if let Some(state_roots) = state_roots {
-                    region.constrain_equal(
-                        local_conn.start_state_root.cell(),
-                        state_roots.start_state_root.0,
-                    )?;
-                    region.constrain_equal(
-                        local_conn.end_state_root.cell(),
-                        state_roots.end_state_root.0,
-                    )?;
+                    log::debug!(
+                        "constrain_equal of state root: {:?} <-> {:?}",
+                        (local_conn.start_state_root, local_conn.end_state_root),
+                        (state_roots.start_state_root, state_roots.end_state_root)
+                    );
+
+                    #[cfg(feature = "scroll-trace")]
+                    {
+                        region.constrain_equal(
+                            local_conn.start_state_root.cell(),
+                            state_roots.start_state_root.0,
+                        )?;
+                        region.constrain_equal(
+                            local_conn.end_state_root.cell(),
+                            state_roots.end_state_root.0,
+                        )?;
+                    }
                 } else {
                     log::warn!("state roots are not set, skip connection with state circuit");
                 }
 
                 if let Some(withdraw_roots) = withdraw_roots {
+                    log::debug!(
+                        "constrain_equal of withdraw root: {:?} <-> {:?}",
+                        local_conn.withdraw_root,
+                        withdraw_roots.withdraw_root
+                    );
                     region.constrain_equal(
                         local_conn.withdraw_root.cell(),
                         withdraw_roots.withdraw_root.0,

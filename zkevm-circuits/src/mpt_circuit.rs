@@ -71,7 +71,7 @@ impl SubCircuitConfig<Fr> for MptCircuitConfig<Fr> {
 
         // TODO: re-enable this after we can generate full scroll block trace in local tracer
         // when feature="scroll"
-        #[cfg(feature = "zktrie-lookup")]
+        #[cfg(feature = "scroll-trace")]
         meta.lookup_any("updates in mpt table proven in mpt circuit", |meta| {
             mpt_table
                 .table_exprs(meta)
