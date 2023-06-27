@@ -6,6 +6,8 @@ mod circuit_ext;
 mod config;
 ///
 mod dynamic;
+///
+mod util;
 
 pub use circuit::AggregationCircuit;
 pub use config::AggregationConfig;
