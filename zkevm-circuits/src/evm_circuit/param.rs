@@ -37,7 +37,8 @@ pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
     + BLOCK_TABLE_LOOKUPS
     + COPY_TABLE_LOOKUPS
     + KECCAK_TABLE_LOOKUPS
-    + EXP_TABLE_LOOKUPS;
+    + EXP_TABLE_LOOKUPS
+    + SIG_TABLE_LOOKUPS;
 
 /// Lookups done per row.
 pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[

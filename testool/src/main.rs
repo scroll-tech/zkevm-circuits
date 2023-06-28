@@ -188,7 +188,7 @@ fn go() -> Result<()> {
                 let filename = f.unwrap().file_name().to_str().unwrap().to_string();
                 (filename.starts_with(&format!("{}.", args.suite))
                     && filename.ends_with(".csv")
-                    && !filename.contains(&format!(".{}.", git_hash)))
+                    && !filename.contains(&format!(".{git_hash}.")))
                 .then_some(filename)
             })
             .collect();
@@ -196,8 +196,8 @@ fn go() -> Result<()> {
         files.sort_by(|f, s| s.cmp(f));
         let previous = if !files.is_empty() {
             let file = files.remove(0);
-            let path = format!("{}/{}", REPORT_FOLDER, file);
-            info!("Comparing with previous results in {}", path);
+            let path = format!("{REPORT_FOLDER}/{file}");
+            info!("Comparing with previous results in {path}");
             Some((file, Results::from_file(PathBuf::from(path))?))
         } else {
             None
@@ -231,6 +231,6 @@ fn go() -> Result<()> {
 
 fn main() {
     if let Err(err) = go() {
-        eprintln!("Error found {}", err);
+        eprintln!("Error found {err}");
     }
 }

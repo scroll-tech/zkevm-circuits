@@ -7,7 +7,7 @@ mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 
-use std::{iter, marker::PhantomData};
+use std::{iter, marker::PhantomData, str::FromStr};
 
 use crate::{evm_circuit::util::constraint_builder::ConstrainBuilderCommon, table::KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -57,7 +57,12 @@ use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 use itertools::Itertools;
 
-pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| read_env_var("COINBASE", Address::zero()));
+pub(crate) static COINBASE: Lazy<Address> = Lazy::new(|| {
+    read_env_var(
+        "COINBASE",
+        Address::from_str("0x5300000000000000000000000000000000000005").unwrap(),
+    )
+});
 pub(crate) static DIFFICULTY: Lazy<Word> = Lazy::new(|| read_env_var("DIFFICULTY", Word::zero()));
 
 /// PublicData contains all the values that the PiCircuit receives as input
@@ -215,7 +220,8 @@ pub struct PiCircuitConfig<F: Field> {
     is_rlc_keccak: Column<Fixed>,
     q_keccak: Selector,
 
-    pi: Column<Instance>, // hi(keccak(rpi)), lo(keccak(rpi))
+    // 32 big-endian bytes of pi_hash
+    pi: Column<Instance>,
 
     // External tables
     block_table: BlockTable,
@@ -800,7 +806,6 @@ impl<F: Field> PiCircuitConfig<F> {
             challenges,
         )?;
         let chain_id_cell = cells[RPI_CELL_IDX].clone();
-        let chain_id_byte_cells = cells[3..].to_vec();
         // copy chain_id to block table
         for block_idx in 0..self.max_inner_blocks {
             region.constrain_equal(
@@ -1027,12 +1032,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 + N_BYTES_WORD,
         );
 
-        let instance_byte_cells = [
-            chain_id_byte_cells,
-            pi_hash_hi_byte_cells,
-            pi_hash_lo_byte_cells,
-        ]
-        .concat();
+        let instance_byte_cells = [pi_hash_hi_byte_cells, pi_hash_lo_byte_cells].concat();
 
         Ok((instance_byte_cells, connections))
     }
@@ -1312,7 +1312,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 .zip(tag.iter())
             {
                 region.assign_fixed(
-                    || format!("block table row {}", offset),
+                    || format!("block table row {offset}"),
                     self.block_table.tag,
                     offset,
                     || row[0],
@@ -1322,7 +1322,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 let mut block_number_cell = None;
                 for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                     let cell = region.assign_advice(
-                        || format!("block table row {}", offset),
+                        || format!("block table row {offset}"),
                         *column,
                         offset,
                         || *value,
@@ -1456,19 +1456,33 @@ impl<F: Field> PiCircuit<F> {
             || "pi connecting region",
             |mut region| {
                 if let Some(state_roots) = state_roots {
-                    region.constrain_equal(
-                        local_conn.start_state_root.cell(),
-                        state_roots.start_state_root.0,
-                    )?;
-                    region.constrain_equal(
-                        local_conn.end_state_root.cell(),
-                        state_roots.end_state_root.0,
-                    )?;
+                    log::debug!(
+                        "constrain_equal of state root: {:?} <-> {:?}",
+                        (&local_conn.start_state_root, &local_conn.end_state_root),
+                        (&state_roots.start_state_root, &state_roots.end_state_root)
+                    );
+
+                    #[cfg(feature = "scroll-trace")]
+                    {
+                        region.constrain_equal(
+                            local_conn.start_state_root.cell(),
+                            state_roots.start_state_root.0,
+                        )?;
+                        region.constrain_equal(
+                            local_conn.end_state_root.cell(),
+                            state_roots.end_state_root.0,
+                        )?;
+                    }
                 } else {
                     log::warn!("state roots are not set, skip connection with state circuit");
                 }
 
                 if let Some(withdraw_roots) = withdraw_roots {
+                    log::debug!(
+                        "constrain_equal of withdraw root: {:?} <-> {:?}",
+                        &local_conn.withdraw_root,
+                        &withdraw_roots.withdraw_root
+                    );
                     region.constrain_equal(
                         local_conn.withdraw_root.cell(),
                         withdraw_roots.withdraw_root.0,
@@ -1514,13 +1528,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let pi_hash = self.public_data.get_pi();
 
         let public_inputs = iter::empty()
-            .chain(
-                self.public_data
-                    .chain_id
-                    .to_be_bytes()
-                    .into_iter()
-                    .map(|byte| F::from(byte as u64)),
-            )
             .chain(
                 pi_hash
                     .to_fixed_bytes()
