@@ -219,46 +219,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         self.data_offset
             .assign(region, offset, data_offset, F::from(call_data_length))?;
 
-        // rw_counter increase from copy lookup is `length` memory writes + a variable
-        // number of memory reads.
-        let length_u64 = length.low_u64();
-        let copy_rwc_inc = if length_u64 == 0 {
-            0
-        } else if call.is_root {
-            let memory_start_slot = memory_offset.low_u64() - memory_offset.low_u64() % 32;
-            let memory_end = memory_offset.low_u64() + length_u64;
-            let memory_end_slot = memory_end - memory_end % 32;
-            trace!(
-                "memory_start {}, length {}",
-                memory_offset.low_u64(),
-                length.low_u64()
-            );
-            // no memory reads when reading from tx call data.
-            (memory_end_slot - memory_start_slot) / 32 + 1
-        } else {
-            let src_addr_end = call_data_offset.checked_add(call_data_length).unwrap();
-            let src_addr = u64::try_from(data_offset)
-                .ok()
-                .and_then(|s| s.checked_add(call_data_offset))
-                .unwrap_or(src_addr_end)
-                .min(src_addr_end);
-            let src_begin_slot = src_addr - src_addr % 32;
-            let src_end_slot = src_addr_end - src_addr_end % 32;
-
-            let dst_addr = memory_offset.low_u64();
-            let dst_addr_end = dst_addr + length_u64;
-            let dst_begin_slot = dst_addr - dst_addr % 32;
-            let dst_end_slot = dst_addr_end - dst_addr_end % 32;
-
-            let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot);
-
-            2 * (slot_count / 32 + 1)
-        };
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                copy_rwc_inc
+                step.copy_rw_counter_delta
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
