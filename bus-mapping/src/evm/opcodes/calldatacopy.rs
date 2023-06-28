@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     operation::CallContextField,
     Error,
@@ -129,6 +129,9 @@ fn gen_copy_event(
             memory_updated,
         )?;
 
+        //todo: fetch pre write bytes to fill 'bytes_write_prev' of CopyBytes
+        let copy_bytes = CopyBytes::new(copy_steps, None, None, None);
+
         Ok(CopyEvent {
             src_type: CopyDataType::TxCalldata,
             src_id: NumberOrHash::Number(state.tx_ctx.id()),
@@ -139,8 +142,7 @@ fn gen_copy_event(
             dst_addr,
             log_id: None,
             rw_counter_start,
-            bytes: copy_steps,
-            aux_bytes: None,
+            copy_bytes: copy_bytes,
         })
     } else {
         let (read_steps, write_steps) = state.gen_copy_steps_for_call_data_non_root(
@@ -162,8 +164,8 @@ fn gen_copy_event(
             dst_addr,
             log_id: None,
             rw_counter_start,
-            bytes: read_steps,
-            aux_bytes: Some(write_steps),
+            //todo: fetch pre read and write bytes of CopyBytes
+            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None, None),
         })
     }
 }

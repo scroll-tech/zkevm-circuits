@@ -294,7 +294,7 @@ pub mod sha3_tests {
         //assert_eq!(copy_events[0].bytes.len(), size);
 
         let mut mask_count = 0;
-        for (idx, (value, is_code, is_mask)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, is_mask)) in copy_events[0].CopyBytes.bytes.iter().enumerate() {
             if !is_mask {
                 assert_eq!(Some(value), memory_view.get(idx - mask_count));
                 assert!(!is_code);

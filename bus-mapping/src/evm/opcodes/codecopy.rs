@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     Error,
 };
@@ -109,8 +109,8 @@ fn gen_copy_event(
         dst_addr,
         log_id: None,
         rw_counter_start,
-        bytes: copy_steps,
-        aux_bytes: None,
+        //todo: fetch pre write bytes of CopyBytes
+        copy_bytes: CopyBytes::new(copy_steps, None, None, None),
     })
 }
 
