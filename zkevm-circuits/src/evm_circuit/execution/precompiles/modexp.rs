@@ -10,6 +10,7 @@ use crate::{
         util::{constraint_builder::{EVMConstraintBuilder, ConstrainBuilderCommon}, 
             CachedRegion, Cell,Word,
             math_gadget::{BinaryNumberGadget, IsZeroGadget, LtGadget},
+            rlc,
         },
     },
     table::CallContextFieldTag,
@@ -115,24 +116,23 @@ impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
     }
 }
 
-
-#[derive(Clone, Debug)]
-struct FixedRandPowRepresent<F, const EXP: usize, const BIT_LIMIT: usize> (RandPowRepresent<F, BIT_LIMIT>);
-
-impl<F: Field, const EXP: usize, const BIT_LIMIT: usize> AsRef<RandPowRepresent<F, BIT_LIMIT>> for FixedRandPowRepresent<F, EXP, BIT_LIMIT>{
-    fn as_ref(&self) -> &RandPowRepresent<F, BIT_LIMIT>{&self.0}
-}
-
 const SIZE_LIMIT: usize = MODEXP_SIZE_LIMIT;
 const SIZE_REPRESENT_BITS: usize = 6;
 const SIZE_REPRESENT_BYTES: usize = SIZE_LIMIT/256 + 1;
 const INPUT_LIMIT: usize = 32*6;
 
+// rlc word, in the reversed byte order
+fn rlc_word_rev<F: Field, const N: usize>(cells: &[Cell<F>; N], randomness: Expression<F>) -> Expression<F> {
+
+    let rlc_rev = cells.iter().map(|cell| cell.expr()).rev().collect::<Vec<_>>();
+    rlc::expr(&rlc_rev, randomness)
+}
+
 #[derive(Clone, Debug)]
 struct SizeRepresent<F> {
     len_bytes: Word<F>,
     is_rest_field_zero: IsZeroGadget<F>,
-    is_exceed_limit: LtGadget<F, SIZE_REPRESENT_BYTES>,
+    is_not_exceed_limit: LtGadget<F, SIZE_REPRESENT_BYTES>,
 }
 
 impl<F: Field> SizeRepresent<F> {
@@ -146,14 +146,14 @@ impl<F: Field> SizeRepresent<F> {
             );
         let len_effect_bytes = len_bytes.cells[(32-SIZE_REPRESENT_BYTES)..]
             .iter().map(Cell::expr).collect::<Vec<_>>();            
-        let is_exceed_limit = LtGadget::construct(cb, 
+        let is_not_exceed_limit = LtGadget::construct(cb, 
             util::expr_from_bytes(&len_effect_bytes),
-            SIZE_LIMIT.expr(),
+            (SIZE_LIMIT+1).expr(),
         );
         Self {
             len_bytes,
             is_rest_field_zero,
-            is_exceed_limit,
+            is_not_exceed_limit,
         }
     }
 
@@ -162,11 +162,19 @@ impl<F: Field> SizeRepresent<F> {
         self.len_bytes.expr()
     }
 
+    /// the value of size
+    pub fn value(&self) -> Expression<F> {
+        let len_effect_bytes = self.len_bytes.cells[(32-SIZE_REPRESENT_BYTES)..]
+            .iter().map(Cell::expr).collect::<Vec<_>>();
+        util::expr_from_bytes(&len_effect_bytes)
+    }
+
+
     pub fn is_valid(&self) -> Expression<F> {
         util::and::expr(
             [
                 self.is_rest_field_zero.expr(),
-                util::not::expr(self.is_exceed_limit.expr()),
+                self.is_not_exceed_limit.expr(),
             ]
         )
     }
@@ -179,7 +187,19 @@ impl<F: Field> SizeRepresent<F> {
     ) -> Result<(), Error> {
         let mut bytes = [0u8; 32];
         size.to_big_endian(&mut bytes);
+
         self.len_bytes.assign(region, offset, Some(bytes))?;
+
+        let rest_field = U256::from_big_endian(&bytes[..(32-SIZE_REPRESENT_BYTES)]);
+        let effect_field = U256::from_big_endian(&bytes[(32-SIZE_REPRESENT_BYTES)..]);
+
+        self.is_rest_field_zero.assign(region, offset, rest_field.to_scalar().unwrap())?;
+        self.is_not_exceed_limit.assign(
+            region, 
+            offset, 
+            effect_field.to_scalar().unwrap(), 
+            F::from((SIZE_LIMIT + 1)as u64),
+        )?;
         Ok(())
     }
 
@@ -216,8 +236,8 @@ impl<F: Field> ModExpInputs<F> {
         let modulus_len = SizeRepresent::configure(cb);
         let exp_len = SizeRepresent::configure(cb);
 
-        let r_pow_32 = RandPowRepresent::<_, 5>::base_pows_expr(
-            cb.challenges().keccak_input())[4].clone(); //r**32
+        let r_pow_32 = RandPowRepresent::<_, 6>::base_pows_expr(
+            cb.challenges().keccak_input())[5].clone(); //r**32
         let r_pow_64 = r_pow_32.clone().square();
 
         let base = cb.query_keccak_rlc();
@@ -240,21 +260,21 @@ impl<F: Field> ModExpInputs<F> {
         let base_pow = RandPow::configure(cb, 
             cb.challenges().keccak_input(),
             util::select::expr(input_valid.expr(), 
-                base_len.memory_value(), 
+                base_len.value(), 
                 32.expr(),
             ),
         );
         let exp_pow = RandPow::configure(cb, 
             cb.challenges().keccak_input(),
             util::select::expr(input_valid.expr(), 
-                exp_len.memory_value(), 
+                exp_len.value(), 
                 32.expr(),
             ),
         );
         let modulus_pow = RandPow::configure(cb,
             cb.challenges().keccak_input(),
             util::select::expr(input_valid.expr(), 
-                modulus_len.memory_value(), 
+                modulus_len.value(), 
                 32.expr(),
             ),       
         );
@@ -265,12 +285,12 @@ impl<F: Field> ModExpInputs<F> {
 
         cb.require_equal("acc bytes must equal", 
             input_bytes_acc, 
-            base_len.memory_value() + 
-            r_pow_32 * exp_len.memory_value() +
-            r_pow_64 * modulus_len.memory_value() +
-            r_pow_base * base.expr() + //rlc of base plus r**(64+base_len)"
-            r_pow_exp * exp.expr() + //rlc of exp plus r**(64+base_len+exp_len)
-            r_pow_modulus * modulus.expr() //rlc of modulus plus r**(64+base_len+exp_len+modulus_len)
+            base_len.memory_value()
+            + r_pow_32 * exp_len.memory_value()
+            + r_pow_64 * modulus_len.memory_value()
+            + r_pow_base * base.expr() //rlc of base plus r**(64+base_len)"
+            + r_pow_exp * exp.expr() //rlc of exp plus r**(64+base_len+exp_len)
+            + r_pow_modulus * modulus.expr() //rlc of modulus plus r**(64+base_len+exp_len+modulus_len)
         );
 
         Self {
@@ -287,7 +307,7 @@ impl<F: Field> ModExpInputs<F> {
         }
     }
 
-    pub fn modulus_len(&self) -> Expression<F> {self.modulus_len.memory_value()}
+    pub fn modulus_len(&self) -> Expression<F> {self.modulus_len.value()}
     pub fn is_valid(&self) -> Expression<F> {self.input_valid.expr()}
 
     pub fn assign(
@@ -342,8 +362,8 @@ impl<F: Field> ModExpOutputs<F> {
         let result_pow_prefix = cb.query_cell_phase2();        
         let result = cb.query_keccak_rlc();
 
-        let r_pow_32 = RandPowRepresent::<_, 5>::base_pows_expr(
-            cb.challenges().keccak_input())[4].clone(); //r**32
+        let r_pow_32 = RandPowRepresent::<_, 6>::base_pows_expr(
+            cb.challenges().keccak_input())[5].clone(); //r**32
 
         cb.require_equal("use pow prefix as 1/r**32", 
             result_pow_prefix.expr() * r_pow_32, 
@@ -397,6 +417,9 @@ pub struct ModExpGadget<F> {
 
     input: ModExpInputs<F>,
     output: ModExpOutputs<F>,
+
+    input_bytes_acc: Cell<F>,
+    output_bytes_acc: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
@@ -407,8 +430,8 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
 
         // we 'copy' the acc_bytes cell inside call_op step, so it must be the first query cells
-        let input_bytes_acc = cb.query_copy_cell_phase2();
-        let output_bytes_acc = cb.query_copy_cell_phase2();
+        let input_bytes_acc = cb.query_cell_phase2();
+        let output_bytes_acc = cb.query_cell_phase2();
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -463,6 +486,8 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             return_data_length,
             input,
             output,
+            input_bytes_acc,
+            output_bytes_acc,
         }
     }
 
@@ -478,6 +503,8 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
 
         if let Some(PrecompileAuxData::Modexp(data)) = &step.aux_data {
 
+//            println!("exp data: {:?}", data);
+
             self.input.assign(region, offset, (
                 data.valid,
                 data.input_lens,
@@ -488,6 +515,19 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
                 data.output_len,
                 data.output,
             ))?;
+
+            let input_rlc = region
+                .challenges()
+                .keccak_input()
+                .map(|randomness|rlc::value(data.input_memory.iter().rev(), randomness));
+
+            let output_rlc = region
+                .challenges()
+                .keccak_input()
+                .map(|randomness| rlc::value(data.output_memory.iter().rev(), randomness));
+
+            self.input_bytes_acc.assign(region, offset, input_rlc)?;
+            self.output_bytes_acc.assign(region, offset, output_rlc)?;
 
         } else {
             log::error!("unexpected aux_data {:?} for modexp", step.aux_data);

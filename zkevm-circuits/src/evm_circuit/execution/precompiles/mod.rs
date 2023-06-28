@@ -18,8 +18,10 @@ use crate::{
 mod ecrecover;
 pub use ecrecover::EcrecoverGadget;
 
-mod identity;
 mod modexp;
+pub use modexp::ModExpGadget;
+
+mod identity;
 pub use identity::IdentityGadget;
 
 #[derive(Clone, Debug)]

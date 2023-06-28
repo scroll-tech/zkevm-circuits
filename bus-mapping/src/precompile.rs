@@ -177,6 +177,10 @@ pub struct ModExpAuxData {
     pub output_len: usize,
     /// output of modexp.
     pub output: [u8;MODEXP_SIZE_LIMIT],
+    /// backup of input memory
+    pub input_memory: Vec<u8>,
+    /// backup of output memory
+    pub output_memory: Vec<u8>,
 }
 
 impl ModExpAuxData {
@@ -191,8 +195,14 @@ impl ModExpAuxData {
 
     /// Create a new instance of modexp auxiliary data.
     pub fn new(mut mem_input: Vec<u8>, output: Vec<u8>) -> Self {
+        
+        let input_memory = mem_input.clone();
+        let output_memory = output.clone();
+
         // extended to minimum size (3x U256)
-        mem_input.resize(96, 0);
+        if mem_input.len() < 96 {
+            mem_input.resize(96, 0);
+        }
         let base_len = Word::from_big_endian(&mem_input[..32]);
         let exp_len = Word::from_big_endian(&mem_input[32..64]);
         let modulus_len = Word::from_big_endian(&mem_input[64..96]);
@@ -209,20 +219,23 @@ impl ModExpAuxData {
     
         mem_input.resize(96+base_mem_len+exp_mem_len+modulus_mem_len, 0);
         let mut cur_input_begin = &mem_input[96..];
-    
+
         let base = Self::parse_memory_to_value(&cur_input_begin[..base_mem_len]);
         cur_input_begin = &cur_input_begin[base_mem_len..];
         let exp = Self::parse_memory_to_value(&cur_input_begin[..exp_mem_len]);
         cur_input_begin = &cur_input_begin[exp_mem_len..];
         let modulus = Self::parse_memory_to_value(&cur_input_begin[..modulus_mem_len]);
-        
+        let output_len = output.len();
+        let output = Self::parse_memory_to_value(&output);
 
         Self {
             valid: input_valid,
             input_lens: [base_len, exp_len, modulus_len],
             inputs: [base, exp, modulus],
-            output: Self::parse_memory_to_value(&output),
-            output_len: output.len(),
+            output,
+            output_len,
+            input_memory,
+            output_memory,
         }   
     }
 }

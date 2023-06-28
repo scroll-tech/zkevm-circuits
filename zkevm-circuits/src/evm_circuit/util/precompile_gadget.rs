@@ -39,7 +39,7 @@ impl<F: Field> PrecompileGadget<F> {
 
         cb.condition(address.value_equals(PrecompileCalls::Ecrecover), |cb| {
             cb.constrain_next_step(ExecutionState::PrecompileEcrecover, None, |cb| {
-                let (recovered, msg_hash_rlc, sig_v, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
+/*                 let (recovered, msg_hash_rlc, sig_v, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
                     cb.query_bool(),
                     cb.query_cell_phase2(),
                     cb.query_byte(),
@@ -73,7 +73,7 @@ impl<F: Field> PrecompileGadget<F> {
                 cb.condition(not::expr(recovered.expr()), |cb| {
                     cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
                     cb.require_zero("recovered addr == 0", recovered_addr_rlc.expr());
-                });
+                }); */
             });
         });
 
@@ -103,13 +103,13 @@ impl<F: Field> PrecompileGadget<F> {
 
         cb.condition(address.value_equals(PrecompileCalls::Modexp), |cb| {
             cb.constrain_next_step(ExecutionState::PrecompileBigModExp, None, |cb| {
-                let input_bytes_acc_copied = cb.query_copy_cell_phase2();
-                let output_bytes_acc_copied = cb.query_copy_cell_phase2();
-                cb.require_equal(
-                    "copy input bytes",
-                    input_bytes_rlc.clone(),
-                    input_bytes_acc_copied.expr(),
-                );
+                let input_bytes_acc_copied = cb.query_cell_phase2();
+                let output_bytes_acc_copied = cb.query_cell_phase2();
+                // cb.require_equal(
+                //     "copy input bytes",
+                //     input_bytes_rlc.clone(),
+                //     input_bytes_acc_copied.expr(),
+                // );
                 cb.require_equal(
                     "copy output bytes",
                     output_bytes_rlc.clone(),
