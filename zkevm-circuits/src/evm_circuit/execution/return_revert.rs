@@ -339,15 +339,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             call.return_data_length.min(length.as_u64())
         };
 
-        let copy_rwc_inc = if valid_length == 0 {
-            0
-        } else {
-            let begin_slot = memory_offset.low_u64() - shift;
-            let end = memory_offset.low_u64() + valid_length;
-            let end_slot = end - end % 32;
-
-            (end_slot - begin_slot) / 32 + 1
-        };
+        let copy_rwc_inc = step.copy_rw_counter_delta;
 
         if call.is_create && call.is_success {
             // read memory word and get real copy bytes
@@ -398,23 +390,15 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 .assign(region, offset, Value::known(F::from(values.len() as u64)))?;
         }
 
-        let copy_rw_increase = if call.is_create && call.is_success {
-            copy_rwc_inc
-        } else if !call.is_root {
-            copy_rwc_inc * 2
-        } else {
-            0
-        };
         self.copy_rw_increase
-            .assign(region, offset, Value::known(F::from(copy_rw_increase)))?;
+            .assign(region, offset, Value::known(F::from(copy_rwc_inc)))?;
         self.copy_rw_increase_is_zero
-            .assign(region, offset, F::from(copy_rw_increase))?;
+            .assign(region, offset, F::from(copy_rwc_inc))?;
 
         let is_contract_deployment = call.is_create && call.is_success && !length.is_zero();
         if !call.is_root {
             let mut rw_counter_offset = 3;
             if is_contract_deployment {
-                //rw_counter_offset += 5 + length.as_u64();
                 rw_counter_offset += 5 + copy_rwc_inc;
                 #[cfg(feature = "scroll")]
                 {
