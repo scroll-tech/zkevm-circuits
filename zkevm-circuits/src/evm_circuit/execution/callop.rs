@@ -981,34 +981,61 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             output_rws,
             return_rws,
         ) = if is_precompiled(&callee_address.to_address()) {
-            let input_bytes_begin = cd_offset.as_usize();
-            let input_bytes_end = cd_offset.as_usize() + cd_length.as_usize();
-            let input_bytes_begin_slot = input_bytes_begin - input_bytes_begin % 32;
-            let input_bytes_end_slot = input_bytes_end - input_bytes_end % 32;
-            let input_bytes_word_count = (input_bytes_end_slot - input_bytes_begin_slot + 32) / 32;
-            // input may not be aligned to 32 bytes. actual input is [start_offset..end_offset]
-            let input_bytes_start_offset = input_bytes_begin - input_bytes_begin_slot;
-            let input_bytes_end_offset = input_bytes_end - input_bytes_begin_slot;
+            let [input_bytes_start_offset, input_bytes_end_offset, input_bytes_word_count] =
+                // Correspond to this check in bus-mapping.
+                // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L349>
+                if cd_length.is_zero() {
+                    [0; 3]
+                } else {
+                    let begin = cd_offset.as_usize();
+                    let end = cd_offset.as_usize() + cd_length.as_usize();
+                    let begin_slot = begin - begin % 32;
+                    let end_slot = end - end % 32;
 
-            let output_bytes_end = precompile_return_length.as_usize();
-            let output_bytes_end_slot = output_bytes_end - output_bytes_end % 32;
-            let output_bytes_word_count = (output_bytes_end_slot + 32) / 32;
+                    // input may not be aligned to 32 bytes. actual input is
+                    // [start_offset..end_offset]
+                    let start_offset = begin - begin_slot;
+                    let end_offset = end - begin_slot;
+                    let word_count = (end_slot - begin_slot + 32) / 32;
 
-            let return_bytes_length = min(rd_length.as_usize(), output_bytes_end);
-            let callee_memory_end_slot = return_bytes_length - return_bytes_length % 32;
-            let return_bytes_begin = rd_offset.as_usize();
-            let return_bytes_end = return_bytes_begin + return_bytes_length;
-            let return_bytes_begin_slot = return_bytes_begin - return_bytes_begin % 32;
-            let return_bytes_end_slot = return_bytes_end - return_bytes_end % 32;
-            let return_bytes_slot_count = max(
-                callee_memory_end_slot,
-                return_bytes_end_slot - return_bytes_begin_slot,
-            );
-            let return_bytes_word_count = return_bytes_slot_count / 32 + 1;
-            // return data may not be aligned to 32 bytes. actual return data is
-            // [start_offset..end_offset]
-            let return_bytes_start_offset = return_bytes_begin - return_bytes_begin_slot;
-            let return_bytes_end_offset = return_bytes_end - return_bytes_begin_slot;
+                    [start_offset, end_offset, word_count]
+                };
+
+            let [output_bytes_end, output_bytes_word_count] =
+                // Correspond to this check in bus-mapping.
+                // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L387>
+                if cd_length.is_zero() || precompile_return_length.is_zero() {
+                    [0; 2]
+                } else {
+                    let end = precompile_return_length.as_usize();
+                    let end_slot = end - end % 32;
+
+                    [end, (end_slot + 32) / 32]
+                };
+
+            let [return_bytes_start_offset, return_bytes_end_offset, return_bytes_word_count] =
+                // Correspond to this check in bus-mapping.
+                // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/evm/opcodes/callop.rs#L416>
+                if cd_length.is_zero() || precompile_return_length.is_zero() || rd_length.is_zero()
+                {
+                    [0; 3]
+                } else {
+                    let length = min(rd_length.as_usize(), output_bytes_end);
+                    let begin = rd_offset.as_usize();
+                    let end = begin + length;
+
+                    let begin_slot = begin - begin % 32;
+                    let end_slot = end - end % 32;
+                    let slot_count = max(length - length % 32, end_slot - begin_slot);
+
+                    // return data may not be aligned to 32 bytes. actual return data is
+                    // [start_offset..end_offset]
+                    let start_offset = begin - begin_slot;
+                    let end_offset = end - begin_slot;
+                    let word_count = slot_count / 32 + 1;
+
+                    [start_offset, end_offset, word_count]
+                };
 
             trace!("rw_offset {rw_offset}");
             trace!(
