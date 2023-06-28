@@ -69,8 +69,6 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     // if code_hash_previous is zero, then no collision
     not_address_collision: IsZeroGadget<F>,
     copy_rwc_inc: Cell<F>,
-    /// include actual and padding to word bytes
-    bytes_length_word: Cell<F>,
 }
 
 impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<F>
@@ -86,7 +84,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let code_hash_previous = cb.query_cell();
         let opcode = cb.query_cell();
         let copy_rwc_inc = cb.query_cell();
-        let bytes_length_word = cb.query_cell();
 
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
@@ -161,7 +158,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                 init_code.address(),
                 0.expr(),
                 init_code.length(),
-                //bytes_length_word.expr(),
                 init_code_rlc.expr(),
                 //init_code.length(),
                 copy_rwc_inc.expr(),
@@ -510,7 +506,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             code_hash_previous,
             not_address_collision,
             copy_rwc_inc,
-            bytes_length_word,
         }
     }
 
@@ -777,13 +772,6 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
-        )?;
-
-        let bytes_length_to_word = copy_rwc_inc * 32;
-        self.bytes_length_word.assign(
-            region,
-            offset,
-            Value::known(F::from(bytes_length_to_word)),
         )?;
 
         Ok(())
