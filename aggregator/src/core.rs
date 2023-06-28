@@ -1,5 +1,6 @@
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
+    plonk::Error,
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use rand::Rng;
@@ -23,7 +24,7 @@ pub(crate) fn extract_accumulators_and_proof(
     params: &ParamsKZG<Bn256>,
     snarks: &[Snark],
     rng: impl Rng + Send,
-) -> (KzgAccumulator<G1Affine, NativeLoader>, Vec<u8>) {
+) -> Result<(KzgAccumulator<G1Affine, NativeLoader>, Vec<u8>), Error> {
     let svk = params.get_g()[0].into();
 
     let mut transcript_read =
@@ -58,7 +59,6 @@ pub(crate) fn extract_accumulators_and_proof(
             &accumulators,
             &mut transcript_write,
             rng,
-        )
-        .unwrap();
-    (accumulator, transcript_write.finalize())
+        )?;
+    Ok((accumulator, transcript_write.finalize()))
 }
