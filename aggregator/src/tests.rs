@@ -164,7 +164,7 @@ macro_rules! aggregation_layer_snark {
 
         let mut rng = test_rng();
 
-        let aggregation_circuit = AggregationCircuit::new(
+        let aggregation_circuit = AggregationCircuit::new::<CompressionCircuit>(
             &$param,
             $previous_snarks.as_ref(),
             &mut rng,

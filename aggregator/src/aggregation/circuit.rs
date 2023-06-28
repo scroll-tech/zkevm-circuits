@@ -3,7 +3,10 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
     plonk::{Circuit, ConstraintSystem, Error},
-    poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
+    poly::{
+        commitment::{Params, ParamsProver},
+        kzg::commitment::ParamsKZG,
+    },
 };
 use itertools::Itertools;
 use rand::Rng;
@@ -54,7 +57,7 @@ pub struct AggregationCircuit {
 impl AggregationCircuit {
     /// Build a new aggregation circuit for a list of __compressed__ snarks.
     /// Requires the chunk hashes that are used for the __fresh__ snark
-    pub fn new(
+    pub fn new<SnarkCircuit: CircuitExt<Fr>>(
         params: &ParamsKZG<Bn256>,
         snarks_without_padding: &[Snark],
         rng: impl Rng + Send,
@@ -98,8 +101,10 @@ impl AggregationCircuit {
 
         // pad the input snarks with dummy snarks
         let dummy_snarks = if snarks_len < MAX_AGG_SNARKS {
+            let mut params = params.clone();
+            params.downsize(9);
             let dummy_snark =
-                gen_dummy_snark::<CompressionCircuit, Kzg<Bn256, Bdfg21>>(params, None, vec![84]);
+                gen_dummy_snark::<SnarkCircuit, Kzg<Bn256, Bdfg21>>(&params, None, vec![84]);
             vec![dummy_snark; MAX_AGG_SNARKS - snarks_len]
         } else {
             vec![]
@@ -332,7 +337,7 @@ impl Circuit<Fr> for AggregationCircuit {
         let mut assigned_num_snarks = vec![];
         layouter.assign_region(
             || "glue circuits",
-            |mut region| {
+            |region| {
                 if first_pass {
                     first_pass = false;
                     return Ok(());
