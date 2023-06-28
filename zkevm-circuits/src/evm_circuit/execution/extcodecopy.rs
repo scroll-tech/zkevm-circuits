@@ -216,12 +216,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.code_offset
             .assign(region, offset, code_offset, F::from(code_size))?;
 
-        let copy_rwc_inc = step.copy_rw_counter_delta;
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                copy_rwc_inc
+                step.copy_rw_counter_delta
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),

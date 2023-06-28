@@ -246,54 +246,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
 
-        let src_begin = (return_data_offset + data_offset).low_u64();
-        let src_end = src_begin + size.low_u64();
-        assert!(
-            src_end <= (return_data_offset + return_data_size).low_u64(),
-            "should not happen copy out of bound"
-        );
-        let src_begin_slot = src_begin - src_begin % 32;
-        let src_end_slot = src_end - src_end % 32;
-
-        let dst_begin = dest_offset.low_u64();
-        let dst_end = (dest_offset + size).low_u64();
-        let dst_begin_slot = dst_begin - dst_begin % 32;
-        let dst_end_slot = dst_end - dst_end % 32;
-
-        let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot);
-        let src_end_slot = src_begin_slot + slot_count;
-        let dst_end_slot = dst_begin_slot + slot_count;
-
-        let copy_rwc_inc = if size.low_u64() == 0 {
-            0
-        } else {
-            2 * (slot_count / 32 + 1)
-        };
-
-        trace!(
-            r#"circuit:
-        src_addr = {src_begin}
-        dst_addr = {dst_begin}
-        copy_length = {size}
-
-        src_end = {src_end}
-        dst_end = {dst_end}
-
-        src_begin_slot = {src_begin_slot}
-        src_end_slot = {src_end_slot}
-        dst_begin_slot = {dst_begin_slot}
-        dst_end_slot = {dst_end_slot}
-        slot_count = {slot_count}
-
-        copy_rwc_inc = {copy_rwc_inc}"#
-        );
-
-        // rw_counter always increases by `size` reads and `size` writes
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                copy_rwc_inc
+                step.copy_rw_counter_delta
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
@@ -306,18 +263,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
                 .to_scalar()
                 .expect("unexpected U256 -> Scalar conversion failure"),
         )?;
-
-        trace!(
-            "copytable lookup: src_id: 0x{:x}, src_addr: 0x{:x}, src_addr_end: 0x{:x}, dst_id: 0x{:x}, dst_addr: 0x{:x}, length: 0x{:x}, rw_counter: 0x{:x}, rwc_inc: 0x{:x}",
-            last_callee_id.low_u64(),
-            return_data_offset.low_u64() + data_offset.low_u64(),
-            return_data_offset.low_u64() + return_data_size.low_u64(),
-            call.id,
-            dest_offset.low_u64(),
-            size.low_u64(),
-            step.rw_counter,
-            copy_rwc_inc
-        );
 
         Ok(())
     }
