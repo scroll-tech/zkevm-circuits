@@ -34,8 +34,6 @@ impl MockChunkCircuit {
 
 #[test]
 fn test_mock_chunk_prover() {
-    env_logger::init();
-
     let mut rng = test_rng();
 
     let circuit = MockChunkCircuit::random(&mut rng, true);

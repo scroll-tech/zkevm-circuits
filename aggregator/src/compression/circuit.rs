@@ -79,8 +79,8 @@ impl Circuit<Fr> for CompressionCircuit {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         // Too bad that configure function doesn't take additional input
         // it would be nicer to load parameters from API rather than ENV
-        let path = std::env::var("VERIFY_CONFIG")
-            .unwrap_or_else(|_| "configs/verify_circuit.config".to_owned());
+        let path = std::env::var("COMPRESSION_CONFIG")
+            .unwrap_or_else(|_| "configs/compression_wide.config".to_owned());
         let params: ConfigParams = serde_json::from_reader(
             File::open(path.as_str()).unwrap_or_else(|_| panic!("{path:?} does not exist")),
         )
