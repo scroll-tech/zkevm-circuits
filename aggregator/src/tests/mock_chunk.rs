@@ -22,6 +22,7 @@ pub(crate) struct MockChunkCircuit {
 }
 
 impl MockChunkCircuit {
+    #[allow(dead_code)]
     pub(crate) fn new(is_fresh: bool, chain_id: u64, chunk: ChunkHash) -> Self {
         MockChunkCircuit {
             is_fresh,
