@@ -122,7 +122,7 @@ chunk_pi_hash := keccak(chain_id || prev_state_root || post_state_root || withdr
 ```
 This relation is __not enforced__ within chunk circuit.
 
-Looking ahead, this hash is within aggregation circuit's hash table, but the validity of `chunk_pi_hash` is not checked there either.
+Looking ahead, this hash is within aggregation circuit's hash table, and the validity of `chunk_pi_hash` is checked there to ensure a uniform aggregation circuit across various number of snarks.
 
 ## Aggregation Circuit
 
@@ -135,8 +135,8 @@ We want to aggregate `k` snarks, each from a valid chunk. We generate `(n-k)` du
 There will be three configurations for Aggregation circuit.
 - FpConfig; used for snark aggregation
 - KeccakConfig: used to build keccak table
-- RlcConfig: used for compute RLCs
-    - will also com with a __phase 2__ column
+- RlcConfig: used to compute RLCs
+    - will also comes with a __phase 2__ column
 
 ### Public Input
 The public input of the aggregation circuit consists of
@@ -146,16 +146,22 @@ The public input of the aggregation circuit consists of
 ### Statements
 For snarks $s_1,\dots,s_k,\dots, s_n$ the aggregation circuit argues the following statements.
 
-1. The hash is correct
+1. The public input hash is correct and matches public input.
 ```
-batch_pi_hash   := keccak(chain_id || chunk_0.prev_state_root || chunk_n-1.post_state_root || chunk_n-1.withdraw_root || batch_data_hash)
+batch_pi_hash   := keccak(chain_id || chunk_1.prev_state_root || chunk_n.post_state_root || chunk_n.withdraw_root || batch_data_hash)
 ```
-for public input `batch_pi_hash`. The rest data fields are all private inputs.
+and `batch_pi_hash` matches public input.
 
 2. The chunks are continuous:
 
-for i in 1 ... __n__
+for i in 1 ... __n-1__
 ```
+c_i.post_state_root == c_{i+1}.prev_state_root
+```
+
+3. Each chunk's `pi_hash` is derived correctly.
+```
+for i in 1 ... __n__
 chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash)
 ```
 3. The last `(n-k)` are dummies:
@@ -163,8 +169,8 @@ chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || with
 for i in 1 ... n:
     is_padding = (i > k) // k is public input
     if is_padding:
-        chunk_i.prev_state_root = chunk_i.post_state_root 
-        chunk_i.withdraw_root = chunk_{i-1}.withdraw_root
+        chunk_i.prev_state_root == chunk_i.post_state_root 
+        chunk_i.withdraw_root == chunk_{i-1}.withdraw_root
 ```
 4. Data hash is correct
 ```
@@ -174,10 +180,11 @@ This keccak is the last keccak from the table, and has various length.
 This keccak can take upto $t:=\lceil32\times n/136\rceil$ rounds.
 To argue this statement, we do the following:
 
-    1. Extact the final `data_rlc` cell from each round. There are maximum $t$ of this, denoted by $r_1,\dots r_t$
-    2. Extract a challenge and then compute `rlc:= RLC(chunk_1.data_hash || ... || chunk_k.data_hash)` using a __phase 2__ column
-    3. assert $rlc \in \{r_1,\dots r_t\}$ via a naive lookup 
-        - we don't need to use lookup API. There is only $t$ elements and we can check equality one by one.
+1. Extact the final `data_rlc` cell from each round. There are maximum $t$ of this, denoted by $r_1,\dots r_t$
+    - __caveat__: will need to make sure the circuit is padded as if there are $t$ rounds, if the actual number of rounds is less than $t$.
+2. Extract a challenge and then compute `rlc:= RLC(chunk_1.data_hash || ... || chunk_k.data_hash)` using a __phase 2__ column
+3. assert $rlc \in \{r_1,\dots r_t\}$ via a naive lookup 
+    - we don't need to use lookup API. There is only $t$ elements and we can check equality one by one.
 
 
 <!-- 
