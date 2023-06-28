@@ -220,7 +220,8 @@ pub struct PiCircuitConfig<F: Field> {
     is_rlc_keccak: Column<Fixed>,
     q_keccak: Selector,
 
-    pi: Column<Instance>, // hi(keccak(rpi)), lo(keccak(rpi))
+    // 32 big-endian bytes of pi_hash
+    pi: Column<Instance>,
 
     // External tables
     block_table: BlockTable,
@@ -805,7 +806,6 @@ impl<F: Field> PiCircuitConfig<F> {
             challenges,
         )?;
         let chain_id_cell = cells[RPI_CELL_IDX].clone();
-        let chain_id_byte_cells = cells[3..].to_vec();
         // copy chain_id to block table
         for block_idx in 0..self.max_inner_blocks {
             region.constrain_equal(
@@ -1032,12 +1032,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 + N_BYTES_WORD,
         );
 
-        let instance_byte_cells = [
-            chain_id_byte_cells,
-            pi_hash_hi_byte_cells,
-            pi_hash_lo_byte_cells,
-        ]
-        .concat();
+        let instance_byte_cells = [pi_hash_hi_byte_cells, pi_hash_lo_byte_cells].concat();
 
         Ok((instance_byte_cells, connections))
     }
@@ -1533,13 +1528,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let pi_hash = self.public_data.get_pi();
 
         let public_inputs = iter::empty()
-            .chain(
-                self.public_data
-                    .chain_id
-                    .to_be_bytes()
-                    .into_iter()
-                    .map(|byte| F::from(byte as u64)),
-            )
             .chain(
                 pi_hash
                     .to_fixed_bytes()
