@@ -52,8 +52,12 @@ fn test_mock_aggregation() {
             param.downsize(k1);
             param
         };
-        let aggregation_circuit =
-            AggregationCircuit::new::<MockChunkCircuit>(&param, &layer_0_snarks, &mut rng, chunks.as_ref());
+        let aggregation_circuit = AggregationCircuit::new::<MockChunkCircuit>(
+            &param,
+            &layer_0_snarks,
+            &mut rng,
+            chunks.as_ref(),
+        );
         let instance = aggregation_circuit.instances();
         println!("instance length {:?}", instance.len());
 
@@ -122,8 +126,12 @@ fn test_aggregation_circuit() {
             param.downsize(k3);
             param
         };
-        let aggregation_circuit =
-            AggregationCircuit::new::<CompressionCircuit>(&param, &layer_2_snarks, &mut rng, chunks.as_ref());
+        let aggregation_circuit = AggregationCircuit::new::<CompressionCircuit>(
+            &param,
+            &layer_2_snarks,
+            &mut rng,
+            chunks.as_ref(),
+        );
         let instance = aggregation_circuit.instances();
 
         let mock_prover = MockProver::<Fr>::run(k3, &aggregation_circuit, instance).unwrap();
