@@ -1317,7 +1317,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 .zip(tag.iter())
             {
                 region.assign_fixed(
-                    || format!("block table row {}", offset),
+                    || format!("block table row {offset}"),
                     self.block_table.tag,
                     offset,
                     || row[0],
@@ -1327,7 +1327,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 let mut block_number_cell = None;
                 for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                     let cell = region.assign_advice(
-                        || format!("block table row {}", offset),
+                        || format!("block table row {offset}"),
                         *column,
                         offset,
                         || *value,

@@ -40,7 +40,7 @@ fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNE
 
     let prover = match MockProver::run(k, &circuit, public_inputs) {
         Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
+        Err(e) => panic!("{e:#?}"),
     };
     prover.assert_satisfied_par();
     prover.verify()

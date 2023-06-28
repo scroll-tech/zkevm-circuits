@@ -159,7 +159,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                                 if !data_refs.contains_label(label) {
                                     continue;
                                 }
-                                data_label = format!("({})", label);
+                                data_label = format!("({label})");
                             } else if !data_refs.contains_index(idx_data) {
                                 continue;
                             }
@@ -176,8 +176,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                             tests.push(StateTest {
                                 path: path.to_string(),
                                 id: format!(
-                                    "{}_d{}{}_g{}_v{}",
-                                    test_name, idx_data, data_label, idx_gas, idx_value
+                                    "{test_name}_d{idx_data}{data_label}_g{idx_gas}_v{idx_value}"
                                 ),
                                 env: env.clone(),
                                 pre: pre.clone(),
@@ -290,12 +289,12 @@ impl<'a> YamlStateTestBuilder<'a> {
         if let Some(as_str) = yaml.as_str() {
             parse::parse_address(as_str)
         } else if let Some(as_i64) = yaml.as_i64() {
-            let hex = format!("{:0>40}", as_i64);
+            let hex = format!("{as_i64:0>40}");
             Ok(Address::from_slice(&hex::decode(hex)?))
         } else if let Yaml::Real(as_real) = yaml {
             Ok(Address::from_str(as_real)?)
         } else {
-            bail!("cannot parse address {:?}", yaml);
+            bail!("cannot parse address {yaml:?}");
         }
     }
 
@@ -337,9 +336,9 @@ impl<'a> YamlStateTestBuilder<'a> {
         let as_str = if let Some(as_str) = yaml.as_str() {
             as_str.to_string()
         } else if let Some(as_int) = yaml.as_i64() {
-            format!("0x{:x}", as_int)
+            format!("0x{as_int:x}")
         } else {
-            bail!(format!("code '{:?}' not an str", yaml));
+            bail!(format!("code '{yaml:?}' not an str"));
         };
         parse::parse_code(self.compiler, &as_str)
     }
@@ -580,12 +579,7 @@ arith:
 
         let ccccc = address!("cccccccccccccccccccccccccccccccccccccccc");
         let check_ccccc_balance = |id: &str, v: u64| {
-            assert_eq!(
-                tcs[id].result[&ccccc].balance,
-                Some(U256::from(v)),
-                "{}",
-                id
-            )
+            assert_eq!(tcs[id].result[&ccccc].balance, Some(U256::from(v)), "{id}")
         };
 
         check_ccccc_balance("arith_d0_g0_v0", 1000000000001);
