@@ -536,7 +536,9 @@ impl<F: Field> RlpCircuitConfig<F> {
                 },
             );
 
-            // if (tx_id' == tx_id and format' != format) or (tx_id' != tx_id and tx_id' != 0)
+            // These two cases are not the very last non-padding RLP instance.
+            // 1. (tx_id' == tx_id and format' != format)
+            // 2. (tx_id' != tx_id and tx_id' != 0)
             cb.condition(
                 sum::expr([
                     // case 1
@@ -568,6 +570,23 @@ impl<F: Field> RlpCircuitConfig<F> {
                         "bytes_value and bytes_rlc are equal at the first index",
                         meta.query_advice(data_table.byte_value, Rotation::next()),
                         meta.query_advice(data_table.bytes_rlc, Rotation::next()),
+                    );
+                },
+            );
+
+            // For the very last non-padding RLP instance, we have
+            //   tx_id' != tx_id && tx_id' == 0
+            cb.condition(
+                and::expr([
+                    is_padding_in_dt.expr(Rotation::next())(meta),
+                    not::expr(tx_id_check_in_dt.is_equal_expression.expr()),
+                ]),
+                |cb| {
+                    // byte_rev_idx == 1
+                    cb.require_equal(
+                        "byte_rev_idx is 1 at the last index",
+                        meta.query_advice(data_table.byte_rev_idx, Rotation::cur()),
+                        1.expr(),
                     );
                 },
             );
