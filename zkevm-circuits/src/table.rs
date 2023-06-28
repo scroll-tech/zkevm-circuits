@@ -1493,7 +1493,7 @@ pub struct CopyTable {
     pub src_addr_end: Column<Advice>,
     /// The number of bytes left to be copied.
     pub bytes_left: Column<Advice>,
-    /// The number of non-padding bytes left to be copied.
+    /// The number of non-masked bytes left to be copied.
     pub real_bytes_left: Column<Advice>,
     /// mask indicates the byte is actual coped or padding to memory word
     pub value_wrod_rlc: Column<Advice>,
