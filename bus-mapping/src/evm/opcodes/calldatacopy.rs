@@ -19,7 +19,7 @@ impl Opcode for Calldatacopy {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -86,6 +86,7 @@ fn gen_calldatacopy_step(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
@@ -116,15 +117,11 @@ fn gen_copy_event(
         .min(src_addr_end);
     let dst_addr = memory_offset;
 
-    // Work on a temporary ExecStep. The references to new RW ops will be discarded.
-    let mut exec_step = state.new_step(geth_step)?;
-
     if state.call()?.is_root {
         let copy_steps = state.gen_copy_steps_for_call_data_root(
-            &mut exec_step,
+            exec_step,
             src_addr,
             dst_addr,
-            src_addr_end,
             length,
             memory_updated,
         )?;
@@ -144,9 +141,8 @@ fn gen_copy_event(
         })
     } else {
         let (read_steps, write_steps) = state.gen_copy_steps_for_call_data_non_root(
-            &mut exec_step,
+            exec_step,
             src_addr,
-            src_addr_end,
             dst_addr,
             length,
             memory_updated,
@@ -252,8 +248,8 @@ mod calldatacopy_tests {
         let caller_id = builder.block.txs()[0].calls()[step.call_index].caller_id;
         let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
 
-        // 3 stack reads + 3 call context reads.
-        assert_eq!(step.bus_mapping_instance.len(), 6);
+        // 3 stack reads + 3 call context reads + 1 copy read + 1 copy write.
+        assert_eq!(step.bus_mapping_instance.len(), 8);
 
         // 3 stack reads.
         assert_eq!(
@@ -431,7 +427,8 @@ mod calldatacopy_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATACOPY))
             .unwrap();
 
-        assert_eq!(step.bus_mapping_instance.len(), 5);
+        // 3 stack reads + 2 call context reads + 2 copy write.
+        assert_eq!(step.bus_mapping_instance.len(), 7);
 
         assert_eq!(
             [0, 1, 2]
