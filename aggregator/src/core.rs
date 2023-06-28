@@ -1,6 +1,5 @@
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, G1Affine},
-    plonk::Error,
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use rand::Rng;
@@ -11,6 +10,7 @@ use snark_verifier::{
         AccumulationSchemeProver,
     },
     verifier::PlonkVerifier,
+    Error,
 };
 use snark_verifier_sdk::{
     types::{PoseidonTranscript, Shplonk, POSEIDON_SPEC},

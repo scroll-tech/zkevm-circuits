@@ -69,7 +69,7 @@ macro_rules! compression_layer_snark {
 
         let is_fresh = if $layer_index == 1 { true } else { false };
         let compression_circuit =
-            CompressionCircuit::new(&$param, $previous_snark.clone(), is_fresh, &mut rng);
+            CompressionCircuit::new(&$param, $previous_snark.clone(), is_fresh, &mut rng).unwrap();
 
         let pk = gen_pk(&$param, &compression_circuit, None);
         // build the snark for next layer
@@ -111,7 +111,7 @@ macro_rules! compression_layer_evm {
         let mut rng = test_rng();
 
         let compression_circuit =
-            CompressionCircuit::new(&$param, $previous_snark, false, &mut rng);
+            CompressionCircuit::new(&$param, $previous_snark, false, &mut rng).unwrap();
 
         let instances = compression_circuit.instances();
 

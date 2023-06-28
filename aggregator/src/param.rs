@@ -30,7 +30,7 @@ impl ConfigParams {
         }
     }
 
-    pub(crate) fn _compress_wide_param() -> Self {
+    pub(crate) fn compress_wide_param() -> Self {
         Self {
             strategy: FpStrategy::Simple,
             degree: 22,

@@ -84,7 +84,7 @@ impl Circuit<Fr> for CompressionCircuit {
         let params: ConfigParams = serde_json::from_reader(
             File::open(path.as_str()).unwrap_or_else(|_| panic!("{path:?} does not exist")),
         )
-        .unwrap_or_else(|_| panic!("Fail to deserialize {path:?}"));
+        .unwrap_or_else(|_| ConfigParams::compress_wide_param());
 
         log::info!(
             "compression circuit configured with k = {} and {:?} advice columns",
@@ -173,14 +173,15 @@ impl CompressionCircuit {
         snark: Snark,
         is_fresh: bool,
         rng: impl Rng + Send,
-    ) -> Self {
+    ) -> Result<Self, snark_verifier::Error> {
         let svk = params.get_g()[0].into();
 
         // for the proof compression, only ONE snark is under accumulation
         // it is turned into an accumulator via KzgAs accumulation scheme
         // in case not first time:
         // (old_accumulator, public inputs) -> (new_accumulator, public inputs)
-        let (accumulator, as_proof) = extract_accumulators_and_proof(params, &[snark.clone()], rng);
+        let (accumulator, as_proof) =
+            extract_accumulators_and_proof(params, &[snark.clone()], rng)?;
 
         // the instance for the outer circuit is
         // - new accumulator, consists of 12 elements
@@ -214,13 +215,13 @@ impl CompressionCircuit {
             }
         }
 
-        Self {
+        Ok(Self {
             svk,
             snark: snark.into(),
             is_fresh,
             flattened_instances,
             as_proof: Value::known(as_proof),
-        }
+        })
     }
 
     pub fn succinct_verifying_key(&self) -> &Svk {
