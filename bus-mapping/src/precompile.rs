@@ -116,7 +116,7 @@ impl PrecompileCalls {
             Self::Ecrecover | Self::Bn128Add => Some(128),
             Self::Bn128Mul => Some(96),
             Self::Blake2F => Some(213),
-            Self::Modexp => Some(192),
+            Self::Modexp => Some(MODEXP_INPUT_LIMIT),
             _ => None,
         }
     }
@@ -163,6 +163,8 @@ impl EcrecoverAuxData {
 
 /// size limit of modexp
 pub const MODEXP_SIZE_LIMIT: usize = 32;
+/// size of input limit
+pub const MODEXP_INPUT_LIMIT: usize = 192;
 
 /// Auxiliary data for Modexp
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

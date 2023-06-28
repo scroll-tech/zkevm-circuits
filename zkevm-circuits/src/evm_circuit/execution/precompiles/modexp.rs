@@ -2,7 +2,7 @@ use eth_types::{Field, ToScalar, U256};
 use gadgets::{binary_number::AsBits, util::{self, Expr}};
 use halo2_proofs::{circuit::Value, plonk::{Expression, Error}};
 
-use bus_mapping::precompile::{PrecompileAuxData, MODEXP_SIZE_LIMIT};
+use bus_mapping::precompile::{PrecompileAuxData, MODEXP_SIZE_LIMIT, MODEXP_INPUT_LIMIT};
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -120,6 +120,8 @@ const SIZE_LIMIT: usize = MODEXP_SIZE_LIMIT;
 const SIZE_REPRESENT_BITS: usize = 6;
 const SIZE_REPRESENT_BYTES: usize = SIZE_LIMIT/256 + 1;
 const INPUT_LIMIT: usize = 32*6;
+const INPUT_REPRESENT_BYTES: usize = MODEXP_INPUT_LIMIT/256 + 1;
+const INPUT_REPRESENT_BITS: usize = 8;
 
 // rlc word, in the reversed byte order
 fn rlc_word_rev<F: Field, const N: usize>(cells: &[Cell<F>; N], randomness: Expression<F>) -> Expression<F> {
@@ -225,11 +227,14 @@ struct ModExpInputs<F> {
     exp_pow: RandPow<F>,
     exp: Word<F>,
     input_valid: Cell<F>,
+    padding_pow: RandPowRepresent<F, INPUT_REPRESENT_BITS>,
+    is_input_need_padding: LtGadget<F, INPUT_REPRESENT_BYTES>,
 }
 
 impl<F: Field> ModExpInputs<F> {
     pub fn configure(
         cb: &mut EVMConstraintBuilder<F>,
+        input_bytes_len: Expression<F>,
         input_bytes_acc: Expression<F>,
     ) -> Self {
         let base_len = SizeRepresent::configure(cb);
@@ -254,29 +259,55 @@ impl<F: Field> ModExpInputs<F> {
             ]),
         );
 
+        let base_len_expected = util::select::expr(
+            input_valid.expr(), 
+            base_len.value(), 
+            SIZE_LIMIT.expr(),
+        );
+
+        let exp_len_expected = util::select::expr(
+            input_valid.expr(), 
+            exp_len.value(), 
+            SIZE_LIMIT.expr(),
+        );
+
+        let modulus_len_expected = util::select::expr(
+            input_valid.expr(), 
+            modulus_len.value(), 
+            SIZE_LIMIT.expr(),
+        );
+
+        let input_expected = 96.expr() + base_len_expected.clone() + exp_len_expected.clone() + modulus_len_expected.clone();
+
+        let is_input_need_padding = LtGadget::construct(
+            cb, 
+            input_bytes_len.clone(),
+            input_expected.clone(),
+        );
+
+        let padding_pow = RandPowRepresent::configure(cb, 
+            cb.challenges().keccak_input(),
+            util::select::expr(
+                is_input_need_padding.expr(), 
+                input_expected - input_bytes_len, 
+                0.expr(),
+            )
+        );
+
         // we put correct size in each input word if input is valid
         // else we just put as most as possible bytes (32) into it
         // so we finally handle the memory in limited sized (32*3)
         let base_pow = RandPow::configure(cb, 
             cb.challenges().keccak_input(),
-            util::select::expr(input_valid.expr(), 
-                base_len.value(), 
-                32.expr(),
-            ),
+            base_len_expected,
         );
         let exp_pow = RandPow::configure(cb, 
             cb.challenges().keccak_input(),
-            util::select::expr(input_valid.expr(), 
-                exp_len.value(), 
-                32.expr(),
-            ),
+            exp_len_expected,
         );
         let modulus_pow = RandPow::configure(cb,
             cb.challenges().keccak_input(),
-            util::select::expr(input_valid.expr(), 
-                modulus_len.value(), 
-                32.expr(),
-            ),       
+            modulus_len_expected,       
         );
 
         let r_pow_base = r_pow_64.clone() * base_pow.pow();
@@ -304,6 +335,8 @@ impl<F: Field> ModExpInputs<F> {
             exp_pow,
             exp,
             input_valid,
+            padding_pow,
+            is_input_need_padding,
         }
     }
 
@@ -451,7 +484,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             cb.execution_state().precompile_base_gas_cost().expr(),
         );
 
-        let input = ModExpInputs::configure(cb, input_bytes_acc.expr());
+        let input = ModExpInputs::configure(cb, call_data_length.expr(), input_bytes_acc.expr());
 
         let call_success = util::and::expr([
             input.is_valid(),
