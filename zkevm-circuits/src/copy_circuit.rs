@@ -915,7 +915,10 @@ impl<F: Field> CopyCircuitConfig<F> {
         max_copy_rows: usize,
         challenges: Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let copy_rows_needed = copy_events.iter().map(|c| c.bytes.len() * 2).sum::<usize>();
+        let copy_rows_needed = copy_events
+            .iter()
+            .map(|c| c.copy_bytes.bytes.len() * 2)
+            .sum::<usize>();
 
         // The `+ 2` is used to take into account the two extra empty copy rows needed
         // to satisfy the query at `Rotation(2)` performed inside of the
@@ -952,10 +955,10 @@ impl<F: Field> CopyCircuitConfig<F> {
                         "offset is {} before {}th copy event(bytes len: {}): {:?}",
                         offset,
                         ev_idx,
-                        copy_event.bytes.len(),
+                        copy_event.copy_bytes.bytes.len(),
                         {
                             let mut copy_event = copy_event.clone();
-                            copy_event.bytes.clear();
+                            copy_event.copy_bytes.bytes.clear();
                             copy_event
                         }
                     );
@@ -1283,7 +1286,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
             block
                 .copy_events
                 .iter()
-                .map(|c| c.bytes.len() * 2)
+                .map(|c| c.copy_bytes.bytes.len() * 2)
                 .sum::<usize>()
                 + 2,
             block.circuits_params.max_copy_rows,

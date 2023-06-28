@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     Error,
 };
@@ -109,8 +109,7 @@ impl Opcode for Sha3 {
                 dst_id: NumberOrHash::Number(call_id),
                 log_id: None,
                 rw_counter_start,
-                bytes: copy_steps,
-                aux_bytes: None,
+                copy_bytes: CopyBytes::new(copy_steps, None, None, None),
             },
         );
 
@@ -294,7 +293,7 @@ pub mod sha3_tests {
         //assert_eq!(copy_events[0].bytes.len(), size);
 
         let mut mask_count = 0;
-        for (idx, (value, is_code, is_mask)) in copy_events[0].CopyBytes.bytes.iter().enumerate() {
+        for (idx, (value, is_code, is_mask)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             if !is_mask {
                 assert_eq!(Some(value), memory_view.get(idx - mask_count));
                 assert!(!is_code);

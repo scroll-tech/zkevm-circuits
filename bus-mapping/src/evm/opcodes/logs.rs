@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
     },
     operation::{CallContextField, TxLogField},
     Error,
@@ -149,8 +149,7 @@ fn gen_copy_event(
         dst_addr: 0,
         log_id: Some(state.tx_ctx.log_id as u64 + 1),
         rw_counter_start,
-        bytes: read_steps,
-        aux_bytes: Some(write_steps),
+        copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None, None),
     })
 }
 

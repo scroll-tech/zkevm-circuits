@@ -1,7 +1,8 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CallKind, CircuitInputStateRef, CodeSource, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CallKind, CircuitInputStateRef, CodeSource, CopyBytes, CopyDataType, CopyEvent, ExecStep,
+        NumberOrHash,
     },
     evm::opcodes::precompiles::gen_associated_ops as precompile_associated_ops,
     operation::{AccountField, CallContextField, MemoryWordOp, TxAccessListAccountOp, RW},
@@ -373,8 +374,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             dst_addr: 0,
                             log_id: None,
                             rw_counter_start,
-                            bytes: copy_steps,
-                            aux_bytes: None,
+                            copy_bytes: CopyBytes::new(copy_steps, None, None, None),
                         },
                     );
                 }
@@ -399,8 +399,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             dst_addr: 0,
                             log_id: None,
                             rw_counter_start,
-                            bytes: copy_steps,
-                            aux_bytes: None,
+                            copy_bytes: CopyBytes::new(copy_steps, None, None, None),
                         },
                     );
                 }
@@ -429,8 +428,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             dst_addr: call.return_data_offset,
                             log_id: None,
                             rw_counter_start,
-                            bytes: read_steps,
-                            aux_bytes: Some(write_steps),
+                            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None, None),
                         },
                     );
                 }

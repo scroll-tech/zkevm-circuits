@@ -1543,6 +1543,7 @@ impl CopyTable {
         // rlc_acc
         let rlc_acc = {
             let values = copy_event
+                .copy_bytes
                 .bytes
                 .iter()
                 .filter(|(_, _, mask)| !mask)
@@ -1564,6 +1565,7 @@ impl CopyTable {
         let mut rlc_acc_write = Value::known(F::zero());
 
         let non_mask_pos = copy_event
+            .copy_bytes
             .bytes
             .iter()
             .position(|&step| !step.2)
@@ -1581,11 +1583,11 @@ impl CopyTable {
             0
         };
 
-        let read_steps = copy_event.bytes.iter();
-        let copy_steps = if let Some(ref write_steps) = copy_event.aux_bytes {
+        let read_steps = copy_event.copy_bytes.bytes.iter();
+        let copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
             read_steps.zip(write_steps.iter())
         } else {
-            read_steps.zip(copy_event.bytes.iter())
+            read_steps.zip(copy_event.copy_bytes.bytes.iter())
         };
 
         for (step_idx, (is_read_step, copy_step)) in copy_steps
@@ -1615,7 +1617,7 @@ impl CopyTable {
             // is_first
             let is_first = Value::known(if step_idx == 0 { F::one() } else { F::zero() });
             // is last
-            let is_last = if step_idx == copy_event.bytes.len() * 2 - 1 {
+            let is_last = if step_idx == copy_event.copy_bytes.bytes.len() * 2 - 1 {
                 Value::known(F::one())
             } else {
                 Value::known(F::zero())
@@ -1715,7 +1717,8 @@ impl CopyTable {
             };
 
             // bytes_left (final padding word length )
-            let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
+            let bytes_left =
+                u64::try_from(copy_event.copy_bytes.bytes.len() * 2 - step_idx).unwrap() / 2;
             // value
             let value = Value::known(F::from(copy_step.value as u64));
 

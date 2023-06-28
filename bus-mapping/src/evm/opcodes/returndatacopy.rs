@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     evm::Opcode,
     operation::CallContextField,
@@ -128,8 +128,7 @@ fn gen_copy_event(
         dst_addr,
         log_id: None,
         rw_counter_start,
-        bytes: read_steps,
-        aux_bytes: Some(write_steps),
+        copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None, None),
     })
 }
 

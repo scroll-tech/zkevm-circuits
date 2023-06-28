@@ -1,6 +1,8 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, NumberOrHash,
+    },
     evm::opcodes::ExecStep,
     operation::{AccountField, AccountOp, CallContextField, MemoryWordOp, RW},
     state_db::CodeDB,
@@ -271,8 +273,7 @@ fn handle_copy(
             dst_id: NumberOrHash::Number(destination.id),
             dst_addr: destination.offset.try_into().unwrap(),
             log_id: None,
-            bytes: read_steps,
-            aux_bytes: Some(write_steps),
+            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None, None),
         },
     );
 
@@ -357,8 +358,7 @@ fn handle_create(
             dst_id,
             dst_addr: 0,
             log_id: None,
-            bytes: copy_steps,
-            aux_bytes: None, // FIXME
+            copy_bytes: CopyBytes::new(copy_steps, None, None, None),
         },
     );
 
