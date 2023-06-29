@@ -238,10 +238,10 @@ impl Config {
             (self.limb_difference_inverse, "LO_limb_difference_inverse"),
         ]
         .iter()
-        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+        .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
         // fixed column
         region.name_column(
-            || format!("{}_LO_upper_limb_difference", prefix),
+            || format!("{prefix}_LO_upper_limb_difference"),
             self.selector,
         );
     }

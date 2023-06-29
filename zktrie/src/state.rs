@@ -12,21 +12,6 @@ pub mod witness;
 
 use std::{cell::RefCell, fmt, rc::Rc};
 
-/// turn a integer (expressed by field) into MPTProofType
-pub fn as_proof_type(v: i32) -> MPTProofType {
-    match v {
-        0 => MPTProofType::PoseidonCodeHashExists,
-        1 => MPTProofType::NonceChanged,
-        2 => MPTProofType::BalanceChanged,
-        3 => MPTProofType::CodeHashExists,
-        4 => MPTProofType::CodeSizeExists,
-        5 => MPTProofType::AccountDoesNotExist,
-        6 => MPTProofType::StorageChanged,
-        7 => MPTProofType::StorageDoesNotExist,
-        _ => unreachable!("unexpected proof type number {:?}", v),
-    }
-}
-
 /// represent a storage state being applied in specified block
 #[derive(Clone, Default)]
 pub struct ZktrieState {

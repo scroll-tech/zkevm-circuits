@@ -110,7 +110,7 @@ impl Bytecode {
         }
         // Check if the full value could be pushed
         for byte in bytes.iter().skip(n as usize) {
-            debug_assert!(*byte == 0u8, "value too big for PUSH{}: {}", n, value);
+            debug_assert!(*byte == 0u8, "value too big for PUSH{n}: {value}");
         }
         self
     }
@@ -125,8 +125,7 @@ impl Bytecode {
     pub fn insert_marker(&mut self, marker: &str, pos: usize) {
         debug_assert!(
             !self.markers.contains_key(marker),
-            "marker already used: {}",
-            marker
+            "marker already used: {marker}"
         );
         self.markers.insert(marker.to_string(), pos);
     }
@@ -136,14 +135,14 @@ impl Bytecode {
         *self
             .markers
             .get(&marker.to_string())
-            .unwrap_or_else(|| panic!("marker '{}' not found", marker))
+            .unwrap_or_else(|| panic!("marker '{marker}' not found"))
     }
 
     /// Setup state
     pub fn setup_state(&mut self) -> &mut Self {
         self.append(&crate::bytecode! {
-            PUSH1(0x80u64)
-            PUSH1(0x40u64)
+            PUSH1(0x80u64) // value
+            PUSH1(0x40u64) // offset
             MSTORE
         });
         self
@@ -247,8 +246,8 @@ impl FromStr for OpcodeWithData {
 impl ToString for OpcodeWithData {
     fn to_string(&self) -> String {
         match self {
-            OpcodeWithData::Opcode(opcode) => format!("{:?}", opcode),
-            OpcodeWithData::PushWithData(n, word) => format!("PUSH{}({})", n, word),
+            OpcodeWithData::Opcode(opcode) => format!("{opcode:?}"),
+            OpcodeWithData::PushWithData(n, word) => format!("PUSH{n}({word})"),
         }
     }
 }

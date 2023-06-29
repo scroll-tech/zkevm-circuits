@@ -13,7 +13,7 @@ use eth_types::{address, bytecode, geth_types::GethData, Bytecode, Word};
 #[test]
 fn super_circuit_degree() {
     let mut cs = ConstraintSystem::<Fr>::default();
-    SuperCircuit::<_, 1, 32, 64, 0x100>::configure(&mut cs);
+    SuperCircuit::<Fr, 1, 32, 64, 0x100>::configure(&mut cs);
     log::info!("super circuit degree: {}", cs.degree());
     log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
     assert!(cs.degree() <= 9);
@@ -28,6 +28,7 @@ fn test_super_circuit<
     block: GethData,
     circuits_params: CircuitsParams,
 ) {
+    set_var("COINBASE", "0x0000000000000000000000000000000000000000");
     set_var("CHAIN_ID", MOCK_CHAIN_ID.to_string());
     let mut difficulty_be_bytes = [0u8; 32];
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
