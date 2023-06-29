@@ -1033,25 +1033,42 @@ impl<F: Field> RlpCircuitConfig<F> {
                 cb.condition(
                     meta.query_advice(transit_to_new_rlp_instance, Rotation::cur()),
                     |cb| {
-                        let tx_id = meta.query_advice(rlp_table.tx_id, Rotation::cur());
-                        let tx_id_next = meta.query_advice(rlp_table.tx_id, Rotation::next());
-                        let format = meta.query_advice(rlp_table.format, Rotation::cur());
-                        let format_next = meta.query_advice(rlp_table.format, Rotation::next());
-                        let tag_next = tag_next_expr(meta);
+                        let tag_next = meta.query_advice(tag, Rotation::next());
 
                         // state transition.
                         update_state!(meta, cb, byte_idx, 1);
                         update_state!(meta, cb, depth, 0);
                         update_state!(meta, cb, state, DecodeTagStart);
-                        cb.require_zero(
-                            "(tx_id' == tx_id + 1) or (format' == format + 1)",
-                            (tx_id_next - tx_id - 1.expr()) * (format_next - format - 1.expr()),
-                        );
+
                         cb.require_zero(
                             "tag == TxType or tag == BeginList",
                             (tag_next.expr() - TxType.expr())
                                 * (tag_next.expr() - BeginList.expr()),
                         );
+                    },
+                );
+                // tx_id' == tx_id => format' == format + 1
+                cb.condition(
+                    and::expr([
+                        meta.query_advice(transit_to_new_rlp_instance, Rotation::cur()),
+                        tx_id_check_in_sm.is_equal_expression.expr(),
+                    ]),
+                    |cb| {
+                        let format = meta.query_advice(rlp_table.format, Rotation::cur());
+                        let format_next = meta.query_advice(rlp_table.format, Rotation::next());
+                        cb.require_equal("format' == format + 1", format_next, format + 1.expr());
+                    },
+                );
+                // tx_id' != tx_id => tx_id' == tx_id + 1
+                cb.condition(
+                    and::expr([
+                        meta.query_advice(transit_to_new_rlp_instance, Rotation::cur()),
+                        not::expr(tx_id_check_in_sm.is_equal_expression.expr()),
+                    ]),
+                    |cb| {
+                        let tx_id = meta.query_advice(rlp_table.tx_id, Rotation::cur());
+                        let tx_id_next = meta.query_advice(rlp_table.tx_id, Rotation::next());
+                        cb.require_equal("tx_id' == tx_id + 1", tx_id_next, tx_id + 1.expr());
                     },
                 );
                 cb.condition(
