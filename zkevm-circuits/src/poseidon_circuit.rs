@@ -67,7 +67,6 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         // without any feature we just synthesis an empty poseidon circuit
         #[cfg(feature = "zktrie")]
         {
-            // TODO: check here to avoid duplicate calculation
             let traces: Vec<(MPTProofType, SMTTrace)> = block
                 .mpt_updates
                 .proof_types
@@ -79,6 +78,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
             let triples: Vec<(Fr, Fr, Fr)> = hash_traces(&proofs);
             let triples: Vec<(F, F, F)> = triples
                 .into_iter()
+                .unique_by(|(a, b, c)| (a.to_bytes(), b.to_bytes(), c.to_bytes()))
                 .map(|(a, b, c)| (a.into(), b.into(), c.into()))
                 .collect();
             for elems in &triples {
@@ -86,6 +86,15 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
                     log::info!("zero hash {:?}", elems);
                 }
             }
+
+            if triples.len() > max_hashes {
+                log::error!(
+                    "poseidon max_hashes: {:?} too low. {:?} needed",
+                    max_hashes,
+                    triples.len()
+                );
+            }
+
             poseidon_table_data.constant_inputs_with_check(&triples);
         }
         #[cfg(feature = "poseidon-codehash")]
