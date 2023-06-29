@@ -1372,7 +1372,7 @@ mod copy_circuit_stats {
                 block
                     .copy_events
                     .iter()
-                    .map(|c| c.bytes.len() * 2)
+                    .map(|c| c.copy_bytes.bytes.len() * 2)
                     .sum::<usize>()
             },
         );

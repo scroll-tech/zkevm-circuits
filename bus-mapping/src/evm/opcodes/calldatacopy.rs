@@ -144,7 +144,7 @@ fn gen_copy_event(
             copy_bytes: copy_bytes,
         })
     } else {
-        let (read_steps, write_steps) = state.gen_copy_steps_for_call_data_non_root(
+        let (read_steps, write_steps, prev_bytes) = state.gen_copy_steps_for_call_data_non_root(
             &mut exec_step,
             src_addr,
             src_addr_end,
@@ -163,8 +163,8 @@ fn gen_copy_event(
             dst_addr,
             log_id: None,
             rw_counter_start,
-            //todo: fetch pre read and write bytes of CopyBytes
-            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None),
+            //fetch pre read and write bytes of CopyBytes
+            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), Some(prev_bytes)),
         })
     }
 }
