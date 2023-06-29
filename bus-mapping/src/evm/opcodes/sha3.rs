@@ -109,7 +109,7 @@ impl Opcode for Sha3 {
                 dst_id: NumberOrHash::Number(call_id),
                 log_id: None,
                 rw_counter_start,
-                copy_bytes: CopyBytes::new(copy_steps, None, None, None),
+                copy_bytes: CopyBytes::new(copy_steps, None, None),
             },
         );
 

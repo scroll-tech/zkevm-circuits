@@ -374,7 +374,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             dst_addr: 0,
                             log_id: None,
                             rw_counter_start,
-                            copy_bytes: CopyBytes::new(copy_steps, None, None, None),
+                            copy_bytes: CopyBytes::new(copy_steps, None, None),
                         },
                     );
                 }
@@ -399,7 +399,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             dst_addr: 0,
                             log_id: None,
                             rw_counter_start,
-                            copy_bytes: CopyBytes::new(copy_steps, None, None, None),
+                            copy_bytes: CopyBytes::new(copy_steps, None, None),
                         },
                     );
                 }
@@ -428,7 +428,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             dst_addr: call.return_data_offset,
                             log_id: None,
                             rw_counter_start,
-                            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None, None),
+                            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None),
                         },
                     );
                 }

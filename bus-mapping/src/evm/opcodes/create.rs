@@ -391,7 +391,7 @@ fn handle_copy(
             dst_id: NumberOrHash::Hash(code_hash),
             dst_addr: 0,
             log_id: None,
-            copy_bytes: CopyBytes::new(copy_steps, None, None, None),
+            copy_bytes: CopyBytes::new(copy_steps, None, None),
         },
     );
 

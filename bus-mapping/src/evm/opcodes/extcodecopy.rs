@@ -168,7 +168,7 @@ fn gen_copy_event(
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         log_id: None,
         rw_counter_start,
-        copy_bytes: CopyBytes::new(copy_steps, None, None, None),
+        copy_bytes: CopyBytes::new(copy_steps, None, None),
     })
 }
 

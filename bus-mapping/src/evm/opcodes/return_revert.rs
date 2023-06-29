@@ -273,7 +273,7 @@ fn handle_copy(
             dst_id: NumberOrHash::Number(destination.id),
             dst_addr: destination.offset.try_into().unwrap(),
             log_id: None,
-            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None, None),
+            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None),
         },
     );
 
@@ -358,7 +358,7 @@ fn handle_create(
             dst_id,
             dst_addr: 0,
             log_id: None,
-            copy_bytes: CopyBytes::new(copy_steps, None, None, None),
+            copy_bytes: CopyBytes::new(copy_steps, None, None),
         },
     );
 

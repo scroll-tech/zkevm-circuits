@@ -342,11 +342,8 @@ pub struct CopyBytes {
     /// Represents the list of (bytes, is_code, mask) copied during this copy event
     pub bytes: Vec<(u8, bool, bool)>,
     /// Represents the list of (bytes, is_code, mask) read to copy during this copy event, used for
-    /// memory to memory case
+    /// memory to memoryb write case
     pub aux_bytes: Option<Vec<(u8, bool, bool)>>,
-    /// Represents the list of bytes before this copy event, it is reuqired for memory read copy
-    /// event
-    pub bytes_read_prev: Option<Vec<u8>>,
     /// Represents the list of bytes before this copy event, it is reuqired for memory write copy
     /// event
     pub bytes_write_prev: Option<Vec<u8>>,
@@ -357,13 +354,11 @@ impl CopyBytes {
     pub fn new(
         bytes: Vec<(u8, bool, bool)>,
         aux_bytes: Option<Vec<(u8, bool, bool)>>,
-        bytes_read_prev: Option<Vec<u8>>,
         bytes_write_prev: Option<Vec<u8>>,
     ) -> Self {
         Self {
             bytes,
             aux_bytes,
-            bytes_read_prev,
             bytes_write_prev,
         }
     }

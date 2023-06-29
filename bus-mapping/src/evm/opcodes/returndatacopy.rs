@@ -128,7 +128,7 @@ fn gen_copy_event(
         dst_addr,
         log_id: None,
         rw_counter_start,
-        copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None, None),
+        copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None),
     })
 }
 

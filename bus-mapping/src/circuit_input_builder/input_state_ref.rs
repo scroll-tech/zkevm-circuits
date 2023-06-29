@@ -320,6 +320,34 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Push a write type [`MemoryWordOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    pub fn memory_write_word_prev_bytes(
+        &mut self,
+        step: &mut ExecStep,
+        address: MemoryAddress, //Caution: make sure this address = slot passing
+        value: Word,
+    ) -> Result<(Vec<u8>), Error> {
+        let mem = &mut self.call_ctx_mut()?.memory;
+        let value_prev = mem.read_word(address);
+        let value_prev_bytes = value_prev.to_be_bytes();
+
+        let value_bytes = value.to_be_bytes();
+        mem.write_chunk(address, &value_bytes);
+
+        let call_id = self.call()?.call_id;
+        self.push_op(
+            step,
+            RW::WRITE,
+            MemoryWordOp::new_write(call_id, address, value, value_prev),
+        );
+        Ok(value_prev_bytes.to_vec())
+    }
+
+    /// Push a write type [`MemoryWordOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and `caller_id`, and then
     /// adds a reference to the stored operation ([`OperationRef`]) inside
     /// the bus-mapping instance of the current [`ExecStep`].  Then increase
@@ -1911,12 +1939,12 @@ impl<'a> CircuitInputStateRef<'a> {
         _src_addr_end: u64, // for internal call, memory dest ending addr
         copy_length: u64,   // number of bytes to copy, without padding
         memory_updated: Memory,
-    ) -> Result<Vec<(u8, bool, bool)>, Error> {
+    ) -> Result<(Vec<(u8, bool, bool)>, Vec<u8>), Error> {
         assert!(self.call()?.is_root);
-
+        let mut prev_bytes: Vec<u8> = vec![];
         let mut copy_steps = Vec::with_capacity(copy_length as usize);
         if copy_length == 0 {
-            return Ok(copy_steps);
+            return Ok((copy_steps, prev_bytes));
         }
 
         let (dst_begin_slot, full_length, _) = Memory::align_range(dst_addr, copy_length);
@@ -1941,11 +1969,13 @@ impl<'a> CircuitInputStateRef<'a> {
         // memory word writes to destination word
         for chunk in calldata_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(chunk);
-            self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
+            let mut prev_bytes_write =
+                self.memory_write_word_prev_bytes(exec_step, chunk_index.into(), dest_word)?;
+            prev_bytes.append(&mut prev_bytes_write);
             chunk_index += 32;
         }
 
-        Ok(copy_steps)
+        Ok((copy_steps, prev_bytes))
     }
 
     pub(crate) fn gen_copy_steps_for_call_data_non_root(

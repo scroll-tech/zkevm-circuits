@@ -110,7 +110,7 @@ fn gen_copy_event(
         log_id: None,
         rw_counter_start,
         //todo: fetch pre write bytes of CopyBytes
-        copy_bytes: CopyBytes::new(copy_steps, None, None, None),
+        copy_bytes: CopyBytes::new(copy_steps, None, None),
     })
 }
 

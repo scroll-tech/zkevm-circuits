@@ -7,7 +7,6 @@ use crate::{
     Error,
 };
 use eth_types::GethExecStep;
-use revm_precompile::primitives::bitvec::macros::internal::funty::Fundamental;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Calldatacopy;
@@ -120,7 +119,7 @@ fn gen_copy_event(
     let mut exec_step = state.new_step(geth_step)?;
 
     if state.call()?.is_root {
-        let copy_steps = state.gen_copy_steps_for_call_data_root(
+        let (copy_steps, prev_bytes) = state.gen_copy_steps_for_call_data_root(
             &mut exec_step,
             src_addr,
             dst_addr,
@@ -130,7 +129,7 @@ fn gen_copy_event(
         )?;
 
         //todo: fetch pre write bytes to fill 'bytes_write_prev' of CopyBytes
-        let copy_bytes = CopyBytes::new(copy_steps, None, None, None);
+        let copy_bytes = CopyBytes::new(copy_steps, None, Some(prev_bytes));
 
         Ok(CopyEvent {
             src_type: CopyDataType::TxCalldata,
@@ -165,7 +164,7 @@ fn gen_copy_event(
             log_id: None,
             rw_counter_start,
             //todo: fetch pre read and write bytes of CopyBytes
-            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None, None),
+            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None),
         })
     }
 }
