@@ -102,9 +102,6 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.tag_matches(RwTableTag::Start), |cb| {
             cb.build_start_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::Memory), |cb| {
-            cb.build_memory_constraints(q)
-        });
         self.condition(q.tag_matches(RwTableTag::MemoryWord), |cb| {
             cb.build_memory_word_constraints(q)
         });
@@ -214,43 +211,6 @@ impl<F: Field> ConstraintBuilder<F> {
             )
         });
         self.require_zero("value_prev column is 0 for Start", q.value_prev_column());
-    }
-
-    fn build_memory_constraints(&mut self, q: &Queries<F>) {
-        // 2.0. Unused keys are 0
-        self.require_zero("field_tag is 0 for Memory", q.field_tag());
-        self.require_zero(
-            "storage_key is 0 for Memory",
-            q.rw_table.storage_key.clone(),
-        );
-
-        // 2.1. First access for a set of all keys are 0 if READ
-        self.require_zero(
-            "first access for a set of all keys are 0 if READ",
-            q.first_access() * q.is_read() * q.value(),
-        );
-        // 2.2. mem_addr in range
-        for limb in &q.address.limbs[2..] {
-            self.require_zero("memory address fits into 2 limbs", limb.clone());
-        }
-        // 2.3. value is a byte
-        self.add_lookup(
-            "memory value is a byte",
-            vec![(q.rw_table.value.clone(), q.lookups.u8.clone())],
-        );
-        // 2.4. Start initial value is 0
-        self.require_zero("initial Memory value is 0", q.initial_value());
-        // 2.5. state root does not change
-        self.require_equal(
-            "state_root is unchanged for Memory",
-            q.state_root(),
-            q.state_root_prev(),
-        );
-        self.require_equal(
-            "value_prev column equals initial_value for Memory",
-            q.value_prev_column(),
-            q.initial_value(),
-        );
     }
 
     fn build_memory_word_constraints(&mut self, q: &Queries<F>) {
