@@ -1060,14 +1060,14 @@ fn verify_with_overrides(
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
     let errors = result.expect_err("result is not an error");
-    assert_eq!(errors.len(), 1, "{:?}", errors);
+    assert_eq!(errors.len(), 1, "{errors:?}");
     match &errors[0] {
         VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
             // fields of halo2_proofs::dev::metadata::Constraint aren't public, so we have
             // to match off of its format string.
-            let constraint = format!("{}", constraint);
+            let constraint = format!("{constraint}");
             if !constraint.contains(name) {
-                panic!("{} does not contain {}", constraint, name);
+                panic!("{constraint} does not contain {name}");
             }
         }
         VerifyFailure::Lookup {

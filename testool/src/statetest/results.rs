@@ -84,10 +84,10 @@ impl Diffs {
 
         let mut summary = String::default();
         if stat_news > 0 {
-            summary.push_str(&format!("new: {:+} ", stat_news));
+            summary.push_str(&format!("new: {stat_news:+} "));
         }
         for (lvl, n) in stat {
-            summary.push_str(&format!("/ {:?}: {:+} ", lvl, n));
+            summary.push_str(&format!("/ {lvl:?}: {n:+} "));
         }
         if summary.is_empty() {
             summary.push_str("No changes");
@@ -227,7 +227,7 @@ impl Results {
                 .expect("should be urldecodeable")
                 .to_string();
             let path = split.next().unwrap().to_string();
-            let id = format!("{}#{}", test_id, path);
+            let id = format!("{test_id}#{path}");
             tests.insert(
                 id,
                 ResultInfo {
@@ -319,7 +319,7 @@ impl Results {
 
         let levels: Vec<_> = ResultLevel::iter().collect();
 
-        header.append(&mut levels.iter().map(|v| format!("{:?}", v)).collect());
+        header.append(&mut levels.iter().map(|v| format!("{v:?}")).collect());
         by_folder.add_row(Row::from_iter(header));
 
         let mut totals = vec![0usize; levels.len()];

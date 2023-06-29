@@ -465,7 +465,7 @@ impl SortKeysConfig {
         self.id.annotate_columns_in_region(region, prefix);
         self.storage_key.annotate_columns_in_region(region, prefix);
         self.rw_counter.annotate_columns_in_region(region, prefix);
-        region.name_column(|| format!("{}_field_tag", prefix), self.field_tag);
+        region.name_column(|| format!("{prefix}_field_tag"), self.field_tag);
     }
 }
 
