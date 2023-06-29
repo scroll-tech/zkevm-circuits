@@ -210,14 +210,6 @@ pub enum Rw {
         stack_pointer: usize,
         value: Word,
     },
-    /// Memory
-    Memory {
-        rw_counter: usize,
-        is_write: bool,
-        call_id: usize,
-        memory_address: u64,
-        byte: u8,
-    },
     /// Memory word
     MemoryWord {
         rw_counter: usize,
@@ -410,12 +402,6 @@ impl Rw {
         }
     }
 
-    pub fn memory_value(&self) -> u8 {
-        match self {
-            Self::Memory { byte, .. } => *byte,
-            _ => unreachable!("{:?}", self),
-        }
-    }
     pub fn memory_word_value(&self) -> Word {
         match self {
             Self::MemoryWord { value, .. } => *value,
@@ -475,7 +461,6 @@ impl Rw {
     pub fn rw_counter(&self) -> usize {
         match self {
             Self::Start { rw_counter }
-            | Self::Memory { rw_counter, .. }
             | Self::MemoryWord { rw_counter, .. }
             | Self::Stack { rw_counter, .. }
             | Self::AccountStorage { rw_counter, .. }
@@ -492,8 +477,7 @@ impl Rw {
     pub fn is_write(&self) -> bool {
         match self {
             Self::Start { .. } => false,
-            Self::Memory { is_write, .. }
-            | Self::MemoryWord { is_write, .. }
+            Self::MemoryWord { is_write, .. }
             | Self::Stack { is_write, .. }
             | Self::AccountStorage { is_write, .. }
             | Self::TxAccessListAccount { is_write, .. }
@@ -509,7 +493,6 @@ impl Rw {
     pub fn tag(&self) -> RwTableTag {
         match self {
             Self::Start { .. } => RwTableTag::Start,
-            Self::Memory { .. } => RwTableTag::Memory,
             Self::MemoryWord { .. } => RwTableTag::MemoryWord,
             Self::Stack { .. } => RwTableTag::Stack,
             Self::AccountStorage { .. } => RwTableTag::AccountStorage,
@@ -533,8 +516,7 @@ impl Rw {
             | Self::TxReceipt { tx_id, .. } => Some(*tx_id),
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
-            | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::MemoryWord { call_id, .. } => Some(*call_id),
+            | Self::MemoryWord { call_id, .. } => Some(*call_id),
             Self::Start { .. } | Self::Account { .. } => None,
         }
     }
@@ -553,7 +535,6 @@ impl Rw {
             | Self::AccountStorage {
                 account_address, ..
             } => Some(*account_address),
-            Self::Memory { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
             Self::MemoryWord { memory_address, .. } => {
                 Some(U256::from(*memory_address).to_address())
             }
@@ -585,7 +566,6 @@ impl Rw {
             // for why the field tag for AccountStorage is CodeHash instead of None.
             Self::AccountStorage { .. } => Some(AccountFieldTag::CodeHash as u64),
             Self::Start { .. }
-            | Self::Memory { .. }
             | Self::MemoryWord { .. }
             | Self::Stack { .. }
             | Self::TxAccessListAccount { .. }
@@ -602,7 +582,6 @@ impl Rw {
             Self::Start { .. }
             | Self::CallContext { .. }
             | Self::Stack { .. }
-            | Self::Memory { .. }
             | Self::MemoryWord { .. }
             | Self::TxRefund { .. }
             | Self::Account { .. }
@@ -663,7 +642,6 @@ impl Rw {
 
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
-            Self::Memory { byte, .. } => F::from(u64::from(*byte)),
             Self::MemoryWord { value, .. } => rlc::value(&value.to_le_bytes(), randomness),
             Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
         }
@@ -700,7 +678,6 @@ impl Rw {
             Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
             Self::Start { .. }
             | Self::Stack { .. }
-            | Self::Memory { .. }
             | Self::MemoryWord { .. }
             | Self::CallContext { .. }
             | Self::TxLog { .. }
@@ -874,22 +851,6 @@ impl From<&operation::OperationContainer> for RwMap {
                     call_id: op.op().call_id(),
                     stack_pointer: usize::from(*op.op().address()),
                     value: *op.op().value(),
-                })
-                .collect(),
-        );
-        rws.insert(
-            RwTableTag::Memory,
-            container
-                .memory
-                .iter()
-                .map(|op| Rw::Memory {
-                    rw_counter: op.rwc().into(),
-                    is_write: op.rw().is_write(),
-                    call_id: op.op().call_id(),
-                    memory_address: u64::from_le_bytes(
-                        op.op().address().to_le_bytes()[..8].try_into().unwrap(),
-                    ),
-                    byte: op.op().value(),
                 })
                 .collect(),
         );

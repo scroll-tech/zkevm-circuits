@@ -9,7 +9,7 @@ use log::trace;
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
 /// `OpcodeId`. This is responsible of generating all of the associated
-/// [`crate::operation::StackOp`]s and [`crate::operation::MemoryOp`]s and place
+/// [`crate::operation::StackOp`]s and [`crate::operation::MemoryWordOp`]s and place
 /// them inside the trace's [`crate::operation::OperationContainer`].
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Mload;
