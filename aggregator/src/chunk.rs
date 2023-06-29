@@ -50,7 +50,7 @@ impl From<&Block<Fr>> for ChunkHash {
             .chain(block.txs.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
             .collect::<Vec<u8>>();
 
-        let data_hash = H256(keccak256(&data_bytes));
+        let data_hash = H256(keccak256(data_bytes));
 
         let post_state_root = block
             .context
