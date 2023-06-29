@@ -136,7 +136,7 @@ There will be three configurations for Aggregation circuit.
 - FpConfig; used for snark aggregation
 - KeccakConfig: used to build keccak table
 - RlcConfig: used to compute RLCs
-    - will also comes with a __phase 2__ column
+    - will also comes with a __phase 2__ column, and an advice column to indicate which cell to be looked up
 
 ### Public Input
 The public input of the aggregation circuit consists of
@@ -181,10 +181,12 @@ This keccak can take upto $t:=\lceil32\times n/136\rceil$ rounds.
 To argue this statement, we do the following:
 
 1. Extact the final `data_rlc` cell from each round. There are maximum $t$ of this, denoted by $r_1,\dots r_t$
-    - __caveat__: will need to make sure the circuit is padded as if there are $t$ rounds, if the actual number of rounds is less than $t$.
+    - __caveat__: will need to make sure the circuit is padded as if there are $t$ rounds, if the actual number of rounds is less than $t$. This is done by keccak table already: 
+    all columns of keccak table are padded to `1<<LOG_DEGREE` by construction (__need to double check this is circuit dependent__)
 2. Extract a challenge and then compute `rlc:= RLC(chunk_1.data_hash || ... || chunk_k.data_hash)` using a __phase 2__ column
-3. assert $rlc \in \{r_1,\dots r_t\}$ via a naive lookup 
-    - we don't need to use lookup API. There is only $t$ elements and we can check equality one by one.
+3. assert `rlc` is valid via a lookup argument
+    - constrain `rlc` cell is within the "data_rlc" column of keccak table via standard lookup API
+    - potential optimization: avoid using lookup API. There is only $t$ elements as $rlc \in \{r_1,\dots r_t\}$ and we may check equality one by one.
 
 
 <!-- 
