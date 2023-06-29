@@ -1,7 +1,10 @@
 //! This module implements `Chunk` related data types.
 //! A chunk is a list of blocks.
-use eth_types::H256;
+use eth_types::{ToBigEndian, H256};
 use ethers_core::utils::keccak256;
+use halo2_proofs::halo2curves::bn256::Fr;
+use std::iter;
+use zkevm_circuits::witness::Block;
 
 #[derive(Default, Debug, Clone, Copy)]
 /// A chunk is a set of continuous blocks.
@@ -21,6 +24,49 @@ pub struct ChunkHash {
     pub(crate) withdraw_root: H256,
     /// the data hash of this chunk
     pub(crate) data_hash: H256,
+}
+
+impl From<&Block<Fr>> for ChunkHash {
+    fn from(block: &Block<Fr>) -> Self {
+        // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/circuit_input_builder.rs#L690>
+
+        let data_bytes = iter::empty()
+            .chain(block.context.ctxs.iter().flat_map(|(b_num, b_ctx)| {
+                let num_txs = block
+                    .txs
+                    .iter()
+                    .filter(|tx| tx.block_number == *b_num)
+                    .count() as u16;
+
+                iter::empty()
+                    // Block Values
+                    .chain(b_ctx.number.as_u64().to_be_bytes())
+                    .chain(b_ctx.timestamp.as_u64().to_be_bytes())
+                    .chain(b_ctx.base_fee.to_be_bytes())
+                    .chain(b_ctx.gas_limit.to_be_bytes())
+                    .chain(num_txs.to_be_bytes())
+            }))
+            // Tx Hashes
+            .chain(block.txs.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
+            .collect::<Vec<u8>>();
+
+        let data_hash = H256(keccak256(data_bytes));
+
+        let post_state_root = block
+            .context
+            .ctxs
+            .last_key_value()
+            .map(|(_, b_ctx)| b_ctx.eth_block.state_root)
+            .unwrap_or(H256(block.prev_state_root.to_be_bytes()));
+
+        Self {
+            chain_id: block.chain_id,
+            prev_state_root: H256(block.prev_state_root.to_be_bytes()),
+            post_state_root,
+            withdraw_root: H256(block.withdraw_root.to_be_bytes()),
+            data_hash,
+        }
+    }
 }
 
 impl ChunkHash {
