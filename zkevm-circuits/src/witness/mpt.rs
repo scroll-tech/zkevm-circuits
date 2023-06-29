@@ -324,10 +324,17 @@ impl Key {
     }
 }
 
-impl<F> MptUpdateRow<F> {
+impl<F: Field> MptUpdateRow<Value<F>> {
+    /// Corresponds to the padding row the mpt circuit uses to fill its columns.
+    pub fn padding() -> Self {
+        let mut values = [F::zero(); 7];
+        values[2] = F::from(MPTProofType::AccountDoesNotExist as u64);
+        Self(values.map(Value::known))
+    }
+
     /// The individual values of the row, in the column order used by the
     /// MptTable
-    pub fn values(&self) -> impl Iterator<Item = &F> {
+    pub fn values(&self) -> impl Iterator<Item = &Value<F>> {
         self.0.iter()
     }
 }

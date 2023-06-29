@@ -772,11 +772,10 @@ impl MptTable {
         max_mpt_rows: usize,
         randomness: Value<F>,
     ) -> Result<(), Error> {
-        let dummy_row = MptUpdateRow([Value::known(F::zero()); 7]);
-        for (offset, row) in updates
-            .table_assignments(randomness)
+        let mpt_update_rows = updates.table_assignments(randomness);
+        for (offset, row) in mpt_update_rows
             .into_iter()
-            .chain(repeat(dummy_row))
+            .chain(repeat(MptUpdateRow::padding()))
             .take(max_mpt_rows)
             .enumerate()
         {
