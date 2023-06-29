@@ -8,7 +8,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{constraint_builder::{EVMConstraintBuilder, ConstrainBuilderCommon}, 
-            CachedRegion, Cell,Word,
+            CachedRegion, Cell,
             math_gadget::{BinaryNumberGadget, IsZeroGadget, LtGadget},
             rlc,
         },
@@ -123,30 +123,48 @@ const INPUT_LIMIT: usize = 32*6;
 const INPUT_REPRESENT_BYTES: usize = MODEXP_INPUT_LIMIT/256 + 1;
 const INPUT_REPRESENT_BITS: usize = 8;
 
+type Word<F> = [Cell<F>; 32];
+
+fn assign_word<F: Field, const N: usize>(
+    region: &mut CachedRegion<'_, '_, F>,
+    offset: usize,
+    cells: &[Cell<F>; N],
+    bytes: [u8; N],
+) -> Result<(), Error> {
+
+    for (cell, byte) in cells.iter().zip(bytes){
+        cell.assign(region, offset, Value::known(F::from(byte as u64)))?;
+    }
+
+    Ok(())
+}
+
 // rlc word, in the reversed byte order
 fn rlc_word_rev<F: Field, const N: usize>(cells: &[Cell<F>; N], randomness: Expression<F>) -> Expression<F> {
-
-    let rlc_rev = cells.iter().map(|cell| cell.expr()).rev().collect::<Vec<_>>();
-    rlc::expr(&rlc_rev, randomness)
+    cells.iter().map(|cell| cell.expr()).reduce(
+        |acc, value| acc * randomness.clone() + value
+    ).expect("values should not be empty")
 }
 
 #[derive(Clone, Debug)]
 struct SizeRepresent<F> {
     len_bytes: Word<F>,
+    expression: Expression<F>,
     is_rest_field_zero: IsZeroGadget<F>,
     is_not_exceed_limit: LtGadget<F, SIZE_REPRESENT_BYTES>,
 }
 
 impl<F: Field> SizeRepresent<F> {
     pub fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let len_bytes = cb.query_keccak_rlc();
+        let len_bytes = cb.query_bytes();
+        let expression = rlc_word_rev(&len_bytes, cb.challenges().keccak_input());
         // we calculate at most 31 bytes so it can be fit into a field
-        let len_blank_bytes = len_bytes.cells[..(32-SIZE_REPRESENT_BYTES)]
+        let len_blank_bytes = len_bytes[..(32-SIZE_REPRESENT_BYTES)]
             .iter().map(Cell::expr).collect::<Vec<_>>();
         let is_rest_field_zero = IsZeroGadget::construct(cb, 
                 util::expr_from_bytes(&len_blank_bytes),
             );
-        let len_effect_bytes = len_bytes.cells[(32-SIZE_REPRESENT_BYTES)..]
+        let len_effect_bytes = len_bytes[(32-SIZE_REPRESENT_BYTES)..]
             .iter().map(Cell::expr).collect::<Vec<_>>();            
         let is_not_exceed_limit = LtGadget::construct(cb, 
             util::expr_from_bytes(&len_effect_bytes),
@@ -154,19 +172,20 @@ impl<F: Field> SizeRepresent<F> {
         );
         Self {
             len_bytes,
+            expression,
             is_rest_field_zero,
             is_not_exceed_limit,
         }
     }
 
-    /// the rlc of size memory
-    pub fn memory_value(&self) -> Expression<F> {
-        self.len_bytes.expr()
+    /// the rlc of size memory, in reversed byte order
+    pub fn memory_rlc(&self) -> Expression<F> {
+        self.expression.clone()
     }
 
     /// the value of size
     pub fn value(&self) -> Expression<F> {
-        let len_effect_bytes = self.len_bytes.cells[(32-SIZE_REPRESENT_BYTES)..]
+        let len_effect_bytes = self.len_bytes[(32-SIZE_REPRESENT_BYTES)..]
             .iter().map(Cell::expr).collect::<Vec<_>>();
         util::expr_from_bytes(&len_effect_bytes)
     }
@@ -190,7 +209,7 @@ impl<F: Field> SizeRepresent<F> {
         let mut bytes = [0u8; 32];
         size.to_big_endian(&mut bytes);
 
-        self.len_bytes.assign(region, offset, Some(bytes))?;
+        assign_word(region, offset, &self.len_bytes, bytes)?;
 
         let rest_field = U256::from_big_endian(&bytes[..(32-SIZE_REPRESENT_BYTES)]);
         let effect_field = U256::from_big_endian(&bytes[(32-SIZE_REPRESENT_BYTES)..]);
@@ -245,9 +264,9 @@ impl<F: Field> ModExpInputs<F> {
             cb.challenges().keccak_input())[5].clone(); //r**32
         let r_pow_64 = r_pow_32.clone().square();
 
-        let base = cb.query_keccak_rlc();
-        let modulus = cb.query_keccak_rlc();
-        let exp = cb.query_keccak_rlc();
+        let base = cb.query_bytes();
+        let modulus = cb.query_bytes();
+        let exp = cb.query_bytes();
 
         let input_valid = cb.query_cell();
         cb.require_equal("mark input valid by checking 3 lens is valid", 
@@ -310,18 +329,18 @@ impl<F: Field> ModExpInputs<F> {
             modulus_len_expected,       
         );
 
-        let r_pow_base = r_pow_64.clone() * base_pow.pow();
+        let r_pow_base = base_pow.pow();
         let r_pow_exp = r_pow_base.clone() * exp_pow.pow();
-        let r_pow_modulus = r_pow_exp.clone() * modulus_pow.pow();
+        let r_pow_all_vars = r_pow_exp.clone() * modulus_pow.pow();
 
         cb.require_equal("acc bytes must equal", 
-            input_bytes_acc, 
-            base_len.memory_value()
-            + r_pow_32 * exp_len.memory_value()
-            + r_pow_64 * modulus_len.memory_value()
-            + r_pow_base * base.expr() //rlc of base plus r**(64+base_len)"
-            + r_pow_exp * exp.expr() //rlc of exp plus r**(64+base_len+exp_len)
-            + r_pow_modulus * modulus.expr() //rlc of modulus plus r**(64+base_len+exp_len+modulus_len)
+            input_bytes_acc * padding_pow.pow(),
+            rlc_word_rev(&modulus, cb.challenges().keccak_input()) //rlc of base
+            + r_pow_base * rlc_word_rev(&exp, cb.challenges().keccak_input()) //rlc of exp plus r**base_len
+            + r_pow_exp * rlc_word_rev(&base, cb.challenges().keccak_input()) //rlc of exp plus r**(base_len + exp_len)
+            + r_pow_all_vars.clone() * modulus_len.memory_rlc()
+            + r_pow_all_vars.clone() * r_pow_32 * exp_len.memory_rlc()
+            + r_pow_all_vars * r_pow_64 * base_len.memory_rlc()
         );
 
         Self {
@@ -348,6 +367,7 @@ impl<F: Field> ModExpInputs<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         (input_valid, lens, values): InputParsedResult,
+        input_len: usize,
     ) -> Result<(), Error> {
         self.input_valid.assign(region, offset, Value::known(if input_valid {F::one()} else {F::zero()}))?;
 
@@ -360,8 +380,21 @@ impl<F: Field> ModExpInputs<F> {
         }
 
         for (val, input_bytes) in values.zip([&self.base, &self.exp, &self.modulus]){
-            input_bytes.assign(region, offset, Some(val))?;
+            assign_word(region, offset, input_bytes, val)?;
         }
+
+        let expected_len = if input_valid {
+            lens.iter().map(U256::as_usize).sum::<usize>() + 96
+        } else {INPUT_LIMIT};
+
+        self.is_input_need_padding.assign(region, offset, 
+            F::from(input_len as u64), 
+            F::from(expected_len as u64),
+        )?;
+
+        self.padding_pow.assign(region, offset, 
+            if input_len < expected_len {expected_len - input_len} else {0},
+        )?;
 
         Ok(())
     }
@@ -371,8 +404,6 @@ impl<F: Field> ModExpInputs<F> {
 
 #[derive(Clone, Debug)]
 struct ModExpOutputs<F> {
-    result_pow: RandPow<F>,
-    result_pow_prefix: Cell<F>,
     result: Word<F>,
     is_result_zero: IsZeroGadget<F>,
 }
@@ -387,32 +418,17 @@ impl<F: Field> ModExpOutputs<F> {
 
         let output_len = inner_success * modulus_len;
         let is_result_zero = IsZeroGadget::construct(cb, output_len.clone());
+ 
+        let result = cb.query_bytes();
 
-        let result_pow = RandPow::configure(cb, 
-            cb.challenges().keccak_input(),
-            output_len,
-        );
-        let result_pow_prefix = cb.query_cell_phase2();        
-        let result = cb.query_keccak_rlc();
-
-        let r_pow_32 = RandPowRepresent::<_, 6>::base_pows_expr(
-            cb.challenges().keccak_input())[5].clone(); //r**32
-
-        cb.require_equal("use pow prefix as 1/r**32", 
-            result_pow_prefix.expr() * r_pow_32, 
-            1.expr(),
-        );
-
-        cb.condition(is_result_zero.expr(), |cb|{
+        cb.condition(util::not::expr(is_result_zero.expr()), |cb|{
             cb.require_equal("acc bytes must equal", 
                 output_bytes_acc, 
-                result_pow_prefix.expr() * result_pow.pow() * result.expr(), 
+                rlc_word_rev(&result, cb.challenges().keccak_input()),
             );
         });
 
         Self {
-            result_pow,
-            result_pow_prefix,
             result,
             is_result_zero,
         }
@@ -426,13 +442,8 @@ impl<F: Field> ModExpOutputs<F> {
         offset: usize,
         (output_len, data): OutputParsedResult,
     ) -> Result<(), Error> {
-        self.result_pow_prefix.assign(region, offset, 
-            region.challenges().keccak_input().map(
-                |rand|rand.pow_vartime(&[32]).invert().unwrap()
-            ))?;
         self.is_result_zero.assign(region, offset, F::from(output_len as u64))?;
-        self.result_pow.assign(region, offset, output_len)?;
-        self.result.assign(region, offset, Some(data))?;
+        assign_word(region, offset, &self.result, data)?;
         Ok(())
     }
 
@@ -538,11 +549,10 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
 
 //            println!("exp data: {:?}", data);
 
-            self.input.assign(region, offset, (
-                data.valid,
-                data.input_lens,
-                data.inputs,
-            ))?;
+            self.input.assign(region, offset, 
+                (data.valid, data.input_lens, data.inputs),
+                data.input_memory.len(),
+            )?;
 
             self.output.assign(region, offset, (
                 data.output_len,

@@ -448,6 +448,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn query_cell_phase2(&mut self) -> Cell<F> {
         let cell = self.query_cell_with_type(CellType::StoragePhase2);
+        #[cfg(not(feature = "onephase"))]
         assert_eq!(cell.column.column_type(), &Advice::new(SecondPhase));
         cell
     }
