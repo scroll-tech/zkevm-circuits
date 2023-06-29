@@ -1243,6 +1243,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]);
             cb.condition(cond.expr(), |cb| {
                 // assertions.
+                do_not_emit!(meta, cb);
                 constrain_eq!(meta, cb, is_tag_begin, true);
 
                 // state transitions
