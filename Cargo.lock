@@ -24,7 +24,7 @@ dependencies = [
 name = "aggregator"
 version = "0.1.0"
 dependencies = [
- "ark-std 0.4.0",
+ "ark-std",
  "env_logger 0.10.0",
  "eth-types 0.1.0",
  "ethers-core",
@@ -96,16 +96,6 @@ name = "ark-std"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1df2c09229cbc5a028b1d70e00fdb2acee28b1055dfb5ca73eea49c5a25c4e7c"
-dependencies = [
- "num-traits",
- "rand",
-]
-
-[[package]]
-name = "ark-std"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
 dependencies = [
  "colored",
  "num-traits",
@@ -571,7 +561,7 @@ dependencies = [
 name = "circuit-benchmarks"
 version = "0.1.0"
 dependencies = [
- "ark-std 0.3.0",
+ "ark-std",
  "bus-mapping",
  "env_logger 0.9.3",
  "eth-types 0.1.0",
@@ -2206,7 +2196,7 @@ name = "halo2_proofs"
 version = "0.2.0"
 source = "git+https://github.com/scroll-tech/halo2.git?branch=v0.4#3d40ae4968759ac4516c5f9c45ad20140e2d35d5"
 dependencies = [
- "ark-std 0.3.0",
+ "ark-std",
  "blake2b_simd",
  "cfg-if 0.1.10",
  "crossbeam",

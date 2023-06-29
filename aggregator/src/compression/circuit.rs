@@ -29,10 +29,7 @@ use snark_verifier::{
 };
 use snark_verifier_sdk::{aggregate, flatten_accumulator, types::Svk, Snark, SnarkWitness};
 
-use crate::{
-    core::extract_accumulators_and_proof,
-    param::{ConfigParams, BITS, LIMBS},
-};
+use crate::{core::extract_accumulators_and_proof, param::ConfigParams, ACC_LEN, BITS, LIMBS};
 
 use super::config::CompressionConfig;
 
@@ -144,7 +141,7 @@ impl Circuit<Fr> for CompressionCircuit {
                 );
                 // - if the snark is not a fresh one, assigned_instances already contains an
                 //   accumulator so we want to skip the first 12 elements from the public input
-                let skip = if self.is_fresh { 0 } else { 12 };
+                let skip = if self.is_fresh { 0 } else { ACC_LEN };
                 instances.extend(assigned_instances.iter().flat_map(|instance_column| {
                     instance_column.iter().skip(skip).map(|x| x.cell())
                 }));
@@ -191,10 +188,10 @@ impl CompressionCircuit {
         // as specified in CircuitExt::accumulator_indices()
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
         let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
-            .map(fe_to_limbs::<Fq, Fr, LIMBS, BITS>)
+            .map(fe_to_limbs::<Fq, Fr, { LIMBS }, { BITS }>)
             .concat();
         // skip the old accumulator if exists
-        let skip = if is_fresh { 0 } else { 12 };
+        let skip = if is_fresh { 0 } else { ACC_LEN };
         let snark_instance = snark
             .instances
             .iter()

@@ -11,7 +11,10 @@ use snark_verifier::loader::halo2::halo2_ecc::{
     },
 };
 
-use crate::param::{ConfigParams, BITS, LIMBS};
+use crate::{
+    constants::{BITS, LIMBS},
+    param::ConfigParams,
+};
 
 #[derive(Clone, Debug)]
 /// Configurations for compression circuit
@@ -38,8 +41,8 @@ impl CompressionConfig {
             &params.num_lookup_advice,
             params.num_fixed,
             params.lookup_bits,
-            BITS,
-            LIMBS,
+            params.limb_bits,
+            params.num_limbs,
             modulus::<Fq>(),
             0,
             params.degree as usize,
