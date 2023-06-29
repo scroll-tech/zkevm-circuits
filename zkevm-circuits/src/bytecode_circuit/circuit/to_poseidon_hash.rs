@@ -15,9 +15,10 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
+use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
+#[cfg(feature = "scroll-trace")]
 use itertools::Itertools;
 use log::trace;
-use mpt_zktrie::hash::HASHABLE_DOMAIN_SPEC;
 use std::vec;
 
 use super::{
@@ -169,7 +170,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 cb.require_equal(
                     "if is_field_border_prev padding_shift := 256^(BYTES_IN_FIELD-1)",
                     meta.query_advice(padding_shift, Rotation::cur()),
-                    Expression::Constant(F::from(256 as u64).pow_vartime([BYTES_IN_FIELD as u64-1])),
+                    Expression::Constant(F::from(256_u64).pow_vartime([BYTES_IN_FIELD as u64-1])),
                 );
             });
 
@@ -321,7 +322,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         //  * PoseidonTable::INPUT_WIDTH lookups for each input field
         //  * PoseidonTable::INPUT_WIDTH -1 lookups for the padded zero input
         //  so we have 2*PoseidonTable::INPUT_WIDTH -1 lookups
-        #[cfg(feature = "poseidon-codehash-lookup")]
+        #[cfg(feature = "scroll-trace")]
         for i in 0..PoseidonTable::INPUT_WIDTH {
             meta.lookup_any("poseidon input", |meta| {
                 // Conditions:
@@ -351,7 +352,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         }
 
         // the canonical form should be `for i in 1..PoseidonTable::INPUT_WIDTH{...}`
-        #[cfg(feature = "poseidon-codehash-lookup")]
+        #[cfg(feature = "scroll-trace")]
         meta.lookup_any("poseidon input padding zero for final", |meta| {
             // Conditions:
             // - On the row with the last byte (`is_byte_to_header == 1`)
@@ -523,7 +524,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
             (
                 "padding shift header",
                 self.padding_shift,
-                F::from(256 as u64).pow_vartime([BYTES_IN_FIELD as u64]),
+                F::from(256_u64).pow_vartime([BYTES_IN_FIELD as u64]),
             ),
             ("field index header", self.field_index, F::one()),
         ] {
@@ -567,8 +568,8 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                     F::from((BYTES_IN_FIELD - bytes_in_field_index) as u64)
                         .invert()
                         .unwrap_or(F::zero());
-                let padding_shift_f = F::from(256 as u64)
-                    .pow_vartime([(BYTES_IN_FIELD - bytes_in_field_index) as u64]);
+                let padding_shift_f =
+                    F::from(256_u64).pow_vartime([(BYTES_IN_FIELD - bytes_in_field_index) as u64]);
                 let input_f = row.value * padding_shift_f + input_prev;
                 // relax field_border for code end
                 let field_border = field_border || code_index + 1 == code_length;
@@ -616,7 +617,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                     ("field index inv", self.field_index_inv, field_index_inv_f),
                 ] {
                     region.assign_advice(
-                        || format!("assign {} {}", tip, offset),
+                        || format!("assign {tip} {offset}"),
                         column,
                         offset,
                         || Value::known(val),

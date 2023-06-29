@@ -158,7 +158,7 @@ mod log_tests {
     use crate::{
         circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, MemoryOp, StackOp, TxLogField, TxLogOp, RW},
+        operation::{CallContextField, CallContextOp, StackOp, TxLogField, TxLogOp, RW},
     };
     use eth_types::{
         bytecode,

@@ -1698,7 +1698,7 @@ fn tracer_err_stack_overflow() {
     let next_step = block.geth_traces[0].struct_logs.get(index + 1);
     assert_eq!(
         step.error,
-        Some(format!("{} 1024 (1023)", GETH_ERR_STACK_OVERFLOW))
+        Some(format!("{GETH_ERR_STACK_OVERFLOW} 1024 (1023)"))
     );
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);
@@ -1729,7 +1729,7 @@ fn tracer_err_stack_underflow() {
     let next_step = block.geth_traces[0].struct_logs.get(index + 1);
     assert_eq!(
         step.error,
-        Some(format!("{} (0 <=> 6)", GETH_ERR_STACK_UNDERFLOW))
+        Some(format!("{GETH_ERR_STACK_UNDERFLOW} (0 <=> 6)",))
     );
 
     let mut builder = CircuitInputBuilderTx::new(&block, step);

@@ -44,8 +44,6 @@ pub(crate) struct CodeCopyGadget<F> {
     /// RW inverse counter from the copy table at the start of related copy
     /// steps.
     copy_rwc_inc: Cell<F>,
-    /// include actual and padding to word bytes
-    bytes_length_word: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
@@ -61,7 +59,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let size = cb.query_word_rlc();
         let dst_memory_offset = cb.query_cell_phase2();
         let code_offset = WordByteCapGadget::construct(cb, code_size.expr());
-        let bytes_length_word = cb.query_cell();
 
         // Pop items from stack.
         cb.stack_pop(dst_memory_offset.expr());
@@ -104,7 +101,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 src_addr,
                 code_size.expr(),
                 dst_memory_addr.offset(),
-                bytes_length_word.expr(),
+                dst_memory_addr.length(),
                 0.expr(), // for CODECOPY, rlc_acc is 0
                 copy_rwc_inc.expr(),
             );
@@ -140,7 +137,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             memory_expansion,
             memory_copier_gas,
             copy_rwc_inc,
-            bytes_length_word,
         }
     }
 
@@ -209,14 +205,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
-        )?;
-
-        let bytes_length_to_word = copy_rwc_inc * 32;
-
-        self.bytes_length_word.assign(
-            region,
-            offset,
-            Value::known(F::from(bytes_length_to_word)),
         )?;
 
         Ok(())

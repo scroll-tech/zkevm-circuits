@@ -1,11 +1,11 @@
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToBigEndian, ToLittleEndian, U256};
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
-use num::ToPrimitive;
+use log::trace;
 
 use crate::{
     evm_circuit::{
@@ -180,7 +180,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             src_addr,
         );
 
-        let address_align = MemoryWordAddress::construct(cb, address.clone());
+        let address_align = MemoryWordAddress::construct(cb, address);
         let mask = MemoryMask::construct(cb, &address_align.shift_bits(), 0.expr());
 
         // For an internal call, the call data comes from memory，read memory word
@@ -357,7 +357,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 }
             }
         }
-        println!("assign calldata_bytes {:?}", calldata_bytes);
+        trace!("assign calldata_bytes {calldata_bytes:?}");
 
         self.buffer_reader.assign(
             region,

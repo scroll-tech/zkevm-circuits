@@ -11,7 +11,7 @@ pub enum Tag {
     #[default]
     /// Tag that marks the beginning of a list
     /// whose value gives the length of bytes of this list.
-    BeginList = 3,
+    BeginList = 4,
     /// Tag that marks the ending of a list and
     /// it does not consume any byte.
     EndList,
@@ -108,6 +108,8 @@ pub enum RlpTag {
     Len,
     /// RLC of RLP bytes
     RLC,
+    /// GasCost of RLP bytes
+    GasCost,
     /// Null never occurs in RLP table
     Null,
     /// Tag
@@ -127,6 +129,7 @@ impl From<RlpTag> for usize {
             RlpTag::Len => 0,
             RlpTag::RLC => 1,
             RlpTag::Null => 2,
+            RlpTag::GasCost => 3,
             RlpTag::Tag(tag) => usize::from(tag),
         }
     }
@@ -148,18 +151,24 @@ use crate::{
     },
 };
 
+// The number of bytes of list can not larger than 2^24.
+pub(crate) const N_BYTES_LIST: usize = 1 << 24;
+pub(crate) const N_BYTES_CALLDATA: usize = 1 << 24;
+
 fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_U64, vec![1]),
+        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![5]),
         (TxValue, Data, N_BYTES_WORD, vec![6]),
-        (Data, ChainId, 2usize.pow(24), vec![7]),
+        (Data, ChainId, N_BYTES_CALLDATA, vec![7]),
         (ChainId, Zero1, N_BYTES_U64, vec![8]),
         (Zero1, Zero2, 1, vec![9]),
         (Zero2, EndList, 1, vec![10]),
+        (EndList, EndList, 0, vec![11]),
+        // used to emit TxGasCostInL1
         (EndList, BeginList, 0, vec![]),
     ];
 
@@ -170,16 +179,18 @@ fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
 
 fn eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_U64, vec![1]),
+        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![5]),
         (TxValue, Data, N_BYTES_WORD, vec![6]),
-        (Data, SigV, 2usize.pow(24), vec![7]),
+        (Data, SigV, N_BYTES_CALLDATA, vec![7]),
         (SigV, SigR, N_BYTES_U64, vec![8]),
         (SigR, SigS, N_BYTES_WORD, vec![9]),
         (SigS, EndList, N_BYTES_WORD, vec![10]),
+        (EndList, EndList, 0, vec![11]),
+        // used to emit TxGasCostInL1
         (EndList, BeginList, 0, vec![]),
     ];
 
@@ -190,13 +201,15 @@ fn eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn pre_eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_U64, vec![1]),
+        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![5]),
         (TxValue, Data, N_BYTES_WORD, vec![6]),
-        (Data, EndList, 2usize.pow(24), vec![7]),
+        (Data, EndList, N_BYTES_CALLDATA, vec![7]),
+        (EndList, EndList, 0, vec![8]),
+        // used to emit TxGasCostInL1
         (EndList, BeginList, 0, vec![]),
     ];
 
@@ -207,16 +220,18 @@ pub fn pre_eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_U64, vec![1]),
+        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![5]),
         (TxValue, Data, N_BYTES_WORD, vec![6]),
-        (Data, SigV, 2usize.pow(24), vec![7]),
+        (Data, SigV, N_BYTES_CALLDATA, vec![7]),
         (SigV, SigR, N_BYTES_U64, vec![8]),
         (SigR, SigS, N_BYTES_WORD, vec![9]),
         (SigS, EndList, N_BYTES_WORD, vec![10]),
+        (EndList, EndList, 0, vec![11]),
+        // used to emit TxGasCostInL1
         (EndList, BeginList, 0, vec![]),
     ];
 
@@ -228,7 +243,7 @@ pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
         (TxType, BeginList, 1, vec![1]),
-        (BeginList, ChainId, 8, vec![2]),
+        (BeginList, ChainId, N_BYTES_LIST, vec![2]),
         (ChainId, Nonce, N_BYTES_U64, vec![3]),
         (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![4]),
         (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![5]),
@@ -236,19 +251,24 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (Gas, To, N_BYTES_U64, vec![7]),
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![8]),
         (TxValue, Data, N_BYTES_WORD, vec![9]),
-        (Data, BeginVector, 2usize.pow(24), vec![10, 11]),
-        (BeginVector, EndVector, 8, vec![21]), // access_list is none
-        (BeginVector, BeginList, 8, vec![12]),
-        (BeginList, AccessListAddress, 8, vec![13]),
+        (Data, BeginVector, N_BYTES_CALLDATA, vec![10, 11]),
+        (BeginVector, EndVector, N_BYTES_LIST, vec![21]), // access_list is none
+        (BeginVector, BeginList, N_BYTES_LIST, vec![12]),
+        (BeginList, AccessListAddress, N_BYTES_LIST, vec![13]),
         (
             AccessListAddress,
             BeginVector,
             N_BYTES_ACCOUNT_ADDRESS,
             vec![14, 15],
         ),
-        (BeginVector, EndVector, 8, vec![18]), /* access_list.storage_keys
-                                                * is none */
-        (BeginVector, AccessListStorageKey, 8, vec![16, 17]),
+        (BeginVector, EndVector, N_BYTES_LIST, vec![18]), /* access_list.storage_keys
+                                                           * is none */
+        (
+            BeginVector,
+            AccessListStorageKey,
+            N_BYTES_LIST,
+            vec![16, 17],
+        ),
         (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![18]), // finished parsing storage keys
         (
             AccessListStorageKey,
@@ -263,6 +283,8 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (SigV, SigR, N_BYTES_U64, vec![23]),
         (SigR, SigS, N_BYTES_WORD, vec![24]),
         (SigS, EndList, N_BYTES_WORD, vec![25]),
+        (EndList, EndList, 0, vec![26]),
+        // used to exit TxGasCostInL1
         (EndList, BeginList, 0, vec![]),
     ];
 
@@ -273,7 +295,7 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, ChainId, 8, vec![1]),
+        (BeginList, ChainId, N_BYTES_LIST, vec![1]),
         (ChainId, Nonce, N_BYTES_U64, vec![2]),
         (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![3]),
         (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![4]),
@@ -281,18 +303,23 @@ pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
         (Gas, To, N_BYTES_U64, vec![6]),
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![7]),
         (TxValue, Data, N_BYTES_WORD, vec![8]),
-        (Data, BeginVector, 2usize.pow(24), vec![9, 10]),
-        (BeginVector, EndVector, 8, vec![20]), // access_list is none
-        (BeginVector, BeginList, 8, vec![11]),
-        (BeginList, AccessListAddress, 8, vec![12]),
+        (Data, BeginVector, N_BYTES_CALLDATA, vec![9, 10]),
+        (BeginVector, EndVector, N_BYTES_LIST, vec![20]), // access_list is none
+        (BeginVector, BeginList, N_BYTES_LIST, vec![11]),
+        (BeginList, AccessListAddress, N_BYTES_LIST, vec![12]),
         (
             AccessListAddress,
             BeginVector,
             N_BYTES_ACCOUNT_ADDRESS,
             vec![13, 14],
         ),
-        (BeginVector, EndVector, 8, vec![17]), /* access_list.storage_keys is none */
-        (BeginVector, AccessListStorageKey, 8, vec![15, 16]),
+        (BeginVector, EndVector, N_BYTES_LIST, vec![17]), /* access_list.storage_keys is none */
+        (
+            BeginVector,
+            AccessListStorageKey,
+            N_BYTES_LIST,
+            vec![15, 16],
+        ),
         (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![17]), // finished parsing storage keys
         (
             AccessListStorageKey,
@@ -304,6 +331,8 @@ pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
         (EndList, EndVector, 0, vec![20]), // finished parsing access_list
         (EndList, BeginList, 0, vec![11]), // parse another access_list entry
         (EndVector, EndList, 0, vec![21]),
+        (EndList, EndList, 0, vec![22]),
+        // used to emit TxGasCostInL1
         (EndList, BeginList, 0, vec![]),
     ];
 
@@ -438,6 +467,8 @@ pub struct DataTable<F: FieldExt> {
     pub byte_value: u8,
     /// RLC of raw RLP bytes up to `byte_idx`
     pub bytes_rlc: Value<F>,
+    /// GasCost of raw RLP bytes up to `byte_idx`
+    pub gas_cost_acc: Value<F>,
 }
 
 impl<F: FieldExt> DataTable<F> {
@@ -450,6 +481,7 @@ impl<F: FieldExt> DataTable<F> {
             Value::known(F::from(self.byte_rev_idx as u64)),
             Value::known(F::from(self.byte_value as u64)),
             self.bytes_rlc,
+            self.gas_cost_acc,
         ]
     }
 }
@@ -501,6 +533,8 @@ pub struct StateMachine<F: FieldExt> {
     pub depth: usize,
     /// The RLC of bytes up to `byte_idx`
     pub bytes_rlc: Value<F>,
+    /// The gas cost of bytes up to `byte_idx`
+    pub gas_cost_acc: Value<F>,
 }
 
 /// Represents the witness in a single row of the RLP circuit.

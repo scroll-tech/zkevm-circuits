@@ -5,6 +5,7 @@ use crate::{
     Error,
 };
 use eth_types::{GethExecStep, Word, U256};
+use log::trace;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ErrorCreationCode;
@@ -37,7 +38,7 @@ impl Opcode for ErrorCreationCode {
         assert!(byte == 0xef);
 
         let mut memory = state.call_ctx_mut()?.memory.clone();
-        println!("before mload memory length is {}", memory.0.len());
+        trace!("before mload memory length is {}", memory.0.len());
 
         let offset = offset.as_u64();
         // expand to offset + 32 as need one word at least.
@@ -47,7 +48,7 @@ impl Opcode for ErrorCreationCode {
 
         let shift = offset % 32;
         let slot = offset - shift;
-        println!(
+        trace!(
             "minimal_length {} , slot {},  shift {}, memory_length {}",
             minimal_length,
             slot,

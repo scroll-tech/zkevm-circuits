@@ -38,8 +38,6 @@ pub(crate) struct ExtcodecopyGadget<F> {
     code_hash: Cell<F>,
     code_size: Cell<F>,
     copy_rwc_inc: Cell<F>,
-    /// include actual and padding to word bytes
-    bytes_length_word: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
 }
@@ -57,7 +55,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             from_bytes::expr(&external_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
 
         let code_size = cb.query_cell();
-        let bytes_length_word = cb.query_cell();
 
         let memory_length = cb.query_word_rlc();
         let memory_offset = cb.query_cell_phase2();
@@ -122,7 +119,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 src_addr,
                 code_size.expr(),
                 memory_address.offset(),
-                bytes_length_word.expr(),
+                memory_address.length(),
                 0.expr(),
                 copy_rwc_inc.expr(),
             );
@@ -159,7 +156,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             code_hash,
             code_size,
             copy_rwc_inc,
-            bytes_length_word,
             memory_expansion,
             memory_copier_gas,
         }
@@ -235,13 +231,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
-        )?;
-
-        let bytes_length_to_word = copy_rwc_inc * 32;
-        self.bytes_length_word.assign(
-            region,
-            offset,
-            Value::known(F::from(bytes_length_to_word)),
         )?;
 
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
