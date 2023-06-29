@@ -9,11 +9,9 @@ use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{
-    sign_types::SignData, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word, H256, U256,
-};
+use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
-use mpt_zktrie::state::{builder::HASH_SCHEME_DONE, ZktrieState};
+use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
 
 use super::{
     mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep,
