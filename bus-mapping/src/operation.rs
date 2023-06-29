@@ -1,5 +1,5 @@
 //! Collection of structs and functions used to:
-//! - Define the internals of a [`MemoryOp`], [`StackOp`] and [`StorageOp`].
+//! - Define the internals of a [`MemoryWordOp`], [`StackOp`] and [`StorageOp`].
 //! - Define the actual operation types and a wrapper over them (the [`Operation`] enum).
 //! - Define structures that interact with operations such as [`OperationContainer`].
 pub(crate) mod container;
@@ -144,7 +144,7 @@ impl fmt::Debug for MemoryWordOp {
 }
 
 impl MemoryWordOp {
-    /// Create a new instance of a `MemoryOp` from it's components.
+    /// Create a new instance of a `MemoryWordOp` from it's components.
     pub fn new(call_id: usize, address: MemoryAddress, value: Word) -> MemoryWordOp {
         MemoryWordOp {
             call_id,
@@ -180,7 +180,7 @@ impl Op for MemoryWordOp {
     }
 
     fn reverse(&self) -> Self {
-        unreachable!("MemoryOp can't be reverted")
+        unreachable!("MemoryWordOp can't be reverted")
     }
 }
 
@@ -906,7 +906,7 @@ impl Op for TxReceiptOp {
 }
 
 /// Generic enum that wraps over all the operation types possible.
-/// In particular [`StackOp`], [`MemoryOp`] and [`StorageOp`].
+/// In particular [`StackOp`], [`MemoryWordOp`] and [`StorageOp`].
 #[derive(Debug, Clone)]
 pub enum OpEnum {
     /// Stack

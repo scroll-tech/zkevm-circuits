@@ -125,7 +125,7 @@ impl Default for CircuitsParams {
 ///
 /// The generated bus-mapping operations are:
 /// [`StackOp`](crate::operation::StackOp)s,
-/// [`MemoryOp`](crate::operation::MemoryOp)s and
+/// [`MemoryWordOp`](crate::operation::MemoryWordOp)s and
 /// [`StorageOp`](crate::operation::StorageOp), which correspond to each
 /// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecTrace` step so that
 /// the State Proof witnesses are already generated on a structured manner and
