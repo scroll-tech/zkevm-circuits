@@ -162,7 +162,7 @@ c_i.post_state_root == c_{i+1}.prev_state_root
 3. Each chunk's `pi_hash` is derived correctly.
 ```
 for i in 1 ... __n__
-chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash)
+    chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash)
 ```
 3. The last `(n-k)` are dummies:
 ```
@@ -171,8 +171,15 @@ for i in 1 ... n:
     if is_padding:
         chunk_i.prev_state_root == chunk_i.post_state_root 
         chunk_i.withdraw_root == chunk_{i-1}.withdraw_root
+        chunk_i.data_hash == [0u8; 32]
 ```
-4. Data hash is correct
+4. All the chunks use a same chain id
+```
+for i in 1 ... __n__
+    batch.chain_id == chunk[i].chain_id
+```
+
+5. Data hash is correct
 ```
 batch_data_hash := keccak(chunk_1.data_hash || ... || chunk_k.data_hash)
 ```
