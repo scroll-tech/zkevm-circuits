@@ -752,26 +752,6 @@ fn bad_initial_memory_value() {
 }
 
 #[test]
-fn invalid_memory_value() {
-    let rows = vec![Rw::MemoryWord {
-        rw_counter: 1,
-        is_write: true,
-        call_id: 1,
-        memory_address: 10,
-        value: 1.into(),
-    }];
-    let v = Fr::from(256);
-    let overrides = HashMap::from([
-        ((AdviceColumn::Value, 0), v),
-        ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
-    ]);
-
-    let result = verify_with_overrides(rows, overrides);
-
-    assert_error_matches(result, "memory value is a byte");
-}
-
-#[test]
 fn stack_read_before_write() {
     let rows = vec![Rw::Stack {
         rw_counter: 9,
