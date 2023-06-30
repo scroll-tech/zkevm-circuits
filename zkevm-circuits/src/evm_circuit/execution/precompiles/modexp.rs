@@ -20,10 +20,13 @@ use crate::{
 #[derive(Clone, Debug)]
 struct RandPowRepresent<F, const BIT_LIMIT: usize> {
     bits: BinaryNumberGadget<F, BIT_LIMIT>,
-    pow_assembles: [Cell<F>;BIT_LIMIT],
+    pow_assembles: Vec<(Cell<F>, usize)>,
+    pow: Expression<F>,
 }
 
 impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
+
+    const BIT_EXP_MAX_DEGREE: usize = 4;
 
     /// build randomness r, r**2, ... r**(2**BIT_LIMIT)
     pub fn base_pows_expr(randomness: Expression<F>) -> [Expression<F>;BIT_LIMIT] {
@@ -47,44 +50,56 @@ impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
         )
     }
 
-    /// refere to a binary represent of exponent (like BinaryNumberGadget)
+    /// refere to a binary represent of exponent (like BinaryNumberGadget), can
+    /// link another expression so the expr is linked_val * r ** exponent
     pub fn configure(
         cb: &mut EVMConstraintBuilder<F>,
         randomness: Expression<F>,
         exponent: Expression<F>,
+        linked_val: Option<Expression<F>>,
     ) -> Self {
         let bits = BinaryNumberGadget::construct(cb, exponent);
         let base_pows = Self::base_pows_expr(randomness);
-        let pow_assembles = [0; BIT_LIMIT].map(|_|cb.query_cell_phase2());
-        let mut last_pow_assemble = 1.expr();
-        for ((pow_assemble, exp_bit), base_pow) in 
-            pow_assembles
-            .as_slice()
-            .iter()
-            .zip(bits.bits.as_slice().iter().rev())
-            .zip(&base_pows) {
-            cb.require_equal(
-                "pow_assemble = if exp_bit {pow_assemble.last} else {pow_assemble.last*base_pow}  ",
-                pow_assemble.expr(),
-                util::select::expr(exp_bit.expr(), last_pow_assemble.clone() * base_pow.clone(), last_pow_assemble.clone()),
-            );
-            last_pow_assemble = pow_assemble.expr();
+        let mut pow_assembles = Vec::new();
+        let mut pow = linked_val.unwrap_or_else(||1.expr());
+        for (n, (base_pow, exp_bit)) in base_pows.into_iter()
+            .zip(bits.bits.as_slice().iter().rev()).enumerate(){
+
+            pow = pow * util::select::expr(exp_bit.expr(), base_pow, 1.expr());
+
+            if pow.degree() > Self::BIT_EXP_MAX_DEGREE {
+
+                let cached_cell = cb.query_cell_phase2();
+                cb.require_equal(
+                    "pow_assemble cached current expression",
+                    cached_cell.expr(),
+                    pow.clone(),
+                );
+
+                pow = cached_cell.expr(); 
+                pow_assembles.push((cached_cell, n));
+            }
+
         }
 
         Self {
             pow_assembles,
             bits,
+            pow,
         }
     }
 
-    pub fn pow(&self) -> Expression<F> {self.pow_assembles.last().expect("BIT_LIMIT is not zero").expr()}
+    pub fn expr(&self) -> Expression<F> {self.pow.clone()}
+
+    pub fn phase2_cell_cost(&self) -> usize {self.pow_assembles.len()}
 
     pub fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         exponent: usize,
-    ) -> Result<(), Error> {
+        linked_value: Option<Value<F>>,
+    ) -> Result<Value<F>, Error> {
         assert!(2usize.pow(BIT_LIMIT as u32) > exponent, "exponent ({exponent}) can not exceed bit limit (2**{BIT_LIMIT}-1)");
         self.bits.assign(region, offset, exponent)?;
         let bits : [bool; BIT_LIMIT]= exponent.as_bits();
@@ -95,24 +110,25 @@ impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
             |val| Some(val.map(|v|v.square()))
         ).take(BIT_LIMIT);
 
-        let mut last_assigned_assemble = Value::known(F::one());
-        for ((column, &bit), base_pow) in 
-            self.pow_assembles
-            .as_slice()
-            .iter()
+        let mut pow_cached_i = self.pow_assembles.iter();
+        let mut cached_cell = pow_cached_i.next();
+        let mut value_should_assigned = linked_value.unwrap_or_else(||Value::known(F::one()));
+
+        for (n, (base_pow, &bit)) in 
+            base_pows
             .zip(bits.as_slice().iter().rev())
-            .zip(base_pows) {
-            
-            let assigned_v = if bit {
-                last_assigned_assemble*base_pow
-            }else {
-                last_assigned_assemble
-            };
-            column.assign(region, offset, assigned_v)?;
-            last_assigned_assemble = assigned_v;
+            .enumerate(){
+
+            value_should_assigned = value_should_assigned * (if bit {base_pow} else {Value::known(F::one())});
+            if let Some((cell, i)) = cached_cell {
+                if *i == n {
+                    cell.assign(region, offset, value_should_assigned)?;
+                    cached_cell = pow_cached_i.next();
+                }
+            }
         }
 
-        Ok(())
+        Ok(value_should_assigned)
     }
 }
 
@@ -310,38 +326,46 @@ impl<F: Field> ModExpInputs<F> {
                 is_input_need_padding.expr(), 
                 input_expected - input_bytes_len, 
                 0.expr(),
-            )
+            ),
+            None,
         );
 
         // we put correct size in each input word if input is valid
         // else we just put as most as possible bytes (32) into it
         // so we finally handle the memory in limited sized (32*3)
-        let base_pow = RandPow::configure(cb, 
+        let modulus_pow = RandPow::configure(cb,
             cb.challenges().keccak_input(),
-            base_len_expected,
+            modulus_len_expected,
+            None,
         );
+
+        // exp_pow = r**(modulus_len + exp_len)
         let exp_pow = RandPow::configure(cb, 
             cb.challenges().keccak_input(),
             exp_len_expected,
-        );
-        let modulus_pow = RandPow::configure(cb,
-            cb.challenges().keccak_input(),
-            modulus_len_expected,       
+            Some(modulus_pow.expr()),
         );
 
-        let r_pow_base = base_pow.pow();
-        let r_pow_exp = r_pow_base.clone() * exp_pow.pow();
-        let r_pow_all_vars = r_pow_exp.clone() * modulus_pow.pow();
+        // base_pow = r**(modulus_len + exp_len + base_len)
+        let base_pow = RandPow::configure(cb, 
+            cb.challenges().keccak_input(),
+            base_len_expected,
+            Some(exp_pow.expr()),
+        );
 
         cb.require_equal("acc bytes must equal", 
-            input_bytes_acc * padding_pow.pow(),
+            padding_pow.expr() * input_bytes_acc,
             rlc_word_rev(&modulus, cb.challenges().keccak_input()) //rlc of base
-            + r_pow_base * rlc_word_rev(&exp, cb.challenges().keccak_input()) //rlc of exp plus r**base_len
-            + r_pow_exp * rlc_word_rev(&base, cb.challenges().keccak_input()) //rlc of exp plus r**(base_len + exp_len)
-            + r_pow_all_vars.clone() * modulus_len.memory_rlc()
-            + r_pow_all_vars.clone() * r_pow_32 * exp_len.memory_rlc()
-            + r_pow_all_vars * r_pow_64 * base_len.memory_rlc()
+            + modulus_pow.expr() * rlc_word_rev(&exp, cb.challenges().keccak_input()) //rlc of exp plus r**base_len
+            + exp_pow.expr() * rlc_word_rev(&base, cb.challenges().keccak_input()) //rlc of exp plus r**(base_len + exp_len)
+            + base_pow.expr() * modulus_len.memory_rlc()
+            + base_pow.expr() * r_pow_32 * exp_len.memory_rlc()
+            + base_pow.expr() * r_pow_64 * base_len.memory_rlc()
         );
+
+        // println!("phase 2 cell used {}",
+        //     padding_pow.phase2_cell_cost() + [&modulus_pow, &exp_pow, &base_pow].iter().map(|pw|pw.phase2_cell_cost()).sum::<usize>()
+        // );
 
         Self {
             base_len,
@@ -375,8 +399,16 @@ impl<F: Field> ModExpInputs<F> {
             len_represent.assign(region, offset, len)?;
         }
 
-        for (len, pow) in lens.iter().zip([&self.base_pow, &self.exp_pow, &self.modulus_pow]){
-            pow.assign(region, offset, if input_valid {len.as_usize()} else {SIZE_LIMIT})?;
+        let mut linked_v = None;
+        for (len, pow) in lens.iter().zip([&self.base_pow, &self.exp_pow, &self.modulus_pow]).rev(){
+            let assigned = pow.assign(
+                region, 
+                offset, 
+                if input_valid {len.as_usize()} else {SIZE_LIMIT},
+                linked_v,
+            )?;
+
+            linked_v = Some(assigned);
         }
 
         for (val, input_bytes) in values.zip([&self.base, &self.exp, &self.modulus]){
@@ -394,6 +426,7 @@ impl<F: Field> ModExpInputs<F> {
 
         self.padding_pow.assign(region, offset, 
             if input_len < expected_len {expected_len - input_len} else {0},
+            None,
         )?;
 
         Ok(())
@@ -547,7 +580,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
 
         if let Some(PrecompileAuxData::Modexp(data)) = &step.aux_data {
 
-//            println!("exp data: {:?}", data);
+            println!("exp data: {:?}", data);
 
             self.input.assign(region, offset, 
                 (data.valid, data.input_lens, data.inputs),
@@ -657,6 +690,60 @@ mod test {
                     address: PrecompileCalls::Modexp.address().to_word(),
                     ..Default::default()
                 },
+                PrecompileCallArgs {
+                    name: "modexp success",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x1)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x3) 
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x2) 
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0800000901000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0x60)
+                        MSTORE                        
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0x66.into(),
+                    ret_offset: 0x9f.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "modexp success",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x1)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x3) 
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x2) 
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0800000901000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0x60)
+                        MSTORE                        
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0x65.into(),
+                    ret_offset: 0x9f.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },                               
             ]
         };
     }
