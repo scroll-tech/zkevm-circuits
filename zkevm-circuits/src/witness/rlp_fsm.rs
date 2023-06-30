@@ -151,8 +151,8 @@ use crate::{
     },
 };
 
-// The number of bytes of list can not larger than 2^24.
-pub(crate) const N_BYTES_LIST: usize = 1 << 24;
+// The number of bytes of list can not larger than 2^24 = 2^(8*3).
+pub(crate) const N_BYTES_LIST: usize = 3;
 pub(crate) const N_BYTES_CALLDATA: usize = 1 << 24;
 
 fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
