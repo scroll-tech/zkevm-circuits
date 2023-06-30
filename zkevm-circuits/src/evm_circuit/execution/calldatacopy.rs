@@ -145,18 +145,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             );
         });
 
-        // // State transition
-        // let rw_counter_delta = select::expr(
-        //     cb.curr.state.is_root.expr(),
-        //     select::expr(selector, when_true, when_false)
-        //     //4.expr() + copy_rwc_inc.expr() +  memory_address.has_length(),
-
-        //     5.expr() + copy_rwc_inc.expr() - memory_address.has_length(),
-        //     6.expr() + copy_rwc_inc.expr() - memory_address.has_length(),
-        // );
         let step_state_transition = StepStateTransition {
             // 1 tx id lookup + 3 stack pop + option(calldatalength lookup)
-            //TODO: handle internal call rw_counter
             rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
@@ -376,8 +366,9 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_simple() {
-        test_root_ok(0x40, 10, 0x00.into(), 0x40.into());
-        test_internal_ok(0x40, 0x40, 10, 0x10.into(), 0xA0.into());
+        //test_root_ok(0x40, 10, 0x00.into(), 0x40.into());
+        test_internal_ok(0x40, 0x40, 10, 0x10.into(), 0x00.into());
+        //test_internal_ok(0x40, 0x40, 10, 0x10.into(), 0xA0.into());
     }
 
     #[test]

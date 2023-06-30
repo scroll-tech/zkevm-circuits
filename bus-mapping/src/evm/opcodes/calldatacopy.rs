@@ -334,7 +334,7 @@ mod calldatacopy_tests {
         );
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
-        for (idx, (value, is_code, _)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, _)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             if idx < memory_a.len() {
                 assert_eq!(*value, memory_a[idx]);
             } else {
@@ -489,13 +489,16 @@ mod calldatacopy_tests {
         assert_eq!(copy_events.len(), 1);
         let begin_slot = dst_offset - dst_offset % 32;
         let end_slot = (dst_offset + size - 1) - (dst_offset + size - 1) % 32;
-        assert_eq!(copy_events[0].bytes.len(), end_slot - begin_slot + 32);
+        assert_eq!(
+            copy_events[0].copy_bytes.bytes.len(),
+            end_slot - begin_slot + 32
+        );
         assert_eq!(
             builder.block.container.memory_word.len(),
             (end_slot - begin_slot) / 32 + 1
         );
 
-        for (idx, (value, is_code, _)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, _)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             assert_eq!(value, calldata.get(offset as usize + idx).unwrap_or(&0));
             assert!(!is_code);
         }

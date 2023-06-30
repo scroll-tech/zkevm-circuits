@@ -1564,7 +1564,7 @@ impl CopyTable {
         };
 
         let read_steps = copy_event.copy_bytes.bytes.iter();
-        let mut copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
+        let copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
             read_steps.zip(write_steps.iter())
         } else {
             read_steps.zip(copy_event.copy_bytes.bytes.iter())
@@ -1729,7 +1729,11 @@ impl CopyTable {
 
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
-
+            //todo: rm
+            println!(
+                "step {},is_last {:?}, real_bytes_left {}",
+                step_idx, is_last, real_length_left
+            );
             assignments.push((
                 tag,
                 [

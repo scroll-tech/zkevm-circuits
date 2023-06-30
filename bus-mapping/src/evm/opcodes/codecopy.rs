@@ -90,7 +90,7 @@ fn gen_copy_event(
         .min(src_addr_end);
 
     let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = state.gen_copy_steps_for_bytecode(
+    let (copy_steps, prev_bytes) = state.gen_copy_steps_for_bytecode(
         &mut exec_step,
         &bytecode,
         src_addr,
@@ -109,8 +109,8 @@ fn gen_copy_event(
         dst_addr,
         log_id: None,
         rw_counter_start,
-        //todo: fetch pre write bytes of CopyBytes
-        copy_bytes: CopyBytes::new(copy_steps, None, None),
+        //fetch pre write bytes of CopyBytes
+        copy_bytes: CopyBytes::new(copy_steps, None, Some(prev_bytes)),
     })
 }
 
@@ -214,7 +214,7 @@ mod codecopy_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 
-        for (idx, (value, is_code, is_mask)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, is_mask)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             let bytecode_element = code.get(code_offset + idx).unwrap_or_default();
             if !is_mask {
                 assert_eq!(*value, bytecode_element.value);

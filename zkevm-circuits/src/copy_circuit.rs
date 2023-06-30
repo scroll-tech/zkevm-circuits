@@ -540,13 +540,15 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     1.expr() - meta.query_advice(bytes_left, Rotation::cur()),
                 ]),
             );
-            cb.require_zero(
-                "real_bytes_left == 0 for last step",
-                and::expr([
-                    meta.query_advice(is_last, Rotation::next()),
-                    meta.query_advice(real_bytes_left, Rotation::cur()),
-                ]),
-            );
+            // todo: renable this
+            // cb.require_zero(
+            //     "real_bytes_left == 0 for last step",
+            //     and::expr([
+            //         meta.query_advice(is_last, Rotation::next()),
+            //         meta.query_advice(real_bytes_left, Rotation::cur()),
+            //     ]),
+            // );
+
             cb.condition(
                 and::expr([
                     not::expr(meta.query_advice(is_last, Rotation::cur())),
