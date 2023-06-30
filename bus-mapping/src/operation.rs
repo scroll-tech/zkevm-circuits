@@ -1,5 +1,5 @@
 //! Collection of structs and functions used to:
-//! - Define the internals of a [`MemoryOp`], [`StackOp`] and [`StorageOp`].
+//! - Define the internals of a [`MemoryWordOp`], [`StackOp`] and [`StorageOp`].
 //! - Define the actual operation types and a wrapper over them (the [`Operation`] enum).
 //! - Define structures that interact with operations such as [`OperationContainer`].
 pub(crate) mod container;
@@ -86,8 +86,6 @@ impl RWCounter {
 pub enum Target {
     /// Start is a padding operation.
     Start,
-    /// Means the target of the operation is the Memory.
-    Memory,
     /// Means the target of the operation is the MemoryWord.
     MemoryWord,
     /// Means the target of the operation is the Stack.
@@ -120,83 +118,6 @@ pub trait Op: Clone + Eq + Ord {
     fn reverse(&self) -> Self;
 }
 
-/// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
-/// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
-/// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
-#[derive(Clone, PartialEq, Eq)]
-pub struct MemoryOp {
-    /// Call ID
-    pub call_id: usize,
-    /// Memory Address
-    pub address: MemoryAddress,
-    /// Value
-    pub value: u8,
-}
-
-impl fmt::Debug for MemoryOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("MemoryOp { ")?;
-        f.write_fmt(format_args!(
-            "call_id: {:?}, addr: {:?}, value: 0x{:02x}",
-            self.call_id, self.address, self.value
-        ))?;
-        f.write_str(" }")
-    }
-}
-
-impl MemoryOp {
-    /// Create a new instance of a `MemoryOp` from it's components.
-    pub fn new(call_id: usize, address: MemoryAddress, value: u8) -> MemoryOp {
-        MemoryOp {
-            call_id,
-            address,
-            value,
-        }
-    }
-
-    /// Returns the [`Target`] (operation type) of this operation.
-    pub const fn target(&self) -> Target {
-        Target::Memory
-    }
-
-    /// Returns the call id associated to this Operation.
-    pub const fn call_id(&self) -> usize {
-        self.call_id
-    }
-
-    /// Returns the [`MemoryAddress`] associated to this Operation.
-    pub const fn address(&self) -> &MemoryAddress {
-        &self.address
-    }
-
-    /// Returns the bytes read or written by this operation.
-    pub fn value(&self) -> u8 {
-        self.value
-    }
-}
-
-impl Op for MemoryOp {
-    fn into_enum(self) -> OpEnum {
-        OpEnum::Memory(self)
-    }
-
-    fn reverse(&self) -> Self {
-        unreachable!("MemoryOp can't be reverted")
-    }
-}
-
-impl PartialOrd for MemoryOp {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for MemoryOp {
-    fn cmp(&self, other: &Self) -> Ordering {
-        (&self.call_id, &self.address).cmp(&(&other.call_id, &other.address))
-    }
-}
-
 // new Memory ops for word value
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
 /// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
@@ -225,7 +146,7 @@ impl fmt::Debug for MemoryWordOp {
 }
 
 impl MemoryWordOp {
-    /// Create a new instance of a `MemoryOp` from it's components.
+    /// Create a new instance of a `MemoryWordOp` from it's components.
     pub fn new(call_id: usize, address: MemoryAddress, value: Word) -> MemoryWordOp {
         Self::new_write(call_id, address, value, value)
     }
@@ -247,7 +168,7 @@ impl MemoryWordOp {
 
     /// Returns the [`Target`] (operation type) of this operation.
     pub const fn target(&self) -> Target {
-        Target::Memory
+        Target::MemoryWord
     }
 
     /// Returns the call id associated to this Operation.
@@ -277,7 +198,7 @@ impl Op for MemoryWordOp {
     }
 
     fn reverse(&self) -> Self {
-        unreachable!("MemoryOp can't be reverted")
+        unreachable!("MemoryWordOp can't be reverted")
     }
 }
 
@@ -1003,13 +924,11 @@ impl Op for TxReceiptOp {
 }
 
 /// Generic enum that wraps over all the operation types possible.
-/// In particular [`StackOp`], [`MemoryOp`] and [`StorageOp`].
+/// In particular [`StackOp`], [`MemoryWordOp`] and [`StorageOp`].
 #[derive(Debug, Clone)]
 pub enum OpEnum {
     /// Stack
     Stack(StackOp),
-    /// Memory
-    Memory(MemoryOp),
     /// Memory word
     MemoryWord(MemoryWordOp),
     /// Storage
@@ -1177,7 +1096,7 @@ mod operation_tests {
 
         let stack_op_as_operation = Operation::new(RWCounter(1), RW::WRITE, stack_op.clone());
 
-        let memory_op = MemoryOp::new(1, MemoryAddress(0x40), 0x40);
+        let memory_op = MemoryWordOp::new(1, MemoryAddress(0x40), Word::from(0x40));
 
         let memory_op_as_operation = Operation::new(RWCounter(1), RW::WRITE, memory_op.clone());
 

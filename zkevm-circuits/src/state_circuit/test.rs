@@ -6,7 +6,7 @@ use crate::{
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
-    MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
+    MemoryWordOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
 };
 use eth_types::{
     address,
@@ -37,12 +37,12 @@ fn state_circuit_unusable_rows() {
 }
 
 fn test_state_circuit_ok(
-    memory_ops: Vec<Operation<MemoryOp>>,
+    memory_ops: Vec<Operation<MemoryWordOp>>,
     stack_ops: Vec<Operation<StackOp>>,
     storage_ops: Vec<Operation<StorageOp>>,
 ) {
     let rw_map = RwMap::from(&OperationContainer {
-        memory: memory_ops,
+        memory_word: memory_ops,
         stack: stack_ops,
         storage: storage_ops,
         ..Default::default()
@@ -70,10 +70,10 @@ fn verifying_key_independent_of_rw_length() {
     let no_rows = StateCircuit::<Fr>::new(RwMap::default(), N_ROWS);
     let one_row = StateCircuit::<Fr>::new(
         RwMap::from(&OperationContainer {
-            memory: vec![Operation::new(
+            memory_word: vec![Operation::new(
                 RWCounter::from(1),
                 RW::WRITE,
-                MemoryOp::new(1, MemoryAddress::from(0), 32),
+                MemoryWordOp::new(1, MemoryAddress::from(0), 32.into()),
             )],
             ..Default::default()
         }),
@@ -97,23 +97,23 @@ fn state_circuit_simple_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryWordOp::new(1, MemoryAddress::from(0), 32.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(24),
         RW::READ,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryWordOp::new(1, MemoryAddress::from(0), 32.into()),
     );
 
     let memory_op_2 = Operation::new(
         RWCounter::from(17),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(1), 32),
+        MemoryWordOp::new(1, MemoryAddress::from(1), 32.into()),
     );
     let memory_op_3 = Operation::new(
         RWCounter::from(87),
         RW::READ,
-        MemoryOp::new(1, MemoryAddress::from(1), 32),
+        MemoryWordOp::new(1, MemoryAddress::from(1), 32.into()),
     );
 
     let stack_op_0 = Operation::new(
@@ -176,12 +176,12 @@ fn state_circuit_simple_6() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryWordOp::new(1, MemoryAddress::from(0), 32.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
         RW::READ,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryWordOp::new(1, MemoryAddress::from(0), 32.into()),
     );
     let storage_op_2 = Operation::new(
         RWCounter::from(19),
@@ -203,7 +203,7 @@ fn lexicographic_ordering_test_1() {
     let memory_op = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryWordOp::new(1, MemoryAddress::from(0), 32.into()),
     );
     let storage_op = Operation::new(
         RWCounter::from(19),
@@ -225,12 +225,12 @@ fn lexicographic_ordering_test_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryWordOp::new(1, MemoryAddress::from(0), 32.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
         RW::WRITE,
-        MemoryOp::new(1, MemoryAddress::from(0), 32),
+        MemoryWordOp::new(1, MemoryAddress::from(0), 32.into()),
     );
     test_state_circuit_ok(vec![memory_op_0, memory_op_1], vec![], vec![]);
 }
@@ -473,12 +473,12 @@ fn is_write_nonbinary() {
 
 #[test]
 fn nonlexicographic_order_tag() {
-    let first = Rw::Memory {
+    let first = Rw::MemoryWord {
         rw_counter: 1,
         is_write: true,
         call_id: 1,
         memory_address: 10,
-        byte: 12,
+        value: 12.into(),
     };
     let second = Rw::CallContext {
         rw_counter: 2,
@@ -672,19 +672,19 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
 fn read_inconsistency() {
     // TODO: memory word checking read_inconsistency
     let rows = vec![
-        Rw::Memory {
+        Rw::MemoryWord {
             rw_counter: 10,
             is_write: false,
             call_id: 1,
             memory_address: 10,
-            byte: 0,
+            value: 0.into(),
         },
-        Rw::Memory {
+        Rw::MemoryWord {
             rw_counter: 40,
             is_write: false,
             call_id: 1,
             memory_address: 10,
-            byte: 200,
+            value: 200.into(),
         },
     ];
 
@@ -716,12 +716,12 @@ fn skipped_start_rw_counter() {
 
 #[test]
 fn invalid_memory_address() {
-    let rows = vec![Rw::Memory {
+    let rows = vec![Rw::MemoryWord {
         rw_counter: 1,
         is_write: true,
         call_id: 1,
         memory_address: 1u64 << 32,
-        byte: 12,
+        value: 12.into(),
     }];
 
     assert_error_matches(verify(rows), "memory address fits into 2 limbs");
@@ -729,12 +729,12 @@ fn invalid_memory_address() {
 
 #[test]
 fn bad_initial_memory_value() {
-    let rows = vec![Rw::Memory {
+    let rows = vec![Rw::MemoryWord {
         rw_counter: 1,
         is_write: true,
         call_id: 1,
         memory_address: 10,
-        byte: 0,
+        value: 0.into(),
     }];
 
     let v = Fr::from(200);
@@ -749,26 +749,6 @@ fn bad_initial_memory_value() {
     let result = verify_with_overrides(rows, overrides);
 
     assert_error_matches(result, "initial Memory value is 0");
-}
-
-#[test]
-fn invalid_memory_value() {
-    let rows = vec![Rw::Memory {
-        rw_counter: 1,
-        is_write: true,
-        call_id: 1,
-        memory_address: 10,
-        byte: 1,
-    }];
-    let v = Fr::from(256);
-    let overrides = HashMap::from([
-        ((AdviceColumn::Value, 0), v),
-        ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
-    ]);
-
-    let result = verify_with_overrides(rows, overrides);
-
-    assert_error_matches(result, "memory value is a byte");
 }
 
 #[test]

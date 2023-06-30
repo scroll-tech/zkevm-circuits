@@ -132,7 +132,7 @@ use swap::Swap;
 /// or multiple [`ExecStep`](crate::circuit_input_builder::ExecStep) depending
 /// of the [`OpcodeId`] it contains.
 pub trait Opcode: Debug {
-    /// Generate the associated [`MemoryOp`](crate::operation::MemoryOp)s,
+    /// Generate the associated [`MemoryWordOp`](crate::operation::MemoryWordOp)s,
     /// [`StackOp`](crate::operation::StackOp)s, and
     /// [`StorageOp`](crate::operation::StorageOp)s associated to the Opcode
     /// is implemented for.

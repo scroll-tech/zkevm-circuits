@@ -126,7 +126,7 @@ impl Default for CircuitsParams {
 ///
 /// The generated bus-mapping operations are:
 /// [`StackOp`](crate::operation::StackOp)s,
-/// [`MemoryOp`](crate::operation::MemoryOp)s and
+/// [`MemoryWordOp`](crate::operation::MemoryWordOp)s and
 /// [`StorageOp`](crate::operation::StorageOp), which correspond to each
 /// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecTrace` step so that
 /// the State Proof witnesses are already generated on a structured manner and
@@ -314,7 +314,7 @@ impl<'a> CircuitInputBuilder {
                     values.1 += step
                         .bus_mapping_instance
                         .iter()
-                        .filter(|rw| rw.0 == operation::Target::Memory)
+                        .filter(|rw| rw.0 == operation::Target::MemoryWord)
                         .count();
                     values.2 += step
                         .bus_mapping_instance
@@ -331,7 +331,7 @@ impl<'a> CircuitInputBuilder {
             .rev()
         {
             log::debug!(
-                "op {:?}, count {}, mem rw {}(avg {:.2}), stack rw {}(avg {:.2})",
+                "op {:?}, count {}, memory_word rw {}(avg {:.2}), stack rw {}(avg {:.2})",
                 op,
                 count,
                 mem,
@@ -340,7 +340,10 @@ impl<'a> CircuitInputBuilder {
                 *stack as f32 / *count as f32
             );
         }
-        log::debug!("memory num: {}", self.block.container.memory.len());
+        log::debug!(
+            "memory_word num: {}",
+            self.block.container.memory_word.len()
+        );
         log::debug!("stack num: {}", self.block.container.stack.len());
         log::debug!("storage num: {}", self.block.container.storage.len());
         log::debug!(

@@ -15,9 +15,9 @@ use crate::{
     },
     exec_trace::OperationRef,
     operation::{
-        AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, MemoryWordOp, Op,
-        OpEnum, Operation, StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp,
-        TxReceiptField, TxReceiptOp, RW,
+        AccountField, AccountOp, CallContextField, CallContextOp, MemoryWordOp, Op, OpEnum,
+        Operation, StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField,
+        TxReceiptOp, RW,
     },
     precompile::is_precompiled,
     state_db::{CodeDB, StateDB},
@@ -214,24 +214,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    /// Push a read type [`MemoryOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter) by one.
-    pub fn memory_read(
-        &mut self,
-        step: &mut ExecStep,
-        address: MemoryAddress,
-        value: u8,
-    ) -> Result<(), Error> {
-        let call_id = self.call()?.call_id;
-        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, value));
-        Ok(())
-    }
-
-    /// Push a read type [`MemoryOp`] into the
+    /// Push a read type [`MemoryWordOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
     /// adds a reference to the stored operation ([`OperationRef`]) inside
@@ -267,23 +250,6 @@ impl<'a> CircuitInputStateRef<'a> {
         let caller_id = self.call()?.caller_id;
         self.push_op(step, RW::READ, MemoryWordOp::new(caller_id, address, value));
         Ok(value)
-    }
-
-    /// Push a write type [`MemoryOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
-    pub fn memory_write(
-        &mut self,
-        step: &mut ExecStep,
-        address: MemoryAddress,
-        value: u8,
-    ) -> Result<(), Error> {
-        let call_id = self.call()?.call_id;
-        self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value));
-        Ok(())
     }
 
     /// Push a write type [`MemoryWordOp`] into the
