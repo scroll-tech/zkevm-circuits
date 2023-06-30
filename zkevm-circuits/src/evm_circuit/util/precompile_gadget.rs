@@ -1,19 +1,20 @@
 use bus_mapping::precompile::PrecompileCalls;
 use eth_types::Field;
-use gadgets::util::{not, Expr};
-use halo2_proofs::plonk::Expression;
+use gadgets::util::{not, or, select, Expr};
+use halo2_proofs::{circuit::Value, plonk::Expression};
 
 use crate::evm_circuit::{param::N_BYTES_ACCOUNT_ADDRESS, step::ExecutionState};
 
 use super::{
     constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
     math_gadget::BinaryNumberGadget,
-    CachedRegion,
+    CachedRegion, Cell,
 };
 
 #[derive(Clone, Debug)]
 pub struct PrecompileGadget<F> {
     address: BinaryNumberGadget<F, 4>,
+    padding_gadget: PaddingGadget<F>,
 }
 
 impl<F: Field> PrecompileGadget<F> {
@@ -36,6 +37,24 @@ impl<F: Field> PrecompileGadget<F> {
         _return_bytes_rlc: Expression<F>,
     ) -> Self {
         let address = BinaryNumberGadget::construct(cb, callee_address.expr());
+        let input_len = {
+            let len_128 = or::expr([
+                address.value_equals(PrecompileCalls::Ecrecover),
+                address.value_equals(PrecompileCalls::Bn128Add),
+            ]);
+            let len_96 = address.value_equals(PrecompileCalls::Bn128Mul);
+            select::expr(
+                len_128,
+                128.expr(),
+                select::expr(len_96, 96.expr(), 0.expr()),
+            )
+        };
+        let padding_gadget = PaddingGadget::construct(
+            cb,
+            input_bytes_rlc.expr(),
+            cd_length.expr(),
+            input_len.expr(),
+        );
 
         cb.condition(address.value_equals(PrecompileCalls::Ecrecover), |cb| {
             cb.constrain_next_step(ExecutionState::PrecompileEcrecover, None, |cb| {
@@ -63,16 +82,16 @@ impl<F: Field> PrecompileGadget<F> {
                         + (sig_r_rlc.expr() * r_pow_32)
                         + sig_s_rlc.expr(),
                 );
-                cb.condition(recovered.expr(), |cb| {
-                    cb.require_equal(
-                        "output bytes (RLC) = recovered address",
-                        output_bytes_rlc.expr(),
-                        recovered_addr_rlc.expr(),
-                    );
-                });
+
+                // RLC of output bytes always equals RLC of the recovered address.
+                cb.require_equal(
+                    "output bytes (RLC) = recovered address",
+                    output_bytes_rlc.expr(),
+                    recovered_addr_rlc.expr(),
+                );
+                // If the address was not recovered, RLC(address) == RLC(output) == 0.
                 cb.condition(not::expr(recovered.expr()), |cb| {
                     cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
-                    cb.require_zero("recovered addr == 0", recovered_addr_rlc.expr());
                 });
             });
         });
@@ -121,7 +140,10 @@ impl<F: Field> PrecompileGadget<F> {
             cb.constrain_next_step(ExecutionState::PrecompileBlake2f, None, |_cb| {});
         });
 
-        Self { address }
+        Self {
+            address,
+            padding_gadget,
+        }
     }
 
     pub(crate) fn assign(
@@ -129,7 +151,78 @@ impl<F: Field> PrecompileGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         address: PrecompileCalls,
+        input_rlc: Value<F>,
+        input_len: u64,
+        keccak_rand: Value<F>,
     ) -> Result<(), halo2_proofs::plonk::Error> {
-        self.address.assign(region, offset, address)
+        self.address.assign(region, offset, address.clone())?;
+        self.padding_gadget
+            .assign(region, offset, address, input_rlc, input_len, keccak_rand)?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PaddingGadget<F> {
+    padded_rlc: Cell<F>,
+    power_of_rand: Cell<F>,
+}
+
+impl<F: Field> PaddingGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        input_rlc: Expression<F>,
+        input_len: Expression<F>,
+        required_input_len: Expression<F>,
+    ) -> Self {
+        // No. of right padded zeroes is the difference between the required input length and the
+        // length of the provided input bytes. We only support right-padding by up to 127 bytes, as
+        // that's the maximum we ever require considering all cases (ecrecover, ecAdd, ecMul).
+        let n_padded_zeroes = required_input_len.expr() - input_len.expr();
+        cb.range_lookup(n_padded_zeroes.expr(), 128);
+
+        // Phase2 cell that contains the RLC of the padded-bytes.
+        let padded_rlc = cb.query_cell_phase2();
+
+        // Power of randomness we are interested in, i.e. r ^ n_padded_zeroes.
+        let power_of_rand = cb.query_cell_phase2();
+        // TODO: cb.power_of_rand_lookup(n_padded_zeroes.expr(), power_of_rand.expr());
+
+        // Validate value of padded RLC.
+        cb.require_equal(
+            "padded RLC == input RLC * pow_of_r",
+            padded_rlc.expr(),
+            input_rlc * power_of_rand.expr(),
+        );
+
+        Self {
+            padded_rlc,
+            power_of_rand,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        precompile: PrecompileCalls,
+        input_rlc: Value<F>,
+        input_len: u64,
+        keccak_rand: Value<F>,
+    ) -> Result<(), halo2_proofs::plonk::Error> {
+        let (padded_rlc, power_of_rand) = if let Some(required_input_len) = precompile.input_len() {
+            assert!(required_input_len >= input_len as usize);
+            let n_padded_zeroes = (required_input_len as u64) - input_len;
+            assert!(n_padded_zeroes < 128);
+            let power_of_rand = keccak_rand.map(|r| r.pow(&[n_padded_zeroes, 0, 0, 0]));
+            (input_rlc * power_of_rand, power_of_rand)
+        } else {
+            (input_rlc, Value::known(F::one()))
+        };
+
+        self.padded_rlc.assign(region, offset, padded_rlc)?;
+        self.power_of_rand.assign(region, offset, power_of_rand)?;
+
+        Ok(())
     }
 }
