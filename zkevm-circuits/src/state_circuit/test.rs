@@ -108,7 +108,7 @@ fn state_circuit_simple_2() {
     let memory_op_2 = Operation::new(
         RWCounter::from(17),
         RW::WRITE,
-        MemoryWordOp::new(1, MemoryAddress::from(1), 32.into()),
+        MemoryWordOp::new_with_prev_value(1, MemoryAddress::from(1), 32.into(), 0.into()),
     );
     let memory_op_3 = Operation::new(
         RWCounter::from(87),
