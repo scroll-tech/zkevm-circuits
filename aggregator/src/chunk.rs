@@ -3,6 +3,9 @@
 use eth_types::H256;
 use ethers_core::utils::keccak256;
 
+/// Implements a dummy circuit for the chunk
+pub(crate) mod dummy_circuit;
+
 #[derive(Default, Debug, Clone, Copy)]
 /// A chunk is a set of continuous blocks.
 /// A ChunkHash consists of 4 hashes, representing the changes incurred by this chunk of blocks:
@@ -41,6 +44,26 @@ impl ChunkHash {
             post_state_root: post_state_root.into(),
             withdraw_root: withdraw_root.into(),
             data_hash: data_hash.into(),
+        }
+    }
+
+    /// Build a dummy chunk from a real chunk.
+    /// The dummy chunk will act as a consecutive chunk of the real chunk
+    pub(crate) fn dummy_chunk_hash(previous_chunk: &Self) -> Self {
+        Self {
+            chain_id: previous_chunk.chain_id,
+            prev_state_root: previous_chunk.post_state_root,
+            post_state_root: previous_chunk.post_state_root,
+            withdraw_root: previous_chunk.withdraw_root,
+            data_hash: [0u8; 32].into(),
+        }
+    }
+
+    pub(crate) fn is_dummy(&self) -> bool {
+        if self.prev_state_root != self.post_state_root || self.data_hash != [0u8; 32].into() {
+            false
+        } else {
+            true
         }
     }
 
