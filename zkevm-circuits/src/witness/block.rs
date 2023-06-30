@@ -154,8 +154,11 @@ impl<F: Field> Block<F> {
             .values()
             .map(|bytecode| bytecode.bytes.len() + 1)
             .sum();
-        let num_rows_required_for_copy_table: usize =
-            self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
+        let num_rows_required_for_copy_table: usize = self
+            .copy_events
+            .iter()
+            .map(|c| c.copy_bytes.bytes.len() * 2)
+            .sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
         let num_rows_required_for_tx_table: usize =
             TX_LEN * self.circuits_params.max_txs + self.circuits_params.max_calldata;

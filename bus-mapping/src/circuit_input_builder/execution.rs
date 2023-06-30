@@ -320,6 +320,8 @@ impl_expr!(CopyDataType, u64::from);
 pub struct CopyStep {
     /// Byte value copied in this step.
     pub value: u8,
+    /// Byte value before this step.
+    pub prev_value: Option<u8>,
     /// mask indicates this byte won't be copied.
     pub mask: bool,
     /// Optional field which is enabled only for the source being `bytecode`,
@@ -334,6 +336,34 @@ pub enum NumberOrHash {
     Number(usize),
     /// Variant to indicate a 256-bits hash value.
     Hash(H256),
+}
+
+/// Represents all bytes related in one copy event.
+#[derive(Clone, Debug)]
+pub struct CopyBytes {
+    /// Represents the list of (bytes, is_code, mask) copied during this copy event
+    pub bytes: Vec<(u8, bool, bool)>,
+    /// Represents the list of (bytes, is_code, mask) read to copy during this copy event, used for
+    /// memory to memoryb write case
+    pub aux_bytes: Option<Vec<(u8, bool, bool)>>,
+    /// Represents the list of bytes before this copy event, it is reuqired for memory write copy
+    /// event
+    pub bytes_write_prev: Option<Vec<u8>>,
+}
+
+impl CopyBytes {
+    /// construct CopyBytes instance
+    pub fn new(
+        bytes: Vec<(u8, bool, bool)>,
+        aux_bytes: Option<Vec<(u8, bool, bool)>>,
+        bytes_write_prev: Option<Vec<u8>>,
+    ) -> Self {
+        Self {
+            bytes,
+            aux_bytes,
+            bytes_write_prev,
+        }
+    }
 }
 
 /// Defines a copy event associated with EVM opcodes such as CALLDATACOPY,
@@ -360,10 +390,8 @@ pub struct CopyEvent {
     pub log_id: Option<u64>,
     /// Value of rw counter at start of this copy event
     pub rw_counter_start: RWCounter,
-    /// Represents the list of (bytes, is_code, mask) copied during this copy event
-    pub bytes: CopyEventSteps,
-    /// Represents the list of (bytes, is_code, mask) read to copy during this copy event
-    pub aux_bytes: Option<CopyEventSteps>,
+    /// Represents the list of bytes related during this copy event
+    pub copy_bytes: CopyBytes,
 }
 
 pub type CopyEventSteps = Vec<(u8, bool, bool)>;
@@ -388,7 +416,7 @@ impl CopyEvent {
 
         // // step_index == self.bytes.len() when caculate total rw increasing.
         if self.dst_type == CopyDataType::TxLog
-            && step_index != self.bytes.len() * 2
+            && step_index != self.copy_bytes.bytes.len() * 2
             && step_index % 64 == 63
         {
             // log writing
@@ -400,16 +428,17 @@ impl CopyEvent {
 
     /// rw counter increase left at step index
     pub fn rw_counter_increase_left(&self, step_index: usize) -> u64 {
-        if self.rw_counter_step(self.bytes.len() * 2) < self.rw_counter_step(step_index) {
+        if self.rw_counter_step(self.copy_bytes.bytes.len() * 2) < self.rw_counter_step(step_index)
+        {
             panic!("prev rw_counter_step > total tw_counter");
         }
         // self.rw_counter_step(self.bytes.len() * 2) - self.rw_counter_step(step_index)
-        self.rw_counter_step(self.bytes.len() * 2) - self.rw_counter_step(step_index)
+        self.rw_counter_step(self.copy_bytes.bytes.len() * 2) - self.rw_counter_step(step_index)
     }
 
     /// Number of rw operations performed by this copy event
     pub fn rw_counter_delta(&self) -> u64 {
-        self.rw_counter_increase(self.bytes.len() * 2)
+        self.rw_counter_increase(self.copy_bytes.bytes.len() * 2)
     }
 
     // increase in rw counter from the start of the copy event to step index

@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
     Error,
@@ -149,8 +149,9 @@ fn gen_copy_event(
         .unwrap_or(u64::MAX)
         .min(src_addr_end);
 
-    let copy_steps = state.gen_copy_steps_for_bytecode(
-        exec_step,
+    let mut exec_step = state.new_step(geth_step)?;
+    let (copy_steps, prev_bytes) = state.gen_copy_steps_for_bytecode(
+        &mut exec_step,
         &bytecode,
         src_addr,
         dst_addr,
@@ -168,8 +169,7 @@ fn gen_copy_event(
         dst_id: NumberOrHash::Number(state.call()?.call_id),
         log_id: None,
         rw_counter_start,
-        bytes: copy_steps,
-        aux_bytes: None,
+        copy_bytes: CopyBytes::new(copy_steps, None, Some(prev_bytes)),
     })
 }
 
@@ -411,6 +411,7 @@ mod extcodecopy_tests {
         let copy_end = length - length % 32;
         let word_ops = (copy_end + 32 - copy_start) / 32;
         let copied_bytes = builder.block.copy_events[0]
+            .copy_bytes
             .bytes
             .iter()
             .map(|(b, _, _)| *b)
@@ -452,7 +453,7 @@ mod extcodecopy_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 
-        for (idx, (value, is_code, is_mask)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, is_mask)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             if !*is_mask {
                 let bytecode_element = bytecode_ext.get(idx).unwrap_or_default();
                 assert_eq!(*value, bytecode_element.value);

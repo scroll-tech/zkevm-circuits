@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     error::{ContractAddressCollisionError, ExecError},
     evm::{Opcode, OpcodeId},
@@ -388,8 +388,7 @@ fn handle_copy(
             dst_id: NumberOrHash::Hash(code_hash),
             dst_addr: 0,
             log_id: None,
-            bytes: copy_steps,
-            aux_bytes: None,
+            copy_bytes: CopyBytes::new(copy_steps, None, None),
         },
     );
 

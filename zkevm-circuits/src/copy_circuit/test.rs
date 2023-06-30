@@ -62,6 +62,7 @@ pub fn test_copy_circuit_from_block<F: Field>(
 
 fn gen_calldatacopy_data() -> CircuitInputBuilder {
     let length = 0x0fffusize;
+    // let length = 0x0fusize;
     let code = bytecode! {
         PUSH32(Word::from(length))
         PUSH32(Word::from(0x00))
@@ -364,8 +365,10 @@ fn copy_circuit_invalid_calldatacopy() {
     let mut builder = gen_calldatacopy_data();
 
     // modify first byte of first copy event
-    builder.block.copy_events[0].bytes[0].0 =
-        builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+    builder.block.copy_events[0].copy_bytes.bytes[0].0 =
+        builder.block.copy_events[0].copy_bytes.bytes[0]
+            .0
+            .wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 
@@ -380,8 +383,10 @@ fn copy_circuit_invalid_codecopy() {
     let mut builder = gen_codecopy_data();
 
     // modify first byte of first copy event
-    builder.block.copy_events[0].bytes[0].0 =
-        builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+    builder.block.copy_events[0].copy_bytes.bytes[0].0 =
+        builder.block.copy_events[0].copy_bytes.bytes[0]
+            .0
+            .wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 
@@ -396,8 +401,10 @@ fn copy_circuit_invalid_extcodecopy() {
     let mut builder = gen_extcodecopy_data();
 
     // modify first byte of first copy event
-    builder.block.copy_events[0].bytes[0].0 =
-        builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+    builder.block.copy_events[0].copy_bytes.bytes[0].0 =
+        builder.block.copy_events[0].copy_bytes.bytes[0]
+            .0
+            .wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 
@@ -412,8 +419,10 @@ fn copy_circuit_invalid_sha3() {
     let mut builder = gen_sha3_data();
 
     // modify first byte of first copy event
-    builder.block.copy_events[0].bytes[0].0 =
-        builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+    builder.block.copy_events[0].copy_bytes.bytes[0].0 =
+        builder.block.copy_events[0].copy_bytes.bytes[0]
+            .0
+            .wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 
@@ -428,8 +437,10 @@ fn copy_circuit_invalid_tx_log() {
     let mut builder = gen_tx_log_data();
 
     // modify first byte of first copy event
-    builder.block.copy_events[0].bytes[0].0 =
-        builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+    builder.block.copy_events[0].copy_bytes.bytes[0].0 =
+        builder.block.copy_events[0].copy_bytes.bytes[0]
+            .0
+            .wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 

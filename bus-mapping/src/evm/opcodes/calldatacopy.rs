@@ -1,13 +1,12 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     operation::CallContextField,
     Error,
 };
 use eth_types::GethExecStep;
-use revm_precompile::primitives::bitvec::macros::internal::funty::Fundamental;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Calldatacopy;
@@ -118,13 +117,16 @@ fn gen_copy_event(
     let dst_addr = memory_offset;
 
     if state.call()?.is_root {
-        let copy_steps = state.gen_copy_steps_for_call_data_root(
+        let (copy_steps, prev_bytes) = state.gen_copy_steps_for_call_data_root(
             exec_step,
             src_addr,
             dst_addr,
             length,
             memory_updated,
         )?;
+
+        //todo: fetch pre write bytes to fill 'bytes_write_prev' of CopyBytes
+        let copy_bytes = CopyBytes::new(copy_steps, None, Some(prev_bytes));
 
         Ok(CopyEvent {
             src_type: CopyDataType::TxCalldata,
@@ -136,11 +138,10 @@ fn gen_copy_event(
             dst_addr,
             log_id: None,
             rw_counter_start,
-            bytes: copy_steps,
-            aux_bytes: None,
+            copy_bytes: copy_bytes,
         })
     } else {
-        let (read_steps, write_steps) = state.gen_copy_steps_for_call_data_non_root(
+        let (read_steps, write_steps, prev_bytes) = state.gen_copy_steps_for_call_data_non_root(
             exec_step,
             src_addr,
             dst_addr,
@@ -158,8 +159,8 @@ fn gen_copy_event(
             dst_addr,
             log_id: None,
             rw_counter_start,
-            bytes: read_steps,
-            aux_bytes: Some(write_steps),
+            //fetch pre read and write bytes of CopyBytes
+            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), Some(prev_bytes)),
         })
     }
 }
@@ -329,7 +330,7 @@ mod calldatacopy_tests {
         );
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
-        for (idx, (value, is_code, _)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, _)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             if idx < memory_a.len() {
                 assert_eq!(*value, memory_a[idx]);
             } else {
@@ -485,13 +486,16 @@ mod calldatacopy_tests {
         assert_eq!(copy_events.len(), 1);
         let begin_slot = dst_offset - dst_offset % 32;
         let end_slot = (dst_offset + size - 1) - (dst_offset + size - 1) % 32;
-        assert_eq!(copy_events[0].bytes.len(), end_slot - begin_slot + 32);
+        assert_eq!(
+            copy_events[0].copy_bytes.bytes.len(),
+            end_slot - begin_slot + 32
+        );
         assert_eq!(
             builder.block.container.memory_word.len(),
             (end_slot - begin_slot) / 32 + 1
         );
 
-        for (idx, (value, is_code, _)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, _)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             assert_eq!(value, calldata.get(offset as usize + idx).unwrap_or(&0));
             assert!(!is_code);
         }

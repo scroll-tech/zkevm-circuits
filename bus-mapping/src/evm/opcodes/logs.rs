@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
     },
     operation::{CallContextField, TxLogField},
     Error,
@@ -149,8 +149,7 @@ fn gen_copy_event(
         dst_addr: 0,
         log_id: Some(state.tx_ctx.log_id as u64 + 1),
         rw_counter_start,
-        bytes: read_steps,
-        aux_bytes: Some(write_steps),
+        copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None),
     })
 }
 
@@ -360,6 +359,7 @@ mod log_tests {
         let copy_end = copy_last - copy_last % 32;
         let word_ops = (copy_end + 32 - copy_start) / 32;
         let copied_bytes = builder.block.copy_events[0]
+            .copy_bytes
             .bytes
             .iter()
             .map(|(b, _, _)| *b)
@@ -404,7 +404,7 @@ mod log_tests {
         assert_eq!(copy_events[0].dst_addr as usize, 0);
         assert_eq!(copy_events[0].log_id, Some(step.log_id as u64 + 1));
 
-        for (idx, (byte, is_code, is_mask)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (byte, is_code, is_mask)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             if !*is_mask {
                 assert_eq!(Some(byte), memory_data.get(mstart + idx));
                 assert!(!*is_code);

@@ -1517,6 +1517,7 @@ impl CopyTable {
         // rlc_acc
         let rlc_acc = {
             let values = copy_event
+                .copy_bytes
                 .bytes
                 .iter()
                 .filter(|(_, _, mask)| !mask)
@@ -1538,11 +1539,17 @@ impl CopyTable {
         let mut rlc_acc_write = Value::known(F::zero());
 
         let non_mask_pos = copy_event
+            .copy_bytes
             .bytes
             .iter()
             .position(|&step| !step.2)
             .unwrap_or(0);
-        let mut real_length_left = copy_event.bytes.iter().filter(|&step| !step.2).count();
+        let mut real_length_left = copy_event
+            .copy_bytes
+            .bytes
+            .iter()
+            .filter(|&step| !step.2)
+            .count();
         let mut word_index;
         let mut read_addr_slot = if copy_event.src_type == CopyDataType::Memory {
             copy_event.src_addr - copy_event.src_addr % 32
@@ -1556,17 +1563,24 @@ impl CopyTable {
             0
         };
 
-        let read_steps = copy_event.bytes.iter();
-        let copy_steps = if let Some(ref write_steps) = copy_event.aux_bytes {
+        let read_steps = copy_event.copy_bytes.bytes.iter();
+        let copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
             read_steps.zip(write_steps.iter())
         } else {
-            read_steps.zip(copy_event.bytes.iter())
+            read_steps.zip(copy_event.copy_bytes.bytes.iter())
         };
 
-        for (step_idx, (is_read_step, copy_step)) in copy_steps
+        let prev_write_bytes: Vec<u8> = copy_event
+            .copy_bytes
+            .bytes_write_prev
+            .clone()
+            .unwrap_or(vec![]);
+
+        for (step_idx, (is_read_step, mut copy_step)) in copy_steps
             .flat_map(|(read_step, write_step)| {
                 let read_step = CopyStep {
                     value: read_step.0,
+                    prev_value: None,
                     mask: read_step.2,
                     is_code: if copy_event.src_type == CopyDataType::Bytecode {
                         Some(read_step.1)
@@ -1576,6 +1590,8 @@ impl CopyTable {
                 };
                 let write_step = CopyStep {
                     value: write_step.0,
+                    // temp set prev_value to None, will assgin it latter
+                    prev_value: None,
                     mask: write_step.2,
                     is_code: if copy_event.dst_type == CopyDataType::Bytecode {
                         Some(write_step.1)
@@ -1587,10 +1603,15 @@ impl CopyTable {
             })
             .enumerate()
         {
+            // re-assign with correct `prev_value` in copy_step
+            if !is_read_step && !prev_write_bytes.is_empty() {
+                copy_step.prev_value = Some(*prev_write_bytes.get(step_idx / 2).unwrap());
+            }
+
             // is_first
             let is_first = Value::known(if step_idx == 0 { F::one() } else { F::zero() });
             // is last
-            let is_last = if step_idx == copy_event.bytes.len() * 2 - 1 {
+            let is_last = if step_idx == copy_event.copy_bytes.bytes.len() * 2 - 1 {
                 Value::known(F::one())
             } else {
                 Value::known(F::zero())
@@ -1634,7 +1655,7 @@ impl CopyTable {
                         + Value::known(F::from(copy_step.value as u64));
                     // TODO: use value_prev.
                     value_word_write_rlc_prev = value_word_write_rlc_prev * challenges.evm_word()
-                        + Value::known(F::from(copy_step.value as u64));
+                        + Value::known(F::from(copy_step.prev_value.unwrap_or(0u8) as u64));
                 }
             }
 
@@ -1690,7 +1711,8 @@ impl CopyTable {
             };
 
             // bytes_left (final padding word length )
-            let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
+            let bytes_left =
+                u64::try_from(copy_event.copy_bytes.bytes.len() * 2 - step_idx).unwrap() / 2;
             // value
             let value = Value::known(F::from(copy_step.value as u64));
 
@@ -1707,7 +1729,11 @@ impl CopyTable {
 
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
-
+            //todo: rm
+            println!(
+                "step {},is_last {:?}, real_bytes_left {}",
+                step_idx, is_last, real_length_left
+            );
             assignments.push((
                 tag,
                 [
