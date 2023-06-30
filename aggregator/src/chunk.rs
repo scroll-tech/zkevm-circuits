@@ -2,9 +2,20 @@
 //! A chunk is a list of blocks.
 use eth_types::H256;
 use ethers_core::utils::keccak256;
+use halo2_proofs::{
+    halo2curves::bn256::{Bn256, G1Affine},
+    plonk::ProvingKey,
+    poly::kzg::commitment::ParamsKZG,
+};
+use rand::Rng;
+use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, Snark};
+
+use crate::chunk::dummy_circuit::DummyChunkHashCircuit;
 
 /// Implements a dummy circuit for the chunk
 pub(crate) mod dummy_circuit;
+/// Implements a dummy circuit ext for the chunk
+pub(crate) mod dummy_circuit_ext;
 
 #[derive(Default, Debug, Clone, Copy)]
 /// A chunk is a set of continuous blocks.
@@ -57,6 +68,20 @@ impl ChunkHash {
             withdraw_root: previous_chunk.withdraw_root,
             data_hash: [0u8; 32].into(),
         }
+    }
+
+    /// Generate a dummy snark, as well as the pk. Require the chunk hash to be a dummy one
+    pub(crate) fn dummy_snark(
+        &self,
+        param: &ParamsKZG<Bn256>,
+        rng: &mut (impl Rng + Send),
+    ) -> (ProvingKey<G1Affine>, Snark) {
+        // make sure self is dummy or we will not generate a snark
+        assert!(self.is_dummy());
+        let dummy_circuit = DummyChunkHashCircuit::new(*self);
+        let pk = gen_pk(param, &dummy_circuit, None);
+        let snark = gen_snark_shplonk(&param, &pk, dummy_circuit, rng, None::<String>);
+        (pk, snark)
     }
 
     pub(crate) fn is_dummy(&self) -> bool {

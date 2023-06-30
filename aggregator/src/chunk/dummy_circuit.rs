@@ -17,10 +17,6 @@ impl DummyChunkHashCircuit {
         Self { dummy_chunk }
     }
 
-    pub(crate) fn instance_len() -> usize {
-        32
-    }
-
     pub(crate) fn instance(&self) -> Vec<Fr> {
         self.dummy_chunk
             .public_input_hash()
