@@ -25,6 +25,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
+use itertools::Itertools;
 
 /// Decodes the usable part of an address stored in a Word
 pub(crate) mod address_low {
@@ -687,10 +688,16 @@ impl<F: Field, const MAX_BYTES: usize, const ADDR_SIZE_IN_BYTES: usize>
         bytes: &[u8],
     ) -> Result<(), Error> {
         assert_eq!(bytes.len(), MAX_BYTES);
-        for idx in 0..MAX_BYTES {
+        for (idx, ((byte_col, &byte_val), selector_col)) in self
+            .bytes
+            .iter()
+            .zip_eq(bytes.iter())
+            .zip_eq(self.selectors.iter())
+            .enumerate()
+        {
             let selector = (addr_start + idx as u64) < addr_end;
-            self.selectors[idx].assign(region, offset, Value::known(F::from(selector as u64)))?;
-            self.bytes[idx].assign(region, offset, Value::known(F::from(bytes[idx] as u64)))?;
+            selector_col.assign(region, offset, Value::known(F::from(selector as u64)))?;
+            byte_col.assign(region, offset, Value::known(F::from(byte_val as u64)))?;
         }
 
         let is_empty = addr_start >= addr_end;
