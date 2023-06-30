@@ -107,7 +107,7 @@ fn gen_copy_event(
         last_callee_return_data_offset + last_callee_return_data_length,
     );
 
-    let (read_steps, write_steps) = state.gen_copy_steps_for_return_data(
+    let (read_steps, write_steps, prev_bytes) = state.gen_copy_steps_for_return_data(
         exec_step,
         src_addr,
         src_addr_end,
@@ -126,7 +126,7 @@ fn gen_copy_event(
         dst_addr,
         log_id: None,
         rw_counter_start,
-        copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None),
+        copy_bytes: CopyBytes::new(read_steps, Some(write_steps), Some(prev_bytes)),
     })
 }
 

@@ -2033,12 +2033,13 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: u64,    // memory dest starting addr
         copy_length: u64, // number of bytes to copy, without padding
         memory_updated: Memory,
-    ) -> Result<(CopyEventSteps, CopyEventSteps), Error> {
+    ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
         let mut read_steps = Vec::with_capacity(copy_length as usize);
         let mut write_steps = Vec::with_capacity(copy_length as usize);
+        let mut prev_bytes: Vec<u8> = vec![];
 
         if copy_length == 0 {
-            return Ok((read_steps, write_steps));
+            return Ok((read_steps, write_steps, prev_bytes));
         }
 
         let last_callee_id = self.call()?.last_callee_id;
@@ -2095,8 +2096,9 @@ impl<'a> CircuitInputStateRef<'a> {
             src_chunk_index += 32;
 
             let write_word = Word::from_big_endian(write_chunk);
-            self.memory_write_word(exec_step, dst_chunk_index.into(), write_word)?;
-
+            let mut prev_bytes_write =
+                self.memory_write_word_prev_bytes(exec_step, dst_chunk_index.into(), write_word)?;
+            prev_bytes.append(&mut prev_bytes_write);
             trace!("write chunk: {current_call_id} {dst_chunk_index} {write_chunk:?}");
             dst_chunk_index += 32;
 
@@ -2125,7 +2127,7 @@ impl<'a> CircuitInputStateRef<'a> {
             write_slot_bytes.len()
         );
 
-        Ok((read_steps, write_steps))
+        Ok((read_steps, write_steps, prev_bytes))
     }
 
     pub(crate) fn gen_copy_steps_for_log(
