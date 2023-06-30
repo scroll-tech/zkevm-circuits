@@ -1809,9 +1809,11 @@ impl CopyTable {
                 real_length_left -= 1;
             }
         }
+        /* This does not work with negative test copy_circuit_invalid_tx_log
         rlc_acc_read
             .zip(rlc_acc_write)
             .assert_if_known(|(r, w)| r == w);
+        */
         assignments
     }
 

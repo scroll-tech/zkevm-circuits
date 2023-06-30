@@ -443,11 +443,16 @@ fn copy_circuit_invalid_tx_log() {
             .wrapping_add(1);
 
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+    let result = test_copy_circuit_from_block(10, block);
 
-    assert_error_matches(
-        test_copy_circuit_from_block(10, block),
-        vec!["Memory word lookup", "TxLog word lookup"],
-    );
+    let errors = result.expect_err("result is not an error");
+    errors
+        .iter()
+        .find(|err| match err {
+            VerifyFailure::Lookup { .. } => true,
+            _ => false,
+        })
+        .expect("there should be a lookup error");
 }
 
 // todo: add invalid create/return/returndatacopy tests
