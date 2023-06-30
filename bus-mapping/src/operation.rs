@@ -151,21 +151,6 @@ impl MemoryWordOp {
         Self::new_write(call_id, address, value, value)
     }
 
-    /// Create a new instance of a `MemoryWordOp` with value_prev provided
-    pub fn new_with_prev_value(
-        call_id: usize,
-        address: MemoryAddress,
-        value: Word,
-        value_prev: Word,
-    ) -> MemoryWordOp {
-        MemoryWordOp {
-            call_id,
-            address,
-            value,
-            value_prev,
-        }
-    }
-
     /// Create a new instance of a `MemoryOp` from it's components.
     pub fn new_write(
         call_id: usize,

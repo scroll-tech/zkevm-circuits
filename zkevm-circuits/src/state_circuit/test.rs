@@ -97,23 +97,23 @@ fn state_circuit_simple_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryWordOp::new_with_prev_value(1, MemoryAddress::from(0), 32.into(), 0.into()),
+        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(24),
         RW::READ,
-        MemoryWordOp::new_with_prev_value(1, MemoryAddress::from(0), 32.into(), 32.into()),
+        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
 
     let memory_op_2 = Operation::new(
         RWCounter::from(17),
         RW::WRITE,
-        MemoryWordOp::new_with_prev_value(1, MemoryAddress::from(1), 32.into(), 0.into()),
+        MemoryWordOp::new_write(1, MemoryAddress::from(1), 32.into(), 0.into()),
     );
     let memory_op_3 = Operation::new(
         RWCounter::from(87),
         RW::READ,
-        MemoryWordOp::new_with_prev_value(1, MemoryAddress::from(1), 32.into(), 32.into()),
+        MemoryWordOp::new_write(1, MemoryAddress::from(1), 32.into(), 32.into()),
     );
 
     let stack_op_0 = Operation::new(
@@ -176,12 +176,12 @@ fn state_circuit_simple_6() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryWordOp::new_with_prev_value(1, MemoryAddress::from(0), 32.into(), 0.into()),
+        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
         RW::READ,
-        MemoryWordOp::new_with_prev_value(1, MemoryAddress::from(0), 32.into(), 32.into()),
+        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
     let storage_op_2 = Operation::new(
         RWCounter::from(19),
@@ -203,7 +203,7 @@ fn lexicographic_ordering_test_1() {
     let memory_op = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryWordOp::new_with_prev_value(1, MemoryAddress::from(0), 32.into(), 0.into()),
+        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let storage_op = Operation::new(
         RWCounter::from(19),
@@ -225,12 +225,12 @@ fn lexicographic_ordering_test_2() {
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
-        MemoryWordOp::new_with_prev_value(1, MemoryAddress::from(0), 32.into(), 0.into()),
+        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 0.into()),
     );
     let memory_op_1 = Operation::new(
         RWCounter::from(13),
         RW::WRITE,
-        MemoryWordOp::new_with_prev_value(1, MemoryAddress::from(0), 32.into(), 32.into()),
+        MemoryWordOp::new_write(1, MemoryAddress::from(0), 32.into(), 32.into()),
     );
     test_state_circuit_ok(vec![memory_op_0, memory_op_1], vec![], vec![]);
 }
