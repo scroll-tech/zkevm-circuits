@@ -24,21 +24,6 @@ impl Opcode for Log {
             state.tx_ctx.log_id += 1;
         }
 
-        // reconstruction
-        let offset = geth_step.stack.nth_last(0)?;
-        let length = geth_step.stack.nth_last(1)?.as_u64();
-
-        if length != 0 {
-            // Offset should be within range of Uint64 if length is non-zero.
-            let memory_length = offset
-                .as_u64()
-                .checked_add(length)
-                .and_then(|val| usize::try_from(val).ok())
-                .unwrap();
-
-            state.call_ctx_mut()?.memory.extend_at_least(memory_length);
-        }
-
         Ok(vec![exec_step])
     }
 }
@@ -133,11 +118,18 @@ fn gen_copy_event(
     // Get low Uint64 for memory start as below reference. Memory size must be
     // within range of Uint64, otherwise returns ErrGasUintOverflow.
     // https://github.com/ethereum/go-ethereum/blob/b80f05bde2c4e93ae64bb3813b6d67266b5fc0e6/core/vm/instructions.go#L850
-    let memory_start = geth_step.stack.nth_last(0)?.low_u64();
-    let msize = geth_step.stack.nth_last(1)?.as_u64();
+    let memory_offset = geth_step.stack.nth_last(0)?;
+    let length = geth_step.stack.nth_last(1)?;
 
-    let (src_addr, src_addr_end) = (memory_start, memory_start.checked_add(msize).unwrap());
-    let (read_steps, write_steps) = state.gen_copy_steps_for_log(exec_step, src_addr, msize)?;
+    state
+        .call_ctx_mut()?
+        .memory
+        .extend_for_range(memory_offset, length);
+
+    let (memory_start, length) = (memory_offset.low_u64(), length.as_u64());
+
+    let (src_addr, src_addr_end) = (memory_start, memory_start.checked_add(length).unwrap());
+    let (read_steps, write_steps) = state.gen_copy_steps_for_log(exec_step, src_addr, length)?;
 
     Ok(CopyEvent {
         src_type: CopyDataType::Memory,
