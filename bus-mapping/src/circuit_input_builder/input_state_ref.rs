@@ -1928,9 +1928,8 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         exec_step: &mut ExecStep,
         _src_addr: u64,
-        dst_addr: u64,      // memory dest starting addr
-        _src_addr_end: u64, // for internal call, memory dest ending addr
-        copy_length: u64,   // number of bytes to copy, without padding
+        dst_addr: u64,    // memory dest starting addr
+        copy_length: u64, // number of bytes to copy, without padding
         memory_updated: Memory,
     ) -> Result<(Vec<(u8, bool, bool)>, Vec<u8>), Error> {
         assert!(self.call()?.is_root);
@@ -1974,7 +1973,6 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         exec_step: &mut ExecStep,
         src_addr: u64,
-        src_addr_end: u64,
         dst_addr: u64,    // memory dest starting addr
         copy_length: u64, // number of bytes to copy, without padding
         memory_updated: Memory,
@@ -1989,8 +1987,7 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok((read_steps, write_steps, prev_bytes));
         }
 
-        let (src_begin_slot, src_length, _) =
-            Memory::align_range(src_addr, src_addr_end - src_addr);
+        let (src_begin_slot, src_length, _) = Memory::align_range(src_addr, copy_length);
         let (dst_begin_slot, dst_length, _) = Memory::align_range(dst_addr, copy_length);
         let full_length = max(src_length, dst_length);
 
@@ -2044,7 +2041,6 @@ impl<'a> CircuitInputStateRef<'a> {
             dst_addr = {dst_addr}
             copy_length = {copy_length}
 
-            src_end = {src_addr_end}
             dst_end = {}
 
             src_begin_slot = {src_begin_slot}

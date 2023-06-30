@@ -33,7 +33,7 @@ impl Opcode for Codecopy {
         // TODO: move to the "memory_updated" approach.
         memory.copy_from(dst_offset, code_offset, length, &code);
 
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -68,6 +68,7 @@ fn gen_codecopy_step(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 

@@ -19,7 +19,7 @@ impl Opcode for Returndatacopy {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_returndatacopy_step(state, geth_step)?];
 
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -78,6 +78,7 @@ fn gen_returndatacopy_step(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
@@ -106,11 +107,8 @@ fn gen_copy_event(
         last_callee_return_data_offset + last_callee_return_data_length,
     );
 
-    // Work on a temporary ExecStep. The references to new RW ops will be discarded.
-    let mut exec_step = state.new_step(geth_step)?;
-
     let (read_steps, write_steps) = state.gen_copy_steps_for_return_data(
-        &mut exec_step,
+        exec_step,
         src_addr,
         src_addr_end,
         dst_addr,

@@ -20,7 +20,10 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{
+    evm_types::{GasCost, Memory},
+    Field, ToLittleEndian, ToScalar,
+};
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -213,21 +216,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.code_offset
             .assign(region, offset, code_offset, F::from(code_size))?;
 
-        let shift = memory_offset.low_u64() % 32;
-        let memory_start_slot = memory_offset.low_u64() - shift;
-        let memory_end = memory_offset.low_u64() + memory_length.low_u64();
-        let memory_end_slot = memory_end - memory_end % 32;
-        let copy_rwc_inc = if memory_length.low_u64() == 0 {
-            0
-        } else {
-            (memory_end_slot - memory_start_slot) / 32 + 1
-        };
-
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                copy_rwc_inc
+                step.copy_rw_counter_delta
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),

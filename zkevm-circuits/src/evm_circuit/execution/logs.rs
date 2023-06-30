@@ -262,23 +262,12 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             .assign(region, offset, Value::known(F::from(is_persistent)))?;
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
-        // rw_counter increase from copy table lookup is `msize` memory reads + `msize`
-        // log writes when `is_persistent` is true.
-        let shift = memory_start.low_u64() % 32;
-        let memory_start_slot = memory_start.low_u64() - shift;
-        let memory_end = memory_start.low_u64() + msize.low_u64();
-        let memory_end_slot = memory_end - memory_end % 32;
-        let copy_rwc_inc = if msize.low_u64() == 0 || !call.is_persistent {
-            0
-        } else {
-            (memory_end_slot - memory_start_slot) / 32 + 1
-        };
 
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                (copy_rwc_inc * 2)
+                step.copy_rw_counter_delta
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),

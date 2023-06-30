@@ -538,14 +538,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         rw_offset += usize::from(is_create2);
 
         let shift = init_code_start.low_u64() % 32;
-        let memory_start_slot = init_code_start.low_u64() - shift;
-        let memory_end = init_code_start.low_u64() + init_code_length.low_u64();
-        let memory_end_slot = memory_end - memory_end % 32;
-        let copy_rwc_inc = if init_code_length.low_u64() == 0 {
-            0
-        } else {
-            (memory_end_slot - memory_start_slot) / 32 + 1
-        };
+        let copy_rwc_inc = step.copy_rw_counter_delta;
 
         let padded_bytes: Vec<u8> = (4 + rw_offset..4 + rw_offset + copy_rwc_inc as usize)
             .map(|i| {
@@ -799,7 +792,7 @@ mod test {
     fn run_test_circuits(ctx: TestContext<2, 1>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
-                max_rws: 300000,
+                max_rws: 10000,
                 ..Default::default()
             })
             .run();

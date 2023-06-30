@@ -126,14 +126,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             .assign(region, offset, Some(sha3_output.to_le_bytes()))?;
 
         let shift = memory_offset.low_u64() % 32;
-        let memory_start_slot = memory_offset.low_u64() - shift;
-        let memory_end = memory_offset.low_u64() + size.low_u64();
-        let memory_end_slot = memory_end - memory_end % 32;
-        let copy_rwc_inc = if size.low_u64() == 0 {
-            0
-        } else {
-            (memory_end_slot - memory_start_slot) / 32 + 1
-        };
+        let copy_rwc_inc = step.copy_rw_counter_delta;
 
         self.copy_rwc_inc.assign(
             region,
