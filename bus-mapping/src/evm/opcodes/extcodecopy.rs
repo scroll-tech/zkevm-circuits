@@ -137,14 +137,12 @@ fn gen_copy_event(
     let call_ctx = state.call_ctx_mut()?;
     let memory = &mut call_ctx.memory;
     memory.extend_for_range(dst_offset, length.into());
-    // memory.copy_from(dst_offset, code_offset, length, &code);
     let memory_updated = {
         let mut memory_updated = memory.clone();
         memory_updated.copy_from(dst_offset, code_offset, length.into(), &bytecode.to_vec());
         memory_updated
     };
 
-    /// end
     let (copy_steps, prev_bytes) = state.gen_copy_steps_for_bytecode(
         exec_step,
         &bytecode,
@@ -432,7 +430,8 @@ mod extcodecopy_tests {
                             call_id,
                             MemoryAddress(copy_start + idx * 32),
                             Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
-                            Word::from(&prev_bytes[idx * 32..(idx + 1) * 32]), // TODO: get previous value
+                            // get previous value
+                            Word::from(&prev_bytes[idx * 32..(idx + 1) * 32]),
                         ),
                     )
                 })

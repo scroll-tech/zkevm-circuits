@@ -76,18 +76,16 @@ fn gen_copy_event(
     let src_addr = u64::try_from(code_offset)
         .unwrap_or(u64::MAX)
         .min(src_addr_end);
-    ///////memory_update
+
     let call_ctx = state.call_ctx_mut()?;
     let memory = &mut call_ctx.memory;
     memory.extend_for_range(dst_offset, length.into());
-    // memory.copy_from(dst_offset, code_offset, length, &code);
     let memory_updated = {
         let mut memory_updated = memory.clone();
         memory_updated.copy_from(dst_offset, code_offset, length.into(), &bytecode.to_vec());
         memory_updated
     };
 
-    /// /end
     let mut exec_step = state.new_step(geth_step)?;
     let (copy_steps, prev_bytes) = state.gen_copy_steps_for_bytecode(
         &mut exec_step,
