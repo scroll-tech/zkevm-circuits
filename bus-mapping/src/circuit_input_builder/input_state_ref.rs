@@ -1657,6 +1657,7 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: u64,
         src_addr_end: u64,
         bytes_left: u64,
+        memory_updated: Memory,
     ) -> Result<(CopyEventSteps, Vec<u8>), Error> {
         let mut copy_steps = Vec::with_capacity(bytes_left as usize);
         let mut prev_bytes: Vec<u8> = vec![];
@@ -1666,10 +1667,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let (dst_begin_slot, full_length, _) = Memory::align_range(dst_addr, bytes_left);
 
-        let code_slot_bytes = self
-            .call_ctx()?
-            .memory
-            .read_chunk(dst_begin_slot.into(), full_length.into());
+        let code_slot_bytes = memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
 
         let mut copy_start = 0u64;
         let mut first_set = true;
@@ -2191,7 +2189,6 @@ impl<'a> CircuitInputStateRef<'a> {
 
         Ok((read_steps, write_steps))
     }
-
     // TODO: add new gen_copy_steps for common use
     pub(crate) fn gen_memory_copy_steps(
         steps: &mut CopyEventSteps,
