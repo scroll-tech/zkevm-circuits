@@ -18,7 +18,20 @@ pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> 
     };
 
     match precompile_fn(input, gas) {
-        Ok((gas_cost, return_value)) => (return_value, gas_cost),
+        Ok((gas_cost, return_value)) => {
+            match PrecompileCalls::from(address.0[19]){
+                // FIXME: override the behavior of invalid input
+                PrecompileCalls::Modexp => {
+                    let (input_valid, _) = ModExpAuxData::check_input(input);
+                    if input_valid {
+                        (return_value, gas_cost)   
+                    }else {
+                        (vec![], gas_cost)
+                    }
+                },
+                _ => (return_value, gas_cost),
+            }
+        },
         Err(_) => (vec![], gas),
     }
 }
@@ -195,26 +208,30 @@ impl ModExpAuxData {
         value_bytes    
     }
 
+    /// check input
+    pub fn check_input(input: &[u8]) -> (bool, [Word;3]){
+        let mut i = input.chunks(32);
+        let base_len = Word::from_big_endian(i.next().unwrap_or(&[]));
+        let exp_len = Word::from_big_endian(i.next().unwrap_or(&[]));
+        let modulus_len = Word::from_big_endian(i.next().unwrap_or(&[]));
+
+        let limit = Word::from(MODEXP_SIZE_LIMIT);
+    
+        let input_valid = base_len <= limit &&
+            exp_len <= limit &&
+            modulus_len <= limit;
+
+        (input_valid, [base_len, exp_len, modulus_len])        
+    }
+
     /// Create a new instance of modexp auxiliary data.
     pub fn new(mut mem_input: Vec<u8>, output: Vec<u8>) -> Self {
         
         let input_memory = mem_input.clone();
         let output_memory = output.clone();
 
-        // extended to minimum size (3x U256)
-        if mem_input.len() < 96 {
-            mem_input.resize(96, 0);
-        }
-        let base_len = Word::from_big_endian(&mem_input[..32]);
-        let exp_len = Word::from_big_endian(&mem_input[32..64]);
-        let modulus_len = Word::from_big_endian(&mem_input[64..96]);
-    
-        let limit = Word::from(MODEXP_SIZE_LIMIT);
-    
-        let input_valid = base_len <= limit &&
-            exp_len <= limit &&
-            modulus_len <= limit;
-    
+        let (input_valid, [base_len, exp_len, modulus_len]) = Self::check_input(&mem_input);
+
         let base_mem_len = if input_valid {base_len.as_usize()} else {MODEXP_SIZE_LIMIT};
         let exp_mem_len = if input_valid {exp_len.as_usize()} else {MODEXP_SIZE_LIMIT};
         let modulus_mem_len = if input_valid {modulus_len.as_usize()} else {MODEXP_SIZE_LIMIT};

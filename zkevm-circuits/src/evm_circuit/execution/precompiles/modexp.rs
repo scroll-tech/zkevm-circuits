@@ -718,7 +718,7 @@ mod test {
                     ..Default::default()
                 },
                 PrecompileCallArgs {
-                    name: "modexp success",
+                    name: "modexp success with padding 0",
                     setup_code: bytecode! {
                         // Base size
                         PUSH1(0x1)
@@ -746,15 +746,47 @@ mod test {
                 },                               
             ]
         };
+
+        static ref TEST_INVALID_VECTOR: Vec<PrecompileCallArgs> = {
+            vec![
+                PrecompileCallArgs {
+                    name: "modexp length too large invalid",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x1)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x1) 
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x21) 
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x08090A0000000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0x60)
+                        MSTORE                        
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0x63.into(),
+                    ret_offset: 0x9f.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },
+            ]
+        };      
     }
 
     #[test]
     fn precompile_modexp_test() {
         let call_kinds = vec![
-//            OpcodeId::CALL,
+            OpcodeId::CALL,
             OpcodeId::STATICCALL,
-//            OpcodeId::DELEGATECALL,
-//            OpcodeId::CALLCODE,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
         ];
 
         for (test_vector, &call_kind) in TEST_VECTOR.iter().cartesian_product(&call_kinds) {
