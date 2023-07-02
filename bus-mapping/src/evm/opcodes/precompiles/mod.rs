@@ -5,7 +5,7 @@ use eth_types::{
 use halo2_proofs::halo2curves::secp256k1::Fq;
 
 use crate::{
-    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep},
+    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep, ModExpEvent},
     operation::CallContextField,
     precompile::{EcrecoverAuxData, ModExpAuxData, PrecompileAuxData, PrecompileCalls},
     Error,
@@ -64,6 +64,15 @@ pub fn gen_associated_ops(
             input_bytes.unwrap_or_default(),
             output_bytes.unwrap_or_default(),
         );
+        if aux_data.valid {
+            let event = ModExpEvent {
+                base: Word::from_big_endian(&aux_data.inputs[0]),
+                exponent: Word::from_big_endian(&aux_data.inputs[1]),
+                modulus: Word::from_big_endian(&aux_data.inputs[2]),
+                result: Word::from_big_endian(&aux_data.output),
+            };
+            state.push_modexp(event);
+        }
         exec_step.aux_data = Some(PrecompileAuxData::Modexp(aux_data));
     }
 

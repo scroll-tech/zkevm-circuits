@@ -459,3 +459,27 @@ impl Default for ExpEvent {
         }
     }
 }
+
+/// Event representating an exponentiation `a ^ b == d (mod m)` in precompile modexp.
+#[derive(Clone, Debug)]
+pub struct ModExpEvent {
+    /// Base `a` for the exponentiation.
+    pub base: Word,
+    /// Exponent `b` for the exponentiation.
+    pub exponent: Word,
+    /// Modulus `m`
+    pub modulus: Word,
+    /// Mod exponentiation result.
+    pub result: Word,
+}
+
+impl Default for ModExpEvent {
+    fn default() -> Self {
+        Self {
+            modulus: 1.into(),
+            base: Default::default(),
+            exponent: Default::default(),
+            result: Default::default(),
+        }
+    }
+}

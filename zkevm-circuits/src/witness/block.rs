@@ -6,7 +6,7 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 
 use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
-    circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
+    circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent, ModExpEvent},
     Error,
 };
 use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
@@ -52,6 +52,8 @@ pub struct Block<F> {
     pub sha3_inputs: Vec<Vec<u8>>,
     /// IO to/from precompile Ecrecover calls.
     pub ecrecover_events: Vec<SignData>,
+    /// Params for the precompile Modexp calls.
+    pub modexp_events: Vec<ModExpEvent>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
     /// Withdraw root
@@ -444,6 +446,7 @@ pub fn block_convert<F: Field>(
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
         ecrecover_events: block.ecrecover_events.clone(),
+        modexp_events: block.modexp_events.clone(),
         circuits_params: CircuitsParams {
             max_rws,
             ..block.circuits_params

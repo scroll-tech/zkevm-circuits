@@ -1,7 +1,7 @@
 //! Block-related utility module
 
 use super::{
-    execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
+    execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent, ModExpEvent,
 };
 use crate::{
     operation::{OperationContainer, RWCounter},
@@ -155,6 +155,8 @@ pub struct Block {
     pub sha3_inputs: Vec<Vec<u8>>,
     /// IO to/from the precompile Ecrecover calls.
     pub ecrecover_events: Vec<SignData>,
+    /// Params for the precompile Modexp calls.
+    pub modexp_events: Vec<ModExpEvent>,
     /// Block-wise steps
     pub block_steps: BlockSteps,
     /// Exponentiation events in the block.
@@ -252,4 +254,8 @@ impl Block {
     pub fn add_ecrecover_event(&mut self, event: SignData) {
         self.ecrecover_events.push(event);
     }
+    /// Push an modexp event to the block.
+    pub fn add_modexp_event(&mut self, event: ModExpEvent) {
+        self.modexp_events.push(event);
+    }    
 }
