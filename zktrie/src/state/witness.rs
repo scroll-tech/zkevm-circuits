@@ -311,8 +311,10 @@ impl WitnessGenerator {
                 let mut acc_data = acc_before.copied().unwrap_or_default();
                 match proof_type {
                     MPTProofType::NonceChanged => {
-                        assert!(old_val < u64::MAX.into());
-                        assert!(new_val < u64::MAX.into());
+                        assert!(old_val <= u64::MAX.into());
+                        // TODO: fix (hypothetical) inconsistency where CREATE gadget allows nonce
+                        // to be 1 << 64, but mpt circuit does not support this.
+                        assert!(new_val <= Word::from(u64::MAX) + Word::one());
                         assert_eq!(old_val.as_u64(), acc_data.nonce);
                         acc_data.nonce = new_val.as_u64();
                     }
