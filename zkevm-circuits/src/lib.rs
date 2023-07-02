@@ -31,6 +31,7 @@ pub mod rlp_circuit_fsm;
 pub mod sig_circuit;
 // we don't use this for aggregation
 //pub mod root_circuit;
+pub mod precompile_circuit;
 pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;
