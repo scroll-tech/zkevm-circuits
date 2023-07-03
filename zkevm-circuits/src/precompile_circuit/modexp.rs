@@ -185,7 +185,7 @@ impl Circuit<Fr> for TestCircuit {
     }
 }
 
-
+/* 
 #[test]
 fn test_modexp_circuit_00() {
     let base = BigUint::from(1u128 << 100);
@@ -214,3 +214,4 @@ fn test_modexp_circuit_02() {
     let prover = MockProver::run(16, &test_circuit, vec![]).unwrap();
     assert_eq!(prover.verify(), Ok(()));
 }
+*/

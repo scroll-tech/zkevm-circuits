@@ -2229,34 +2229,174 @@ impl<F: Field> LookupTable<F> for SigTable {
 /// Lookup table embedded in the modexp circuit for precompile.
 #[derive(Clone, Copy, Debug)]
 pub struct ModExpTable {
-    /// Is enabled
-    pub q_enable: Column<Fixed>,
-    /// RLC encoded of the 4 limbs-represent (notice not bytes) of U256 base in modexp circuit
-    pub base_rlc: Column<Advice>,
-    /// RLC encoded of the U256 exponent
-    pub exp_rlc: Column<Advice>,
-    /// RLC encoded of the U256 modulus
-    pub modulus_rlc: Column<Advice>,
-    /// RLC encoded of the U256 results
-    pub result_rlc: Column<Advice>,
+    /// Use for indicate beginning of a limbs group
+    pub q_head: Column<Fixed>,
+    /// base represented by limbs
+    pub base: Column<Advice>,
+    /// exp represented by limbs
+    pub exp: Column<Advice>,
+    /// modulus represented by limbs
+    pub modulus: Column<Advice>,
+    /// result represented by limbs
+    pub result: Column<Advice>,
 }
 
 
 impl ModExpTable {
     /// Construct the modexp table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        
         Self {
-            q_enable: meta.fixed_column(),
-            base_rlc: meta.advice_column_in(SecondPhase),
-            exp_rlc: meta.advice_column_in(SecondPhase),
-            modulus_rlc: meta.advice_column_in(SecondPhase),
-            result_rlc: meta.advice_column_in(SecondPhase),
+            q_head: meta.fixed_column(),
+            base: meta.advice_column(),
+            exp: meta.advice_column(),
+            modulus: meta.advice_column(),
+            result: meta.advice_column(),
         }
+    }
+
+    fn split_u256_108bit_limbs(word: &Word) -> [u128;3]{
+        let bit108 = 1u128<<108;
+        let (next, limb0) = word.div_mod(U256::from(bit108));
+        let (limb1, limb2) = next.div_mod(U256::from(bit108));
+        [limb0.as_u128(), limb1.as_u128(), limb2.as_u128()]
+    }
+
+    fn native_u256<F: Field>(word: &Word) -> F {
+        let mut bytes = [0u8; 64];
+        word.to_little_endian(&mut bytes[..32]);
+        F::from_bytes_wide(&bytes)
     }
 
     /// Get assignments to the modexp table. Meant to be used for dev purposes.
     pub fn dev_load<F: Field>(
-        _challenges: &Challenges<Value<F>>,
-    ) {
+        &self,
+        layouter: &mut impl Layouter<F>,
+        block: &Block<F>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "modexp table",
+            |mut region|{
+
+                let event_limit = block.circuits_params.max_keccak_rows / 9300;
+                let exp_events = &block.modexp_events;
+                assert!(exp_events.len() <= event_limit, 
+                    "not enough rows for modexp circuit, expected {}, limit {}",
+                    exp_events.len(),
+                    event_limit,
+                );
+
+                let mut offset = 0usize;
+
+                for (n, event) in exp_events.iter()
+                    .chain(std::iter::repeat(&Default::default()))
+                    .take(event_limit).enumerate(){
+
+                    for i in 0..4 {
+                        region.assign_fixed(
+                            || format!("modexp table head {}", offset+i),
+                            self.q_head,
+                            offset + i,
+                            || Value::known(if i == 0 {F::one()} else {F::zero()}),
+                        )?;    
+                    }
+
+                    let base_limbs = Self::split_u256_108bit_limbs(&event.base);
+                    let exp_limbs = Self::split_u256_108bit_limbs(&event.exponent);
+                    let modulus_limbs = Self::split_u256_108bit_limbs(&event.modulus);
+                    let result_limbs = Self::split_u256_108bit_limbs(&event.result);
+
+                    for i in 0..3 {
+                        for (limbs, &col) in 
+                            [base_limbs, exp_limbs, modulus_limbs, result_limbs]
+                            .zip([&self.base, &self.exp, &self.modulus, &self.result]){
+
+                            region.assign_advice(
+                                || format!("modexp table limb row {}", offset+i),
+                                col, 
+                                offset + i, 
+                                || Value::known(F::from_u128(limbs[i])),
+                            )?;
+                        }
+                    }
+
+                    // native is not used by lookup (and in fact it can be omitted in dev)
+                    for (word, &col) in [&event.base, &event.exponent, &event.modulus, &event.result] 
+                        .zip([&self.base, &self.exp, &self.modulus, &self.result]){
+
+                        region.assign_advice(
+                            || format!("modexp table native row {}", offset+3),
+                            col, 
+                            offset + 3, 
+                            || Value::<F>::known(Self::native_u256(word)),
+                        )?;    
+                    }
+
+                    offset += 4;
+                }
+
+                // fill last totally 0 row
+                region.assign_fixed(
+                    || "modexp table blank row",
+                    self.q_head,
+                    offset,
+                    || Value::known(F::zero()),
+                )?;
+                for &col in [&self.base, &self.exp, &self.modulus, &self.result]{
+                    region.assign_advice(
+                        || "modexp table blank row {}",
+                        col, 
+                        offset, 
+                        || Value::known(F::zero()),
+                    )?;    
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+
+impl<F: Field> LookupTable<F> for ModExpTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_head.into(),
+            self.base.into(),
+            self.exp.into(),
+            self.modulus.into(),
+            self.result.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("is_head"),
+            String::from("base"),
+            String::from("exp"),
+            String::from("modulus"),
+            String::from("result"),
+        ]
+    }
+
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            // ignore the is_valid field as the EVM circuit's use-case (Ecrecover precompile) does
+            // not care whether the signature is valid or not. It only cares about the recovered
+            // address.
+            meta.query_fixed(self.q_head, Rotation::cur()),
+            meta.query_advice(self.base, Rotation::cur()),
+            meta.query_advice(self.exp, Rotation::cur()),
+            meta.query_advice(self.modulus, Rotation::cur()),
+            meta.query_advice(self.result, Rotation::cur()),
+            meta.query_advice(self.base, Rotation::next()),
+            meta.query_advice(self.exp, Rotation::next()),
+            meta.query_advice(self.modulus, Rotation::next()),
+            meta.query_advice(self.result, Rotation::next()),
+            meta.query_advice(self.base, Rotation(2)),
+            meta.query_advice(self.exp, Rotation(2)),
+            meta.query_advice(self.modulus, Rotation(2)),
+            meta.query_advice(self.result, Rotation(2)),                        
+        ]
     }
 }
