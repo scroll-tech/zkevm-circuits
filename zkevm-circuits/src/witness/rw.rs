@@ -88,9 +88,9 @@ impl RwMap {
                 }
             }
         }
-        log::debug!("rw value check err num: {}", errs.len());
+        log::warn!("rw value check err num: {}", errs.len());
         for e in errs {
-            log::debug!("err is {:?}", e);
+            log::warn!("err is {:?}", e);
         }
     }
     /// Calculates the number of Rw::Start rows needed.

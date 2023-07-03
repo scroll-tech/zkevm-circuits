@@ -35,7 +35,7 @@ version = "0.1.0"
 dependencies = [
  "ark-std",
  "env_logger 0.10.0",
- "eth-types 0.1.0",
+ "eth-types",
  "ethers-core",
  "halo2_proofs",
  "itertools",
