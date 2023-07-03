@@ -81,7 +81,7 @@ impl Circuit<Fr> for CompressionCircuit {
         let params: ConfigParams = serde_json::from_reader(
             File::open(path.as_str()).unwrap_or_else(|_| panic!("{path:?} does not exist")),
         )
-        .unwrap_or_else(|_| ConfigParams::compress_wide_param());
+        .unwrap_or_else(|_| ConfigParams::default_compress_wide_param());
 
         log::info!(
             "compression circuit configured with k = {} and {:?} advice columns",

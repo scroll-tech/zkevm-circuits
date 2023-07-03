@@ -21,14 +21,7 @@ macro_rules! layer_0 {
         );
         log::trace!("finished layer 0 pk generation for circuit");
 
-        let snark = gen_snark_shplonk(
-            &param,
-            &pk,
-            $circuit.clone(),
-            &mut rng,
-            None::<String>,
-            // Some(&$path.join(Path::new("layer_0.snark"))),
-        );
+        let snark = gen_snark_shplonk(&param, &pk, $circuit.clone(), &mut rng, None::<String>);
         log::trace!("finished layer 0 snark generation for circuit");
 
         assert!(verify_snark_shplonk::<$circuit_type>(
