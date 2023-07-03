@@ -70,6 +70,13 @@ impl<F: Field> PrecompileGadget<F> {
                 input_len.expr(),
             )
         });
+        cb.condition(not::expr(pad_right.expr()), |cb| {
+            cb.require_equal(
+                "no padding implies both equal",
+                padding_gadget.padded_rlc(),
+                input_bytes_rlc.expr(),
+            );
+        });
 
         cb.condition(address.value_equals(PrecompileCalls::Ecrecover), |cb| {
             cb.constrain_next_step(ExecutionState::PrecompileEcrecover, None, |cb| {
@@ -97,7 +104,6 @@ impl<F: Field> PrecompileGadget<F> {
                         + (sig_r_rlc.expr() * r_pow_32)
                         + sig_s_rlc.expr(),
                 );
-
                 // RLC of output bytes always equals RLC of the recovered address.
                 cb.require_equal(
                     "output bytes (RLC) = recovered address",
@@ -175,8 +181,6 @@ impl<F: Field> PrecompileGadget<F> {
         let input_len =
             self.padding_gadget
                 .assign(region, offset, address, input_rlc, cd_len, keccak_rand)?;
-        log::info!("cd length    = {}", cd_len);
-        log::info!("input length = {}", input_len);
         self.pad_right
             .assign(region, offset, F::from(cd_len), F::from(input_len))?;
 
