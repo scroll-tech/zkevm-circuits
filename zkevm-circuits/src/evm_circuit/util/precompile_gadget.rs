@@ -76,7 +76,7 @@ impl<F: Field> PrecompileGadget<F> {
                 };
                 cb.require_equal(
                     "input bytes (RLC) = [msg_hash | sig_v | sig_r | sig_s]",
-                    input_bytes_rlc.expr(),
+                    padding_gadget.padded_rlc(),
                     (msg_hash_rlc.expr() * r_pow_96)
                         + ((sig_v.expr() + 27.expr()) * r_pow_64)
                         + (sig_r_rlc.expr() * r_pow_32)
@@ -155,7 +155,7 @@ impl<F: Field> PrecompileGadget<F> {
         input_len: u64,
         keccak_rand: Value<F>,
     ) -> Result<(), halo2_proofs::plonk::Error> {
-        self.address.assign(region, offset, address.clone())?;
+        self.address.assign(region, offset, address)?;
         self.padding_gadget
             .assign(region, offset, address, input_rlc, input_len, keccak_rand)?;
         Ok(())
@@ -186,7 +186,7 @@ impl<F: Field> PaddingGadget<F> {
 
         // Power of randomness we are interested in, i.e. r ^ n_padded_zeroes.
         let power_of_rand = cb.query_cell_phase2();
-        // TODO: cb.power_of_rand_lookup(n_padded_zeroes.expr(), power_of_rand.expr());
+        cb.pow_of_rand_lookup(n_padded_zeroes.expr(), power_of_rand.expr());
 
         // Validate value of padded RLC.
         cb.require_equal(
@@ -224,5 +224,9 @@ impl<F: Field> PaddingGadget<F> {
         self.power_of_rand.assign(region, offset, power_of_rand)?;
 
         Ok(())
+    }
+
+    pub(crate) fn padded_rlc(&self) -> Expression<F> {
+        self.padded_rlc.expr()
     }
 }

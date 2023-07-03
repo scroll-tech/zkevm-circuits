@@ -2225,3 +2225,65 @@ impl<F: Field> LookupTable<F> for SigTable {
         ]
     }
 }
+
+/// Lookup table for powers of keccak randomness up to exponent in [0, 128)
+#[derive(Clone, Copy, Debug)]
+pub struct PowOfRandTable {
+    /// exponent.
+    pub exponent: Column<Fixed>,
+    /// power of keccak randomness.
+    pub pow_of_rand: Column<Advice>,
+}
+
+impl PowOfRandTable {
+    /// Construct the powers of randomness table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            exponent: meta.fixed_column(),
+            pow_of_rand: meta.advice_column_in(SecondPhase),
+        }
+    }
+
+    /// Assign values to the table.
+    pub fn dev_load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        let r = challenges.keccak_input();
+        layouter.assign_region(
+            || "power of randomness table",
+            |mut region| {
+                let pows_of_rand =
+                    std::iter::successors(Some(Value::known(F::one())), |&v| Some(v * r)).take(128);
+
+                for (idx, pow_of_rand) in pows_of_rand.enumerate() {
+                    region.assign_fixed(
+                        || format!("exponent at offset = {idx}"),
+                        self.exponent,
+                        idx,
+                        || Value::known(F::from(idx as u64)),
+                    )?;
+                    region.assign_advice(
+                        || format!("pow_of_rand at offset = {idx}"),
+                        self.pow_of_rand,
+                        idx,
+                        || pow_of_rand,
+                    )?;
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+impl<F: Field> LookupTable<F> for PowOfRandTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![self.exponent.into(), self.pow_of_rand.into()]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![String::from("exponent"), String::from("pow_of_rand")]
+    }
+}

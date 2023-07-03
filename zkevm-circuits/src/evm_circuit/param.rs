@@ -51,6 +51,7 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Keccak, KECCAK_TABLE_LOOKUPS),
     (Table::Exp, EXP_TABLE_LOOKUPS),
     (Table::Sig, SIG_TABLE_LOOKUPS),
+    (Table::PowOfRand, POW_OF_RAND_TABLE_LOOKUPS),
 ];
 
 /// Fixed Table lookups done in EVMCircuit
@@ -79,6 +80,9 @@ pub const EXP_TABLE_LOOKUPS: usize = 1;
 
 /// Sig Table lookups done in EVMCircuit
 pub const SIG_TABLE_LOOKUPS: usize = 1;
+
+/// Power of Randomness lookups done from EVM Circuit.
+pub const POW_OF_RAND_TABLE_LOOKUPS: usize = 1;
 
 /// Maximum number of bytes that an integer can fit in field without wrapping
 /// around.
