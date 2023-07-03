@@ -19,20 +19,6 @@ impl Opcode for Codecopy {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_codecopy_step(state, geth_step)?];
 
-        // reconstruction
-        let dst_offset = geth_step.stack.nth_last(0)?;
-        let code_offset = geth_step.stack.nth_last(1)?;
-        let length = geth_step.stack.nth_last(2)?;
-
-        let code_hash = state.call()?.code_hash;
-        let code = state.code(code_hash)?;
-
-        let call_ctx = state.call_ctx_mut()?;
-        let memory = &mut call_ctx.memory;
-
-        // TODO: move to the "memory_updated" approach.
-        memory.copy_from(dst_offset, code_offset, length, &code);
-
         let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
@@ -90,6 +76,15 @@ fn gen_copy_event(
         .unwrap_or(u64::MAX)
         .min(src_addr_end);
 
+    let call_ctx = state.call_ctx_mut()?;
+    let memory = &mut call_ctx.memory;
+    memory.extend_for_range(dst_offset, length.into());
+    let memory_updated = {
+        let mut memory_updated = memory.clone();
+        memory_updated.copy_from(dst_offset, code_offset, length.into(), &bytecode.to_vec());
+        memory_updated
+    };
+
     let mut exec_step = state.new_step(geth_step)?;
     let (copy_steps, prev_bytes) = state.gen_copy_steps_for_bytecode(
         &mut exec_step,
@@ -98,6 +93,7 @@ fn gen_copy_event(
         dst_addr,
         src_addr_end,
         length,
+        memory_updated,
     )?;
 
     Ok(CopyEvent {
