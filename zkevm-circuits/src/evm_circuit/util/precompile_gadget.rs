@@ -3,17 +3,21 @@ use eth_types::Field;
 use gadgets::util::{not, or, select, Expr};
 use halo2_proofs::{circuit::Value, plonk::Expression};
 
-use crate::evm_circuit::{param::N_BYTES_ACCOUNT_ADDRESS, step::ExecutionState};
+use crate::evm_circuit::{
+    param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64},
+    step::ExecutionState,
+};
 
 use super::{
     constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-    math_gadget::BinaryNumberGadget,
+    math_gadget::{BinaryNumberGadget, LtGadget},
     CachedRegion, Cell,
 };
 
 #[derive(Clone, Debug)]
 pub struct PrecompileGadget<F> {
     address: BinaryNumberGadget<F, 4>,
+    pad_right: LtGadget<F, N_BYTES_U64>,
     padding_gadget: PaddingGadget<F>,
 }
 
@@ -37,6 +41,11 @@ impl<F: Field> PrecompileGadget<F> {
         _return_bytes_rlc: Expression<F>,
     ) -> Self {
         let address = BinaryNumberGadget::construct(cb, callee_address.expr());
+
+        // input length represents:
+        // - 128 bytes for ecrecover/ecAdd
+        // - 96 bytes for ecMul
+        // - calldata length for all other cases
         let input_len = {
             let len_128 = or::expr([
                 address.value_equals(PrecompileCalls::Ecrecover),
@@ -46,15 +55,21 @@ impl<F: Field> PrecompileGadget<F> {
             select::expr(
                 len_128,
                 128.expr(),
-                select::expr(len_96, 96.expr(), 0.expr()),
+                select::expr(len_96, 96.expr(), cd_length.expr()),
             )
         };
-        let padding_gadget = PaddingGadget::construct(
-            cb,
-            input_bytes_rlc.expr(),
-            cd_length.expr(),
-            input_len.expr(),
-        );
+        let pad_right = LtGadget::construct(cb, cd_length.expr(), input_len.expr());
+
+        // we right-pad zeroes only if calldata length provided was less than the expected/required
+        // input length for that precompile call.
+        let padding_gadget = cb.condition(pad_right.expr(), |cb| {
+            PaddingGadget::construct(
+                cb,
+                input_bytes_rlc.expr(),
+                cd_length.expr(),
+                input_len.expr(),
+            )
+        });
 
         cb.condition(address.value_equals(PrecompileCalls::Ecrecover), |cb| {
             cb.constrain_next_step(ExecutionState::PrecompileEcrecover, None, |cb| {
@@ -142,6 +157,7 @@ impl<F: Field> PrecompileGadget<F> {
 
         Self {
             address,
+            pad_right,
             padding_gadget,
         }
     }
@@ -152,12 +168,18 @@ impl<F: Field> PrecompileGadget<F> {
         offset: usize,
         address: PrecompileCalls,
         input_rlc: Value<F>,
-        input_len: u64,
+        cd_len: u64,
         keccak_rand: Value<F>,
     ) -> Result<(), halo2_proofs::plonk::Error> {
         self.address.assign(region, offset, address)?;
-        self.padding_gadget
-            .assign(region, offset, address, input_rlc, input_len, keccak_rand)?;
+        let input_len =
+            self.padding_gadget
+                .assign(region, offset, address, input_rlc, cd_len, keccak_rand)?;
+        log::info!("cd length    = {}", cd_len);
+        log::info!("input length = {}", input_len);
+        self.pad_right
+            .assign(region, offset, F::from(cd_len), F::from(input_len))?;
+
         Ok(())
     }
 }
@@ -207,23 +229,32 @@ impl<F: Field> PaddingGadget<F> {
         offset: usize,
         precompile: PrecompileCalls,
         input_rlc: Value<F>,
-        input_len: u64,
+        cd_len: u64,
         keccak_rand: Value<F>,
-    ) -> Result<(), halo2_proofs::plonk::Error> {
-        let (padded_rlc, power_of_rand) = if let Some(required_input_len) = precompile.input_len() {
-            assert!(required_input_len >= input_len as usize);
-            let n_padded_zeroes = (required_input_len as u64) - input_len;
-            assert!(n_padded_zeroes < 128);
-            let power_of_rand = keccak_rand.map(|r| r.pow(&[n_padded_zeroes, 0, 0, 0]));
-            (input_rlc * power_of_rand, power_of_rand)
-        } else {
-            (input_rlc, Value::known(F::one()))
-        };
+    ) -> Result<u64, halo2_proofs::plonk::Error> {
+        let (input_len, padded_rlc, power_of_rand) =
+            if let Some(required_input_len) = precompile.input_len() {
+                // pad only if calldata length is less than the required input length.
+                let n_padded_zeroes = if cd_len < required_input_len as u64 {
+                    (required_input_len as u64) - cd_len
+                } else {
+                    0
+                };
+                assert!(n_padded_zeroes < 128);
+                let power_of_rand = keccak_rand.map(|r| r.pow(&[n_padded_zeroes, 0, 0, 0]));
+                (
+                    required_input_len as u64,
+                    input_rlc * power_of_rand,
+                    power_of_rand,
+                )
+            } else {
+                (cd_len, input_rlc, Value::known(F::one()))
+            };
 
         self.padded_rlc.assign(region, offset, padded_rlc)?;
         self.power_of_rand.assign(region, offset, power_of_rand)?;
 
-        Ok(())
+        Ok(input_len)
     }
 
     pub(crate) fn padded_rlc(&self) -> Expression<F> {

@@ -2,7 +2,8 @@ use super::{
     param::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
-        N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS, RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS,
+        TX_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
     EvmCircuitExports,
@@ -1228,6 +1229,7 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
             ("EVM_lookup_sig", SIG_TABLE_LOOKUPS),
+            ("EVM_lookup_pow_of_rand", POW_OF_RAND_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),
             ("EVM_copy", N_COPY_COLUMNS),
             ("EVM_lookup_byte", N_BYTE_LOOKUPS),

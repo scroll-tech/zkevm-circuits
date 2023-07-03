@@ -1053,7 +1053,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 offset,
                 precompile_addr.0[19].into(),
                 input_bytes_rlc,
-                input_len,
+                cd_length.as_u64(),
                 region.challenges().keccak_input(),
             )?;
         }
