@@ -204,12 +204,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             },
             |_meta| 1.expr(),
         );
-        meta.create_gate("is precompile", |meta| {
+        meta.create_gate("decode tag", |meta| {
             let enabled = meta.query_fixed(q_enable, Rotation::cur());
             let is_precompile = meta.query_advice(is_precompiled, Rotation::cur());
             let is_tx_calldata = meta.query_advice(is_tx_calldata, Rotation::cur());
             let is_bytecode = meta.query_advice(is_bytecode, Rotation::cur());
             let is_memory = meta.query_advice(is_memory, Rotation::cur());
+            let is_tx_log = meta.query_advice(is_tx_log, Rotation::cur());
             let precompiles = sum::expr([
                 tag.value_equals(
                     CopyDataType::Precompile(PrecompileCalls::ECRecover),
@@ -258,6 +259,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         - tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)),
                 enabled.expr()
                     * (is_memory - tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)),
+                enabled.expr()
+                    * (is_tx_log - tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)),
             ]
         });
 
@@ -524,7 +527,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     meta.query_advice(is_last, Rotation::next()),
                     and::expr([
                         meta.query_advice(is_memory, Rotation::cur()),
-                        meta.query_advice(is_memory, Rotation::next()),
+                        meta.query_advice(is_memory, Rotation::next())
+                            + meta.query_advice(is_tx_log, Rotation::next()),
                     ]),
                 ]))
             },
