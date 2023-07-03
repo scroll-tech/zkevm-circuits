@@ -16,7 +16,7 @@ use gadgets::{
     util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
+    circuit::{Chip, Layouter, Region, Value},
     plonk::{
         Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
     },
@@ -780,6 +780,28 @@ impl<F: Field> RlpCircuitConfig<F> {
             |meta| meta.query_advice(format, Rotation::cur()),
             |meta| meta.query_advice(format, Rotation::next()),
         );
+
+        // constrain diff belong to range256 table for each comparator
+        let mut diffs = vec![];
+        diffs.extend(byte_value_gte_0x80.lt_chip.config().diff);
+        diffs.extend(byte_value_gte_0xb8.lt_chip.config().diff);
+        diffs.extend(byte_value_gte_0xc0.lt_chip.config().diff);
+        diffs.extend(byte_value_gte_0xf8.lt_chip.config().diff);
+        diffs.extend(byte_value_lte_0x80.lt_chip.config().diff);
+        diffs.extend(byte_value_lte_0xb8.lt_chip.config().diff);
+        diffs.extend(byte_value_lte_0xc0.lt_chip.config().diff);
+        diffs.extend(byte_value_lte_0xf8.lt_chip.config().diff);
+        diffs.extend(tidx_lte_tlength.lt_chip.config().diff);
+        diffs.extend(mlength_lte_0x20.lt_chip.config().diff);
+
+        for diff in diffs {
+            meta.lookup_any("diff in range256", |meta| {
+                let diff = meta.query_advice(diff, Rotation::cur());
+                let range256 = meta.query_fixed(range256_table.0, Rotation::cur());
+
+                vec![(diff, range256)]
+            });
+        }
 
         // constraints on the booleans that we use to reduce degree
         meta.create_gate("booleans for reducing degree (part one)", |meta| {
