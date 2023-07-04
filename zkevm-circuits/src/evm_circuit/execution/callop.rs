@@ -949,10 +949,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, code_address)?;
         self.is_precompile_lt
             .assign(region, offset, code_address, 0x0Au64.into())?;
-        if is_precompile_call {
-            self.precompile_gadget
-                .assign(region, offset, precompile_addr.0[19].into())?;
-        }
         let precompile_return_length = if is_precompile_call {
             let value_rw = block.rws[step.rw_indices[32 + rw_offset]];
             assert_eq!(
@@ -1028,27 +1024,39 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 .keccak_input()
                 .map(|randomness| rlc::value(return_bytes.iter().rev(), randomness));
             (
-                Value::known(F::from(input_len as u64)),
+                input_len as u64,
                 input_bytes_rlc,
                 output_bytes_rlc,
                 return_bytes_rlc,
             )
         } else {
             (
-                Value::known(F::zero()),
+                0,
                 Value::known(F::zero()),
                 Value::known(F::zero()),
                 Value::known(F::zero()),
             )
         };
 
-        self.input_len.assign(region, offset, input_len)?;
+        self.input_len
+            .assign(region, offset, Value::known(F::from(input_len)))?;
         self.input_bytes_rlc
             .assign(region, offset, input_bytes_rlc)?;
         self.output_bytes_rlc
             .assign(region, offset, output_bytes_rlc)?;
         self.return_bytes_rlc
             .assign(region, offset, return_bytes_rlc)?;
+
+        if is_precompile_call {
+            self.precompile_gadget.assign(
+                region,
+                offset,
+                precompile_addr.0[19].into(),
+                input_bytes_rlc,
+                cd_length.as_u64(),
+                region.challenges().keccak_input(),
+            )?;
+        }
 
         Ok(())
     }

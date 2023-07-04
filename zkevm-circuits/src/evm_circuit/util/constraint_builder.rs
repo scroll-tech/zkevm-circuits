@@ -1353,6 +1353,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Sig Table
+
     pub(crate) fn sig_table_lookup(
         &mut self,
         msg_hash_rlc: Expression<F>,
@@ -1371,6 +1372,22 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 recovered_addr: recovered_addr.expr(),
             },
         );
+    }
+
+    // Power of Randomness Table
+
+    pub(crate) fn pow_of_rand_lookup(
+        &mut self,
+        exponent: Expression<F>,
+        pow_of_rand: Expression<F>,
+    ) {
+        self.add_lookup(
+            "power of randomness",
+            Lookup::PowOfRandTable {
+                exponent,
+                pow_of_rand,
+            },
+        )
     }
 
     // Keccak Table

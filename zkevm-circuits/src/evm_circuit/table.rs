@@ -144,6 +144,7 @@ pub(crate) enum Table {
     Keccak,
     Exp,
     Sig,
+    PowOfRand,
 }
 
 #[derive(Clone, Debug)]
@@ -300,6 +301,10 @@ pub(crate) enum Lookup<F> {
         sig_s_rlc: Expression<F>,
         recovered_addr: Expression<F>,
     },
+    PowOfRandTable {
+        exponent: Expression<F>,
+        pow_of_rand: Expression<F>,
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -320,6 +325,7 @@ impl<F: Field> Lookup<F> {
             Self::KeccakTable { .. } => Table::Keccak,
             Self::ExpTable { .. } => Table::Exp,
             Self::SigTable { .. } => Table::Sig,
+            Self::PowOfRandTable { .. } => Table::PowOfRand,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -455,6 +461,14 @@ impl<F: Field> Lookup<F> {
                 sig_r_rlc.clone(),
                 sig_s_rlc.clone(),
                 recovered_addr.clone(),
+            ],
+            Self::PowOfRandTable {
+                exponent,
+                pow_of_rand,
+            } => vec![
+                1.expr(), /* q_enable */
+                exponent.clone(),
+                pow_of_rand.clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()

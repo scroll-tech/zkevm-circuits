@@ -269,14 +269,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     callee_gas_left,
                 );
 
-                log::info!(
-                    "precompile returned {:?} with len {} and gas {} and is_success {}",
-                    result,
-                    result.len(),
-                    contract_gas_cost,
-                    call.is_success(),
-                );
-
                 // mutate the caller memory.
                 let caller_ctx_mut = state.caller_ctx_mut()?;
                 caller_ctx_mut.return_data = result.clone();

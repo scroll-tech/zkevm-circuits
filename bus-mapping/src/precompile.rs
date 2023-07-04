@@ -115,7 +115,6 @@ impl PrecompileCalls {
         match self {
             Self::Ecrecover | Self::Bn128Add => Some(128),
             Self::Bn128Mul => Some(96),
-            Self::Blake2F => Some(213),
             _ => None,
         }
     }
