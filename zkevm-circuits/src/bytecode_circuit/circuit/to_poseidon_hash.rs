@@ -15,19 +15,14 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
-use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
-#[cfg(feature = "scroll-trace")]
-use itertools::Itertools;
 use log::trace;
 use std::vec;
 
+pub use super::super::bytecode_unroller::HASHBLOCK_BYTES_IN_FIELD;
 use super::{
     super::bytecode_unroller::{BytecodeRow, UnrolledBytecode},
     BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
 };
-
-/// specify byte in field for encoding bytecode
-pub const HASHBLOCK_BYTES_IN_FIELD: usize = bus_mapping::util::POSEIDON_HASH_BYTES_IN_FIELD;
 
 #[derive(Clone, Debug)]
 /// Bytecode circuit (for hash block) configuration
@@ -59,7 +54,6 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
     ) -> Self {
         let base_conf_cl = base_conf.clone();
         let bytecode_table = base_conf.bytecode_table;
-        let code_hash = bytecode_table.code_hash;
 
         let q_enable = base_conf.q_enable; // from 0 to last avaliable row
 
@@ -293,90 +287,95 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         // ]))
         // });
 
-        let pick_hash_tbl_cols = |meta: &mut VirtualCells<F>, inp_i: usize| {
-            debug_assert_eq!(PoseidonTable::INPUT_WIDTH, 2);
-            [
-                meta.query_fixed(poseidon_table.q_enable, Rotation::cur()),
-                meta.query_advice(poseidon_table.hash_id, Rotation::cur()),
-                meta.query_advice(
-                    match inp_i {
-                        0 => poseidon_table.input0,
-                        1 => poseidon_table.input1,
-                        _ => unreachable!("valid poseidon input index"),
-                    },
-                    Rotation::cur(),
-                ),
-                meta.query_advice(poseidon_table.control, Rotation::cur()),
-            ]
-        };
-
-        // we use a special selection exp for only 2 indexs
-        let field_selector = |meta: &mut VirtualCells<F>| {
-            let field_index = meta.query_advice(field_index, Rotation::cur()) - 1.expr();
-            [1.expr() - field_index.clone(), field_index]
-        };
-
-        let domain_spec_factor = Expression::Constant(F::from_u128(HASHABLE_DOMAIN_SPEC));
-
-        // poseidon lookup:
-        //  * PoseidonTable::INPUT_WIDTH lookups for each input field
-        //  * PoseidonTable::INPUT_WIDTH -1 lookups for the padded zero input
-        //  so we have 2*PoseidonTable::INPUT_WIDTH -1 lookups
         #[cfg(feature = "scroll-trace")]
-        for i in 0..PoseidonTable::INPUT_WIDTH {
-            meta.lookup_any("poseidon input", |meta| {
+        {
+            use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
+            use itertools::Itertools;
+            let code_hash = bytecode_table.code_hash;
+            let pick_hash_tbl_cols = |meta: &mut VirtualCells<F>, inp_i: usize| {
+                debug_assert_eq!(PoseidonTable::INPUT_WIDTH, 2);
+                [
+                    meta.query_fixed(poseidon_table.q_enable, Rotation::cur()),
+                    meta.query_advice(poseidon_table.hash_id, Rotation::cur()),
+                    meta.query_advice(
+                        match inp_i {
+                            0 => poseidon_table.input0,
+                            1 => poseidon_table.input1,
+                            _ => unreachable!("valid poseidon input index"),
+                        },
+                        Rotation::cur(),
+                    ),
+                    meta.query_advice(poseidon_table.control, Rotation::cur()),
+                ]
+            };
+
+            // we use a special selection exp for only 2 indexs
+            let field_selector = |meta: &mut VirtualCells<F>| {
+                let field_index = meta.query_advice(field_index, Rotation::cur()) - 1.expr();
+                [1.expr() - field_index.clone(), field_index]
+            };
+
+            let domain_spec_factor = Expression::Constant(F::from_u128(HASHABLE_DOMAIN_SPEC));
+
+            // poseidon lookup:
+            //  * PoseidonTable::INPUT_WIDTH lookups for each input field
+            //  * PoseidonTable::INPUT_WIDTH -1 lookups for the padded zero input
+            //  so we have 2*PoseidonTable::INPUT_WIDTH -1 lookups
+            for i in 0..PoseidonTable::INPUT_WIDTH {
+                meta.lookup_any("poseidon input", |meta| {
+                    // Conditions:
+                    // - On the row at **field border** (`is_field_border == 1`)
+                    // - the field_index match current i
+                    let enable = and::expr(vec![
+                        meta.query_advice(is_field_border, Rotation::cur()),
+                        field_selector(meta)[i].clone(),
+                    ]);
+                    let mut constraints = Vec::new();
+
+                    let lookup_inputs = [
+                        1.expr(),
+                        meta.query_advice(code_hash, Rotation::cur()),
+                        meta.query_advice(field_input, Rotation::cur()),
+                        meta.query_advice(control_length, Rotation::cur())
+                            * domain_spec_factor.clone(),
+                    ];
+
+                    for (input_expr, table_expr) in lookup_inputs
+                        .into_iter()
+                        .zip_eq(pick_hash_tbl_cols(meta, i))
+                    {
+                        constraints.push((enable.clone() * input_expr, table_expr))
+                    }
+                    constraints
+                });
+            }
+
+            // the canonical form should be `for i in 1..PoseidonTable::INPUT_WIDTH{...}`
+            meta.lookup_any("poseidon input padding zero for final", |meta| {
                 // Conditions:
-                // - On the row at **field border** (`is_field_border == 1`)
-                // - the field_index match current i
+                // - On the row with the last byte (`is_byte_to_header == 1`)
+                // - Not padding
+                // - the (0 begin) field_index is 1 (for we have only 2 input field)
                 let enable = and::expr(vec![
-                    meta.query_advice(is_field_border, Rotation::cur()),
-                    field_selector(meta)[i].clone(),
+                    is_byte_to_header(meta),
+                    2.expr() - meta.query_advice(field_index, Rotation::cur()),
                 ]);
                 let mut constraints = Vec::new();
-
                 let lookup_inputs = [
                     1.expr(),
                     meta.query_advice(code_hash, Rotation::cur()),
-                    meta.query_advice(field_input, Rotation::cur()),
-                    meta.query_advice(control_length, Rotation::cur()) * domain_spec_factor.clone(),
+                    0.expr(),
+                    meta.query_advice(control_length, Rotation::cur()) * domain_spec_factor,
                 ];
-
                 for (input_expr, table_expr) in lookup_inputs
                     .into_iter()
-                    .zip_eq(pick_hash_tbl_cols(meta, i))
+                    .zip_eq(pick_hash_tbl_cols(meta, 1))
                 {
                     constraints.push((enable.clone() * input_expr, table_expr))
                 }
                 constraints
             });
         }
-
-        // the canonical form should be `for i in 1..PoseidonTable::INPUT_WIDTH{...}`
-        #[cfg(feature = "scroll-trace")]
-        meta.lookup_any("poseidon input padding zero for final", |meta| {
-            // Conditions:
-            // - On the row with the last byte (`is_byte_to_header == 1`)
-            // - Not padding
-            // - the (0 begin) field_index is 1 (for we have only 2 input field)
-            let enable = and::expr(vec![
-                is_byte_to_header(meta),
-                2.expr() - meta.query_advice(field_index, Rotation::cur()),
-            ]);
-            let mut constraints = Vec::new();
-            let lookup_inputs = [
-                1.expr(),
-                meta.query_advice(code_hash, Rotation::cur()),
-                0.expr(),
-                meta.query_advice(control_length, Rotation::cur()) * domain_spec_factor,
-            ];
-            for (input_expr, table_expr) in lookup_inputs
-                .into_iter()
-                .zip_eq(pick_hash_tbl_cols(meta, 1))
-            {
-                constraints.push((enable.clone() * input_expr, table_expr))
-            }
-            constraints
-        });
 
         // re-export keccak table in extended config
         let keccak_table = base_conf.keccak_table.clone();
@@ -671,66 +670,6 @@ impl<F: Field> SubCircuitConfig<F> for ToHashBlockCircuitConfig<F, HASHBLOCK_BYT
     }
 }
 
-/// Get unrolled hash inputs as inputs to hash circuit
-pub fn unroll_to_hash_input<F: Field, const BYTES_IN_FIELD: usize, const INPUT_LEN: usize>(
-    code: impl ExactSizeIterator<Item = u8>,
-) -> Vec<[F; INPUT_LEN]> {
-    use eth_types::U256;
-
-    let fl_cnt = code.len() / BYTES_IN_FIELD;
-    let fl_cnt = if code.len() % BYTES_IN_FIELD != 0 {
-        fl_cnt + 1
-    } else {
-        fl_cnt
-    };
-
-    let (msgs, _) = code
-        .chain(std::iter::repeat(0))
-        .take(fl_cnt * BYTES_IN_FIELD)
-        .fold((Vec::new(), Vec::new()), |(mut msgs, mut cache), bt| {
-            cache.push(bt);
-            if cache.len() == BYTES_IN_FIELD {
-                let mut buf: [u8; 64] = [0; 64];
-                U256::from_big_endian(&cache).to_little_endian(&mut buf[0..32]);
-                msgs.push(F::from_bytes_wide(&buf));
-                cache.clear();
-            }
-            (msgs, cache)
-        });
-
-    let input_cnt = msgs.len() / INPUT_LEN;
-    let input_cnt = if msgs.len() % INPUT_LEN != 0 {
-        input_cnt + 1
-    } else {
-        input_cnt
-    };
-    if input_cnt == 0 {
-        return Vec::new();
-    }
-
-    let (mut inputs, last) = msgs
-        .into_iter()
-        .chain(std::iter::repeat(F::zero()))
-        .take(input_cnt * INPUT_LEN)
-        .fold(
-            (Vec::new(), [None; INPUT_LEN]),
-            |(mut msgs, mut v_arr), f| {
-                if let Some(v) = v_arr.iter_mut().find(|v| v.is_none()) {
-                    v.replace(f);
-                    (msgs, v_arr)
-                } else {
-                    msgs.push(v_arr.map(|v| v.unwrap()));
-                    let mut v_arr = [None; INPUT_LEN];
-                    v_arr[0].replace(f);
-                    (msgs, v_arr)
-                }
-            },
-        );
-
-    inputs.push(last.map(|v| v.unwrap()));
-    inputs
-}
-
 /// test module
 #[cfg(any(feature = "test", test))]
 #[cfg(test)]
@@ -739,6 +678,7 @@ pub mod tests {
     // use super::super::tests::get_randomness;
     // use crate::{bytecode_circuit::dev::test_bytecode_circuit_unrolled,
     // util::DEFAULT_RAND}; use eth_types::Bytecode;
+    use crate::bytecode_circuit::bytecode_unroller::unroll_to_hash_input;
     use halo2_proofs::halo2curves::bn256::Fr;
 
     #[test]
