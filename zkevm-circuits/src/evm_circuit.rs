@@ -425,7 +425,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let keccak_table = KeccakTable::construct(meta);
         let exp_table = ExpTable::construct(meta);
         let sig_table = SigTable::construct(meta);
-        let pow_of_rand_table = PowOfRandTable::construct(meta);
+        let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
         (
             EvmCircuitConfig::new(
                 meta,

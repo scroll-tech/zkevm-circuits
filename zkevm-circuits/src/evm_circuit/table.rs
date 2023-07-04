@@ -465,7 +465,11 @@ impl<F: Field> Lookup<F> {
             Self::PowOfRandTable {
                 exponent,
                 pow_of_rand,
-            } => vec![exponent.clone(), pow_of_rand.clone()],
+            } => vec![
+                1.expr(), /* q_enable */
+                exponent.clone(),
+                pow_of_rand.clone(),
+            ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()
                 .into_iter()
