@@ -291,7 +291,7 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         address: MemoryAddress, //Caution: make sure this address = slot passing
         value: Word,
-    ) -> Result<(Vec<u8>), Error> {
+    ) -> Result<Vec<u8>, Error> {
         let mem = &mut self.call_ctx_mut()?.memory;
         let value_prev = mem.read_word(address);
         let value_prev_bytes = value_prev.to_be_bytes();
@@ -1659,6 +1659,7 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: u64,
         src_addr_end: u64,
         bytes_left: u64,
+        memory_updated: Memory,
     ) -> Result<(CopyEventSteps, Vec<u8>), Error> {
         let mut copy_steps = Vec::with_capacity(bytes_left as usize);
         let mut prev_bytes: Vec<u8> = vec![];
@@ -1668,13 +1669,9 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let (dst_begin_slot, full_length, _) = Memory::align_range(dst_addr, bytes_left);
 
-        let code_slot_bytes = self
-            .call_ctx()?
-            .memory
-            .read_chunk(dst_begin_slot.into(), full_length.into());
+        let code_slot_bytes = memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
 
-        let mut copy_start = 0u64;
-        let mut first_set = true;
+        let copy_start = dst_addr - dst_begin_slot;
         for (idx, value) in code_slot_bytes.iter().enumerate() {
             if (idx as u64 + dst_begin_slot < dst_addr)
                 || (idx as u64 + dst_begin_slot >= dst_addr + bytes_left)
@@ -1683,11 +1680,6 @@ impl<'a> CircuitInputStateRef<'a> {
                 copy_steps.push((*value, false, true));
             } else {
                 // real copy byte
-                if first_set {
-                    copy_start = idx as u64;
-                    first_set = false;
-                }
-
                 let addr = src_addr
                     .checked_add(idx as u64 - copy_start)
                     .unwrap_or(src_addr_end);
@@ -2154,7 +2146,6 @@ impl<'a> CircuitInputStateRef<'a> {
 
         Ok((read_steps, write_steps))
     }
-
     // TODO: add new gen_copy_steps for common use
     pub(crate) fn gen_memory_copy_steps(
         steps: &mut CopyEventSteps,

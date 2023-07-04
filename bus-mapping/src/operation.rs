@@ -138,8 +138,8 @@ impl fmt::Debug for MemoryWordOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("MemoryWordOp { ")?;
         f.write_fmt(format_args!(
-            "call_id: {:?}, addr: {:?}, value: 0x{:?}",
-            self.call_id, self.address, self.value
+            "call_id: {:?}, addr: {:?}, value: 0x{:?} value_prev {:?}",
+            self.call_id, self.address, self.value, self.value_prev
         ))?;
         f.write_str(" }")
     }
