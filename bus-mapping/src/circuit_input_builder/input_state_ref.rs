@@ -1718,33 +1718,22 @@ impl<'a> CircuitInputStateRef<'a> {
     pub(crate) fn gen_copy_steps_for_precompile_calldata(
         &mut self,
         exec_step: &mut ExecStep,
-        call_id: usize,
         src_addr: u64,
         copy_length: u64,
-        caller_memory: &[u8],
+        caller_memory: &Memory,
     ) -> Result<CopyEventSteps, Error> {
         let mut copy_steps = Vec::with_capacity(copy_length as usize);
         if copy_length == 0 {
             return Ok(copy_steps);
         }
 
-        let (_, src_begin_slot) = self.get_addr_shift_slot(src_addr).unwrap();
-        let (_, src_end_slot) = self.get_addr_shift_slot(src_addr + copy_length).unwrap();
-        let slot_count = src_end_slot - src_begin_slot;
-
-        let mut caller_memory = caller_memory.to_owned();
-
-        let minimal_length = src_end_slot as usize + 32;
-        if caller_memory.len() < minimal_length {
-            caller_memory.resize(minimal_length, 0);
-        }
-        let calldata_slot_bytes =
-            caller_memory[src_begin_slot as usize..(src_end_slot + 32) as usize].to_vec();
+        let (src_begin_slot, full_length, _) = Memory::align_range(src_addr, copy_length);
+        let calldata_slot_bytes = caller_memory.read_chunk(src_begin_slot.into(), full_length.into());
 
         Self::gen_memory_copy_steps(
             &mut copy_steps,
             &calldata_slot_bytes,
-            slot_count as usize + 32,
+            full_length as usize,
             src_addr as usize,
             src_begin_slot as usize,
             copy_length as usize,
@@ -1752,11 +1741,8 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let mut chunk_index = src_begin_slot;
         for chunk in calldata_slot_bytes.chunks(32) {
-            self.push_op(
-                exec_step,
-                RW::READ,
-                MemoryWordOp::new(call_id, chunk_index.into(), Word::from_big_endian(chunk)),
-            );
+            let value = self.memory_read_caller(exec_step, chunk_index.into())?;
+            debug_assert_eq!(Word::from_big_endian(chunk), value);
             chunk_index += 32;
         }
 
@@ -1774,17 +1760,16 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok((copy_steps, prev_bytes));
         }
 
-        let (_, end_slot) = self.get_addr_shift_slot(result.len() as u64)?;
-        let minimal_length = end_slot as usize + 32;
+        let (_, full_length, _) = Memory::align_range(0, result.len() as u64);
         let mut memory = result.clone();
-        if memory.len() < minimal_length {
-            memory.resize(minimal_length, 0);
+        if memory.len() < full_length as usize {
+            memory.resize(full_length as usize, 0);
         }
 
         Self::gen_memory_copy_steps(
             &mut copy_steps,
             &memory,
-            end_slot as usize + 32,
+            full_length as usize,
             0,
             0,
             result.len(),
@@ -1815,33 +1800,23 @@ impl<'a> CircuitInputStateRef<'a> {
         if copy_length == 0 {
             return Ok((read_steps, write_steps, prev_bytes));
         }
-        let src_begin_slot = 0;
-        let (_, src_end_slot) = self.get_addr_shift_slot(copy_length as u64).unwrap();
         assert!(copy_length <= result.len());
-        let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
-        let (_, dst_end_slot) = self
-            .get_addr_shift_slot(dst_addr + copy_length as u64)
-            .unwrap();
+        let src_begin_slot = 0;
+        let (_, src_full_length, _) = Memory::align_range(0, copy_length as u64);
+        let (dst_begin_slot, dst_full_length, _) = Memory::align_range(dst_addr, copy_length as u64);
 
-        let slot_count = max(src_end_slot - src_begin_slot, dst_end_slot - dst_begin_slot) as usize;
-        let src_end_slot = src_begin_slot as usize + slot_count;
-        let dst_end_slot = dst_begin_slot as usize + slot_count;
+        let slot_count = max(src_full_length, dst_full_length) as usize;
 
-        let mut src_memory = result.clone();
-        if src_memory.len() < src_end_slot + 32 {
-            src_memory.resize(src_end_slot + 32, 0);
-        }
+        let src_memory = Memory(result.clone());
 
-        let minimal_length = dst_end_slot + 32;
-        memory_updated.extend_at_least(minimal_length);
-
-        let read_slot_bytes = src_memory[src_begin_slot as usize..(src_end_slot + 32)].to_vec();
-        let write_slot_bytes = memory_updated.0[dst_begin_slot as usize..(dst_end_slot + 32)].to_vec();
+        let read_slot_bytes = src_memory.read_chunk(src_begin_slot.into(), slot_count.into());
+        let write_slot_bytes = memory_updated.read_chunk(dst_begin_slot.into(), slot_count.into());
+        debug_assert_eq!(read_slot_bytes.len(), write_slot_bytes.len());
 
         Self::gen_memory_copy_steps(
             &mut read_steps,
             &read_slot_bytes,
-            slot_count + 32,
+            slot_count,
             0,
             src_begin_slot as usize,
             copy_length,
@@ -1850,7 +1825,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Self::gen_memory_copy_steps(
             &mut write_steps,
             &write_slot_bytes,
-            slot_count + 32,
+            slot_count,
             dst_addr as usize,
             dst_begin_slot as usize,
             copy_length,
