@@ -65,7 +65,7 @@ impl std::fmt::Display for StateTest {
             let k = if k.is_empty() {
                 k.to_string()
             } else {
-                format!("{} :", k)
+                format!("{k} :")
             };
             let max_len = max_len - k.len();
             for i in 0..=v.len() / max_len {
@@ -119,7 +119,7 @@ impl std::fmt::Display for StateTest {
                 state.insert("nonce".to_string(), format!("{}", pre.nonce));
                 state.insert("code".to_string(), hex::encode(&pre.code).to_string());
                 for (key, value) in &pre.storage {
-                    let (k, v) = (format!("slot {}", key), format!("{}", value));
+                    let (k, v) = (format!("slot {key}"), format!("{value}"));
                     state.insert(k, v);
                 }
             }
@@ -127,23 +127,23 @@ impl std::fmt::Display for StateTest {
                 let none = String::from("∅");
                 if let Some(balance) = result.balance {
                     let pre = state.get("balance").unwrap_or(&none);
-                    let text = format!("{} → {}", pre, balance);
+                    let text = format!("{pre} → {balance}");
                     state.insert("balance".to_string(), text);
                 }
                 if let Some(code) = &result.code {
                     let pre = state.get("code").unwrap_or(&none);
-                    let text = format!("{} → {}", pre, code);
+                    let text = format!("{pre} → {code}");
                     state.insert("code".to_string(), text);
                 }
                 if let Some(nonce) = &result.nonce {
                     let pre = state.get("nonce").unwrap_or(&none);
-                    let text = format!("{} → {}", pre, nonce);
+                    let text = format!("{pre} → {nonce}");
                     state.insert("nonce".to_string(), text);
                 }
                 for (key, value) in &result.storage {
-                    let (k, v) = (format!("slot {}", key), format!("{}", value));
+                    let (k, v) = (format!("slot {key}"), format!("{value}"));
                     let pre = state.get(&k).unwrap_or(&none);
-                    let text = format!("{} → {}", pre, v);
+                    let text = format!("{pre} → {v}");
                     state.insert(k, text);
                 }
             }
@@ -153,9 +153,9 @@ impl std::fmt::Display for StateTest {
             for k in keys {
                 text.push_str(&format(state.get(k).unwrap(), k));
             }
-            table.add_row(row![format!("{:?}", addr), text]);
+            table.add_row(row![format!("{addr:?}"), text]);
         }
-        write!(f, "{}", table)?;
+        write!(f, "{table}")?;
 
         Ok(())
     }
@@ -223,7 +223,7 @@ impl StateTest {
                 .next()
                 .ok_or_else(|| anyhow!("Invalid account"))?
                 .replace("0x", "");
-            let address = format!("{:0>40}", address);
+            let address = format!("{address:0>40}");
             let address = Address::from_str(&address)?;
             if !is_create && to.is_none() {
                 to = Some(address);

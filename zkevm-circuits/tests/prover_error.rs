@@ -52,7 +52,7 @@ fn prover_error() {
     let eth_block = load_json("../block/block.json");
     let mut eth_block: Block<Transaction> = from_value(eth_block).unwrap();
     eth_block.base_fee_per_gas = Some(U256::zero());
-    println!("block {:#?}", eth_block);
+    println!("block {eth_block:#?}");
     let history_hashes: Vec<U256> = {
         let hashes = load_json("../block/block_hashes.json");
         let mut hashes: Vec<U256> = from_value(hashes).unwrap();

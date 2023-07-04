@@ -170,7 +170,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                 cb.require_equal(
                     "if is_field_border_prev padding_shift := 256^(BYTES_IN_FIELD-1)",
                     meta.query_advice(padding_shift, Rotation::cur()),
-                    Expression::Constant(F::from(256 as u64).pow_vartime([BYTES_IN_FIELD as u64-1])),
+                    Expression::Constant(F::from(256_u64).pow_vartime([BYTES_IN_FIELD as u64-1])),
                 );
             });
 
@@ -524,7 +524,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
             (
                 "padding shift header",
                 self.padding_shift,
-                F::from(256 as u64).pow_vartime([BYTES_IN_FIELD as u64]),
+                F::from(256_u64).pow_vartime([BYTES_IN_FIELD as u64]),
             ),
             ("field index header", self.field_index, F::one()),
         ] {
@@ -568,8 +568,8 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                     F::from((BYTES_IN_FIELD - bytes_in_field_index) as u64)
                         .invert()
                         .unwrap_or(F::zero());
-                let padding_shift_f = F::from(256 as u64)
-                    .pow_vartime([(BYTES_IN_FIELD - bytes_in_field_index) as u64]);
+                let padding_shift_f =
+                    F::from(256_u64).pow_vartime([(BYTES_IN_FIELD - bytes_in_field_index) as u64]);
                 let input_f = row.value * padding_shift_f + input_prev;
                 // relax field_border for code end
                 let field_border = field_border || code_index + 1 == code_length;
@@ -617,7 +617,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                     ("field index inv", self.field_index_inv, field_index_inv_f),
                 ] {
                     region.assign_advice(
-                        || format!("assign {} {}", tip, offset),
+                        || format!("assign {tip} {offset}"),
                         column,
                         offset,
                         || Value::known(val),
