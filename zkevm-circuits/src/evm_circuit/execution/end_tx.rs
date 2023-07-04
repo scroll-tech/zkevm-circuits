@@ -205,7 +205,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
-                        11.expr() - is_first_tx.expr() + create_coinbase_account.clone(),
+                        11.expr() - is_first_tx.expr()
+                            + create_coinbase_account.clone() * {
+                                if cfg!(feature = "scroll") {
+                                    2 // keccak code hash + poseidon code hash
+                                } else {
+                                    1
+                                }.expr()
+                            },
                     ),
                     ..StepStateTransition::any()
                 });
