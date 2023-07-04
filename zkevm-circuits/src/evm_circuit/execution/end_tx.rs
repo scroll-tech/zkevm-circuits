@@ -211,7 +211,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                                     2 // keccak code hash + poseidon code hash
                                 } else {
                                     1
-                                }.expr()
+                                }
+                                .expr()
                             },
                     ),
                     ..StepStateTransition::any()
