@@ -219,6 +219,7 @@ mod test {
     use eth_types::{bytecode, word, ToWord};
     use itertools::Itertools;
     use mock::TestContext;
+    use rayon::iter::{ParallelBridge, ParallelIterator};
 
     use crate::test_util::CircuitTestBuilder;
 
@@ -359,13 +360,17 @@ mod test {
             OpcodeId::CALLCODE,
         ];
 
-        for (test_vector, &call_kind) in TEST_VECTOR.iter().cartesian_product(&call_kinds) {
-            let bytecode = test_vector.with_call_op(call_kind);
+        TEST_VECTOR
+            .iter()
+            .cartesian_product(&call_kinds)
+            .par_bridge()
+            .for_each(|(test_vector, &call_kind)| {
+                let bytecode = test_vector.with_call_op(call_kind);
 
-            CircuitTestBuilder::new_from_test_ctx(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-            )
-            .run();
-        }
+                CircuitTestBuilder::new_from_test_ctx(
+                    TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+                )
+                .run();
+            })
     }
 }
