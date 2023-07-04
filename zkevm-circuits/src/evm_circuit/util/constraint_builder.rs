@@ -12,10 +12,10 @@ use crate::{
     util::{build_tx_log_expression, Challenges, Expr},
 };
 use bus_mapping::{
-    state_db::{CodeDB, EMPTY_CODE_HASH_LE},
+    state_db::EMPTY_CODE_HASH_LE,
     util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
 };
-use eth_types::{Field, ToLittleEndian, ToScalar, ToWord, H256, U256};
+use eth_types::{Field, ToLittleEndian, ToScalar, ToWord};
 use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
@@ -445,6 +445,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cell_with_type(CellType::StoragePhase1)
     }
 
+    #[allow(clippy::let_and_return)]
     pub(crate) fn query_cell_phase2(&mut self) -> Cell<F> {
         let cell = self.query_cell_with_type(CellType::StoragePhase2);
         #[cfg(not(feature = "onephase"))]
