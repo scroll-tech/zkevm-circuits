@@ -371,7 +371,7 @@ pub fn block_convert<F: Field>(
         block.circuits_params.max_rws
     };
 
-    let mut mpt_updates = MptUpdates::mock_from(&rws.table_assignments());
+    let mpt_updates = MptUpdates::mock_from(&rws.table_assignments());
 
     let _withdraw_root_check_rw = if end_block_last.rw_counter == 0 {
         0
