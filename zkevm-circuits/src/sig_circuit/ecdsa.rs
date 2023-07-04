@@ -1,5 +1,5 @@
 //! This module implements the ECDSA circuit. Modified from
-//! https://github.com/scroll-tech/halo2-lib/blob/530e744232860641f9533c9b9f8c1fee57f54cab/halo2-ecc/src/ecc/ecdsa.rs#L16
+//! <https://github.com/scroll-tech/halo2-lib/blob/530e744232860641f9533c9b9f8c1fee57f54cab/halo2-ecc/src/ecc/ecdsa.rs#L16>
 
 use halo2_base::{
     gates::{GateInstructions, RangeInstructions},
