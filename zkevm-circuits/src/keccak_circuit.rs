@@ -2,7 +2,7 @@
 mod cell_manager;
 /// Keccak packed multi
 pub mod keccak_packed_multi;
-mod param;
+pub(crate) mod param;
 mod table;
 /// Util
 mod util;
@@ -57,7 +57,7 @@ pub struct KeccakCircuitConfig<F> {
     q_padding_last: Column<Fixed>,
     /// The columns for other circuits to lookup Keccak hash results
     pub keccak_table: KeccakTable,
-    /// Expose the columns that stores the cells for hash input/output
+    /// The cell manager that stores/allocates the advice columns
     pub cell_manager: CellManager<F>,
     round_cst: Column<Fixed>,
     normalize_3: [TableColumn; 2],
@@ -69,6 +69,7 @@ pub struct KeccakCircuitConfig<F> {
 }
 
 /// Circuit configuration arguments
+#[derive(Debug, Clone)]
 pub struct KeccakCircuitConfigArgs<F: Field> {
     /// KeccakTable
     pub keccak_table: KeccakTable,
@@ -303,7 +304,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         // multiple rows with lookups in a way that doesn't require any
         // extra additional cells or selectors we have to put all `s[i]`'s on the same
         // row. This isn't that strong of a requirement actually because we the
-        // words are split into multipe parts, and so only the parts at the same
+        // words are split into multiple parts, and so only the parts at the same
         // position of those words need to be on the same row.
         let target_word_sizes = target_part_sizes(part_size);
         let num_word_parts = target_word_sizes.len();
@@ -868,6 +869,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
 }
 
 impl<F: Field> KeccakCircuitConfig<F> {
+    /// Assign the circuit for hash function
     pub(crate) fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -960,7 +962,7 @@ impl<F: Field> KeccakCircuitConfig<F> {
         Ok(res)
     }
 
-    /// Load the auxiliary table for keccak table.
+    /// Load the auxiliary tables for keccak circuit
     pub fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         load_normalize_table(layouter, "normalize_6", &self.normalize_6, 6u64)?;
         load_normalize_table(layouter, "normalize_4", &self.normalize_4, 4u64)?;
@@ -989,7 +991,12 @@ impl<F: Field> KeccakCircuitConfig<F> {
 /// KeccakCircuit
 #[derive(Default, Clone, Debug)]
 pub struct KeccakCircuit<F: Field> {
+    // The input is a two dimensional vector
+    // Each input row is a pre-image of the hash
+    // The output row of the hash, i.e., the digest is NOT part of the circuit input
     inputs: Vec<Vec<u8>>,
+    // The maximum number of rows, for example, 2^20
+    // This needs to be large enough for the circuit.
     num_rows: usize,
     _marker: PhantomData<F>,
 }
@@ -1001,7 +1008,7 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
         keccak_unusable_rows()
     }
 
-    /// The `block.circuits_params.keccak_padding` parmeter, when enabled, sets
+    /// The `block.circuits_params.keccak_padding` parameter, when enabled, sets
     /// up the circuit to support a fixed number of permutations/keccak_f's,
     /// independently of the permutations required by `inputs`.
     fn new_from_block(block: &witness::Block<F>) -> Self {

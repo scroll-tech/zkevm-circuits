@@ -153,7 +153,7 @@ impl<F: FieldExt> CellManager<F> {
         self.rows.iter().cloned().max().unwrap()
     }
 
-    /// expose the columns used for keccak cell
+    /// Expose the columns used by the cell manager by reference.
     pub fn columns(&self) -> &[CellColumn<F>] {
         &self.columns
     }
