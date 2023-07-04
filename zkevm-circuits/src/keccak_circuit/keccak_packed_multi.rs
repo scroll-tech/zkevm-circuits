@@ -871,19 +871,6 @@ pub fn multi_keccak<F: Field>(
         });
     }
 
-    // // Dedup actual keccaks
-    // let inputs_len: usize = bytes.iter().map(|k| k.len()).sum();
-    // let inputs_num = bytes.len();
-    // for (idx, bytes) in bytes.iter().enumerate() {
-    //     println!("{}th keccak is of len {}", idx, bytes.len());
-    // }
-    // let bytes: Vec<_> = bytes.iter().unique().collect();
-    // let inputs_len2: usize = bytes.iter().map(|k| k.len()).sum();
-    // let inputs_num2 = bytes.len();
-    // println!(
-    //     "after dedup inputs, input num {inputs_num}->{inputs_num2}, input total len
-    // {inputs_len}->{inputs_len2}" );
-
     // TODO: optimize the `extend` using Iter?
     let real_rows: Vec<_> = bytes
         .par_iter()

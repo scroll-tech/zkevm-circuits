@@ -16,7 +16,10 @@ use zkevm_circuits::{
     util::{Challenges, SubCircuitConfig},
 };
 
-use crate::param::{ConfigParams, BITS, LIMBS};
+use crate::{
+    constants::{BITS, LIMBS},
+    param::ConfigParams,
+};
 
 #[derive(Debug, Clone)]
 #[rustfmt::skip]

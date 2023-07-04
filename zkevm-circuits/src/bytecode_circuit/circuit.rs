@@ -24,6 +24,7 @@ use super::{
 };
 
 /// An extended circuit for binding with poseidon
+#[cfg(feature = "scroll")]
 pub mod to_poseidon_hash;
 
 #[cfg(feature = "onephase")]
@@ -99,7 +100,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
         bytecode_table.annotate_columns(meta);
         keccak_table.annotate_columns(meta);
         push_table.iter().enumerate().for_each(|(idx, &col)| {
-            meta.annotate_lookup_any_column(col, || format!("push_table_{}", idx))
+            meta.annotate_lookup_any_column(col, || format!("push_table_{idx}"))
         });
 
         let is_header_to_header = |meta: &mut VirtualCells<F>| {
@@ -575,7 +576,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 ("length", self.length, F::from(overwrite.bytes.len() as u64)),
             ] {
                 region.assign_advice(
-                    || format!("assign {} {}", name, offset),
+                    || format!("assign {name} {offset}"),
                     column,
                     offset,
                     || Value::known(value),
@@ -599,7 +600,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 ("value_rlc", self.value_rlc, value_rlc),
             ] {
                 region.assign_advice(
-                    || format!("assign {} {}", name, offset),
+                    || format!("assign {name} {offset}"),
                     column,
                     offset,
                     || value,
@@ -771,7 +772,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
     ) -> Result<(), Error> {
         // q_enable
         region.assign_fixed(
-            || format!("assign q_enable {}", offset),
+            || format!("assign q_enable {offset}"),
             self.q_enable,
             offset,
             || Value::known(F::from(enable as u64)),
@@ -779,7 +780,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
         // q_first
         region.assign_fixed(
-            || format!("assign q_first {}", offset),
+            || format!("assign q_first {offset}"),
             self.q_first,
             offset,
             || Value::known(F::from((offset == 0) as u64)),
@@ -788,7 +789,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         // q_last
         let q_last_value = if last { F::one() } else { F::zero() };
         region.assign_fixed(
-            || format!("assign q_last {}", offset),
+            || format!("assign q_last {offset}"),
             self.q_last,
             offset,
             || Value::known(q_last_value),
@@ -809,7 +810,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             ("push_data_size", self.push_data_size, push_data_size),
         ] {
             region.assign_advice(
-                || format!("assign {} {}", name, offset),
+                || format!("assign {name} {offset}"),
                 column,
                 offset,
                 || Value::known(value),
@@ -820,7 +821,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             ("value_rlc", self.value_rlc, value_rlc),
         ] {
             region.assign_advice(
-                || format!("assign {} {}", name, offset),
+                || format!("assign {name} {offset}"),
                 column,
                 offset,
                 || value,
@@ -880,7 +881,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         ("push_size", self.push_table[1], push_size),
                     ] {
                         region.assign_fixed(
-                            || format!("Push table assign {} {}", name, byte),
+                            || format!("Push table assign {name} {byte}"),
                             *column,
                             byte,
                             || Value::known(F::from(*value)),

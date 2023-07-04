@@ -10,7 +10,7 @@ eth-types = { path = "../eth-types" }
 zkevm-circuits = { path = "../zkevm-circuits" }
 
 
-ark-std = "0.4.0"
+ark-std = "0.3.0"
 env_logger = "0.10.0"
 ethers-core = "0.17.0"
 log = "0.4"

@@ -2,7 +2,10 @@
 
 use crate::{
     copy_circuit::util::number_or_hash_to_field,
-    evm_circuit::util::rlc,
+    evm_circuit::util::{
+        constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+        rlc,
+    },
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
     util::{build_tx_log_address, Challenges},
@@ -16,7 +19,7 @@ use core::iter::once;
 use eth_types::{sign_types::SignData, Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    util::{split_u256, split_u256_limb64},
+    util::{and, not, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -133,7 +136,7 @@ pub enum TxFieldTag {
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
-    /// Gas cost for rlp-encoded bytes of unsigned transaction (4 for byte == 0, 16 otherwise)
+    /// Gas cost of the transaction data charged in L1
     TxDataGasCost,
     /// Chain ID
     ChainID,
@@ -370,8 +373,6 @@ pub enum RwTableTag {
     Stack,
     /// Memory operation
     Memory,
-    /// Account Storage operation
-    AccountStorage,
     /// Tx Access List Account operation
     TxAccessListAccount,
     /// Tx Access List Account Storage operation
@@ -380,6 +381,8 @@ pub enum RwTableTag {
     TxRefund,
     /// Account operation
     Account,
+    /// Account Storage operation
+    AccountStorage,
     /// Call Context operation
     CallContext,
     /// Tx Log operation
@@ -412,15 +415,14 @@ impl From<RwTableTag> for usize {
 /// Tag for an AccountField in RwTable
 #[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccountFieldTag {
-    /// Variant representing the poseidon hash of an account's code.
-    CodeHash = 0, /* we need this to match to the field tag of AccountStorage, which is
-                   * always 0 */
     /// Nonce field
     Nonce,
     /// Balance field
     Balance,
     /// Variant representing the keccak hash of an account's code.
     KeccakCodeHash,
+    /// Variant representing the poseidon hash of an account's code.
+    CodeHash,
     /// Variant representing the code size, i.e. length of account's code.
     CodeSize,
     /// NonExisting field
@@ -655,36 +657,16 @@ impl RwTable {
     }
 }
 
-/// The types of proofs in the MPT table
-#[derive(Clone, Copy, Debug)]
-pub enum MPTProofType {
-    /// Nonce updated
-    NonceMod = AccountFieldTag::Nonce as isize,
-    /// Balance updated
-    BalanceMod = AccountFieldTag::Balance as isize,
-    /// Keccak Code hash exists
-    KeccakCodeHashExists = AccountFieldTag::KeccakCodeHash as isize,
-    /// Poseidon Code hash exits
-    PoseidonCodeHashExists = AccountFieldTag::CodeHash as isize,
-    /// Code size exists
-    CodeSizeExists = AccountFieldTag::CodeSize as isize,
-    /// Account does not exist
-    NonExistingAccountProof = AccountFieldTag::NonExisting as isize,
-    /// Storage updated
-    StorageMod,
-    /// Storage does not exist
-    NonExistingStorageProof,
-}
-impl_expr!(MPTProofType);
+pub use mpt_zktrie::mpt_circuits::MPTProofType;
 
 impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
         match tag {
-            AccountFieldTag::Nonce => Self::NonceMod,
-            AccountFieldTag::Balance => Self::BalanceMod,
-            AccountFieldTag::KeccakCodeHash => Self::KeccakCodeHashExists,
+            AccountFieldTag::Nonce => Self::NonceChanged,
+            AccountFieldTag::Balance => Self::BalanceChanged,
+            AccountFieldTag::KeccakCodeHash => Self::CodeHashExists,
             AccountFieldTag::CodeHash => Self::PoseidonCodeHashExists,
-            AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
+            AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
             AccountFieldTag::CodeSize => Self::CodeSizeExists,
         }
     }
@@ -793,11 +775,10 @@ impl MptTable {
         max_mpt_rows: usize,
         randomness: Value<F>,
     ) -> Result<(), Error> {
-        let dummy_row = MptUpdateRow([Value::known(F::zero()); 7]);
-        for (offset, row) in updates
-            .table_assignments(randomness)
+        let mpt_update_rows = updates.table_assignments(randomness);
+        for (offset, row) in mpt_update_rows
             .into_iter()
-            .chain(repeat(dummy_row))
+            .chain(repeat(MptUpdateRow::padding()))
             .take(max_mpt_rows)
             .enumerate()
         {
@@ -862,7 +843,7 @@ impl PoseidonTable {
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
-            hash_id: meta.advice_column_in(SecondPhase),
+            hash_id: meta.advice_column(),
             input0: meta.advice_column(),
             input1: meta.advice_column(),
             control: meta.advice_column(),
@@ -870,16 +851,9 @@ impl PoseidonTable {
         }
     }
 
-    /// Construct a new PoseidonTable for dev (no secondphase, mpt only)
+    /// Construct a new PoseidonTable for dev
     pub(crate) fn dev_construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            q_enable: meta.fixed_column(),
-            hash_id: meta.advice_column(),
-            input0: meta.advice_column(),
-            input1: meta.advice_column(),
-            control: meta.advice_column(),
-            heading_mark: meta.advice_column(),
-        }
+        Self::construct(meta)
     }
 
     pub(crate) fn assign<F: Field>(
@@ -941,7 +915,7 @@ impl PoseidonTable {
             unroll_to_hash_input_default, HASHBLOCK_BYTES_IN_FIELD,
         };
         use bus_mapping::state_db::CodeDB;
-        use mpt_zktrie::hash::HASHABLE_DOMAIN_SPEC;
+        use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
 
         layouter.assign_region(
             || "poseidon table",
@@ -2162,18 +2136,26 @@ impl SigTable {
                 let signatures: Vec<SignData> = block.get_sign_data(false);
 
                 for (offset, sign_data) in signatures.iter().enumerate() {
-                    let addr: F = sign_data.get_addr().to_scalar().unwrap();
-
-                    let msg_hash_rlc = challenges
-                        .keccak_input()
-                        .map(|challenge| rlc::value(&sign_data.msg_hash.to_bytes(), challenge));
-                    let sig_r_rlc = challenges
-                        .keccak_input()
-                        .map(|challenge| rlc::value(&sign_data.signature.0.to_bytes(), challenge));
-                    let sig_s_rlc = challenges
-                        .keccak_input()
-                        .map(|challenge| rlc::value(&sign_data.signature.1.to_bytes(), challenge));
+                    let msg_hash_rlc = challenges.keccak_input().map(|challenge| {
+                        rlc::value(
+                            sign_data.msg_hash.to_bytes().iter().rev().collect_vec(),
+                            challenge,
+                        )
+                    });
+                    let sig_r_rlc = challenges.keccak_input().map(|challenge| {
+                        rlc::value(
+                            sign_data.signature.0.to_bytes().iter().rev().collect_vec(),
+                            challenge,
+                        )
+                    });
+                    let sig_s_rlc = challenges.keccak_input().map(|challenge| {
+                        rlc::value(
+                            sign_data.signature.1.to_bytes().iter().rev().collect_vec(),
+                            challenge,
+                        )
+                    });
                     let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
+                    let recovered_addr = Value::known(sign_data.get_addr().to_scalar().unwrap());
 
                     region.assign_fixed(
                         || format!("sig table q_enable {offset}"),
@@ -2186,7 +2168,7 @@ impl SigTable {
                         ("sig_v", self.sig_v, sig_v),
                         ("sig_r_rlc", self.sig_r_rlc, sig_r_rlc),
                         ("sig_s_rlc", self.sig_s_rlc, sig_s_rlc),
-                        ("recovered_addr", self.recovered_addr, Value::known(addr)),
+                        ("recovered_addr", self.recovered_addr, recovered_addr),
                         ("is_valid", self.is_valid, Value::known(F::one())),
                     ] {
                         region.assign_advice(
@@ -2242,6 +2224,136 @@ impl<F: Field> LookupTable<F> for SigTable {
             meta.query_advice(self.sig_r_rlc, Rotation::cur()),
             meta.query_advice(self.sig_s_rlc, Rotation::cur()),
             meta.query_advice(self.recovered_addr, Rotation::cur()),
+        ]
+    }
+}
+
+/// Lookup table for powers of keccak randomness up to exponent in [0, 128)
+#[derive(Clone, Copy, Debug)]
+pub struct PowOfRandTable {
+    /// Whether the row is enabled.
+    pub q_enable: Column<Fixed>,
+    /// Whether the row is the first enabled row.
+    pub is_first: Column<Fixed>,
+    /// exponent = [0, 1, 2, ..., 126, 127] for enabled rows.
+    /// exponent = 0 for all other rows (disabled).
+    pub exponent: Column<Fixed>,
+    /// power of keccak randomness.
+    pub pow_of_rand: Column<Advice>,
+}
+
+impl PowOfRandTable {
+    /// Construct the powers of randomness table.
+    pub fn construct<F: Field>(
+        meta: &mut ConstraintSystem<F>,
+        challenges: &Challenges<Expression<F>>,
+    ) -> Self {
+        let table = Self {
+            q_enable: meta.fixed_column(),
+            is_first: meta.fixed_column(),
+            exponent: meta.fixed_column(),
+            pow_of_rand: meta.advice_column_in(SecondPhase),
+        };
+
+        meta.create_gate("pow_of_rand_table: first row", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            cb.require_equal(
+                "first row: rand ^ 0 == 1",
+                meta.query_advice(table.pow_of_rand, Rotation::cur()),
+                1.expr(),
+            );
+            cb.gate(and::expr([
+                meta.query_fixed(table.q_enable, Rotation::cur()),
+                meta.query_fixed(table.is_first, Rotation::cur()),
+            ]))
+        });
+
+        meta.create_gate("pow_of_rand_table: all other enabled rows", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            cb.require_equal(
+                "pow_of_rand::cur == pow_of_rand::prev * rand",
+                meta.query_advice(table.pow_of_rand, Rotation::cur()),
+                meta.query_advice(table.pow_of_rand, Rotation::prev()) * challenges.keccak_input(),
+            );
+            cb.gate(and::expr([
+                meta.query_fixed(table.q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(table.is_first, Rotation::cur())),
+            ]))
+        });
+
+        table
+    }
+
+    /// Assign values to the table.
+    pub fn dev_load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        let r = challenges.keccak_input();
+        layouter.assign_region(
+            || "power of randomness table",
+            |mut region| {
+                let pows_of_rand =
+                    std::iter::successors(Some(Value::known(F::one())), |&v| Some(v * r)).take(128);
+
+                for (idx, pow_of_rand) in pows_of_rand.enumerate() {
+                    region.assign_fixed(
+                        || format!("q_enable at offset = {idx}"),
+                        self.q_enable,
+                        idx,
+                        || Value::known(F::one()),
+                    )?;
+                    region.assign_fixed(
+                        || format!("is_first at offset = {idx}"),
+                        self.is_first,
+                        idx,
+                        || Value::known(if idx == 0 { F::one() } else { F::zero() }),
+                    )?;
+                    region.assign_fixed(
+                        || format!("exponent at offset = {idx}"),
+                        self.exponent,
+                        idx,
+                        || Value::known(F::from(idx as u64)),
+                    )?;
+                    region.assign_advice(
+                        || format!("pow_of_rand at offset = {idx}"),
+                        self.pow_of_rand,
+                        idx,
+                        || pow_of_rand,
+                    )?;
+                }
+
+                Ok(())
+            },
+        )
+    }
+}
+
+impl<F: Field> LookupTable<F> for PowOfRandTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_enable.into(),
+            self.is_first.into(),
+            self.exponent.into(),
+            self.pow_of_rand.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("q_enable"),
+            String::from("is_first"),
+            String::from("exponent"),
+            String::from("pow_of_rand"),
+        ]
+    }
+
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            meta.query_fixed(self.q_enable, Rotation::cur()),
+            meta.query_fixed(self.exponent, Rotation::cur()),
+            meta.query_advice(self.pow_of_rand, Rotation::cur()),
         ]
     }
 }

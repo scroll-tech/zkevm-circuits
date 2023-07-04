@@ -30,8 +30,9 @@ use zkevm_circuits::util::Challenges;
 
 use crate::{
     aggregation::{config::AggregationConfig, util::is_smaller_than},
+    constants::{BITS, LIMBS},
     core::{assign_batch_hashes, extract_accumulators_and_proof},
-    param::{ConfigParams, BITS, LIMBS},
+    param::ConfigParams,
     BatchHash, ChunkHash, CompressionCircuit, CHAIN_ID_LEN, MAX_AGG_SNARKS, POST_STATE_ROOT_INDEX,
     PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
 };
@@ -117,7 +118,7 @@ impl AggregationCircuit {
         // this aggregates MULTIPLE snarks
         //  (instead of ONE as in proof compression)
         let (accumulator, as_proof) =
-            extract_accumulators_and_proof(params, &snarks_with_padding, rng);
+            extract_accumulators_and_proof(params, &snarks_with_padding, rng).unwrap();
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
         let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
             .map(fe_to_limbs::<Fq, Fr, LIMBS, BITS>)
@@ -307,7 +308,8 @@ impl Circuit<Fr> for AggregationCircuit {
             &mut layouter,
             challenges,
             &preimages,
-        )?;
+        )
+        .unwrap();
         end_timer!(timer);
 
         log::trace!("hash input");

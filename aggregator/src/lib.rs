@@ -8,6 +8,8 @@ mod batch;
 mod chunk;
 /// proof compression
 mod compression;
+/// Configurations
+mod constants;
 /// Core module for circuit assignment
 mod core;
 /// Parameters for compression circuit
@@ -22,4 +24,5 @@ pub use aggregation::*;
 pub use batch::BatchHash;
 pub use chunk::ChunkHash;
 pub use compression::*;
+pub(crate) use constants::*;
 pub use param::*;

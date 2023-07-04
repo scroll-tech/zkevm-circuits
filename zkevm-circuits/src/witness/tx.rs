@@ -104,6 +104,7 @@ impl Transaction {
             callee_address: Some(Address::zero()),
             is_create: false, // callee_address != None
             chain_id,
+            tx_data_gas_cost: tx_data_gas_cost(&rlp_signed),
             v: dummy_sig.v,
             r: dummy_sig.r,
             s: dummy_sig.s,
@@ -369,6 +370,15 @@ impl Transaction {
                 Some(*rlc)
             })
             .collect::<Vec<_>>();
+        let rlp_gas_cost_acc = rlp_bytes
+            .iter()
+            .scan(Value::known(F::zero()), |acc, &byte| {
+                let cost = if byte == 0 { 4 } else { 16 };
+                *acc = *acc + Value::known(F::from(cost));
+
+                Some(*acc)
+            })
+            .collect::<Vec<_>>();
         let mut cur = SmState {
             tag: rom_table[0].tag,
             state: DecodeTagStart,
@@ -419,10 +429,17 @@ impl Transaction {
                             assert_eq!(cur.byte_idx, rlp_bytes.len() - 1);
                             is_output = true;
                             rlp_tag = RlpTag::RLC;
+                        } else if cur.depth == 0 {
+                            // emit GasCost
+                            is_output = true;
+                            rlp_tag = RlpTag::GasCost;
                         }
 
                         // state transitions
-                        next.depth = cur.depth - 1;
+                        // if cur.depth == 0 then we are at the end of decoding
+                        if cur.depth > 0 {
+                            next.depth = cur.depth - 1;
+                        }
                         next.state = DecodeTagStart;
                     } else {
                         let byte_value = rlp_bytes[cur.byte_idx];
@@ -622,10 +639,12 @@ impl Transaction {
 
             assert!(cur.byte_idx < rlp_bytes.len());
             let (byte_value, bytes_rlc) = (rlp_bytes[cur.byte_idx], rlp_bytes_rlc[cur.byte_idx]);
+            let gas_cost_acc = rlp_gas_cost_acc[cur.byte_idx];
 
             let tag_value = match rlp_tag {
                 RlpTag::Len => cur.tag_value_acc + Value::known(F::from((cur.byte_idx + 1) as u64)),
                 RlpTag::RLC => bytes_rlc,
+                RlpTag::GasCost => gas_cost_acc,
                 RlpTag::Tag(_) => cur.tag_value_acc,
                 RlpTag::Null => unreachable!("Null is not used"),
             };
@@ -652,11 +671,12 @@ impl Transaction {
                     tag_acc_value: cur.tag_value_acc,
                     depth: cur.depth,
                     bytes_rlc,
+                    gas_cost_acc,
                 },
             });
             witness_table_idx += 1;
 
-            if cur.tag == EndList && next.depth == 0 {
+            if cur.tag == EndList && cur.depth == 0 {
                 break;
             }
             cur = next;
@@ -751,17 +771,23 @@ impl<F: Field> RlpFsmWitnessGen<F> for Transaction {
             rlp_bytes
                 .iter()
                 .enumerate()
-                .scan(Value::known(F::zero()), |rlc, (i, &byte_value)| {
-                    *rlc = *rlc * r + Value::known(F::from(byte_value as u64));
-                    Some(DataTable {
-                        tx_id,
-                        format,
-                        byte_idx: i + 1,
-                        byte_rev_idx: n - i,
-                        byte_value,
-                        bytes_rlc: *rlc,
-                    })
-                })
+                .scan(
+                    (Value::known(F::zero()), Value::known(F::zero())),
+                    |(rlc, gas_cost_acc), (i, &byte_value)| {
+                        let byte_cost = if byte_value == 0 { 4 } else { 16 };
+                        *rlc = *rlc * r + Value::known(F::from(byte_value as u64));
+                        *gas_cost_acc = *gas_cost_acc + Value::known(F::from(byte_cost));
+                        Some(DataTable {
+                            tx_id,
+                            format,
+                            byte_idx: i + 1,
+                            byte_rev_idx: n - i,
+                            byte_value,
+                            bytes_rlc: *rlc,
+                            gas_cost_acc: *gas_cost_acc,
+                        })
+                    },
+                )
                 .collect::<Vec<_>>()
         };
 
@@ -843,6 +869,11 @@ pub(super) fn tx_convert(
         chain_id, tx.chain_id
     );
     let callee_address = if tx.is_create() { None } else { Some(tx.to) };
+    let tx_gas_cost = if tx.tx_type.is_l1_msg() {
+        0
+    } else {
+        tx_data_gas_cost(&tx.rlp_bytes)
+    };
 
     Transaction {
         block_number: tx.block_num,
@@ -859,7 +890,7 @@ pub(super) fn tx_convert(
         call_data: tx.input.clone(),
         call_data_length: tx.input.len(),
         call_data_gas_cost: tx_data_gas_cost(&tx.input),
-        tx_data_gas_cost: tx_data_gas_cost(&tx.rlp_bytes),
+        tx_data_gas_cost: tx_gas_cost,
         chain_id,
         rlp_unsigned: tx.rlp_unsigned_bytes.clone(),
         rlp_signed: tx.rlp_bytes.clone(),
@@ -917,7 +948,9 @@ pub(super) fn tx_convert(
 #[cfg(test)]
 mod tests {
     use crate::witness::{tx::Challenges, RlpTag, Tag, Transaction};
-    use eth_types::{geth_types::TxType, Address, ToBigEndian, ToScalar};
+    use eth_types::{
+        evm_types::gas_utils::tx_data_gas_cost, geth_types::TxType, Address, ToBigEndian, ToScalar,
+    };
     use ethers_core::{
         types::{Transaction as EthTransaction, TransactionRequest},
         utils::rlp::{Decodable, Rlp},
@@ -973,7 +1006,7 @@ mod tests {
         ];
 
         // assertions
-        assert_eq!(tx_table.len() + 2, rlp_table.len()); // +2 for Len and RLC
+        assert_eq!(tx_table.len() + 3, rlp_table.len()); // +3 for Len, RLC and GasCost
 
         // assertions about RlpTag::Len
         assert_eq!(rlp_table[0].rlp_tag, RlpTag::Len);
@@ -988,10 +1021,17 @@ mod tests {
         }
 
         // assertions about RlpTag::RLC
-        assert_eq!(rlp_table[rlp_table.len() - 1].rlp_tag, RlpTag::RLC);
+        assert_eq!(rlp_table[rlp_table.len() - 2].rlp_tag, RlpTag::RLC); // -2 for GasCost is the last
+        assert_eq!(
+            unwrap_value(rlp_table[rlp_table.len() - 2].tag_value),
+            rlc(&tx.rlp_unsigned, keccak_input)
+        );
+
+        // assertions about RlpTag::GasCost
+        assert_eq!(rlp_table[rlp_table.len() - 1].rlp_tag, RlpTag::GasCost);
         assert_eq!(
             unwrap_value(rlp_table[rlp_table.len() - 1].tag_value),
-            rlc(&tx.rlp_unsigned, keccak_input)
+            Fr::from(tx_data_gas_cost(&tx.rlp_unsigned)),
         );
     }
 
@@ -1051,10 +1091,17 @@ mod tests {
         }
 
         // assertions about RlpTag::RLC
-        assert_eq!(rlp_table[rlp_table.len() - 1].rlp_tag, RlpTag::RLC);
+        assert_eq!(rlp_table[rlp_table.len() - 2].rlp_tag, RlpTag::RLC); // -2 for GasCost is the last
+        assert_eq!(
+            unwrap_value(rlp_table[rlp_table.len() - 2].tag_value),
+            rlc(&tx.rlp_signed, keccak_input)
+        );
+
+        // assertions about RlpTag::GasCost
+        assert_eq!(rlp_table[rlp_table.len() - 1].rlp_tag, RlpTag::GasCost);
         assert_eq!(
             unwrap_value(rlp_table[rlp_table.len() - 1].tag_value),
-            rlc(&tx.rlp_signed, keccak_input)
+            Fr::from(tx_data_gas_cost(&tx.rlp_signed)),
         );
     }
 
@@ -1112,7 +1159,7 @@ mod tests {
         ]);
 
         // assertions
-        assert_eq!(tx_table.len() + 2, rlp_table.len()); // +2 for Len and RLC
+        assert_eq!(tx_table.len() + 3, rlp_table.len()); // +3 for Len, RLC and GasCost
 
         // assertions about RlpTag::Len
         assert_eq!(rlp_table[1].rlp_tag, RlpTag::Len);
@@ -1128,10 +1175,17 @@ mod tests {
         }
 
         // assertions about RlpTag::RLC
-        assert_eq!(rlp_table[rlp_table.len() - 1].rlp_tag, RlpTag::RLC);
+        assert_eq!(rlp_table[rlp_table.len() - 2].rlp_tag, RlpTag::RLC); // -2 for GasCost is the last
+        assert_eq!(
+            unwrap_value(rlp_table[rlp_table.len() - 2].tag_value),
+            rlc(&tx.rlp_signed, keccak_input)
+        );
+
+        // assertions about RlpTag::GasCost
+        assert_eq!(rlp_table[rlp_table.len() - 1].rlp_tag, RlpTag::GasCost);
         assert_eq!(
             unwrap_value(rlp_table[rlp_table.len() - 1].tag_value),
-            rlc(&tx.rlp_signed, keccak_input)
+            Fr::from(tx_data_gas_cost(&tx.rlp_signed)),
         );
     }
 }

@@ -120,7 +120,7 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
         let diff_bytes = diff.to_repr();
         for (idx, diff_column) in config.diff.iter().enumerate() {
             region.assign_advice(
-                || format!("lt chip: diff byte {}", idx),
+                || format!("lt chip: diff byte {idx}"),
                 *diff_column,
                 offset,
                 || Value::known(F::from(diff_bytes[idx] as u64)),

@@ -160,7 +160,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 if table == Table::Fixed {
-                    let name = format!("{:?}", table);
+                    let name = format!("{table:?}");
                     meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                         let table_expressions = fixed_table.table_exprs(meta);
                         vec![(

@@ -110,7 +110,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             .request("eth_getTransactionByHash", [hash])
             .await
             .map_err(|e| Error::JSONRpcError(e.into()));
-        println!("tx is {:#?}", tx);
+        println!("tx is {tx:#?}");
         tx
     }
 

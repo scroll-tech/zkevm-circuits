@@ -29,10 +29,7 @@ use snark_verifier::{
 };
 use snark_verifier_sdk::{aggregate, flatten_accumulator, types::Svk, Snark, SnarkWitness};
 
-use crate::{
-    core::extract_accumulators_and_proof,
-    param::{ConfigParams, BITS, LIMBS},
-};
+use crate::{core::extract_accumulators_and_proof, param::ConfigParams, ACC_LEN, BITS, LIMBS};
 
 use super::config::CompressionConfig;
 
@@ -79,12 +76,12 @@ impl Circuit<Fr> for CompressionCircuit {
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         // Too bad that configure function doesn't take additional input
         // it would be nicer to load parameters from API rather than ENV
-        let path = std::env::var("VERIFY_CONFIG")
-            .unwrap_or_else(|_| "configs/verify_circuit.config".to_owned());
+        let path = std::env::var("COMPRESSION_CONFIG")
+            .unwrap_or_else(|_| "configs/compression_wide.config".to_owned());
         let params: ConfigParams = serde_json::from_reader(
             File::open(path.as_str()).unwrap_or_else(|_| panic!("{path:?} does not exist")),
         )
-        .unwrap();
+        .unwrap_or_else(|_| ConfigParams::default_compress_wide_param());
 
         log::info!(
             "compression circuit configured with k = {} and {:?} advice columns",
@@ -144,7 +141,7 @@ impl Circuit<Fr> for CompressionCircuit {
                 );
                 // - if the snark is not a fresh one, assigned_instances already contains an
                 //   accumulator so we want to skip the first 12 elements from the public input
-                let skip = if self.is_fresh { 0 } else { 12 };
+                let skip = if self.is_fresh { 0 } else { ACC_LEN };
                 instances.extend(assigned_instances.iter().flat_map(|instance_column| {
                     instance_column.iter().skip(skip).map(|x| x.cell())
                 }));
@@ -173,14 +170,15 @@ impl CompressionCircuit {
         snark: Snark,
         is_fresh: bool,
         rng: impl Rng + Send,
-    ) -> Self {
+    ) -> Result<Self, snark_verifier::Error> {
         let svk = params.get_g()[0].into();
 
         // for the proof compression, only ONE snark is under accumulation
         // it is turned into an accumulator via KzgAs accumulation scheme
         // in case not first time:
         // (old_accumulator, public inputs) -> (new_accumulator, public inputs)
-        let (accumulator, as_proof) = extract_accumulators_and_proof(params, &[snark.clone()], rng);
+        let (accumulator, as_proof) =
+            extract_accumulators_and_proof(params, &[snark.clone()], rng)?;
 
         // the instance for the outer circuit is
         // - new accumulator, consists of 12 elements
@@ -190,10 +188,10 @@ impl CompressionCircuit {
         // as specified in CircuitExt::accumulator_indices()
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
         let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
-            .map(fe_to_limbs::<Fq, Fr, LIMBS, BITS>)
+            .map(fe_to_limbs::<Fq, Fr, { LIMBS }, { BITS }>)
             .concat();
         // skip the old accumulator if exists
-        let skip = if is_fresh { 0 } else { 12 };
+        let skip = if is_fresh { 0 } else { ACC_LEN };
         let snark_instance = snark
             .instances
             .iter()
@@ -214,13 +212,13 @@ impl CompressionCircuit {
             }
         }
 
-        Self {
+        Ok(Self {
             svk,
             snark: snark.into(),
             is_fresh,
             flattened_instances,
             as_proof: Value::known(as_proof),
-        }
+        })
     }
 
     pub fn succinct_verifying_key(&self) -> &Svk {

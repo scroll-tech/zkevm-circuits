@@ -10,9 +10,6 @@ mod util;
 pub use circuit::AggregationCircuit;
 pub use config::AggregationConfig;
 
-// TODO(ZZ): update to the right degree
-pub(crate) const LOG_DEGREE: u32 = 19;
-
 // ================================
 // indices for hash bytes
 // ================================
@@ -24,8 +21,7 @@ pub(crate) const LOG_DEGREE: u32 = 19;
 // - withdraw_root      32 bytes
 // - chunk_data_hash    32 bytes
 //
-// A chain_id is u64 and uses 8 bytes
-pub(crate) const CHAIN_ID_LEN: usize = 8;
+
 pub(crate) const PREV_STATE_ROOT_INDEX: usize = 8;
 pub(crate) const POST_STATE_ROOT_INDEX: usize = 40;
 pub(crate) const WITHDRAW_ROOT_INDEX: usize = 72;

@@ -1,7 +1,6 @@
 use snark_verifier::loader::halo2::halo2_ecc::fields::fp::FpStrategy;
 
-pub(crate) const LIMBS: usize = 3;
-pub(crate) const BITS: usize = 88;
+use crate::{BITS, LIMBS};
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 /// Parameters for aggregation circuit and compression circuit configs.
@@ -25,12 +24,12 @@ impl ConfigParams {
             num_lookup_advice: vec![1],
             num_fixed: 1,
             lookup_bits: 20,
-            limb_bits: 88,
-            num_limbs: 3,
+            limb_bits: BITS,
+            num_limbs: LIMBS,
         }
     }
 
-    pub(crate) fn _compress_wide_param() -> Self {
+    pub(crate) fn default_compress_wide_param() -> Self {
         Self {
             strategy: FpStrategy::Simple,
             degree: 22,
@@ -38,8 +37,8 @@ impl ConfigParams {
             num_lookup_advice: vec![1],
             num_fixed: 1,
             lookup_bits: 20,
-            limb_bits: 88,
-            num_limbs: 3,
+            limb_bits: BITS,
+            num_limbs: LIMBS,
         }
     }
 
@@ -51,8 +50,8 @@ impl ConfigParams {
             num_lookup_advice: vec![1],
             num_fixed: 1,
             lookup_bits: 20,
-            limb_bits: 88,
-            num_limbs: 3,
+            limb_bits: BITS,
+            num_limbs: LIMBS,
         }
     }
 }

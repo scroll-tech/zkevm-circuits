@@ -3,7 +3,6 @@ use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     halo2curves::bn256::{Bn256, G1Affine},
-    plonk::Error,
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use rand::Rng;
@@ -14,6 +13,7 @@ use snark_verifier::{
         AccumulationSchemeProver,
     },
     verifier::PlonkVerifier,
+    Error,
 };
 use snark_verifier_sdk::{
     types::{PoseidonTranscript, Shplonk, POSEIDON_SPEC},
@@ -26,9 +26,9 @@ use zkevm_circuits::{
 };
 
 use crate::{
+    constants::{CHAIN_ID_LEN, LOG_DEGREE},
     util::{assert_equal, capacity, get_indices},
-    CHAIN_ID_LEN, CHUNK_DATA_HASH_INDEX, LOG_DEGREE, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX,
-    WITHDRAW_ROOT_INDEX,
+    CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
 };
 
 /// Input the hash input bytes,
@@ -65,7 +65,7 @@ pub(crate) fn assign_batch_hashes<F: Field>(
     //      chunk[i].prevStateRoot || chunk[i].postStateRoot ||
     //      chunk[i].withdrawRoot || chunk[i].datahash)
     // each part of the preimage is mapped to image by Keccak256
-    let witness = multi_keccak(preimages, challenges, capacity(num_rows))?;
+    let witness = multi_keccak(preimages, challenges, capacity(num_rows)).unwrap();
     end_timer!(timer);
 
     // extract the indices of the rows for which the preimage and the digest cells lie in
@@ -266,7 +266,7 @@ pub(crate) fn assign_batch_hashes<F: Field>(
             config.annotate_circuit(&mut region);
             Ok(())
         },
-    )?;
+    ).unwrap();
 
     Ok((hash_input_cells, hash_output_cells))
 }
@@ -278,7 +278,7 @@ pub(crate) fn extract_accumulators_and_proof(
     params: &ParamsKZG<Bn256>,
     snarks: &[Snark],
     rng: impl Rng + Send,
-) -> (KzgAccumulator<G1Affine, NativeLoader>, Vec<u8>) {
+) -> Result<(KzgAccumulator<G1Affine, NativeLoader>, Vec<u8>), Error> {
     let svk = params.get_g()[0].into();
 
     let mut transcript_read =
@@ -313,7 +313,6 @@ pub(crate) fn extract_accumulators_and_proof(
             &accumulators,
             &mut transcript_write,
             rng,
-        )
-        .unwrap();
-    (accumulator, transcript_write.finalize())
+        )?;
+    Ok((accumulator, transcript_write.finalize()))
 }

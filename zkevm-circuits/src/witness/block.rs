@@ -11,6 +11,7 @@ use bus_mapping::{
 };
 use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
+use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
 
 use super::{
     mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep,
@@ -93,7 +94,7 @@ impl<F: Field> Block<F> {
     /// and all the rw operations of the step.
     pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
         for (tx_idx, tx) in self.txs.iter().enumerate() {
-            println!("tx {}", tx_idx);
+            println!("tx {tx_idx}");
             for step in &tx.steps {
                 println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
                 for rw_ref in &step.rw_indices {
@@ -370,11 +371,14 @@ pub fn block_convert<F: Field>(
     } else {
         block.circuits_params.max_rws
     };
-    let mpt_updates = MptUpdates::from_rws_with_mock_state_roots(
-        &rws.table_assignments(),
-        block.prev_state_root,
-        block.end_state_root(),
-    );
+
+    let mut mpt_updates = MptUpdates::mock_from(&rws.table_assignments());
+    assert!(*HASH_SCHEME_DONE);
+    mpt_updates.mock_fill_state_roots();
+
+    let mut block = block.clone();
+    block.prev_state_root = mpt_updates.old_root();
+    let block = &block;
 
     let _withdraw_root_check_rw = if end_block_last.rw_counter == 0 {
         0

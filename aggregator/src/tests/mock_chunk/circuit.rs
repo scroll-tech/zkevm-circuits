@@ -1,12 +1,10 @@
 use std::iter;
 
-use ark_std::{end_timer, start_timer};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use zkevm_circuits::util::{Challenges, SubCircuitConfig};
 
 use crate::ChunkHash;
 

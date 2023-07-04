@@ -36,10 +36,7 @@ pub(super) fn calc_required_advices(num_verif: usize) -> usize {
         }
         num_adv += 1;
     }
-    panic!(
-        "the required advice columns exceeds {} for {} signatures",
-        COLUMN_NUM_LIMIT, num_verif
-    );
+    panic!("the required advice columns exceeds {COLUMN_NUM_LIMIT} for {num_verif} signatures");
 }
 
 /// Chip to handle overflow integers of ECDSA::Fq, the scalar field

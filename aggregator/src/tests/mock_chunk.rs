@@ -22,6 +22,7 @@ pub(crate) struct MockChunkCircuit {
 }
 
 impl MockChunkCircuit {
+    #[allow(dead_code)]
     pub(crate) fn new(is_fresh: bool, chain_id: u64, chunk: ChunkHash) -> Self {
         MockChunkCircuit {
             is_fresh,
@@ -33,8 +34,6 @@ impl MockChunkCircuit {
 
 #[test]
 fn test_mock_chunk_prover() {
-    env_logger::init();
-
     let mut rng = test_rng();
 
     let circuit = MockChunkCircuit::random(&mut rng, true);
