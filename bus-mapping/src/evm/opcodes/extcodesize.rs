@@ -100,7 +100,7 @@ mod extcodesize_tests {
         geth_types::{Account, GethData},
         Bytecode, U256,
     };
-    use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
+    use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES, MOCK_COINBASE};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -154,7 +154,7 @@ mod extcodesize_tests {
             |mut txs, accs| {
                 txs[0].to(accs[0].address).from(accs[2].address);
             },
-            |block, _tx| block.number(0xcafeu64),
+            |block, _tx| block.author(*MOCK_COINBASE).number(0xcafeu64),
         )
         .unwrap()
         .into();

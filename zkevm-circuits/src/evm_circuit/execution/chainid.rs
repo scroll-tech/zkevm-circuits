@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell,
+            from_bytes, CachedRegion, U64Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -19,7 +19,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct ChainIdGadget<F> {
     same_context: SameContextGadget<F>,
-    chain_id: Cell<F>,
+    chain_id: U64Word<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CHAINID;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let chain_id = cb.query_cell_phase2();
+        let chain_id = cb.query_word_rlc();
 
         // Push the value to the stack
         cb.stack_push(chain_id.expr());
@@ -37,7 +37,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
         cb.block_lookup(
             BlockContextFieldTag::ChainId.expr(),
             cb.curr.state.block_number.expr(),
-            chain_id.expr(),
+            from_bytes::expr(&chain_id.cells),
         );
 
         // State transition
@@ -67,10 +67,11 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let chain_id = block.rws[step.rw_indices[0]].stack_value();
 
+        let chain_id = block.rws[step.rw_indices[0]].stack_value().as_u64();
         self.chain_id
-            .assign(region, offset, region.word_rlc(chain_id))?;
+            .assign(region, offset, Some(chain_id.to_le_bytes()))?;
+
         Ok(())
     }
 }

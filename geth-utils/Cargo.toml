@@ -5,6 +5,10 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [build-dependencies]
-gobuild = "0.1.0-alpha.1"
+gobuild = { git = "https://github.com/scroll-tech/gobuild.git" }
 log = "0.4.14"
 env_logger = "0.9"
+
+[features]
+default = []
+scroll = []

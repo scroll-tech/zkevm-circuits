@@ -445,8 +445,15 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cell_with_type(CellType::StoragePhase1)
     }
 
+    #[allow(clippy::let_and_return)]
     pub(crate) fn query_cell_phase2(&mut self) -> Cell<F> {
-        self.query_cell_with_type(CellType::StoragePhase2)
+        let cell = self.query_cell_with_type(CellType::StoragePhase2);
+        #[cfg(not(feature = "onephase"))]
+        assert_eq!(
+            cell.column.column_type(),
+            &halo2_proofs::plonk::Advice::new(halo2_proofs::plonk::SecondPhase)
+        );
+        cell
     }
 
     pub(crate) fn query_copy_cell(&mut self) -> Cell<F> {
@@ -492,7 +499,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
         if cfg!(feature = "poseidon-codehash") {
-            Expression::Constant(POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap())
+            let codehash = POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap();
+            Expression::Constant(codehash)
         } else {
             self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
         }
@@ -576,6 +584,22 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 values: [value, 0.expr(), 0.expr()],
             },
         );
+    }
+
+    // precompiled contract information
+    pub(crate) fn precompile_info_lookup(
+        &mut self,
+        execution_state: Expression<F>,
+        address: Expression<F>,
+        base_gas_cost: Expression<F>,
+    ) {
+        self.add_lookup(
+            "precompiles info",
+            Lookup::Fixed {
+                tag: FixedTableTag::PrecompileInfo.expr(),
+                values: [execution_state, address, base_gas_cost],
+            },
+        )
     }
 
     // constant gas
@@ -1013,7 +1037,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             RwValues::new(
                 tx_id,
                 account_address,
-                0.expr(),
+                AccountFieldTag::CodeHash.expr(),
                 key,
                 value.clone(),
                 value,
@@ -1040,7 +1064,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             RwValues::new(
                 tx_id,
                 account_address,
-                0.expr(),
+                AccountFieldTag::CodeHash.expr(),
                 key,
                 value,
                 value_prev,
@@ -1331,6 +1355,44 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 exponentiation_lo_hi,
             },
         );
+    }
+
+    // Sig Table
+
+    pub(crate) fn sig_table_lookup(
+        &mut self,
+        msg_hash_rlc: Expression<F>,
+        sig_v: Expression<F>,
+        sig_r_rlc: Expression<F>,
+        sig_s_rlc: Expression<F>,
+        recovered_addr: Expression<F>,
+    ) {
+        self.add_lookup(
+            "sig table",
+            Lookup::SigTable {
+                msg_hash_rlc: msg_hash_rlc.expr(),
+                sig_v: sig_v.expr(),
+                sig_r_rlc: sig_r_rlc.expr(),
+                sig_s_rlc: sig_s_rlc.expr(),
+                recovered_addr: recovered_addr.expr(),
+            },
+        );
+    }
+
+    // Power of Randomness Table
+
+    pub(crate) fn pow_of_rand_lookup(
+        &mut self,
+        exponent: Expression<F>,
+        pow_of_rand: Expression<F>,
+    ) {
+        self.add_lookup(
+            "power of randomness",
+            Lookup::PowOfRandTable {
+                exponent,
+                pow_of_rand,
+            },
+        )
     }
 
     // Keccak Table

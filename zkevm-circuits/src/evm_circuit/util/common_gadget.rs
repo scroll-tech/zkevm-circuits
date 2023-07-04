@@ -30,6 +30,10 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
+mod tx_l1_fee;
+
+pub(crate) use tx_l1_fee::TxL1FeeGadget;
+
 /// Construction of execution state that stays in the same call context, which
 /// lookups the opcode and verifies the execution state is responsible for it,
 /// then calculates the gas_cost and constrain the state transition.
@@ -164,11 +168,12 @@ impl<F: Field> RestoreContextGadget<F> {
             * GasCost::CODE_DEPOSIT_BYTE_COST.expr()
             * return_data_length;
 
-        let gas_refund = if cb.execution_state().halts_in_exception() {
-            0.expr() // no gas refund if call halts in exception
-        } else {
-            cb.curr.state.gas_left.expr() - memory_expansion_cost - code_deposit_cost
-        };
+        let gas_refund =
+            if cb.execution_state().halts_in_exception() || cb.execution_state().is_precompiled() {
+                0.expr() // no gas refund if call halts in exception
+            } else {
+                cb.curr.state.gas_left.expr() - memory_expansion_cost - code_deposit_cost
+            };
 
         let gas_left = caller_gas_left.expr() + gas_refund;
 
@@ -407,6 +412,14 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
                     0.expr(),
                     Some(reversion_info),
                 );
+                #[cfg(feature = "scroll")]
+                cb.account_write(
+                    receiver_address.clone(),
+                    AccountFieldTag::KeccakCodeHash,
+                    cb.empty_keccak_hash_rlc(),
+                    0.expr(),
+                    Some(reversion_info),
+                );
             },
         );
         // Skip transfer if value == 0
@@ -440,10 +453,11 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         // +1 Write Account (sender) Balance (Not Reversible tx fee)
         1.expr() +
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
             self.must_create.clone()]
-        ) * 1.expr() +
+        ) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -452,10 +466,11 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
         // NOTE: Write Account (sender) Balance (Not Reversible tx fee)
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
             self.must_create.clone()]
-        ) * 1.expr() +
+        ) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -537,8 +552,14 @@ impl<F: Field> TransferGadget<F> {
                     0.expr(),
                     Some(reversion_info),
                 );
-                // TODO: also write empty keccak code hash? codesize seems not need yet. write a
-                // test to verify this.
+                #[cfg(feature = "scroll")]
+                cb.account_write(
+                    receiver_address.clone(),
+                    AccountFieldTag::KeccakCodeHash,
+                    cb.empty_keccak_hash_rlc(),
+                    0.expr(),
+                    Some(reversion_info),
+                );
             },
         );
         // Skip transfer if value == 0
@@ -577,10 +598,11 @@ impl<F: Field> TransferGadget<F> {
 
     pub(crate) fn rw_delta(&self) -> Expression<F> {
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        // feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
             self.must_create.clone()]
-        ) * 1.expr() +
+        ) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -588,10 +610,11 @@ impl<F: Field> TransferGadget<F> {
 
     pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        // if feature = "scroll": +1 Write Account (receiver) KeccakCodeHash
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
-            self.must_create.clone()]
-        ) * 1.expr() +
+            self.must_create.clone(),
+        ]) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -1105,8 +1128,8 @@ impl<F: Field> CommonErrorGadget<F> {
     }
 }
 
-/// Check if the passed in word is within the specified byte range and less than
-/// a maximum cap.
+/// Check if the passed in word is within the specified byte range
+/// (not overflow) and less than a maximum cap.
 #[derive(Clone, Debug)]
 pub(crate) struct WordByteCapGadget<F, const VALID_BYTES: usize> {
     word: WordByteRangeGadget<F, VALID_BYTES>,
@@ -1116,14 +1139,14 @@ pub(crate) struct WordByteCapGadget<F, const VALID_BYTES: usize> {
 impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, cap: Expression<F>) -> Self {
         let word = WordByteRangeGadget::construct(cb);
-        let value = select::expr(word.within_range(), word.valid_value(), cap.expr());
+        let value = select::expr(word.overflow(), cap.expr(), word.valid_value());
         let lt_cap = LtGadget::construct(cb, value, cap);
 
         Self { word, lt_cap }
     }
 
-    /// Return true if within the specified byte range, false if overflow. No
-    /// matter whether it is less than the cap.
+    /// Return true if within the specified byte range (not overflow), false if
+    /// overflow. No matter whether it is less than the cap.
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -1131,9 +1154,9 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         original: U256,
         cap: F,
     ) -> Result<bool, Error> {
-        let within_range = self.word.assign(region, offset, original)?;
+        let not_overflow = self.word.assign(region, offset, original)?;
 
-        let value = if within_range {
+        let value = if not_overflow {
             let mut bytes = [0; 32];
             bytes[0..VALID_BYTES].copy_from_slice(&original.to_le_bytes()[0..VALID_BYTES]);
             F::from_repr(bytes).unwrap()
@@ -1143,11 +1166,15 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
 
         self.lt_cap.assign(region, offset, value, cap)?;
 
-        Ok(within_range)
+        Ok(not_overflow)
     }
 
     pub(crate) fn lt_cap(&self) -> Expression<F> {
         self.lt_cap.expr()
+    }
+
+    pub(crate) fn original_ref(&self) -> &Word<F> {
+        self.word.original_ref()
     }
 
     pub(crate) fn original_word(&self) -> Expression<F> {
@@ -1162,16 +1189,16 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         self.word.valid_value()
     }
 
-    pub(crate) fn within_range(&self) -> Expression<F> {
-        self.word.within_range()
+    pub(crate) fn not_overflow(&self) -> Expression<F> {
+        self.word.not_overflow()
     }
 }
 
-/// Check if the passed in word is within the specified byte range.
+/// Check if the passed in word is within the specified byte range (not overflow).
 #[derive(Clone, Debug)]
 pub(crate) struct WordByteRangeGadget<F, const VALID_BYTES: usize> {
     original: Word<F>,
-    within_range: IsZeroGadget<F>,
+    not_overflow: IsZeroGadget<F>,
 }
 
 impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
@@ -1179,11 +1206,11 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         debug_assert!(VALID_BYTES < 32);
 
         let original = cb.query_word_rlc();
-        let within_range = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
+        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
 
         Self {
             original,
-            within_range,
+            not_overflow,
         }
     }
 
@@ -1194,18 +1221,20 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         offset: usize,
         original: U256,
     ) -> Result<bool, Error> {
-        debug_assert!(VALID_BYTES < 32);
-
         self.original
             .assign(region, offset, Some(original.to_le_bytes()))?;
 
         let overflow_hi = original.to_le_bytes()[VALID_BYTES..]
             .iter()
             .fold(0, |acc, val| acc + u64::from(*val));
-        self.within_range
+        self.not_overflow
             .assign(region, offset, F::from(overflow_hi))?;
 
         Ok(overflow_hi == 0)
+    }
+
+    pub(crate) fn original_ref(&self) -> &Word<F> {
+        &self.original
     }
 
     pub(crate) fn original_word(&self) -> Expression<F> {
@@ -1213,16 +1242,14 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
     }
 
     pub(crate) fn overflow(&self) -> Expression<F> {
-        not::expr(self.within_range())
+        not::expr(self.not_overflow())
     }
 
     pub(crate) fn valid_value(&self) -> Expression<F> {
-        debug_assert!(VALID_BYTES < 32);
-
         from_bytes::expr(&self.original.cells[..VALID_BYTES])
     }
 
-    pub(crate) fn within_range(&self) -> Expression<F> {
-        self.within_range.expr()
+    pub(crate) fn not_overflow(&self) -> Expression<F> {
+        self.not_overflow.expr()
     }
 }

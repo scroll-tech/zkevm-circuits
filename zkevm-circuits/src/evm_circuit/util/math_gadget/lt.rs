@@ -1,7 +1,10 @@
 use crate::{
-    evm_circuit::util::{
-        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        from_bytes, pow_of_two, transpose_val_ret, CachedRegion, Cell,
+    evm_circuit::{
+        param::MAX_N_BYTES_INTEGER,
+        util::{
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            from_bytes, pow_of_two, transpose_val_ret, CachedRegion, Cell,
+        },
     },
     util::Expr,
 };
@@ -34,6 +37,7 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
+        assert!(N_BYTES <= MAX_N_BYTES_INTEGER);
         let lt = cb.query_bool();
         let diff = cb.query_bytes();
         let range = pow_of_two(N_BYTES * 8);

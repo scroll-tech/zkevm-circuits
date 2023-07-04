@@ -6,6 +6,7 @@ use bus_mapping::{
     },
     evm::OpcodeId,
     operation,
+    precompile::{PrecompileAuxData, PrecompileCalls},
 };
 
 use crate::{
@@ -49,6 +50,8 @@ pub struct ExecStep {
     pub opcode: Option<OpcodeId>,
     /// The block number in which this step exists.
     pub block_num: u64,
+    /// Aux data used for precompiles
+    pub aux_data: Option<PrecompileAuxData>,
 }
 
 impl ExecStep {
@@ -111,7 +114,7 @@ impl From<&ExecError> for ExecutionState {
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
                 OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
-                OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
+                OogError::Create => ExecutionState::ErrorOutOfGasCREATE,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
             },
         }
@@ -164,7 +167,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::NOT => ExecutionState::NOT,
                     OpcodeId::EXP => ExecutionState::EXP,
                     OpcodeId::POP => ExecutionState::POP,
-                    OpcodeId::PUSH32 => ExecutionState::PUSH,
                     OpcodeId::BYTE => ExecutionState::BYTE,
                     OpcodeId::MLOAD => ExecutionState::MEMORY,
                     OpcodeId::MSTORE => ExecutionState::MEMORY,
@@ -204,17 +206,28 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
+                    OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
                     OpcodeId::CREATE => ExecutionState::CREATE,
                     OpcodeId::CREATE2 => ExecutionState::CREATE2,
-                    OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
                     // dummy ops
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
+            circuit_input_builder::ExecState::Precompile(precompile) => match precompile {
+                PrecompileCalls::Ecrecover => ExecutionState::PrecompileEcrecover,
+                PrecompileCalls::Sha256 => ExecutionState::PrecompileSha256,
+                PrecompileCalls::Ripemd160 => ExecutionState::PrecompileRipemd160,
+                PrecompileCalls::Identity => ExecutionState::PrecompileIdentity,
+                PrecompileCalls::Modexp => ExecutionState::PrecompileBigModExp,
+                PrecompileCalls::Bn128Add => ExecutionState::PrecompileBn256Add,
+                PrecompileCalls::Bn128Mul => ExecutionState::PrecompileBn256ScalarMul,
+                PrecompileCalls::Bn128Pairing => ExecutionState::PrecompileBn256Pairing,
+                PrecompileCalls::Blake2F => ExecutionState::PrecompileBlake2f,
+            },
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
             circuit_input_builder::ExecState::EndBlock => ExecutionState::EndBlock,
@@ -263,5 +276,6 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u6
         reversible_write_counter_delta: step.reversible_write_counter_delta,
         log_id: step.log_id,
         block_num,
+        aux_data: step.aux_data.clone(),
     }
 }

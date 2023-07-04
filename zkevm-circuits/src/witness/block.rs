@@ -3,29 +3,21 @@ use std::collections::BTreeMap;
 
 #[cfg(any(feature = "test", test))]
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
-#[cfg(feature = "test")]
-use crate::tx_circuit::TX_LEN;
 
-use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{sign_types::SignData, Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
+use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
 
 use super::{
     mpt::ZktrieState as MptState, step::step_convert, tx::tx_convert, Bytecode, ExecStep,
     MptUpdates, RwMap, Transaction,
 };
 use crate::util::{Challenges, DEFAULT_RAND};
-
-/// max range of prev blocks allowed inside BLOCKHASH opcode
-#[cfg(feature = "scroll")]
-pub const NUM_PREV_BLOCK_ALLOWED: u64 = 1;
-/// max range of prev blocks allowed inside BLOCKHASH opcode
-#[cfg(not(feature = "scroll"))]
-pub const NUM_PREV_BLOCK_ALLOWED: u64 = 256;
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -49,8 +41,6 @@ pub struct Block<F> {
     pub bytecodes: BTreeMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContexts,
-    /// The init state of mpt
-    pub mpt_state: Option<MptState>,
     /// Copy events for the copy circuit's table.
     pub copy_events: Vec<CopyEvent>,
     /// Exponentiation traces for the exponentiation circuit's table.
@@ -61,14 +51,20 @@ pub struct Block<F> {
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
+    /// IO to/from precompile Ecrecover calls.
+    pub ecrecover_events: Vec<SignData>,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
+    /// Withdraw root
+    pub withdraw_root: Word,
+    /// Withdraw roof of the previous block
+    pub prev_withdraw_root: Word,
     /// Keccak inputs
     pub keccak_inputs: Vec<Vec<u8>>,
     /// Mpt updates
     pub mpt_updates: MptUpdates,
     /// Chain ID
-    pub chain_id: Word,
+    pub chain_id: u64,
 }
 
 /// ...
@@ -98,7 +94,7 @@ impl<F: Field> Block<F> {
     /// and all the rw operations of the step.
     pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
         for (tx_idx, tx) in self.txs.iter().enumerate() {
-            println!("tx {}", tx_idx);
+            println!("tx {tx_idx}");
             for step in &tx.steps {
                 println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
                 for rw_ref in &step.rw_indices {
@@ -107,10 +103,37 @@ impl<F: Field> Block<F> {
             }
         }
     }
+
+    /// Get signature (witness) from the block for tx signatures and ecRecover calls.
+    pub(crate) fn get_sign_data(&self, padding: bool) -> Vec<SignData> {
+        let mut signatures: Vec<SignData> = self
+            .txs
+            .iter()
+            .map(|tx| {
+                if tx.tx_type.is_l1_msg() {
+                    // dummy signature
+                    Ok(SignData::default())
+                } else {
+                    tx.sign_data()
+                }
+            })
+            .filter_map(|res| res.ok())
+            .collect::<Vec<SignData>>();
+        signatures.extend_from_slice(&self.ecrecover_events);
+        if padding {
+            let max_verif = self.circuits_params.max_txs;
+            signatures.resize(
+                max_verif,
+                Transaction::dummy(self.chain_id).sign_data().unwrap(),
+            )
+        }
+        signatures
+    }
 }
 
 #[cfg(feature = "test")]
 use crate::exp_circuit::param::OFFSET_INCREMENT;
+use crate::tx_circuit::TX_LEN;
 #[cfg(feature = "test")]
 use crate::util::log2_ceil;
 
@@ -143,8 +166,6 @@ impl<F: Field> Block<F> {
             .map(|e| e.steps.len() * OFFSET_INCREMENT)
             .sum();
 
-        const NUM_BLINDING_ROWS: usize = 64;
-
         let rows_needed: usize = itertools::max([
             num_rows_required_for_execution_steps,
             num_rows_required_for_rw_table,
@@ -157,7 +178,7 @@ impl<F: Field> Block<F> {
         ])
         .unwrap();
 
-        let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
+        let k = log2_ceil(EvmCircuit::<F>::unusable_rows() + rows_needed);
         log::debug!(
             "num_rows_required_for rw_table={}, fixed_table={}, bytecode_table={}, \
             copy_table={}, keccak_table={}, tx_table={}, exp_table={}",
@@ -192,7 +213,7 @@ pub struct BlockContext {
     /// The hash of previous blocks
     pub history_hashes: Vec<Word>,
     /// The chain id
-    pub chain_id: Word,
+    pub chain_id: u64,
     /// Original Block from geth
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
@@ -243,7 +264,7 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                     Value::known(current_block_number),
-                    randomness.map(|rand| rlc::value(&self.chain_id.to_le_bytes(), rand)),
+                    Value::known(F::from(self.chain_id)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::NumTxs as u64)),
@@ -267,7 +288,7 @@ impl BlockContext {
         #[cfg(not(feature = "scroll"))]
         let history_hashes: &[U256] = &self.history_hashes;
         #[cfg(feature = "scroll")]
-        let history_hashes: &[U256] = &[self.eth_block.parent_hash.to_word()];
+        let history_hashes: &[U256] = &[]; // block_hash is computed as keccak256(chain_id || block_number)
 
         let len_history = history_hashes.len();
 
@@ -326,6 +347,7 @@ pub fn block_convert<F: Field>(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
     let rws = RwMap::from(&block.container);
+    #[cfg(debug_assertions)]
     rws.check_value();
     let num_txs = block.txs().len();
     let last_block_num = block
@@ -349,11 +371,49 @@ pub fn block_convert<F: Field>(
     } else {
         block.circuits_params.max_rws
     };
+
+    let mut mpt_updates = MptUpdates::mock_from(&rws.table_assignments());
+    assert!(*HASH_SCHEME_DONE);
+    mpt_updates.mock_fill_state_roots();
+
+    let mut block = block.clone();
+    block.prev_state_root = mpt_updates.old_root();
+    let block = &block;
+
+    let _withdraw_root_check_rw = if end_block_last.rw_counter == 0 {
+        0
+    } else {
+        end_block_last.rw_counter + 1
+    };
+    let total_tx_as_txid = num_txs;
+    let withdraw_root_entry = mpt_updates.get(&super::rw::Rw::AccountStorage {
+        tx_id: total_tx_as_txid,
+        account_address: *bus_mapping::l2_predeployed::message_queue::ADDRESS,
+        storage_key: *bus_mapping::l2_predeployed::message_queue::WITHDRAW_TRIE_ROOT_SLOT,
+        // following field is not used in Mpt::Key so we just fill them arbitrarily
+        rw_counter: 0,
+        is_write: false,
+        value: U256::zero(),
+        value_prev: U256::zero(),
+        committed_value: U256::zero(),
+    });
+    if let Some(entry) = withdraw_root_entry {
+        let (withdraw_root, _) = entry.values();
+        if block.withdraw_root != withdraw_root {
+            log::error!(
+                "new withdraw root non consistent ({:#x}, vs ,{:#x})",
+                block.withdraw_root,
+                withdraw_root,
+            );
+        }
+    } else {
+        log::error!("withdraw root is not avaliable");
+    }
+
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
-        mpt_state: None,
-        rws: rws.clone(),
+        rws,
         txs: block
             .txs()
             .iter()
@@ -364,7 +424,7 @@ pub fn block_convert<F: Field>(
                 } else {
                     last_block_num + 1
                 };
-                tx_convert(tx, idx + 1, chain_id.as_u64(), next_block_num)
+                tx_convert(tx, idx + 1, chain_id, next_block_num)
             })
             .collect(),
         sigs: block.txs().iter().map(|tx| tx.signature).collect(),
@@ -387,24 +447,22 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
+        ecrecover_events: block.ecrecover_events.clone(),
         circuits_params: CircuitsParams {
             max_rws,
             ..block.circuits_params
         },
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
+        withdraw_root: block.withdraw_root,
+        prev_withdraw_root: block.prev_withdraw_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
-        mpt_updates: MptUpdates::from_rws_with_mock_state_roots(
-            &rws.table_assignments(),
-            block.prev_state_root,
-            block.end_state_root(),
-        ),
+        mpt_updates,
         chain_id,
     })
 }
 
 /// Attach witness block with mpt states
-pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: MptState) {
-    block.mpt_updates.fill_state_roots(&mpt_state);
-    block.mpt_state.replace(mpt_state);
+pub fn block_apply_mpt_state<F: Field>(block: &mut Block<F>, mpt_state: &MptState) {
+    block.mpt_updates.fill_state_roots(mpt_state);
 }

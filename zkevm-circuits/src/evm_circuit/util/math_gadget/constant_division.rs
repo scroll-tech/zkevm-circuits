@@ -1,8 +1,11 @@
 use crate::{
-    evm_circuit::util::{
-        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        math_gadget::*,
-        transpose_val_ret, CachedRegion, Cell, CellType,
+    evm_circuit::{
+        param::MAX_N_BYTES_INTEGER,
+        util::{
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::*,
+            transpose_val_ret, CachedRegion, Cell, CellType,
+        },
     },
     util::Expr,
 };
@@ -31,6 +34,7 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
         numerator: Expression<F>,
         denominator: u64,
     ) -> Self {
+        assert!(N_BYTES * 8 + 64 - denominator.leading_zeros() as usize <= MAX_N_BYTES_INTEGER * 8);
         let quotient = cb.query_cell_with_type(CellType::storage_for_expr(&numerator));
         let remainder = cb.query_cell_with_type(CellType::storage_for_expr(&numerator));
 

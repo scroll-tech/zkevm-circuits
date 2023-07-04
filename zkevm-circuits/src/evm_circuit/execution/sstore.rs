@@ -283,21 +283,21 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         let prev_eq_value = prev_eq_value_gadget.expr();
         let original_eq_prev = original_eq_prev_gadget.expr();
 
-        // (value_prev != value) && (original_value != value) && (value ==
-        // Word::from(0))
+        // (value_prev != value) && (original_value != 0) && (value ==
+        // 0)
         let delete_slot =
             not::expr(prev_eq_value.clone()) * not::expr(original_is_zero.clone()) * value_is_zero;
         // (value_prev != value) && (original_value == value) && (original_value !=
-        // Word::from(0))
+        // 0)
         let reset_existing = not::expr(prev_eq_value.clone())
             * original_eq_value.clone()
             * not::expr(original_is_zero.clone());
         // (value_prev != value) && (original_value == value) && (original_value ==
-        // Word::from(0))
+        // 0)
         let reset_inexistent =
             not::expr(prev_eq_value.clone()) * original_eq_value * (original_is_zero);
         // (value_prev != value) && (original_value != value_prev) && (value_prev ==
-        // Word::from(0))
+        // 0)
         let recreate_slot =
             not::expr(prev_eq_value) * not::expr(original_eq_prev) * (value_prev_is_zero);
 

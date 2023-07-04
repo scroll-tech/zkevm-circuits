@@ -1,4 +1,5 @@
 use super::{param::*, util::*};
+use crate::keccak_circuit::keccak_packed_multi::get_num_bits_per_base_chi_lookup;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, Value},
@@ -17,6 +18,17 @@ pub(crate) fn load_normalize_table<F: Field>(
     load_normalize_table_impl(layouter, name, tables, range, log_height)
 }
 
+pub(crate) fn normalize_table_size(range: usize) -> usize {
+    let log_height = get_degree();
+    let part_size = get_num_bits_per_lookup_impl(range, log_height);
+    (0..part_size).fold(1usize, |acc, _| acc * range)
+}
+
+pub(crate) fn lookup_table_size(lookup_table_len: usize) -> usize {
+    let part_size = get_num_bits_per_base_chi_lookup();
+    (0..part_size).fold(1usize, |acc, _| acc * lookup_table_len)
+}
+
 // Implementation of the above without environment dependency.
 fn load_normalize_table_impl<F: Field>(
     layouter: &mut impl Layouter<F>,
@@ -28,7 +40,7 @@ fn load_normalize_table_impl<F: Field>(
     assert!(range <= BIT_SIZE as u64);
     let part_size = get_num_bits_per_lookup_impl(range as usize, log_height);
     layouter.assign_table(
-        || format!("{} table", name),
+        || format!("{name} table"),
         |mut table| {
             // Iterate over all combinations of parts, each taking values in the range.
             for (offset, perm) in (0..part_size)
@@ -45,13 +57,13 @@ fn load_normalize_table_impl<F: Field>(
                     factor *= BIT_SIZE as u64;
                 }
                 table.assign_cell(
-                    || format!("{} input", name),
+                    || format!("{name} input"),
                     tables[0],
                     offset,
                     || Value::known(F::from(input)),
                 )?;
                 table.assign_cell(
-                    || format!("{} output", name),
+                    || format!("{name} output"),
                     tables[1],
                     offset,
                     || Value::known(F::from(output)),
@@ -94,7 +106,7 @@ pub(crate) fn load_lookup_table<F: Field>(
     lookup_table: &[u8],
 ) -> Result<(), Error> {
     layouter.assign_table(
-        || format!("{} table", name),
+        || format!("{name} table"),
         |mut table| {
             for (offset, perm) in (0..part_size)
                 .map(|_| 0..lookup_table.len() as u64)
@@ -110,13 +122,13 @@ pub(crate) fn load_lookup_table<F: Field>(
                     factor *= BIT_SIZE as u64;
                 }
                 table.assign_cell(
-                    || format!("{} input", name),
+                    || format!("{name} input"),
                     tables[0],
                     offset,
                     || Value::known(F::from(input)),
                 )?;
                 table.assign_cell(
-                    || format!("{} output", name),
+                    || format!("{name} output"),
                     tables[1],
                     offset,
                     || Value::known(F::from(output)),

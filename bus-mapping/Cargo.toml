@@ -15,7 +15,7 @@ ethers-core = "0.17.0"
 ethers-signers = "0.17.0"
 ethers-providers = "0.17.0"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
-poseidon-circuit = { git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0408", features=["short"]}
+poseidon-circuit = { git = "https://github.com/scroll-tech/poseidon-circuit.git", branch = "scroll-dev-0619", features=["short"]}
 itertools = "0.10"
 lazy_static = "1.4"
 log = "0.4.14"
@@ -43,4 +43,6 @@ rand = "0.8"
 [features]
 default = ["test"]
 test = ["mock", "rand"]
-scroll = ["eth-types/scroll"]
+scroll = ["eth-types/scroll", "mock?/scroll"]
+# Enable shanghai feature of mock only if mock is enabled (by test).
+shanghai = ["eth-types/shanghai", "mock?/shanghai"]

@@ -31,7 +31,7 @@ lazy_static! {
      /// Mock GASLIMIT value
     pub static ref MOCK_GASLIMIT: Word = Word::from(0x2386f26fc10000u64);
     /// Mock chain ID value
-    pub static ref MOCK_CHAIN_ID: Word = Word::from(1338u64);
+    pub static ref MOCK_CHAIN_ID: u64 = 1338;
     /// Mock DIFFICULTY value
     pub static ref MOCK_DIFFICULTY: Word = Word::from(0x200000u64);
     /// Mock accounts loaded with ETH to use for test cases.

@@ -96,12 +96,12 @@ where
     pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
         let mut annotations = Vec::new();
         for (i, _) in self.bits.iter().enumerate() {
-            annotations.push(format!("GADGETS_binary_number_{}", i));
+            annotations.push(format!("GADGETS_binary_number_{i}"));
         }
         self.bits
             .iter()
             .zip(annotations.iter())
-            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+            .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
     }
 }
 
@@ -187,7 +187,7 @@ where
     ) -> Result<(), Error> {
         for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
             region.assign_advice(
-                || format!("binary number {:?}", column),
+                || format!("binary number {column:?}"),
                 column,
                 offset,
                 || Value::known(F::from(bit)),

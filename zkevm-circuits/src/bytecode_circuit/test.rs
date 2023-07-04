@@ -2,12 +2,20 @@
 use crate::{
     bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
     table::BytecodeFieldTag,
-    util::{is_push, keccak, Challenges, SubCircuit},
+    util::{is_push_with_data, keccak, unusable_rows, Challenges, SubCircuit},
 };
 use bus_mapping::{evm::OpcodeId, state_db::CodeDB};
 use eth_types::{Bytecode, Field, ToWord, Word};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
+
+#[test]
+fn bytecode_circuit_unusable_rows() {
+    assert_eq!(
+        BytecodeCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, BytecodeCircuit::<Fr>>(),
+    )
+}
 
 impl<F: Field> BytecodeCircuit<F> {
     /// Verify that the selected bytecode fulfills the circuit
@@ -46,7 +54,7 @@ pub fn test_bytecode_circuit_unrolled<F: Field>(
         }
     }
     let error_msg = if success { "valid" } else { "invalid" };
-    assert_eq!(result.is_ok(), success, "proof must be {}", error_msg);
+    assert_eq!(result.is_ok(), success, "proof must be {error_msg}");
 }
 
 /// Verify unrolling code
@@ -56,7 +64,7 @@ fn bytecode_unrolling() {
     let mut bytecode = Bytecode::default();
     // First add all non-push bytes, which should all be seen as code
     for byte in 0u8..=255u8 {
-        if !is_push(byte) {
+        if !is_push_with_data(byte) {
             bytecode.write(byte, true);
             rows.push(BytecodeRow {
                 code_hash: Word::zero(),
@@ -79,7 +87,7 @@ fn bytecode_unrolling() {
             tag: Fr::from(BytecodeFieldTag::Byte as u64),
             index: Fr::from(rows.len() as u64),
             is_code: Fr::from(true as u64),
-            value: Fr::from(OpcodeId::PUSH1.as_u64() + ((n - 1) as u64)),
+            value: Fr::from(OpcodeId::PUSH0.as_u64() + n as u64),
         });
         for _ in 0..n {
             rows.push(BytecodeRow {
@@ -178,11 +186,8 @@ fn bytecode_push() {
 
 /// Test invalid code_hash data
 /// There is only one case where this test should be disabled:
-///   "poseidon-codehash" enabled, but "poseidon-codehash-lookup" disabled.
-#[cfg(any(
-    not(feature = "poseidon-codehash"),
-    feature = "poseidon-codehash-lookup"
-))]
+///   "poseidon-codehash" enabled, but "scroll-trace" disabled.
+#[cfg(any(not(feature = "poseidon-codehash"), feature = "scroll-trace"))]
 #[test]
 fn bytecode_invalid_hash_data() {
     let k = 9;
@@ -226,11 +231,8 @@ fn bytecode_invalid_index() {
 
 /// Test invalid byte data
 /// There is only one case where this test should be disabled:
-///   "poseidon-codehash" enabled, but "poseidon-codehash-lookup" disabled.
-#[cfg(any(
-    not(feature = "poseidon-codehash"),
-    feature = "poseidon-codehash-lookup"
-))]
+///   "poseidon-codehash" enabled, but "scroll-trace" disabled.
+#[cfg(any(not(feature = "poseidon-codehash"), feature = "scroll-trace"))]
 fn bytecode_invalid_byte_data() {
     let k = 9;
     let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];

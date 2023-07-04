@@ -2,7 +2,7 @@
 pub use super::{dev::*, *};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::SubCircuit,
+    util::{unusable_rows, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -27,6 +27,14 @@ use std::collections::{BTreeSet, HashMap};
 use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
+
+#[test]
+fn state_circuit_unusable_rows() {
+    assert_eq!(
+        StateCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, StateCircuit::<Fr>>(),
+    )
+}
 
 fn test_state_circuit_ok(
     memory_ops: Vec<Operation<MemoryOp>>,
@@ -1052,14 +1060,14 @@ fn verify_with_overrides(
 
 fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, name: &str) {
     let errors = result.expect_err("result is not an error");
-    assert_eq!(errors.len(), 1, "{:?}", errors);
+    assert_eq!(errors.len(), 1, "{errors:?}");
     match &errors[0] {
         VerifyFailure::ConstraintNotSatisfied { constraint, .. } => {
             // fields of halo2_proofs::dev::metadata::Constraint aren't public, so we have
             // to match off of its format string.
-            let constraint = format!("{}", constraint);
+            let constraint = format!("{constraint}");
             if !constraint.contains(name) {
-                panic!("{} does not contain {}", constraint, name);
+                panic!("{constraint} does not contain {name}");
             }
         }
         VerifyFailure::Lookup {

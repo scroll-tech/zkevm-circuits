@@ -48,3 +48,9 @@ pub fn eip150_gas(gas_left: u64, gas_specified: Word) -> u64 {
 
     capped_gas
 }
+
+/// Calculate gas cost for transaction data.
+pub fn tx_data_gas_cost(data: &[u8]) -> u64 {
+    data.iter()
+        .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 })
+}

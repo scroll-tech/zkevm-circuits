@@ -28,6 +28,7 @@ mod tests {
     use zkevm_circuits::super_circuit::SuperCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
+    #[cfg_attr(not(feature = "print-trace"), allow(unused_variables))] // FIXME: remove this after ark-std upgrade
     #[test]
     fn bench_super_circuit_prover() {
         let setup_prfx = crate::constants::SETUP_PREFIX;
@@ -43,13 +44,11 @@ mod tests {
 
         let mut rng = ChaChaRng::seed_from_u64(2);
 
-        let chain_id = (*MOCK_CHAIN_ID).as_u64();
-
         let bytecode = bytecode! {
             STOP
         };
 
-        let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+        let wallet_a = LocalWallet::new(&mut rng).with_chain_id(*MOCK_CHAIN_ID);
 
         let addr_a = wallet_a.address();
         let addr_b = address!("0x000000000000000000000000000000000000BBBB");
@@ -93,6 +92,7 @@ mod tests {
             max_evm_rows: 0,
             max_inner_blocks: MAX_INNER_BLOCKS,
             max_keccak_rows: 0,
+            max_rlp_rows: 256,
         };
         let (_, circuit, instance, _) =
             SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, 0x100>::build(
@@ -103,7 +103,7 @@ mod tests {
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation
-        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
+        let setup_message = format!("{BENCHMARK_ID} {setup_prfx} with degree = {degree}");
         let start1 = start_timer!(|| setup_message);
         let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
@@ -116,10 +116,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!(
-            "{} {} with degree = {}",
-            BENCHMARK_ID, proof_gen_prfx, degree
-        );
+        let proof_message = format!("{BENCHMARK_ID} {proof_gen_prfx} with degree = {degree}");
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -141,7 +138,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| format!("{} {}", BENCHMARK_ID, proof_ver_prfx));
+        let start3 = start_timer!(|| format!("{BENCHMARK_ID} {proof_ver_prfx}"));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

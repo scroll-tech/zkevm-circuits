@@ -23,6 +23,9 @@ pub struct Call {
     pub caller_address: Address,
     /// The callee address
     pub callee_address: Address,
+    /// The code address. This comes handy to differentiate between different kinds of call, for
+    /// instance CALL, DELEGATECALL and so on.
+    pub code_address: Option<Address>,
     /// The call data offset in the memory
     pub call_data_offset: u64,
     /// The length of call data

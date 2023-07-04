@@ -241,6 +241,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes_array, test_util::CircuitTestBuilder};
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
         address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word,
     };
@@ -310,7 +311,12 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_copy_rows: 1750,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]

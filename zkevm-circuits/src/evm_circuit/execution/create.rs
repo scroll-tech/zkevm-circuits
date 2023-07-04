@@ -18,7 +18,7 @@ use crate::{
             memory_gadget::{
                 CommonMemoryAddressGadget, MemoryAddressGadget, MemoryExpansionGadget,
             },
-            not, select, CachedRegion, Cell, Word,
+            not, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -26,7 +26,10 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
-use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
+use eth_types::{
+    evm_types::{GasCost, CREATE2_GAS_PER_CODE_WORD, CREATE_GAS_PER_CODE_WORD, MAX_INIT_CODE_SIZE},
+    Field, ToBigEndian, ToLittleEndian, ToScalar, U256,
+};
 use ethers_core::utils::keccak256;
 use gadgets::util::{and, expr_from_bytes};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -47,6 +50,10 @@ pub(crate) struct CreateGadget<F, const IS_CREATE2: bool, const S: ExecutionStat
     transfer: TransferGadget<F>,
     init_code: MemoryAddressGadget<F>,
     init_code_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    // Init code size must be less than or equal to 49152
+    // (maximum init code size) if Shanghai, otherwise should be less than or
+    // equal to 0x1FFFFFFFE0 (maximum value of offset + size).
+    init_code_size_not_overflow: LtGadget<F, { N_BYTES_MEMORY_ADDRESS }>,
     init_code_rlc: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
@@ -80,12 +87,17 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         cb.require_equal(
             "Opcode is CREATE or CREATE2",
             opcode.expr(),
-            select::expr(
-                IS_CREATE2.expr(),
-                OpcodeId::CREATE2.expr(),
-                OpcodeId::CREATE.expr(),
-            ),
+            if IS_CREATE2 {
+                OpcodeId::CREATE2
+            } else {
+                OpcodeId::CREATE
+            }
+            .expr(),
         );
+
+        // constrain not in static call
+        let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
+        cb.require_zero("is_static is false", is_static.expr());
 
         let value = cb.query_word_rlc();
 
@@ -93,6 +105,16 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         let init_code_length = cb.query_word_rlc();
         let init_code =
             MemoryAddressGadget::construct(cb, init_code_memory_offset, init_code_length);
+        let init_code_size_not_overflow =
+            LtGadget::construct(cb, init_code.length(), MAX_INIT_CODE_SIZE.expr() + 1.expr());
+
+        // Init code size overflow is checked before ErrDepth, ErrInsufficientBalance,
+        // ErrNonceUintOverflow and ErrContractAddressCollision.
+        cb.require_equal(
+            "Init code size must be not overflow",
+            init_code_size_not_overflow.expr(),
+            1.expr(),
+        );
 
         let keccak_output = cb.query_word_rlc();
         let new_address_rlc = cb.word_rlc::<N_BYTES_ACCOUNT_ADDRESS>(
@@ -113,9 +135,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         cb.stack_pop(value.expr());
         cb.stack_pop(init_code.offset_rlc());
         cb.stack_pop(init_code.length_rlc());
-        cb.condition(IS_CREATE2.expr(), |cb| {
+        if IS_CREATE2 {
             cb.stack_pop(create.salt_word_rlc(cb));
-        });
+        }
 
         cb.stack_push(callee_is_success.expr() * new_address_rlc);
 
@@ -303,8 +325,13 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             init_code.length() + (N_BYTES_WORD - 1).expr(),
             N_BYTES_WORD as u64,
         );
-        let keccak_gas_cost =
-            GasCost::COPY_SHA3.expr() * IS_CREATE2.expr() * init_code_word_size.quotient();
+        let keccak_gas_cost = init_code_word_size.quotient()
+            * if IS_CREATE2 {
+                CREATE2_GAS_PER_CODE_WORD
+            } else {
+                CREATE_GAS_PER_CODE_WORD
+            }
+            .expr();
 
         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost() + keccak_gas_cost;
         let gas_remaining = cb.curr.state.gas_left.expr() - gas_cost.clone();
@@ -464,6 +491,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             gas_left,
             callee_is_success,
             init_code_word_size,
+            init_code_size_not_overflow,
             create,
             caller_balance,
             is_depth_in_range,
@@ -490,20 +518,20 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
+        let mut rw_offset = 1; // is_static
         let [value, init_code_start, init_code_length] = [0, 1, 2]
-            .map(|i| step.rw_indices[i])
+            .map(|i| step.rw_indices[i + rw_offset])
             .map(|idx| block.rws[idx].stack_value());
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
         let salt = if is_create2 {
-            block.rws[step.rw_indices[3]].stack_value()
+            block.rws[step.rw_indices[3 + rw_offset]].stack_value()
         } else {
             U256::zero()
         };
-
-        let values: Vec<_> = (4 + usize::from(is_create2)
-            ..4 + usize::from(is_create2) + init_code_length.as_usize())
-            .map(|i| block.rws[step.rw_indices[i]].memory_value())
+        rw_offset += usize::from(is_create2);
+        let values: Vec<_> = (4..4 + init_code_length.as_usize())
+            .map(|i| block.rws[step.rw_indices[i + rw_offset]].memory_value())
             .collect();
         let copy_rw_increase = init_code_length.as_usize();
         let keccak_code_hash = keccak256(&values);
@@ -515,6 +543,12 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             region,
             offset,
             region.keccak_rlc(&values.iter().rev().cloned().collect::<Vec<u8>>()),
+        )?;
+        self.init_code_size_not_overflow.assign(
+            region,
+            offset,
+            F::from(init_code_length.as_u64()),
+            F::from(MAX_INIT_CODE_SIZE + 1),
         )?;
 
         self.tx_id
@@ -531,9 +565,8 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
-
-        let tx_access_rw =
-            block.rws[step.rw_indices[7 + usize::from(is_create2) + copy_rw_increase]];
+        rw_offset += copy_rw_increase;
+        let tx_access_rw = block.rws[step.rw_indices[7 + rw_offset]];
         self.was_warm.assign(
             region,
             offset,
@@ -546,13 +579,11 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             ),
         )?;
 
-        let caller_balance = block.rws
-            [step.rw_indices[10 + usize::from(is_create2) + copy_rw_increase]]
+        let caller_balance = block.rws[step.rw_indices[10 + rw_offset]]
             .account_balance_pair()
             .1;
 
-        let caller_nonce = block.rws
-            [step.rw_indices[11 + usize::from(is_create2) + copy_rw_increase]]
+        let caller_nonce = block.rws[step.rw_indices[11 + rw_offset]]
             .account_nonce_pair()
             .1
             .low_u64();
@@ -563,10 +594,9 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             } else {
                 0
             };
-
+        rw_offset += is_precheck_ok;
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [12, 13].map(|i| {
-            let rw = block.rws
-                [step.rw_indices[i + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]];
+            let rw = block.rws[step.rw_indices[i + rw_offset]];
             rw.call_context_value()
         });
 
@@ -581,9 +611,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
         )?;
 
         // retrieve code_hash for creating address
-        let code_hash_previous = block.rws
-            [step.rw_indices[14 + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]]
-            .account_codehash_pair();
+        let code_hash_previous = block.rws[step.rw_indices[14 + rw_offset]].account_codehash_pair();
         let code_hash_previous_rlc = region.code_hash(code_hash_previous.0);
         self.code_hash_previous
             .assign(region, offset, code_hash_previous_rlc)?;
@@ -591,15 +619,17 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             .assign_value(region, offset, code_hash_previous_rlc)?;
         let is_address_collision = !code_hash_previous.0.is_zero();
 
-        let mut rw_offset = 0;
+        #[cfg(feature = "scroll")]
+        {
+            rw_offset += 1; // Write empty Keccak code hash.
+        }
+
         if is_precheck_ok == 1 && !is_address_collision {
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
+                let account_balance_pair = [16, 17]
+                    .map(|i| block.rws[step.rw_indices[i + rw_offset]].account_balance_pair());
                 rw_offset += 2;
-                [16, 17].map(|i| {
-                    block.rws[step.rw_indices
-                        [i + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]]
-                        .account_balance_pair()
-                })
+                account_balance_pair
             } else {
                 [(0.into(), 0.into()), (0.into(), 0.into())]
             };
@@ -626,14 +656,14 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             (31u64 + init_code_length.as_u64()).into(),
         )?;
 
-        let gas_left = step.gas_left
-            - GasCost::CREATE.as_u64()
-            - memory_expansion_gas_cost
-            - if is_create2 {
-                u64::try_from(init_code_word_size).unwrap() * GasCost::COPY_SHA3.as_u64()
+        let keccak_gas_cost = u64::try_from(init_code_word_size).unwrap()
+            * if IS_CREATE2 {
+                CREATE2_GAS_PER_CODE_WORD
             } else {
-                0
+                CREATE_GAS_PER_CODE_WORD
             };
+        let gas_left =
+            step.gas_left - GasCost::CREATE.as_u64() - memory_expansion_gas_cost - keccak_gas_cost;
         self.gas_left.assign(region, offset, gas_left.into())?;
 
         self.callee_is_success.assign(
@@ -642,8 +672,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             Value::known(if is_precheck_ok == 0 || is_address_collision {
                 F::zero()
             } else {
-                block.rws[step.rw_indices
-                    [23 + rw_offset + usize::from(is_create2) + copy_rw_increase + is_precheck_ok]]
+                block.rws[step.rw_indices[23 + rw_offset]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap()

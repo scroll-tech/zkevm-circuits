@@ -172,14 +172,23 @@ mod test {
 
     #[test]
     fn test_extcodesize_gadget_simple() {
+        // Test for empty account.
+        let mut empty_address_bytes = [0; 20];
+        empty_address_bytes[12] = 234;
+        assert!(Account::default().is_empty());
+        test_ok(
+            &Account {
+                address: empty_address_bytes.into(),
+                ..Default::default()
+            },
+            false,
+        );
+
         let account = Account {
             address: MOCK_ACCOUNTS[4],
             code: MOCK_CODES[4].clone(),
             ..Default::default()
         };
-
-        // Test for empty account.
-        test_ok(&Account::default(), false);
         // Test for cold account.
         test_ok(&account, false);
         // Test for warm account.

@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
+    Shanghai = 15,
     Merge = 14,
     GrayGlacier = 13,
     ArrowGlacier = 12,
@@ -24,6 +25,9 @@ pub enum MainnetFork {
     Frontier = 1,
 }
 
+#[cfg(feature = "shanghai")]
+pub const TEST_FORK: MainnetFork = MainnetFork::Shanghai;
+#[cfg(not(feature = "shanghai"))]
 pub const TEST_FORK: MainnetFork = MainnetFork::Merge;
 
 impl FromStr for MainnetFork {
@@ -31,6 +35,7 @@ impl FromStr for MainnetFork {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
+            "Shanghai" => Self::Shanghai,
             "Merge" => Self::Merge,
             "Gray Glacier" => Self::GrayGlacier,
             "Arrow Glacier" => Self::ArrowGlacier,
@@ -45,7 +50,7 @@ impl FromStr for MainnetFork {
             "TangeringWhistle" => Self::TangerineWhistle,
             "Homestead" => Self::Homestead,
             "Frontier" => Self::Frontier,
-            _ => bail!(format!("Unknown network '{}'", s)),
+            _ => bail!(format!("Unknown network '{s}'")),
         })
     }
 }
@@ -75,7 +80,7 @@ impl MainnetFork {
 pub fn print_trace(trace: GethExecTrace) -> Result<()> {
     fn u256_to_str(u: &U256) -> String {
         if *u > U256::from_str("0x1000000000000000").unwrap() {
-            format!("0x{:x}", u)
+            format!("0x{u:x}")
         } else {
             u.to_string()
         }
@@ -104,7 +109,7 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
             let item = if count == 1 {
                 v.to_string()
             } else {
-                format!("{}[{}]", v, count)
+                format!("{v}[{count}]")
             };
 
             if current_len > len {

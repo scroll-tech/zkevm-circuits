@@ -7,3 +7,6 @@ pub use opcodes::Opcode;
 
 #[cfg(any(feature = "test", test))]
 pub use opcodes::{gen_sha3_code, MemoryKind};
+
+#[cfg(any(feature = "test", test))]
+pub use opcodes::PrecompileCallArgs;

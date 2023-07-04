@@ -2,9 +2,11 @@ use super::{
     param::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
-        N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS, RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS,
+        TX_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
+    EvmCircuitExports,
 };
 use crate::{
     evm_circuit::{
@@ -23,13 +25,13 @@ use crate::{
     util::{query_expression, Challenges, Expr},
 };
 use bus_mapping::util::read_env_var;
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian};
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
+        Advice, Assigned, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
         VirtualCells,
     },
     poly::Rotation,
@@ -87,7 +89,7 @@ mod error_invalid_opcode;
 mod error_oog_account_access;
 mod error_oog_call;
 mod error_oog_constant;
-mod error_oog_create2;
+mod error_oog_create;
 mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
@@ -119,6 +121,7 @@ mod opcode_not;
 mod origin;
 mod pc;
 mod pop;
+mod precompiles;
 mod push;
 mod return_revert;
 mod returndatacopy;
@@ -135,7 +138,7 @@ mod sstore;
 mod stop;
 mod swap;
 
-use self::{logs::LogGadget, sha3::Sha3Gadget};
+use self::{logs::LogGadget, precompiles::BasePrecompileGadget, sha3::Sha3Gadget};
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
@@ -169,7 +172,7 @@ use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_account_access::ErrorOOGAccountAccessGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
-use error_oog_create2::ErrorOOGCreate2Gadget;
+use error_oog_create::ErrorOOGCreateGadget;
 use error_oog_dynamic_memory::ErrorOOGDynamicMemoryGadget;
 use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
@@ -200,6 +203,7 @@ use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
+use precompiles::{EcrecoverGadget, IdentityGadget};
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
@@ -333,7 +337,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_log: Box<ErrorOOGLogGadget<F>>,
     error_oog_account_access: Box<ErrorOOGAccountAccessGadget<F>>,
     error_oog_sha3: Box<ErrorOOGSha3Gadget<F>>,
-    error_oog_create2: Box<ErrorOOGCreate2Gadget<F>>,
+    error_oog_create: Box<ErrorOOGCreateGadget<F>>,
     error_code_store: Box<ErrorCodeStoreGadget<F>>,
     #[cfg(not(feature = "scroll"))]
     error_oog_self_destruct:
@@ -343,6 +347,19 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
+    // precompile calls
+    precompile_ecrecover_gadget: Box<EcrecoverGadget<F>>,
+    precompile_sha2_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileSha256 }>>,
+    precompile_ripemd_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileRipemd160 }>>,
+    precompile_identity_gadget: Box<IdentityGadget<F>>,
+    precompile_modexp_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBigModExp }>>,
+    precompile_bn128add_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256Add }>>,
+    precompile_bn128mul_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256ScalarMul }>>,
+    precompile_bn128pairing_gadget:
+        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBn256Pairing }>>,
+    precompile_blake2f_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileBlake2f }>>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -360,6 +377,8 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
+        sig_table: &dyn LookupTable<F>,
+        pow_of_rand_table: &dyn LookupTable<F>,
     ) -> Self {
         let mut instrument = Instrument::default();
         let q_usable = meta.complex_selector();
@@ -595,7 +614,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_account_access: configure_gadget!(),
             error_oog_sha3: configure_gadget!(),
             error_oog_exp: configure_gadget!(),
-            error_oog_create2: configure_gadget!(),
+            error_oog_create: configure_gadget!(),
             #[cfg(not(feature = "scroll"))]
             error_oog_self_destruct: configure_gadget!(),
             error_code_store: configure_gadget!(),
@@ -605,6 +624,16 @@ impl<F: Field> ExecutionConfig<F> {
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
             error_precompile_failed: configure_gadget!(),
+            // precompile calls
+            precompile_ecrecover_gadget: configure_gadget!(),
+            precompile_sha2_gadget: configure_gadget!(),
+            precompile_ripemd_gadget: configure_gadget!(),
+            precompile_identity_gadget: configure_gadget!(),
+            precompile_modexp_gadget: configure_gadget!(),
+            precompile_bn128add_gadget: configure_gadget!(),
+            precompile_bn128mul_gadget: configure_gadget!(),
+            precompile_bn128pairing_gadget: configure_gadget!(),
+            precompile_blake2f_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -623,6 +652,8 @@ impl<F: Field> ExecutionConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
+            sig_table,
+            pow_of_rand_table,
             &challenges,
             &cell_manager,
         );
@@ -878,6 +909,8 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
+        sig_table: &dyn LookupTable<F>,
+        pow_of_rand_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
@@ -894,6 +927,8 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
+                        Table::Sig => sig_table,
+                        Table::PowOfRand => pow_of_rand_table,
                     }
                     .table_exprs(meta);
                     vec![(
@@ -976,7 +1011,7 @@ impl<F: Field> ExecutionConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(), Error> {
+    ) -> Result<EvmCircuitExports<Assigned<F>>, Error> {
         let mut is_first_time = true;
 
         layouter.assign_region(
@@ -1159,8 +1194,28 @@ impl<F: Field> ExecutionConfig<F> {
                 Ok(())
             },
         )?;
+
         log::debug!("assign_block done");
-        Ok(())
+
+        let final_withdraw_root_cell = self
+            .end_block_gadget
+            .withdraw_root_assigned
+            .borrow()
+            .expect("withdraw_root cell should has been assigned");
+
+        // sanity check
+        let evm_rows = block.circuits_params.max_evm_rows;
+        if evm_rows >= 2 {
+            assert_eq!(final_withdraw_root_cell.row_offset, evm_rows - 2);
+        }
+
+        let withdraw_root_rlc = challenges
+            .evm_word()
+            .map(|r| rlc::value(&block.withdraw_root.to_le_bytes(), r));
+
+        Ok(EvmCircuitExports {
+            withdraw_root: (final_withdraw_root_cell, withdraw_root_rlc.into()),
+        })
     }
 
     fn annotate_circuit(&self, region: &mut Region<F>) {
@@ -1173,6 +1228,8 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
+            ("EVM_lookup_sig", SIG_TABLE_LOOKUPS),
+            ("EVM_lookup_pow_of_rand", POW_OF_RAND_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),
             ("EVM_copy", N_COPY_COLUMNS),
             ("EVM_lookup_byte", N_BYTE_LOOKUPS),
@@ -1412,8 +1469,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasEXP => {
                 assign_exec_step!(self.error_oog_exp)
             }
-            ExecutionState::ErrorOutOfGasCREATE2 => {
-                assign_exec_step!(self.error_oog_create2)
+            ExecutionState::ErrorOutOfGasCREATE => {
+                assign_exec_step!(self.error_oog_create)
             }
             ExecutionState::ErrorOutOfGasSELFDESTRUCT => {
                 #[cfg(not(feature = "scroll"))]
@@ -1442,6 +1499,33 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
+            }
+            ExecutionState::PrecompileEcrecover => {
+                assign_exec_step!(self.precompile_ecrecover_gadget)
+            }
+            ExecutionState::PrecompileSha256 => {
+                assign_exec_step!(self.precompile_sha2_gadget)
+            }
+            ExecutionState::PrecompileRipemd160 => {
+                assign_exec_step!(self.precompile_ripemd_gadget)
+            }
+            ExecutionState::PrecompileIdentity => {
+                assign_exec_step!(self.precompile_identity_gadget)
+            }
+            ExecutionState::PrecompileBigModExp => {
+                assign_exec_step!(self.precompile_modexp_gadget)
+            }
+            ExecutionState::PrecompileBn256Add => {
+                assign_exec_step!(self.precompile_bn128add_gadget)
+            }
+            ExecutionState::PrecompileBn256ScalarMul => {
+                assign_exec_step!(self.precompile_bn128mul_gadget)
+            }
+            ExecutionState::PrecompileBn256Pairing => {
+                assign_exec_step!(self.precompile_bn128pairing_gadget)
+            }
+            ExecutionState::PrecompileBlake2f => {
+                assign_exec_step!(self.precompile_blake2f_gadget)
             }
         }
 

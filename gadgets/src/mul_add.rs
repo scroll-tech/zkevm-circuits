@@ -231,14 +231,14 @@ impl<F: Field> MulAddChip<F> {
         .enumerate()
         {
             region.assign_advice(
-                || format!("a limb ({})", i),
+                || format!("a limb ({i})"),
                 column,
                 offset,
                 || Value::known(F::from(value.as_u64())),
             )?;
         }
         region.assign_advice(
-            || format!("unused col: {}", offset),
+            || format!("unused col: {offset}"),
             self.config.col4,
             offset,
             || Value::known(F::zero()),
@@ -256,7 +256,7 @@ impl<F: Field> MulAddChip<F> {
         .enumerate()
         {
             region.assign_advice(
-                || format!("b limb ({})", i),
+                || format!("b limb ({i})"),
                 column,
                 offset + 1,
                 || Value::known(F::from(value.as_u64())),
@@ -318,7 +318,7 @@ impl<F: Field> MulAddChip<F> {
         .enumerate()
         {
             region.assign_advice(
-                || format!("carry lo ({})", i),
+                || format!("carry lo ({i})"),
                 col,
                 rot,
                 || Value::known(F::from(*val as u64)),
@@ -348,7 +348,7 @@ impl<F: Field> MulAddChip<F> {
         .enumerate()
         {
             region.assign_advice(
-                || format!("carry hi ({})", i),
+                || format!("carry hi ({i})"),
                 col,
                 rot,
                 || Value::known(F::from(*val as u64)),
@@ -374,7 +374,7 @@ impl<F: Field> MulAddChip<F> {
             (self.config.col4, "GADGET_MUL_ADD_col4"),
         ]
         .iter()
-        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+        .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
     }
 }
 

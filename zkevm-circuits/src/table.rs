@@ -2,21 +2,24 @@
 
 use crate::{
     copy_circuit::util::number_or_hash_to_field,
-    evm_circuit::util::rlc,
+    evm_circuit::util::{
+        constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+        rlc,
+    },
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
     util::{build_tx_log_address, Challenges},
     witness::{
-        Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw,
-        RwMap, RwRow, SignedTransaction, Transaction,
+        Block, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpFsmWitnessGen, Rw, RwMap,
+        RwRow, Transaction,
     },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
-use eth_types::{Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
+use eth_types::{sign_types::SignData, Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    util::{split_u256, split_u256_limb64},
+    util::{and, not, split_u256, split_u256_limb64, Expr},
 };
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -44,6 +47,15 @@ pub trait LookupTable<F: Field> {
     /// Returns the list of ALL the table advice columns following the table
     /// order.
     fn advice_columns(&self) -> Vec<Column<Advice>> {
+        self.columns()
+            .iter()
+            .map(|&col| col.try_into())
+            .filter_map(|res| res.ok())
+            .collect()
+    }
+
+    /// Returns the list of ALL the table fixed columns following the table order.
+    fn fixed_columns(&self) -> Vec<Column<Fixed>> {
         self.columns()
             .iter()
             .map(|&col| col.try_into())
@@ -102,6 +114,8 @@ impl<F: Field, C: Into<Column<Any>> + Copy, const W: usize> LookupTable<F> for [
 pub enum TxFieldTag {
     /// Unused tag
     Null = 0,
+    /// CallData
+    CallData,
     /// Nonce
     Nonce,
     /// GasPrice
@@ -116,10 +130,16 @@ pub enum TxFieldTag {
     IsCreate,
     /// Value
     Value,
+    /// CallDataRLC
+    CallDataRLC,
     /// CallDataLength
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
+    /// Gas cost of the transaction data charged in L1
+    TxDataGasCost,
+    /// Chain ID
+    ChainID,
     /// Signature field V.
     SigV,
     /// Signature field R.
@@ -143,8 +163,6 @@ pub enum TxFieldTag {
     TxHashRLC,
     /// TxHash: Hash of the transaction with the signature
     TxHash,
-    /// CallData
-    CallData,
     /// The block number in which this tx is included.
     BlockNumber,
 }
@@ -355,8 +373,6 @@ pub enum RwTableTag {
     Stack,
     /// Memory operation
     Memory,
-    /// Account Storage operation
-    AccountStorage,
     /// Tx Access List Account operation
     TxAccessListAccount,
     /// Tx Access List Account Storage operation
@@ -365,6 +381,8 @@ pub enum RwTableTag {
     TxRefund,
     /// Account operation
     Account,
+    /// Account Storage operation
+    AccountStorage,
     /// Call Context operation
     CallContext,
     /// Tx Log operation
@@ -397,15 +415,14 @@ impl From<RwTableTag> for usize {
 /// Tag for an AccountField in RwTable
 #[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccountFieldTag {
-    /// Variant representing the poseidon hash of an account's code.
-    CodeHash = 0, /* we need this to match to the field tag of AccountStorage, which is
-                   * always 0 */
     /// Nonce field
     Nonce,
     /// Balance field
     Balance,
     /// Variant representing the keccak hash of an account's code.
     KeccakCodeHash,
+    /// Variant representing the poseidon hash of an account's code.
+    CodeHash,
     /// Variant representing the code size, i.e. length of account's code.
     CodeSize,
     /// NonExisting field
@@ -653,36 +670,16 @@ impl RwTable {
     }
 }
 
-/// The types of proofs in the MPT table
-#[derive(Clone, Copy, Debug)]
-pub enum MPTProofType {
-    /// Nonce updated
-    NonceMod = AccountFieldTag::Nonce as isize,
-    /// Balance updated
-    BalanceMod = AccountFieldTag::Balance as isize,
-    /// Keccak Code hash exists
-    KeccakCodeHashExists = AccountFieldTag::KeccakCodeHash as isize,
-    /// Poseidon Code hash exits
-    PoseidonCodeHashExists = AccountFieldTag::CodeHash as isize,
-    /// Code size exists
-    CodeSizeExists = AccountFieldTag::CodeSize as isize,
-    /// Account does not exist
-    NonExistingAccountProof = AccountFieldTag::NonExisting as isize,
-    /// Storage updated
-    StorageMod,
-    /// Storage does not exist
-    NonExistingStorageProof,
-}
-impl_expr!(MPTProofType);
+pub use mpt_zktrie::mpt_circuits::MPTProofType;
 
 impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
         match tag {
-            AccountFieldTag::Nonce => Self::NonceMod,
-            AccountFieldTag::Balance => Self::BalanceMod,
-            AccountFieldTag::KeccakCodeHash => Self::KeccakCodeHashExists,
+            AccountFieldTag::Nonce => Self::NonceChanged,
+            AccountFieldTag::Balance => Self::BalanceChanged,
+            AccountFieldTag::KeccakCodeHash => Self::CodeHashExists,
             AccountFieldTag::CodeHash => Self::PoseidonCodeHashExists,
-            AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
+            AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
             AccountFieldTag::CodeSize => Self::CodeSizeExists,
         }
     }
@@ -791,11 +788,10 @@ impl MptTable {
         max_mpt_rows: usize,
         randomness: Value<F>,
     ) -> Result<(), Error> {
-        let dummy_row = MptUpdateRow([Value::known(F::zero()); 7]);
-        for (offset, row) in updates
-            .table_assignments(randomness)
+        let mpt_update_rows = updates.table_assignments(randomness);
+        for (offset, row) in mpt_update_rows
             .into_iter()
-            .chain(repeat(dummy_row))
+            .chain(repeat(MptUpdateRow::padding()))
             .take(max_mpt_rows)
             .enumerate()
         {
@@ -860,7 +856,7 @@ impl PoseidonTable {
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
-            hash_id: meta.advice_column_in(SecondPhase),
+            hash_id: meta.advice_column(),
             input0: meta.advice_column(),
             input1: meta.advice_column(),
             control: meta.advice_column(),
@@ -868,16 +864,9 @@ impl PoseidonTable {
         }
     }
 
-    /// Construct a new PoseidonTable for dev (no secondphase, mpt only)
+    /// Construct a new PoseidonTable for dev
     pub(crate) fn dev_construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            q_enable: meta.fixed_column(),
-            hash_id: meta.advice_column(),
-            input0: meta.advice_column(),
-            input1: meta.advice_column(),
-            control: meta.advice_column(),
-            heading_mark: meta.advice_column(),
-        }
+        Self::construct(meta)
     }
 
     pub(crate) fn assign<F: Field>(
@@ -939,7 +928,7 @@ impl PoseidonTable {
             unroll_to_hash_input_default, HASHBLOCK_BYTES_IN_FIELD,
         };
         use bus_mapping::state_db::CodeDB;
-        use mpt_zktrie::hash::HASHABLE_DOMAIN_SPEC;
+        use hash_circuit::hash::HASHABLE_DOMAIN_SPEC;
 
         layouter.assign_region(
             || "poseidon table",
@@ -1236,7 +1225,6 @@ impl BlockTable {
         layouter: &mut impl Layouter<F>,
         block_ctxs: &BlockContexts,
         txs: &[Transaction],
-        max_inner_blocks: usize,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -1255,11 +1243,7 @@ impl BlockTable {
                 offset += 1;
 
                 let mut cum_num_txs = 0usize;
-                let padding_blocks = (block_ctxs.ctxs.len()..max_inner_blocks)
-                    .into_iter()
-                    .map(|_| BlockContext::default())
-                    .collect::<Vec<_>>();
-                for block_ctx in block_ctxs.ctxs.values().chain(padding_blocks.iter()) {
+                for block_ctx in block_ctxs.ctxs.values() {
                     let num_txs = txs
                         .iter()
                         .filter(|tx| tx.block_number == block_ctx.number.as_u64())
@@ -1501,8 +1485,8 @@ pub struct CopyTable {
     pub rwc_inc_left: Column<Advice>,
     /// Binary chip to constrain the copy table conditionally depending on the
     /// current row's tag, whether it is Bytecode, Memory, TxCalldata or
-    /// TxLog.
-    pub tag: BinaryNumberConfig<CopyDataType, 3>,
+    /// TxLog. This also now includes various precompile calls, hence will take up more cells.
+    pub tag: BinaryNumberConfig<CopyDataType, 4>,
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
@@ -1643,6 +1627,8 @@ impl CopyTable {
                         match (copy_event.src_type, copy_event.dst_type) {
                             (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
                             (_, CopyDataType::RlcAcc) => rlc_acc,
+                            (CopyDataType::Memory, CopyDataType::Precompile(_)) => rlc_acc,
+                            (CopyDataType::Precompile(_), CopyDataType::Memory) => rlc_acc,
                             _ => Value::known(F::zero()),
                         },
                         "rlc_acc",
@@ -1989,42 +1975,35 @@ impl<F: Field> LookupTable<F> for ExpTable {
     }
 }
 
-/// Lookup table embedded in the RLP circuit.
+/// The RLP table connected to the RLP state machine circuit.
 #[derive(Clone, Copy, Debug)]
-pub struct RlpTable {
-    /// Is enabled
+pub struct RlpFsmRlpTable {
+    /// Whether the row is enabled.
     pub q_enable: Column<Fixed>,
-    /// Transaction ID of the transaction. This is not the transaction hash, but
-    /// an incremental ID starting from 1 to indicate the position of the
-    /// transaction within the L2 block.
+    /// The transaction's index in the batch.
     pub tx_id: Column<Advice>,
-    /// Denotes the field/tag that this row represents. Example: nonce, gas,
-    /// gas_price, and so on.
-    pub tag: Column<Advice>,
-    /// Denotes the decrementing index specific to this tag. The final value of
-    /// the field is accumulated in `value_acc` at `tag_index == 1`.
-    pub tag_rindex: Column<Advice>,
-    /// Denotes the accumulator value for this field, which is a linear
-    /// combination or random linear combination of the field's bytes.
-    pub value_acc: Column<Advice>,
-    /// Denotes the type of input assigned in this row. Type can either be
-    /// `TxSign` (transaction data that needs to be signed) or `TxHash`
-    /// (signed transaction's data).
-    pub data_type: Column<Advice>,
-    /// Denotes if the tag_length is equal to 1
-    pub tag_length_eq_one: Column<Advice>,
+    /// The format of the tx being decoded.
+    pub format: Column<Advice>,
+    /// The RLP-Tag assigned at the current row.
+    pub rlp_tag: Column<Advice>,
+    /// The actual value of the current tag being decoded.
+    pub tag_value: Column<Advice>,
+    /// Whether or not the row emits an output value.
+    pub is_output: Column<Advice>,
+    /// Whether or not the current tag's value was nil.
+    pub is_none: Column<Advice>,
 }
 
-impl<F: Field> LookupTable<F> for RlpTable {
+impl<F: Field> LookupTable<F> for RlpFsmRlpTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.q_enable.into(),
             self.tx_id.into(),
-            self.tag.into(),
-            self.tag_rindex.into(),
-            self.value_acc.into(),
-            self.data_type.into(),
-            self.tag_length_eq_one.into(),
+            self.format.into(),
+            self.rlp_tag.into(),
+            self.tag_value.into(),
+            self.is_output.into(),
+            self.is_none.into(),
         ]
     }
 
@@ -2032,99 +2011,182 @@ impl<F: Field> LookupTable<F> for RlpTable {
         vec![
             String::from("q_enable"),
             String::from("tx_id"),
-            String::from("tag"),
-            String::from("tag_rindex"),
-            String::from("value_acc"),
-            String::from("data_type"),
-            String::from("tag_length_eq_one"),
+            String::from("format"),
+            String::from("rlp_tag"),
+            String::from("tag_value_acc"),
+            String::from("is_output"),
+            String::from("is_none"),
         ]
     }
 }
 
-impl RlpTable {
+impl RlpFsmRlpTable {
     /// Construct the RLP table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),
             tx_id: meta.advice_column(),
-            tag: meta.advice_column(),
-            tag_rindex: meta.advice_column(),
-            value_acc: meta.advice_column_in(SecondPhase),
-            data_type: meta.advice_column(),
-            tag_length_eq_one: meta.advice_column(),
+            format: meta.advice_column(),
+            rlp_tag: meta.advice_column(),
+            tag_value: meta.advice_column_in(SecondPhase),
+            is_output: meta.advice_column(),
+            is_none: meta.advice_column(),
         }
     }
 
-    /// Get assignments to the RLP table. Meant to be used for dev purposes.
-    pub fn dev_assignments<F: Field>(
-        txs: Vec<SignedTransaction>,
-        challenges: &Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 6]> {
-        let mut assignments = vec![];
-        for signed_tx in txs {
-            for row in signed_tx
-                .gen_witness(challenges)
-                .iter()
-                .chain(signed_tx.rlp_rows(challenges.keccak_input()).iter())
-                .chain(signed_tx.tx.gen_witness(challenges).iter())
-                .chain(signed_tx.tx.rlp_rows(challenges.keccak_input()).iter())
-            {
-                assignments.push([
-                    Value::known(F::from(row.tx_id as u64)),
-                    Value::known(F::from(row.tag as u64)),
-                    Value::known(F::from(row.tag_rindex as u64)),
-                    row.value_acc,
-                    Value::known(F::from(row.data_type as u64)),
-                    Value::known(F::from((row.tag_length == 1) as u64)),
-                ]);
-            }
-        }
-        assignments
-    }
-}
-
-impl RlpTable {
-    /// Load witness into RLP table. Meant to be used for dev purposes.
+    /// Load the RLP table (only for dev).
     pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        txs: Vec<SignedTransaction>,
+        txs: Vec<Transaction>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        let rows = txs
+            .into_iter()
+            .flat_map(|tx| tx.gen_sm_witness(challenges))
+            .filter(|row| row.rlp_table.is_output)
+            .map(|row| row.rlp_table)
+            .collect::<Vec<_>>();
+
+        let assign_any = |region: &mut Region<'_, F>,
+                          annotation: &'static str,
+                          col: Column<Any>,
+                          row: usize,
+                          value: Value<F>| {
+            match *(col.column_type()) {
+                Any::Fixed => {
+                    region.assign_fixed(|| annotation, col.try_into().unwrap(), row, || value)
+                }
+                Any::Advice(_) => {
+                    region.assign_advice(|| annotation, col.try_into().unwrap(), row, || value)
+                }
+                Any::Instance => unreachable!("we do not assign to instance column"),
+            }
+        };
+
+        layouter.assign_region(
+            || "RLP dev table",
+            |mut region| {
+                for (i, row) in rows.iter().enumerate() {
+                    let cells: Vec<(&'static str, Column<Any>, Value<F>)> = vec![
+                        ("q_enable", self.q_enable.into(), Value::known(F::one())),
+                        ("tx_id", self.tx_id.into(), Value::known(F::from(row.tx_id))),
+                        (
+                            "format",
+                            self.format.into(),
+                            Value::known(F::from(usize::from(row.format) as u64)),
+                        ),
+                        (
+                            "rlp_tag",
+                            self.rlp_tag.into(),
+                            Value::known(F::from(usize::from(row.rlp_tag) as u64)),
+                        ),
+                        ("tag_value", self.tag_value.into(), row.tag_value),
+                        ("is_output", self.is_output.into(), Value::known(F::one())),
+                        (
+                            "is_none",
+                            self.is_none.into(),
+                            Value::known(F::from(row.is_none as u64)),
+                        ),
+                    ];
+
+                    for cell in cells.into_iter() {
+                        assign_any(&mut region, cell.0, cell.1, i, cell.2)?;
+                    }
+                }
+                Ok(())
+            },
+        )?;
+
+        Ok(())
+    }
+}
+
+/// The sig table is used to verify signatures, used in tx circuit and ecrecover precompile.
+#[derive(Clone, Copy, Debug)]
+pub struct SigTable {
+    /// Indicates whether or not the gates are enabled on the current row.
+    pub q_enable: Column<Fixed>,
+    /// Random-linear combination of the Keccak256 hash of the message that's signed.
+    pub msg_hash_rlc: Column<Advice>,
+    /// should be in range [0, 1]
+    /// TODO: we need to constrain v <=> pub.y oddness
+    pub sig_v: Column<Advice>,
+    /// Random-linear combination of the signature's `r` component.
+    pub sig_r_rlc: Column<Advice>,
+    /// Random-linear combination of the signature's `s` component.
+    pub sig_s_rlc: Column<Advice>,
+    /// The recovered address, i.e. the 20-bytes address that must have signed the message.
+    pub recovered_addr: Column<Advice>,
+    /// Indicates whether or not the signature is valid or not upon signature verification.
+    pub is_valid: Column<Advice>,
+}
+
+impl SigTable {
+    /// Construct the SigTable.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            q_enable: meta.fixed_column(),
+            msg_hash_rlc: meta.advice_column_in(SecondPhase),
+            sig_v: meta.advice_column(),
+            sig_s_rlc: meta.advice_column_in(SecondPhase),
+            sig_r_rlc: meta.advice_column_in(SecondPhase),
+            recovered_addr: meta.advice_column(),
+            is_valid: meta.advice_column(),
+        }
+    }
+
+    /// Assign witness data from a block to the verification table.
+    pub fn dev_load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        block: &Block<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "rlp table",
+            || "sig table (dev load)",
             |mut region| {
-                let mut offset = 0;
-                region.assign_fixed(
-                    || format!("empty row: {}", offset),
-                    self.q_enable,
-                    offset,
-                    || Value::known(F::one()),
-                )?;
-                for column in <RlpTable as LookupTable<F>>::advice_columns(self) {
-                    region.assign_advice(
-                        || format!("empty row: {}", offset),
-                        column,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
-                }
+                let signatures: Vec<SignData> = block.get_sign_data(false);
 
-                for row in Self::dev_assignments(txs.clone(), challenges) {
-                    offset += 1;
+                for (offset, sign_data) in signatures.iter().enumerate() {
+                    let msg_hash_rlc = challenges.keccak_input().map(|challenge| {
+                        rlc::value(
+                            sign_data.msg_hash.to_bytes().iter().rev().collect_vec(),
+                            challenge,
+                        )
+                    });
+                    let sig_r_rlc = challenges.keccak_input().map(|challenge| {
+                        rlc::value(
+                            sign_data.signature.0.to_bytes().iter().rev().collect_vec(),
+                            challenge,
+                        )
+                    });
+                    let sig_s_rlc = challenges.keccak_input().map(|challenge| {
+                        rlc::value(
+                            sign_data.signature.1.to_bytes().iter().rev().collect_vec(),
+                            challenge,
+                        )
+                    });
+                    let sig_v = Value::known(F::from(sign_data.signature.2 as u64));
+                    let recovered_addr = Value::known(sign_data.get_addr().to_scalar().unwrap());
+
                     region.assign_fixed(
-                        || format!("row: {}", offset),
+                        || format!("sig table q_enable {offset}"),
                         self.q_enable,
                         offset,
                         || Value::known(F::one()),
                     )?;
-                    for (column, value) in <RlpTable as LookupTable<F>>::advice_columns(self)
-                        .iter()
-                        .zip(row)
-                    {
+                    for (column_name, column, value) in [
+                        ("msg_hash_rlc", self.msg_hash_rlc, msg_hash_rlc),
+                        ("sig_v", self.sig_v, sig_v),
+                        ("sig_r_rlc", self.sig_r_rlc, sig_r_rlc),
+                        ("sig_s_rlc", self.sig_s_rlc, sig_s_rlc),
+                        ("recovered_addr", self.recovered_addr, recovered_addr),
+                        ("is_valid", self.is_valid, Value::known(F::one())),
+                    ] {
                         region.assign_advice(
-                            || format!("row: {}", offset),
-                            *column,
+                            || format!("sig table {column_name} {offset}"),
+                            column,
                             offset,
                             || value,
                         )?;
@@ -2133,6 +2195,178 @@ impl RlpTable {
 
                 Ok(())
             },
+        )?;
+
+        Ok(())
+    }
+}
+
+impl<F: Field> LookupTable<F> for SigTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_enable.into(),
+            self.msg_hash_rlc.into(),
+            self.sig_v.into(),
+            self.sig_r_rlc.into(),
+            self.sig_s_rlc.into(),
+            self.recovered_addr.into(),
+            self.is_valid.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("q_enable"),
+            String::from("msg_hash_rlc"),
+            String::from("sig_v"),
+            String::from("sig_r_rlc"),
+            String::from("sig_s_rlc"),
+            String::from("recovered_addr"),
+            String::from("is_valid"),
+        ]
+    }
+
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            // ignore the is_valid field as the EVM circuit's use-case (Ecrecover precompile) does
+            // not care whether the signature is valid or not. It only cares about the recovered
+            // address.
+            meta.query_fixed(self.q_enable, Rotation::cur()),
+            meta.query_advice(self.msg_hash_rlc, Rotation::cur()),
+            meta.query_advice(self.sig_v, Rotation::cur()),
+            meta.query_advice(self.sig_r_rlc, Rotation::cur()),
+            meta.query_advice(self.sig_s_rlc, Rotation::cur()),
+            meta.query_advice(self.recovered_addr, Rotation::cur()),
+        ]
+    }
+}
+
+/// Lookup table for powers of keccak randomness up to exponent in [0, 128)
+#[derive(Clone, Copy, Debug)]
+pub struct PowOfRandTable {
+    /// Whether the row is enabled.
+    pub q_enable: Column<Fixed>,
+    /// Whether the row is the first enabled row.
+    pub is_first: Column<Fixed>,
+    /// exponent = [0, 1, 2, ..., 126, 127] for enabled rows.
+    /// exponent = 0 for all other rows (disabled).
+    pub exponent: Column<Fixed>,
+    /// power of keccak randomness.
+    pub pow_of_rand: Column<Advice>,
+}
+
+impl PowOfRandTable {
+    /// Construct the powers of randomness table.
+    pub fn construct<F: Field>(
+        meta: &mut ConstraintSystem<F>,
+        challenges: &Challenges<Expression<F>>,
+    ) -> Self {
+        let table = Self {
+            q_enable: meta.fixed_column(),
+            is_first: meta.fixed_column(),
+            exponent: meta.fixed_column(),
+            pow_of_rand: meta.advice_column_in(SecondPhase),
+        };
+
+        meta.create_gate("pow_of_rand_table: first row", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            cb.require_equal(
+                "first row: rand ^ 0 == 1",
+                meta.query_advice(table.pow_of_rand, Rotation::cur()),
+                1.expr(),
+            );
+            cb.gate(and::expr([
+                meta.query_fixed(table.q_enable, Rotation::cur()),
+                meta.query_fixed(table.is_first, Rotation::cur()),
+            ]))
+        });
+
+        meta.create_gate("pow_of_rand_table: all other enabled rows", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            cb.require_equal(
+                "pow_of_rand::cur == pow_of_rand::prev * rand",
+                meta.query_advice(table.pow_of_rand, Rotation::cur()),
+                meta.query_advice(table.pow_of_rand, Rotation::prev()) * challenges.keccak_input(),
+            );
+            cb.gate(and::expr([
+                meta.query_fixed(table.q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(table.is_first, Rotation::cur())),
+            ]))
+        });
+
+        table
+    }
+
+    /// Assign values to the table.
+    pub fn dev_load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        let r = challenges.keccak_input();
+        layouter.assign_region(
+            || "power of randomness table",
+            |mut region| {
+                let pows_of_rand =
+                    std::iter::successors(Some(Value::known(F::one())), |&v| Some(v * r)).take(128);
+
+                for (idx, pow_of_rand) in pows_of_rand.enumerate() {
+                    region.assign_fixed(
+                        || format!("q_enable at offset = {idx}"),
+                        self.q_enable,
+                        idx,
+                        || Value::known(F::one()),
+                    )?;
+                    region.assign_fixed(
+                        || format!("is_first at offset = {idx}"),
+                        self.is_first,
+                        idx,
+                        || Value::known(if idx == 0 { F::one() } else { F::zero() }),
+                    )?;
+                    region.assign_fixed(
+                        || format!("exponent at offset = {idx}"),
+                        self.exponent,
+                        idx,
+                        || Value::known(F::from(idx as u64)),
+                    )?;
+                    region.assign_advice(
+                        || format!("pow_of_rand at offset = {idx}"),
+                        self.pow_of_rand,
+                        idx,
+                        || pow_of_rand,
+                    )?;
+                }
+
+                Ok(())
+            },
         )
+    }
+}
+
+impl<F: Field> LookupTable<F> for PowOfRandTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.q_enable.into(),
+            self.is_first.into(),
+            self.exponent.into(),
+            self.pow_of_rand.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("q_enable"),
+            String::from("is_first"),
+            String::from("exponent"),
+            String::from("pow_of_rand"),
+        ]
+    }
+
+    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
+        vec![
+            meta.query_fixed(self.q_enable, Rotation::cur()),
+            meta.query_fixed(self.exponent, Rotation::cur()),
+            meta.query_advice(self.pow_of_rand, Rotation::cur()),
+        ]
     }
 }

@@ -59,7 +59,20 @@ impl Opcode for Sload {
         state.stack_read(&mut exec_step, stack_position, key)?;
 
         // Storage read
-        let value = geth_step.storage.get_or_err(&key)?;
+        let value_from_statedb = *state.sdb.get_storage(&contract_addr, &key).1;
+        {
+            let value_from_step = geth_step.storage.get_or_err(&key)?;
+            let value_from_stack = geth_steps[1].stack.last().unwrap();
+            if !(value_from_step == value_from_statedb && value_from_step == value_from_stack) {
+                log::error!(
+                    "inconsistent sload: step proof {:?}, local statedb {:?}, result {:?}",
+                    value_from_step,
+                    value_from_statedb,
+                    value_from_stack
+                );
+            }
+        }
+        let value = value_from_statedb;
 
         let is_warm = state
             .sdb

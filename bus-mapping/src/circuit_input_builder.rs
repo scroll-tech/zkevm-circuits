@@ -15,7 +15,7 @@ pub use self::block::BlockHead;
 use crate::{
     error::Error,
     evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops},
-    operation::{CallContextField, Operation, RWCounter, StartOp, RW},
+    operation::{self, CallContextField, Operation, RWCounter, StartOp, StorageOp, RW},
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
 };
@@ -32,7 +32,7 @@ use eth_types::{
 };
 use ethers_core::{
     k256::ecdsa::SigningKey,
-    types::{Bytes, NameOrAddress, Signature, TransactionRequest},
+    types::{Bytes, Signature, TransactionRequest},
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
@@ -48,7 +48,9 @@ use std::{
     collections::{BTreeMap, HashMap},
     iter,
 };
-pub use transaction::{Transaction, TransactionContext};
+pub use transaction::{
+    Transaction, TransactionContext, TxL1Fee, TX_L1_COMMIT_EXTRA_COST, TX_L1_FEE_PRECISION,
+};
 
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
@@ -62,6 +64,8 @@ pub struct CircuitsParams {
     pub max_txs: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
+    /// Maximum number of rows that the RLP Circuit can have
+    pub max_rlp_rows: usize,
     /// Max amount of rows that the CopyCircuit can have.
     pub max_copy_rows: usize,
     /// Maximum number of inner blocks in a batch
@@ -103,6 +107,7 @@ impl Default for CircuitsParams {
             max_bytecode: 512,
             max_evm_rows: 0,
             max_keccak_rows: 0,
+            max_rlp_rows: 1000,
         }
     }
 }
@@ -243,23 +248,28 @@ impl<'a> CircuitInputBuilder {
         check_last_tx: bool,
     ) -> Result<(), Error> {
         // accumulates gas across all txs in the block
-        log::info!("handling block {:?}", eth_block.number);
+        log::info!(
+            "handling block {:?}, tx num {}",
+            eth_block.number,
+            eth_block.transactions.len()
+        );
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
+            let batch_tx_idx = self.block.txs.len();
             if self.block.txs.len() >= self.block.circuits_params.max_txs {
                 log::warn!(
-                    "skip tx outside MAX_TX limit {}, {}th(inner idx: {}) tx {:?}",
+                    "skip tx outside MAX_TX limit {}, {}th tx(inner idx: {}) {:?}",
                     self.block.circuits_params.max_txs,
+                    batch_tx_idx,
                     tx.transaction_index.unwrap_or_default(),
-                    self.block.txs.len(),
                     tx.hash
                 );
                 continue;
             }
             let geth_trace = &geth_traces[tx_index];
             log::info!(
-                "handling {}th(inner idx: {}) tx: {:?} rwc {:?}, to: {:?}, input_len {:?}",
+                "handling {}th tx(inner idx: {}): {:?} rwc {:?}, to: {:?}, input_len {:?}",
+                batch_tx_idx,
                 tx.transaction_index.unwrap_or_default(),
-                self.block.txs.len(),
                 tx.hash,
                 self.block_ctx.rwc,
                 tx.to,
@@ -273,6 +283,12 @@ impl<'a> CircuitInputBuilder {
                 geth_trace,
                 check_last_tx && tx_index + 1 == eth_block.transactions.len(),
             )?;
+            log::debug!(
+                "after handle {}th tx: rwc {:?}, block total gas {:?}",
+                batch_tx_idx,
+                self.block_ctx.rwc,
+                self.block_ctx.cumulative_gas_used
+            );
         }
         if handle_rwc_reversion {
             self.set_value_ops_call_context_rwc_eor();
@@ -285,8 +301,81 @@ impl<'a> CircuitInputBuilder {
         Ok(())
     }
 
+    fn print_rw_usage(&self) {
+        // opcode -> (count, mem_rw_len, stack_rw_len)
+        let mut opcode_info_map = BTreeMap::new();
+        for t in &self.block.txs {
+            for step in t.steps() {
+                if let ExecState::Op(op) = step.exec_state {
+                    opcode_info_map.entry(op).or_insert((0, 0, 0));
+                    let mut values = opcode_info_map[&op];
+                    values.0 += 1;
+                    values.1 += step
+                        .bus_mapping_instance
+                        .iter()
+                        .filter(|rw| rw.0 == operation::Target::Memory)
+                        .count();
+                    values.2 += step
+                        .bus_mapping_instance
+                        .iter()
+                        .filter(|rw| rw.0 == operation::Target::Stack)
+                        .count();
+                    opcode_info_map.insert(op, values);
+                }
+            }
+        }
+        for (op, (count, mem, stack)) in opcode_info_map
+            .iter()
+            .sorted_by_key(|(_, (_, m, _))| m)
+            .rev()
+        {
+            log::debug!(
+                "op {:?}, count {}, mem rw {}(avg {:.2}), stack rw {}(avg {:.2})",
+                op,
+                count,
+                mem,
+                *mem as f32 / *count as f32,
+                stack,
+                *stack as f32 / *count as f32
+            );
+        }
+        log::debug!("memory num: {}", self.block.container.memory.len());
+        log::debug!("stack num: {}", self.block.container.stack.len());
+        log::debug!("storage num: {}", self.block.container.storage.len());
+        log::debug!(
+            "tx_access_list_account num: {}",
+            self.block.container.tx_access_list_account.len()
+        );
+        log::debug!(
+            "tx_access_list_account_storage num: {}",
+            self.block.container.tx_access_list_account_storage.len()
+        );
+        log::debug!("tx_refund num: {}", self.block.container.tx_refund.len());
+        log::debug!("account num: {}", self.block.container.account.len());
+        log::debug!(
+            "call_context num: {}",
+            self.block.container.call_context.len()
+        );
+        log::debug!("tx_receipt num: {}", self.block.container.tx_receipt.len());
+        log::debug!("tx_log num: {}", self.block.container.tx_log.len());
+        log::debug!("start num: {}", self.block.container.start.len());
+    }
+
     /// ..
     pub fn set_end_block(&mut self) -> Result<(), Error> {
+        use crate::l2_predeployed::message_queue::{
+            ADDRESS as MESSAGE_QUEUE, WITHDRAW_TRIE_ROOT_SLOT,
+        };
+
+        let withdraw_root = *self
+            .sdb
+            .get_storage(&MESSAGE_QUEUE, &WITHDRAW_TRIE_ROOT_SLOT)
+            .1;
+        let withdraw_root_before = *self
+            .sdb
+            .get_committed_storage(&MESSAGE_QUEUE, &WITHDRAW_TRIE_ROOT_SLOT)
+            .1;
+
         let max_rws = self.block.circuits_params.max_rws;
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
@@ -297,14 +386,29 @@ impl<'a> CircuitInputBuilder {
         let mut dummy_tx_ctx = TransactionContext::default();
         let mut state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
 
+        let dummy_tx_id = state.block.txs.len();
         if let Some(call_id) = state.block.txs.last().map(|tx| tx.calls[0].call_id) {
             state.call_context_read(
                 &mut end_block_last,
                 call_id,
                 CallContextField::TxId,
-                Word::from(state.block.txs.len() as u64),
+                Word::from(dummy_tx_id as u64),
             );
         }
+
+        // increase the total rwc by 1
+        state.push_op(
+            &mut end_block_last,
+            RW::READ,
+            StorageOp::new(
+                *MESSAGE_QUEUE,
+                *WITHDRAW_TRIE_ROOT_SLOT,
+                withdraw_root,
+                withdraw_root,
+                dummy_tx_id,
+                withdraw_root_before,
+            ),
+        );
 
         let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
             let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
@@ -333,6 +437,8 @@ impl<'a> CircuitInputBuilder {
             StartOp {},
         );
 
+        self.block.withdraw_root = withdraw_root;
+        self.block.prev_withdraw_root = withdraw_root_before;
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
         Ok(())
@@ -350,6 +456,17 @@ impl<'a> CircuitInputBuilder {
         is_last_tx: bool,
     ) -> Result<(), Error> {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
+
+        // Sanity check for transaction L1 fee.
+        let tx_l1_fee = tx.l1_fee();
+        if tx_l1_fee != geth_trace.l1_fee {
+            log::error!(
+                "Mismatch tx_l1_fee: calculated = {}, real = {}",
+                tx_l1_fee,
+                geth_trace.l1_fee
+            );
+        }
+
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
         let mut debug_tx = tx.clone();
         debug_tx.input.clear();
@@ -370,19 +487,22 @@ impl<'a> CircuitInputBuilder {
         gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx), geth_trace)?;
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
+            let tx_gas = tx.gas;
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
             log::trace!(
-                "handle {}th tx depth {} {}th opcode {:?} pc: {} gas_left: {} rwc: {} call_id: {} msize: {} args: {}",
+                "handle {}th tx depth {} {}th/{} opcode {:?} pc: {} gas_left: {} gas_used: {} rwc: {} call_id: {} msize: {} args: {}",
                 eth_tx.transaction_index.unwrap_or_default(),
                 geth_step.depth,
                 index,
+                geth_trace.struct_logs.len(),
                 geth_step.op,
                 geth_step.pc.0,
                 geth_step.gas.0,
+                tx_gas - geth_step.gas.0,
                 state_ref.block_ctx.rwc.0,
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
                 state_ref.call_ctx()?.memory.len(),
-                if geth_step.op.is_push() {
+                if geth_step.op.is_push_with_data() {
                     format!("{:?}", geth_trace.struct_logs[index + 1].stack.last())
                 } else if geth_step.op.is_call_without_value() {
                     format!(
@@ -469,18 +589,18 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     let mut keccak_inputs = Vec::new();
     // Tx Circuit
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.into()).collect();
-    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id().as_u64())?);
+    keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs)?);
     log::debug!(
         "keccak total len after txs: {}",
         keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
     );
     // PI circuit
-    keccak_inputs.push(keccak_inputs_pi_circuit(
-        block.chain_id().as_u64(),
+    keccak_inputs.extend(keccak_inputs_pi_circuit(
+        block.chain_id,
         block.prev_state_root,
+        block.withdraw_root,
         &block.headers,
         block.txs(),
-        block.circuits_params.max_txs,
     ));
     // Bytecode Circuit
     for _bytecode in code_db.0.values() {
@@ -526,10 +646,10 @@ pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
     inputs
 }
 
-/// Generate a dummy tx in which
-/// (nonce=0, gas=0, gas_price=0, to=0, value=0, data="", chain_id)
+/// Generate a dummy pre-eip155 tx in which
+/// (nonce=0, gas=0, gas_price=0, to=0, value=0, data="")
 /// using the dummy private key = 1
-pub fn get_dummy_tx(chain_id: u64) -> (TransactionRequest, Signature) {
+pub fn get_dummy_tx() -> (TransactionRequest, Signature) {
     let mut sk_be_scalar = [0u8; 32];
     sk_be_scalar[31] = 1_u8;
 
@@ -542,21 +662,27 @@ pub fn get_dummy_tx(chain_id: u64) -> (TransactionRequest, Signature) {
         .gas_price(U256::zero())
         .to(Address::zero())
         .value(U256::zero())
-        .data(Bytes::default())
-        .chain_id(chain_id);
+        .data(Bytes::default());
+    let sighash: H256 = keccak256(tx.rlp_unsigned()).into();
 
     // FIXME: need to check if this is deterministic which means sig is fixed.
-    let sig = wallet.sign_transaction_sync(&tx.clone().into());
+    let sig = wallet.sign_hash(sighash);
+    assert_eq!(sig.v, 28);
 
     (tx, sig)
 }
 
 /// Get the tx hash of the dummy tx (nonce=0, gas=0, gas_price=0, to=0, value=0,
-/// data="") for any chain_id
-pub fn get_dummy_tx_hash(chain_id: u64) -> H256 {
-    let (tx, sig) = get_dummy_tx(chain_id);
+/// data="")
+pub fn get_dummy_tx_hash() -> H256 {
+    let (tx, sig) = get_dummy_tx();
 
     let tx_hash = keccak256(tx.rlp_signed(&sig));
+
+    assert_eq!(
+        hex::encode(tx_hash),
+        "137c41d53f2e633af81c75e938f6ccf7298ad6d2fa698b19a50545c1ae5b2b85"
+    );
 
     H256(tx_hash)
 }
@@ -564,92 +690,55 @@ pub fn get_dummy_tx_hash(chain_id: u64) -> H256 {
 fn keccak_inputs_pi_circuit(
     chain_id: u64,
     prev_state_root: Word,
+    withdraw_trie_root: Word,
     block_headers: &BTreeMap<u64, BlockHead>,
     transactions: &[Transaction],
-    max_txs: usize,
-) -> Vec<u8> {
-    let dummy_tx_hash = get_dummy_tx_hash(chain_id);
-    // TODO: use real-world withdraw trie root
-    let withdraw_trie_root = Word::zero(); // zero for now
-
-    let result = iter::empty()
-        // state roots
-        .chain(prev_state_root.to_be_bytes())
-        .chain(
-            block_headers
-                .last_key_value()
-                .map(|(_, blk)| blk.eth_block.state_root)
-                .unwrap_or(H256(prev_state_root.to_be_bytes()))
-                .to_fixed_bytes(),
-        )
-        // withdraw trie root
-        .chain(withdraw_trie_root.to_be_bytes())
+) -> Vec<Vec<u8>> {
+    let data_bytes = iter::empty()
         .chain(block_headers.iter().flat_map(|(block_num, block)| {
             let num_txs = transactions
                 .iter()
                 .filter(|tx| tx.block_num == *block_num)
                 .count() as u16;
-            let parent_hash = block.eth_block.parent_hash;
-            let block_hash = block.eth_block.hash.unwrap_or(H256::zero());
-            let num_l1_msgs = 0_u16; // 0 for now
 
             iter::empty()
                 // Block Values
-                .chain(block_hash.to_fixed_bytes())
-                .chain(parent_hash.to_fixed_bytes()) // parent hash
                 .chain(block.number.as_u64().to_be_bytes())
                 .chain(block.timestamp.as_u64().to_be_bytes())
                 .chain(block.base_fee.to_be_bytes())
                 .chain(block.gas_limit.to_be_bytes())
                 .chain(num_txs.to_be_bytes())
-                .chain(num_l1_msgs.to_be_bytes())
         }))
         // Tx Hashes
         .chain(transactions.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
-        .chain(
-            (0..(max_txs - transactions.len()))
-                .into_iter()
-                .flat_map(|_| dummy_tx_hash.to_fixed_bytes()),
-        )
+        .collect::<Vec<u8>>();
+    let data_hash = H256(keccak256(&data_bytes));
+    let after_state_root = block_headers
+        .last_key_value()
+        .map(|(_, blk)| blk.eth_block.state_root)
+        .unwrap_or(H256(prev_state_root.to_be_bytes()));
+    let pi_bytes = iter::empty()
+        .chain(chain_id.to_be_bytes())
+        .chain(prev_state_root.to_be_bytes())
+        .chain(after_state_root.to_fixed_bytes())
+        .chain(withdraw_trie_root.to_be_bytes())
+        .chain(data_hash.to_fixed_bytes())
         .collect::<Vec<u8>>();
 
-    result
+    vec![data_bytes, pi_bytes]
 }
 
 /// Generate the keccak inputs required by the Tx Circuit from the transactions.
-pub fn keccak_inputs_tx_circuit(
-    txs: &[geth_types::Transaction],
-    chain_id: u64,
-) -> Result<Vec<Vec<u8>>, Error> {
+pub fn keccak_inputs_tx_circuit(txs: &[geth_types::Transaction]) -> Result<Vec<Vec<u8>>, Error> {
     let mut inputs = Vec::new();
 
     let hash_datas = txs
         .iter()
-        .map(|tx| {
-            let sig = Signature {
-                r: tx.r,
-                s: tx.s,
-                v: tx.v,
-            };
-            let mut tx: TransactionRequest = tx.into();
-            if tx.to.is_some() {
-                let to = tx.to.clone().unwrap();
-                match to {
-                    NameOrAddress::Name(_) => {}
-                    NameOrAddress::Address(addr) => {
-                        // the rlp of zero addr is 0x80
-                        if addr == Address::zero() {
-                            tx.to = None;
-                        }
-                    }
-                }
-            }
-            tx.rlp_signed(&sig).to_vec()
-        })
+        .map(|tx| tx.rlp_bytes.clone())
         .collect::<Vec<Vec<u8>>>();
     let dummy_hash_data = {
         // dummy tx is a legacy tx.
-        let (dummy_tx, dummy_sig) = get_dummy_tx(chain_id);
+        let (dummy_tx, dummy_sig) = get_dummy_tx();
         dummy_tx.rlp_signed(&dummy_sig).to_vec()
     };
     inputs.extend_from_slice(&hash_datas);
@@ -659,14 +748,23 @@ pub fn keccak_inputs_tx_circuit(
         .iter()
         .enumerate()
         .filter(|(i, tx)| {
-            if tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
-                warn!("tx {} is not signed, skipping tx circuit keccak input", i);
+            if !tx.tx_type.is_l1_msg() && tx.v == 0 && tx.r.is_zero() && tx.s.is_zero() {
+                warn!(
+                    "tx {} is not signed and is not L1Msg, skipping tx circuit keccak input",
+                    i
+                );
                 false
             } else {
                 true
             }
         })
-        .map(|(_, tx)| tx.sign_data(chain_id))
+        .map(|(_, tx)| {
+            if tx.tx_type.is_l1_msg() {
+                Ok(SignData::default())
+            } else {
+                tx.sign_data()
+            }
+        })
         .try_collect()?;
     // Keccak inputs from SignVerify Chip
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
@@ -676,12 +774,12 @@ pub fn keccak_inputs_tx_circuit(
     // one that we use in get_dummy_tx, so we only need to include the tx sign
     // hash of the dummy tx.
     let dummy_sign_input = {
-        let (dummy_tx, _) = get_dummy_tx(chain_id);
-        dummy_tx.rlp().to_vec()
+        let (dummy_tx, _) = get_dummy_tx();
+        // dummy tx is of type pre-eip155
+        dummy_tx.rlp_unsigned().to_vec()
     };
     inputs.push(dummy_sign_input);
-    // NOTE: We don't verify the Tx Hash in the circuit yet, so we don't have more
-    // hash inputs.
+
     Ok(inputs)
 }
 
@@ -721,7 +819,7 @@ type EthBlock = eth_types::Block<eth_types::Transaction>;
 /// the necessary information and using the CircuitInputBuilder.
 pub struct BuilderClient<P: JsonRpcClient> {
     cli: GethClient<P>,
-    chain_id: Word,
+    chain_id: u64,
     circuits_params: CircuitsParams,
 }
 
@@ -789,7 +887,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
 
         Ok(Self {
             cli: client,
-            chain_id: chain_id.into(),
+            chain_id,
             circuits_params,
         })
     }

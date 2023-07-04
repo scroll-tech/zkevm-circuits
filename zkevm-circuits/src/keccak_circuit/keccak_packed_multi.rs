@@ -14,9 +14,17 @@ const MAX_DEGREE: usize = 9;
 
 pub(crate) fn get_num_rows_per_round() -> usize {
     var("KECCAK_ROWS")
-        .unwrap_or_else(|_| "20".to_string())
+        .unwrap_or_else(|_| format!("{DEFAULT_KECCAK_ROWS}"))
         .parse()
         .expect("Cannot parse KECCAK_ROWS env var as usize")
+}
+
+pub(crate) fn keccak_unusable_rows() -> usize {
+    const UNUSABLE_ROWS_BY_KECCAK_ROWS: [usize; 24] = [
+        53, 67, 63, 59, 45, 79, 77, 75, 73, 71, 69, 67, 65, 63, 61, 59, 57, 71, 89, 107, 107, 107,
+        107, 107,
+    ];
+    UNUSABLE_ROWS_BY_KECCAK_ROWS[get_num_rows_per_round() - NUM_BYTES_PER_WORD - 1]
 }
 
 pub(crate) fn get_num_bits_per_absorb_lookup() -> usize {
@@ -59,9 +67,12 @@ pub struct KeccakRow<F: Field> {
     pub(crate) q_padding: bool,
     pub(crate) q_padding_last: bool,
     pub(crate) round_cst: F,
-    pub(crate) is_final: bool,
-    pub(crate) cell_values: Vec<F>,
-    pub(crate) length: usize,
+    /// if the row is the last row of the current keccak round
+    pub is_final: bool,
+    /// the value of the cells that are to be assigned
+    pub cell_values: Vec<F>,
+    /// The input length of the hash function
+    pub length: usize,
     pub(crate) data_rlc: Value<F>,
     pub(crate) hash_rlc: Value<F>,
 }
@@ -412,7 +423,7 @@ pub(crate) mod transform {
     }
 }
 
-// Transfroms values to cells
+// Transforms values to cells
 pub(crate) mod transform_to {
     use super::{Cell, KeccakRegion, Part, PartValue};
     use crate::{
@@ -481,7 +492,10 @@ pub(crate) mod transform_to {
     }
 }
 
-fn keccak_rows<F: Field>(bytes: &[u8], challenges: Challenges<Value<F>>) -> Vec<KeccakRow<F>> {
+pub(crate) fn keccak_rows<F: Field>(
+    bytes: &[u8],
+    challenges: Challenges<Value<F>>,
+) -> Vec<KeccakRow<F>> {
     let mut rows = Vec::new();
     keccak(&mut rows, bytes, challenges);
     rows
@@ -856,18 +870,6 @@ pub fn multi_keccak<F: Field>(
             cell_values: Vec::new(),
         });
     }
-
-    // Dedup actual keccaks
-    // let inputs_len: usize = bytes.iter().map(|k| k.len()).sum();
-    // let inputs_num = bytes.len();
-    // for (idx, bytes) in bytes.iter().enumerate() {
-    // debug!("{}th keccak is of len {}", idx, bytes.len());
-    // }
-    // let bytes: Vec<_> = bytes.iter().unique().collect();
-    // let inputs_len2: usize = bytes.iter().map(|k| k.len()).sum();
-    // let inputs_num2 = bytes.len();
-    // debug!("after dedup inputs, input num {inputs_num}->{inputs_num2}, input total len
-    // {inputs_len}->{inputs_len2}");
 
     // TODO: optimize the `extend` using Iter?
     let real_rows: Vec<_> = bytes

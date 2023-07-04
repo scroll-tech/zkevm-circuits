@@ -4,7 +4,7 @@
 mod tests {
     use ark_std::{end_timer, start_timer};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::Field;
+    use eth_types::{evm_types::MAX_CODE_SIZE, Field};
     use halo2_proofs::{
         halo2curves::bn256::{Bn256, Fr, G1Affine},
         plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
@@ -23,11 +23,16 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::bytecode_circuit::bytecode_unroller::{unroll, UnrolledBytecode};
-
-    use zkevm_circuits::bytecode_circuit::TestBytecodeCircuit;
+    use zkevm_circuits::{
+        bytecode_circuit::{
+            bytecode_unroller::{unroll, UnrolledBytecode},
+            TestBytecodeCircuit,
+        },
+        util::SubCircuit,
+    };
 
     #[cfg_attr(not(feature = "benches"), ignore)]
+    #[cfg_attr(not(feature = "print-trace"), allow(unused_variables))] // FIXME: remove this after ark-std upgrade
     #[test]
     fn bench_bytecode_circuit_prover() {
         let setup_prfx = crate::constants::SETUP_PREFIX;
@@ -41,13 +46,11 @@ mod tests {
         // Unique string used by bench results module for parsing the result
         const BENCHMARK_ID: &str = "Bytecode Circuit";
 
-        // Contract code size exceeds 24576 bytes may not be deployable on Mainnet.
-        const MAX_BYTECODE_LEN: usize = 24576;
-
         let num_rows = 1 << degree;
-        const NUM_BLINDING_ROWS: usize = 7 - 1;
-        let max_bytecode_row_num = num_rows - NUM_BLINDING_ROWS;
-        let bytecode_len = std::cmp::min(MAX_BYTECODE_LEN, max_bytecode_row_num);
+        let max_bytecode_row_num = num_rows - TestBytecodeCircuit::<Fr>::unusable_rows();
+
+        // Contract code size exceeds 24576 bytes may not be deployable on Mainnet.
+        let bytecode_len = std::cmp::min(MAX_CODE_SIZE as usize, max_bytecode_row_num);
         let bytecodes_num: usize = max_bytecode_row_num / bytecode_len;
 
         // Create the circuit
@@ -63,7 +66,7 @@ mod tests {
         ]);
 
         // Bench setup generation
-        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
+        let setup_message = format!("{BENCHMARK_ID} {setup_prfx} with degree = {degree}");
         let start1 = start_timer!(|| setup_message);
         let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
@@ -77,10 +80,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!(
-            "{} {} with degree = {}",
-            BENCHMARK_ID, proof_gen_prfx, degree
-        );
+        let proof_message = format!("{BENCHMARK_ID} {proof_gen_prfx} with degree = {degree}");
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -102,7 +102,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| format!("{} {}", BENCHMARK_ID, proof_ver_prfx));
+        let start3 = start_timer!(|| format!("{BENCHMARK_ID} {proof_ver_prfx}"));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

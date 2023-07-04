@@ -13,7 +13,7 @@ use eth_types::{address, bytecode, geth_types::GethData, Bytecode, Word};
 #[test]
 fn super_circuit_degree() {
     let mut cs = ConstraintSystem::<Fr>::default();
-    SuperCircuit::<_, 1, 32, 64, 0x100>::configure(&mut cs);
+    SuperCircuit::<Fr, 1, 32, 64, 0x100>::configure(&mut cs);
     log::info!("super circuit degree: {}", cs.degree());
     log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
     assert!(cs.degree() <= 9);
@@ -28,11 +28,10 @@ fn test_super_circuit<
     block: GethData,
     circuits_params: CircuitsParams,
 ) {
+    set_var("COINBASE", "0x0000000000000000000000000000000000000000");
+    set_var("CHAIN_ID", MOCK_CHAIN_ID.to_string());
     let mut difficulty_be_bytes = [0u8; 32];
-    let mut chain_id_be_bytes = [0u8; 32];
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
-    MOCK_CHAIN_ID.to_big_endian(&mut chain_id_be_bytes);
-    set_var("CHAIN_ID", hex::encode(chain_id_be_bytes));
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
     let (k, circuit, instance, _) =
@@ -42,6 +41,7 @@ fn test_super_circuit<
         )
         .unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
+    prover.assert_satisfied_par();
     let res = prover.verify_par();
     if let Err(err) = res {
         error!("Verification failures: {:#?}", err);
@@ -71,7 +71,7 @@ fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
 fn block_1tx_deploy() -> GethData {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = (*MOCK_CHAIN_ID).as_u64();
+    let chain_id = *MOCK_CHAIN_ID;
 
     let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let addr_a = wallet_a.address();
@@ -99,7 +99,7 @@ fn block_1tx_deploy() -> GethData {
 pub(crate) fn block_1tx() -> GethData {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = (*MOCK_CHAIN_ID).as_u64();
+    let chain_id = *MOCK_CHAIN_ID;
 
     let bytecode = bytecode! {
         GAS
@@ -137,10 +137,10 @@ pub(crate) fn block_1tx() -> GethData {
     block
 }
 
-fn block_2tx() -> GethData {
+pub(crate) fn block_2tx() -> GethData {
     let mut rng = ChaCha20Rng::seed_from_u64(2);
 
-    let chain_id = (*MOCK_CHAIN_ID).as_u64();
+    let chain_id = *MOCK_CHAIN_ID;
 
     let bytecode = bytecode! {
         GAS
@@ -205,6 +205,7 @@ fn serial_test_super_circuit_1tx_1max_tx() {
         max_evm_rows: 0,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
+        max_rlp_rows: 500,
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
         block,
@@ -227,12 +228,13 @@ fn serial_test_super_circuit_1tx_deploy_2max_tx() {
         max_calldata: MAX_CALLDATA,
         max_rws: MAX_RWS,
         max_copy_rows: MAX_COPY_ROWS,
-        max_mpt_rows: 512,
+        max_mpt_rows: 1024,
         max_bytecode: 512,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
         max_exp_steps: 256,
         max_evm_rows: 0,
+        max_rlp_rows: 500,
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
         block,
@@ -259,6 +261,7 @@ fn serial_test_super_circuit_1tx_2max_tx() {
         max_evm_rows: 0,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
+        max_rlp_rows: 500,
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
         block,
@@ -287,6 +290,7 @@ fn serial_test_super_circuit_2tx_4max_tx() {
         max_inner_blocks: MAX_INNER_BLOCKS,
         max_exp_steps: 256,
         max_evm_rows: 0,
+        max_rlp_rows: 800,
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
         block,
@@ -313,6 +317,7 @@ fn serial_test_super_circuit_2tx_2max_tx() {
         max_evm_rows: 0,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
+        max_rlp_rows: 500,
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
         block,

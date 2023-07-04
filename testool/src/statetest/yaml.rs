@@ -137,12 +137,12 @@ impl<'a> YamlStateTestBuilder<'a> {
                 }
 
                 let data_refs = Self::parse_refs(&expect["indexes"]["data"])?;
-                let gparse_refs = Self::parse_refs(&expect["indexes"]["gas"])?;
+                let gas_refs = Self::parse_refs(&expect["indexes"]["gas"])?;
                 let value_refs = Self::parse_refs(&expect["indexes"]["value"])?;
                 let result = self.parse_accounts(&expect["result"])?;
 
                 if MainnetFork::in_network_range(&networks)? {
-                    expects.push((exception, data_refs, gparse_refs, value_refs, result));
+                    expects.push((exception, data_refs, gas_refs, value_refs, result));
                 }
             }
 
@@ -152,19 +152,19 @@ impl<'a> YamlStateTestBuilder<'a> {
                 for (idx_gas, gas_limit) in gas_limit_s.iter().enumerate() {
                     for (idx_value, value) in value_s.iter().enumerate() {
                         // find the first result that fulfills the pattern
-                        for (exception, data_refs, parse_refs, value_refs, result) in &expects {
+                        for (exception, data_refs, gas_refs, value_refs, result) in &expects {
                             // check if this result can be applied to the current test
                             let mut data_label = String::new();
                             if let Some(label) = &data.1 {
                                 if !data_refs.contains_label(label) {
                                     continue;
                                 }
-                                data_label = format!("({})", label);
+                                data_label = format!("({label})");
                             } else if !data_refs.contains_index(idx_data) {
                                 continue;
                             }
 
-                            if !parse_refs.contains_index(idx_gas) {
+                            if !gas_refs.contains_index(idx_gas) {
                                 continue;
                             }
 
@@ -176,8 +176,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                             tests.push(StateTest {
                                 path: path.to_string(),
                                 id: format!(
-                                    "{}_d{}{}_g{}_v{}",
-                                    test_name, idx_data, data_label, idx_gas, idx_value
+                                    "{test_name}_d{idx_data}{data_label}_g{idx_gas}_v{idx_value}"
                                 ),
                                 env: env.clone(),
                                 pre: pre.clone(),
@@ -290,12 +289,12 @@ impl<'a> YamlStateTestBuilder<'a> {
         if let Some(as_str) = yaml.as_str() {
             parse::parse_address(as_str)
         } else if let Some(as_i64) = yaml.as_i64() {
-            let hex = format!("{:0>40}", as_i64);
+            let hex = format!("{as_i64:0>40}");
             Ok(Address::from_slice(&hex::decode(hex)?))
         } else if let Yaml::Real(as_real) = yaml {
             Ok(Address::from_str(as_real)?)
         } else {
-            bail!("cannot parse address {:?}", yaml);
+            bail!("cannot parse address {yaml:?}");
         }
     }
 
@@ -337,9 +336,9 @@ impl<'a> YamlStateTestBuilder<'a> {
         let as_str = if let Some(as_str) = yaml.as_str() {
             as_str.to_string()
         } else if let Some(as_int) = yaml.as_i64() {
-            format!("0x{:x}", as_int)
+            format!("0x{as_int:x}")
         } else {
-            bail!(format!("code '{:?}' not an str", yaml));
+            bail!(format!("code '{yaml:?}' not an str"));
         };
         parse::parse_code(self.compiler, &as_str)
     }
@@ -386,6 +385,11 @@ impl<'a> YamlStateTestBuilder<'a> {
     ///   <range_lo>-<range_hi> >= Ref::Index(range_lo)..=RefIndex(range_hi)
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn parse_refs(yaml: &Yaml) -> Result<Refs> {
+        if yaml.is_badvalue() {
+            // It is considered as Any if missing this field.
+            return Ok(Refs(vec![Ref::Any]));
+        }
+
         // convert a unique element into a list
         let yamls = if yaml.is_array() {
             yaml.as_vec().context("as_vec")?.iter().collect()
@@ -575,12 +579,7 @@ arith:
 
         let ccccc = address!("cccccccccccccccccccccccccccccccccccccccc");
         let check_ccccc_balance = |id: &str, v: u64| {
-            assert_eq!(
-                tcs[id].result[&ccccc].balance,
-                Some(U256::from(v)),
-                "{}",
-                id
-            )
+            assert_eq!(tcs[id].result[&ccccc].balance, Some(U256::from(v)), "{id}")
         };
 
         check_ccccc_balance("arith_d0_g0_v0", 1000000000001);

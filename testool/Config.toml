@@ -184,7 +184,7 @@ paths = [
     "EIP1559",
     "EIP2930",
     "stPreCompiledContracts",
-	"stZeroKnowledge"
+    "stZeroKnowledge"
 ]
 
 [[skip_paths]]
@@ -219,14 +219,36 @@ paths = [
 desc = "bad json"
 paths = [
     "Opcodes_TransactionInitFiller",
-    "static_CallContractToCreateContractAndCallItOOGFiller.json", 
+    "static_CallContractToCreateContractAndCallItOOGFiller.json",
     "dummyFiller.json",
     "codesizeOOGInvalidSizeFiller.json",
     "codesizeValidFiller.json",
     "create2callPrecompilesFiller.json",
     "callToNonExistentFiller.json",
     "tackDepthLimitSECFiller.json",
-    "ValueOverflowFiller" # weird 0x:biginteger 0x...
+    "ValueOverflowFiller", # weird 0x:biginteger 0x...
+    "result_mergeEnvConvertionFiller.json" # missing `currentDifficulty`
+]
+
+[[skip_paths]]
+desc = "wrong //comment"
+paths = [
+    "CREATE_EContract_ThenCALLToNonExistentAccFiller.json",
+    "CREATE_EmptyContractFiller.json",
+    "CreateAndGasInsideCreateFiller.json",
+    "StoreGasOnCreateFiller.json",
+    "static_CREATE_EmptyContractAndCallIt_0weiFiller.json",
+    "static_CREATE_EmptyContractWithStorageAndCallIt_0weiFiller.json"
+]
+
+[[skip_paths]]
+desc = "bad yml"
+paths = [
+    "CreateAddressWarmAfterFailFiller.yml", # Odd number
+    "HighGasPriceFiller.yml", # Wrong network EIP158
+    "doubleSelfdestructTestFiller.yml", # character is not in the range 0-9
+    "eoaEmptyFiller.yml", # cannot parse to address Integer(49374)
+    "touchAndGoFiller.yml" # Wrong network EIP150
 ]
 
 [[skip_paths]]

@@ -47,7 +47,7 @@ impl<F: Field> IsZeroConfig<F> {
     pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
         [(self.value_inv, "GADGETS_IS_ZERO_inverse_witness")]
             .iter()
-            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+            .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
     }
 }
 

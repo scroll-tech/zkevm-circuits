@@ -38,7 +38,7 @@ impl BatchedIsZeroConfig {
             ),
         ]
         .iter()
-        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+        .for_each(|(col, ann)| region.name_column(|| format!("{prefix}_{ann}"), *col));
     }
 }
 

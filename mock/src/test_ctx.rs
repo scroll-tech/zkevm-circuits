@@ -79,7 +79,7 @@ pub use external_tracer::LoggerConfig;
 #[derive(Debug)]
 pub struct TestContext<const NACC: usize, const NTX: usize> {
     /// chain id
-    pub chain_id: Word,
+    pub chain_id: u64,
     /// Account list
     pub accounts: [Account; NACC],
     /// history hashes contains most recent 256 block hashes in history, where
@@ -234,7 +234,7 @@ impl<const NACC: usize, const NTX: usize> TestContext<NACC, NTX> {
 /// Generates execution traces for the transactions included in the provided
 /// Block
 pub fn gen_geth_traces(
-    chain_id: Word,
+    chain_id: u64,
     block: Block<Transaction>,
     accounts: Vec<Account>,
     history_hashes: Option<Vec<Word>>,
@@ -254,6 +254,10 @@ pub fn gen_geth_traces(
             .map(eth_types::geth_types::Transaction::from)
             .collect(),
         logger_config,
+        #[cfg(feature = "shanghai")]
+        chain_config: Some(external_tracer::ChainConfig::shanghai()),
+        #[cfg(not(feature = "shanghai"))]
+        chain_config: None,
     };
     let traces = trace(&trace_config)?;
     Ok(traces)

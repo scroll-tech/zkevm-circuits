@@ -1,6 +1,9 @@
-use crate::evm_circuit::util::{
-    constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-    from_bytes, CachedRegion, Cell,
+use crate::evm_circuit::{
+    param::MAX_N_BYTES_INTEGER,
+    util::{
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        from_bytes, CachedRegion, Cell,
+    },
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -17,6 +20,7 @@ pub struct RangeCheckGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> RangeCheckGadget<F, N_BYTES> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, value: Expression<F>) -> Self {
+        assert!(N_BYTES <= MAX_N_BYTES_INTEGER);
         let parts = cb.query_bytes();
 
         // Require that the reconstructed value from the parts equals the

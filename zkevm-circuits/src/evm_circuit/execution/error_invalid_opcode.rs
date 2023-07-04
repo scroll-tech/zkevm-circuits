@@ -84,7 +84,7 @@ mod test {
             vec![0xf6],
             vec![0xfe],
             // Multiple invalid opcodes
-            vec![0x5c, 0x5e, 0x5f],
+            vec![0x5c, 0x5e],
         ];
     }
 
@@ -108,6 +108,16 @@ mod test {
         let selfdestruct_opcode = 0xff_u8;
         test_root_ok(&[selfdestruct_opcode]);
         test_internal_ok(0x20, 0x00, &[selfdestruct_opcode]);
+    }
+
+    #[cfg(not(feature = "shanghai"))]
+    #[test]
+    fn invalid_opcode_push0_for_not_shanghai() {
+        // Should test with logs in `assign_exec_step`, otherwise it could also
+        // pass (since PushGadget).
+        let push0 = 0x5f;
+        test_root_ok(&[push0]);
+        test_internal_ok(0x20, 0x00, &[push0]);
     }
 
     fn test_root_ok(invalid_code: &[u8]) {

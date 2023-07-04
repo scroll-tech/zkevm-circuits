@@ -3,7 +3,7 @@ use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
@@ -28,6 +28,7 @@ pub enum FixedTableTag {
     ResponsibleOpcode,
     Pow2,
     ConstantGasCost,
+    PrecompileInfo,
 }
 impl_expr!(FixedTableTag);
 
@@ -117,6 +118,17 @@ impl FixedTableTag {
                         ]
                     }),
             ),
+            Self::PrecompileInfo => Box::new(PrecompileCalls::iter().map(move |precompile| {
+                [
+                    tag,
+                    F::from({
+                        let state: ExecutionState = precompile.into();
+                        state.as_u64()
+                    }),
+                    F::from(u64::from(precompile)),
+                    F::from(precompile.base_gas_cost().0),
+                ]
+            })),
         }
     }
 }
@@ -131,6 +143,8 @@ pub(crate) enum Table {
     Copy,
     Keccak,
     Exp,
+    Sig,
+    PowOfRand,
 }
 
 #[derive(Clone, Debug)]
@@ -280,6 +294,17 @@ pub(crate) enum Lookup<F> {
         exponent_lo_hi: [Expression<F>; 2],
         exponentiation_lo_hi: [Expression<F>; 2],
     },
+    SigTable {
+        msg_hash_rlc: Expression<F>,
+        sig_v: Expression<F>,
+        sig_r_rlc: Expression<F>,
+        sig_s_rlc: Expression<F>,
+        recovered_addr: Expression<F>,
+    },
+    PowOfRandTable {
+        exponent: Expression<F>,
+        pow_of_rand: Expression<F>,
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -299,6 +324,8 @@ impl<F: Field> Lookup<F> {
             Self::CopyTable { .. } => Table::Copy,
             Self::KeccakTable { .. } => Table::Keccak,
             Self::ExpTable { .. } => Table::Exp,
+            Self::SigTable { .. } => Table::Sig,
+            Self::PowOfRandTable { .. } => Table::PowOfRand,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -420,6 +447,28 @@ impl<F: Field> Lookup<F> {
                 exponent_lo_hi[1].clone(),
                 exponentiation_lo_hi[0].clone(),
                 exponentiation_lo_hi[1].clone(),
+            ],
+            Self::SigTable {
+                msg_hash_rlc,
+                sig_v,
+                sig_r_rlc,
+                sig_s_rlc,
+                recovered_addr,
+            } => vec![
+                1.expr(), // q_enable
+                msg_hash_rlc.clone(),
+                sig_v.clone(),
+                sig_r_rlc.clone(),
+                sig_s_rlc.clone(),
+                recovered_addr.clone(),
+            ],
+            Self::PowOfRandTable {
+                exponent,
+                pow_of_rand,
+            } => vec![
+                1.expr(), /* q_enable */
+                exponent.clone(),
+                pow_of_rand.clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()
