@@ -16,7 +16,7 @@ impl CircuitExt<Fr> for DummyChunkHashCircuit {
         None
     }
 
-    fn selectors(config: &Self::Config) -> Vec<Selector> {
+    fn selectors(_config: &Self::Config) -> Vec<Selector> {
         vec![]
     }
 }

@@ -33,8 +33,7 @@ use crate::{
     constants::{BITS, LIMBS},
     core::{assign_batch_hashes, extract_accumulators_and_proof},
     param::ConfigParams,
-    BatchHash, ChunkHash, CompressionCircuit, CHAIN_ID_LEN, MAX_AGG_SNARKS, POST_STATE_ROOT_INDEX,
-    PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
+    BatchHash, ChunkHash, MAX_AGG_SNARKS,
 };
 
 /// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
@@ -380,7 +379,8 @@ impl Circuit<Fr> for AggregationCircuit {
                                 let value = assigned_cell.value().copied();
                                 let assigned_value = flex_gate.load_witness(&mut ctx, value);
                                 ctx.region
-                                    .constrain_equal(assigned_cell.cell(), assigned_value.cell);
+                                    .constrain_equal(assigned_cell.cell(), assigned_value.cell)
+                                    .unwrap();
                                 assigned_value
                             })
                             .collect_vec()
@@ -396,7 +396,8 @@ impl Circuit<Fr> for AggregationCircuit {
                                 let value = assigned_cell.value().copied();
                                 let assigned_value = flex_gate.load_witness(&mut ctx, value);
                                 ctx.region
-                                    .constrain_equal(assigned_cell.cell(), assigned_value.cell);
+                                    .constrain_equal(assigned_cell.cell(), assigned_value.cell)
+                                    .unwrap();
                                 assigned_value
                             })
                             .collect_vec()

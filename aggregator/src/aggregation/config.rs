@@ -77,9 +77,6 @@ impl AggregationConfig {
             KeccakCircuitConfig::new(meta, keccak_circuit_config_args)
         };
 
-        /// - hash input
-        /// - is-padding
-        /// - rlc <- check against hash table
         // The current code base is hardcoded for KeccakCircuit configured
         // with 300 rows and 87 columns per hash call.
         let columns = keccak_circuit_config.cell_manager.columns();

@@ -13,6 +13,7 @@ pub struct DummyChunkHashCircuit {
 }
 
 impl DummyChunkHashCircuit {
+    #[allow(dead_code)]
     pub(crate) fn new(dummy_chunk: ChunkHash) -> Self {
         Self { dummy_chunk }
     }
@@ -83,7 +84,8 @@ impl Circuit<Fr> for DummyChunkHashCircuit {
 
                 Ok(())
             },
-        );
+        )?;
+
         for (index, element) in cells.iter().enumerate() {
             layouter.constrain_instance(element.cell(), config.instance, index)?;
         }

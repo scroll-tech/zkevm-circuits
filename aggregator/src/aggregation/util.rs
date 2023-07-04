@@ -1,4 +1,4 @@
-use halo2_proofs::{circuit::AssignedCell, halo2curves::FieldExt, plonk::Error};
+use halo2_proofs::halo2curves::FieldExt;
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
     gates::{flex_gate::FlexGateConfig, GateInstructions},
     AssignedValue, Context, QuantumCell,
