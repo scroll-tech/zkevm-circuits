@@ -21,7 +21,7 @@ use eth_types::{
 };
 use ethers_core::utils::get_contract_address;
 
-use crate::util::{CHECK_MEM_STRICT, KECCAK_CODE_HASH_ZERO};
+use crate::util::CHECK_MEM_STRICT;
 
 #[cfg(any(feature = "test", test))]
 pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
@@ -812,13 +812,17 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
             CodeDB::empty_code_hash().to_word(),
             Word::zero(),
         )?;
-        state.account_write(
-            &mut exec_step,
-            block_info.coinbase,
-            AccountField::KeccakCodeHash,
-            KECCAK_CODE_HASH_ZERO.to_word(),
-            Word::zero(),
-        )?;
+
+        #[cfg(feature = "scroll")]
+        {
+            state.account_write(
+                &mut exec_step,
+                block_info.coinbase,
+                AccountField::KeccakCodeHash,
+                crate::util::KECCAK_CODE_HASH_ZERO.to_word(),
+                Word::zero(),
+            )?;
+        }
     }
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance = coinbase_balance_prev + coinbase_reward;

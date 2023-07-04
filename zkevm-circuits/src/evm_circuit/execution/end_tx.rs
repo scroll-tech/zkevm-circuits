@@ -140,6 +140,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                 0.expr(),
                 None,
             );
+            #[cfg(feature = "scroll")]
             cb.account_write(
                 coinbase.expr(),
                 AccountFieldTag::KeccakCodeHash,
@@ -204,20 +205,27 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(
-                        11.expr() - is_first_tx.expr() + 2.expr() * create_coinbase_account.clone(),
+                        11.expr() - is_first_tx.expr() + create_coinbase_account.clone(),
                     ),
                     ..StepStateTransition::any()
                 });
             },
         );
 
+        let rw_counter_delta = 10.expr() - is_first_tx.expr()
+            + create_coinbase_account * {
+                if cfg!(feature = "scroll") {
+                    2 // keccak code hash + poseidon code hash
+                } else {
+                    1
+                }
+            }
+            .expr();
         cb.condition(
             cb.next.execution_state_selector([ExecutionState::EndBlock]),
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(
-                        10.expr() - is_first_tx.expr() + 2.expr() * create_coinbase_account,
-                    ),
+                    rw_counter: Delta(rw_counter_delta),
                     // We propagate call_id so that EndBlock can get the last tx_id
                     // in order to count processed txs.
                     call_id: Same,
@@ -310,9 +318,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             tx.gas_price,
         )?;
         let coinbase_reward = effective_tip * (gas_used - effective_refund);
-        let (coinbase_codehash, _) = block.rws[step.rw_indices[4]].account_value_pair();
+        let (coinbase_codehash, _) = block.rws[step.rw_indices[4]].account_codehash_pair();
         let coinbase_created = coinbase_codehash.is_zero() && !coinbase_reward.is_zero();
-        let coinbase_codehash_rlc = region.word_rlc(coinbase_codehash);
+        let coinbase_codehash_rlc = region.code_hash(coinbase_codehash);
         self.coinbase_codehash
             .assign(region, offset, coinbase_codehash_rlc)?;
         self.coinbase_codehash_is_zero
@@ -335,8 +343,15 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             ),
         )?;
 
-        let (coinbase_balance, coinbase_balance_prev) =
-            block.rws[step.rw_indices[5 + 2 * usize::from(coinbase_created)]].account_value_pair();
+        let (coinbase_balance, coinbase_balance_prev) = block.rws[step.rw_indices[5
+            + usize::from(coinbase_created) * {
+                if cfg!(feature = "scroll") {
+                    2
+                } else {
+                    1
+                }
+            }]]
+        .account_balance_pair();
         let effective_fee = coinbase_balance - coinbase_balance_prev;
         self.effective_fee
             .assign(region, offset, Some(effective_fee.to_le_bytes()))?;
