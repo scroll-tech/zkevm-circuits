@@ -84,6 +84,8 @@ impl ChunkHash {
         (pk, snark)
     }
 
+    /// A ChunkHash is dummy if its pre_state_root matches its post_state_root
+    /// and its data_hash is all 0s.
     pub(crate) fn is_dummy(&self) -> bool {
         if self.prev_state_root != self.post_state_root || self.data_hash != [0u8; 32].into() {
             false
