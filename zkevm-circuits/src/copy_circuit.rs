@@ -164,7 +164,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let is_memory = meta.query_advice(is_memory, Rotation::cur());
             let precompiles = sum::expr([
                 tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::ECRecover),
+                    CopyDataType::Precompile(PrecompileCalls::Ecrecover),
                     Rotation::cur(),
                 )(meta),
                 tag.value_equals(

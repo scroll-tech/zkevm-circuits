@@ -23,7 +23,11 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, precompile::is_precompiled};
+use bus_mapping::{
+    circuit_input_builder::CopyDataType,
+    evm::OpcodeId,
+    precompile::{is_precompiled, PrecompileCalls},
+};
 use eth_types::{
     evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToLittleEndian, ToScalar, U256,
 };
@@ -67,10 +71,11 @@ pub(crate) struct CallOpGadget<F> {
     precompile_gadget: PrecompileGadget<F>,
     precompile_return_length: Cell<F>,
     precompile_return_length_zero: IsZeroGadget<F>,
-    return_data_copy_size: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
-    input_bytes_rlc: Cell<F>,  // input bytes to precompile call.
-    output_bytes_rlc: Cell<F>, // output bytes from precompile call.
-    return_bytes_rlc: Cell<F>, // bytes returned to caller from precompile call.
+    precompile_return_data_copy_size: MinMaxGadget<F, N_BYTES_MEMORY_ADDRESS>,
+    precompile_input_len: Cell<F>, // the number of input bytes taken for the precompile call.
+    precompile_input_bytes_rlc: Cell<F>, // input bytes to precompile call.
+    precompile_output_bytes_rlc: Cell<F>, // output bytes from precompile call.
+    precompile_return_bytes_rlc: Cell<F>, // bytes returned to caller from precompile call.
 }
 
 impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
@@ -203,11 +208,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let precompile_return_length = cb.query_cell();
         let precompile_return_length_zero =
             IsZeroGadget::construct(cb, precompile_return_length.expr());
-        let return_data_copy_size = MinMaxGadget::construct(
+        let precompile_return_data_copy_size = MinMaxGadget::construct(
             cb,
             precompile_return_length.expr(),
             call_gadget.rd_address.length(),
         );
+        let precompile_input_len = cb.query_cell();
         let precompile_memory_rws = select::expr(
             call_gadget.cd_address.has_length(),
             select::expr(
@@ -216,10 +222,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     call_gadget.rd_address.has_length(),
                     not::expr(precompile_return_length_zero.expr()),
                 ]),
-                call_gadget.cd_address.length()
+                precompile_input_len.expr()
                     + precompile_return_length.expr()
-                    + return_data_copy_size.min(),
-                call_gadget.cd_address.length(),
+                    + precompile_return_data_copy_size.min(),
+                precompile_input_len.expr(),
             ),
             0.expr(),
         );
@@ -280,123 +286,123 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let memory_expansion = call_gadget.memory_expansion.clone();
 
         // handle precompile calls.
-        let (precompile_gadget, input_bytes_rlc, output_bytes_rlc, return_bytes_rlc) = cb
-            .condition(
-                and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
-                |cb| {
-                    cb.require_equal(
-                        "Callee has no code for precompile",
-                        no_callee_code.expr(),
+        let (
+            precompile_gadget,
+            precompile_input_bytes_rlc,
+            precompile_output_bytes_rlc,
+            precompile_return_bytes_rlc,
+        ) = cb.condition(
+            and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
+            |cb| {
+                cb.require_equal(
+                    "Callee has no code for precompile",
+                    no_callee_code.expr(),
+                    true.expr(),
+                );
+
+                // Write to callee's context.
+                for (field_tag, value) in [
+                    (
+                        CallContextFieldTag::IsSuccess,
+                        call_gadget.is_success.expr(),
+                    ),
+                    (
+                        CallContextFieldTag::CalleeAddress,
+                        call_gadget.callee_address_expr(),
+                    ),
+                    (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
+                    (
+                        CallContextFieldTag::CallDataOffset,
+                        call_gadget.cd_address.offset(),
+                    ),
+                    (
+                        CallContextFieldTag::CallDataLength,
+                        call_gadget.cd_address.length(),
+                    ),
+                    (
+                        CallContextFieldTag::ReturnDataOffset,
+                        call_gadget.rd_address.offset(),
+                    ),
+                    (
+                        CallContextFieldTag::ReturnDataLength,
+                        call_gadget.rd_address.length(),
+                    ),
+                ] {
+                    cb.call_context_lookup(
                         true.expr(),
+                        Some(callee_call_id.expr()),
+                        field_tag,
+                        value,
                     );
+                } // rwc_delta += 7 for precompile
 
-                    // Write to callee's context.
-                    for (field_tag, value) in [
-                        (
-                            CallContextFieldTag::IsSuccess,
-                            call_gadget.is_success.expr(),
-                        ),
-                        (
-                            CallContextFieldTag::CalleeAddress,
-                            call_gadget.callee_address_expr(),
-                        ),
-                        (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
-                        (
-                            CallContextFieldTag::CallDataOffset,
-                            call_gadget.cd_address.offset(),
-                        ),
-                        (
-                            CallContextFieldTag::CallDataLength,
-                            call_gadget.cd_address.length(),
-                        ),
-                        (
-                            CallContextFieldTag::ReturnDataOffset,
-                            call_gadget.rd_address.offset(),
-                        ),
-                        (
-                            CallContextFieldTag::ReturnDataLength,
-                            call_gadget.rd_address.length(),
-                        ),
-                    ] {
-                        cb.call_context_lookup(
-                            true.expr(),
-                            Some(callee_call_id.expr()),
-                            field_tag,
-                            value,
-                        );
-                    } // rwc_delta += 7 for precompile
+                // Save caller's call state
+                for (field_tag, value) in [
+                    (
+                        CallContextFieldTag::ProgramCounter,
+                        cb.curr.state.program_counter.expr() + 1.expr(),
+                    ),
+                    (
+                        CallContextFieldTag::StackPointer,
+                        cb.curr.state.stack_pointer.expr()
+                            + select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr()),
+                    ),
+                    (
+                        CallContextFieldTag::GasLeft,
+                        cb.curr.state.gas_left.expr() - step_gas_cost.expr(),
+                    ),
+                    (
+                        CallContextFieldTag::MemorySize,
+                        memory_expansion.next_memory_word_size(),
+                    ),
+                    (
+                        CallContextFieldTag::ReversibleWriteCounter,
+                        cb.curr.state.reversible_write_counter.expr() + 1.expr(),
+                    ),
+                    (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),
+                    (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
+                    (
+                        CallContextFieldTag::LastCalleeReturnDataLength,
+                        precompile_return_length.expr(),
+                    ),
+                ] {
+                    cb.call_context_lookup(true.expr(), None, field_tag, value);
+                } // rwc_delta += 8 for precompile
 
-                    // Save caller's call state
-                    for (field_tag, value) in [
-                        (
-                            CallContextFieldTag::ProgramCounter,
-                            cb.curr.state.program_counter.expr() + 1.expr(),
-                        ),
-                        (
-                            CallContextFieldTag::StackPointer,
-                            cb.curr.state.stack_pointer.expr()
-                                + select::expr(
-                                    is_call.expr() + is_callcode.expr(),
-                                    6.expr(),
-                                    5.expr(),
-                                ),
-                        ),
-                        (
-                            CallContextFieldTag::GasLeft,
-                            cb.curr.state.gas_left.expr() - step_gas_cost.expr(),
-                        ),
-                        (
-                            CallContextFieldTag::MemorySize,
-                            memory_expansion.next_memory_word_size(),
-                        ),
-                        (
-                            CallContextFieldTag::ReversibleWriteCounter,
-                            cb.curr.state.reversible_write_counter.expr() + 1.expr(),
-                        ),
-                        (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),
-                        (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
-                        (
-                            CallContextFieldTag::LastCalleeReturnDataLength,
-                            precompile_return_length.expr(),
-                        ),
-                    ] {
-                        cb.call_context_lookup(true.expr(), None, field_tag, value);
-                    } // rwc_delta += 8 for precompile
-
-                    // copy table lookup to verify the copying of bytes:
-                    // - from caller's memory (`call_data_length` bytes starting at
-                    //   `call_data_offset`)
-                    // - to the precompile input.
-                    let input_bytes_rlc = cb.condition(call_gadget.cd_address.has_length(), |cb| {
-                        let input_bytes_rlc = cb.query_cell_phase2();
+                // copy table lookup to verify the copying of bytes:
+                // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
+                // - to the precompile input.
+                let precompile_input_bytes_rlc =
+                    cb.condition(call_gadget.cd_address.has_length(), |cb| {
+                        let precompile_input_bytes_rlc = cb.query_cell_phase2();
                         cb.copy_table_lookup(
                             cb.curr.state.call_id.expr(),
                             CopyDataType::Memory.expr(),
                             callee_call_id.expr(),
                             5.expr() + call_gadget.callee_address_expr(), // refer u64::from(CopyDataType)
                             call_gadget.cd_address.offset(),
-                            call_gadget.cd_address.address(),
+                            call_gadget.cd_address.offset() + precompile_input_len.expr(),
                             0.expr(),
-                            call_gadget.cd_address.length(),
-                            input_bytes_rlc.expr(),
-                            call_gadget.cd_address.length(), // reads
+                            precompile_input_len.expr(),
+                            precompile_input_bytes_rlc.expr(),
+                            precompile_input_len.expr(), // reads
                         ); // rwc_delta += `call_gadget.cd_address.length()` for precompile
-                        input_bytes_rlc
+                        precompile_input_bytes_rlc
                     });
 
-                    // copy table lookup to verify the precompile result.
-                    // - from precompiled contract.
-                    // - to the current call's memory (starting at `0`).
-                    let output_bytes_rlc = cb.condition(
-                        and::expr([
-                            call_gadget.is_success.expr(),
-                            call_gadget.cd_address.has_length(),
-                            call_gadget.rd_address.has_length(),
-                            not::expr(precompile_return_length_zero.expr()),
-                        ]),
-                        |cb| {
-                            let output_bytes_rlc = cb.query_cell_phase2();
-                            cb.copy_table_lookup(
+                // copy table lookup to verify the precompile result.
+                // - from precompiled contract.
+                // - to the current call's memory (starting at `0`).
+                let precompile_output_bytes_rlc = cb.condition(
+                    and::expr([
+                        call_gadget.is_success.expr(),
+                        call_gadget.cd_address.has_length(),
+                        call_gadget.rd_address.has_length(),
+                        not::expr(precompile_return_length_zero.expr()),
+                    ]),
+                    |cb| {
+                        let precompile_output_bytes_rlc = cb.query_cell_phase2();
+                        cb.copy_table_lookup(
                                 callee_call_id.expr(),
                                 5.expr() + call_gadget.callee_address_expr(), // refer u64::from(CopyDataType)
                                 callee_call_id.expr(),
@@ -405,88 +411,88 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                                 precompile_return_length.expr(),
                                 0.expr(),
                                 precompile_return_length.expr(),
-                                output_bytes_rlc.expr(),
+                                precompile_output_bytes_rlc.expr(),
                                 precompile_return_length.expr(), // writes.
                             ); // rwc_delta += `precompile_return_length` for precompile
-                            output_bytes_rlc
-                        },
-                    );
+                        precompile_output_bytes_rlc
+                    },
+                );
 
-                    // copy table lookup to verify the copying of bytes if the precompile call was
-                    // successful.
-                    // - from precompile (min(rd_length, precompile_return_length) bytes)
-                    // - to caller's memory (min(rd_length, precompile_return_length) bytes starting
-                    //   at `return_data_offset`).
-                    let return_bytes_rlc = cb.condition(
-                        and::expr([
-                            call_gadget.is_success.expr(),
-                            call_gadget.cd_address.has_length(),
-                            call_gadget.rd_address.has_length(),
-                            not::expr(precompile_return_length_zero.expr()),
-                        ]),
-                        |cb| {
-                            let return_bytes_rlc = cb.query_cell_phase2();
-                            cb.copy_table_lookup(
+                // copy table lookup to verify the copying of bytes if the precompile call was
+                // successful.
+                // - from precompile (min(rd_length, precompile_return_length) bytes)
+                // - to caller's memory (min(rd_length, precompile_return_length) bytes starting at
+                //   `return_data_offset`).
+                let precompile_return_bytes_rlc = cb.condition(
+                    and::expr([
+                        call_gadget.is_success.expr(),
+                        call_gadget.cd_address.has_length(),
+                        call_gadget.rd_address.has_length(),
+                        not::expr(precompile_return_length_zero.expr()),
+                    ]),
+                    |cb| {
+                        let precompile_return_bytes_rlc = cb.query_cell_phase2();
+                        cb.copy_table_lookup(
                                 callee_call_id.expr(),
                                 5.expr() + call_gadget.callee_address_expr(), // refer u64::from(CopyDataType)
                                 cb.curr.state.call_id.expr(),
                                 CopyDataType::Memory.expr(),
                                 0.expr(),
-                                return_data_copy_size.min(),
+                                precompile_return_data_copy_size.min(),
                                 call_gadget.rd_address.offset(),
-                                return_data_copy_size.min(),
-                                return_bytes_rlc.expr(),
-                                return_data_copy_size.min(), // writes
-                            ); // rwc_delta += `return_data_copy_size.min()` for precompile
-                            return_bytes_rlc
-                        },
-                    );
+                                precompile_return_data_copy_size.min(),
+                                precompile_return_bytes_rlc.expr(),
+                                precompile_return_data_copy_size.min(), // writes
+                            ); // rwc_delta += `precompile_return_data_copy_size.min()` for precompile
+                        precompile_return_bytes_rlc
+                    },
+                );
 
-                    let transfer_rwc_delta =
-                        is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
-                    // +15 call context lookups for precompile.
-                    let rw_counter_delta = 33.expr()
-                        + is_call.expr() * 1.expr()
-                        + transfer_rwc_delta
-                        + is_callcode.expr()
-                        + is_delegatecall.expr() * 2.expr()
-                        + precompile_memory_rws;
+                let transfer_rwc_delta =
+                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
+                // +15 call context lookups for precompile.
+                let rw_counter_delta = 33.expr()
+                    + is_call.expr() * 1.expr()
+                    + transfer_rwc_delta
+                    + is_callcode.expr()
+                    + is_delegatecall.expr() * 2.expr()
+                    + precompile_memory_rws;
 
-                    cb.require_step_state_transition(StepStateTransition {
-                        rw_counter: Delta(rw_counter_delta),
-                        call_id: To(callee_call_id.expr()),
-                        is_root: To(false.expr()),
-                        is_create: To(false.expr()),
-                        code_hash: To(cb.empty_code_hash_rlc()),
-                        program_counter: Delta(1.expr()),
-                        stack_pointer: Delta(stack_pointer_delta.expr()),
-                        gas_left: To(callee_gas_left.expr()),
-                        memory_word_size: To(0.expr()),
-                        reversible_write_counter: To(0.expr()),
-                        ..StepStateTransition::default()
-                    });
+                cb.require_step_state_transition(StepStateTransition {
+                    rw_counter: Delta(rw_counter_delta),
+                    call_id: To(callee_call_id.expr()),
+                    is_root: To(false.expr()),
+                    is_create: To(false.expr()),
+                    code_hash: To(cb.empty_code_hash_rlc()),
+                    program_counter: Delta(1.expr()),
+                    stack_pointer: Delta(stack_pointer_delta.expr()),
+                    gas_left: To(callee_gas_left.expr()),
+                    memory_word_size: To(0.expr()),
+                    reversible_write_counter: To(0.expr()),
+                    ..StepStateTransition::default()
+                });
 
-                    (
-                        PrecompileGadget::construct(
-                            cb,
-                            call_gadget.is_success.expr(),
-                            call_gadget.callee_address_expr(),
-                            cb.curr.state.call_id.expr(),
-                            call_gadget.cd_address.offset(),
-                            call_gadget.cd_address.length(),
-                            call_gadget.rd_address.offset(),
-                            call_gadget.rd_address.length(),
-                            precompile_return_length.expr(),
-                            input_bytes_rlc.expr(),
-                            output_bytes_rlc.expr(),
-                            return_bytes_rlc.expr(),
-                        ),
-                        input_bytes_rlc,
-                        output_bytes_rlc,
-                        return_bytes_rlc,
-                    )
-                },
-            );
+                (
+                    PrecompileGadget::construct(
+                        cb,
+                        call_gadget.is_success.expr(),
+                        call_gadget.callee_address_expr(),
+                        cb.curr.state.call_id.expr(),
+                        call_gadget.cd_address.offset(),
+                        call_gadget.cd_address.length(),
+                        call_gadget.rd_address.offset(),
+                        call_gadget.rd_address.length(),
+                        precompile_return_length.expr(),
+                        precompile_input_bytes_rlc.expr(),
+                        precompile_output_bytes_rlc.expr(),
+                        precompile_return_bytes_rlc.expr(),
+                    ),
+                    precompile_input_bytes_rlc,
+                    precompile_output_bytes_rlc,
+                    precompile_return_bytes_rlc,
+                )
+            },
+        );
 
         // handle calls to accounts with no code.
         cb.condition(
@@ -717,10 +723,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             precompile_gadget,
             precompile_return_length,
             precompile_return_length_zero,
-            return_data_copy_size,
-            input_bytes_rlc,
-            output_bytes_rlc,
-            return_bytes_rlc,
+            precompile_return_data_copy_size,
+            precompile_input_len,
+            precompile_input_bytes_rlc,
+            precompile_output_bytes_rlc,
+            precompile_return_bytes_rlc,
         }
     }
 
@@ -934,19 +941,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         )?;
 
         // precompile related assignment.
+        let (is_precompile_call, precompile_addr) = {
+            let precompile_addr = callee_address.to_address();
+            let is_precompiled_call = is_precompiled(&precompile_addr);
+            (is_precompiled_call, precompile_addr)
+        };
         let code_address: F = callee_address.to_address().to_scalar().unwrap();
         self.is_code_address_zero
             .assign(region, offset, code_address)?;
         self.is_precompile_lt
             .assign(region, offset, code_address, 0x0Au64.into())?;
-        if is_precompiled(&callee_address.to_address()) {
-            self.precompile_gadget.assign(
-                region,
-                offset,
-                callee_address.to_address().0[19].into(),
-            )?;
-        }
-        let precompile_return_length = if is_precompiled(&callee_address.to_address()) {
+        let precompile_return_length = if is_precompile_call {
             let value_rw = block.rws[step.rw_indices[32 + rw_offset]];
             assert_eq!(
                 value_rw.field_tag(),
@@ -966,70 +971,101 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             offset,
             precompile_return_length.to_scalar().unwrap(),
         )?;
-        self.return_data_copy_size.assign(
+        self.precompile_return_data_copy_size.assign(
             region,
             offset,
             precompile_return_length.to_scalar().unwrap(),
             rd_length.to_scalar().unwrap(),
         )?;
 
-        let (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc) =
-            if is_precompiled(&callee_address.to_address()) {
-                let input_length = cd_length.as_usize();
-                let (input_bytes_start, input_bytes_end) =
-                    (33usize + rw_offset, 33usize + rw_offset + input_length);
-                let [output_bytes_start, output_bytes_end, return_bytes_start, return_bytes_end] =
-                    if input_length > 0 {
-                        let (output_start, output_end) = (
-                            input_bytes_end,
-                            input_bytes_end + precompile_return_length.as_usize(),
-                        );
-                        [
-                            output_start,
-                            output_end,
-                            output_end,
-                            output_end + rd_length.min(precompile_return_length).as_usize(),
-                        ]
-                    } else {
-                        [input_bytes_end; 4]
-                    };
-                let input_bytes: Vec<u8> = (input_bytes_start..input_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
-                let output_bytes: Vec<u8> = (output_bytes_start..output_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
-                let return_bytes: Vec<u8> = (return_bytes_start..return_bytes_end)
-                    .map(|i| block.rws[step.rw_indices[i]].memory_value())
-                    .collect();
-
-                let input_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(input_bytes.iter().rev(), randomness));
-                let output_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(output_bytes.iter().rev(), randomness));
-                let return_bytes_rlc = region
-                    .challenges()
-                    .keccak_input()
-                    .map(|randomness| rlc::value(return_bytes.iter().rev(), randomness));
-                (input_bytes_rlc, output_bytes_rlc, return_bytes_rlc)
+        let (
+            precompile_input_len,
+            precompile_input_bytes_rlc,
+            precompile_output_bytes_rlc,
+            precompile_return_bytes_rlc,
+        ) = if is_precompile_call {
+            let precompile_call: PrecompileCalls = precompile_addr.0[19].into();
+            let input_len = if let Some(input_len) = precompile_call.input_len() {
+                std::cmp::min(input_len, cd_length.as_usize())
             } else {
-                (
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                    Value::known(F::zero()),
-                )
+                cd_length.as_usize()
             };
+            let (input_bytes_start, input_bytes_end) =
+                (33usize + rw_offset, 33usize + rw_offset + input_len);
+            let [output_bytes_start, output_bytes_end, return_bytes_start, return_bytes_end] =
+                if input_len > 0 {
+                    let (output_start, output_end) = (
+                        input_bytes_end,
+                        input_bytes_end + precompile_return_length.as_usize(),
+                    );
+                    [
+                        output_start,
+                        output_end,
+                        output_end,
+                        output_end + rd_length.min(precompile_return_length).as_usize(),
+                    ]
+                } else {
+                    [input_bytes_end; 4]
+                };
+            let input_bytes: Vec<u8> = (input_bytes_start..input_bytes_end)
+                .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                .collect();
+            let output_bytes: Vec<u8> = (output_bytes_start..output_bytes_end)
+                .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                .collect();
+            let return_bytes: Vec<u8> = (return_bytes_start..return_bytes_end)
+                .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                .collect();
 
-        self.input_bytes_rlc
-            .assign(region, offset, input_bytes_rlc)?;
-        self.output_bytes_rlc
-            .assign(region, offset, output_bytes_rlc)?;
-        self.return_bytes_rlc
-            .assign(region, offset, return_bytes_rlc)?;
+            let input_bytes_rlc = region
+                .challenges()
+                .keccak_input()
+                .map(|randomness| rlc::value(input_bytes.iter().rev(), randomness));
+            let output_bytes_rlc = region
+                .challenges()
+                .keccak_input()
+                .map(|randomness| rlc::value(output_bytes.iter().rev(), randomness));
+            let return_bytes_rlc = region
+                .challenges()
+                .keccak_input()
+                .map(|randomness| rlc::value(return_bytes.iter().rev(), randomness));
+            (
+                input_len as u64,
+                input_bytes_rlc,
+                output_bytes_rlc,
+                return_bytes_rlc,
+            )
+        } else {
+            (
+                0,
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+                Value::known(F::zero()),
+            )
+        };
+
+        self.precompile_input_len.assign(
+            region,
+            offset,
+            Value::known(F::from(precompile_input_len)),
+        )?;
+        self.precompile_input_bytes_rlc
+            .assign(region, offset, precompile_input_bytes_rlc)?;
+        self.precompile_output_bytes_rlc
+            .assign(region, offset, precompile_output_bytes_rlc)?;
+        self.precompile_return_bytes_rlc
+            .assign(region, offset, precompile_return_bytes_rlc)?;
+
+        if is_precompile_call {
+            self.precompile_gadget.assign(
+                region,
+                offset,
+                precompile_addr.0[19].into(),
+                precompile_input_bytes_rlc,
+                cd_length.as_u64(),
+                region.challenges().keccak_input(),
+            )?;
+        }
 
         Ok(())
     }

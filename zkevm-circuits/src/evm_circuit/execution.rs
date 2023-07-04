@@ -2,7 +2,8 @@ use super::{
     param::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
-        N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        N_PHASE1_COLUMNS, POW_OF_RAND_TABLE_LOOKUPS, RW_TABLE_LOOKUPS, SIG_TABLE_LOOKUPS,
+        TX_TABLE_LOOKUPS,
     },
     util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
     EvmCircuitExports,
@@ -202,7 +203,7 @@ use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
-use precompiles::IdentityGadget;
+use precompiles::{EcrecoverGadget, IdentityGadget};
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
@@ -347,8 +348,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
     // precompile calls
-    precompile_ecrecover_gadget:
-        Box<BasePrecompileGadget<F, { ExecutionState::PrecompileEcRecover }>>,
+    precompile_ecrecover_gadget: Box<EcrecoverGadget<F>>,
     precompile_sha2_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileSha256 }>>,
     precompile_ripemd_gadget: Box<BasePrecompileGadget<F, { ExecutionState::PrecompileRipemd160 }>>,
     precompile_identity_gadget: Box<IdentityGadget<F>>,
@@ -378,6 +378,7 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         sig_table: &dyn LookupTable<F>,
+        pow_of_rand_table: &dyn LookupTable<F>,
     ) -> Self {
         let mut instrument = Instrument::default();
         let q_usable = meta.complex_selector();
@@ -652,6 +653,7 @@ impl<F: Field> ExecutionConfig<F> {
             keccak_table,
             exp_table,
             sig_table,
+            pow_of_rand_table,
             &challenges,
             &cell_manager,
         );
@@ -908,6 +910,7 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         sig_table: &dyn LookupTable<F>,
+        pow_of_rand_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
@@ -925,6 +928,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
                         Table::Sig => sig_table,
+                        Table::PowOfRand => pow_of_rand_table,
                     }
                     .table_exprs(meta);
                     vec![(
@@ -1225,6 +1229,7 @@ impl<F: Field> ExecutionConfig<F> {
             ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
             ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
             ("EVM_lookup_sig", SIG_TABLE_LOOKUPS),
+            ("EVM_lookup_pow_of_rand", POW_OF_RAND_TABLE_LOOKUPS),
             ("EVM_adv_phase2", N_PHASE2_COLUMNS),
             ("EVM_copy", N_COPY_COLUMNS),
             ("EVM_lookup_byte", N_BYTE_LOOKUPS),
@@ -1495,7 +1500,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorPrecompileFailed => {
                 assign_exec_step!(self.error_precompile_failed)
             }
-            ExecutionState::PrecompileEcRecover => {
+            ExecutionState::PrecompileEcrecover => {
                 assign_exec_step!(self.precompile_ecrecover_gadget)
             }
             ExecutionState::PrecompileSha256 => {

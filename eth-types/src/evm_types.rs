@@ -178,7 +178,7 @@ impl GasCost {
     /// it from 10 to 50.
     pub const EXP_BYTE_TIMES: Self = Self(50);
     /// Base gas price for precompile call: Elliptic curve recover
-    pub const PRECOMPILE_EC_RECOVER_BASE: Self = Self(3000);
+    pub const PRECOMPILE_ECRECOVER_BASE: Self = Self(3000);
     /// Base gas price for precompile call: SHA256
     pub const PRECOMPILE_SHA256_BASE: Self = Self(60);
     /// Per-word gas price for SHA256
