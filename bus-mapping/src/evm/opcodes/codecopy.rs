@@ -85,9 +85,8 @@ fn gen_copy_event(
         memory_updated
     };
 
-    let mut exec_step = state.new_step(geth_step)?;
     let (copy_steps, prev_bytes) = state.gen_copy_steps_for_bytecode(
-        &mut exec_step,
+        exec_step,
         &bytecode,
         src_addr,
         dst_addr,
