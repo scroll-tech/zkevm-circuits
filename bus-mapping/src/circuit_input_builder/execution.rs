@@ -395,6 +395,7 @@ pub struct CopyEvent {
 }
 
 pub type CopyEventSteps = Vec<(u8, bool, bool)>;
+pub type CopyEventPrevBytes = Vec<u8>;
 
 impl CopyEvent {
     /// rw counter at step index

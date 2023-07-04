@@ -31,6 +31,7 @@ use eth_types::{
 use halo2_proofs::{circuit::Value, plonk::Error};
 use log::trace;
 use std::cmp::{max, min};
+use eth_types::evm_types::Memory;
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
@@ -458,7 +459,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         program_counter: Delta(1.expr()),
                         stack_pointer: Delta(stack_pointer_delta.expr()),
                         gas_left: To(callee_gas_left.expr()),
-                        memory_word_size: To(0.expr()),
+                        memory_word_size: To(precompile_output_rws.expr()),
                         reversible_write_counter: To(0.expr()),
                         ..StepStateTransition::default()
                     });
@@ -989,14 +990,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 } else {
                     let begin = cd_offset.as_usize();
                     let end = cd_offset.as_usize() + cd_length.as_usize();
-                    let begin_slot = begin - begin % 32;
-                    let end_slot = end - end % 32;
+                    let (begin_slot, full_length, _) = Memory::align_range(begin as u64, cd_length.as_u64());
+                    let end_slot = begin_slot as usize + full_length as usize;
 
                     // input may not be aligned to 32 bytes. actual input is
                     // [start_offset..end_offset]
-                    let start_offset = begin - begin_slot;
-                    let end_offset = end - begin_slot;
-                    let word_count = (end_slot - begin_slot + 32) / 32;
+                    let start_offset = begin - begin_slot as usize;
+                    let end_offset = end - begin_slot as usize;
+                    let word_count = full_length as usize / 32;
 
                     [start_offset, end_offset, word_count]
                 };
@@ -1008,9 +1009,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     [0; 2]
                 } else {
                     let end = precompile_return_length.as_usize();
-                    let end_slot = end - end % 32;
+                    let (_, full_length, _) = Memory::align_range(0, end as u64);
 
-                    [end, (end_slot + 32) / 32]
+                    [end, full_length as usize / 32]
                 };
 
             let [return_bytes_start_offset, return_bytes_end_offset, return_bytes_word_count] =
@@ -1024,15 +1025,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     let begin = rd_offset.as_usize();
                     let end = begin + length;
 
-                    let begin_slot = begin - begin % 32;
-                    let end_slot = end - end % 32;
-                    let slot_count = max(length - length % 32, end_slot - begin_slot);
+                    let (_, src_full_length, _) = Memory::align_range(0, length as u64);
+                    let (begin_slot, full_length, _) = Memory::align_range(begin as u64, length as u64);
+                    let slot_count = max(src_full_length, full_length);
 
                     // return data may not be aligned to 32 bytes. actual return data is
                     // [start_offset..end_offset]
-                    let start_offset = begin - begin_slot;
-                    let end_offset = end - begin_slot;
-                    let word_count = slot_count / 32 + 1;
+                    let start_offset = begin - begin_slot as usize;
+                    let end_offset = end - begin_slot as usize;
+                    let word_count = slot_count as usize / 32;
 
                     [start_offset, end_offset, word_count]
                 };
