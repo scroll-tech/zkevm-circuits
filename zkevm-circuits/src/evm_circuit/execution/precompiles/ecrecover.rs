@@ -9,7 +9,8 @@ use crate::{
         param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder,
+            common_gadget::RestoreContextGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes, rlc, CachedRegion, Cell, RandomLinearCombination,
         },
     },
@@ -21,7 +22,7 @@ use crate::{
 pub struct EcrecoverGadget<F> {
     recovered: Cell<F>,
     msg_hash_rlc: Cell<F>,
-    sig_v: Cell<F>,
+    sig_v_rlc: Cell<F>,
     sig_r_rlc: Cell<F>,
     sig_s_rlc: Cell<F>,
     recovered_addr_rlc: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
@@ -42,21 +43,27 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
     const NAME: &'static str = "ECRECOVER";
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (recovered, msg_hash_rlc, sig_v, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
+        let (recovered, msg_hash_rlc, sig_v_rlc, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
             cb.query_bool(),
             cb.query_cell_phase2(),
-            cb.query_byte(),
+            cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_keccak_rlc(),
         );
 
         cb.condition(recovered.expr(), |cb| {
+            // if address was recovered, the sig_v (recovery ID) was correct.
+            cb.require_zero(
+                "sig_v == 27 or 28",
+                (sig_v_rlc.expr() - 27.expr()) * (sig_v_rlc.expr() - 28.expr()),
+            );
+
             // lookup to the sign_verify table
             // || v | r | s | msg_hash | recovered_addr ||
             cb.sig_table_lookup(
                 msg_hash_rlc.expr(),
-                sig_v.expr(),
+                sig_v_rlc.expr() - 27.expr(),
                 sig_r_rlc.expr(),
                 sig_s_rlc.expr(),
                 from_bytes::expr(&recovered_addr_rlc.cells),
@@ -94,7 +101,7 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
         Self {
             recovered,
             msg_hash_rlc,
-            sig_v,
+            sig_v_rlc,
             sig_r_rlc,
             sig_s_rlc,
             recovered_addr_rlc,
@@ -130,10 +137,13 @@ impl<F: Field> ExecutionGadget<F> for EcrecoverGadget<F> {
                     .keccak_input()
                     .map(|r| rlc::value(&aux_data.msg_hash.to_le_bytes(), r)),
             )?;
-            self.sig_v.assign(
+            self.sig_v_rlc.assign(
                 region,
                 offset,
-                Value::known(F::from(u64::from(aux_data.sig_v))),
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|r| rlc::value(&aux_data.sig_v.to_le_bytes(), r)),
             )?;
             self.sig_r_rlc.assign(
                 region,

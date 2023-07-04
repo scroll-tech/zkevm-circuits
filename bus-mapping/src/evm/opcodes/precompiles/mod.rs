@@ -38,24 +38,27 @@ pub fn gen_associated_ops(
         });
         let aux_data = EcrecoverAuxData::new(input_bytes, output_bytes);
 
-        if let Ok(recovered_pk) = recover_pk(
-            aux_data.sig_v,
-            &aux_data.sig_r,
-            &aux_data.sig_s,
-            &aux_data.msg_hash.to_be_bytes(),
-        ) {
-            let sign_data = SignData {
-                signature: (
-                    Fq::from_bytes(&aux_data.sig_r.to_be_bytes()).unwrap(),
-                    Fq::from_bytes(&aux_data.sig_s.to_be_bytes()).unwrap(),
-                    aux_data.sig_v,
-                ),
-                pk: recovered_pk,
-                msg: Bytes::default(),
-                msg_hash: Fq::from_bytes(&aux_data.msg_hash.to_be_bytes()).unwrap(),
-            };
-            assert_eq!(aux_data.recovered_addr, sign_data.get_addr());
-            state.push_ecrecover(sign_data);
+        // only if sig_v was a valid recovery ID, then we proceed to populate the ecrecover events.
+        if let Some(sig_v) = aux_data.recovery_id() {
+            if let Ok(recovered_pk) = recover_pk(
+                sig_v,
+                &aux_data.sig_r,
+                &aux_data.sig_s,
+                &aux_data.msg_hash.to_be_bytes(),
+            ) {
+                let sign_data = SignData {
+                    signature: (
+                        Fq::from_bytes(&aux_data.sig_r.to_be_bytes()).unwrap(),
+                        Fq::from_bytes(&aux_data.sig_s.to_be_bytes()).unwrap(),
+                        sig_v,
+                    ),
+                    pk: recovered_pk,
+                    msg: Bytes::default(),
+                    msg_hash: Fq::from_bytes(&aux_data.msg_hash.to_be_bytes()).unwrap(),
+                };
+                assert_eq!(aux_data.recovered_addr, sign_data.get_addr());
+                state.push_ecrecover(sign_data);
+            }
         }
 
         exec_step.aux_data = Some(PrecompileAuxData::Ecrecover(aux_data));

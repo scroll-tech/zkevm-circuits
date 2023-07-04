@@ -80,10 +80,10 @@ impl<F: Field> PrecompileGadget<F> {
 
         cb.condition(address.value_equals(PrecompileCalls::Ecrecover), |cb| {
             cb.constrain_next_step(ExecutionState::PrecompileEcrecover, None, |cb| {
-                let (recovered, msg_hash_rlc, sig_v, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
+                let (recovered, msg_hash_rlc, sig_v_rlc, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
                     cb.query_bool(),
                     cb.query_cell_phase2(),
-                    cb.query_byte(),
+                    cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
                     cb.query_keccak_rlc::<N_BYTES_ACCOUNT_ADDRESS>(),
@@ -97,10 +97,10 @@ impl<F: Field> PrecompileGadget<F> {
                     (r_pow_32, r_pow_64, r_pow_96)
                 };
                 cb.require_equal(
-                    "input bytes (RLC) = [msg_hash | sig_v | sig_r | sig_s]",
+                    "input bytes (RLC) = [msg_hash | sig_v_rlc | sig_r | sig_s]",
                     padding_gadget.padded_rlc(),
                     (msg_hash_rlc.expr() * r_pow_96)
-                        + ((sig_v.expr() + 27.expr()) * r_pow_64)
+                        + (sig_v_rlc.expr() * r_pow_64)
                         + (sig_r_rlc.expr() * r_pow_32)
                         + sig_s_rlc.expr(),
                 );
