@@ -82,6 +82,36 @@ impl MptUpdates {
         })
     }
 
+    pub(crate) fn mock_fill_state_roots(&mut self) {
+        // initialize a mock witness generator that is consistent with the old values of
+        // self.updates
+        let mut wit_gen = WitnessGenerator::from(&ZktrieState::default());
+        for (key, update) in &mut self.updates {
+            let key = key.set_non_exists(Word::zero(), update.old_value);
+            self.old_root = U256::from_little_endian(
+                wit_gen
+                    .handle_new_state(
+                        update.proof_type(),
+                        match key {
+                            Key::Account { address, .. } | Key::AccountStorage { address, .. } => {
+                                address
+                            }
+                        },
+                        update.old_value,
+                        Word::zero(),
+                        match key {
+                            Key::Account { .. } => None,
+                            Key::AccountStorage { storage_key, .. } => Some(storage_key),
+                        },
+                    )
+                    .account_path[1]
+                    .root
+                    .as_ref(),
+            );
+        }
+        self.fill_state_roots_from_generator(wit_gen);
+    }
+
     pub(crate) fn fill_state_roots(&mut self, init_trie: &ZktrieState) {
         let root_pair = (self.old_root, self.new_root);
         self.old_root = U256::from_big_endian(init_trie.root());
@@ -324,10 +354,17 @@ impl Key {
     }
 }
 
-impl<F> MptUpdateRow<F> {
+impl<F: Field> MptUpdateRow<Value<F>> {
+    /// Corresponds to the padding row the mpt circuit uses to fill its columns.
+    pub fn padding() -> Self {
+        let mut values = [F::zero(); 7];
+        values[2] = F::from(MPTProofType::AccountDoesNotExist as u64);
+        Self(values.map(Value::known))
+    }
+
     /// The individual values of the row, in the column order used by the
     /// MptTable
-    pub fn values(&self) -> impl Iterator<Item = &F> {
+    pub fn values(&self) -> impl Iterator<Item = &Value<F>> {
         self.0.iter()
     }
 }
