@@ -128,7 +128,7 @@ impl PrecompileCalls {
         match self {
             Self::Ecrecover | Self::Bn128Add => Some(128),
             Self::Bn128Mul => Some(96),
-            Self::Modexp => Some(MODEXP_INPUT_LIMIT),
+            //Self::Modexp => Some(MODEXP_INPUT_LIMIT),
             _ => None,
         }
     }

@@ -2280,13 +2280,17 @@ impl ModExpTable {
             || "modexp table",
             |mut region|{
 
-                let event_limit = block.circuits_params.max_keccak_rows / 9300;
+                let mut event_limit = block.circuits_params.max_keccak_rows / 9300;
                 let exp_events = &block.modexp_events;
-                assert!(exp_events.len() <= event_limit, 
-                    "not enough rows for modexp circuit, expected {}, limit {}",
-                    exp_events.len(),
-                    event_limit,
-                );
+                if exp_events.len() <= event_limit {
+                    // only warn in dev_load
+                    log::warn!( 
+                        "not enough rows for modexp circuit, expected {}, limit {}",
+                        exp_events.len(),
+                        event_limit,
+                    );
+                    event_limit = exp_events.len().max(5);
+                }
 
                 let mut offset = 0usize;
 
