@@ -830,7 +830,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     padding_length,
                     &self.updates,
                     self.n_rows,
-                    challenges.evm_word(),
+                    randomness,
                 )?;
                 let exports = config.update_state_root(
                     &mut region,
@@ -839,7 +839,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     &is_first_access_vec,
                     &self.updates,
                     self.n_rows,
-                    challenges.evm_word(),
+                    randomness,
                 )?;
 
                 if self.exports.borrow().is_none() {
