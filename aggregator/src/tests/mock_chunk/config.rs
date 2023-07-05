@@ -5,6 +5,7 @@ use halo2_proofs::{
 };
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base::halo2_proofs;
 
+// todo: use RLCconfig instead
 #[derive(Clone, Copy)]
 pub(crate) struct MockPlonkConfig {
     pub(crate) a: Column<Advice>,

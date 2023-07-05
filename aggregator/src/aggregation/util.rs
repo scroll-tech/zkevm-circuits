@@ -1,8 +1,10 @@
-use halo2_proofs::halo2curves::FieldExt;
+use halo2_proofs::{circuit::AssignedCell, halo2curves::FieldExt, plonk::Error};
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
     gates::{flex_gate::FlexGateConfig, GateInstructions},
     AssignedValue, Context, QuantumCell,
 };
+
+use crate::rlc::RlcConfig;
 
 /// Input values a and b, return a boolean cell a < b
 pub(crate) fn is_smaller_than<F: FieldExt>(

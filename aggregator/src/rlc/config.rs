@@ -12,8 +12,10 @@ use zkevm_circuits::util::Challenges;
 #[cfg(test)]
 use halo2_proofs::plonk::FirstPhase;
 
+use crate::constants::LOG_DEGREE;
+
 /// This config is used to compute RLCs for bytes.
-/// It requires a
+/// It requires a phase 2 column
 #[derive(Debug, Clone)]
 pub struct RlcConfig {
     #[cfg(test)]
@@ -183,5 +185,18 @@ impl RlcConfig {
             cur_challenge = self.mul(region, &challenge, &cur_challenge, offset)?;
         }
         Ok(acc)
+    }
+
+    // padded the columns
+    pub(crate) fn pad(&self, region: &mut Region<Fr>, offset: &usize) -> Result<(), Error> {
+        for index in *offset..1 << LOG_DEGREE {
+            region.assign_advice(
+                || "pad",
+                self.phase_2_column,
+                index,
+                || Value::known(Fr::zero()),
+            )?;
+        }
+        Ok(())
     }
 }
