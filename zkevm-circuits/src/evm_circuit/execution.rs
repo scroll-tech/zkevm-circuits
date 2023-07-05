@@ -652,6 +652,7 @@ impl<F: Field> ExecutionConfig<F> {
             keccak_table,
             exp_table,
             sig_table,
+            modexp_table,
             &challenges,
             &cell_manager,
         );
@@ -908,6 +909,7 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         sig_table: &dyn LookupTable<F>,
+        modexp_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
@@ -925,6 +927,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
                         Table::Sig => sig_table,
+                        Table::ModExp => modexp_table,
                     }
                     .table_exprs(meta);
                     vec![(

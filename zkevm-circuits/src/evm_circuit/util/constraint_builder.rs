@@ -1392,6 +1392,25 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         );
     }
 
+    // ModExp table
+    pub(crate) fn modexp_table_lookup(
+        &mut self,
+        base_limbs: [Expression<F>; 3],
+        exp_limbs: [Expression<F>; 3],
+        modulus_limbs: [Expression<F>; 3],
+        result_limbs: [Expression<F>; 3],
+    ) {
+        self.add_lookup(
+            "u256 exponentiation modulus lookup",
+            Lookup::ModExpTable { 
+                base_limbs, 
+                exp_limbs, 
+                modulus_limbs, 
+                result_limbs
+            },
+        );
+    }
+
     // Validation
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {

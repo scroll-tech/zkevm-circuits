@@ -2287,9 +2287,9 @@ impl ModExpTable {
 
                 let mut offset = 0usize;
 
-                for (n, event) in exp_events.iter()
+                for event in exp_events.iter()
                     .chain(std::iter::repeat(&Default::default()))
-                    .take(event_limit).enumerate(){
+                    .take(event_limit){
 
                     for i in 0..4 {
                         region.assign_fixed(

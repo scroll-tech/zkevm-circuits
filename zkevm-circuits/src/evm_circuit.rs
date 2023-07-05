@@ -487,6 +487,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config
             .sig_table
             .dev_load(&mut layouter, block, &challenges)?;
+        config.modexp_table.dev_load(&mut layouter, block)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }

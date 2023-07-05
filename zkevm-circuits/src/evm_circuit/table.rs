@@ -144,6 +144,7 @@ pub(crate) enum Table {
     Keccak,
     Exp,
     Sig,
+    ModExp,
 }
 
 #[derive(Clone, Debug)]
@@ -300,6 +301,12 @@ pub(crate) enum Lookup<F> {
         sig_s_rlc: Expression<F>,
         recovered_addr: Expression<F>,
     },
+    ModExpTable {
+        base_limbs: [Expression<F>; 3],
+        exp_limbs: [Expression<F>; 3],
+        modulus_limbs: [Expression<F>; 3],
+        result_limbs: [Expression<F>; 3],
+    },
     /// Conditional lookup enabled by the first element.
     Conditional(Expression<F>, Box<Lookup<F>>),
 }
@@ -320,6 +327,7 @@ impl<F: Field> Lookup<F> {
             Self::KeccakTable { .. } => Table::Keccak,
             Self::ExpTable { .. } => Table::Exp,
             Self::SigTable { .. } => Table::Sig,
+            Self::ModExpTable { .. } => Table::ModExp,
             Self::Conditional(_, lookup) => lookup.table(),
         }
     }
@@ -455,6 +463,26 @@ impl<F: Field> Lookup<F> {
                 sig_r_rlc.clone(),
                 sig_s_rlc.clone(),
                 recovered_addr.clone(),
+            ],
+            Self::ModExpTable { 
+                base_limbs, 
+                exp_limbs, 
+                modulus_limbs, 
+                result_limbs 
+            } => vec![
+                1.expr(), // q_head
+                base_limbs[0].clone(),
+                exp_limbs[0].clone(),
+                modulus_limbs[0].clone(),
+                result_limbs[0].clone(),
+                base_limbs[1].clone(),
+                exp_limbs[1].clone(),
+                modulus_limbs[1].clone(),
+                result_limbs[1].clone(),
+                base_limbs[2].clone(),
+                exp_limbs[2].clone(),
+                modulus_limbs[2].clone(),
+                result_limbs[2].clone(),
             ],
             Self::Conditional(condition, lookup) => lookup
                 .input_exprs()
