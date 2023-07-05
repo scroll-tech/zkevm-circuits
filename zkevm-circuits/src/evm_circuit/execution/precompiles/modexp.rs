@@ -482,6 +482,63 @@ impl<F: Field> ModExpOutputs<F> {
 
 }
 
+
+#[derive(Clone, Debug)]
+struct Limbs<F> {
+    byte14_split_lo: Cell<F>,
+    byte14_split_hi: Cell<F>,
+    limbs: [Expression<F>;3],
+}
+
+
+impl<F: Field> Limbs<F> {
+    fn configure(
+        cb: &mut EVMConstraintBuilder<F>,
+        word: &Word<F>,
+    ) -> Self {
+        let byte14_split_lo = cb.query_byte();
+        let byte14_split_hi = cb.query_byte();
+
+        cb.require_equal(
+            "split 14th byte in word into half",
+            word[14].expr(),
+            byte14_split_lo.expr() + 128.expr() * byte14_split_hi.expr(),
+        );
+
+        let limbs = [
+            util::expr_from_bytes(
+                &word[..14].iter()
+                .chain(std::iter::once(&byte14_split_lo))
+                .collect::<Vec<_>>()
+            ),
+            util::expr_from_bytes(
+                &std::iter::once(&byte14_split_hi)
+                .chain(&word[14..28])
+                .collect::<Vec<_>>()
+            ),
+            util::expr_from_bytes(
+                &word[28..]
+            ),
+        ];
+
+        Self {
+            byte14_split_hi,
+            byte14_split_lo,
+            limbs,
+        }
+    }
+
+
+    pub fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        (output_len, data): OutputParsedResult,
+    ) -> Result<(), Error> {
+        Ok(())
+    }    
+}
+
 #[derive(Clone, Debug)]
 pub struct ModExpGadget<F> {
     is_success: Cell<F>,
@@ -549,8 +606,14 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             input.modulus_len(),
         );
 
-        cb.condition(util::not::expr(output.is_output_nil()), |_cb|{
-            //TODO: config modexp circuit
+        cb.condition(util::not::expr(output.is_output_nil()), |cb|{
+            cb.modexp_table_lookup(
+                base_limbs, 
+                exp_limbs, 
+                modulus_limbs, 
+                result_limbs
+            );
+            
         });
 
         Self {
