@@ -218,8 +218,6 @@ impl<F: Field> StateCircuitConfig<F> {
         layouter.assign_region(
             || "state circuit (StateCircuitConfig)",
             |mut region| {
-                // annotate columns
-                self.annotate_circuit_in_region(&mut region);
                 let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
                 let is_first_access_vec = self.assign_with_region(
                     &mut region,
@@ -233,6 +231,7 @@ impl<F: Field> StateCircuitConfig<F> {
                 self.update_state_root(
                     &mut region,
                     &rows,
+                    padding_length,
                     &is_first_access_vec,
                     updates,
                     n_rows,
@@ -247,19 +246,21 @@ impl<F: Field> StateCircuitConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         rows: &[Rw],
-        chunk_offsets: usize,
+        offset_begin: usize,
         padding_length: usize,
         updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
         randomness: Value<F>,
     ) -> Result<Vec<bool>, Error> {
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
+        // annotate columns
+        self.annotate_circuit_in_region(region);
 
         let mut is_first_access_vec = vec![false; n_rows];
         let offsets = (0..n_rows).collect::<Vec<_>>();
         for (offset, is_first_access) in offsets.iter().zip(is_first_access_vec.iter_mut()) {
             let offset = *offset;
-            let global_offset = offset + chunk_offsets;
+            let global_offset = offset + offset_begin;
             let row = &rows[global_offset];
             if global_offset == 0 || global_offset + 1 >= padding_length {
                 log::trace!(
@@ -388,14 +389,12 @@ impl<F: Field> StateCircuitConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         rows: &[Rw],
+        padding_length: usize,
         is_first_access_vec: &[bool],
         updates: &MptUpdates,
         n_rows: usize, // 0 means dynamically calculated from `rows`.
         randomness: Value<F>,
     ) -> Result<StateCircuitExports<Assigned<F>>, Error> {
-        println!("update_state_root n_rows");
-
-        let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
         log::info!(
             "state circuit assign total rows {}, n_rows {}, padding_length {}",
             rows.len(),
@@ -409,7 +408,6 @@ impl<F: Field> StateCircuitConfig<F> {
         let mut start_state_root: Option<AssignedCell<_, F>> = None;
         let mut end_state_root: Option<AssignedCell<_, F>> = None;
 
-        let part3_timer = Instant::now();
         for (offset, (row, is_first_access)) in
             rows.iter().zip(is_first_access_vec.iter()).enumerate()
         {
@@ -481,7 +479,6 @@ impl<F: Field> StateCircuitConfig<F> {
                 end_state_root.replace(assigned);
             }
         }
-        println!("update_state_root part3: {:?}", part3_timer.elapsed());
 
         let start_state_root = start_state_root.expect("should be assigned");
         let end_state_root = end_state_root.expect("should be assigned");
@@ -489,6 +486,163 @@ impl<F: Field> StateCircuitConfig<F> {
             start_state_root: (start_state_root.cell(), start_state_root.value_field()),
             end_state_root: (end_state_root.cell(), end_state_root.value_field()),
         })
+    }
+
+    #[cfg(feature = "parallel_syn")]
+    fn assign_parallel(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        rows: &[Rw],
+        n_rows: usize, // 0 means dynamically calculated from `rows`.
+        updates: &MptUpdates,
+        randomness: Value<F>,
+        #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+        overrides: &HashMap<(dev::AdviceColumn, isize),F,>,
+        circuit_exports: &std::cell::RefCell<Option<StateCircuitExports<Assigned<F>>>>,
+    ) -> Result<(), Error> {
+        let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
+        let rows_len = rows.len();
+        let offsets = (0..rows_len).collect::<Vec<_>>();
+        let num_threads = std::thread::available_parallelism()
+            .map(|e| e.get())
+            .unwrap_or(32);
+        let chunk_size = (rows_len + num_threads - 1) / num_threads;
+        let chunk_num = (rows_len + chunk_size - 1) / chunk_size;
+        log::debug!("rows.len() =  {}", rows_len);
+        log::debug!(
+            "rows.len() + num_threads - 1 =  {}",
+            rows_len + num_threads - 1
+        );
+        log::debug!(
+            "assign_with_region num_threads: {}, chunk_size: {}",
+            num_threads,
+            chunk_size
+        );
+
+        // Assigning to same columns in different regions should be avoided.
+        // Here we use one single region to assign `overrides` to both rw table and
+        // other parts.
+        let column = self.rw_table.rw_counter;
+        let mut is_first_time_vec = vec![true; chunk_num];
+        layouter.assign_regions(
+            || "state circuit (synthesize_sub) part1",
+            offsets
+                .chunks(chunk_size)
+                .zip(rows.chunks(chunk_size))
+                .zip(is_first_time_vec.iter_mut())
+                .map(|((offsets, rows), is_first_time)| {
+                    move |region: Region<'_, F>| {
+                        let mut region = region;
+
+                        if *is_first_time {
+                            *is_first_time = false;
+                            region.assign_advice(
+                                || "dummy offset",
+                                column,
+                                offsets.len() - 1,
+                                || Value::known(F::zero()),
+                            )?;
+                            return Ok(());
+                        }
+
+                        self.rw_table.load_with_region_padded_row(
+                            &mut region,
+                            &rows,
+                            offsets.len(),
+                            randomness,
+                        )?;
+
+                        Ok(())
+                    }
+                })
+                .collect_vec(),
+        )?;
+
+        let mut is_first_time_vec = vec![true; chunk_num];
+        let column = self.initial_value;
+        let is_first_access_chunks = layouter.assign_regions(
+            || "state circuit (synthesize_sub) part2",
+            offsets
+                .chunks(chunk_size)
+                .zip(is_first_time_vec.iter_mut())
+                .map(|(offsets, is_first_time)| {
+                    let rows = &rows;
+                    let updates = updates;
+                    move |region: Region<'_, F>| {
+                        let mut region = region;
+
+                        if *is_first_time {
+                            *is_first_time = false;
+                            region.assign_advice(
+                                || "dummy offset",
+                                column,
+                                offsets.len() - 1,
+                                || Value::known(F::zero()),
+                            )?;
+                            return Ok(vec![]);
+                        }
+
+                        let is_first_access_chunk: Vec<bool> = self.assign_with_region(
+                            &mut region,
+                            rows,
+                            offsets[0],
+                            padding_length,
+                            updates,
+                            offsets.len(),
+                            randomness,
+                        )?;
+
+                        Ok(is_first_access_chunk)
+                    }
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        let mut is_first_access_vec = vec![];
+        for is_first_access_chunk in is_first_access_chunks {
+            is_first_access_vec.extend(is_first_access_chunk);
+        }
+
+        let mut is_first_time = true;
+        layouter.assign_region(
+            || "state circuit (synthesize_sub) part3",
+            |mut region| {
+                if is_first_time {
+                    is_first_time = false;
+                    return Ok(());
+                }
+
+                let exports = self.update_state_root(
+                    &mut region,
+                    &rows,
+                    padding_length,
+                    &is_first_access_vec,
+                    updates,
+                    n_rows,
+                    randomness,
+                )?;
+                if circuit_exports.borrow().is_none() {
+                    circuit_exports.borrow_mut().replace(exports);
+                }
+
+                #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+                {
+                    for ((column, row_offset), &f) in overrides {
+                        let advice_column = column.value(self);
+                        let offset =
+                            usize::try_from(isize::try_from(padding_length).unwrap() + *row_offset)
+                                .unwrap();
+                        region.assign_advice(
+                            || "override",
+                            advice_column,
+                            offset,
+                            || Value::known(f),
+                        )?;
+                    }
+                }
+
+                Ok(())
+            },
+        )
     }
 
     fn annotate_circuit_in_region(&self, region: &mut Region<F>) {
@@ -606,136 +760,86 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load_aux_tables(layouter)?;
+
         let randomness = challenges.evm_word();
 
-        let (rows, padding_length) = RwMap::table_assignments_prepad(&self.rows, self.n_rows);
-        let rows_len = rows.len();
-        let offsets = (0..rows_len).collect::<Vec<_>>();
-        let num_threads = std::thread::available_parallelism()
-            .map(|e| e.get())
-            .unwrap_or(32);
-        let chunk_size = (rows_len + num_threads - 1) / num_threads;
-        let chunk_num = (rows_len + chunk_size - 1) / chunk_size;
-        log::debug!("rows.len() =  {}", rows_len);
-        log::debug!(
-            "rows.len() + num_threads - 1 =  {}",
-            rows_len + num_threads - 1
-        );
-        log::debug!(
-            "assign_with_region num_threads: {}, chunk_size: {}",
-            num_threads,
-            chunk_size
-        );
+        #[cfg(feature = "parallel_syn")]
+        {
+            // if feature "parallel_syn" is enabled,
+            // `parallel` assignment is turned on by default
+            // we can turn it off by set the environment variable
+            // `CIRCUIT_ASSIGNMENT_TYPE=serial`
+            let assignment_type = std::env::var("CIRCUIT_ASSIGNMENT_TYPE")
+                .ok()
+                .unwrap_or_default();
+            let is_parallel_assignment = match assignment_type.as_str() {
+                "serial" => false,
+                "parallel" => true,
+                &_ => true,
+            };
+            log::debug!("CIRCUIT_ASSIGNMENT_TYPE: {}", assignment_type);
+            log::debug!("is_parallel_assignment: {}", is_parallel_assignment);
+
+            if is_parallel_assignment {
+                return config.assign_parallel(
+                    layouter,
+                    &self.rows,
+                    self.n_rows,
+                    &self.updates,
+                    randomness,
+                    #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+                    &self.overrides,
+                    &self.exports,
+                );
+            }
+        }
+
+        let mut is_first_time = true;
 
         // Assigning to same columns in different regions should be avoided.
         // Here we use one single region to assign `overrides` to both rw table and
         // other parts.
-        let part1_timer = Instant::now();
-        let column = config.rw_table.rw_counter;
-        let mut is_first_time_vec = vec![true; chunk_num];
-        layouter.assign_regions(
-            || "state circuit (synthesize_sub) part1",
-            offsets
-                .chunks(chunk_size)
-                .zip(rows.chunks(chunk_size))
-                .zip(is_first_time_vec.iter_mut())
-                .map(|((offsets, rows), is_first_time)| {
-                    move |region: Region<'_, F>| {
-                        let mut region = region;
-
-                        if *is_first_time {
-                            *is_first_time = false;
-                            region.assign_advice(
-                                || "dummy offset",
-                                column,
-                                offsets.len() - 1,
-                                || Value::known(F::zero()),
-                            )?;
-                            return Ok(());
-                        }
-
-                        config.rw_table.load_with_region_padded_row(
-                            &mut region,
-                            &rows,
-                            offsets.len(),
-                            randomness,
-                        )?;
-
-                        Ok(())
-                    }
-                })
-                .collect_vec(),
-        )?;
-        log::debug!("part1_timer: {:?}", part1_timer.elapsed());
-
-        let part2_timer = Instant::now();
-        let mut is_first_time_vec = vec![true; chunk_num];
-        let column = config.initial_value;
-        let is_first_access_chunks = layouter.assign_regions(
-            || "state circuit (synthesize_sub) part2",
-            offsets
-                .chunks(chunk_size)
-                .zip(is_first_time_vec.iter_mut())
-                .map(|(offsets, is_first_time)| {
-                    let rows = &rows;
-                    let updates = &self.updates;
-                    move |region: Region<'_, F>| {
-                        let mut region = region;
-
-                        if *is_first_time {
-                            *is_first_time = false;
-                            region.assign_advice(
-                                || "dummy offset",
-                                column,
-                                offsets.len() - 1,
-                                || Value::known(F::zero()),
-                            )?;
-                            return Ok(vec![]);
-                        }
-
-                        // annotate columns
-                        config.annotate_circuit_in_region(&mut region);
-
-                        let is_first_access_chunk: Vec<bool> = config.assign_with_region(
-                            &mut region,
-                            rows,
-                            offsets[0],
-                            padding_length,
-                            updates,
-                            offsets.len(),
-                            randomness,
-                        )?;
-
-                        Ok(is_first_access_chunk)
-                    }
-                })
-                .collect::<Vec<_>>(),
-        )?;
-        let mut is_first_access_vec = vec![];
-        for is_first_access_chunk in is_first_access_chunks {
-            is_first_access_vec.extend(is_first_access_chunk);
-        }
-        log::debug!("part2_timer: {:?}", part2_timer.elapsed());
-
-        let part3_timer = Instant::now();
-        let mut is_first_time = true;
         layouter.assign_region(
-            || "state circuit (synthesize_sub) part3",
+            || "state circuit",
             |mut region| {
                 if is_first_time {
-                    println!("state circuit part3: first time");
                     is_first_time = false;
+                    region.assign_advice(
+                        || "step selector",
+                        config.rw_table.rw_counter,
+                        self.n_rows - 1,
+                        || Value::known(F::zero()),
+                    )?;
                     return Ok(());
                 }
-
-                let exports = config.update_state_root(
+                config.rw_table.load_with_region(
                     &mut region,
                     &self.rows,
-                    &is_first_access_vec,
-                    &self.updates,
                     self.n_rows,
                     randomness,
                 )?;
+
+                let (rows, padding_length) =
+                    RwMap::table_assignments_prepad(&self.rows, self.n_rows);
+                let is_first_access_vec = config.assign_with_region(
+                    &mut region,
+                    &rows,
+                    0,
+                    padding_length,
+                    &self.updates,
+                    self.n_rows,
+                    challenges.evm_word(),
+                )?;
+                let exports = config.update_state_root(
+                    &mut region,
+                    &rows,
+                    padding_length,
+                    &is_first_access_vec,
+                    &self.updates,
+                    self.n_rows,
+                    challenges.evm_word(),
+                )?;
+
                 if self.exports.borrow().is_none() {
                     self.exports.borrow_mut().replace(exports);
                 }
@@ -756,7 +860,6 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                         )?;
                     }
                 }
-                println!("part3_timer: {:?}", part3_timer.elapsed());
 
                 Ok(())
             },
