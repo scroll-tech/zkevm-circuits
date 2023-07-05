@@ -496,8 +496,10 @@ impl<F: Field> StateCircuitConfig<F> {
         n_rows: usize, // 0 means dynamically calculated from `rows`.
         updates: &MptUpdates,
         randomness: Value<F>,
-        #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-        overrides: &HashMap<(dev::AdviceColumn, isize),F,>,
+        #[cfg(any(feature = "test", test, feature = "test-circuits"))] overrides: &HashMap<
+            (dev::AdviceColumn, isize),
+            F,
+        >,
         circuit_exports: &std::cell::RefCell<Option<StateCircuitExports<Assigned<F>>>>,
     ) -> Result<(), Error> {
         let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
