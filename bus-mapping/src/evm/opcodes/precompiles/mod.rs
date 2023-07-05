@@ -1,15 +1,17 @@
-use eth_types::{
-    sign_types::{recover_pk, SignData},
-    Bytes, GethExecStep, ToBigEndian, ToWord, Word,
-};
-use halo2_proofs::halo2curves::secp256k1::Fq;
+use eth_types::{GethExecStep, ToWord, Word};
 
 use crate::{
-    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep, PrecompileEvent},
+    circuit_input_builder::{Call, CircuitInputStateRef, ExecState, ExecStep},
     operation::CallContextField,
-    precompile::{EcrecoverAuxData, PrecompileAuxData, PrecompileCalls},
+    precompile::PrecompileCalls,
     Error,
 };
+
+mod ec_add;
+mod ecrecover;
+
+use ec_add::handle as handle_ec_add;
+use ecrecover::handle as handle_ecrecover;
 
 type InOutRetData = (Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
 
@@ -26,42 +28,14 @@ pub fn gen_associated_ops(
 
     common_call_ctx_reads(state, &mut exec_step, &call);
 
-    // TODO: refactor and replace with `match` once we have more branches.
-    if precompile == PrecompileCalls::Ecrecover {
-        let input_bytes = input_bytes.map_or(vec![0u8; 128], |mut bytes| {
-            bytes.resize(128, 0u8);
-            bytes
-        });
-        let output_bytes = output_bytes.map_or(vec![0u8; 32], |mut bytes| {
-            bytes.resize(32, 0u8);
-            bytes
-        });
-        let aux_data = EcrecoverAuxData::new(input_bytes, output_bytes);
-
-        // only if sig_v was a valid recovery ID, then we proceed to populate the ecrecover events.
-        if let Some(sig_v) = aux_data.recovery_id() {
-            if let Ok(recovered_pk) = recover_pk(
-                sig_v,
-                &aux_data.sig_r,
-                &aux_data.sig_s,
-                &aux_data.msg_hash.to_be_bytes(),
-            ) {
-                let sign_data = SignData {
-                    signature: (
-                        Fq::from_bytes(&aux_data.sig_r.to_be_bytes()).unwrap(),
-                        Fq::from_bytes(&aux_data.sig_s.to_be_bytes()).unwrap(),
-                        sig_v,
-                    ),
-                    pk: recovered_pk,
-                    msg: Bytes::default(),
-                    msg_hash: Fq::from_bytes(&aux_data.msg_hash.to_be_bytes()).unwrap(),
-                };
-                assert_eq!(aux_data.recovered_addr, sign_data.get_addr());
-                state.push_precompile_event(PrecompileEvent::Ecrecover(sign_data));
-            }
+    match precompile {
+        PrecompileCalls::Ecrecover => {
+            handle_ecrecover(input_bytes, output_bytes, state, &mut exec_step)
         }
-
-        exec_step.aux_data = Some(PrecompileAuxData::Ecrecover(aux_data));
+        PrecompileCalls::Bn128Add => {
+            handle_ec_add(input_bytes, output_bytes, state, &mut exec_step)
+        }
+        _ => {}
     }
 
     Ok(exec_step)

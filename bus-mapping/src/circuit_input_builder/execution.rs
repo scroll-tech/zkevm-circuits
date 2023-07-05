@@ -17,8 +17,10 @@ use eth_types::{
     sign_types::SignData,
     word, GethExecStep, ToLittleEndian, Word, H256,
 };
+use ethers_core::k256::elliptic_curve::subtle::{Choice, CtOption};
 use gadgets::impl_expr;
 use halo2_proofs::{
+    arithmetic::CurveAffine,
     halo2curves::bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
     plonk::Expression,
 };
@@ -577,6 +579,43 @@ impl EcAddOp {
     pub fn new(p: G1Affine, q: G1Affine, r: G1Affine) -> Self {
         assert_eq!(p.add(q), r.into());
         Self { p, q, r }
+    }
+
+    /// Creates a new EcAdd op given input and output bytes from a precompile call.
+    pub fn new_from_bytes(input: &[u8], output: &[u8]) -> CtOption<Self> {
+        let fq_from_slice = |buf: &mut [u8; 32], bytes: &[u8]| -> CtOption<Fq> {
+            buf.copy_from_slice(bytes);
+            buf.reverse();
+            Fq::from_bytes(buf)
+        };
+
+        let g1_from_slice = |buf: &mut [u8; 32], bytes: &[u8]| -> CtOption<G1Affine> {
+            fq_from_slice(buf, &bytes[0x00..0x20]).and_then(|x| {
+                fq_from_slice(buf, &bytes[0x20..0x40]).and_then(|y| G1Affine::from_xy(x, y))
+            })
+        };
+
+        let mut buf = [0u8; 32];
+        g1_from_slice(&mut buf, &input[0x00..0x40]).and_then(|point_p| {
+            g1_from_slice(&mut buf, &input[0x40..0x80]).and_then(|point_q| {
+                // valid input implies valid output. If the result matches, the computation was
+                // successful.
+                let point_r_got = g1_from_slice(&mut buf, output).unwrap();
+                let point_r: G1Affine = point_p.add(&point_q).into();
+                if point_r.eq(&point_r_got) {
+                    CtOption::new(
+                        Self {
+                            p: point_p,
+                            q: point_q,
+                            r: point_r,
+                        },
+                        Choice::from(1u8),
+                    )
+                } else {
+                    CtOption::new(Self::default(), Choice::from(0u8))
+                }
+            })
+        })
     }
 
     /// Returns true if the input points P and Q are the same.
