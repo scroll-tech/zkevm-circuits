@@ -19,6 +19,7 @@ use zkevm_circuits::{
 use crate::{
     constants::{BITS, LIMBS},
     param::ConfigParams,
+    rlc::RlcConfig,
 };
 
 #[derive(Debug, Clone)]
@@ -30,6 +31,8 @@ pub struct AggregationConfig {
     pub base_field_config: FpConfig<Fr, Fq>,
     /// Keccak circuit configurations
     pub keccak_circuit_config: KeccakCircuitConfig<Fr>,
+    // /// RLC config
+    // pub rlc_config: RlcConfig,
     /// Instance for public input; stores
     /// - accumulator from aggregation (12 elements)
     /// - batch_public_input_hash (32 elements)

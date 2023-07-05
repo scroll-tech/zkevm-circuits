@@ -3,6 +3,7 @@ pub(crate) mod compression;
 pub(crate) mod dummy_chunk;
 pub(crate) mod end_to_end;
 pub(crate) mod mock_chunk;
+pub(crate) mod rlc;
 
 #[macro_export]
 macro_rules! layer_0 {
