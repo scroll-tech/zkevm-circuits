@@ -16,7 +16,7 @@ pub const MAX_STEP_HEIGHT: usize = 21;
 pub(crate) const STEP_STATE_HEIGHT: usize = 1;
 
 /// Number of Advice Phase2 columns in the EVM circuit
-pub(crate) const N_PHASE2_COLUMNS: usize = 4;
+pub(crate) const N_PHASE2_COLUMNS: usize = 5;
 
 /// Number of Advice Phase1 columns in the EVM circuit
 pub(crate) const N_PHASE1_COLUMNS: usize =
@@ -38,7 +38,8 @@ pub(crate) const EVM_LOOKUP_COLS: usize = FIXED_TABLE_LOOKUPS
     + COPY_TABLE_LOOKUPS
     + KECCAK_TABLE_LOOKUPS
     + EXP_TABLE_LOOKUPS
-    + SIG_TABLE_LOOKUPS;
+    + SIG_TABLE_LOOKUPS
+    + POW_OF_RAND_TABLE_LOOKUPS;
 
 /// Lookups done per row.
 pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
@@ -51,6 +52,7 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Keccak, KECCAK_TABLE_LOOKUPS),
     (Table::Exp, EXP_TABLE_LOOKUPS),
     (Table::Sig, SIG_TABLE_LOOKUPS),
+    (Table::PowOfRand, POW_OF_RAND_TABLE_LOOKUPS),
 ];
 
 /// Fixed Table lookups done in EVMCircuit
@@ -79,6 +81,9 @@ pub const EXP_TABLE_LOOKUPS: usize = 1;
 
 /// Sig Table lookups done in EVMCircuit
 pub const SIG_TABLE_LOOKUPS: usize = 1;
+
+/// Power of Randomness lookups done from EVM Circuit.
+pub const POW_OF_RAND_TABLE_LOOKUPS: usize = 1;
 
 /// Maximum number of bytes that an integer can fit in field without wrapping
 /// around.

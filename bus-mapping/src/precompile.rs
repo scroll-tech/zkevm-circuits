@@ -1,6 +1,6 @@
 //! precompile helpers
 
-use eth_types::{evm_types::GasCost, Address, Word};
+use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
 use revm_precompile::{Precompile, Precompiles};
 use strum::EnumIter;
 
@@ -128,7 +128,6 @@ impl PrecompileCalls {
         match self {
             Self::Ecrecover | Self::Bn128Add => Some(128),
             Self::Bn128Mul => Some(96),
-            Self::Blake2F => Some(213),
             Self::Modexp => Some(MODEXP_INPUT_LIMIT),
             _ => None,
         }
@@ -141,7 +140,7 @@ pub struct EcrecoverAuxData {
     /// Keccak hash of the message being signed.
     pub msg_hash: Word,
     /// v-component of signature.
-    pub sig_v: u8,
+    pub sig_v: Word,
     /// r-component of signature.
     pub sig_r: Word,
     /// s-component of signature.
@@ -156,22 +155,29 @@ impl EcrecoverAuxData {
         assert_eq!(input.len(), 128);
         assert_eq!(output.len(), 32);
 
-        // assert that sig v is a byte, which indirectly means the other 31 bytes are 0.
-        assert!(input[0x20..0x3f].iter().all(|&b| b == 0));
-        let sig_v = input[0x3f] - 27;
-
         // assert that recovered address is 20 bytes.
         assert!(output[0x00..0x0c].iter().all(|&b| b == 0));
         let recovered_addr = Address::from_slice(&output[0x0c..0x20]);
 
         Self {
             msg_hash: Word::from_big_endian(&input[0x00..0x20]),
-            sig_v,
+            sig_v: Word::from_big_endian(&input[0x20..0x40]),
             sig_r: Word::from_big_endian(&input[0x40..0x60]),
             sig_s: Word::from_big_endian(&input[0x60..0x80]),
             recovered_addr,
         }
     }
+
+    /// Sanity check and returns recovery ID.
+    pub fn recovery_id(&self) -> Option<u8> {
+        let sig_v_bytes = self.sig_v.to_be_bytes();
+        let sig_v = sig_v_bytes[31];
+        if sig_v_bytes.iter().take(31).all(|&b| b == 0) && (sig_v == 27 || sig_v == 28) {
+            Some(sig_v - 27)
+        } else {
+            None
+        }
+    }    
 }
 
 /// size limit of modexp
@@ -255,7 +261,7 @@ impl ModExpAuxData {
             output_len,
             input_memory,
             output_memory,
-        }   
+        }
     }
 }
 

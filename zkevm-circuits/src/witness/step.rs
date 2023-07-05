@@ -50,7 +50,7 @@ pub struct ExecStep {
     pub opcode: Option<OpcodeId>,
     /// The block number in which this step exists.
     pub block_num: u64,
-    ///
+    /// Aux data used for precompiles
     pub aux_data: Option<PrecompileAuxData>,
 }
 

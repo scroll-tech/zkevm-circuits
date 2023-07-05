@@ -106,6 +106,9 @@ impl Instrument {
                     CellType::Lookup(Table::Sig) => {
                         report.sig_table = data_entry;
                     }
+                    CellType::Lookup(Table::PowOfRand) => {
+                        report.pow_of_rand_table = data_entry;
+                    }
                 }
             }
             report_collection.push(report);
@@ -133,6 +136,7 @@ pub(crate) struct ExecStateReport {
     pub(crate) keccak_table: StateReportRow,
     pub(crate) exp_table: StateReportRow,
     pub(crate) sig_table: StateReportRow,
+    pub(crate) pow_of_rand_table: StateReportRow,
 }
 
 impl From<ExecutionState> for ExecStateReport {

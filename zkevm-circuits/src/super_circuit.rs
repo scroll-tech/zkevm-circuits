@@ -82,7 +82,7 @@ use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, PoseidonTable,
-        RlpFsmRlpTable as RlpTable, RwTable, TxTable, ModExpTable,
+        PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, TxTable, ModExpTable
     },
 };
 
@@ -194,6 +194,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         log_circuit_info(meta, "sig table");
         let modexp_table = ModExpTable::construct(meta);
         log_circuit_info(meta, "modexp table");
+        let pow_of_rand_table = PowOfRandTable::construct(meta, &challenges_expr);
+        log_circuit_info(meta, "power of randomness table");
 
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
@@ -329,6 +331,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
                 exp_table,
                 sig_table,
                 modexp_table,
+                pow_of_rand_table,
             },
         );
         log_circuit_info(meta, "evm circuit");

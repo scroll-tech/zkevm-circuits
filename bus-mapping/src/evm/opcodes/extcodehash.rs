@@ -65,7 +65,11 @@ impl Opcode for Extcodehash {
         state.account_read(
             &mut exec_step,
             external_address,
-            AccountField::KeccakCodeHash,
+            if cfg!(feature = "scroll") {
+                AccountField::KeccakCodeHash
+            } else {
+                AccountField::CodeHash
+            },
             code_hash.to_word(),
         );
         debug_assert_eq!(steps[1].stack.last()?, code_hash.to_word());
@@ -272,7 +276,11 @@ mod extcodehash_tests {
                 RW::READ,
                 &AccountOp {
                     address: external_address,
-                    field: AccountField::KeccakCodeHash,
+                    field: if cfg!(feature = "scroll") {
+                        AccountField::KeccakCodeHash
+                    } else {
+                        AccountField::CodeHash
+                    },
                     value: if exists { code_hash } else { U256::zero() },
                     value_prev: if exists { code_hash } else { U256::zero() },
                 }
