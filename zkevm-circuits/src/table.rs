@@ -2257,17 +2257,49 @@ impl ModExpTable {
         }
     }
 
-    fn split_u256_108bit_limbs(word: &Word) -> [u128;3]{
+    /// helper for devide a U256 into 3 108bit limbs
+    pub fn split_u256_108bit_limbs(word: &Word) -> [u128;3]{
         let bit108 = 1u128<<108;
         let (next, limb0) = word.div_mod(U256::from(bit108));
         let (limb1, limb2) = next.div_mod(U256::from(bit108));
         [limb0.as_u128(), limb1.as_u128(), limb2.as_u128()]
     }
 
-    fn native_u256<F: Field>(word: &Word) -> F {
+    /// helper for obtain the modulus of a U256 in Fr
+    pub fn native_u256<F: Field>(word: &Word) -> F {
         let mut bytes = [0u8; 64];
         word.to_little_endian(&mut bytes[..32]);
         F::from_bytes_wide(&bytes)
+    }
+
+    /// fill a blank 4-row region start from offset for empty lookup
+    pub fn fill_blank<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error>{
+        layouter.assign_region(
+            || "modexp table blank region",
+            |mut region|{
+                for i in 0..4 {
+                    // fill last totally 0 row
+                    region.assign_fixed(
+                        || "modexp table blank head row",
+                        self.q_head,
+                        i,
+                        || Value::known(F::zero()),
+                    )?;
+                    for &col in [&self.base, &self.exp, &self.modulus, &self.result]{
+                        region.assign_advice(
+                            || "modexp table blank limb row",
+                            col, 
+                            i, 
+                            || Value::known(F::zero()),
+                        )?;    
+                    }
+                }
+                Ok(())           
+            }
+        )
     }
 
     /// Get assignments to the modexp table. Meant to be used for dev purposes.
@@ -2280,23 +2312,9 @@ impl ModExpTable {
             || "modexp table",
             |mut region|{
 
-                let mut event_limit = block.circuits_params.max_keccak_rows / 9300;
-                let exp_events = &block.modexp_events;
-                if exp_events.len() <= event_limit {
-                    // only warn in dev_load
-                    log::warn!( 
-                        "not enough rows for modexp circuit, expected {}, limit {}",
-                        exp_events.len(),
-                        event_limit,
-                    );
-                    event_limit = exp_events.len().max(5);
-                }
-
                 let mut offset = 0usize;
 
-                for event in exp_events.iter()
-                    .chain(std::iter::repeat(&Default::default()))
-                    .take(event_limit){
+                for event in &block.modexp_events{
 
                     for i in 0..4 {
                         region.assign_fixed(
@@ -2341,25 +2359,12 @@ impl ModExpTable {
                     offset += 4;
                 }
 
-                // fill last totally 0 row
-                region.assign_fixed(
-                    || "modexp table blank row",
-                    self.q_head,
-                    offset,
-                    || Value::known(F::zero()),
-                )?;
-                for &col in [&self.base, &self.exp, &self.modulus, &self.result]{
-                    region.assign_advice(
-                        || "modexp table blank row {}",
-                        col, 
-                        offset, 
-                        || Value::known(F::zero()),
-                    )?;    
-                }
-
                 Ok(())
             },
-        )
+        )?;
+
+        self.fill_blank(layouter)
+
     }
 }
 
