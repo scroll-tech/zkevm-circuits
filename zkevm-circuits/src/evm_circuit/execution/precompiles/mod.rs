@@ -18,6 +18,9 @@ use crate::{
 mod ecrecover;
 pub use ecrecover::EcrecoverGadget;
 
+mod ec_mul;
+pub use ec_mul::EcMulGadget;
+
 mod identity;
 pub use identity::IdentityGadget;
 

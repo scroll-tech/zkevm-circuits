@@ -17,8 +17,10 @@ use eth_types::{
     sign_types::SignData,
     word, GethExecStep, ToLittleEndian, Word, H256,
 };
+use ethers_core::k256::elliptic_curve::subtle::{Choice, CtOption};
 use gadgets::impl_expr;
 use halo2_proofs::{
+    arithmetic::CurveAffine,
     halo2curves::bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
     plonk::Expression,
 };
@@ -602,6 +604,69 @@ impl Default for EcMulOp {
         let s = Fr::from_raw([2, 0, 0, 0]);
         let r = p.mul(s).into();
         Self { p, s, r }
+    }
+}
+
+impl EcMulOp {
+    /// Creates a new EcMul op given the inputs and output.
+    pub fn new(p: G1Affine, s: Fr, r: G1Affine) -> Self {
+        assert_eq!(p.mul(s), r.into());
+        Self { p, s, r }
+    }
+
+    /// Creates a new EcMul op given input and output bytes from a precompile call.    
+    pub fn new_from_bytes(input: &[u8], output: &[u8]) -> CtOption<Self> {
+        let copy_bytes = |buf: &mut [u8; 32], bytes: &[u8]| -> () {
+            buf.copy_from_slice(bytes);
+            buf.reverse();
+        };
+
+        let mut buf = [0u8; 32];
+
+        let p: CtOption<G1Affine> = {
+            copy_bytes(&mut buf, &input[0x00..0x20]);
+            Fq::from_bytes(&buf).and_then(|x| {
+                copy_bytes(&mut buf, &input[0x20..0x40]);
+                Fq::from_bytes(&buf).and_then(|y| {
+                    G1Affine::from_xy(x, y)
+                })
+            })
+        };
+
+        let s: CtOption<Fr> = {
+            copy_bytes(&mut buf, &input[0x40..0x60]);
+            Fr::from_bytes(&buf)
+        };
+
+        let r_specified: CtOption<G1Affine> = {
+            copy_bytes(&mut buf, &output[0x00..0x20]);
+            Fq::from_bytes(&buf).and_then(|x| {
+                copy_bytes(&mut buf, &output[0x20..0x40]);
+                Fq::from_bytes(&buf).and_then(|y| {
+                    G1Affine::from_xy(x, y)
+                })
+            })
+        };
+
+        p.and_then(|p| {
+            s.and_then(|s| {
+                r_specified.and_then(|r_specified| {
+                    let r_expected: G1Affine = p.mul(s).into();
+                    if r_expected.eq(&r_specified) {
+                        CtOption::new(
+                            Self {
+                                p,
+                                s,
+                                r: r_specified
+                            },
+                            Choice::from(1u8)
+                        )
+                    } else {
+                        CtOption::new(Self::default(), Choice::from(0u8))
+                    }
+                })
+            })
+        })
     }
 }
 

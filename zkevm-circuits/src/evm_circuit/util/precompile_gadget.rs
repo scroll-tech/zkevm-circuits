@@ -130,8 +130,8 @@ impl<F: Field> PrecompileGadget<F> {
             cb.condition(is_success, |cb| {
                 cb.require_equal(
                     "input and output bytes are the same",
-                    input_bytes_rlc,
-                    output_bytes_rlc,
+                    input_bytes_rlc.expr(),
+                    output_bytes_rlc.expr(),
                 );
                 cb.require_equal(
                     "input length and precompile return length are the same",
@@ -150,7 +150,40 @@ impl<F: Field> PrecompileGadget<F> {
         });
 
         cb.condition(address.value_equals(PrecompileCalls::Bn128Mul), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBn256ScalarMul, None, |_cb| {});
+            cb.constrain_next_step(ExecutionState::PrecompileBn256ScalarMul, None, |cb| {
+                let (is_valid, p_x_rlc, p_y_rlc, scalar_s_rlc, r_x_rlc, r_y_rlc) = (
+                    cb.query_bool(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2(),
+                    cb.query_cell_phase2()
+                );
+                let (r_pow_32, r_pow_64) = {
+                    let challenges = cb.challenges().keccak_powers_of_randomness::<16>();
+                    let r_pow_16 = challenges[15].clone();
+                    let r_pow_32 = r_pow_16.square();
+                    let r_pow_64 = r_pow_32.expr().square();
+                    (r_pow_32, r_pow_64)
+                };
+                cb.require_equal(
+                    "input bytes (RLC) = [ p_x | p_y | s ]",
+                    padding_gadget.padded_rlc(),
+                    (p_x_rlc.expr() * r_pow_64)
+                        + (p_y_rlc.expr() * r_pow_32.expr())
+                        + scalar_s_rlc.expr(),
+                );
+                // RLC of output bytes always equals RLC of result elliptic curve point R.
+                cb.require_equal(
+                    "output bytes (RLC) = [ r_x | r_y ]",
+                    output_bytes_rlc.expr(),
+                    r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
+                );
+                // If the computation was invalid, RLC(output) == 0.
+                cb.condition(not::expr(is_valid.expr()), |cb| {
+                    cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
+                });
+            });
         });
 
         cb.condition(address.value_equals(PrecompileCalls::Bn128Pairing), |cb| {
