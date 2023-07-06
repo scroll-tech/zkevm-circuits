@@ -597,7 +597,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         meta.lookup_any("byte value check", |meta| {
             let cond = and::expr([
                 meta.query_fixed(q_enabled, Rotation::cur()),
-                is_padding_in_dt.expr(Rotation::cur())(meta),
+                not::expr(is_padding_in_dt.expr(Rotation::cur())(meta)),
             ]);
 
             vec![meta.query_advice(data_table.byte_value, Rotation::cur())]
