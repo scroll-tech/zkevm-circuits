@@ -183,6 +183,7 @@ impl<F: Field> SizeRepresent<F> {
         let len_blank_bytes = len_bytes[..(32-SIZE_REPRESENT_BYTES)]
             .iter().map(Cell::expr).collect::<Vec<_>>();
         let is_rest_field_zero = IsZeroGadget::construct(cb, 
+                "if length field exceed 1 byte",
                 expr_from_bytes(&len_blank_bytes),
             );
         let len_effect_bytes = len_bytes[(32-SIZE_REPRESENT_BYTES)..]
@@ -470,7 +471,7 @@ impl<F: Field> ModExpOutputs<F> {
     ) -> Self {
 
         let output_len = inner_success * modulus_len;
-        let is_result_zero = IsZeroGadget::construct(cb, output_len.clone());
+        let is_result_zero = IsZeroGadget::construct(cb, "if output len is nil", output_len.clone());
  
         let result = cb.query_bytes();
         let result_limbs = Limbs::configure(cb, &result);
