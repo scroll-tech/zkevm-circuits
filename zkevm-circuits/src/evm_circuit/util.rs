@@ -416,6 +416,12 @@ impl<F: FieldExt> CellManager<F> {
         }
     }
 
+    pub(crate) fn reset_heights_to(&mut self, heights: &[usize]) {
+        for (column, &height) in self.columns.iter_mut().zip_eq(heights.iter()) {
+            column.height = height;
+        }
+    }
+
     pub(crate) fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
         let mut cells = Vec::with_capacity(count);
         while cells.len() < count {
@@ -474,6 +480,10 @@ impl<F: FieldExt> CellManager<F> {
             .map(|column| column.height)
             .max()
             .unwrap()
+    }
+
+    pub(crate) fn get_heights(&self) -> Vec<usize> {
+        self.columns().iter().map(|column| column.height).collect()
     }
 
     /// Returns a map of CellType -> (width, height, num_cells)
