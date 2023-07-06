@@ -3999,6 +3999,7 @@ dependencies = [
 [[package]]
 name = "rmd160-circuits"
 version = "0.1.0"
+source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?branch=integration#40b2c52919d72404f34a613dc5568f234d0e8a9d"
 dependencies = [
  "ark-std",
  "halo2-gate-generator",
