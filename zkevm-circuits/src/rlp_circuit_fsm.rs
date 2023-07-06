@@ -1151,6 +1151,10 @@ impl<F: Field> RlpCircuitConfig<F> {
                 let (lt, eq) = tlength_lte_mlength.expr(meta, Some(Rotation::cur()));
                 cb.require_equal(
                     "tag_length <= max_length",
+                    // we can use `sum` instead of `or` for two reasons
+                    // 1. both `lt` and `eq` are boolean and they cannot be true at the same time,
+                    //    therefore the result of `sum` is same as `or`.
+                    // 2. sum has lower degree
                     sum::expr([
                         lt, eq,
                     ]),

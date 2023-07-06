@@ -151,13 +151,15 @@ use crate::{
     },
 };
 
-// The number of bytes of list can not larger than 2^24 = 2^(8*3).
-pub(crate) const N_BYTES_LIST: usize = 3;
+// The number of bytes of list can not be larger than 2^24 = 2^(8*3).
+// This const is meant to be the maximum of tag_length for representing a `LongList`.
+// For example, [0xf9, 0xff, 0xff] has tag_length = 2 and has 0xffff bytes inside.
+pub(crate) const MAX_TAG_LENGTH_OF_LIST: usize = 3;
 pub(crate) const N_BYTES_CALLDATA: usize = 1 << 24;
 
 fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
+        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
@@ -179,7 +181,7 @@ fn eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
 
 fn eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
+        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
@@ -201,7 +203,7 @@ fn eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn pre_eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
+        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
@@ -220,7 +222,7 @@ pub fn pre_eip155_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, Nonce, N_BYTES_LIST, vec![1]),
+        (BeginList, Nonce, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (Nonce, GasPrice, N_BYTES_U64, vec![2]),
         (GasPrice, Gas, N_BYTES_WORD, vec![3]),
         (Gas, To, N_BYTES_U64, vec![4]),
@@ -243,7 +245,7 @@ pub fn pre_eip155_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
         (TxType, BeginList, 1, vec![1]),
-        (BeginList, ChainId, N_BYTES_LIST, vec![2]),
+        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![2]),
         (ChainId, Nonce, N_BYTES_U64, vec![3]),
         (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![4]),
         (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![5]),
@@ -252,21 +254,21 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![8]),
         (TxValue, Data, N_BYTES_WORD, vec![9]),
         (Data, BeginVector, N_BYTES_CALLDATA, vec![10, 11]),
-        (BeginVector, EndVector, N_BYTES_LIST, vec![21]), // access_list is none
-        (BeginVector, BeginList, N_BYTES_LIST, vec![12]),
-        (BeginList, AccessListAddress, N_BYTES_LIST, vec![13]),
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![21]), // access_list is none
+        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![12]),
+        (BeginList, AccessListAddress, MAX_TAG_LENGTH_OF_LIST, vec![13]),
         (
             AccessListAddress,
             BeginVector,
             N_BYTES_ACCOUNT_ADDRESS,
             vec![14, 15],
         ),
-        (BeginVector, EndVector, N_BYTES_LIST, vec![18]), /* access_list.storage_keys
-                                                           * is none */
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![18]), /* access_list.storage_keys
+                                                                  * is none */
         (
             BeginVector,
             AccessListStorageKey,
-            N_BYTES_LIST,
+            MAX_TAG_LENGTH_OF_LIST,
             vec![16, 17],
         ),
         (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![18]), // finished parsing storage keys
@@ -295,7 +297,7 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
 
 pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
     let rows = vec![
-        (BeginList, ChainId, N_BYTES_LIST, vec![1]),
+        (BeginList, ChainId, MAX_TAG_LENGTH_OF_LIST, vec![1]),
         (ChainId, Nonce, N_BYTES_U64, vec![2]),
         (Nonce, MaxPriorityFeePerGas, N_BYTES_U64, vec![3]),
         (MaxPriorityFeePerGas, MaxFeePerGas, N_BYTES_WORD, vec![4]),
@@ -304,20 +306,21 @@ pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
         (To, TxValue, N_BYTES_ACCOUNT_ADDRESS, vec![7]),
         (TxValue, Data, N_BYTES_WORD, vec![8]),
         (Data, BeginVector, N_BYTES_CALLDATA, vec![9, 10]),
-        (BeginVector, EndVector, N_BYTES_LIST, vec![20]), // access_list is none
-        (BeginVector, BeginList, N_BYTES_LIST, vec![11]),
-        (BeginList, AccessListAddress, N_BYTES_LIST, vec![12]),
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![20]), // access_list is none
+        (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![11]),
+        (BeginList, AccessListAddress, MAX_TAG_LENGTH_OF_LIST, vec![12]),
         (
             AccessListAddress,
             BeginVector,
             N_BYTES_ACCOUNT_ADDRESS,
             vec![13, 14],
         ),
-        (BeginVector, EndVector, N_BYTES_LIST, vec![17]), /* access_list.storage_keys is none */
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![17]), /* access_list.storage_keys is
+                                                                  * none */
         (
             BeginVector,
             AccessListStorageKey,
-            N_BYTES_LIST,
+            MAX_TAG_LENGTH_OF_LIST,
             vec![15, 16],
         ),
         (AccessListStorageKey, EndVector, N_BYTES_WORD, vec![17]), // finished parsing storage keys
