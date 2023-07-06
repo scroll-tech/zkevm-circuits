@@ -15,9 +15,7 @@ use zkevm_circuits::{
     util::{Challenges, SubCircuitConfig},
 };
 
-use crate::{rlc::RlcConfig, util::capacity};
-
-const TEST_LOG_DEGREE: usize = 17;
+use crate::{constants::LOG_DEGREE, rlc::RlcConfig, util::capacity};
 
 #[derive(Default, Debug, Clone)]
 struct DynamicHashCircuit {
@@ -82,12 +80,8 @@ impl Circuit<Fr> for DynamicHashCircuit {
 
         let challenge = challenges.values(&layouter);
 
-        let witness = multi_keccak(
-            &[self.inputs.clone()],
-            challenge,
-            capacity(1 << TEST_LOG_DEGREE),
-        )
-        .unwrap();
+        let witness =
+            multi_keccak(&[self.inputs.clone()], challenge, capacity(1 << LOG_DEGREE)).unwrap();
 
         layouter.assign_region(
             || "mock circuit",
@@ -186,13 +180,13 @@ impl CircuitExt<Fr> for DynamicHashCircuit {}
 
 #[test]
 fn test_hashes() {
-    let params = gen_srs(TEST_LOG_DEGREE as u32);
+    let params = gen_srs(LOG_DEGREE as u32);
     let mut rng = test_rng();
     const LEN: usize = 100;
 
     let a = (0..LEN).map(|x| x as u8).collect::<Vec<u8>>();
     let circuit = DynamicHashCircuit { inputs: a };
-    let prover = MockProver::run(TEST_LOG_DEGREE as u32, &circuit, vec![]).unwrap();
+    let prover = MockProver::run(LOG_DEGREE as u32, &circuit, vec![]).unwrap();
     prover.assert_satisfied_par();
 
     let pk = gen_pk(&params, &circuit, None);
