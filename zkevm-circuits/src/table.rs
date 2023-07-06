@@ -2248,13 +2248,18 @@ impl ModExpTable {
     /// Construct the modexp table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         
-        Self {
+        let ret = Self {
             q_head: meta.fixed_column(),
             base: meta.advice_column(),
             exp: meta.advice_column(),
             modulus: meta.advice_column(),
             result: meta.advice_column(),
-        }
+        };
+        meta.enable_equality(ret.base);
+        meta.enable_equality(ret.exp);
+        meta.enable_equality(ret.modulus);
+        meta.enable_equality(ret.result);
+        ret
     }
 
     /// helper for devide a U256 into 3 108bit limbs

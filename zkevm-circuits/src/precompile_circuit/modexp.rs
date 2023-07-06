@@ -174,6 +174,8 @@ impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
         layouter.assign_region(
             || "modexp circuit",
             |mut region| {
+
+                range_chip.initialize(&mut region)?;
                 let mut calc_offset = 0;
                 for (n, event) in self.0.iter().enumerate(){
                     calc_offset = config.assign_group(
