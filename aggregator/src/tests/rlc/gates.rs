@@ -7,7 +7,7 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error},
 };
 
-use crate::rlc::RlcConfig;
+use crate::rlc::{rlc, RlcConfig};
 
 #[derive(Default, Debug, Clone, Copy)]
 struct ArithTestCircuit {
@@ -84,7 +84,7 @@ fn test_field_ops() {
     let f3 = f1 + f2;
     let f4 = f1 * f2;
     let f5 = f1 * f2 + f3;
-    let f6 = f1 + f2 * f5 + f3 * f5 * f5 + f4 * f5 * f5 * f5;
+    let f6 = rlc(&[f1, f2, f3, f4], &f5);
 
     {
         let circuit = ArithTestCircuit {

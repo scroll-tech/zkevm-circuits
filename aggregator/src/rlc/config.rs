@@ -173,16 +173,9 @@ impl RlcConfig {
         challenge: &AssignedCell<Fr, Fr>,
         offset: &mut usize,
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
-        let challenge =
-            challenge.copy_advice(|| "challenge", region, self.phase_2_column, *offset)?;
-        *offset += 1;
-
-        let mut cur_challenge = challenge.clone();
-
         let mut acc = inputs[0].clone();
         for input in inputs.iter().skip(1) {
-            acc = self.mul_add(region, input, &cur_challenge, &acc, offset)?;
-            cur_challenge = self.mul(region, &challenge, &cur_challenge, offset)?;
+            acc = self.mul_add(region, &acc, &challenge, input, offset)?;
         }
         Ok(acc)
     }

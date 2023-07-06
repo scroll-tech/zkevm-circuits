@@ -12,7 +12,11 @@ use zkevm_circuits::{
     util::{Challenges, SubCircuitConfig},
 };
 
-use crate::{core::assign_batch_hashes, rlc::RlcConfig, util::capacity};
+use crate::{
+    core::assign_batch_hashes,
+    rlc::{rlc, RlcConfig},
+    util::capacity,
+};
 
 #[derive(Default, Debug, Clone)]
 struct DynamicHashCircuit {
@@ -73,10 +77,22 @@ impl Circuit<Fr> for DynamicHashCircuit {
 
         println!("challenge: {:?}", challenge);
         let witness = multi_keccak(&[self.inputs.clone()], challenge, capacity(1 << 19)).unwrap();
-
+        let mut challenge_fr = Fr::zero();
+        challenge.keccak_input().map(|x| challenge_fr = x);
+        let rlc = rlc(
+            &self
+                .inputs
+                .iter()
+                .map(|&x| Fr::from(x as u64))
+                .collect::<Vec<_>>(),
+            &challenge_fr,
+        );
+        println!("rlc: {:?}", rlc);
         for row in witness.iter().take(1200) {
-            println!("{:?}", row);
-            println!("======================");
+            if row.is_final {
+                println!("{:?}", row);
+                println!("======================");
+            }
         }
 
         // let (hash_input_cells, hash_output_cells) = assign_batch_hashes(
@@ -101,9 +117,9 @@ impl Circuit<Fr> for DynamicHashCircuit {
 #[test]
 fn test_hashes() {
     let k = 19;
-    const LEN: usize = 100;
-    // let a = (0..LEN).map(|x| x as u8).collect::<Vec<u8>>();
-    let a = vec![1;LEN];
+    const LEN: usize = 200;
+    let a = (0..LEN).map(|x| x as u8).collect::<Vec<u8>>();
+    // let a = vec![1; LEN];
     let circuit = DynamicHashCircuit { inputs: a };
     let prover = MockProver::run(k, &circuit, vec![]).unwrap();
     // prover.assert_satisfied();
