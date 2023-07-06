@@ -85,7 +85,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         // These are globally defined because they are used across multiple cases.
         let copy_rw_increase = cb.query_cell();
-        let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, copy_rw_increase.expr());
+        let copy_rw_increase_is_zero = IsZeroGadget::construct(cb, "", copy_rw_increase.expr());
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [range.address()]);
 

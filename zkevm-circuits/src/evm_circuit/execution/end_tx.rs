@@ -122,10 +122,11 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             AccountFieldTag::CodeHash,
             coinbase_codehash.expr(),
         );
-        let coinbase_codehash_is_zero = IsZeroGadget::construct(cb, coinbase_codehash.expr());
+        let coinbase_codehash_is_zero =
+            IsZeroGadget::construct(cb, "coinbase_codehash_is_zero", coinbase_codehash.expr());
 
         let coinbase_reward_is_zero =
-            IsZeroGadget::construct(cb, mul_effective_tip_by_gas_used.product().expr());
+            IsZeroGadget::construct(cb, "coinbase_reward_is_zero", effective_fee.expr());
         // If coinbase account balance will become positive because of this tx, update its codehash
         // from 0 to the empty codehash.
         let create_coinbase_account = and::expr(&[

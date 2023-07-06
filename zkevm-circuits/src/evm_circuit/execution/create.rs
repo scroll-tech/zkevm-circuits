@@ -277,7 +277,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             code_hash_previous.expr(),
         );
 
-        let not_address_collision = IsZeroGadget::construct(cb, code_hash_previous.expr());
+        let not_address_collision = IsZeroGadget::construct(cb, "", code_hash_previous.expr());
         /*
         // CREATE2 may cause address collision error. And for a tricky
         // case of CREATE, it could also cause this error. e.g. the `to`

@@ -34,11 +34,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
+        let is_call = IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::CALL.expr());
         let gas_word = cb.query_word_rlc();
         let code_address_word = cb.query_word_rlc();
         let value = cb.query_word_rlc();
-        let is_value_zero = IsZeroGadget::construct(cb, value.expr());
+        let is_value_zero = IsZeroGadget::construct(cb, "", value.expr());
 
         // require_in_set method will spilit into more low degree expressions if exceed
         // max_degree. otherwise need to do fixed lookup for these opcodes

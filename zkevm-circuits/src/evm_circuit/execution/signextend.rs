@@ -49,7 +49,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         // need to do any changes. So just sum all the non-LSB byte
         // values here and then check if it's non-zero so we can use
         // that as an additional condition to enable the selector.
-        let is_msb_sum_zero = IsZeroGadget::construct(cb, sum::expr(&index.cells[1..32]));
+        let is_msb_sum_zero = IsZeroGadget::construct(cb, "", sum::expr(&index.cells[1..32]));
 
         // Check if this byte is selected looking only at the LSB of the index
         // word

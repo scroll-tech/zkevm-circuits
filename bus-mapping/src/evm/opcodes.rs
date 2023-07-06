@@ -569,7 +569,11 @@ pub fn gen_begin_tx_ops(
             && !callee_account.code_hash.eq(&CodeDB::empty_code_hash()))
             || !callee_account.nonce.is_zero())
     {
-        unimplemented!("deployment collision");
+        unimplemented!(
+            "deployment collision at {:?}, account {:?}",
+            call.address,
+            callee_account
+        );
     }
     let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
         (true, _) => (call.code_hash.to_word(), false),
