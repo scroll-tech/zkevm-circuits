@@ -7,7 +7,7 @@ use halo2_proofs::{
 };
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
 use snark_verifier_sdk::{
-    gen_pk, gen_proof_shplonk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt,
+    gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt,
 };
 use zkevm_circuits::{
     keccak_circuit::{
@@ -218,6 +218,9 @@ fn test_hashes() {
     {
         let a: Vec<u8> = (0..LEN * 2).map(|x| x as u8).collect::<Vec<u8>>();
         let circuit = DynamicHashCircuit { inputs: a };
+        let prover = MockProver::run(LOG_DEGREE as u32, &circuit, vec![]).unwrap();
+        prover.assert_satisfied_par();
+
         let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>);
         assert!(verify_snark_shplonk::<DynamicHashCircuit>(
             &params,
@@ -230,6 +233,9 @@ fn test_hashes() {
     {
         let a: Vec<u8> = (0..LEN * 3).map(|x| x as u8).collect::<Vec<u8>>();
         let circuit = DynamicHashCircuit { inputs: a };
+        let prover = MockProver::run(LOG_DEGREE as u32, &circuit, vec![]).unwrap();
+        prover.assert_satisfied_par();
+
         let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>);
         assert!(verify_snark_shplonk::<DynamicHashCircuit>(
             &params,
