@@ -13,6 +13,7 @@ use zkevm_circuits::{
 };
 
 use crate::{
+    constants::LOG_DEGREE,
     core::assign_batch_hashes,
     rlc::{rlc, RlcConfig},
     util::capacity,
@@ -76,37 +77,78 @@ impl Circuit<Fr> for DynamicHashCircuit {
         let challenge = challenges.values(&layouter);
 
         println!("challenge: {:?}", challenge);
-        let witness = multi_keccak(&[self.inputs.clone()], challenge, capacity(1 << 19)).unwrap();
-        let mut challenge_fr = Fr::zero();
-        challenge.keccak_input().map(|x| challenge_fr = x);
-        let rlc = rlc(
-            &self
-                .inputs
-                .iter()
-                .map(|&x| Fr::from(x as u64))
-                .collect::<Vec<_>>(),
-            &challenge_fr,
-        );
+        let witness =
+            multi_keccak(&[self.inputs.clone()], challenge, capacity(1 << LOG_DEGREE)).unwrap();
+
+        // compute rlc in the clear
+        let rlc = {
+            let mut challenge_fr = Fr::zero();
+            challenge.keccak_input().map(|x| challenge_fr = x);
+            rlc(
+                &self
+                    .inputs
+                    .iter()
+                    .map(|&x| Fr::from(x as u64))
+                    .collect::<Vec<_>>(),
+                &challenge_fr,
+            )
+        };
+
         println!("rlc: {:?}", rlc);
-        for row in witness.iter().take(1200) {
+        for (i, row) in witness.iter().enumerate().take(1200) {
             if row.is_final {
-                println!("{:?}", row);
+                println!("{}-th row:\n{:?}", i, row);
                 println!("======================");
             }
         }
 
-        // let (hash_input_cells, hash_output_cells) = assign_batch_hashes(
-        //     &config.keccak_circuit_config,
-        //     &mut layouter,
-        //     challenges,
-        //     &[self.inputs.clone()],
-        // )
-        // .unwrap();
-
         layouter.assign_region(
             || "mock circuit",
             |mut region| {
-                config.rlc_config.pad(&mut region, &0)?;
+                // keccak part
+                let mut data_rlc_cells = vec![];
+                for (offset, keccak_row) in witness.iter().enumerate() {
+                    let row =
+                        config
+                            .keccak_circuit_config
+                            .set_row(&mut region, offset, keccak_row)?;
+                    if keccak_row.is_final && keccak_row.length != 0 {
+                        // second element is data rlc
+                        data_rlc_cells.push(row[1].clone());
+                    }
+                }
+
+                // rlc part
+                let mut offset = 0;
+                let challenge = {
+                    let mut tmp = Fr::zero();
+                    challenge.keccak_input().map(|x| tmp = x);
+                    config
+                        .rlc_config
+                        .load_private(&mut region, &tmp, &mut offset)?
+                };
+
+                let rlc_inputs = self
+                    .inputs
+                    .iter()
+                    .map(|&x| {
+                        config
+                            .rlc_config
+                            .load_private(&mut region, &Fr::from(x as u64), &mut offset)
+                            .unwrap()
+                    })
+                    .collect::<Vec<_>>();
+
+                let rlc_cells =
+                    config
+                        .rlc_config
+                        .rlc(&mut region, &rlc_inputs, &challenge, &mut offset)?;
+
+                // rlc should be either one of data_rlc_cells[0], data_rlc_cells[1] and
+                // data_rlc_cells[2] so we compute prod =
+                // (data_rlc_cells[0]-rlc)*(data_rlc_cells[1]-rlc)*(data_rlc_cells[2]-rlc)
+                // and constraint prod is zero
+
                 Ok(())
             },
         )?;
@@ -122,7 +164,7 @@ fn test_hashes() {
     // let a = vec![1; LEN];
     let circuit = DynamicHashCircuit { inputs: a };
     let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-    // prover.assert_satisfied();
+    prover.assert_satisfied();
 
-    assert!(false);
+    // assert!(false);
 }

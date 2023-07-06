@@ -79,6 +79,8 @@ pub(crate) fn assign_batch_hashes<F: Field>(
     let mut cur_preimage_index = preimage_indices_iter.next();
     let mut cur_digest_index = digest_indices_iter.next();
 
+    let mut data_rlcs = vec![];
+
     layouter
         .assign_region(
             || "assign keccak rows",
@@ -100,8 +102,8 @@ pub(crate) fn assign_batch_hashes<F: Field>(
                     let row = config.set_row(&mut region, offset, keccak_row)?;
 
                     if cur_preimage_index.is_some() && *cur_preimage_index.unwrap() == offset {
-                        // 7-th column is Keccak input in Keccak circuit
-                        current_hash_input_cells.push(row[6].clone());
+                        // 10-th column is Keccak input in Keccak circuit
+                        current_hash_input_cells.push(row[10].clone());
                         cur_preimage_index = preimage_indices_iter.next();
                     }
                     if cur_digest_index.is_some() && *cur_digest_index.unwrap() == offset {
@@ -118,6 +120,9 @@ pub(crate) fn assign_batch_hashes<F: Field>(
                         hash_output_cells.push(current_hash_output_cells);
                         current_hash_input_cells = vec![];
                         current_hash_output_cells = vec![];
+
+                        // second element is data rlc
+                        data_rlcs.push(row[1].clone());
                     }
                 }
                 end_timer!(timer);

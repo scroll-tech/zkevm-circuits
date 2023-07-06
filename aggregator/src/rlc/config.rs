@@ -82,6 +82,38 @@ impl RlcConfig {
         res
     }
 
+    /// Enforce the element in f is a zero element.
+    pub(crate) fn enforce_zero(
+        &self,
+        region: &mut Region<Fr>,
+        f: &AssignedCell<Fr, Fr>,
+        offset: &mut usize,
+    ) -> Result<(), Error> {
+        self.selector.enable(region, *offset)?;
+        
+        region.assign_advice(
+            || "a",
+            self.phase_2_column,
+            *offset,
+            || Value::known(Fr::zero()),
+        )?;
+        region.assign_advice(
+            || "b",
+            self.phase_2_column,
+            *offset + 1,
+            || Value::known(Fr::zero()),
+        )?;
+        f.copy_advice(|| "c", region, self.phase_2_column, *offset + 2)?;
+        region.assign_advice(
+            || "d",
+            self.phase_2_column,
+            *offset + 3,
+            || Value::known(Fr::zero()),
+        )?;
+        *offset += 4;
+        Ok(())
+    }
+
     /// Enforce res = a + b
     pub(crate) fn add(
         &self,
@@ -182,7 +214,7 @@ impl RlcConfig {
 
     // padded the columns
     pub(crate) fn pad(&self, region: &mut Region<Fr>, offset: &usize) -> Result<(), Error> {
-        for index in *offset..1 << LOG_DEGREE {
+        for index in *offset..(1 << LOG_DEGREE - 1) {
             region.assign_advice(
                 || "pad",
                 self.phase_2_column,

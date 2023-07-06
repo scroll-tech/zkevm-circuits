@@ -17,6 +17,7 @@ struct ArithTestCircuit {
     f4: Fr,
     f5: Fr,
     f6: Fr,
+    f7: Fr,
 }
 
 impl Circuit<Fr> for ArithTestCircuit {
@@ -46,6 +47,7 @@ impl Circuit<Fr> for ArithTestCircuit {
                 let f4 = config.load_private(&mut region, &self.f4, &mut offset)?;
                 let f5 = config.load_private(&mut region, &self.f5, &mut offset)?;
                 let f6 = config.load_private(&mut region, &self.f6, &mut offset)?;
+                let f7 = config.load_private(&mut region, &self.f7, &mut offset)?;
 
                 // unit test: addition
                 {
@@ -67,6 +69,10 @@ impl Circuit<Fr> for ArithTestCircuit {
                     let f6_rec = config.rlc(&mut region, &[f1, f2, f3, f4], &f5, &mut offset)?;
                     region.constrain_equal(f6.cell(), f6_rec.cell())?;
                 }
+                // unit test: enforce_zero
+                {
+                    config.enforce_zero(&mut region, &f7, &mut offset)?;
+                }
 
                 Ok(())
             },
@@ -85,6 +91,7 @@ fn test_field_ops() {
     let f4 = f1 * f2;
     let f5 = f1 * f2 + f3;
     let f6 = rlc(&[f1, f2, f3, f4], &f5);
+    let f7 = Fr::zero();
 
     {
         let circuit = ArithTestCircuit {
@@ -94,6 +101,7 @@ fn test_field_ops() {
             f4,
             f5,
             f6,
+            f7,
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         prover.assert_satisfied();
@@ -107,6 +115,7 @@ fn test_field_ops() {
             f4,
             f5,
             f6,
+            f7,
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert!(prover.verify().is_err());
@@ -120,6 +129,7 @@ fn test_field_ops() {
             f4: Fr::zero(),
             f5,
             f6,
+            f7,
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert!(prover.verify().is_err());
@@ -133,6 +143,7 @@ fn test_field_ops() {
             f4,
             f5: Fr::zero(),
             f6,
+            f7,
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert!(prover.verify().is_err());
@@ -146,6 +157,21 @@ fn test_field_ops() {
             f4,
             f5,
             f6: Fr::zero(),
+            f7,
+        };
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert!(prover.verify().is_err());
+    }
+
+    {
+        let circuit = ArithTestCircuit {
+            f1,
+            f2,
+            f3,
+            f4,
+            f5,
+            f6,
+            f7: Fr::one(),
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert!(prover.verify().is_err());
