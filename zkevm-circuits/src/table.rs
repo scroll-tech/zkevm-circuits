@@ -2261,14 +2261,17 @@ impl ModExpTable {
     pub fn split_u256_108bit_limbs(word: &Word) -> [u128;3]{
         let bit108 = 1u128<<108;
         let (next, limb0) = word.div_mod(U256::from(bit108));
-        let (limb1, limb2) = next.div_mod(U256::from(bit108));
+        let (limb2, limb1) = next.div_mod(U256::from(bit108));
         [limb0.as_u128(), limb1.as_u128(), limb2.as_u128()]
     }
 
     /// helper for obtain the modulus of a U256 in Fr
     pub fn native_u256<F: Field>(word: &Word) -> F {
+        let minus1 = -F::one();
+        let (div, _) = word.div_mod(Word::from_little_endian(minus1.to_repr().as_ref()));
+        let div = div.checked_add(Word::from(1u64)).unwrap();
         let mut bytes = [0u8; 64];
-        word.to_little_endian(&mut bytes[..32]);
+        div.to_little_endian(&mut bytes[..32]);
         F::from_bytes_wide(&bytes)
     }
 

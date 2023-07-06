@@ -162,6 +162,11 @@ fn rlc_word_rev<F: Field, const N: usize>(cells: &[Cell<F>; N], randomness: Expr
     ).expect("values should not be empty")
 }
 
+// calc for big-endian (notice util::expr_from_bytes calc for little-endian)
+fn expr_from_bytes<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
+    bytes.iter().fold(0.expr(), |acc, byte| acc * F::from(256) + byte.expr())
+}
+
 #[derive(Clone, Debug)]
 struct SizeRepresent<F> {
     len_bytes: Word<F>,
@@ -178,12 +183,12 @@ impl<F: Field> SizeRepresent<F> {
         let len_blank_bytes = len_bytes[..(32-SIZE_REPRESENT_BYTES)]
             .iter().map(Cell::expr).collect::<Vec<_>>();
         let is_rest_field_zero = IsZeroGadget::construct(cb, 
-                util::expr_from_bytes(&len_blank_bytes),
+                expr_from_bytes(&len_blank_bytes),
             );
         let len_effect_bytes = len_bytes[(32-SIZE_REPRESENT_BYTES)..]
             .iter().map(Cell::expr).collect::<Vec<_>>();            
         let is_not_exceed_limit = LtGadget::construct(cb, 
-            util::expr_from_bytes(&len_effect_bytes),
+            expr_from_bytes(&len_effect_bytes),
             (SIZE_LIMIT+1).expr(),
         );
         Self {
@@ -203,7 +208,7 @@ impl<F: Field> SizeRepresent<F> {
     pub fn value(&self) -> Expression<F> {
         let len_effect_bytes = self.len_bytes[(32-SIZE_REPRESENT_BYTES)..]
             .iter().map(Cell::expr).collect::<Vec<_>>();
-        util::expr_from_bytes(&len_effect_bytes)
+        expr_from_bytes(&len_effect_bytes)
     }
 
 
@@ -519,24 +524,24 @@ impl<F: Field> Limbs<F> {
 
         cb.require_equal(
             "split 14th byte in word into half",
-            word[14].expr(),
-            byte14_split_lo.expr() + 128.expr() * byte14_split_hi.expr(),
+            word[MODEXP_SIZE_LIMIT-14].expr(),
+            byte14_split_lo.expr() + byte14_split_hi.expr(),
         );
 
         let inv_16 = Expression::Constant(F::from(16u64).invert().unwrap());
 
         let limbs = [
-            util::expr_from_bytes(
+            expr_from_bytes(
                 &std::iter::once(&byte14_split_lo)
                 .chain(&word[MODEXP_SIZE_LIMIT-13..])
                 .collect::<Vec<_>>()                
             ),
-            util::expr_from_bytes(
+            expr_from_bytes(
                 &word[MODEXP_SIZE_LIMIT-27..MODEXP_SIZE_LIMIT-14].iter()
                 .chain(std::iter::once(&byte14_split_hi))
                 .collect::<Vec<_>>()
             ) * inv_16,
-            util::expr_from_bytes(
+            expr_from_bytes(
                 &word[..MODEXP_SIZE_LIMIT-27]
             ),
         ];
@@ -755,8 +760,9 @@ mod test {
     #[test]
     fn test_limbs(){
         use misc_precompiled_circuit::circuits::modexp::Number;
-        use halo2_proofs::halo2curves::bn256::Fr;
+        use halo2_proofs::{arithmetic::FieldExt, halo2curves::bn256::Fr};
         use num_bigint::BigUint;
+        use crate::table::ModExpTable;
 
         // simply take an hash for test
         let bi = BigUint::parse_bytes(b"fcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47", 16).unwrap();
@@ -787,6 +793,14 @@ mod test {
         assert_eq!(limb0, n.limbs[0].value);
         assert_eq!(limb1, n.limbs[1].value * Fr::from(16 as u64));
         assert_eq!(limb2, n.limbs[2].value);
+
+        let nt : Fr = ModExpTable::native_u256(&w);
+
+        let table_split = ModExpTable::split_u256_108bit_limbs(&w);
+        assert_eq!(Fr::from_u128(table_split[0]), n.limbs[0].value);
+        assert_eq!(Fr::from_u128(table_split[1]), n.limbs[1].value);
+        assert_eq!(Fr::from_u128(table_split[2]), n.limbs[2].value);
+        assert_eq!(nt, n.limbs[3].value);
         //Limb::new(None, value)
     }
 
@@ -878,6 +892,77 @@ mod test {
             ]
         };
 
+        static ref TEST_U256_VECTOR: Vec<PrecompileCallArgs> = {
+            vec![
+                PrecompileCallArgs {
+                    name: "modexp length in u256",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x20)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x20) 
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x20) 
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000008"))
+                        PUSH1(0x60)
+                        MSTORE
+                        PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000009"))
+                        PUSH1(0x80)
+                        MSTORE
+                        PUSH32(word!("0xfcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"))
+                        PUSH1(0xA0)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0xc0.into(),
+                    ret_offset: 0xe0.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },
+                PrecompileCallArgs {
+                    name: "modexp length in u256 and result wrapped",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x20)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x20) 
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x20) 
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000008"))
+                        PUSH1(0x60)
+                        MSTORE
+                        PUSH32(word!("0x0000000000000000000000000000000000000000000000000000000000000064"))
+                        PUSH1(0x80)
+                        MSTORE
+                        PUSH32(word!("0xfcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"))
+                        PUSH1(0xA0)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0xc0.into(),
+                    ret_offset: 0xe0.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },                
+            ]
+        };
+
         static ref TEST_INVALID_VECTOR: Vec<PrecompileCallArgs> = {
             vec![
                 PrecompileCallArgs {
@@ -911,6 +996,19 @@ mod test {
         };      
     }
 
+    #[ignore]
+    #[test]
+    fn precompile_modexp_test_fast() {        
+        let bytecode = TEST_VECTOR[0].with_call_op(OpcodeId::STATICCALL);
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
+        
+    }
+
+    #[ignore]
     #[test]
     fn precompile_modexp_test() {
         let call_kinds = vec![
@@ -929,4 +1027,24 @@ mod test {
             .run();
         }
     }
+
+    #[test]
+    fn precompile_modexp_test_u256() {
+        let call_kinds = vec![
+            OpcodeId::CALL,
+            OpcodeId::STATICCALL,
+            OpcodeId::DELEGATECALL,
+            OpcodeId::CALLCODE,
+        ];
+
+        for (test_vector, &call_kind) in TEST_U256_VECTOR.iter().cartesian_product(&call_kinds) {
+            let bytecode = test_vector.with_call_op(call_kind);
+
+            CircuitTestBuilder::new_from_test_ctx(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+            )
+            .run();
+        }
+    }
+
 }
