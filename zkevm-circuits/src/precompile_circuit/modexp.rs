@@ -28,8 +28,9 @@ use misc_precompiled_circuit::circuits::{
     },
 };
 
+/// ModExp circuit config
 #[derive(Clone, Debug)]
-struct ModExpCircuitConfig {
+pub struct ModExpCircuitConfig {
     modexp_config: ModExpConfig,
     rangecheck_config: RangeCheckConfig,
     modexp_table: ModExpTable,
@@ -128,8 +129,9 @@ impl ModExpCircuitConfig {
 
 const MODEXPCONFIG_EACH_CHIP_ROWS : usize = 9291;
 
+/// ModExp circuit for precompile modexp
 #[derive(Clone, Debug, Default)]
-struct ModExpCircuit<F: Field>(Vec<ModExpEvent>, std::marker::PhantomData<F>);
+pub struct ModExpCircuit<F: Field>(Vec<ModExpEvent>, std::marker::PhantomData<F>);
 
 impl<F: Field> SubCircuit<F> for ModExpCircuit<F> {
     type Config = ModExpCircuitConfig;

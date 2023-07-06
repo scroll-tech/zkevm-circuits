@@ -71,6 +71,7 @@ use crate::{
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, SubCircuit, SubCircuitConfig},
     witness::{block_convert, Block},
+    precompile_circuit,
 };
 
 #[cfg(feature = "zktrie")]
@@ -118,6 +119,7 @@ pub struct SuperCircuitConfig<F: Field> {
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
     sig_circuit: SigCircuitConfig<F>,
+    modexp_circuit: precompile_circuit::modexp::ModExpCircuitConfig,
     #[cfg(not(feature = "poseidon-codehash"))]
     bytecode_circuit: BytecodeCircuitConfig<F>,
     #[cfg(feature = "poseidon-codehash")]
@@ -305,6 +307,12 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         );
         log_circuit_info(meta, "sig circuit");
 
+        let modexp_circuit = precompile_circuit::modexp::ModExpCircuitConfig::new(
+            meta,
+            modexp_table,
+        );
+        log_circuit_info(meta, "modexp circuit");
+
         let state_circuit = StateCircuitConfig::new(
             meta,
             StateCircuitConfigArgs {
@@ -358,6 +366,7 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
             tx_circuit,
             exp_circuit,
             sig_circuit,
+            modexp_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
         }
@@ -393,6 +402,8 @@ pub struct SuperCircuit<
     pub poseidon_circuit: PoseidonCircuit<F>,
     /// Sig Circuit
     pub sig_circuit: SigCircuit<F>,
+    /// Modexp Circuit
+    pub modexp_circuit: precompile_circuit::modexp::ModExpCircuit<F>,
     /// Rlp Circuit
     pub rlp_circuit: RlpCircuit<F, Transaction>,
     /// Mpt Circuit
@@ -428,6 +439,7 @@ impl<
         let tx = TxCircuit::min_num_rows_block(block);
         let rlp = RlpCircuit::min_num_rows_block(block);
         let exp = ExpCircuit::min_num_rows_block(block);
+        let mod_exp = precompile_circuit::modexp::ModExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
         let poseidon = (0, 0); //PoseidonCircuit::min_num_rows_block(block);
         #[cfg(feature = "zktrie")]
@@ -442,6 +454,7 @@ impl<
             tx,
             rlp,
             exp,
+            mod_exp,
             pi,
             poseidon,
             #[cfg(feature = "zktrie")]
@@ -493,6 +506,7 @@ impl<
         let bytecode_circuit = BytecodeCircuit::new_from_block(block);
         let copy_circuit = CopyCircuit::new_from_block_no_external(block);
         let exp_circuit = ExpCircuit::new_from_block(block);
+        let modexp_circuit = precompile_circuit::modexp::ModExpCircuit::new_from_block(block);
         let keccak_circuit = KeccakCircuit::new_from_block(block);
         let poseidon_circuit = PoseidonCircuit::new_from_block(block);
         let rlp_circuit = RlpCircuit::new_from_block(block);
@@ -511,6 +525,7 @@ impl<
             poseidon_circuit,
             rlp_circuit,
             sig_circuit,
+            modexp_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
         }
@@ -557,6 +572,8 @@ impl<
             .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
         self.sig_circuit
             .synthesize_sub(&config.sig_circuit, challenges, layouter)?;
+        self.modexp_circuit
+            .synthesize_sub(&config.modexp_circuit, challenges, layouter)?;
         self.state_circuit
             .synthesize_sub(&config.state_circuit, challenges, layouter)?;
         self.copy_circuit
