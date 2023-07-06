@@ -51,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let phase2_withdraw_root_prev = cb.query_cell_phase2();
         // Note that rw_counter starts at 1
         let is_empty_block =
-            IsZeroGadget::construct(cb, cb.curr.state.rw_counter.clone().expr() - 1.expr());
+            IsZeroGadget::construct(cb, "", cb.curr.state.rw_counter.clone().expr() - 1.expr());
         // If the block is empty, we do 0 rw_table lookups
         // If the block is not empty, we will do 1 call_context lookup
         // and add 1 withdraw_root lookup
