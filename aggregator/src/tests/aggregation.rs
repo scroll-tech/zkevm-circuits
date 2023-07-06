@@ -32,7 +32,7 @@ fn test_mock_aggregation() {
     let mut chunks = (0..CHUNKS_PER_BATCH)
         .map(|_| ChunkHash::mock_chunk_hash(&mut rng))
         .collect_vec();
-    for i in 0..CHUNKS_PER_BATCH - 1 {
+    for i in 0..CHUNKS_PER_BATCH - 2 {
         chunks[i + 1].prev_state_root = chunks[i].post_state_root;
     }
     // Proof for test circuit
