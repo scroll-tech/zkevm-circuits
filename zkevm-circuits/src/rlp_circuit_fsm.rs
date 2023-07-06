@@ -1180,6 +1180,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             cb.condition(tidx_eq_tlen, |cb| {
                 // assertions
                 emit_rlp_tag!(meta, cb, tag_expr(meta), false);
+                constrain_eq!(meta, cb, rlp_table.tag_value, tag_value_acc_expr(meta));
 
                 // state transitions.
                 update_state!(meta, cb, tag, tag_next_expr(meta));
