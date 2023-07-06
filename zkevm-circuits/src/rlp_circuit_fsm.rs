@@ -306,6 +306,8 @@ pub struct RlpCircuitConfig<F> {
     tidx_lte_tlength: ComparatorConfig<F, 3>,
     /// Check for max_length <= 32
     mlength_lte_0x20: ComparatorConfig<F, 3>,
+    /// Check for tag_length <= max_length
+    tlength_lte_mlength: ComparatorConfig<F, 3>,
     /// Check for depth == 0
     depth_check: IsEqualConfig<F>,
     /// Check for depth == 1
@@ -775,6 +777,12 @@ impl<F: Field> RlpCircuitConfig<F> {
             |meta| meta.query_advice(max_length, Rotation::cur()),
             |_meta| 0x20.expr(),
         );
+        let tlength_lte_mlength = ComparatorChip::configure(
+            meta,
+            cmp_enabled,
+            |meta| meta.query_advice(tag_length, Rotation::cur()),
+            |meta| meta.query_advice(max_length, Rotation::cur()),
+        );
         let depth_check = IsEqualChip::configure(
             meta,
             cmp_enabled,
@@ -1179,6 +1187,18 @@ impl<F: Field> RlpCircuitConfig<F> {
             // Bytes => DecodeTagStart
             cb.condition(tidx_eq_tlen, |cb| {
                 // assertions
+                let (lt, eq) = tlength_lte_mlength.expr(meta, Some(Rotation::cur()));
+                cb.require_equal(
+                    "tag_length <= max_length",
+                    // we can use `sum` instead of `or` for two reasons
+                    // 1. both `lt` and `eq` are boolean and they cannot be true at the same time,
+                    //    therefore the result of `sum` is same as `or`.
+                    // 2. sum has lower degree
+                    sum::expr([
+                        lt, eq,
+                    ]),
+                    true.expr(),
+                );
                 emit_rlp_tag!(meta, cb, tag_expr(meta), false);
                 constrain_eq!(meta, cb, rlp_table.tag_value, tag_value_acc_expr(meta));
 
@@ -1330,6 +1350,8 @@ impl<F: Field> RlpCircuitConfig<F> {
             // LongList => DecodeTagStart
             cb.condition(tidx_eq_tlen.expr(), |cb| {
                 // assertions
+                let (lt, eq) = tlength_lte_mlength.expr(meta, Some(Rotation::cur()));
+                cb.require_equal("tag_length <= max_length", sum::expr([lt, eq]), true.expr());
 
                 // state transitions
                 update_state!(meta, cb, tag, tag_next_expr(meta));
@@ -1452,6 +1474,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             byte_value_gte_0xf8,
             tidx_lte_tlength,
             mlength_lte_0x20,
+            tlength_lte_mlength,
             depth_check,
             depth_eq_one,
 
@@ -1672,6 +1695,13 @@ impl<F: Field> RlpCircuitConfig<F> {
             row,
             F::from(witness.state_machine.tag_idx as u64),
             F::from(witness.state_machine.tag_length as u64),
+        )?;
+        let tlength_lte_mlength_chip = ComparatorChip::construct(self.tlength_lte_mlength.clone());
+        tlength_lte_mlength_chip.assign(
+            region,
+            row,
+            F::from(witness.state_machine.tag_length as u64),
+            F::from(witness.state_machine.max_length as u64),
         )?;
 
         let depth_check_chip = IsEqualChip::construct(self.depth_check.clone());
