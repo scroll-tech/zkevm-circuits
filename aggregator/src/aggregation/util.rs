@@ -1,10 +1,8 @@
-use halo2_proofs::{circuit::AssignedCell, halo2curves::FieldExt, plonk::Error};
+use halo2_proofs::halo2curves::FieldExt;
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
     gates::{flex_gate::FlexGateConfig, GateInstructions},
     AssignedValue, Context, QuantumCell,
 };
-
-use crate::rlc::RlcConfig;
 
 /// Input values a and b, return a boolean cell a < b
 pub(crate) fn is_smaller_than<F: FieldExt>(
@@ -27,4 +25,27 @@ pub(crate) fn is_smaller_than<F: FieldExt>(
     );
 
     *c_bits.last().unwrap()
+}
+
+#[macro_export]
+// convert halo2proof's AssignedCells to halo2-lib's AssignedValues.
+macro_rules! assigned_cell_to_value {
+    ($input_cells: ident, $ctx: ident, $gate: ident) => {
+        $input_cells
+            .iter()
+            .map(|cells| {
+                cells
+                    .iter()
+                    .map(|assigned_cell| {
+                        let value = assigned_cell.value().copied();
+                        let assigned_value = $gate.load_witness(&mut $ctx, value);
+                        $ctx.region
+                            .constrain_equal(assigned_cell.cell(), assigned_value.cell)
+                            .unwrap();
+                        assigned_value
+                    })
+                    .collect_vec()
+            })
+            .collect_vec()
+    };
 }

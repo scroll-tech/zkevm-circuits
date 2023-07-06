@@ -95,8 +95,10 @@ impl AggregationConfig {
 
         // enabling equality for preimage and digest columns
         meta.enable_equality(columns[6].advice);
-        // digest column
+        // enable equality for the digest column
         meta.enable_equality(columns.last().unwrap().advice);
+        // enable equality for the data RLC column
+        meta.enable_equality(keccak_circuit_config.keccak_table.input_rlc);
 
         // Instance column stores public input column
         // - the accumulator
@@ -123,7 +125,7 @@ impl AggregationConfig {
     }
 
     /// Flex gate configuration
-    pub fn gate(&self) -> &FlexGateConfig<Fr> {
+    pub fn flex_gate(&self) -> &FlexGateConfig<Fr> {
         &self.base_field_config.range.gate
     }
 

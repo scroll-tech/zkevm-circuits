@@ -44,6 +44,7 @@ pub(crate) fn assign_batch_hashes<F: Field>(
     (
         Vec<Vec<AssignedCell<F, F>>>, // input cells
         Vec<Vec<AssignedCell<F, F>>>, // digest cells
+        Vec<AssignedCell<F, F>>,      // data RLC cells
     ),
     Error,
 > {
@@ -58,12 +59,12 @@ pub(crate) fn assign_batch_hashes<F: Field>(
     //      chunk[k-1].post_state_root ||
     //      chunk[k-1].withdraw_root ||
     //      batch_data_hash)
-    // (2) batchDataHash preimage =
-    //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
-    // (3) chunk[i].piHash preimage =
+    // (2) chunk[i].piHash preimage =
     //      (chain id ||
     //      chunk[i].prevStateRoot || chunk[i].postStateRoot ||
     //      chunk[i].withdrawRoot || chunk[i].datahash)
+    // (3) batchDataHash preimage =
+    //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
     // each part of the preimage is mapped to image by Keccak256
     let witness = multi_keccak(preimages, challenges, capacity(num_rows)).unwrap();
     end_timer!(timer);
@@ -275,7 +276,7 @@ pub(crate) fn assign_batch_hashes<F: Field>(
         )
         .unwrap();
 
-    Ok((hash_input_cells, hash_output_cells))
+    Ok((hash_input_cells, hash_output_cells, data_rlcs))
 }
 
 /// Subroutine for the witness generations.

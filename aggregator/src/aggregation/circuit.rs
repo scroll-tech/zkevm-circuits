@@ -30,7 +30,8 @@ use zkevm_circuits::util::Challenges;
 
 use crate::{
     aggregation::{config::AggregationConfig, util::is_smaller_than},
-    constants::{BITS, LIMBS},
+    assigned_cell_to_value,
+    constants::{ACC_LEN, BITS, DIGEST_LEN, LIMBS},
     core::{assign_batch_hashes, extract_accumulators_and_proof},
     param::ConfigParams,
     BatchHash, ChunkHash, MAX_AGG_SNARKS,
@@ -73,28 +74,28 @@ impl AggregationCircuit {
             snarks_len,
             chunk_hashes.len(),
         );
+        assert!(
+            snarks_len <= MAX_AGG_SNARKS,
+            "input #snarks ({}) exceed maximum allowed ({})",
+            snarks_len,
+            MAX_AGG_SNARKS
+        );
+
         // sanity check: snarks's public input matches chunk_hashes
         for (chunk, snark) in chunk_hashes.iter().zip(snarks_without_padding.iter()) {
             let chunk_hash_bytes = chunk.public_input_hash();
             let snark_hash_bytes = &snark.instances[0];
 
-            assert_eq!(snark_hash_bytes.len(), 84);
+            assert_eq!(snark_hash_bytes.len(), ACC_LEN + DIGEST_LEN);
 
             for i in 0..32 {
                 // for each snark,
                 //  first 12 elements are accumulator
-                //  next 8 elements are chain id
-                //  next 32 elements are data hash (52=20+32)
                 //  next 32 elements are public_input_hash
-                //  data hash + public_input_hash = snark public input
+                //  accumulator + public_input_hash = snark public input
                 assert_eq!(
-                    Fr::from(chunk.data_hash.as_bytes()[i] as u64),
-                    snark_hash_bytes[i + 20]
-                );
-
-                assert_eq!(
-                    Fr::from(chunk_hash_bytes[i] as u64),
-                    snark_hash_bytes[i + 52]
+                    Fr::from(chunk_hash_bytes.as_bytes()[i] as u64),
+                    snark_hash_bytes[i + ACC_LEN]
                 );
             }
         }
@@ -103,8 +104,11 @@ impl AggregationCircuit {
         let dummy_snarks = if snarks_len < MAX_AGG_SNARKS {
             let mut params = params.clone();
             params.downsize(9);
-            let dummy_snark =
-                gen_dummy_snark::<SnarkCircuit, Kzg<Bn256, Bdfg21>>(&params, None, vec![84]);
+            let dummy_snark = gen_dummy_snark::<SnarkCircuit, Kzg<Bn256, Bdfg21>>(
+                &params,
+                None,
+                vec![ACC_LEN + DIGEST_LEN],
+            );
             vec![dummy_snark; MAX_AGG_SNARKS - snarks_len]
         } else {
             vec![]
@@ -125,8 +129,12 @@ impl AggregationCircuit {
 
         // extract batch's public input hash
         let batch_hash = BatchHash::construct(chunk_hashes);
-        let public_input_hash = &batch_hash.instances()[0];
+        let public_input_hash = &batch_hash.instances_exclude_acc()[0];
 
+        // the public instance for this circuit consists of
+        // - an accumulator (12 elements)
+        // - the batch's public_input_hash (32 elements)
+        // - the number of snarks that is aggregated (1 element)
         let flattened_instances: Vec<Fr> = [
             acc_instances.as_slice(),
             public_input_hash.as_slice(),
@@ -153,7 +161,7 @@ impl AggregationCircuit {
     }
 
     pub fn snarks_without_padding(&self) -> &[SnarkWitness] {
-        &self.snarks_with_padding[0..self.batch_hash.chunks.len()]
+        &self.snarks_with_padding[0..self.batch_hash.number_of_valid_chunks]
     }
 
     pub fn snarks_with_padding(&self) -> &[SnarkWitness] {
@@ -200,12 +208,11 @@ impl Circuit<Fr> for AggregationCircuit {
 
         // This circuit takes 3 steps
         // - 1. use aggregation circuit to aggregate the multiple snarks into a single one;
-        //   re-export all the public input of the snarks, denoted by [snarks_instances], and the
-        //   accumulator [acc_instances]
+        //   re-export all the public input of the snarks, denoted by the accumulator
+        //   [acc_instances] and the chunk's public hash [snarks_instances]
         // - 2. use public input aggregation circuit to aggregate the chunks; expose the instance
-        //   denoted by [pi_agg_instances]
-        // - 3. assert [snarks_instances] are private inputs used for public input aggregation
-        //   circuit
+        //   denoted by [batch_instances]
+        // - 3. assert [snarks_instances] are private inputs used for [batch_instances]
 
         // ==============================================
         // Step 1: snark aggregation circuit
@@ -225,9 +232,9 @@ impl Circuit<Fr> for AggregationCircuit {
                 let ctx = Context::new(
                     region,
                     ContextParams {
-                        max_rows: config.gate().max_rows,
+                        max_rows: config.flex_gate().max_rows,
                         num_context_ids: 1,
-                        fixed_columns: config.gate().constants.clone(),
+                        fixed_columns: config.flex_gate().constants.clone(),
                     },
                 );
 
@@ -253,14 +260,14 @@ impl Circuit<Fr> for AggregationCircuit {
 
                 // extract the following cells for later constraints
                 // - the accumulators
-                // - the public input from snark
+                // - the public inputs from each snark
                 accumulator_instances.extend(flatten_accumulator(acc).iter().copied());
                 // the snark is not a fresh one, assigned_instances already contains an
                 // accumulator so we want to skip the first 12 elements from the public input
                 snark_inputs.extend(
                     assigned_aggregation_instances
                         .iter()
-                        .flat_map(|instance_column| instance_column.iter().skip(20)),
+                        .flat_map(|instance_column| instance_column.iter().skip(ACC_LEN)),
                 );
 
                 config.range().finalize(&mut loader.ctx_mut());
@@ -275,7 +282,7 @@ impl Circuit<Fr> for AggregationCircuit {
         for (i, e) in snark_inputs.iter().enumerate() {
             log::trace!("{}-th instance: {:?}", i, e.value)
         }
-        // assert the accumulator in aggregation instance matchs public input
+        // assert the accumulator in aggregation instance matches public input
         for (i, v) in accumulator_instances.iter().enumerate() {
             layouter.constrain_instance(v.cell(), config.instance, i)?;
         }
@@ -287,7 +294,16 @@ impl Circuit<Fr> for AggregationCircuit {
         let challenges = challenge.values(&layouter);
 
         let timer = start_timer!(|| ("extract hash").to_string());
+        // orders:
+        // - batch_public_input_hash
+        // - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
+        // - batch_data_hash_preimage
         let preimages = self.batch_hash.extract_hash_preimages();
+        assert_eq!(
+            preimages.len(),
+            MAX_AGG_SNARKS + 2,
+            "error extracting preimages"
+        );
         end_timer!(timer);
 
         log::trace!("hash preimages");
@@ -302,7 +318,7 @@ impl Circuit<Fr> for AggregationCircuit {
         end_timer!(timer);
 
         let timer = start_timer!(|| ("assign cells").to_string());
-        let (hash_input_cells, hash_output_cells) = assign_batch_hashes(
+        let (hash_input_cells, hash_output_cells, data_rlc) = assign_batch_hashes(
             &config.keccak_circuit_config,
             &mut layouter,
             challenges,
@@ -352,9 +368,9 @@ impl Circuit<Fr> for AggregationCircuit {
                 let mut ctx = Context::new(
                     region,
                     ContextParams {
-                        max_rows: config.gate().max_rows,
+                        max_rows: config.flex_gate().max_rows,
                         num_context_ids: 1,
-                        fixed_columns: config.gate().constants.clone(),
+                        fixed_columns: config.flex_gate().constants.clone(),
                     },
                 );
 
@@ -370,39 +386,9 @@ impl Circuit<Fr> for AggregationCircuit {
                 // halo2-lib. A future optimization may cherry pick the right cells
                 // for conversion.
                 //
-                let hash_input_cells = hash_input_cells
-                    .iter()
-                    .map(|cells| {
-                        cells
-                            .iter()
-                            .map(|assigned_cell| {
-                                let value = assigned_cell.value().copied();
-                                let assigned_value = flex_gate.load_witness(&mut ctx, value);
-                                ctx.region
-                                    .constrain_equal(assigned_cell.cell(), assigned_value.cell)
-                                    .unwrap();
-                                assigned_value
-                            })
-                            .collect_vec()
-                    })
-                    .collect_vec();
+                let hash_input_cells = assigned_cell_to_value!(hash_input_cells, ctx, flex_gate);
+                let hash_output_cells = assigned_cell_to_value!(hash_output_cells, ctx, flex_gate);
 
-                let hash_output_cells = hash_output_cells
-                    .iter()
-                    .map(|cells| {
-                        cells
-                            .iter()
-                            .map(|assigned_cell| {
-                                let value = assigned_cell.value().copied();
-                                let assigned_value = flex_gate.load_witness(&mut ctx, value);
-                                ctx.region
-                                    .constrain_equal(assigned_cell.cell(), assigned_value.cell)
-                                    .unwrap();
-                                assigned_value
-                            })
-                            .collect_vec()
-                    })
-                    .collect_vec();
                 // =================================================
                 // step 3.2
                 // the actual circuit logics
@@ -412,6 +398,7 @@ impl Circuit<Fr> for AggregationCircuit {
                 let mut current_snark_indexer = flex_gate.load_constant(&mut ctx, Fr::zero());
                 assigned_num_snarks.push(assigned_num_snark_without_padding);
                 let one = flex_gate.load_constant(&mut ctx, Fr::one());
+                let mut data_hash_inputs = vec![];
 
                 for chunk_idx in 0..MAX_AGG_SNARKS {
                     // this loop is invariant w.r.t. num_snark_without_padding
@@ -424,27 +411,30 @@ impl Circuit<Fr> for AggregationCircuit {
                         &current_snark_indexer,
                         &assigned_num_snark_without_padding,
                     );
+                    let is_not_padding = flex_gate.not(&mut ctx, QuantumCell::Existing(is_padding));
 
                     // step 3.2.1, data hash
                     // - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
                     // where batch_data_hash is the second hash for pi aggregation
                     for i in 0..32 {
-                        let byte_is_equal = flex_gate.is_equal(
+                        // let byte_is_equal = flex_gate.is_equal(
+                        //     &mut ctx,
+                        //     // the first 32 inputs for the snark
+                        //     QuantumCell::Existing(snark_inputs[64 * chunk_idx + i]),
+                        //     QuantumCell::Existing(hash_input_cells[1][chunk_idx * 32 + i]),
+                        // );
+                        let consolidated_result = flex_gate.mul(
                             &mut ctx,
-                            // the first 32 inputs for the snark
                             QuantumCell::Existing(snark_inputs[64 * chunk_idx + i]),
-                            QuantumCell::Existing(hash_input_cells[1][chunk_idx * 32 + i]),
+                            QuantumCell::Existing(is_not_padding),
                         );
-                        let enforced_result = flex_gate.or(
-                            &mut ctx,
-                            QuantumCell::Existing(byte_is_equal),
-                            QuantumCell::Existing(is_padding),
-                        );
-                        flex_gate.assert_equal(
-                            &mut ctx,
-                            QuantumCell::Existing(enforced_result),
-                            QuantumCell::Existing(one),
-                        );
+                        data_hash_inputs.push(consolidated_result);
+
+                        // flex_gate.assert_equal(
+                        //     &mut ctx,
+                        //     QuantumCell::Existing(enforced_result),
+                        //     QuantumCell::Existing(one),
+                        // );
                     }
                     // step 3.2.2, public input hash
                     // the public input hash for the i-th snark is the (i+2)-th hash
@@ -506,7 +496,7 @@ impl Circuit<Fr> for AggregationCircuit {
             layouter.constrain_instance(
                 assigned_num_snarks[0].cell(),
                 config.instance,
-                32 + acc_len,
+                DIGEST_LEN + acc_len,
             )?;
         }
 

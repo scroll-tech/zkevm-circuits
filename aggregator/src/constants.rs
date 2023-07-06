@@ -8,6 +8,8 @@ pub(crate) const LOG_DEGREE: u32 = 19;
 
 /// An decomposed accumulator consists of 12 field elements
 pub(crate) const ACC_LEN: usize = 12;
+/// Digest length
+pub(crate) const DIGEST_LEN: usize = 32;
 
 /// number of limbs when decomposing a field element in the ECC chip
 pub(crate) const LIMBS: usize = 3;

@@ -1,16 +1,19 @@
 use halo2_proofs::{halo2curves::bn256::Fr, plonk::Selector};
 use snark_verifier_sdk::CircuitExt;
 
-use crate::constants::ACC_LEN;
+use crate::constants::{ACC_LEN, DIGEST_LEN};
 
 use super::AggregationCircuit;
 
 impl CircuitExt<Fr> for AggregationCircuit {
     fn num_instance(&self) -> Vec<usize> {
-        // 32 elements for batch's public_input_hash
-        vec![ACC_LEN + 32]
+        // 12 elements from accumulator
+        // 32 elements from batch's public_input_hash
+        vec![ACC_LEN + DIGEST_LEN]
     }
 
+    // 12 elements from accumulator
+    // 32 elements from batch's public_input_hash
     fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self.flattened_instances.clone()]
     }
@@ -21,9 +24,13 @@ impl CircuitExt<Fr> for AggregationCircuit {
     }
 
     fn selectors(config: &Self::Config) -> Vec<Selector> {
-        config.0.gate().basic_gates[0]
+        // - advice columns from flex gate
+        // - selector from RLC gate
+        config.0.flex_gate().basic_gates[0]
             .iter()
             .map(|gate| gate.q_enable)
+            .into_iter()
+            .chain([config.0.rlc_config.selector].iter().cloned())
             .collect()
     }
 }
