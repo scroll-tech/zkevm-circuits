@@ -237,7 +237,6 @@ mod test {
         }
     }
 
- 
     #[test]
     fn test_modexp_circuit_00() {
         let base = Word::from(1u128);

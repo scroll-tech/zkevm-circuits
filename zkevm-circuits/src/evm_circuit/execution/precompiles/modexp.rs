@@ -264,6 +264,9 @@ struct ModExpInputs<F> {
     input_valid: Cell<F>,
     padding_pow: RandPowRepresent<F, INPUT_REPRESENT_BITS>,
     is_input_need_padding: LtGadget<F, INPUT_REPRESENT_BYTES>,
+    pub base_limbs: Limbs<F>,
+    pub exp_limbs: Limbs<F>,
+    pub modulus_limbs: Limbs<F>,
 }
 
 impl<F: Field> ModExpInputs<F> {
@@ -283,6 +286,10 @@ impl<F: Field> ModExpInputs<F> {
         let base = cb.query_bytes();
         let modulus = cb.query_bytes();
         let exp = cb.query_bytes();
+
+        let base_limbs = Limbs::configure(cb, &base);
+        let exp_limbs = Limbs::configure(cb, &exp);
+        let modulus_limbs = Limbs::configure(cb, &modulus);
 
         let input_valid = cb.query_cell();
         cb.require_equal("mark input valid by checking 3 lens is valid", 
@@ -380,6 +387,9 @@ impl<F: Field> ModExpInputs<F> {
             input_valid,
             padding_pow,
             is_input_need_padding,
+            base_limbs,
+            exp_limbs,
+            modulus_limbs,
         }
     }
 
@@ -411,6 +421,10 @@ impl<F: Field> ModExpInputs<F> {
             linked_v = Some(assigned);
         }
 
+        for (val_r, input_limbs) in values.iter().zip([&self.base_limbs, &self.exp_limbs, &self.modulus_limbs]){
+            input_limbs.assign(region, offset, val_r)?;
+        }
+
         for (val, input_bytes) in values.zip([&self.base, &self.exp, &self.modulus]){
             assign_word(region, offset, input_bytes, val)?;
         }
@@ -439,6 +453,7 @@ impl<F: Field> ModExpInputs<F> {
 struct ModExpOutputs<F> {
     result: Word<F>,
     is_result_zero: IsZeroGadget<F>,
+    pub result_limbs: Limbs<F>,
 }
 
 impl<F: Field> ModExpOutputs<F> {
@@ -453,6 +468,7 @@ impl<F: Field> ModExpOutputs<F> {
         let is_result_zero = IsZeroGadget::construct(cb, output_len.clone());
  
         let result = cb.query_bytes();
+        let result_limbs = Limbs::configure(cb, &result);
 
         cb.condition(util::not::expr(is_result_zero.expr()), |cb|{
             cb.require_equal("acc bytes must equal", 
@@ -464,6 +480,7 @@ impl<F: Field> ModExpOutputs<F> {
         Self {
             result,
             is_result_zero,
+            result_limbs,
         }
     }
 
@@ -476,6 +493,7 @@ impl<F: Field> ModExpOutputs<F> {
         (output_len, data): OutputParsedResult,
     ) -> Result<(), Error> {
         self.is_result_zero.assign(region, offset, F::from(output_len as u64))?;
+        self.result_limbs.assign(region, offset, &data)?;
         assign_word(region, offset, &self.result, data)?;
         Ok(())
     }
@@ -484,7 +502,7 @@ impl<F: Field> ModExpOutputs<F> {
 
 
 #[derive(Clone, Debug)]
-struct Limbs<F> {
+pub(crate) struct Limbs<F> {
     byte14_split_lo: Cell<F>,
     byte14_split_hi: Cell<F>,
     limbs: [Expression<F>;3],
@@ -492,7 +510,7 @@ struct Limbs<F> {
 
 
 impl<F: Field> Limbs<F> {
-    fn configure(
+    pub fn configure(
         cb: &mut EVMConstraintBuilder<F>,
         word: &Word<F>,
     ) -> Self {
@@ -505,19 +523,21 @@ impl<F: Field> Limbs<F> {
             byte14_split_lo.expr() + 128.expr() * byte14_split_hi.expr(),
         );
 
+        let inv_16 = Expression::Constant(F::from(16u64).invert().unwrap());
+
         let limbs = [
             util::expr_from_bytes(
-                &word[..14].iter()
-                .chain(std::iter::once(&byte14_split_lo))
-                .collect::<Vec<_>>()
+                &std::iter::once(&byte14_split_lo)
+                .chain(&word[MODEXP_SIZE_LIMIT-13..])
+                .collect::<Vec<_>>()                
             ),
             util::expr_from_bytes(
-                &std::iter::once(&byte14_split_hi)
-                .chain(&word[14..28])
+                &word[MODEXP_SIZE_LIMIT-27..MODEXP_SIZE_LIMIT-14].iter()
+                .chain(std::iter::once(&byte14_split_hi))
                 .collect::<Vec<_>>()
-            ),
+            ) * inv_16,
             util::expr_from_bytes(
-                &word[28..]
+                &word[..MODEXP_SIZE_LIMIT-27]
             ),
         ];
 
@@ -528,13 +548,20 @@ impl<F: Field> Limbs<F> {
         }
     }
 
+    pub fn limbs(&self) -> [Expression<F>;3] {self.limbs.clone()}
 
     pub fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        (output_len, data): OutputParsedResult,
+        big_int: &[u8; MODEXP_SIZE_LIMIT],
     ) -> Result<(), Error> {
+
+        let byte14_lo = big_int[MODEXP_SIZE_LIMIT-14] & 0xf;
+        let byte14_hi = big_int[MODEXP_SIZE_LIMIT-14] & 0xf0;
+
+        self.byte14_split_lo.assign(region, offset, Value::known(F::from(byte14_lo as u64)))?;
+        self.byte14_split_hi.assign(region, offset, Value::known(F::from(byte14_hi as u64)))?;
         Ok(())
     }    
 }
@@ -608,10 +635,10 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
 
         cb.condition(util::not::expr(output.is_output_nil()), |cb|{
             cb.modexp_table_lookup(
-                base_limbs, 
-                exp_limbs, 
-                modulus_limbs, 
-                result_limbs
+                input.base_limbs.limbs(), 
+                input.exp_limbs.limbs(), 
+                input.modulus_limbs.limbs(), 
+                output.result_limbs.limbs(),
             );
             
         });
@@ -713,6 +740,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use bus_mapping::{
         evm::{OpcodeId, PrecompileCallArgs},
         precompile::PrecompileCalls,
@@ -722,6 +750,46 @@ mod test {
     use mock::TestContext;
 
     use crate::test_util::CircuitTestBuilder;
+
+
+    #[test]
+    fn test_limbs(){
+        use misc_precompiled_circuit::circuits::modexp::Number;
+        use halo2_proofs::halo2curves::bn256::Fr;
+        use num_bigint::BigUint;
+
+        // simply take an hash for test
+        let bi = BigUint::parse_bytes(b"fcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47", 16).unwrap();
+        let n = Number::<Fr>::from_bn(&bi);
+        let w = word!("0xfcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47");
+        let mut bytes = [0u8;32];
+        w.to_big_endian(&mut bytes);
+        assert_eq!(BigUint::from_bytes_be(&bytes), bi);
+
+        let byte14_lo = bytes[MODEXP_SIZE_LIMIT-14] & 0xf;
+        let byte14_hi = bytes[MODEXP_SIZE_LIMIT-14] & 0xf0;
+
+        let limb0 : Fr = U256::from_big_endian(
+            &(std::iter::once(byte14_lo))
+            .chain(bytes[MODEXP_SIZE_LIMIT-13..].iter().copied())
+            .collect::<Vec<_>>()
+        ).to_scalar().unwrap();
+
+        let limb1 : Fr = U256::from_big_endian(
+            &bytes[MODEXP_SIZE_LIMIT-27..MODEXP_SIZE_LIMIT-14]
+            .iter().copied()
+            .chain(std::iter::once(byte14_hi))
+            .collect::<Vec<_>>()
+        ).to_scalar().unwrap();
+
+        let limb2 : Fr = U256::from_big_endian(&bytes[..MODEXP_SIZE_LIMIT-27]).to_scalar().unwrap();
+
+        assert_eq!(limb0, n.limbs[0].value);
+        assert_eq!(limb1, n.limbs[1].value * Fr::from(16 as u64));
+        assert_eq!(limb2, n.limbs[2].value);
+        //Limb::new(None, value)
+    }
+
 
     lazy_static::lazy_static! {
         static ref TEST_VECTOR: Vec<PrecompileCallArgs> = {
