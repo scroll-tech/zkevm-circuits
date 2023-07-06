@@ -1,0 +1,29 @@
+[package]
+name = "aggregator"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+eth-types = { path = "../eth-types" }
+zkevm-circuits = { path = "../zkevm-circuits" }
+
+
+ark-std = "0.3.0"
+env_logger = "0.10.0"
+ethers-core = "0.17.0"
+log = "0.4"
+itertools = "0.10.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rand = "0.8"
+
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
+snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop" }
+snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "develop", default-features=false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
+
+
+[features]
+default = []
+print-trace = [ "ark-std/print-trace" ]

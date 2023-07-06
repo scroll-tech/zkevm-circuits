@@ -164,7 +164,12 @@ mod test {
 
     #[test]
     fn balance_gadget_empty_account() {
-        let account = Some(Account::default());
+        let mut empty_address_bytes = [0; 20];
+        empty_address_bytes[12] = 234;
+        let account = Some(Account {
+            address: empty_address_bytes.into(),
+            ..Default::default()
+        });
 
         test_root_ok(&account, false);
         test_internal_ok(0x20, 0x00, &account, false);

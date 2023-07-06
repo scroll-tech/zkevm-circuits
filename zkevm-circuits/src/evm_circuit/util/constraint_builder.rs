@@ -20,9 +20,8 @@ use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
-        Advice, Error,
+        Error,
         Expression::{self, Constant},
-        SecondPhase,
     },
 };
 
@@ -446,9 +445,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.query_cell_with_type(CellType::StoragePhase1)
     }
 
+    #[allow(clippy::let_and_return)]
     pub(crate) fn query_cell_phase2(&mut self) -> Cell<F> {
         let cell = self.query_cell_with_type(CellType::StoragePhase2);
-        assert_eq!(cell.column.column_type(), &Advice::new(SecondPhase));
+        #[cfg(not(feature = "onephase"))]
+        assert_eq!(
+            cell.column.column_type(),
+            &halo2_proofs::plonk::Advice::new(halo2_proofs::plonk::SecondPhase)
+        );
         cell
     }
 
@@ -495,7 +499,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
         if cfg!(feature = "poseidon-codehash") {
-            Expression::Constant(POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap())
+            let codehash = POSEIDON_CODE_HASH_ZERO.to_word().to_scalar().unwrap();
+            Expression::Constant(codehash)
         } else {
             self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
         }
@@ -1353,13 +1358,14 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     // Sig Table
-    pub(crate) fn sig_table_lookup<E: Expr<F>>(
+
+    pub(crate) fn sig_table_lookup(
         &mut self,
-        msg_hash_rlc: E,
-        sig_v: E,
-        sig_r_rlc: E,
-        sig_s_rlc: E,
-        recovered_addr: E,
+        msg_hash_rlc: Expression<F>,
+        sig_v: Expression<F>,
+        sig_r_rlc: Expression<F>,
+        sig_s_rlc: Expression<F>,
+        recovered_addr: Expression<F>,
     ) {
         self.add_lookup(
             "sig table",
@@ -1371,6 +1377,22 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 recovered_addr: recovered_addr.expr(),
             },
         );
+    }
+
+    // Power of Randomness Table
+
+    pub(crate) fn pow_of_rand_lookup(
+        &mut self,
+        exponent: Expression<F>,
+        pow_of_rand: Expression<F>,
+    ) {
+        self.add_lookup(
+            "power of randomness",
+            Lookup::PowOfRandTable {
+                exponent,
+                pow_of_rand,
+            },
+        )
     }
 
     // Keccak Table

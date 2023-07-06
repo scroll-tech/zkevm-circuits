@@ -101,9 +101,9 @@ impl<F: Field> SubCircuitConfig<F> for SigCircuitConfig<F> {
         let num_advice = [calc_required_advices(MAX_NUM_SIG), 1];
 
         #[cfg(feature = "onephase")]
-        log::debug!("configuring ECDSA chip with single phase");
+        log::info!("configuring ECDSA chip with single phase");
         #[cfg(not(feature = "onephase"))]
-        log::debug!("configuring ECDSA chip with multiple phases");
+        log::info!("configuring ECDSA chip with multiple phases");
 
         // halo2-ecc's ECDSA config
         //
@@ -766,7 +766,7 @@ impl<F: Field> SigCircuit<F> {
                     .collect::<Result<Vec<SignDataDecomposed<F>>, Error>>()?;
 
                 // IMPORTANT: Move to Phase2 before RLC
-                log::debug!("before proceeding to the next phase");
+                log::info!("before proceeding to the next phase");
                 ctx.print_stats(&["Range"]);
 
                 #[cfg(not(feature = "onephase"))]
@@ -827,7 +827,7 @@ impl<F: Field> SigCircuit<F> {
                 // check lookups
                 // This is not optional.
                 let lookup_cells = ecdsa_chip.finalize(&mut ctx);
-                log::debug!("total number of lookup cells: {}", lookup_cells);
+                log::info!("total number of lookup cells: {}", lookup_cells);
 
                 ctx.print_stats(&["Range"]);
                 Ok(assigned_keccak_values_and_sigs

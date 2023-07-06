@@ -24,6 +24,7 @@ use super::{
 };
 
 /// An extended circuit for binding with poseidon
+#[cfg(feature = "scroll")]
 pub mod to_poseidon_hash;
 
 #[cfg(feature = "onephase")]

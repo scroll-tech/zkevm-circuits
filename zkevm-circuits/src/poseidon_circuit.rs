@@ -3,20 +3,15 @@ use crate::{
     bytecode_circuit::bytecode_unroller::HASHBLOCK_BYTES_IN_FIELD,
     table::PoseidonTable,
     util::{Challenges, SubCircuit, SubCircuitConfig},
-    witness,
+    witness::{self},
 };
 //use bus_mapping::state_db::CodeDB;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
 use hash_circuit::hash::{Hashable, PoseidonHashChip, PoseidonHashConfig, PoseidonHashTable};
-use itertools::Itertools;
-use mpt_zktrie::mpt_circuits::{
-    gadgets::mpt_update::hash_traces, serde::SMTTrace, types::Proof, MPTProofType,
-};
 
 /// re-wrapping for mpt circuit
 #[derive(Default, Clone, Debug)]
@@ -67,24 +62,13 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         // without any feature we just synthesis an empty poseidon circuit
         #[cfg(feature = "zktrie")]
         {
-            // TODO: check here to avoid duplicate calculation
-            let traces: Vec<(MPTProofType, SMTTrace)> = block
-                .mpt_updates
-                .proof_types
-                .iter()
-                .cloned()
-                .zip_eq(block.mpt_updates.smt_traces.iter().cloned())
-                .collect();
-            let proofs: Vec<Proof> = traces.into_iter().map(Proof::from).collect();
-            let triples: Vec<(Fr, Fr, Fr)> = hash_traces(&proofs);
-            let triples: Vec<(F, F, F)> = triples
-                .into_iter()
-                .map(|(a, b, c)| (a.into(), b.into(), c.into()))
-                .collect();
-            for elems in &triples {
-                if elems.2.is_zero_vartime() {
-                    log::info!("zero hash {:?}", elems);
-                }
+            let triples = get_storage_poseidon_witness(block);
+            if triples.len() > max_hashes {
+                log::error!(
+                    "poseidon max_hashes: {:?} not enough. {:?} needed by zktrie proof",
+                    max_hashes,
+                    triples.len()
+                );
             }
             poseidon_table_data.constant_inputs_with_check(&triples);
         }
@@ -113,15 +97,7 @@ impl<F: Field> SubCircuit<F> for PoseidonCircuit<F> {
         #[cfg(feature = "zktrie")]
         let acc = {
             let mut cnt = acc;
-            let traces: Vec<_> = block
-                .mpt_updates
-                .proof_types
-                .iter()
-                .cloned()
-                .zip_eq(block.mpt_updates.smt_traces.iter().cloned())
-                .collect();
-            let proofs: Vec<Proof> = traces.into_iter().map(Proof::from).collect();
-            cnt += hash_traces(&proofs).len();
+            cnt += get_storage_poseidon_witness(block).len();
             cnt
         };
         #[cfg(feature = "poseidon-codehash")]
@@ -187,4 +163,24 @@ impl<F: Field + Hashable> Circuit<F> for PoseidonCircuit<F> {
         let challenges = challenges.values(&layouter);
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
+}
+
+#[cfg(feature = "zktrie")]
+fn get_storage_poseidon_witness<F: Field>(block: &crate::witness::Block<F>) -> Vec<(F, F, F)> {
+    use itertools::Itertools;
+    use mpt_zktrie::mpt_circuits::{gadgets::mpt_update::hash_traces, types::Proof};
+    hash_traces(
+        &block
+            .mpt_updates
+            .proof_types
+            .iter()
+            .cloned()
+            .zip_eq(block.mpt_updates.smt_traces.iter().cloned())
+            .map(Proof::from)
+            .collect_vec(),
+    )
+    .into_iter()
+    .unique_by(|(a, b, c)| (a.to_bytes(), b.to_bytes(), c.to_bytes()))
+    .map(|(a, b, c)| (a.into(), b.into(), c.into()))
+    .collect()
 }

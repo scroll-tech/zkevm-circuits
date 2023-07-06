@@ -1,9 +1,10 @@
 pub use super::*;
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{circuit_input_builder::keccak_inputs, evm::OpcodeId};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
 use mock::{eth, TestContext, MOCK_CHAIN_ID, MOCK_DIFFICULTY};
+use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::{collections::HashMap, env::set_var};
@@ -25,7 +26,7 @@ fn test_super_circuit<
     const MAX_INNER_BLOCKS: usize,
     const MOCK_RANDOMNESS: u64,
 >(
-    block: GethData,
+    geth_data: GethData,
     circuits_params: CircuitsParams,
 ) {
     set_var("COINBASE", "0x0000000000000000000000000000000000000000");
@@ -34,12 +35,31 @@ fn test_super_circuit<
     MOCK_DIFFICULTY.to_big_endian(&mut difficulty_be_bytes);
     set_var("DIFFICULTY", hex::encode(difficulty_be_bytes));
 
-    let (k, circuit, instance, _) =
-        SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>::build(
-            block,
-            circuits_params,
-        )
-        .unwrap();
+    let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
+    let mut builder = block_data.new_circuit_input_builder();
+    builder
+        .handle_block(&block_data.eth_block, &block_data.geth_traces)
+        .expect("could not handle block tx");
+    let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
+    block.randomness = Fr::from(MOCK_RANDOMNESS);
+
+    // Mock fill state roots
+    assert!(*HASH_SCHEME_DONE);
+    block.mpt_updates.mock_fill_state_roots();
+    block.prev_state_root = block.mpt_updates.old_root();
+
+    // Recompute keccak inputs for updated prev_state_root.
+    builder.block.prev_state_root = block.mpt_updates.old_root();
+    block.keccak_inputs = keccak_inputs(&builder.block, &builder.code_db).unwrap();
+
+    let (k, circuit, instance) = SuperCircuit::<
+        Fr,
+        MAX_TXS,
+        MAX_CALLDATA,
+        MAX_INNER_BLOCKS,
+        MOCK_RANDOMNESS,
+    >::build_from_witness_block(block)
+    .unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
     prover.assert_satisfied_par();
     let res = prover.verify_par();
@@ -228,7 +248,7 @@ fn serial_test_super_circuit_1tx_deploy_2max_tx() {
         max_calldata: MAX_CALLDATA,
         max_rws: MAX_RWS,
         max_copy_rows: MAX_COPY_ROWS,
-        max_mpt_rows: 512,
+        max_mpt_rows: 1024,
         max_bytecode: 512,
         max_keccak_rows: 0,
         max_inner_blocks: MAX_INNER_BLOCKS,
