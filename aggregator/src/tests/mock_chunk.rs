@@ -6,7 +6,6 @@ use crate::{ChunkHash, LOG_DEGREE};
 
 mod circuit;
 mod circuit_ext;
-mod config;
 
 #[derive(Debug, Default, Clone, Copy)]
 /// A mock chunk circuit

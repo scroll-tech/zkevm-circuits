@@ -16,7 +16,7 @@ use crate::constants::LOG_DEGREE;
 
 /// This config is used to compute RLCs for bytes.
 /// It requires a phase 2 column
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct RlcConfig {
     #[cfg(test)]
     // Test requires a phase 1 column before proceed to phase 2.
