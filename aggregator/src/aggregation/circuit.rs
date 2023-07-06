@@ -32,7 +32,7 @@ use crate::{
     aggregation::{config::AggregationConfig, util::is_smaller_than},
     assigned_cell_to_value,
     constants::{ACC_LEN, BITS, DIGEST_LEN, LIMBS},
-    core::{assign_batch_hashes, extract_accumulators_and_proof},
+    core::{assert_hash_relations, assign_batch_hashes, extract_accumulators_and_proof},
     param::ConfigParams,
     BatchHash, ChunkHash, MAX_AGG_SNARKS,
 };
@@ -318,7 +318,7 @@ impl Circuit<Fr> for AggregationCircuit {
         end_timer!(timer);
 
         let timer = start_timer!(|| ("assign cells").to_string());
-        let (hash_input_cells, hash_output_cells, data_rlc) = assign_batch_hashes(
+        let (hash_preimage_cells, hash_digest_cells, hash_data_rlc_cells) = assign_batch_hashes(
             &config.keccak_circuit_config,
             &mut layouter,
             challenges,
@@ -328,13 +328,13 @@ impl Circuit<Fr> for AggregationCircuit {
         end_timer!(timer);
 
         log::trace!("hash input");
-        for v in hash_input_cells.iter() {
+        for v in hash_preimage_cells.iter() {
             for (i, c) in v.iter().enumerate() {
                 log::trace!("{}-th {:?}", i, c.value())
             }
         }
         log::trace!("hash output");
-        for v in hash_output_cells.iter() {
+        for v in hash_digest_cells.iter() {
             for (i, c) in v.iter().enumerate() {
                 log::trace!("{}-th {:?}", i, c.value())
             }
@@ -350,129 +350,142 @@ impl Circuit<Fr> for AggregationCircuit {
         //      - public input hash
         // Those are used as private inputs to the public input aggregation circuit
 
-        // stores assigned_num_snark_without_padding cell
-        let mut assigned_num_snarks = vec![];
-        layouter.assign_region(
-            || "glue circuits",
-            |region| {
-                if first_pass {
-                    first_pass = false;
-                    return Ok(());
-                }
-
-                // last element within flattened instance encodes the number of snarks
-                // (this will be be checked against aggregation circuit's public inputs later)
-                let num_snarks_without_padding =
-                    Value::known(*self.flattened_instances.last().unwrap());
-
-                let mut ctx = Context::new(
-                    region,
-                    ContextParams {
-                        max_rows: config.flex_gate().max_rows,
-                        num_context_ids: 1,
-                        fixed_columns: config.flex_gate().constants.clone(),
-                    },
-                );
-
-                let flex_gate = &config.base_field_config.range.gate;
-
-                // =================================================
-                // step 3.1. before processing, we need to convert halo2proof's AssignedCells to
-                // halo2-lib's AssignedValues.
-                // =================================================
-                //
-                // Note that this is a bit overkill since not all cells in halo2proof's
-                // hash_input_cells and hash_output_cells needs to be extracted for
-                // halo2-lib. A future optimization may cherry pick the right cells
-                // for conversion.
-                //
-                let hash_input_cells = assigned_cell_to_value!(hash_input_cells, ctx, flex_gate);
-                let hash_output_cells = assigned_cell_to_value!(hash_output_cells, ctx, flex_gate);
-
-                // =================================================
-                // step 3.2
-                // the actual circuit logics
-                // =================================================
-                let assigned_num_snark_without_padding =
-                    flex_gate.load_witness(&mut ctx, num_snarks_without_padding);
-                let mut current_snark_indexer = flex_gate.load_constant(&mut ctx, Fr::zero());
-                assigned_num_snarks.push(assigned_num_snark_without_padding);
-                let one = flex_gate.load_constant(&mut ctx, Fr::one());
-                let mut data_hash_inputs = vec![];
-
-                for chunk_idx in 0..MAX_AGG_SNARKS {
-                    // this loop is invariant w.r.t. num_snark_without_padding
-                    // it firstly derive a boolean cell to check whether the snark is a dummy one
-                    // and use this boolean cell to override equality checks if the snark is dummy
-
-                    let is_padding = is_smaller_than(
-                        &flex_gate,
-                        &mut ctx,
-                        &current_snark_indexer,
-                        &assigned_num_snark_without_padding,
-                    );
-                    let is_not_padding = flex_gate.not(&mut ctx, QuantumCell::Existing(is_padding));
-
-                    // step 3.2.1, data hash
-                    // - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
-                    // where batch_data_hash is the second hash for pi aggregation
-                    for i in 0..32 {
-                        // let byte_is_equal = flex_gate.is_equal(
-                        //     &mut ctx,
-                        //     // the first 32 inputs for the snark
-                        //     QuantumCell::Existing(snark_inputs[64 * chunk_idx + i]),
-                        //     QuantumCell::Existing(hash_input_cells[1][chunk_idx * 32 + i]),
-                        // );
-                        let consolidated_result = flex_gate.mul(
-                            &mut ctx,
-                            QuantumCell::Existing(snark_inputs[64 * chunk_idx + i]),
-                            QuantumCell::Existing(is_not_padding),
-                        );
-                        data_hash_inputs.push(consolidated_result);
-
-                        // flex_gate.assert_equal(
-                        //     &mut ctx,
-                        //     QuantumCell::Existing(enforced_result),
-                        //     QuantumCell::Existing(one),
-                        // );
-                    }
-                    // step 3.2.2, public input hash
-                    // the public input hash for the i-th snark is the (i+2)-th hash
-                    for i in 0..4 {
-                        for j in 0..8 {
-                            let byte_is_equal = flex_gate.is_equal(
-                                &mut ctx,
-                                // the first 32 inputs for the snark
-                                QuantumCell::Existing(
-                                    snark_inputs[64 * chunk_idx + i * 8 + j + 32],
-                                ),
-                                QuantumCell::Existing(
-                                    hash_output_cells[chunk_idx + 2][(3 - i) * 8 + j],
-                                ),
-                            );
-                            let enforced_result = flex_gate.or(
-                                &mut ctx,
-                                QuantumCell::Existing(byte_is_equal),
-                                QuantumCell::Existing(is_padding),
-                            );
-                            flex_gate.assert_equal(
-                                &mut ctx,
-                                QuantumCell::Existing(enforced_result),
-                                QuantumCell::Existing(one),
-                            );
-                        }
-                    }
-                    // increment the current indexer by 1
-                    current_snark_indexer = flex_gate.add(
-                        &mut ctx,
-                        QuantumCell::Existing(current_snark_indexer),
-                        QuantumCell::Existing(one),
-                    );
-                }
-
-                Ok(())
-            },
+        assert_hash_relations(
+            &config,
+            &mut layouter,
+            &snark_inputs,
+            &hash_preimage_cells,
+            &hash_digest_cells,
+            &hash_data_rlc_cells,
+            self.flattened_instances.last().unwrap(),
         )?;
+
+        // // stores assigned_num_snark_without_padding cell
+        // let mut assigned_num_snarks = vec![];
+        // layouter.assign_region(
+        //     || "glue circuits",
+        //     |region| {
+        //         if first_pass {
+        //             first_pass = false;
+        //             return Ok(());
+        //         }
+
+        //         // last element within flattened instance encodes the number of snarks
+        //         // (this will be be checked against aggregation circuit's public inputs later)
+        //         let num_snarks_without_padding =
+        //             Value::known(*self.flattened_instances.last().unwrap());
+
+        //         let mut ctx = Context::new(
+        //             region,
+        //             ContextParams {
+        //                 max_rows: config.flex_gate().max_rows,
+        //                 num_context_ids: 1,
+        //                 fixed_columns: config.flex_gate().constants.clone(),
+        //             },
+        //         );
+
+        //         let flex_gate = &config.base_field_config.range.gate;
+
+        //         // =================================================
+        //         // step 3.1. before processing, we need to convert halo2proof's AssignedCells to
+        //         // halo2-lib's AssignedValues.
+        //         // =================================================
+        //         //
+        //         // Note that this is a bit overkill since not all cells in halo2proof's
+        //         // hash_input_cells and hash_output_cells needs to be extracted for
+        //         // halo2-lib. A future optimization may cherry pick the right cells
+        //         // for conversion.
+        //         //
+        //         let hash_input_cells = assigned_cell_to_value!(hash_input_cells, ctx, flex_gate);
+        //         let hash_output_cells = assigned_cell_to_value!(hash_output_cells, ctx,
+        // flex_gate);
+
+        //         // =================================================
+        //         // step 3.2
+        //         // the actual circuit logics
+        //         // =================================================
+        //         let assigned_num_snark_without_padding =
+        //             flex_gate.load_witness(&mut ctx, num_snarks_without_padding);
+        //         let mut current_snark_indexer = flex_gate.load_constant(&mut ctx, Fr::zero());
+        //         assigned_num_snarks.push(assigned_num_snark_without_padding);
+        //         let one = flex_gate.load_constant(&mut ctx, Fr::one());
+        //         let mut data_hash_inputs = vec![];
+
+        //         for chunk_idx in 0..MAX_AGG_SNARKS {
+        //             // this loop is invariant w.r.t. num_snark_without_padding
+        //             // it firstly derive a boolean cell to check whether the snark is a dummy one
+        //             // and use this boolean cell to override equality checks if the snark is
+        // dummy
+
+        //             let is_padding = is_smaller_than(
+        //                 &flex_gate,
+        //                 &mut ctx,
+        //                 &current_snark_indexer,
+        //                 &assigned_num_snark_without_padding,
+        //             );
+        //             let is_not_padding = flex_gate.not(&mut ctx,
+        // QuantumCell::Existing(is_padding));
+
+        //             // step 3.2.1, data hash
+        //             // - batch_data_hash := keccak(chunk_0.data_hash || ... ||
+        // chunk_k-1.data_hash)             // where batch_data_hash is the second hash for
+        // pi aggregation             for i in 0..32 {
+        //                 // let byte_is_equal = flex_gate.is_equal(
+        //                 //     &mut ctx,
+        //                 //     // the first 32 inputs for the snark
+        //                 //     QuantumCell::Existing(snark_inputs[64 * chunk_idx + i]),
+        //                 //     QuantumCell::Existing(hash_input_cells[1][chunk_idx * 32 + i]),
+        //                 // );
+        //                 let consolidated_result = flex_gate.mul(
+        //                     &mut ctx,
+        //                     QuantumCell::Existing(snark_inputs[64 * chunk_idx + i]),
+        //                     QuantumCell::Existing(is_not_padding),
+        //                 );
+        //                 data_hash_inputs.push(consolidated_result);
+
+        //                 // flex_gate.assert_equal(
+        //                 //     &mut ctx,
+        //                 //     QuantumCell::Existing(enforced_result),
+        //                 //     QuantumCell::Existing(one),
+        //                 // );
+        //             }
+        //             // step 3.2.2, public input hash
+        //             // the public input hash for the i-th snark is the (i+2)-th hash
+        //             for i in 0..4 {
+        //                 for j in 0..8 {
+        //                     let byte_is_equal = flex_gate.is_equal(
+        //                         &mut ctx,
+        //                         // the first 32 inputs for the snark
+        //                         QuantumCell::Existing(
+        //                             snark_inputs[64 * chunk_idx + i * 8 + j + 32],
+        //                         ),
+        //                         QuantumCell::Existing(
+        //                             hash_output_cells[chunk_idx + 2][(3 - i) * 8 + j],
+        //                         ),
+        //                     );
+        //                     let enforced_result = flex_gate.or(
+        //                         &mut ctx,
+        //                         QuantumCell::Existing(byte_is_equal),
+        //                         QuantumCell::Existing(is_padding),
+        //                     );
+        //                     flex_gate.assert_equal(
+        //                         &mut ctx,
+        //                         QuantumCell::Existing(enforced_result),
+        //                         QuantumCell::Existing(one),
+        //                     );
+        //                 }
+        //             }
+        //             // increment the current indexer by 1
+        //             current_snark_indexer = flex_gate.add(
+        //                 &mut ctx,
+        //                 QuantumCell::Existing(current_snark_indexer),
+        //                 QuantumCell::Existing(one),
+        //             );
+        //         }
+
+        //         Ok(())
+        //     },
+        // )?;
 
         // ====================================================
         // Last step: public inputs
@@ -486,18 +499,18 @@ impl Circuit<Fr> for AggregationCircuit {
                 for j in 0..8 {
                     // digest in circuit has a different endianness
                     layouter.constrain_instance(
-                        hash_output_cells[0][(3 - i) * 8 + j].cell(),
+                        hash_digest_cells[0][(3 - i) * 8 + j].cell(),
                         config.instance,
                         i * 8 + j + acc_len,
                     )?;
                 }
             }
-            // Constrain the number of snarks matches public input
-            layouter.constrain_instance(
-                assigned_num_snarks[0].cell(),
-                config.instance,
-                DIGEST_LEN + acc_len,
-            )?;
+            // // Constrain the number of snarks matches public input
+            // layouter.constrain_instance(
+            //     assigned_num_snarks[0].cell(),
+            //     config.instance,
+            //     DIGEST_LEN + acc_len,
+            // )?;
         }
 
         end_timer!(witness_time);

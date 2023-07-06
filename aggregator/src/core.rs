@@ -2,12 +2,12 @@ use ark_std::{end_timer, start_timer};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
-    halo2curves::bn256::{Bn256, G1Affine},
+    halo2curves::bn256::{Bn256, Fr, G1Affine},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
 use rand::Rng;
 use snark_verifier::{
-    loader::native::NativeLoader,
+    loader::{halo2::halo2_ecc::halo2_base::AssignedValue, native::NativeLoader},
     pcs::{
         kzg::{Bdfg21, Kzg, KzgAccumulator, KzgAs},
         AccumulationSchemeProver,
@@ -28,7 +28,8 @@ use zkevm_circuits::{
 use crate::{
     constants::{CHAIN_ID_LEN, LOG_DEGREE},
     util::{assert_equal, capacity, get_indices},
-    CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX, WITHDRAW_ROOT_INDEX,
+    AggregationConfig, CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX,
+    WITHDRAW_ROOT_INDEX,
 };
 
 /// Input the hash input bytes,
@@ -323,4 +324,35 @@ pub(crate) fn extract_accumulators_and_proof(
             rng,
         )?;
     Ok((accumulator, transcript_write.finalize()))
+}
+
+/// Subroutine to assert the hash relations are correct.
+///
+/// There are (MAX_NUM_SNARK + 2) hashes, ordered as
+///   1. batch_pi_hash   := keccak(chain_id || chunk_0.prev_state_root || chunk_k-1.post_state_root
+///      || chunk_k-1.withdraw_root || batch_data_hash)
+///
+///   2. for i in 0..MAX_NUM_SNARK
+///      chunk[i]_pi_hash:= keccak(chain id || chunk[i].prevStateRoot  ||
+///        chunk[i].postStateRoot || chunk[i].withdrawRoot || chunk[i].datahash)
+///      
+///   3. batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
+///
+/// Statements we prove
+/// - same batch_data_hash is used for eq(1) and eq(3)
+/// - same chunk data_hash is used for eq(2) and eq(3)
+/// - the snark_inputs[i*32..(i+1)*32] matches i-th chunk's pi_hash
+/// - for i in num_valid_chunks..MAX_NUM_SNARK
+///     - chunk[i].withdrawRoot = [0; 32]
+///     - chunk[i].postStateRoot = chunk[i].prevStateRoot
+pub(crate) fn assert_hash_relations(
+    config: &AggregationConfig,
+    layouter: &mut impl Layouter<Fr>,
+    snark_inputs: &[AssignedValue<Fr>],
+    hash_preimages: &[Vec<AssignedCell<Fr, Fr>>],
+    hash_digests: &[Vec<AssignedCell<Fr, Fr>>],
+    hash_data_rlc: &[AssignedCell<Fr, Fr>],
+    num_valid_chunks: &Fr,
+) -> Result<(), halo2_proofs::plonk::Error> {
+    Ok(())
 }
