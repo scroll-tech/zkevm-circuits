@@ -1,9 +1,12 @@
+use ark_std::test_rng;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     dev::MockProver,
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem, Error},
 };
+use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
+use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
 use zkevm_circuits::{
     keccak_circuit::{
         keccak_packed_multi::multi_keccak, KeccakCircuitConfig, KeccakCircuitConfigArgs,
@@ -12,12 +15,9 @@ use zkevm_circuits::{
     util::{Challenges, SubCircuitConfig},
 };
 
-use crate::{
-    constants::LOG_DEGREE,
-    core::assign_batch_hashes,
-    rlc::{rlc, RlcConfig},
-    util::capacity,
-};
+use crate::{rlc::RlcConfig, util::capacity};
+
+const TEST_LOG_DEGREE: usize = 17;
 
 #[derive(Default, Debug, Clone)]
 struct DynamicHashCircuit {
@@ -28,8 +28,8 @@ struct DynamicHashCircuit {
 struct DynamicHashCircuitConfig {
     /// Keccak circuit configurations
     pub keccak_circuit_config: KeccakCircuitConfig<Fr>,
-    // /// RLC config
-    // pub rlc_config: RlcConfig,
+    /// RLC config
+    pub rlc_config: RlcConfig,
 }
 
 impl Circuit<Fr> for DynamicHashCircuit {
@@ -37,12 +37,12 @@ impl Circuit<Fr> for DynamicHashCircuit {
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        Self::default()
+        unimplemented!()
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        // // RLC configuration
-        // let rlc_config = RlcConfig::configure(meta);
+        // RLC configuration
+        let rlc_config = RlcConfig::configure(meta);
 
         // hash config
         let challenges = Challenges::construct(meta);
@@ -58,11 +58,11 @@ impl Circuit<Fr> for DynamicHashCircuit {
 
             KeccakCircuitConfig::new(meta, keccak_circuit_config_args)
         };
-        // // enable equality for the data RLC column
-        // meta.enable_equality(keccak_circuit_config.keccak_table.input_rlc);
+        // enable equality for the data RLC column
+        meta.enable_equality(keccak_circuit_config.keccak_table.input_rlc);
 
         let config = DynamicHashCircuitConfig {
-            // rlc_config,
+            rlc_config,
             keccak_circuit_config,
         };
 
@@ -76,117 +76,104 @@ impl Circuit<Fr> for DynamicHashCircuit {
     ) -> Result<(), Error> {
         let (config, challenges) = config;
 
+        config
+            .keccak_circuit_config
+            .load_aux_tables(&mut layouter)?;
+
         let challenge = challenges.values(&layouter);
 
-        println!("challenge: {:?}", challenge);
-        let witness =
-            multi_keccak(&[self.inputs.clone()], challenge, capacity(1 << 18)).unwrap();
-
-        // // compute rlc in the clear
-        // let rlc = {
-        //     let mut challenge_fr = Fr::zero();
-        //     challenge.keccak_input().map(|x| challenge_fr = x);
-        //     rlc(
-        //         &self
-        //             .inputs
-        //             .iter()
-        //             .map(|&x| Fr::from(x as u64))
-        //             .collect::<Vec<_>>(),
-        //         &challenge_fr,
-        //     )
-        // };
-
-        // println!("rlc: {:?}", rlc);
-        // for (i, row) in witness.iter().enumerate().take(1200) {
-        //     if row.is_final {
-        //         println!("{}-th row:\n{:?}", i, row);
-        //         println!("======================");
-        //     }
-        // }
+        let witness = multi_keccak(
+            &[self.inputs.clone()],
+            challenge,
+            capacity(1 << TEST_LOG_DEGREE),
+        )
+        .unwrap();
 
         layouter.assign_region(
             || "mock circuit",
             |mut region| {
+                // ==============================
                 // keccak part
-                // let mut data_rlc_cells = vec![];
+                // ==============================
+                let mut data_rlc_cells = vec![];
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     let row =
                         config
                             .keccak_circuit_config
                             .set_row(&mut region, offset, keccak_row)?;
-                    // if offset % 300 == 0 && data_rlc_cells.len() < 4 {
-                    //     // second element is data rlc
-                    //     data_rlc_cells.push(row[1].clone());
-                    // }
+                    if offset % 300 == 0 && data_rlc_cells.len() < 4 {
+                        // second element is data rlc
+                        data_rlc_cells.push(row[1].clone());
+                    }
                 }
-                config.keccak_circuit_config.keccak_table.annotate_columns_in_region(&mut region);
+                config
+                    .keccak_circuit_config
+                    .keccak_table
+                    .annotate_columns_in_region(&mut region);
                 config.keccak_circuit_config.annotate_circuit(&mut region);
-                // // rlc part
-                // let mut offset = 0;
-                // let challenge = {
-                //     let mut tmp = Fr::zero();
-                //     challenge.keccak_input().map(|x| tmp = x);
-                //     config
-                //         .rlc_config
-                //         .load_private(&mut region, &tmp, &mut offset)?
-                // };
 
-                // let rlc_inputs = self
-                //     .inputs
-                //     .iter()
-                //     .map(|&x| {
-                //         config
-                //             .rlc_config
-                //             .load_private(&mut region, &Fr::from(x as u64), &mut offset)
-                //             .unwrap()
-                //     })
-                //     .collect::<Vec<_>>();
+                // ==============================
+                // rlc part
+                // ==============================
+                let mut offset = 0;
+                let challenge = {
+                    let mut tmp = Fr::zero();
+                    challenge.keccak_input().map(|x| tmp = x);
+                    config
+                        .rlc_config
+                        .load_private(&mut region, &tmp, &mut offset)?
+                };
 
-                // let rlc_cell =
-                //     config
-                //         .rlc_config
-                //         .rlc(&mut region, &rlc_inputs, &challenge, &mut offset)?;
+                let rlc_inputs = self
+                    .inputs
+                    .iter()
+                    .map(|&x| {
+                        config
+                            .rlc_config
+                            .load_private(&mut region, &Fr::from(x as u64), &mut offset)
+                            .unwrap()
+                    })
+                    .collect::<Vec<_>>();
 
-                // // rlc should be either one of data_rlc_cells[1], data_rlc_cells[2] and
-                // // data_rlc_cells[3] so we compute prod =
-                // // (data_rlc_cells[1]-rlc)*(data_rlc_cells[2]-rlc)*(data_rlc_cells[3]-rlc)
-                // // and constraint prod is zero
-                // let tmp1 = config.rlc_config.sub(
-                //     &mut region,
-                //     &data_rlc_cells[1],
-                //     &rlc_cell,
-                //     &mut offset,
-                // )?;
-                // let tmp2 = config.rlc_config.sub(
-                //     &mut region,
-                //     &data_rlc_cells[2],
-                //     &rlc_cell,
-                //     &mut offset,
-                // )?;
-                // let tmp3 = config.rlc_config.sub(
-                //     &mut region,
-                //     &data_rlc_cells[3],
-                //     &rlc_cell,
-                //     &mut offset,
-                // )?;
-                // let tmp = config
-                //     .rlc_config
-                //     .mul(&mut region, &tmp1, &tmp2, &mut offset)?;
-                // let tmp = config
-                //     .rlc_config
-                //     .mul(&mut region, &tmp, &tmp3, &mut offset)?;
+                let rlc_cell =
+                    config
+                        .rlc_config
+                        .rlc(&mut region, &rlc_inputs, &challenge, &mut offset)?;
 
-                // println!("rlc_cell is {:?}", rlc_cell.value());
-                // println!("rlc 1 is {:?}", data_rlc_cells[1].value());
-                // println!("rlc 2 is {:?}", data_rlc_cells[2].value());
-                // println!("rlc 3 is {:?}", data_rlc_cells[3].value());
-                // println!("tmp1 is {:?}", tmp1.value());
-                // println!("tmp2 is {:?}", tmp2.value());
-                // println!("tmp3 is {:?}", tmp3.value());
-                // println!("tmp is {:?}", tmp.value());
-                // config
-                //     .rlc_config
-                //     .enforce_zero(&mut region, &tmp, &mut offset)?;
+                // rlc should be either one of data_rlc_cells[1], data_rlc_cells[2] and
+                // data_rlc_cells[3] so we compute
+                //   prod = (data_rlc_cells[1]-rlc)
+                //        * (data_rlc_cells[2]-rlc)
+                //        * (data_rlc_cells[3]-rlc)
+                // and constraint prod is zero
+                let tmp1 = config.rlc_config.sub(
+                    &mut region,
+                    &data_rlc_cells[1],
+                    &rlc_cell,
+                    &mut offset,
+                )?;
+                let tmp2 = config.rlc_config.sub(
+                    &mut region,
+                    &data_rlc_cells[2],
+                    &rlc_cell,
+                    &mut offset,
+                )?;
+                let tmp3 = config.rlc_config.sub(
+                    &mut region,
+                    &data_rlc_cells[3],
+                    &rlc_cell,
+                    &mut offset,
+                )?;
+                let tmp = config
+                    .rlc_config
+                    .mul(&mut region, &tmp1, &tmp2, &mut offset)?;
+                let tmp = config
+                    .rlc_config
+                    .mul(&mut region, &tmp, &tmp3, &mut offset)?;
+
+                config
+                    .rlc_config
+                    .enforce_zero(&mut region, &tmp, &mut offset)?;
 
                 Ok(())
             },
@@ -195,15 +182,53 @@ impl Circuit<Fr> for DynamicHashCircuit {
     }
 }
 
+impl CircuitExt<Fr> for DynamicHashCircuit {}
+
 #[test]
 fn test_hashes() {
-    let k = 19;
-    const LEN: usize = 200;
-    let a = (0..LEN).map(|x| x as u8).collect::<Vec<u8>>();
-    // let a = vec![1; LEN];
-    let circuit = DynamicHashCircuit { inputs: a };
-    let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-    prover.assert_satisfied();
+    let params = gen_srs(TEST_LOG_DEGREE as u32);
+    let mut rng = test_rng();
+    const LEN: usize = 100;
 
-    // assert!(false);
+    let a = (0..LEN).map(|x| x as u8).collect::<Vec<u8>>();
+    let circuit = DynamicHashCircuit { inputs: a };
+    let prover = MockProver::run(TEST_LOG_DEGREE as u32, &circuit, vec![]).unwrap();
+    prover.assert_satisfied_par();
+
+    let pk = gen_pk(&params, &circuit, None);
+
+    // pk verifies the original circuit
+    {
+        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>);
+        assert!(verify_snark_shplonk::<DynamicHashCircuit>(
+            &params,
+            snark,
+            pk.get_vk()
+        ));
+        println!("1 round keccak verified with same pk");
+    }
+    // pk verifies the circuit with 2 round of keccak
+    {
+        let a: Vec<u8> = (0..LEN * 2).map(|x| x as u8).collect::<Vec<u8>>();
+        let circuit = DynamicHashCircuit { inputs: a };
+        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>);
+        assert!(verify_snark_shplonk::<DynamicHashCircuit>(
+            &params,
+            snark,
+            pk.get_vk()
+        ));
+        println!("2 round keccak verified with same pk");
+    }
+    // pk verifies the circuit with 3 round of keccak
+    {
+        let a: Vec<u8> = (0..LEN * 3).map(|x| x as u8).collect::<Vec<u8>>();
+        let circuit = DynamicHashCircuit { inputs: a };
+        let snark = gen_snark_shplonk(&params, &pk, circuit, &mut rng, None::<String>);
+        assert!(verify_snark_shplonk::<DynamicHashCircuit>(
+            &params,
+            snark,
+            pk.get_vk()
+        ));
+        println!("3 round keccak verified with same pk");
+    }
 }
