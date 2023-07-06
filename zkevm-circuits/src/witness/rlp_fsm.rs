@@ -256,7 +256,12 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
         (Data, BeginVector, N_BYTES_CALLDATA, vec![10, 11]),
         (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![21]), // access_list is none
         (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![12]),
-        (BeginList, AccessListAddress, MAX_TAG_LENGTH_OF_LIST, vec![13]),
+        (
+            BeginList,
+            AccessListAddress,
+            MAX_TAG_LENGTH_OF_LIST,
+            vec![13],
+        ),
         (
             AccessListAddress,
             BeginVector,
@@ -264,7 +269,7 @@ pub fn eip1559_tx_hash_rom_table_rows() -> Vec<RomTableRow> {
             vec![14, 15],
         ),
         (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![18]), /* access_list.storage_keys
-                                                                  * is none */
+                                                                     * is none */
         (
             BeginVector,
             AccessListStorageKey,
@@ -308,15 +313,21 @@ pub fn eip1559_tx_sign_rom_table_rows() -> Vec<RomTableRow> {
         (Data, BeginVector, N_BYTES_CALLDATA, vec![9, 10]),
         (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![20]), // access_list is none
         (BeginVector, BeginList, MAX_TAG_LENGTH_OF_LIST, vec![11]),
-        (BeginList, AccessListAddress, MAX_TAG_LENGTH_OF_LIST, vec![12]),
+        (
+            BeginList,
+            AccessListAddress,
+            MAX_TAG_LENGTH_OF_LIST,
+            vec![12],
+        ),
         (
             AccessListAddress,
             BeginVector,
             N_BYTES_ACCOUNT_ADDRESS,
             vec![13, 14],
         ),
-        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![17]), /* access_list.storage_keys is
-                                                                  * none */
+        (BeginVector, EndVector, MAX_TAG_LENGTH_OF_LIST, vec![17]), /* access_list.storage_keys
+                                                                     * is
+                                                                     * none */
         (
             BeginVector,
             AccessListStorageKey,
