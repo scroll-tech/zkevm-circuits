@@ -6,7 +6,9 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error},
 };
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base::utils::fs::gen_srs;
-use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt};
+use snark_verifier_sdk::{
+    gen_pk, gen_proof_shplonk, gen_snark_shplonk, verify_snark_shplonk, CircuitExt,
+};
 use zkevm_circuits::{
     keccak_circuit::{
         keccak_packed_multi::multi_keccak, KeccakCircuitConfig, KeccakCircuitConfigArgs,
@@ -80,8 +82,19 @@ impl Circuit<Fr> for DynamicHashCircuit {
 
         let challenge = challenges.values(&layouter);
 
-        let witness =
-            multi_keccak(&[self.inputs.clone()], challenge, capacity(1 << LOG_DEGREE)).unwrap();
+        let hash_preimage = self
+            .inputs
+            .iter()
+            .chain(vec![0; 320 - self.inputs.len()].iter())
+            .copied()
+            .collect::<Vec<_>>();
+
+        let witness = multi_keccak(
+            &[hash_preimage.clone()],
+            challenge,
+            capacity(1 << LOG_DEGREE),
+        )
+        .unwrap();
 
         layouter.assign_region(
             || "mock circuit",
@@ -118,8 +131,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
                         .load_private(&mut region, &tmp, &mut offset)?
                 };
 
-                let rlc_inputs = self
-                    .inputs
+                let rlc_inputs = hash_preimage
                     .iter()
                     .map(|&x| {
                         config
@@ -188,6 +200,7 @@ fn test_hashes() {
     let circuit = DynamicHashCircuit { inputs: a };
     let prover = MockProver::run(LOG_DEGREE as u32, &circuit, vec![]).unwrap();
     prover.assert_satisfied_par();
+    println!("circuit satisfied");
 
     let pk = gen_pk(&params, &circuit, None);
 
