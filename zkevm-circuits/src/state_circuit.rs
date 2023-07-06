@@ -41,7 +41,7 @@ use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQu
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
 use param::*;
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
-use std::{marker::PhantomData, time::Instant};
+use std::marker::PhantomData;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -242,6 +242,7 @@ impl<F: Field> StateCircuitConfig<F> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn assign_with_region(
         &self,
         region: &mut Region<'_, F>,
@@ -385,6 +386,7 @@ impl<F: Field> StateCircuitConfig<F> {
         Ok(is_first_access_vec)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn update_state_root(
         &self,
         region: &mut Region<'_, F>,
@@ -489,6 +491,7 @@ impl<F: Field> StateCircuitConfig<F> {
     }
 
     #[cfg(feature = "parallel_syn")]
+    #[allow(clippy::too_many_arguments)]
     fn assign_parallel(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -549,7 +552,7 @@ impl<F: Field> StateCircuitConfig<F> {
 
                         self.rw_table.load_with_region_padded_row(
                             &mut region,
-                            &rows,
+                            rows,
                             offsets.len(),
                             randomness,
                         )?;

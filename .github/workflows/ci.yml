@@ -138,12 +138,12 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --package zkevm-circuits --lib bytecode_circuit::test --features scroll,parallel_syn -- --nocapture
+          args: --release --package zkevm-circuits --lib bytecode_circuit::test --features scroll,parallel_syn -- --nocapture
       - name: Run parallel assignment tests(state)
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --package zkevm-circuits --lib state_circuit::test --features scroll,parallel_syn -- --nocapture
+          args: --release --package zkevm-circuits --lib state_circuit::test --features scroll,parallel_syn -- --nocapture
 
   build:
     needs: [skip_check]
