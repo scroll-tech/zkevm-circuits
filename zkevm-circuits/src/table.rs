@@ -23,7 +23,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Layouter, Region, Value},
+    circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -1360,14 +1360,20 @@ impl KeccakTable {
         region: &mut Region<F>,
         offset: usize,
         values: [Value<F>; 4],
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        let mut res = vec![];
         for (&column, value) in <KeccakTable as LookupTable<F>>::advice_columns(self)
             .iter()
             .zip(values.iter())
         {
-            region.assign_advice(|| format!("assign {}", offset), column, offset, || *value)?;
+            res.push(region.assign_advice(
+                || format!("assign {}", offset),
+                column,
+                offset,
+                || *value,
+            )?);
         }
-        Ok(())
+        Ok(res)
     }
 
     /// Provide this function for the case that we want to consume a keccak

@@ -58,6 +58,8 @@ impl Circuit<Fr> for DynamicHashCircuit {
 
             KeccakCircuitConfig::new(meta, keccak_circuit_config_args)
         };
+        // enable equality for the data RLC column
+        meta.enable_equality(keccak_circuit_config.keccak_table.input_rlc);
 
         let config = DynamicHashCircuitConfig {
             rlc_config,
@@ -112,7 +114,7 @@ impl Circuit<Fr> for DynamicHashCircuit {
                         config
                             .keccak_circuit_config
                             .set_row(&mut region, offset, keccak_row)?;
-                    if keccak_row.is_final && keccak_row.length != 0 {
+                    if offset % 300 == 0 && data_rlc_cells.len() < 4 {
                         // second element is data rlc
                         data_rlc_cells.push(row[1].clone());
                     }
@@ -139,15 +141,51 @@ impl Circuit<Fr> for DynamicHashCircuit {
                     })
                     .collect::<Vec<_>>();
 
-                let rlc_cells =
+                let rlc_cell =
                     config
                         .rlc_config
                         .rlc(&mut region, &rlc_inputs, &challenge, &mut offset)?;
 
-                // rlc should be either one of data_rlc_cells[0], data_rlc_cells[1] and
-                // data_rlc_cells[2] so we compute prod =
-                // (data_rlc_cells[0]-rlc)*(data_rlc_cells[1]-rlc)*(data_rlc_cells[2]-rlc)
+                // rlc should be either one of data_rlc_cells[1], data_rlc_cells[2] and
+                // data_rlc_cells[3] so we compute prod =
+                // (data_rlc_cells[1]-rlc)*(data_rlc_cells[2]-rlc)*(data_rlc_cells[3]-rlc)
                 // and constraint prod is zero
+                let tmp1 = config.rlc_config.sub(
+                    &mut region,
+                    &data_rlc_cells[1],
+                    &rlc_cell,
+                    &mut offset,
+                )?;
+                let tmp2 = config.rlc_config.sub(
+                    &mut region,
+                    &data_rlc_cells[2],
+                    &rlc_cell,
+                    &mut offset,
+                )?;
+                let tmp3 = config.rlc_config.sub(
+                    &mut region,
+                    &data_rlc_cells[3],
+                    &rlc_cell,
+                    &mut offset,
+                )?;
+                let tmp = config
+                    .rlc_config
+                    .mul(&mut region, &tmp1, &tmp2, &mut offset)?;
+                let tmp = config
+                    .rlc_config
+                    .mul(&mut region, &tmp, &tmp3, &mut offset)?;
+
+                println!("rlc_cell is {:?}", rlc_cell.value());
+                println!("rlc 1 is {:?}", data_rlc_cells[1].value());
+                println!("rlc 2 is {:?}", data_rlc_cells[2].value());
+                println!("rlc 3 is {:?}", data_rlc_cells[3].value());
+                println!("tmp1 is {:?}", tmp1.value());
+                println!("tmp2 is {:?}", tmp2.value());
+                println!("tmp3 is {:?}", tmp3.value());
+                println!("tmp is {:?}", tmp.value());
+                config
+                    .rlc_config
+                    .enforce_zero(&mut region, &tmp, &mut offset)?;
 
                 Ok(())
             },
@@ -164,7 +202,7 @@ fn test_hashes() {
     // let a = vec![1; LEN];
     let circuit = DynamicHashCircuit { inputs: a };
     let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-    prover.assert_satisfied();
+    prover.assert_satisfied_par();
 
     // assert!(false);
 }

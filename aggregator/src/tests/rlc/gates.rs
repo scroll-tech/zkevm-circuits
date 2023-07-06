@@ -54,6 +54,12 @@ impl Circuit<Fr> for ArithTestCircuit {
                     let f3_rec = config.add(&mut region, &f1, &f2, &mut offset)?;
                     region.constrain_equal(f3.cell(), f3_rec.cell())?;
                 }
+                // unit test: subtraction
+                {
+                    let f2_rec = config.sub(&mut region, &f3, &f1, &mut offset)?;
+                    region.constrain_equal(f2.cell(), f2_rec.cell())?;
+                }
+
                 // unit test: multiplication
                 {
                     let f4_rec = config.mul(&mut region, &f1, &f2, &mut offset)?;
