@@ -229,19 +229,11 @@ fn handle_copy(
     }
 
     // memory word write to destination
-    let read_steps = CopyEventStepsBuilder::memory()
+    let read_steps = CopyEventStepsBuilder::memory_range(src_range)
         .source(src_data.as_slice())
-        .read_offset(src_range.shift())
-        .write_offset(src_range.shift())
-        .step_length(src_data.len())
-        .length(copy_length)
         .build();
-    let write_steps = CopyEventStepsBuilder::memory()
+    let write_steps = CopyEventStepsBuilder::memory_range(dst_range)
         .source(dst_data.as_slice())
-        .read_offset(dst_range.shift())
-        .write_offset(dst_range.shift())
-        .step_length(dst_data.len())
-        .length(copy_length)
         .build();
 
     state.push_copy(

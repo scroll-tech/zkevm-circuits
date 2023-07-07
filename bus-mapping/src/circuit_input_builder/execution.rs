@@ -16,6 +16,7 @@ use eth_types::{
 use gadgets::impl_expr;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
+use eth_types::evm_types::memory::MemoryWordRange;
 use eth_types::evm_types::MemoryAddress;
 
 /// An execution step of the EVM.
@@ -510,11 +511,18 @@ impl CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
         }
     }
 
-    pub fn memory() -> CopyEventStepsBuilder<(), usize, (), (), (), Box<dyn Fn(&[u8], usize) -> u8>, Box<dyn Fn(&u8) -> (u8, bool)>> {
+    pub fn memory() -> CopyEventStepsBuilder<(), (), (), (), (), Box<dyn Fn(&[u8], usize) -> u8>, Box<dyn Fn(&u8) -> (u8, bool)>> {
         Self::new()
-            .read_offset(0usize)
             .padding_byte_getter(Box::new(|s: &[u8], idx: usize| s.get(idx).copied().unwrap_or(0)) as Box<dyn Fn(&[u8], usize) -> u8>)
             .mapper(Box::new(|v: &u8| (*v, false)) as Box<dyn Fn(&u8) -> (u8, bool)>)
+    }
+
+    pub fn memory_range(range: MemoryWordRange) -> CopyEventStepsBuilder<(), MemoryAddress, MemoryAddress, MemoryAddress, MemoryAddress, Box<dyn Fn(&[u8], usize) -> u8>, Box<dyn Fn(&u8) -> (u8, bool)>> {
+        Self::memory()
+            .read_offset(range.shift())
+            .write_offset(range.shift())
+            .step_length(range.full_length())
+            .length(range.original_length())
     }
 }
 

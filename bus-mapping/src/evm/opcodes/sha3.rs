@@ -67,12 +67,8 @@ impl Opcode for Sha3 {
                 chunk_index += 32;
             }
 
-            CopyEventStepsBuilder::memory()
+            CopyEventStepsBuilder::memory_range(dst_range)
                 .source(mem.as_slice())
-                .read_offset(dst_range.shift())
-                .write_offset(dst_range.shift())
-                .step_length(dst_range.full_length())
-                .length(size.low_u64())
                 .build()
         } else {
             vec![]
