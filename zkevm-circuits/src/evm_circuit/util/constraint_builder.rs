@@ -1466,11 +1466,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     /// used for constraining the internal states for precompile calls. Each precompile call
     /// expects a different cell layout, but since the next state can be at the most one precompile
     /// state, we can re-use cells assigned across all those conditions.
-    pub(crate) fn constrain_mutually_exclusive_next_step<'x>(
+    pub(crate) fn constrain_mutually_exclusive_next_step(
         &mut self,
         conditions: Vec<Expression<F>>,
         next_states: Vec<ExecutionState>,
-        constraints: Vec<BoxedClosure<'x, F>>,
+        constraints: Vec<BoxedClosure<F>>,
     ) {
         assert_eq!(conditions.len(), constraints.len());
         assert_eq!(conditions.len(), next_states.len());

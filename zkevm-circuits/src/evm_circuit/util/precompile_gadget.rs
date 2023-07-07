@@ -153,7 +153,7 @@ impl<F: Field> PrecompileGadget<F> {
                     );
                 });
             }),
-            Box::new(|cb| { 
+            Box::new(|cb| {
                 let input_bytes_acc_copied = cb.query_cell_phase2();
                 let output_bytes_acc_copied = cb.query_cell_phase2();
                 cb.require_equal(
