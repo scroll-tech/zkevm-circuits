@@ -344,16 +344,11 @@ fn handle_copy(
 
     let dst_range = MemoryWordRange::align_range(offset, length);
     let mem_read = memory.read_chunk(dst_range);
-    let old_mem = memory.clone();
     // collect all bytecode to memory with padding word
-    let create_slot_len = dst_range.full_length().0;
-
-    let mut copy_start = 0u64;
-    let mut first_set = true;
     let mut chunk_index = dst_range.start_slot().0;
 
     // memory word writes to destination word
-    for _ in 0..create_slot_len / 32 {
+    for _ in 0..dst_range.word_count() {
         // read memory
         state.memory_read_word(step, chunk_index.into())?;
         chunk_index += 32;

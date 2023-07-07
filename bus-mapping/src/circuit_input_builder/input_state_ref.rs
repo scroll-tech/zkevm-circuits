@@ -1641,10 +1641,8 @@ impl<'a> CircuitInputStateRef<'a> {
         let src_addr_end = src_addr_end.into();
         let bytes_left = bytes_left.into();
 
-        let mut copy_steps = Vec::with_capacity(bytes_left.0);
-        let mut prev_bytes: Vec<u8> = vec![];
         if bytes_left == 0 {
-            return Ok((copy_steps, prev_bytes));
+            return Ok((vec![], vec![]));
         }
 
         let dst_range = MemoryWordRange::align_range(dst_addr, bytes_left);
@@ -1660,7 +1658,7 @@ impl<'a> CircuitInputStateRef<'a> {
             .step_length(dst_range.full_length())
             .length(bytes_left)
             .build();
-
+        let mut prev_bytes: Vec<u8> = vec![];
         self.write_chunks(exec_step, &code_slot_bytes, dst_begin_slot.0, &mut prev_bytes)?;
 
         Ok((copy_steps, prev_bytes))
@@ -1673,9 +1671,8 @@ impl<'a> CircuitInputStateRef<'a> {
         copy_length: u64,
         caller_memory: &Memory,
     ) -> Result<CopyEventSteps, Error> {
-        let mut copy_steps = Vec::with_capacity(copy_length as usize);
         if copy_length == 0 {
-            return Ok(copy_steps);
+            return Ok(vec![]);
         }
 
         let src_range = MemoryWordRange::align_range(src_addr, copy_length);
@@ -1700,10 +1697,8 @@ impl<'a> CircuitInputStateRef<'a> {
         exec_step: &mut ExecStep,
         result: &Vec<u8>,
     ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
-        let mut copy_steps = Vec::with_capacity(result.len());
-        let mut prev_bytes = vec![];
         if result.is_empty() {
-            return Ok((copy_steps, prev_bytes));
+            return Ok((vec![], vec![]));
         }
 
         let range = MemoryWordRange::align_range(0, result.len());
@@ -1716,6 +1711,7 @@ impl<'a> CircuitInputStateRef<'a> {
         if memory.len() < range.full_length().0 {
             memory.resize(range.full_length().0, 0);
         }
+        let mut prev_bytes = vec![];
         self.write_chunks(exec_step, &memory, chunk_index, &mut prev_bytes)?;
 
         Ok((copy_steps, prev_bytes))
@@ -1785,10 +1781,8 @@ impl<'a> CircuitInputStateRef<'a> {
         memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
         assert!(self.call()?.is_root);
-        let mut prev_bytes: Vec<u8> = vec![];
-        let mut copy_steps = Vec::with_capacity(copy_length);
         if copy_length == 0 {
-            return Ok((copy_steps, prev_bytes));
+            return Ok((vec![], vec![]));
         }
 
         let dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
@@ -1799,6 +1793,7 @@ impl<'a> CircuitInputStateRef<'a> {
             .source(calldata_slot_bytes.as_slice())
             .build();
         let chunk_index = dst_range.start_slot().0;
+        let mut prev_bytes: Vec<u8> = vec![];
         self.write_chunks(
             exec_step,
             &calldata_slot_bytes,
@@ -1818,12 +1813,8 @@ impl<'a> CircuitInputStateRef<'a> {
         memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
         assert!(!self.call()?.is_root);
-
-        let mut read_steps = Vec::with_capacity(copy_length as usize);
-        let mut write_steps = Vec::with_capacity(copy_length as usize);
-        let mut prev_bytes: Vec<u8> = vec![];
         if copy_length == 0 {
-            return Ok((read_steps, write_steps, prev_bytes));
+            return Ok((vec![], vec![], vec![]));
         }
 
         let mut src_range = MemoryWordRange::align_range(src_addr, copy_length);
@@ -1844,9 +1835,9 @@ impl<'a> CircuitInputStateRef<'a> {
             .source(write_slot_bytes.as_slice())
             .build();
 
-        let mut copy_rwc_inc = 0;
         let mut src_chunk_index = src_range.start_slot().0;
         let mut dst_chunk_index = dst_range.start_slot().0;
+        let mut prev_bytes: Vec<u8> = vec![];
         // memory word reads from source and writes to destination word
         for write_chunk in write_slot_bytes.chunks(32) {
             self.memory_read_caller(exec_step, src_chunk_index.into())?;
@@ -1860,7 +1851,6 @@ impl<'a> CircuitInputStateRef<'a> {
             )?;
 
             dst_chunk_index += 32;
-            copy_rwc_inc += 2;
         }
 
         Ok((read_steps, write_steps, prev_bytes))
@@ -1875,12 +1865,8 @@ impl<'a> CircuitInputStateRef<'a> {
         copy_length: u64, // number of bytes to copy, without padding
         memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
-        let mut read_steps = Vec::with_capacity(copy_length as usize);
-        let mut write_steps = Vec::with_capacity(copy_length as usize);
-        let mut prev_bytes: Vec<u8> = vec![];
-
         if copy_length == 0 {
-            return Ok((read_steps, write_steps, prev_bytes));
+            return Ok((vec![], vec![], vec![]));
         }
 
         let last_callee_id = self.call()?.last_callee_id;
@@ -1906,9 +1892,9 @@ impl<'a> CircuitInputStateRef<'a> {
             .source(write_slot_bytes.as_slice())
             .build();
 
-        let mut copy_rwc_inc = 0;
         let mut src_chunk_index = src_range.start_slot().0;
         let mut dst_chunk_index = dst_range.start_slot().0;
+        let mut prev_bytes: Vec<u8> = vec![];
         // memory word reads from source and writes to destination word
         for (read_chunk, write_chunk) in read_slot_bytes.chunks(32).zip(write_slot_bytes.chunks(32))
         {
@@ -1932,8 +1918,6 @@ impl<'a> CircuitInputStateRef<'a> {
             )?;
 
             dst_chunk_index += 32;
-
-            copy_rwc_inc += 2;
         }
 
         Ok((read_steps, write_steps, prev_bytes))

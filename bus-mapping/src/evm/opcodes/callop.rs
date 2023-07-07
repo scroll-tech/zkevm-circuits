@@ -13,7 +13,7 @@ use crate::{
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        Gas, GasCost, Memory, OpcodeId,
+        Gas, GasCost, OpcodeId,
     },
     GethExecStep, ToWord, Word,
 };

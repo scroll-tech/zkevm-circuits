@@ -8,9 +8,8 @@ use crate::{
     state_db::CodeDB,
     Error,
 };
-use eth_types::{evm_types::Memory, Bytecode, GethExecStep, ToWord, Word, H256};
+use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
-use std::cmp::max;
 use eth_types::bytecode::BytecodeElement;
 use eth_types::evm_types::memory::MemoryWordRange;
 use crate::circuit_input_builder::CopyEventStepsBuilder;
@@ -282,8 +281,6 @@ fn handle_create(
     // collect all bytecode to memory with padding word
     let create_slot_len = dst_range.full_length().0;
 
-    let mut copy_start = 0u64;
-    let mut first_set = true;
     let mut chunk_index = dst_range.start_slot().0;
     // memory word writes to destination word
     for _ in 0..create_slot_len / 32 {

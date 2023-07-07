@@ -4,7 +4,7 @@ use crate::{
     },
     Error,
 };
-use eth_types::{evm_types::Memory, GethExecStep, Word, U256};
+use eth_types::{GethExecStep, Word, U256};
 use ethers_core::utils::keccak256;
 use eth_types::evm_types::memory::{MemoryRange, MemoryWordRange};
 use crate::circuit_input_builder::CopyEventStepsBuilder;

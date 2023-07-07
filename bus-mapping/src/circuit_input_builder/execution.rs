@@ -498,6 +498,12 @@ pub struct CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, Le
     mapper: Mapper,
 }
 
+impl Default for CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
     pub fn new() -> Self {
         CopyEventStepsBuilder {
@@ -511,12 +517,14 @@ impl CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn memory() -> CopyEventStepsBuilder<(), (), (), (), (), Box<dyn Fn(&[u8], usize) -> u8>, Box<dyn Fn(&u8) -> (u8, bool)>> {
         Self::new()
             .padding_byte_getter(Box::new(|s: &[u8], idx: usize| s.get(idx).copied().unwrap_or(0)) as Box<dyn Fn(&[u8], usize) -> u8>)
             .mapper(Box::new(|v: &u8| (*v, false)) as Box<dyn Fn(&u8) -> (u8, bool)>)
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn memory_range(range: MemoryWordRange) -> CopyEventStepsBuilder<(), MemoryAddress, MemoryAddress, MemoryAddress, MemoryAddress, Box<dyn Fn(&[u8], usize) -> u8>, Box<dyn Fn(&u8) -> (u8, bool)>> {
         Self::memory()
             .read_offset(range.shift())
