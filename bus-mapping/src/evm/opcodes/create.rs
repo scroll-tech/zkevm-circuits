@@ -11,6 +11,7 @@ use crate::{
 use eth_types::{evm_types::Memory, Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
 use log::trace;
+use eth_types::bytecode::BytecodeElement;
 use eth_types::evm_types::memory::MemoryWordRange;
 use crate::circuit_input_builder::CopyEventStepsBuilder;
 
@@ -339,14 +340,11 @@ fn handle_copy(
     trace!("initialization_bytes bussmapping is {initialization_bytes:?}");
     let keccak_code_hash = H256(keccak256(&initialization_bytes));
     let code_hash = CodeDB::hash(&initialization_bytes);
-    let bytes: Vec<_> = Bytecode::from(initialization_bytes.clone())
-        .code
-        .iter()
-        .map(|element| (element.value, element.is_code, false))
-        .collect();
+    let bytes = Bytecode::from(initialization_bytes.clone()).code;
 
     let dst_range = MemoryWordRange::align_range(offset, length);
-    let mem_read = memory.clone();
+    let mem_read = memory.read_chunk(dst_range);
+    let old_mem = memory.clone();
     // collect all bytecode to memory with padding word
     let create_slot_len = dst_range.full_length().0;
 
@@ -361,13 +359,17 @@ fn handle_copy(
         chunk_index += 32;
     }
 
-    let copy_steps = CopyEventStepsBuilder::memory()
-        .source(mem_read.0.as_slice())
-        .read_offset(dst_range.shift())
+    let copy_steps = CopyEventStepsBuilder::new()
+        .source(bytes.as_slice())
+        .read_offset(0)
         .write_offset(dst_range.shift())
         .step_length(dst_range.full_length())
         .length(length)
+        .padding_byte_getter(|_: &[BytecodeElement], idx: usize| mem_read.get(idx).copied().unwrap_or(0))
+        .mapper(|v: &BytecodeElement| (v.value, v.is_code))
         .build();
+
+    assert_eq!(old_copy_steps, copy_steps);
 
     state.push_copy(
         step,

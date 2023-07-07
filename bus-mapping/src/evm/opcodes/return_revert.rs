@@ -11,6 +11,7 @@ use crate::{
 use eth_types::{evm_types::Memory, Bytecode, GethExecStep, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
 use std::cmp::max;
+use eth_types::bytecode::BytecodeElement;
 use eth_types::evm_types::memory::MemoryWordRange;
 use crate::circuit_input_builder::CopyEventStepsBuilder;
 
@@ -237,8 +238,8 @@ fn handle_copy(
         .build();
     let write_steps = CopyEventStepsBuilder::memory()
         .source(dst_data.as_slice())
-        .read_offset(src_range.shift())
-        .write_offset(src_range.shift())
+        .read_offset(dst_range.shift())
+        .write_offset(dst_range.shift())
         .step_length(dst_data.len())
         .length(copy_length)
         .build();
@@ -279,17 +280,12 @@ fn handle_create(
     let code_hash = CodeDB::hash(&values);
     let size = values.len();
     let dst_id = NumberOrHash::Hash(code_hash);
-    let bytes: Vec<_> = Bytecode::from(values)
-        .code
-        .iter()
-        .map(|element| (element.value, element.is_code, false))
-        .collect();
+    let bytes = Bytecode::from(values).code;
 
     let rw_counter_start = state.block_ctx.rwc;
     let dst_range = MemoryWordRange::align_range(source.offset, source.length);
 
-    let mut memory = state.call_ctx_mut()?.memory.clone();
-    memory.extend_at_least(dst_range.end_slot().0);
+    let memory = state.call_ctx_mut()?.memory.read_chunk(dst_range);
 
     // collect all bytecode to memory with padding word
     let create_slot_len = dst_range.full_length().0;
@@ -304,12 +300,14 @@ fn handle_create(
         chunk_index += 32;
     }
 
-    let copy_steps = CopyEventStepsBuilder::memory()
-        .source(memory.0.as_slice())
-        .read_offset(dst_range.shift())
+    let copy_steps = CopyEventStepsBuilder::new()
+        .source(bytes.as_slice())
+        .read_offset(0)
         .write_offset(dst_range.shift())
         .step_length(dst_range.full_length())
         .length(source.length)
+        .padding_byte_getter(|_: &[BytecodeElement], idx: usize| memory.get(idx).copied().unwrap_or(0))
+        .mapper(|v: &BytecodeElement| (v.value, v.is_code))
         .build();
 
     state.push_copy(
