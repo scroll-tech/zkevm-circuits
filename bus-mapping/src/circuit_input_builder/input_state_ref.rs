@@ -1653,13 +1653,12 @@ impl<'a> CircuitInputStateRef<'a> {
         let dst_begin_slot = dst_range.start_slot();
         let copy_steps = CopyEventStepsBuilder::new()
             .source(&bytecode.code[..src_addr_end.0])
-            .source_offset(src_addr)
             .mapper(|code: &BytecodeElement| (code.value, code.is_code))
-            .padding_byte_getter(|source: &[BytecodeElement], idx| code_slot_bytes[idx])
-            .step_length(code_slot_bytes.len())
-            .begin_slot(dst_begin_slot)
-            .copy_start(dst_addr)
-            .length(bytes_left.0)
+            .padding_byte_getter(|_: &[BytecodeElement], idx| code_slot_bytes[idx])
+            .read_offset(src_addr)
+            .write_offset(dst_range.shift())
+            .step_length(dst_range.full_length())
+            .length(bytes_left)
             .build();
 
         self.write_chunks(exec_step, &code_slot_bytes, dst_begin_slot.0, &mut prev_bytes)?;
@@ -1684,10 +1683,10 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let copy_steps = CopyEventStepsBuilder::memory()
             .source(calldata_slot_bytes.as_slice())
-            .step_length(src_range.full_length().0)
-            .copy_start(src_addr as usize)
-            .begin_slot(src_range.start_slot().0)
-            .length(copy_length as usize)
+            .read_offset(src_addr)
+            .write_offset(src_range.shift())
+            .step_length(src_range.full_length())
+            .length(copy_length)
             .build();
 
         let mut chunk_index = src_range.start_slot().0;
@@ -1714,9 +1713,9 @@ impl<'a> CircuitInputStateRef<'a> {
         let range = MemoryWordRange::align_range(0, result.len());
         let copy_steps = CopyEventStepsBuilder::memory()
             .source(result.as_slice())
+            .read_offset(0)
+            .write_offset(0)
             .step_length(range.full_length())
-            .copy_start(0)
-            .begin_slot(0)
             .length(result.len())
             .build();
         let chunk_index: usize = 0;
@@ -1752,17 +1751,17 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let read_steps = CopyEventStepsBuilder::memory()
             .source(read_slot_bytes.as_slice())
+            .read_offset(0)
+            .write_offset(0)
             .step_length(read_slot_bytes.len())
-            .copy_start(0)
-            .begin_slot(src_range.start_slot())
             .length(copy_length)
             .build();
 
         let write_steps = CopyEventStepsBuilder::memory()
             .source(write_slot_bytes.as_slice())
+            .read_offset(dst_range.shift())
+            .write_offset(dst_range.shift())
             .step_length(write_slot_bytes.len())
-            .copy_start(dst_addr)
-            .begin_slot(dst_range.start_slot())
             .length(copy_length)
             .build();
 
@@ -1809,9 +1808,9 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let copy_steps = CopyEventStepsBuilder::memory()
             .source(calldata_slot_bytes.as_slice())
+            .read_offset(dst_range.shift())
+            .write_offset(dst_range.shift())
             .step_length(calldata_slot_bytes.len())
-            .copy_start(dst_addr)
-            .begin_slot(dst_range.start_slot())
             .length(copy_length)
             .build();
         let chunk_index = dst_range.start_slot().0;
@@ -1855,16 +1854,16 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let read_steps = CopyEventStepsBuilder::memory()
             .source(read_slot_bytes.as_slice())
+            .read_offset(src_range.shift())
+            .write_offset(src_range.shift())
             .step_length(read_slot_bytes.len())
-            .copy_start(src_addr)
-            .begin_slot(src_range.start_slot())
             .length(copy_length)
             .build();
         let write_steps = CopyEventStepsBuilder::memory()
             .source(write_slot_bytes.as_slice())
+            .read_offset(dst_range.shift())
+            .write_offset(dst_range.shift())
             .step_length(write_slot_bytes.len())
-            .copy_start(dst_addr)
-            .begin_slot(dst_range.start_slot())
             .length(copy_length)
             .build();
 
@@ -1925,16 +1924,16 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let read_steps = CopyEventStepsBuilder::memory()
             .source(read_slot_bytes.as_slice())
+            .read_offset(src_range.shift())
+            .write_offset(src_range.shift())
             .step_length(read_slot_bytes.len())
-            .copy_start(src_addr)
-            .begin_slot(src_range.start_slot())
             .length(copy_length)
             .build();
         let write_steps = CopyEventStepsBuilder::memory()
             .source(write_slot_bytes.as_slice())
+            .read_offset(dst_range.shift())
+            .write_offset(dst_range.shift())
             .step_length(write_slot_bytes.len())
-            .copy_start(dst_addr)
-            .begin_slot(dst_range.start_slot())
             .length(copy_length)
             .build();
 
@@ -2012,17 +2011,17 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let read_steps = CopyEventStepsBuilder::memory()
             .source(read_slot_bytes.as_slice())
+            .read_offset(src_range.shift())
+            .write_offset(src_range.shift())
             .step_length(read_slot_bytes.len())
-            .copy_start(src_addr)
-            .begin_slot(src_range.start_slot())
             .length(bytes_left)
             .build();
 
         let write_steps = CopyEventStepsBuilder::memory()
             .source(log_slot_bytes.as_slice())
+            .read_offset(0)
+            .write_offset(0)
             .step_length(log_slot_bytes.len())
-            .copy_start(0)
-            .begin_slot(0)
             .length(bytes_left)
             .build();
 

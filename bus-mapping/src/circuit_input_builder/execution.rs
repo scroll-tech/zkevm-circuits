@@ -473,147 +473,138 @@ impl CopyEvent {
     }
 }
 
-pub struct CopyEventStepsBuilder<SO, SOF, ST, CO, BE, LE, PA, MA> {
-    source: SO,
-    source_offset: SOF,
-    step_length: ST,
-    copy_start: CO,
-    begin_slot: BE,
-    length: LE,
-    padding_byte_getter: PA,
-    mapper: MA,
+/// Defines a builder to construct a copy event.
+///
+/// ```markdown
+///     │◄──read_offset──►│
+///     ├─────────────────┼───────────────┬──────┐
+///     │                 │ Source  Bytes │      │
+///     └─────────────────┼───────┬───────┼──────┘
+///      get_padding      │     mapper    │
+/// ┌─────────▼───────────┼───────▼───────┼─────────┐
+/// │      Padding        │ Copied  Bytes │ Padding │
+/// ├─────────────────────┼───────────────┼─────────┤
+/// │◄────write_offset───►│◄───length────►│         │
+/// │◄─────────────── step_length ─────────────────►│
+/// ```
+pub struct CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> {
+    source: Source,
+    read_offset: ReadOffset,
+    write_offset: WriteOffset,
+    step_length: StepLength,
+    length: Length,
+    padding_byte_getter: Padding,
+    mapper: Mapper,
 }
 
-impl CopyEventStepsBuilder<(), (), (), (), (), (), (), ()> {
+impl CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
     pub fn new() -> Self {
         CopyEventStepsBuilder {
             source: (),
-            source_offset: (),
+            read_offset: (),
+            write_offset: (),
             step_length: (),
-            copy_start: (),
-            begin_slot: (),
             length: (),
             padding_byte_getter: (),
             mapper: (),
         }
     }
 
-    pub fn memory() -> CopyEventStepsBuilder<(), usize, (), (), (), (), Box<dyn Fn(&[u8], usize) -> u8>, Box<dyn Fn(&u8) -> (u8, bool)>> {
+    pub fn memory() -> CopyEventStepsBuilder<(), usize, (), (), (), Box<dyn Fn(&[u8], usize) -> u8>, Box<dyn Fn(&u8) -> (u8, bool)>> {
         Self::new()
-            .source_offset(0usize)
+            .read_offset(0usize)
             .padding_byte_getter(Box::new(|s: &[u8], idx: usize| s[idx]) as Box<dyn Fn(&[u8], usize) -> u8>)
             .mapper(Box::new(|v: &u8| (*v, false)) as Box<dyn Fn(&u8) -> (u8, bool)>)
     }
 }
 
-impl<SO,  SOF, ST, CO, BE, LE, PA, MA> CopyEventStepsBuilder<SO,  SOF, ST, CO, BE, LE, PA, MA>
+impl<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper>
 {
-    pub fn source<SON>(mut self, source: SON) -> CopyEventStepsBuilder<SON, SOF, ST, CO, BE, LE, PA, MA> {
-        let Self { source_offset, step_length, copy_start, begin_slot, length, padding_byte_getter, mapper, .. } = self;
+    pub fn source<New>(self, source: New) -> CopyEventStepsBuilder<New, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> {
+        let CopyEventStepsBuilder { read_offset, write_offset, step_length, length, padding_byte_getter, mapper, .. } = self;
         CopyEventStepsBuilder {
             source,
-            source_offset,
+            read_offset,
+            write_offset,
             step_length,
-            copy_start,
-            begin_slot,
             length,
             padding_byte_getter,
             mapper,
         }
     }
 
-    pub fn source_offset<SOFN>(mut self, source_offset: SOFN) -> CopyEventStepsBuilder<SO, SOFN, ST, CO, BE, LE, PA, MA> {
-        let Self { source, step_length, copy_start, begin_slot, length, padding_byte_getter, mapper, .. } = self;
+    pub fn read_offset<New>(self, read_offset: New) -> CopyEventStepsBuilder<Source, New, WriteOffset, StepLength, Length, Padding, Mapper> {
+        let CopyEventStepsBuilder { source, write_offset, step_length, length, padding_byte_getter, mapper,.. } = self;
         CopyEventStepsBuilder {
             source,
-            source_offset,
+            read_offset,
+            write_offset,
             step_length,
-            copy_start,
-            begin_slot,
             length,
             padding_byte_getter,
             mapper,
         }
     }
 
-    pub fn step_length<STN>(mut self, step_length: STN) -> CopyEventStepsBuilder<SO, SOF, STN, CO, BE, LE, PA, MA> {
-        let Self { source, source_offset, copy_start, begin_slot, length, padding_byte_getter, mapper,.. } = self;
+    pub fn write_offset<New>(self, write_offset: New) -> CopyEventStepsBuilder<Source, ReadOffset, New, StepLength, Length, Padding, Mapper> {
+        let CopyEventStepsBuilder { source, read_offset, step_length, length, padding_byte_getter, mapper,.. } = self;
         CopyEventStepsBuilder {
             source,
-            source_offset,
+            read_offset,
+            write_offset,
             step_length,
-            copy_start,
-            begin_slot,
             length,
             padding_byte_getter,
             mapper,
         }
     }
 
-    pub fn copy_start<OFN>(mut self, copy_start: OFN) -> CopyEventStepsBuilder<SO, SOF, ST, OFN, BE, LE, PA, MA> {
-        let Self { source, source_offset, step_length, begin_slot, length, padding_byte_getter, mapper,.. } = self;
+    pub fn step_length<New>(self, step_length: New) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, New, Length, Padding, Mapper> {
+        let CopyEventStepsBuilder { source, read_offset, write_offset, length, padding_byte_getter, mapper,.. } = self;
         CopyEventStepsBuilder {
             source,
-            source_offset,
+            read_offset,
+            write_offset,
             step_length,
-            copy_start,
-            begin_slot,
             length,
             padding_byte_getter,
             mapper,
         }
     }
 
-    pub fn begin_slot<BEN>(mut self, begin_slot: BEN) -> CopyEventStepsBuilder<SO, SOF, ST, CO, BEN, LE, PA, MA> {
-        let Self { source, source_offset, step_length, copy_start, length, padding_byte_getter, mapper,.. } = self;
+    pub fn length<New>(self, length: New) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, New, Padding, Mapper> {
+        let CopyEventStepsBuilder { source, read_offset, write_offset, step_length, padding_byte_getter, mapper,.. } = self;
         CopyEventStepsBuilder {
             source,
-            source_offset,
+            read_offset,
+            write_offset,
             step_length,
-            copy_start,
-            begin_slot,
             length,
             padding_byte_getter,
             mapper,
         }
     }
 
-    pub fn length<LEN>(mut self, length: LEN) -> CopyEventStepsBuilder<SO, SOF, ST, CO, BE, LEN, PA, MA> {
-        let Self { source, source_offset, step_length, copy_start, begin_slot, padding_byte_getter, mapper,.. } = self;
+    pub fn padding_byte_getter<New>(self, padding_byte_getter: New) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, Length, New, Mapper> {
+        let CopyEventStepsBuilder { source, read_offset, write_offset, step_length, length, mapper,.. } = self;
         CopyEventStepsBuilder {
             source,
-            source_offset,
+            read_offset,
+            write_offset,
             step_length,
-            copy_start,
-            begin_slot,
             length,
             padding_byte_getter,
             mapper,
         }
     }
 
-    pub fn padding_byte_getter<PAN>(mut self, padding_byte_getter: PAN) -> CopyEventStepsBuilder<SO, SOF, ST, CO, BE, LE, PAN, MA> {
-        let Self { source, source_offset, step_length, copy_start, begin_slot, length, mapper, .. } = self;
+    pub fn mapper<New>(self, mapper: New) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, New> {
+        let CopyEventStepsBuilder { source, read_offset, write_offset, step_length, length, padding_byte_getter,.. } = self;
         CopyEventStepsBuilder {
             source,
-            source_offset,
+            read_offset,
+            write_offset,
             step_length,
-            copy_start,
-            begin_slot,
-            length,
-            padding_byte_getter,
-            mapper,
-        }
-    }
-
-    pub fn mapper<MAN>(mut self, mapper: MAN) -> CopyEventStepsBuilder<SO, SOF, ST, CO, BE, LE, PA, MAN> {
-        let Self { source, source_offset, step_length, copy_start, begin_slot, length, padding_byte_getter,.. } = self;
-        CopyEventStepsBuilder {
-            source,
-            source_offset,
-            step_length,
-            copy_start,
-            begin_slot,
             length,
             padding_byte_getter,
             mapper,
@@ -621,33 +612,32 @@ impl<SO,  SOF, ST, CO, BE, LE, PA, MA> CopyEventStepsBuilder<SO,  SOF, ST, CO, B
     }
 }
 
-impl <'a, T: 'a,  SOF, ST, OF, BE, LE, PA, MA> CopyEventStepsBuilder<&'a [T], SOF, ST, OF, BE, LE, PA, MA>
+impl <'a, T: 'a, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> CopyEventStepsBuilder<&'a [T], ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper>
     where
-        SOF: Into<MemoryAddress>,
-        ST: Into<MemoryAddress>,
-        OF: Into<MemoryAddress>,
-        BE: Into<MemoryAddress>,
-        LE: Into<MemoryAddress>,
-        MA: Fn(&T) -> (u8, bool),
-        PA: Fn(&[T], usize) -> u8,
+        ReadOffset: Into<MemoryAddress>,
+        WriteOffset: Into<MemoryAddress>,
+        StepLength: Into<MemoryAddress>,
+        Length: Into<MemoryAddress>,
+        Padding: Fn(&[T], usize) -> u8,
+        Mapper: Fn(&T) -> (u8, bool),
 {
     pub fn build(self) -> CopyEventSteps {
-        let source_offset = self.source_offset.into().0;
+        let read_offset = self.read_offset.into().0;
+        let write_offset = self.write_offset.into().0;
         let step_length = self.step_length.into().0;
-        let copy_start = self.copy_start.into().0;
-        let begin_slot = self.begin_slot.into().0;
         let length = self.length.into().0;
+        let read_end = read_offset.checked_add(length).expect("unexpected overflow");
 
         let mut steps = Vec::with_capacity(step_length);
         for idx in 0..step_length {
-            if (idx + begin_slot < copy_start) || (idx + begin_slot >= copy_start + length) {
+            if (idx < write_offset) || (idx >= write_offset + length) {
                 // padding bytes
                 let value = (self.padding_byte_getter)(self.source, idx);
                 steps.push((value, false, true));
             } else {
-                let addr = source_offset
-                    .checked_add(idx - (copy_start - begin_slot))
-                    .unwrap_or(self.source.len());
+                let addr = read_offset
+                    .checked_add(idx)
+                    .unwrap_or(read_end);
                 if addr < self.source.len() {
                     let (value, is_code) = (self.mapper)(&self.source[addr]);
                     steps.push((value, is_code, false));

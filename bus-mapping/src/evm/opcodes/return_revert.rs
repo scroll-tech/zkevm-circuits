@@ -230,16 +230,16 @@ fn handle_copy(
     // memory word write to destination
     let read_steps = CopyEventStepsBuilder::memory()
         .source(src_data.as_slice())
+        .read_offset(src_range.shift())
+        .write_offset(src_range.shift())
         .step_length(src_data.len())
-        .copy_start(source.offset)
-        .begin_slot(src_range.start_slot())
         .length(copy_length)
         .build();
     let write_steps = CopyEventStepsBuilder::memory()
         .source(dst_data.as_slice())
+        .read_offset(src_range.shift())
+        .write_offset(src_range.shift())
         .step_length(dst_data.len())
-        .copy_start(destination.offset)
-        .begin_slot(dst_range.start_slot())
         .length(copy_length)
         .build();
 
@@ -306,10 +306,9 @@ fn handle_create(
 
     let copy_steps = CopyEventStepsBuilder::memory()
         .source(memory.0.as_slice())
-        .source_offset(source.offset)
+        .read_offset(dst_range.shift())
+        .write_offset(dst_range.shift())
         .step_length(dst_range.full_length())
-        .copy_start(source.offset)
-        .begin_slot(dst_range.start_slot())
         .length(source.length)
         .build();
 

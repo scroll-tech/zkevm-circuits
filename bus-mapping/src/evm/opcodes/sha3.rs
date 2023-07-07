@@ -68,10 +68,9 @@ impl Opcode for Sha3 {
 
             CopyEventStepsBuilder::memory()
                 .source(state.call_ctx()?.memory.0.as_slice())
-                .source_offset(offset.low_u64())
+                .read_offset(dst_range.shift())
+                .write_offset(dst_range.shift())
                 .step_length(dst_range.full_length())
-                .copy_start(offset.low_u64())
-                .begin_slot(dst_range.start_slot())
                 .length(size.low_u64())
                 .build()
         } else {

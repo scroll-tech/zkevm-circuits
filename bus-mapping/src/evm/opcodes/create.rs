@@ -363,10 +363,9 @@ fn handle_copy(
 
     let copy_steps = CopyEventStepsBuilder::memory()
         .source(mem_read.0.as_slice())
-        .source_offset(dst_range.start_slot())
+        .read_offset(dst_range.shift())
+        .write_offset(dst_range.shift())
         .step_length(dst_range.full_length())
-        .copy_start(offset)
-        .begin_slot(dst_range.start_slot())
         .length(length)
         .build();
 
