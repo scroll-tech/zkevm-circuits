@@ -62,7 +62,7 @@ impl Opcode for Sha3 {
             let mem = state.call_ctx()?.memory.read_chunk(dst_range);
             // Read step
             let mut chunk_index = dst_range.start_slot().0;
-            for _ in 0..dst_range.full_length().0 / 32 {
+            for _ in 0..dst_range.word_count() {
                 state.memory_read_word(&mut exec_step, chunk_index.into())?;
                 chunk_index += 32;
             }
