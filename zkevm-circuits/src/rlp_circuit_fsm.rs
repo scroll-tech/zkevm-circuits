@@ -1906,7 +1906,7 @@ impl<F: Field> RlpCircuitConfig<F> {
                 region.assign_fixed(
                     || "q_last",
                     self.q_last,
-                    last_row,
+                    last_row - 1,
                     || Value::known(F::one()),
                 )?;
 
