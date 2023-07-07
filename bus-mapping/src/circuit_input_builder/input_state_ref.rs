@@ -230,7 +230,6 @@ impl<'a> CircuitInputStateRef<'a> {
         address: MemoryAddress,
     ) -> Result<Word, Error> {
         let mem = &self.call_ctx()?.memory;
-        println!("mem: {:?}", mem.0);
         let value = mem.read_word(address);
 
         let call_id = self.call()?.call_id;
@@ -1839,8 +1838,6 @@ impl<'a> CircuitInputStateRef<'a> {
         memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
         assert!(!self.call()?.is_root);
-        println!("input: {src_addr} {dst_addr} {copy_length}");
-        println!("memory_updated: {:?}", memory_updated.0);
 
         let mut read_steps = Vec::with_capacity(copy_length as usize);
         let mut write_steps = Vec::with_capacity(copy_length as usize);
