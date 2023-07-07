@@ -505,6 +505,7 @@ impl Default for CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
 }
 
 impl CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
+    /// Create a new copy steps builder.
     pub fn new() -> Self {
         CopyEventStepsBuilder {
             source: (),
@@ -517,6 +518,7 @@ impl CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
         }
     }
 
+    /// Create a memory copy steps builder.
     #[allow(clippy::type_complexity)]
     pub fn memory() -> CopyEventStepsBuilder<(), (), (), (), (), Box<dyn Fn(&[u8], usize) -> u8>, Box<dyn Fn(&u8) -> (u8, bool)>> {
         Self::new()
@@ -524,6 +526,7 @@ impl CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
             .mapper(Box::new(|v: &u8| (*v, false)) as Box<dyn Fn(&u8) -> (u8, bool)>)
     }
 
+    /// Create a memory copy steps builder from rage.
     #[allow(clippy::type_complexity)]
     pub fn memory_range(range: MemoryWordRange) -> CopyEventStepsBuilder<(), MemoryAddress, MemoryAddress, MemoryAddress, MemoryAddress, Box<dyn Fn(&[u8], usize) -> u8>, Box<dyn Fn(&u8) -> (u8, bool)>> {
         Self::memory()
@@ -536,6 +539,7 @@ impl CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
 
 impl<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper>
 {
+    /// Set source
     pub fn source<New>(self, source: New) -> CopyEventStepsBuilder<New, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> {
         let CopyEventStepsBuilder { read_offset, write_offset, step_length, length, padding_byte_getter, mapper, .. } = self;
         CopyEventStepsBuilder {
@@ -549,6 +553,7 @@ impl<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> CopyE
         }
     }
 
+    /// Set read offset
     pub fn read_offset<New>(self, read_offset: New) -> CopyEventStepsBuilder<Source, New, WriteOffset, StepLength, Length, Padding, Mapper> {
         let CopyEventStepsBuilder { source, write_offset, step_length, length, padding_byte_getter, mapper,.. } = self;
         CopyEventStepsBuilder {
@@ -562,6 +567,7 @@ impl<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> CopyE
         }
     }
 
+    /// Set write offset
     pub fn write_offset<New>(self, write_offset: New) -> CopyEventStepsBuilder<Source, ReadOffset, New, StepLength, Length, Padding, Mapper> {
         let CopyEventStepsBuilder { source, read_offset, step_length, length, padding_byte_getter, mapper,.. } = self;
         CopyEventStepsBuilder {
@@ -575,6 +581,7 @@ impl<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> CopyE
         }
     }
 
+    /// Set step length
     pub fn step_length<New>(self, step_length: New) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, New, Length, Padding, Mapper> {
         let CopyEventStepsBuilder { source, read_offset, write_offset, length, padding_byte_getter, mapper,.. } = self;
         CopyEventStepsBuilder {
@@ -588,6 +595,7 @@ impl<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> CopyE
         }
     }
 
+    /// Set length
     pub fn length<New>(self, length: New) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, New, Padding, Mapper> {
         let CopyEventStepsBuilder { source, read_offset, write_offset, step_length, padding_byte_getter, mapper,.. } = self;
         CopyEventStepsBuilder {
@@ -601,6 +609,7 @@ impl<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> CopyE
         }
     }
 
+    /// Set padding byte getter
     pub fn padding_byte_getter<New>(self, padding_byte_getter: New) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, Length, New, Mapper> {
         let CopyEventStepsBuilder { source, read_offset, write_offset, step_length, length, mapper,.. } = self;
         CopyEventStepsBuilder {
@@ -614,6 +623,7 @@ impl<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> CopyE
         }
     }
 
+    /// Set mapper
     pub fn mapper<New>(self, mapper: New) -> CopyEventStepsBuilder<Source, ReadOffset, WriteOffset, StepLength, Length, Padding, New> {
         let CopyEventStepsBuilder { source, read_offset, write_offset, step_length, length, padding_byte_getter,.. } = self;
         CopyEventStepsBuilder {
@@ -637,6 +647,7 @@ impl <'a, T: 'a, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> C
         Padding: Fn(&[T], usize) -> u8,
         Mapper: Fn(&T) -> (u8, bool),
 {
+    /// Build the copy event steps.
     pub fn build(self) -> CopyEventSteps {
         let read_offset = self.read_offset.into().0;
         let write_offset = self.write_offset.into().0;
