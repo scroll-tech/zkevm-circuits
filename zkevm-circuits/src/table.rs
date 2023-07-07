@@ -2243,11 +2243,9 @@ pub struct ModExpTable {
     pub result: Column<Advice>,
 }
 
-
 impl ModExpTable {
     /// Construct the modexp table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
-        
         let ret = Self {
             q_head: meta.fixed_column(),
             base: meta.advice_column(),
@@ -2263,8 +2261,8 @@ impl ModExpTable {
     }
 
     /// helper for devide a U256 into 3 108bit limbs
-    pub fn split_u256_108bit_limbs(word: &Word) -> [u128;3]{
-        let bit108 = 1u128<<108;
+    pub fn split_u256_108bit_limbs(word: &Word) -> [u128; 3] {
+        let bit108 = 1u128 << 108;
         let (next, limb0) = word.div_mod(U256::from(bit108));
         let (limb2, limb1) = next.div_mod(U256::from(bit108));
         [limb0.as_u128(), limb1.as_u128(), limb2.as_u128()]
@@ -2281,13 +2279,10 @@ impl ModExpTable {
     }
 
     /// fill a blank 4-row region start from offset for empty lookup
-    pub fn fill_blank<F: Field>(
-        &self,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error>{
+    pub fn fill_blank<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "modexp table blank region",
-            |mut region|{
+            |mut region| {
                 for i in 0..4 {
                     // fill last totally 0 row
                     region.assign_fixed(
@@ -2296,17 +2291,17 @@ impl ModExpTable {
                         i,
                         || Value::known(F::zero()),
                     )?;
-                    for &col in [&self.base, &self.exp, &self.modulus, &self.result]{
+                    for &col in [&self.base, &self.exp, &self.modulus, &self.result] {
                         region.assign_advice(
                             || "modexp table blank limb row",
-                            col, 
-                            i, 
+                            col,
+                            i,
                             || Value::known(F::zero()),
-                        )?;    
+                        )?;
                     }
                 }
-                Ok(())           
-            }
+                Ok(())
+            },
         )
     }
 
@@ -2318,19 +2313,17 @@ impl ModExpTable {
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "modexp table",
-            |mut region|{
-
+            |mut region| {
                 let mut offset = 0usize;
 
-                for event in &block.modexp_events{
-
+                for event in &block.modexp_events {
                     for i in 0..4 {
                         region.assign_fixed(
-                            || format!("modexp table head {}", offset+i),
+                            || format!("modexp table head {}", offset + i),
                             self.q_head,
                             offset + i,
-                            || Value::known(if i == 0 {F::one()} else {F::zero()}),
-                        )?;    
+                            || Value::known(if i == 0 { F::one() } else { F::zero() }),
+                        )?;
                     }
 
                     let base_limbs = Self::split_u256_108bit_limbs(&event.base);
@@ -2339,29 +2332,33 @@ impl ModExpTable {
                     let result_limbs = Self::split_u256_108bit_limbs(&event.result);
 
                     for i in 0..3 {
-                        for (limbs, &col) in 
-                            [base_limbs, exp_limbs, modulus_limbs, result_limbs]
-                            .zip([&self.base, &self.exp, &self.modulus, &self.result]){
-
+                        for (limbs, &col) in [base_limbs, exp_limbs, modulus_limbs, result_limbs]
+                            .zip([&self.base, &self.exp, &self.modulus, &self.result])
+                        {
                             region.assign_advice(
-                                || format!("modexp table limb row {}", offset+i),
-                                col, 
-                                offset + i, 
+                                || format!("modexp table limb row {}", offset + i),
+                                col,
+                                offset + i,
                                 || Value::known(F::from_u128(limbs[i])),
                             )?;
                         }
                     }
 
                     // native is not used by lookup (and in fact it can be omitted in dev)
-                    for (word, &col) in [&event.base, &event.exponent, &event.modulus, &event.result] 
-                        .zip([&self.base, &self.exp, &self.modulus, &self.result]){
-
+                    for (word, &col) in [
+                        &event.base,
+                        &event.exponent,
+                        &event.modulus,
+                        &event.result,
+                    ]
+                    .zip([&self.base, &self.exp, &self.modulus, &self.result])
+                    {
                         region.assign_advice(
-                            || format!("modexp table native row {}", offset+3),
-                            col, 
-                            offset + 3, 
+                            || format!("modexp table native row {}", offset + 3),
+                            col,
+                            offset + 3,
                             || Value::<F>::known(Self::native_u256(word)),
-                        )?;    
+                        )?;
                     }
 
                     offset += 4;
@@ -2372,10 +2369,8 @@ impl ModExpTable {
         )?;
 
         self.fill_blank(layouter)
-
     }
 }
-
 
 impl<F: Field> LookupTable<F> for ModExpTable {
     fn columns(&self) -> Vec<Column<Any>> {
@@ -2415,11 +2410,10 @@ impl<F: Field> LookupTable<F> for ModExpTable {
             meta.query_advice(self.base, Rotation(2)),
             meta.query_advice(self.exp, Rotation(2)),
             meta.query_advice(self.modulus, Rotation(2)),
-            meta.query_advice(self.result, Rotation(2)),                        
+            meta.query_advice(self.result, Rotation(2)),
         ]
     }
 }
-
 
 /// Lookup table for powers of keccak randomness up to exponent in [0, 128)
 #[derive(Clone, Copy, Debug)]

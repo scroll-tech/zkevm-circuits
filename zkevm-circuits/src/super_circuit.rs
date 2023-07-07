@@ -66,12 +66,12 @@ use crate::{
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
+    precompile_circuit,
     sig_circuit::{SigCircuit, SigCircuitConfig, SigCircuitConfigArgs},
     table::SigTable,
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
     util::{log2_ceil, SubCircuit, SubCircuitConfig},
     witness::{block_convert, Block},
-    precompile_circuit,
 };
 
 #[cfg(feature = "zktrie")]
@@ -82,8 +82,8 @@ use crate::util::Challenges;
 use crate::{
     state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
     table::{
-        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, PoseidonTable,
-        PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, TxTable, ModExpTable
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, ModExpTable, MptTable,
+        PoseidonTable, PowOfRandTable, RlpFsmRlpTable as RlpTable, RwTable, TxTable,
     },
 };
 
@@ -307,10 +307,8 @@ impl SubCircuitConfig<Fr> for SuperCircuitConfig<Fr> {
         );
         log_circuit_info(meta, "sig circuit");
 
-        let modexp_circuit = precompile_circuit::modexp::ModExpCircuitConfig::new(
-            meta,
-            modexp_table,
-        );
+        let modexp_circuit =
+            precompile_circuit::modexp::ModExpCircuitConfig::new(meta, modexp_table);
         log_circuit_info(meta, "modexp circuit");
 
         let state_circuit = StateCircuitConfig::new(

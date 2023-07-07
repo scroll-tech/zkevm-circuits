@@ -19,19 +19,19 @@ pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> 
 
     match precompile_fn(input, gas) {
         Ok((gas_cost, return_value)) => {
-            match PrecompileCalls::from(address.0[19]){
+            match PrecompileCalls::from(address.0[19]) {
                 // FIXME: override the behavior of invalid input
                 PrecompileCalls::Modexp => {
                     let (input_valid, _) = ModExpAuxData::check_input(input);
                     if input_valid {
-                        (return_value, gas_cost)   
-                    }else {
+                        (return_value, gas_cost)
+                    } else {
                         (vec![], gas_cost)
                     }
-                },
+                }
                 _ => (return_value, gas_cost),
             }
-        },
+        }
         Err(_) => (vec![], gas),
     }
 }
@@ -177,7 +177,7 @@ impl EcrecoverAuxData {
         } else {
             None
         }
-    }    
+    }
 }
 
 /// size limit of modexp
@@ -189,15 +189,15 @@ pub const MODEXP_INPUT_LIMIT: usize = 192;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ModExpAuxData {
     /// The specified len of inputs: [base, exp, modulus]
-    pub input_lens: [Word;3],
+    pub input_lens: [Word; 3],
     /// Input value [base, exp, modulus], limited to SIZE_LIMIT
-    pub inputs: [[u8;MODEXP_SIZE_LIMIT];3], 
+    pub inputs: [[u8; MODEXP_SIZE_LIMIT]; 3],
     /// Input valid.
     pub valid: bool,
     /// len of output, limited to lens of moduls, but can be 0
     pub output_len: usize,
     /// output of modexp.
-    pub output: [u8;MODEXP_SIZE_LIMIT],
+    pub output: [u8; MODEXP_SIZE_LIMIT],
     /// backup of input memory
     pub input_memory: Vec<u8>,
     /// backup of output memory
@@ -205,44 +205,52 @@ pub struct ModExpAuxData {
 }
 
 impl ModExpAuxData {
-
-    fn parse_memory_to_value(mem: &[u8]) -> [u8;MODEXP_SIZE_LIMIT] {
+    fn parse_memory_to_value(mem: &[u8]) -> [u8; MODEXP_SIZE_LIMIT] {
         let mut value_bytes = [0u8; MODEXP_SIZE_LIMIT];
         if !mem.is_empty() {
             value_bytes.as_mut_slice()[(MODEXP_SIZE_LIMIT - mem.len())..].copy_from_slice(mem);
         }
-        value_bytes    
+        value_bytes
     }
 
     /// check input
-    pub fn check_input(input: &[u8]) -> (bool, [Word;3]){
+    pub fn check_input(input: &[u8]) -> (bool, [Word; 3]) {
         let mut i = input.chunks(32);
         let base_len = Word::from_big_endian(i.next().unwrap_or(&[]));
         let exp_len = Word::from_big_endian(i.next().unwrap_or(&[]));
         let modulus_len = Word::from_big_endian(i.next().unwrap_or(&[]));
 
         let limit = Word::from(MODEXP_SIZE_LIMIT);
-    
-        let input_valid = base_len <= limit &&
-            exp_len <= limit &&
-            modulus_len <= limit;
 
-        (input_valid, [base_len, exp_len, modulus_len])        
+        let input_valid = base_len <= limit && exp_len <= limit && modulus_len <= limit;
+
+        (input_valid, [base_len, exp_len, modulus_len])
     }
 
     /// Create a new instance of modexp auxiliary data.
     pub fn new(mut mem_input: Vec<u8>, output: Vec<u8>) -> Self {
-        
         let input_memory = mem_input.clone();
         let output_memory = output.clone();
 
         let (input_valid, [base_len, exp_len, modulus_len]) = Self::check_input(&mem_input);
 
-        let base_mem_len = if input_valid {base_len.as_usize()} else {MODEXP_SIZE_LIMIT};
-        let exp_mem_len = if input_valid {exp_len.as_usize()} else {MODEXP_SIZE_LIMIT};
-        let modulus_mem_len = if input_valid {modulus_len.as_usize()} else {MODEXP_SIZE_LIMIT};
-    
-        mem_input.resize(96+base_mem_len+exp_mem_len+modulus_mem_len, 0);
+        let base_mem_len = if input_valid {
+            base_len.as_usize()
+        } else {
+            MODEXP_SIZE_LIMIT
+        };
+        let exp_mem_len = if input_valid {
+            exp_len.as_usize()
+        } else {
+            MODEXP_SIZE_LIMIT
+        };
+        let modulus_mem_len = if input_valid {
+            modulus_len.as_usize()
+        } else {
+            MODEXP_SIZE_LIMIT
+        };
+
+        mem_input.resize(96 + base_mem_len + exp_mem_len + modulus_mem_len, 0);
         let mut cur_input_begin = &mem_input[96..];
 
         let base = Self::parse_memory_to_value(&cur_input_begin[..base_mem_len]);
@@ -271,7 +279,7 @@ pub enum PrecompileAuxData {
     /// Ecrecover.
     Ecrecover(EcrecoverAuxData),
     /// Modexp.
-    Modexp(ModExpAuxData)
+    Modexp(ModExpAuxData),
 }
 
 impl Default for PrecompileAuxData {

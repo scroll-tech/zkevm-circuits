@@ -154,7 +154,7 @@ impl<F: Field> PrecompileGadget<F> {
                     "copy output bytes",
                     output_bytes_rlc.clone(),
                     output_bytes_acc_copied.expr(),
-                );                
+                );
             });
         });
 

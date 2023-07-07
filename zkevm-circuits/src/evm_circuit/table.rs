@@ -470,11 +470,11 @@ impl<F: Field> Lookup<F> {
                 sig_s_rlc.clone(),
                 recovered_addr.clone(),
             ],
-            Self::ModExpTable { 
-                base_limbs, 
-                exp_limbs, 
-                modulus_limbs, 
-                result_limbs 
+            Self::ModExpTable {
+                base_limbs,
+                exp_limbs,
+                modulus_limbs,
+                result_limbs,
             } => vec![
                 1.expr(), // q_head
                 base_limbs[0].clone(),

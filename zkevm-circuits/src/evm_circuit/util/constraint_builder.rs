@@ -1422,11 +1422,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     ) {
         self.add_lookup(
             "u256 exponentiation modulus lookup",
-            Lookup::ModExpTable { 
-                base_limbs, 
-                exp_limbs, 
-                modulus_limbs, 
-                result_limbs
+            Lookup::ModExpTable {
+                base_limbs,
+                exp_limbs,
+                modulus_limbs,
+                result_limbs,
             },
         );
     }

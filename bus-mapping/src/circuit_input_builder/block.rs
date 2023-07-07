@@ -1,7 +1,8 @@
 //! Block-related utility module
 
 use super::{
-    execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent, ModExpEvent,
+    execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
+    ModExpEvent,
 };
 use crate::{
     operation::{OperationContainer, RWCounter},
@@ -257,5 +258,5 @@ impl Block {
     /// Push an modexp event to the block.
     pub fn add_modexp_event(&mut self, event: ModExpEvent) {
         self.modexp_events.push(event);
-    }    
+    }
 }
