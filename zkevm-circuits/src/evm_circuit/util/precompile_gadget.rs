@@ -9,7 +9,7 @@ use crate::evm_circuit::{
 };
 
 use super::{
-    constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+    constraint_builder::{BoxedClosure, ConstrainBuilderCommon, EVMConstraintBuilder},
     math_gadget::{BinaryNumberGadget, IsZeroGadget, LtGadget},
     CachedRegion, Cell,
 };
@@ -78,8 +78,40 @@ impl<F: Field> PrecompileGadget<F> {
             );
         });
 
-        cb.condition(address.value_equals(PrecompileCalls::Ecrecover), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileEcrecover, None, |cb| {
+        // TODO: is it possible to avoid this? Just a little messy, but `padding_gadget`,
+        // `input_bytes_rlc` and `output_bytes_rlc` will get dropped later, but the boxed closure
+        // lives longer.
+        let padded_rlc1 = padding_gadget.padded_rlc();
+        let padded_rlc2 = padding_gadget.padded_rlc();
+        let input_bytes_rlc1 = input_bytes_rlc.expr();
+        let output_bytes_rlc1 = output_bytes_rlc.expr();
+        let output_bytes_rlc2 = output_bytes_rlc.expr();
+        let output_bytes_rlc3 = output_bytes_rlc.expr();
+
+        let conditions = vec![
+            address.value_equals(PrecompileCalls::Ecrecover),
+            address.value_equals(PrecompileCalls::Sha256),
+            address.value_equals(PrecompileCalls::Ripemd160),
+            address.value_equals(PrecompileCalls::Identity),
+            address.value_equals(PrecompileCalls::Modexp),
+            address.value_equals(PrecompileCalls::Bn128Add),
+            address.value_equals(PrecompileCalls::Bn128Mul),
+            address.value_equals(PrecompileCalls::Bn128Pairing),
+            address.value_equals(PrecompileCalls::Blake2F),
+        ];
+        let next_states = vec![
+            ExecutionState::PrecompileEcrecover,
+            ExecutionState::PrecompileSha256,
+            ExecutionState::PrecompileRipemd160,
+            ExecutionState::PrecompileIdentity,
+            ExecutionState::PrecompileBigModExp,
+            ExecutionState::PrecompileBn256Add,
+            ExecutionState::PrecompileBn256ScalarMul,
+            ExecutionState::PrecompileBn256Pairing,
+            ExecutionState::PrecompileBlake2f,
+        ];
+        let constraints: Vec<BoxedClosure<F>> = vec![
+            Box::new(|cb| {
                 let (recovered, msg_hash_rlc, sig_v_rlc, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
                     cb.query_bool(),
                     cb.query_cell_phase2(),
@@ -98,7 +130,7 @@ impl<F: Field> PrecompileGadget<F> {
                 };
                 cb.require_equal(
                     "input bytes (RLC) = [msg_hash | sig_v_rlc | sig_r | sig_s]",
-                    padding_gadget.padded_rlc(),
+                    padded_rlc1,
                     (msg_hash_rlc.expr() * r_pow_96)
                         + (sig_v_rlc.expr() * r_pow_64)
                         + (sig_r_rlc.expr() * r_pow_32)
@@ -107,47 +139,34 @@ impl<F: Field> PrecompileGadget<F> {
                 // RLC of output bytes always equals RLC of the recovered address.
                 cb.require_equal(
                     "output bytes (RLC) = recovered address",
-                    output_bytes_rlc.expr(),
+                    output_bytes_rlc1.expr(),
                     recovered_addr_rlc.expr(),
                 );
                 // If the address was not recovered, RLC(address) == RLC(output) == 0.
                 cb.condition(not::expr(recovered.expr()), |cb| {
-                    cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
+                    cb.require_zero("output bytes == 0", output_bytes_rlc1);
                 });
-            });
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Sha256), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileSha256, None, |_cb| {});
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Ripemd160), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileRipemd160, None, |_cb| {});
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Identity), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileIdentity, None, |_cb| {});
-            cb.condition(is_success, |cb| {
-                cb.require_equal(
-                    "input and output bytes are the same",
-                    input_bytes_rlc.expr(),
-                    output_bytes_rlc.expr(),
-                );
-                cb.require_equal(
-                    "input length and precompile return length are the same",
-                    cd_length,
-                    precompile_return_length,
-                );
-            });
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Modexp), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBigModExp, None, |_cb| {});
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Bn128Add), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBn256Add, None, |cb| {
-                let (is_valid, p_x_rlc, p_y_rlc, q_x_rlc, q_y_rlc, r_x_rlc, r_y_rlc) = (
+            }),
+            Box::new(|_cb| { /* Sha256 */ }),
+            Box::new(|_cb| { /* Ripemd160 */ }),
+            Box::new(|cb| {
+                cb.condition(is_success, |cb| {
+                    cb.require_equal(
+                        "input and output bytes are the same",
+                        input_bytes_rlc1,
+                        output_bytes_rlc2,
+                    );
+                    cb.require_equal(
+                        "input length and precompile return length are the same",
+                        cd_length,
+                        precompile_return_length,
+                    );
+                });
+            }),
+            Box::new(|_cb| { /* Modexp */ }),
+            Box::new(|_cb| { /* Bn128Add */ }),
+            Box::new(|cb| {
+              let (is_valid, p_x_rlc, p_y_rlc, q_x_rlc, q_y_rlc, r_x_rlc, r_y_rlc) = (
                     cb.query_bool(),
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
@@ -166,7 +185,7 @@ impl<F: Field> PrecompileGadget<F> {
                 };
                 cb.require_equal(
                     "input bytes (RLC) = [ p_x | p_y | q_x | q_y ]",
-                    padding_gadget.padded_rlc(),
+                    padded_rlc2,
                     (p_x_rlc.expr() * r_pow_96)
                         + (p_y_rlc.expr() * r_pow_64)
                         + (q_x_rlc.expr() * r_pow_32.expr())
@@ -175,27 +194,18 @@ impl<F: Field> PrecompileGadget<F> {
                 // RLC of output bytes always equals RLC of result elliptic curve point R.
                 cb.require_equal(
                     "output bytes (RLC) = [ r_x | r_y ]",
-                    output_bytes_rlc.expr(),
+                    output_bytes_rlc3.expr(),
                     r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
                 );
                 // If the computation was invalid, RLC(output) == 0.
                 cb.condition(not::expr(is_valid.expr()), |cb| {
-                    cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
+                    cb.require_zero("output bytes == 0", output_bytes_rlc3);
                 });
-            });
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Bn128Mul), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBn256ScalarMul, None, |_cb| {});
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Bn128Pairing), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBn256Pairing, None, |_cb| {});
-        });
-
-        cb.condition(address.value_equals(PrecompileCalls::Blake2F), |cb| {
-            cb.constrain_next_step(ExecutionState::PrecompileBlake2f, None, |_cb| {});
-        });
+            }),
+            Box::new(|_cb| { /* Bn128Pairing */ }),
+            Box::new(|_cb| { /* Blake2F */ }),
+        ];
+        cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
 
         Self {
             address,
