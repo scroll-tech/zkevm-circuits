@@ -513,7 +513,7 @@ impl CopyEventStepsBuilder<(), (), (), (), (), (), ()> {
     pub fn memory() -> CopyEventStepsBuilder<(), usize, (), (), (), Box<dyn Fn(&[u8], usize) -> u8>, Box<dyn Fn(&u8) -> (u8, bool)>> {
         Self::new()
             .read_offset(0usize)
-            .padding_byte_getter(Box::new(|s: &[u8], idx: usize| s[idx]) as Box<dyn Fn(&[u8], usize) -> u8>)
+            .padding_byte_getter(Box::new(|s: &[u8], idx: usize| s.get(idx).copied().unwrap_or(0)) as Box<dyn Fn(&[u8], usize) -> u8>)
             .mapper(Box::new(|v: &u8| (*v, false)) as Box<dyn Fn(&u8) -> (u8, bool)>)
     }
 }

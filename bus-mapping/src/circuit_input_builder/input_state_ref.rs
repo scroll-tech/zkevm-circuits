@@ -230,6 +230,7 @@ impl<'a> CircuitInputStateRef<'a> {
         address: MemoryAddress,
     ) -> Result<Word, Error> {
         let mem = &self.call_ctx()?.memory;
+        println!("mem: {:?}", mem.0);
         let value = mem.read_word(address);
 
         let call_id = self.call()?.call_id;
@@ -1719,7 +1720,12 @@ impl<'a> CircuitInputStateRef<'a> {
             .length(result.len())
             .build();
         let chunk_index: usize = 0;
-        // TODO: FIXME self.write_chunks(exec_step, &memory, chunk_index, &mut prev_bytes)?;
+        // TODO: remove this
+        let mut memory = result.clone();
+        if memory.len() < range.full_length().0 {
+            memory.resize(range.full_length().0, 0);
+        }
+        self.write_chunks(exec_step, &memory, chunk_index, &mut prev_bytes)?;
 
         Ok((copy_steps, prev_bytes))
     }
@@ -1741,7 +1747,11 @@ impl<'a> CircuitInputStateRef<'a> {
         assert!(copy_length <= result.len());
         let mut src_range = MemoryWordRange::align_range(0, copy_length);
         let mut dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
+        println!("{} {} {}", dst_addr, copy_length, result.len());
+        println!("{:?}", result);
+        println!("src_range: {:?}, dst_range: {:?}", src_range, dst_range);
         src_range.ensure_equal_length(&mut dst_range);
+        println!("src_range: {:?}, dst_range: {:?}", src_range, dst_range);
 
         let src_memory = Memory(result.clone());
 
