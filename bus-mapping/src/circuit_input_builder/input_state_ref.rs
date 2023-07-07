@@ -1833,6 +1833,8 @@ impl<'a> CircuitInputStateRef<'a> {
         memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
         assert!(!self.call()?.is_root);
+        println!("input: {src_addr} {dst_addr} {copy_length}");
+        println!("memory_updated: {:?}", memory_updated.0);
 
         let mut read_steps = Vec::with_capacity(copy_length as usize);
         let mut write_steps = Vec::with_capacity(copy_length as usize);

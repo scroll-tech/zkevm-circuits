@@ -59,6 +59,7 @@ impl Opcode for Sha3 {
         let copy_steps = if size.as_usize() != 0 {
             let dst_range =
                 MemoryWordRange::align_range(offset.low_u64(), size.low_u64());
+            let mem = state.call_ctx()?.memory.read_chunk(dst_range);
             // Read step
             let mut chunk_index = dst_range.start_slot().0;
             for _ in 0..dst_range.full_length().0 / 32 {
@@ -67,7 +68,7 @@ impl Opcode for Sha3 {
             }
 
             CopyEventStepsBuilder::memory()
-                .source(state.call_ctx()?.memory.0.as_slice())
+                .source(mem.as_slice())
                 .read_offset(dst_range.shift())
                 .write_offset(dst_range.shift())
                 .step_length(dst_range.full_length())

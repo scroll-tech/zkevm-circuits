@@ -636,7 +636,7 @@ impl <'a, T: 'a, ReadOffset, WriteOffset, StepLength, Length, Padding, Mapper> C
                 steps.push((value, false, true));
             } else {
                 let addr = read_offset
-                    .checked_add(idx)
+                    .checked_add(idx - write_offset)
                     .unwrap_or(read_end);
                 if addr < self.source.len() {
                     let (value, is_code) = (self.mapper)(&self.source[addr]);
