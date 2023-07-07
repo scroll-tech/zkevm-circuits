@@ -634,18 +634,20 @@ impl <'a, T: 'a,  SOF, ST, OF, BE, LE, PA, MA> CopyEventStepsBuilder<&'a [T], SO
     pub fn build(self) -> CopyEventSteps {
         let source_offset = self.source_offset.into().0;
         let step_length = self.step_length.into().0;
-        let offset_addr = self.copy_start.into().0;
+        let copy_start = self.copy_start.into().0;
         let begin_slot = self.begin_slot.into().0;
         let length = self.length.into().0;
 
         let mut steps = Vec::with_capacity(step_length);
         for idx in 0..step_length {
-            if (idx + begin_slot < offset_addr) || (idx + begin_slot >= offset_addr + length) {
+            if (idx + begin_slot < copy_start) || (idx + begin_slot >= copy_start + length) {
                 // padding bytes
                 let value = (self.padding_byte_getter)(self.source, idx);
                 steps.push((value, false, true));
             } else {
-                let addr = idx.checked_add(source_offset).unwrap_or(self.source.len());
+                let addr = source_offset
+                    .checked_add(idx - (copy_start - begin_slot))
+                    .unwrap_or(self.source.len());
                 if addr < self.source.len() {
                     let (value, is_code) = (self.mapper)(&self.source[addr]);
                     steps.push((value, is_code, false));

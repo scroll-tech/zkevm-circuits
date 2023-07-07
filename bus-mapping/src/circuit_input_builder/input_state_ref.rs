@@ -1651,10 +1651,9 @@ impl<'a> CircuitInputStateRef<'a> {
         let code_slot_bytes = memory_updated.read_chunk(dst_range);
 
         let dst_begin_slot = dst_range.start_slot();
-        let copy_start = dst_addr - dst_begin_slot;
         let copy_steps = CopyEventStepsBuilder::new()
-            .source(bytecode.code.as_slice())
-            .source_offset(copy_start)
+            .source(&bytecode.code[..src_addr_end.0])
+            .source_offset(src_addr)
             .mapper(|code: &BytecodeElement| (code.value, code.is_code))
             .padding_byte_getter(|source: &[BytecodeElement], idx| code_slot_bytes[idx])
             .step_length(code_slot_bytes.len())
