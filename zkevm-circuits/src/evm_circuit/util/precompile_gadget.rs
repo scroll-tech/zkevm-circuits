@@ -78,14 +78,6 @@ impl<F: Field> PrecompileGadget<F> {
             );
         });
 
-        // TODO: is it possible to avoid this? Just a little messy, but `padding_gadget`,
-        // `input_bytes_rlc` and `output_bytes_rlc` will get dropped later, but the boxed closure
-        // lives longer.
-        let padded_rlc1 = padding_gadget.padded_rlc();
-        let input_bytes_rlc1 = input_bytes_rlc.expr();
-        let output_bytes_rlc1 = output_bytes_rlc.expr();
-        let output_bytes_rlc2 = output_bytes_rlc.expr();
-
         let conditions = vec![
             address.value_equals(PrecompileCalls::Ecrecover),
             address.value_equals(PrecompileCalls::Sha256),
@@ -128,7 +120,7 @@ impl<F: Field> PrecompileGadget<F> {
                 };
                 cb.require_equal(
                     "input bytes (RLC) = [msg_hash | sig_v_rlc | sig_r | sig_s]",
-                    padded_rlc1,
+                    padding_gadget.padded_rlc(),
                     (msg_hash_rlc.expr() * r_pow_96)
                         + (sig_v_rlc.expr() * r_pow_64)
                         + (sig_r_rlc.expr() * r_pow_32)
@@ -137,12 +129,12 @@ impl<F: Field> PrecompileGadget<F> {
                 // RLC of output bytes always equals RLC of the recovered address.
                 cb.require_equal(
                     "output bytes (RLC) = recovered address",
-                    output_bytes_rlc1.expr(),
+                    output_bytes_rlc.expr(),
                     recovered_addr_rlc.expr(),
                 );
                 // If the address was not recovered, RLC(address) == RLC(output) == 0.
                 cb.condition(not::expr(recovered.expr()), |cb| {
-                    cb.require_zero("output bytes == 0", output_bytes_rlc1);
+                    cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
                 });
             }),
             Box::new(|_cb| { /* Sha256 */ }),
@@ -151,8 +143,8 @@ impl<F: Field> PrecompileGadget<F> {
                 cb.condition(is_success, |cb| {
                     cb.require_equal(
                         "input and output bytes are the same",
-                        input_bytes_rlc1,
-                        output_bytes_rlc2,
+                        input_bytes_rlc.clone(),
+                        output_bytes_rlc.clone(),
                     );
                     cb.require_equal(
                         "input length and precompile return length are the same",

@@ -321,7 +321,7 @@ impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
     }
 }
 
-pub(crate) type BoxedClosure<F> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>)>;
+pub(crate) type BoxedClosure<'a, F> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>) + 'a>;
 
 impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
@@ -1466,11 +1466,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     /// used for constraining the internal states for precompile calls. Each precompile call
     /// expects a different cell layout, but since the next state can be at the most one precompile
     /// state, we can re-use cells assigned across all those conditions.
-    pub(crate) fn constrain_mutually_exclusive_next_step(
+    pub(crate) fn constrain_mutually_exclusive_next_step<'x>(
         &mut self,
         conditions: Vec<Expression<F>>,
         next_states: Vec<ExecutionState>,
-        constraints: Vec<BoxedClosure<F>>,
+        constraints: Vec<BoxedClosure<'x, F>>,
     ) {
         assert_eq!(conditions.len(), constraints.len());
         assert_eq!(conditions.len(), next_states.len());
