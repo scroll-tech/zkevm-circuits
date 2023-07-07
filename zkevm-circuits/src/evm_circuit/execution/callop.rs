@@ -35,6 +35,7 @@ use eth_types::{
 use halo2_proofs::{circuit::Value, plonk::Error};
 use log::trace;
 use std::cmp::{max, min};
+use eth_types::evm_types::memory::MemoryWordRange;
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
@@ -1003,15 +1004,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 } else {
                     let begin = cd_offset.as_usize();
                     let end = cd_offset.as_usize() + input_len;
-                    let (begin_slot, full_length, _) = Memory::align_range(begin, input_len);
+                    let range = MemoryWordRange::align_range(begin, input_len);
 
                     // input may not be aligned to 32 bytes. actual input is
                     // [start_offset..end_offset]
-                    let start_offset = begin - begin_slot;
-                    let end_offset = end - begin_slot;
-                    let word_count = full_length / 32;
+                    // TODO: turn it into MemoryWordRange method
+                    let start_offset = begin - range.start_slot().0;
+                    let end_offset = end - range.start_slot().0;
 
-                    [start_offset, end_offset, word_count]
+                    [start_offset, end_offset, range.word_count()]
                 };
 
             let [output_bytes_end, output_bytes_word_count] =
@@ -1021,9 +1022,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     [0; 2]
                 } else {
                     let end = precompile_return_length.as_usize();
-                    let (_, full_length, _) = Memory::align_range(0, end);
 
-                    [end, full_length / 32]
+                    [end, MemoryWordRange::align_range(0, end).word_count()]
                 };
 
             let [return_bytes_start_offset, return_bytes_end_offset, return_bytes_word_count] =
@@ -1037,17 +1037,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     let begin = rd_offset.as_usize();
                     let end = begin + length;
 
-                    let (_, src_full_length, _) = Memory::align_range(0, length);
-                    let (begin_slot, full_length, _) = Memory::align_range(begin, length);
-                    let slot_count = max(src_full_length, full_length);
+                    let mut src_range = MemoryWordRange::align_range(0, length);
+                    let mut dst_range = MemoryWordRange::align_range(begin, length);
+                    src_range.ensure_equal_length(&mut dst_range);
 
                     // return data may not be aligned to 32 bytes. actual return data is
                     // [start_offset..end_offset]
-                    let start_offset = begin - begin_slot;
-                    let end_offset = end - begin_slot;
-                    let word_count = slot_count / 32;
+                    // TODO: turn it into MemoryWordRange method
+                    let start_offset = begin - dst_range.start_slot().0;
+                    let end_offset = end - dst_range.start_slot().0;
 
-                    [start_offset, end_offset, word_count]
+                    [start_offset, end_offset, dst_range.word_count()]
                 };
 
             trace!("rw_offset {rw_offset}");

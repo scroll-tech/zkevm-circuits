@@ -11,6 +11,8 @@ use crate::{
 use eth_types::{evm_types::Memory, Bytecode, GethExecStep, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
 use std::cmp::max;
+use eth_types::evm_types::memory::MemoryWordRange;
+use crate::circuit_input_builder::CopyEventStepsBuilder;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
@@ -189,31 +191,28 @@ fn handle_copy(
 
     let rw_counter_start = state.block_ctx.rwc;
 
-    let (src_begin_slot, src_full_length, src_shift) =
-        Memory::align_range(source.offset, copy_length);
-    let (dst_begin_slot, dst_full_length, dst_shift) =
-        Memory::align_range(destination.offset, copy_length);
-
-    let full_length = max(src_full_length, dst_full_length);
+    let mut src_range = MemoryWordRange::align_range(source.offset, copy_length);
+    let mut dst_range = MemoryWordRange::align_range(destination.offset, copy_length);
+    src_range.ensure_equal_length(&mut dst_range);
 
     let src_data = state
         .call_ctx()?
         .memory
-        .read_chunk(src_begin_slot.into(), full_length.into());
+        .read_chunk(src_range);
 
     let dst_data = {
         // Copy src_data into dst_data
         let mut dst_data = state
             .caller_ctx()?
             .memory
-            .read_chunk(dst_begin_slot.into(), full_length.into());
-        dst_data[dst_shift..dst_shift + copy_length]
-            .copy_from_slice(&src_data[src_shift..src_shift + copy_length]);
+            .read_chunk(dst_range);
+        dst_data[dst_range.shift().0..dst_range.shift().0 + copy_length]
+            .copy_from_slice(&src_data[src_range.shift().0..src_range.shift().0 + copy_length]);
         dst_data
     };
 
-    let mut src_chunk_index = src_begin_slot;
-    let mut dst_chunk_index = dst_begin_slot;
+    let mut src_chunk_index = src_range.start_slot().0;
+    let mut dst_chunk_index = dst_range.start_slot().0;
 
     // memory word read from src
     for write_chunk in dst_data.chunks(32) {
@@ -229,25 +228,20 @@ fn handle_copy(
     }
 
     // memory word write to destination
-    let mut read_steps = Vec::with_capacity(source.length);
-    CircuitInputStateRef::gen_copy_steps(
-        &mut read_steps,
-        &src_data,
-        full_length,
-        source.offset,
-        src_begin_slot,
-        copy_length,
-    );
-
-    let mut write_steps = Vec::with_capacity(destination.length);
-    CircuitInputStateRef::gen_copy_steps(
-        &mut write_steps,
-        &dst_data,
-        full_length,
-        destination.offset,
-        dst_begin_slot,
-        copy_length,
-    );
+    let read_steps = CopyEventStepsBuilder::memory()
+        .source(src_data.as_slice())
+        .step_length(src_data.len())
+        .copy_start(source.offset)
+        .begin_slot(src_range.start_slot())
+        .length(copy_length)
+        .build();
+    let write_steps = CopyEventStepsBuilder::memory()
+        .source(dst_data.as_slice())
+        .step_length(dst_data.len())
+        .copy_start(destination.offset)
+        .begin_slot(dst_range.start_slot())
+        .length(copy_length)
+        .build();
 
     state.push_copy(
         step,
@@ -292,18 +286,17 @@ fn handle_create(
         .collect();
 
     let rw_counter_start = state.block_ctx.rwc;
-    let (dst_begin_slot, full_length, _) = Memory::align_range(source.offset, source.length);
+    let dst_range = MemoryWordRange::align_range(source.offset, source.length);
 
     let mut memory = state.call_ctx_mut()?.memory.clone();
-    let minimal_length = dst_begin_slot + full_length;
-    memory.extend_at_least(minimal_length);
+    memory.extend_at_least(dst_range.end_slot().0);
 
     // collect all bytecode to memory with padding word
-    let create_slot_len = full_length;
+    let create_slot_len = dst_range.full_length().0;
 
     let mut copy_start = 0u64;
     let mut first_set = true;
-    let mut chunk_index = dst_begin_slot;
+    let mut chunk_index = dst_range.start_slot().0;
     // memory word writes to destination word
     for _ in 0..create_slot_len / 32 {
         // read memory
@@ -311,24 +304,14 @@ fn handle_create(
         chunk_index += 32;
     }
 
-    let mut copy_steps = Vec::with_capacity(source.length);
-    for idx in 0..create_slot_len {
-        let value = memory.0[dst_begin_slot + idx];
-        if (idx + dst_begin_slot < source.offset)
-            || (idx + dst_begin_slot >= source.offset + source.length)
-        {
-            // front and back mask byte
-            copy_steps.push((value, false, true));
-        } else {
-            // real copy byte
-            if first_set {
-                copy_start = idx as u64;
-                first_set = false;
-            }
-
-            copy_steps.push(bytes[idx - copy_start as usize]);
-        }
-    }
+    let copy_steps = CopyEventStepsBuilder::memory()
+        .source(memory.0.as_slice())
+        .source_offset(source.offset)
+        .step_length(dst_range.full_length())
+        .copy_start(source.offset)
+        .begin_slot(dst_range.start_slot())
+        .length(source.length)
+        .build();
 
     state.push_copy(
         step,

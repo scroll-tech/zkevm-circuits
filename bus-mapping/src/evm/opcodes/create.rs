@@ -11,6 +11,8 @@ use crate::{
 use eth_types::{evm_types::Memory, Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
 use log::trace;
+use eth_types::evm_types::memory::MemoryWordRange;
+use crate::circuit_input_builder::CopyEventStepsBuilder;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Create<const IS_CREATE2: bool>;
@@ -343,14 +345,14 @@ fn handle_copy(
         .map(|element| (element.value, element.is_code, false))
         .collect();
 
-    let (dst_begin_slot, full_length, _) = Memory::align_range(offset, length);
+    let dst_range = MemoryWordRange::align_range(offset, length);
     let mem_read = memory.clone();
     // collect all bytecode to memory with padding word
-    let create_slot_len = full_length;
+    let create_slot_len = dst_range.full_length().0;
 
     let mut copy_start = 0u64;
     let mut first_set = true;
-    let mut chunk_index = dst_begin_slot;
+    let mut chunk_index = dst_range.start_slot().0;
 
     // memory word writes to destination word
     for _ in 0..create_slot_len / 32 {
@@ -359,22 +361,14 @@ fn handle_copy(
         chunk_index += 32;
     }
 
-    let mut copy_steps = Vec::with_capacity(length);
-    for idx in 0..create_slot_len {
-        let value = mem_read.0[dst_begin_slot + idx];
-        if (idx + dst_begin_slot < offset) || (idx + dst_begin_slot >= offset + length) {
-            // front and back mask byte
-            copy_steps.push((value, false, true));
-        } else {
-            // real copy byte
-            if first_set {
-                copy_start = idx as u64;
-                first_set = false;
-            }
-
-            copy_steps.push(bytes[idx - copy_start as usize]);
-        }
-    }
+    let copy_steps = CopyEventStepsBuilder::memory()
+        .source(mem_read.0.as_slice())
+        .source_offset(dst_range.start_slot())
+        .step_length(dst_range.full_length())
+        .copy_start(offset)
+        .begin_slot(dst_range.start_slot())
+        .length(length)
+        .build();
 
     state.push_copy(
         step,

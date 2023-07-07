@@ -18,6 +18,8 @@ use eth_types::{
     GethExecStep, ToWord, Word,
 };
 use std::cmp::min;
+use eth_types::evm_types::memory::MemoryWordRange;
+use eth_types::evm_types::MemoryAddress;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL`, `OpcodeId::CALLCODE`,
@@ -632,12 +634,12 @@ fn write_memory_words(
     };
 
     // Generate aligned slot bytes for MemoryOp.
-    let (begin_slot, full_length, _) = Memory::align_range(offset, length);
-    let slot_bytes = memory_updated.read_chunk(begin_slot.into(), full_length.into());
+    let range = MemoryWordRange::align_range(offset, length);
+    let slot_bytes = memory_updated.read_chunk(range);
 
     // Add memory word write ops.
     for (i, chunk) in slot_bytes.chunks(32).enumerate() {
-        let address = (begin_slot + 32 * i).into();
+        let address = range.start_slot() + MemoryAddress::from(32 * i);
         let write_word = Word::from_big_endian(chunk);
 
         if is_caller {

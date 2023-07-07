@@ -6,6 +6,8 @@ use crate::{
 };
 use eth_types::{evm_types::Memory, GethExecStep, Word, U256};
 use ethers_core::utils::keccak256;
+use eth_types::evm_types::memory::{MemoryRange, MemoryWordRange};
+use crate::circuit_input_builder::CopyEventStepsBuilder;
 
 use super::Opcode;
 
@@ -40,7 +42,7 @@ impl Opcode for Sha3 {
         let sha3_input = state
             .call_ctx()?
             .memory
-            .read_chunk(offset.low_u64().into(), size.as_usize().into());
+            .read_chunk(MemoryRange::new_with_length(offset.low_u64(), size.low_u64()));
 
         // keccak-256 hash of the given data in memory.
         let sha3 = keccak256(&sha3_input);
@@ -53,37 +55,28 @@ impl Opcode for Sha3 {
 
         // Memory read operations
         let rw_counter_start = state.block_ctx.rwc;
-        let mut copy_steps = Vec::with_capacity(size.as_usize());
 
-        if size.as_usize() != 0 {
-            let (dst_begin_slot, full_length, _) =
-                Memory::align_range(offset.low_u64(), size.low_u64());
+        let copy_steps = if size.as_usize() != 0 {
+            let dst_range =
+                MemoryWordRange::align_range(offset.low_u64(), size.low_u64());
             // Read step
-            let mut first_set = true;
-            let mut chunk_index = dst_begin_slot;
-            for _ in 0..full_length / 32 {
+            let mut chunk_index = dst_range.start_slot().0;
+            for _ in 0..dst_range.full_length().0 / 32 {
                 state.memory_read_word(&mut exec_step, chunk_index.into())?;
                 chunk_index += 32;
             }
 
-            let memory = &state.call_ctx()?.memory;
-
-            for idx in 0..full_length {
-                let value = *memory.0.get(dst_begin_slot + idx).unwrap_or(&0);
-                if (idx + dst_begin_slot < offset.low_u64() as usize)
-                    || (idx + dst_begin_slot >= (offset.low_u64() + size.low_u64()) as usize)
-                {
-                    // front and back mask byte
-                    copy_steps.push((value, false, true));
-                } else {
-                    // real copy byte
-                    if first_set {
-                        first_set = false;
-                    }
-                    copy_steps.push((value, false, false));
-                }
-            }
-        }
+            CopyEventStepsBuilder::memory()
+                .source(state.call_ctx()?.memory.0.as_slice())
+                .source_offset(offset.low_u64())
+                .step_length(dst_range.full_length())
+                .copy_start(offset.low_u64())
+                .begin_slot(dst_range.start_slot())
+                .length(size.low_u64())
+                .build()
+        } else {
+            vec![]
+        };
 
         state.block.sha3_inputs.push(sha3_input);
         let call_id = state.call()?.call_id;
@@ -124,6 +117,7 @@ pub mod sha3_tests {
         TestContext,
     };
     use rand::{random, Rng};
+    use eth_types::evm_types::memory::MemoryWordRange;
 
     use crate::{
         circuit_input_builder::{CircuitsParams, ExecState},
@@ -266,7 +260,7 @@ pub mod sha3_tests {
         // Initial memory_len bytes are the memory writes from MSTORE instruction, so we
         // skip them.
         let memory = Memory(memory);
-        let (dst_begin_slot, full_length, _) = Memory::align_range(offset, size);
+        let dst_range = MemoryWordRange::align_range(offset, size);
         assert_eq!(
             builder
                 .block
@@ -274,14 +268,14 @@ pub mod sha3_tests {
                 .memory
                 .iter()
                 .rev()
-                .take(full_length / 32)
+                .take(dst_range.word_count())
                 .rev()
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryOp)>>(),
             {
                 let mut memory_ops = Vec::with_capacity(size);
-                let mut chunk_index = dst_begin_slot;
-                for _ in 0..full_length / 32 {
+                let mut chunk_index = dst_range.start_slot().0;
+                for _ in 0..dst_range.word_count() {
                     let word = memory.read_word(chunk_index.into());
                     memory_ops.push((RW::READ, MemoryOp::new(call_id, chunk_index.into(), word)));
                     chunk_index += 32;
