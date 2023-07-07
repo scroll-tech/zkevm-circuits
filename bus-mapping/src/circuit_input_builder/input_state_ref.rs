@@ -1747,11 +1747,7 @@ impl<'a> CircuitInputStateRef<'a> {
         assert!(copy_length <= result.len());
         let mut src_range = MemoryWordRange::align_range(0, copy_length);
         let mut dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
-        println!("{} {} {}", dst_addr, copy_length, result.len());
-        println!("{:?}", result);
-        println!("src_range: {:?}, dst_range: {:?}", src_range, dst_range);
         src_range.ensure_equal_length(&mut dst_range);
-        println!("src_range: {:?}, dst_range: {:?}", src_range, dst_range);
 
         let src_memory = Memory(result.clone());
 
