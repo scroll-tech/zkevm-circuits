@@ -167,7 +167,7 @@ impl<F: Field> PrecompileGadget<F> {
             Box::new(|_cb| { /* Bn128Pairing */ }),
             Box::new(|_cb| { /* Blake2F */ }),
         ];
-        cb.constrain_mutually_exclusive(conditions, next_states, constraints);
+        cb.constrain_mutually_exclusive_next_step(conditions, next_states, constraints);
 
         Self {
             address,
