@@ -208,7 +208,7 @@ impl ModExpAuxData {
 
     fn parse_memory_to_value(mem: &[u8]) -> [u8;MODEXP_SIZE_LIMIT] {
         let mut value_bytes = [0u8; MODEXP_SIZE_LIMIT];
-        if mem.len() > 0 {
+        if !mem.is_empty() {
             value_bytes.as_mut_slice()[(MODEXP_SIZE_LIMIT - mem.len())..].copy_from_slice(mem);
         }
         value_bytes    

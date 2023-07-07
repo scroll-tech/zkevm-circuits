@@ -104,12 +104,12 @@ impl ModExpCircuitConfig {
         let native_v = ModExpTable::native_u256(value);
         let mut limbs = Vec::new();
 
-        for i in 0..3 {
-            let fv = F::from_u128(limbs_v[i]);
+        for (i, limb) in limbs_v.into_iter().enumerate() {
+            let fv = F::from_u128(limb);
             let c = region.assign_advice(
                 || "assign modexp limb", 
                 col, 
-                offset + i, 
+                offset + i,
                 || Value::known(fv),
             )?;
             limbs.push(Limb::new(Some(c), fv));
@@ -231,9 +231,9 @@ mod test {
             (config, challenge): Self::Config,
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
-            let challenges = challenge.values(&mut layouter);
+            let challenges = challenge.values(&layouter);
             <Self as SubCircuit<Fr>>::synthesize_sub(
-                &self, 
+                self, 
                 &config,
                 &challenges,
                 &mut layouter

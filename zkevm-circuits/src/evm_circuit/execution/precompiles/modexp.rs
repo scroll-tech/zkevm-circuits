@@ -31,7 +31,7 @@ impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
     /// build randomness r, r**2, ... r**(2**BIT_LIMIT)
     pub fn base_pows_expr(randomness: Expression<F>) -> [Expression<F>;BIT_LIMIT] {
         std::iter::successors(
-            Some(randomness.clone()), 
+            Some(randomness), 
             |r| Some(r.clone() * r.clone())
         ).take(BIT_LIMIT)
         .collect::<Vec<_>>()
@@ -471,7 +471,7 @@ impl<F: Field> ModExpOutputs<F> {
     ) -> Self {
 
         let output_len = inner_success * modulus_len;
-        let is_result_zero = IsZeroGadget::construct(cb, "if output len is nil", output_len.clone());
+        let is_result_zero = IsZeroGadget::construct(cb, "if output len is nil", output_len);
  
         let result = cb.query_bytes();
         let result_limbs = Limbs::configure(cb, &result);
