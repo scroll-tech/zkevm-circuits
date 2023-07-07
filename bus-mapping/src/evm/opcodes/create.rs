@@ -369,8 +369,6 @@ fn handle_copy(
         .mapper(|v: &BytecodeElement| (v.value, v.is_code))
         .build();
 
-    assert_eq!(old_copy_steps, copy_steps);
-
     state.push_copy(
         step,
         CopyEvent {
