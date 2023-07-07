@@ -510,11 +510,11 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(is_last, Rotation::next()),
-                    and::expr([
-                        meta.query_advice(is_memory, Rotation::cur()),
-                        meta.query_advice(is_memory, Rotation::next())
-                            + meta.query_advice(is_tx_log, Rotation::next()),
-                    ]),
+                    // and::expr([
+                    //     meta.query_advice(is_memory, Rotation::cur()),
+                    //     meta.query_advice(is_memory, Rotation::next())
+                    //         + meta.query_advice(is_tx_log, Rotation::next()),
+                    // ]),
                 ]))
             },
         );
@@ -569,20 +569,20 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             );
             // we use rlc to constraint the write == read specially for memory to memory case
             // here only handle non memory to memory nor to log cases
-            cb.condition(
-                not::expr(and::expr([
-                    meta.query_advice(is_memory, Rotation::cur()),
-                    meta.query_advice(is_memory, Rotation::next())
-                        + meta.query_advice(is_tx_log, Rotation::next()),
-                ])),
-                |cb| {
-                    cb.require_equal(
-                        "write value == read value",
-                        meta.query_advice(value, Rotation::cur()),
-                        meta.query_advice(value, Rotation::next()),
-                    );
-                },
-            );
+            // cb.condition(
+            //     not::expr(and::expr([
+            //         meta.query_advice(is_memory, Rotation::cur()),
+            //         meta.query_advice(is_memory, Rotation::next())
+            //             + meta.query_advice(is_tx_log, Rotation::next()),
+            //     ])),
+            //     |cb| {
+            //         cb.require_equal(
+            //             "write value == read value",
+            //             meta.query_advice(value, Rotation::cur()),
+            //             meta.query_advice(value, Rotation::next()),
+            //         );
+            //     },
+            // );
 
             cb.require_equal(
                 "value_acc is same for read-write rows",
