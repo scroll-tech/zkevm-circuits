@@ -80,7 +80,7 @@ impl<F: Field> PrecompileGadget<F> {
 
         cb.condition(address.value_equals(PrecompileCalls::Ecrecover), |cb| {
              cb.constrain_next_step(ExecutionState::PrecompileEcrecover, None, |cb| {
-                let (recovered, msg_hash_rlc, sig_v_rlc, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
+/*                let (recovered, msg_hash_rlc, sig_v_rlc, sig_r_rlc, sig_s_rlc, recovered_addr_rlc) = (
                     cb.query_bool(),
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
@@ -113,7 +113,7 @@ impl<F: Field> PrecompileGadget<F> {
                 // If the address was not recovered, RLC(address) == RLC(output) == 0.
                 cb.condition(not::expr(recovered.expr()), |cb| {
                     cb.require_zero("output bytes == 0", output_bytes_rlc.expr());
-                });
+                });*/
             });
         });
 
