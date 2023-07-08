@@ -13,13 +13,12 @@ use crate::{
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        Gas, GasCost, OpcodeId,
+        memory::MemoryWordRange,
+        Gas, GasCost, MemoryAddress, OpcodeId,
     },
     GethExecStep, ToWord, Word,
 };
 use std::cmp::min;
-use eth_types::evm_types::memory::MemoryWordRange;
-use eth_types::evm_types::MemoryAddress;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL`, `OpcodeId::CALLCODE`,

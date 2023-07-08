@@ -1,18 +1,19 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder,
+        NumberOrHash,
     },
     evm::opcodes::ExecStep,
     operation::{AccountField, AccountOp, CallContextField},
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
+use eth_types::{
+    bytecode::BytecodeElement, evm_types::memory::MemoryWordRange, Bytecode, GethExecStep, ToWord,
+    Word, H256,
+};
 use ethers_core::utils::keccak256;
-use eth_types::bytecode::BytecodeElement;
-use eth_types::evm_types::memory::MemoryWordRange;
-use crate::circuit_input_builder::CopyEventStepsBuilder;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
@@ -195,17 +196,11 @@ fn handle_copy(
     let mut dst_range = MemoryWordRange::align_range(destination.offset, copy_length);
     src_range.ensure_equal_length(&mut dst_range);
 
-    let src_data = state
-        .call_ctx()?
-        .memory
-        .read_chunk(src_range);
+    let src_data = state.call_ctx()?.memory.read_chunk(src_range);
 
     let dst_data = {
         // Copy src_data into dst_data
-        let mut dst_data = state
-            .caller_ctx()?
-            .memory
-            .read_chunk(dst_range);
+        let mut dst_data = state.caller_ctx()?.memory.read_chunk(dst_range);
         dst_data[dst_range.shift().0..dst_range.shift().0 + copy_length]
             .copy_from_slice(&src_data[src_range.shift().0..src_range.shift().0 + copy_length]);
         dst_data
@@ -295,7 +290,9 @@ fn handle_create(
         .write_offset(dst_range.shift())
         .step_length(dst_range.full_length())
         .length(source.length)
-        .padding_byte_getter(|_: &[BytecodeElement], idx: usize| memory.get(idx).copied().unwrap_or(0))
+        .padding_byte_getter(|_: &[BytecodeElement], idx: usize| {
+            memory.get(idx).copied().unwrap_or(0)
+        })
         .mapper(|v: &BytecodeElement| (v.value, v.is_code))
         .build();
 

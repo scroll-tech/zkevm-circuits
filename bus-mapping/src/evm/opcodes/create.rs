@@ -1,6 +1,7 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, ExecStep,
+        NumberOrHash,
     },
     error::{ContractAddressCollisionError, ExecError},
     evm::{Opcode, OpcodeId},
@@ -8,12 +9,13 @@ use crate::{
     state_db::CodeDB,
     Error,
 };
-use eth_types::{evm_types::Memory, Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};
+use eth_types::{
+    bytecode::BytecodeElement,
+    evm_types::{memory::MemoryWordRange, Memory},
+    Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256,
+};
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
 use log::trace;
-use eth_types::bytecode::BytecodeElement;
-use eth_types::evm_types::memory::MemoryWordRange;
-use crate::circuit_input_builder::CopyEventStepsBuilder;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Create<const IS_CREATE2: bool>;
@@ -360,7 +362,9 @@ fn handle_copy(
         .write_offset(dst_range.shift())
         .step_length(dst_range.full_length())
         .length(length)
-        .padding_byte_getter(|_: &[BytecodeElement], idx: usize| mem_read.get(idx).copied().unwrap_or(0))
+        .padding_byte_getter(|_: &[BytecodeElement], idx: usize| {
+            mem_read.get(idx).copied().unwrap_or(0)
+        })
         .mapper(|v: &BytecodeElement| (v.value, v.is_code))
         .build();
 

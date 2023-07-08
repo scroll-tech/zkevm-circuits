@@ -8,7 +8,7 @@ use super::{
 #[cfg(feature = "scroll")]
 use crate::util::KECCAK_CODE_HASH_ZERO;
 use crate::{
-    circuit_input_builder::execution::{CopyEventPrevBytes, CopyEventSteps},
+    circuit_input_builder::execution::{CopyEventPrevBytes, CopyEventSteps, CopyEventStepsBuilder},
     error::{
         get_step_reported_error, ContractAddressCollisionError, DepthError, ExecError,
         InsufficientBalanceError, NonceUintOverflowError,
@@ -24,9 +24,11 @@ use crate::{
     Error,
 };
 use eth_types::{
+    bytecode::BytecodeElement,
     evm_types::{
-        gas_utils::memory_expansion_gas_cost, Gas, GasCost, Memory, MemoryAddress, OpcodeId,
-        StackAddress,
+        gas_utils::memory_expansion_gas_cost,
+        memory::{MemoryRange, MemoryWordRange},
+        Gas, GasCost, Memory, MemoryAddress, OpcodeId, StackAddress,
     },
     sign_types::SignData,
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
@@ -34,9 +36,6 @@ use eth_types::{
 use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
 use log::trace;
 use std::cmp::max;
-use eth_types::bytecode::BytecodeElement;
-use eth_types::evm_types::memory::{MemoryRange, MemoryWordRange};
-use crate::circuit_input_builder::execution::CopyEventStepsBuilder;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
@@ -794,9 +793,10 @@ impl<'a> CircuitInputStateRef<'a> {
         let current_call = self.call_ctx().expect("current call not found");
         let call_data = match call.kind {
             CallKind::Call | CallKind::CallCode | CallKind::DelegateCall | CallKind::StaticCall => {
-                current_call
-                    .memory
-                    .read_chunk(MemoryRange::new_with_length(call.call_data_offset, call.call_data_length))
+                current_call.memory.read_chunk(MemoryRange::new_with_length(
+                    call.call_data_offset,
+                    call.call_data_length,
+                ))
             }
             CallKind::Create | CallKind::Create2 => Vec::new(),
         };
@@ -1156,9 +1156,10 @@ impl<'a> CircuitInputStateRef<'a> {
         if call_success_create {
             let offset = step.stack.nth_last(0)?;
             let length = step.stack.nth_last(1)?;
-            let code = call_ctx
-                .memory
-                .read_chunk(MemoryRange::new_with_length(offset.low_u64(), length.low_u64()));
+            let code = call_ctx.memory.read_chunk(MemoryRange::new_with_length(
+                offset.low_u64(),
+                length.low_u64(),
+            ));
             let keccak_code_hash = H256(keccak256(&code));
             let code_hash = self.code_db.insert(code);
             let (found, callee_account) = self.sdb.get_account_mut(&call.address);
@@ -1659,7 +1660,12 @@ impl<'a> CircuitInputStateRef<'a> {
             .length(bytes_left)
             .build();
         let mut prev_bytes: Vec<u8> = vec![];
-        self.write_chunks(exec_step, &code_slot_bytes, dst_begin_slot.0, &mut prev_bytes)?;
+        self.write_chunks(
+            exec_step,
+            &code_slot_bytes,
+            dst_begin_slot.0,
+            &mut prev_bytes,
+        )?;
 
         Ok((copy_steps, prev_bytes))
     }
@@ -1821,10 +1827,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let mut dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
         src_range.ensure_equal_length(&mut dst_range);
 
-        let read_slot_bytes = self
-            .caller_ctx()?
-            .memory
-            .read_chunk(src_range);
+        let read_slot_bytes = self.caller_ctx()?.memory.read_chunk(src_range);
 
         let write_slot_bytes = memory_updated.read_chunk(dst_range);
 
@@ -1878,10 +1881,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let mut dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
         src_range.ensure_equal_length(&mut dst_range);
 
-        let read_slot_bytes = self
-            .call()?
-            .last_callee_memory
-            .read_chunk(src_range);
+        let read_slot_bytes = self.call()?.last_callee_memory.read_chunk(src_range);
 
         let write_slot_bytes = memory_updated.read_chunk(dst_range);
 
@@ -1940,7 +1940,8 @@ impl<'a> CircuitInputStateRef<'a> {
         let read_slot_bytes = memory.read_chunk(src_range);
 
         // Read the actual log data and pad it with zeros.
-        let mut log_slot_bytes = memory.read_chunk(MemoryRange::new_with_length(src_addr, bytes_left));
+        let mut log_slot_bytes =
+            memory.read_chunk(MemoryRange::new_with_length(src_addr, bytes_left));
         log_slot_bytes.resize(src_range.full_length().0, 0);
 
         let mut chunk_index = src_range.start_slot().0;
@@ -1973,7 +1974,6 @@ impl<'a> CircuitInputStateRef<'a> {
             .step_length(log_slot_bytes.len())
             .length(bytes_left)
             .build();
-
 
         Ok((read_steps, write_steps))
     }

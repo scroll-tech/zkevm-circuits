@@ -29,13 +29,12 @@ use bus_mapping::{
     precompile::{is_precompiled, PrecompileCalls},
 };
 use eth_types::{
-    evm_types::GAS_STIPEND_CALL_WITH_VALUE,
+    evm_types::{memory::MemoryWordRange, GAS_STIPEND_CALL_WITH_VALUE},
     Field, ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 use log::trace;
 use std::cmp::min;
-use eth_types::evm_types::memory::MemoryWordRange;
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.

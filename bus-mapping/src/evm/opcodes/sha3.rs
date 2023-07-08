@@ -1,13 +1,15 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, ExecStep,
+        NumberOrHash,
     },
     Error,
 };
-use eth_types::{GethExecStep, Word, U256};
+use eth_types::{
+    evm_types::memory::{MemoryRange, MemoryWordRange},
+    GethExecStep, Word, U256,
+};
 use ethers_core::utils::keccak256;
-use eth_types::evm_types::memory::{MemoryRange, MemoryWordRange};
-use crate::circuit_input_builder::CopyEventStepsBuilder;
 
 use super::Opcode;
 
@@ -42,7 +44,10 @@ impl Opcode for Sha3 {
         let sha3_input = state
             .call_ctx()?
             .memory
-            .read_chunk(MemoryRange::new_with_length(offset.low_u64(), size.low_u64()));
+            .read_chunk(MemoryRange::new_with_length(
+                offset.low_u64(),
+                size.low_u64(),
+            ));
 
         // keccak-256 hash of the given data in memory.
         let sha3 = keccak256(&sha3_input);
@@ -57,8 +62,7 @@ impl Opcode for Sha3 {
         let rw_counter_start = state.block_ctx.rwc;
 
         let copy_steps = if size.as_usize() != 0 {
-            let dst_range =
-                MemoryWordRange::align_range(offset.low_u64(), size.low_u64());
+            let dst_range = MemoryWordRange::align_range(offset.low_u64(), size.low_u64());
             let mem = state.call_ctx()?.memory.read_chunk(dst_range);
             // Read step
             let mut chunk_index = dst_range.start_slot().0;
@@ -103,7 +107,7 @@ impl Opcode for Sha3 {
 pub mod sha3_tests {
     use eth_types::{
         bytecode,
-        evm_types::{Memory, OpcodeId},
+        evm_types::{memory::MemoryWordRange, Memory, OpcodeId},
         geth_types::GethData,
         Bytecode, Word,
     };
@@ -113,7 +117,6 @@ pub mod sha3_tests {
         TestContext,
     };
     use rand::{random, Rng};
-    use eth_types::evm_types::memory::MemoryWordRange;
 
     use crate::{
         circuit_input_builder::{CircuitsParams, ExecState},
