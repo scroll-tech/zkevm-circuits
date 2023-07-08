@@ -1978,28 +1978,6 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok((read_steps, write_steps))
     }
 
-    // common use helpers
-    // gen memory copy steps(bytes) for non bytecode(is_code is different)
-    pub(crate) fn gen_copy_steps(
-        steps: &mut CopyEventSteps,
-        memory_at_begin: &[u8],
-        slot_bytes_len: usize,
-        offset_addr: usize,
-        begin_slot: usize,
-        length: usize,
-    ) {
-        for (idx, value) in memory_at_begin.iter().enumerate().take(slot_bytes_len) {
-            // padding unaligned copy of 32 bytes
-            if (idx + begin_slot < offset_addr) || (idx + begin_slot >= offset_addr + length) {
-                // front and back mask byte
-                steps.push((*value, false, true));
-            } else {
-                // real copy byte
-                steps.push((*value, false, false));
-            }
-        }
-    }
-
     /// write work chunk to RW table and add prev bytes
     pub(crate) fn write_chunk_for_copy_step(
         &mut self,
