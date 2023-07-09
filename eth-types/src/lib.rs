@@ -368,6 +368,7 @@ impl fmt::Debug for GethExecStep {
             .field("op", &self.op)
             .field("gas", &format_args!("{}", self.gas.0))
             .field("gas_cost", &format_args!("{}", self.gas_cost.0))
+            .field("refund", &format_args!("{}", self.refund.0))
             .field("depth", &self.depth)
             .field("error", &self.error)
             .field("stack", &self.stack)

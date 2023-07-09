@@ -755,6 +755,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             return Err(Error::Synthesis);
         }
 
+        println!("call success {}", call.is_success);
         self.is_success.assign(
             region,
             offset,
@@ -1048,6 +1049,7 @@ mod test {
                     ret_offset: 0x9f.into(),
                     ret_size: 0x01.into(),
                     address: PrecompileCalls::Modexp.address().to_word(),
+                    gas: 100000.into(),
                     ..Default::default()
                 },
             ]
@@ -1100,6 +1102,42 @@ mod test {
             CircuitTestBuilder::new_from_test_ctx(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
             )
+            .run();
+        }
+    }
+
+    #[test]
+    fn precompile_modexp_test_invalid() {
+        use eth_types::evm_types::Gas;
+
+        for test_vector in TEST_INVALID_VECTOR.iter() {
+            let bytecode = test_vector.with_call_op(OpcodeId::STATICCALL);
+
+            CircuitTestBuilder::new_from_test_ctx(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+            )
+            .geth_data_modifier(Box::new(|block| {
+                let steps = &mut block.geth_traces[0].struct_logs;
+                let step_len = steps.len();
+                let call_step = &mut steps[step_len - 3];
+                assert_eq!(call_step.op, OpcodeId::STATICCALL);
+                // https://github.com/scroll-tech/go-ethereum/blob/2dcc60a082ff89d1c57e497f23daad4823b2fdea/core/vm/contracts.go#L39C42-L39C98
+                call_step.error =
+                    Some("modexp temporarily accepts only 32-byte (256-bit) inputs".into());
+                call_step.refund.0 = 0;
+                let next_gas = Gas(call_step.gas.0 - call_step.gas_cost.0);
+
+                let pop_step = &mut steps[step_len - 2];
+                assert_eq!(pop_step.op, OpcodeId::POP);
+                pop_step.gas = next_gas;
+                pop_step.stack.0[0] = 0.into();
+                let next_gas = Gas(pop_step.gas.0 - pop_step.gas_cost.0);
+                let final_step = &mut steps[step_len - 1];
+                assert_eq!(final_step.op, OpcodeId::STOP);
+                final_step.gas = next_gas;
+
+                println!("trace {:?}", block.geth_traces);
+            }))
             .run();
         }
     }
