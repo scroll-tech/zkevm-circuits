@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         cb.stack_pop(phase2_condition.expr());
 
         // Determine if the jump condition is met
-        let is_condition_zero = IsZeroGadget::construct(cb, phase2_condition.expr());
+        let is_condition_zero = IsZeroGadget::construct(cb, "", phase2_condition.expr());
         let should_jump = 1.expr() - is_condition_zero.expr();
 
         // Lookup opcode at destination when should_jump

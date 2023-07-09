@@ -31,7 +31,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
         let opcode = cb.query_cell();
 
         let value = cb.query_cell_phase2();
-        let is_zero = math_gadget::IsZeroGadget::construct(cb, value.expr());
+        let is_zero = math_gadget::IsZeroGadget::construct(cb, "", value.expr());
 
         cb.stack_pop(value.expr());
         cb.stack_push(is_zero.expr());

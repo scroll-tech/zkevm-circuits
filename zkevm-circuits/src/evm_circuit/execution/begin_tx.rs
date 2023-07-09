@@ -120,13 +120,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_persistent.expr(),
         ); // rwc_delta += 1
 
-        let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
+        let tx_caller_address_is_zero = IsZeroGadget::construct(cb, "", tx_caller_address.expr());
         cb.require_equal(
             "CallerAddress != 0 (not a padding tx)",
             tx_caller_address_is_zero.expr(),
             false.expr(),
         );
-        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, tx_callee_address.expr());
+        let tx_callee_address_is_zero = IsZeroGadget::construct(cb, "", tx_callee_address.expr());
         cb.condition(tx_is_create.expr(), |cb| {
             cb.require_equal(
                 "Contract creation tx expects callee address to be zero",
@@ -259,7 +259,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let phase2_code_hash = cb.query_cell_phase2();
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_code_hash_rlc());
-        let callee_not_exists = IsZeroGadget::construct(cb, phase2_code_hash.expr());
+        let callee_not_exists = IsZeroGadget::construct(cb, "", phase2_code_hash.expr());
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
         // code_hash = 0).

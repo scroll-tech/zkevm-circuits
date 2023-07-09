@@ -212,7 +212,7 @@ pub struct Transaction {
     /// From / Caller Address
     pub from: Address,
     /// To / Callee Address
-    pub to: Address,
+    pub to: Option<Address>,
     /// Value
     pub value: Word,
     /// Input / Call Data
@@ -240,7 +240,7 @@ impl From<&Transaction> for geth_types::Transaction {
         geth_types::Transaction {
             hash: tx.hash,
             from: tx.from,
-            to: Some(tx.to),
+            to: tx.to,
             nonce: Word::from(tx.nonce),
             gas_limit: Word::from(tx.gas),
             value: tx.value,
@@ -268,7 +268,7 @@ impl Transaction {
             gas_fee_cap: Word::zero(),
             gas_tip_cap: Word::zero(),
             from: Address::zero(),
-            to: Address::zero(),
+            to: Some(Address::zero()), // or use None?
             value: Word::zero(),
             input: Vec::new(),
             chain_id: 0,
@@ -378,7 +378,7 @@ impl Transaction {
             gas_fee_cap: eth_tx.max_fee_per_gas.unwrap_or_default(),
             gas_tip_cap: eth_tx.max_priority_fee_per_gas.unwrap_or_default(),
             from: eth_tx.from,
-            to: eth_tx.to.unwrap_or_default(),
+            to: eth_tx.to,
             value: eth_tx.value,
             input: eth_tx.input.to_vec(),
             chain_id: eth_tx.chain_id.unwrap_or_default().as_u64(), // FIXME

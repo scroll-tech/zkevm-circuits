@@ -47,10 +47,12 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         let divisor_abs_word = AbsWordGadget::construct(cb);
         let remainder_abs_word = AbsWordGadget::construct(cb);
         let dividend_abs_word = AbsWordGadget::construct(cb);
-        let quotient_is_zero = IsZeroGadget::construct(cb, sum::expr(&quotient_abs_word.x().cells));
-        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&divisor_abs_word.x().cells));
+        let quotient_is_zero =
+            IsZeroGadget::construct(cb, "", sum::expr(&quotient_abs_word.x().cells));
+        let divisor_is_zero =
+            IsZeroGadget::construct(cb, "", sum::expr(&divisor_abs_word.x().cells));
         let remainder_is_zero =
-            IsZeroGadget::construct(cb, sum::expr(&remainder_abs_word.x().cells));
+            IsZeroGadget::construct(cb, "", sum::expr(&remainder_abs_word.x().cells));
 
         cb.stack_pop(dividend_abs_word.x().expr());
         cb.stack_pop(divisor_abs_word.x().expr());
