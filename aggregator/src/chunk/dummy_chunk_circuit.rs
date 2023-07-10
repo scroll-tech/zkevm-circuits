@@ -1,11 +1,17 @@
+use std::iter;
+
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::bn256::Fr,
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
 };
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
+use snark_verifier_sdk::CircuitExt;
 
-use crate::ChunkHash;
+use crate::{
+    constants::{ACC_LEN, DIGEST_LEN},
+    ChunkHash,
+};
 
 #[derive(Clone)]
 pub struct DummyChunkHashCircuit {
@@ -19,11 +25,16 @@ impl DummyChunkHashCircuit {
     }
 
     pub(crate) fn instance(&self) -> Vec<Fr> {
-        self.dummy_chunk
-            .public_input_hash()
-            .as_bytes()
-            .iter()
-            .map(|&x| Fr::from(x as u64))
+        iter::repeat(0)
+            .take(ACC_LEN)
+            .chain(
+                self.dummy_chunk
+                    .public_input_hash()
+                    .as_bytes()
+                    .iter()
+                    .copied(),
+            )
+            .map(|x| Fr::from(x as u64))
             .collect()
     }
 }
@@ -91,5 +102,23 @@ impl Circuit<Fr> for DummyChunkHashCircuit {
         }
 
         Ok(())
+    }
+}
+
+impl CircuitExt<Fr> for DummyChunkHashCircuit {
+    fn num_instance(&self) -> Vec<usize> {
+        vec![ACC_LEN + DIGEST_LEN]
+    }
+
+    fn instances(&self) -> Vec<Vec<Fr>> {
+        vec![self.instance()]
+    }
+
+    fn accumulator_indices() -> Option<Vec<(usize, usize)>> {
+        None
+    }
+
+    fn selectors(_config: &Self::Config) -> Vec<Selector> {
+        vec![]
     }
 }

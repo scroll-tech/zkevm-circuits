@@ -2,20 +2,9 @@
 //! A chunk is a list of blocks.
 use eth_types::H256;
 use ethers_core::utils::keccak256;
-use halo2_proofs::{
-    halo2curves::bn256::{Bn256, G1Affine},
-    plonk::ProvingKey,
-    poly::kzg::commitment::ParamsKZG,
-};
-use rand::Rng;
-use snark_verifier_sdk::{gen_pk, gen_snark_shplonk, Snark};
-
-use crate::chunk::dummy_circuit::DummyChunkHashCircuit;
 
 /// Implements a dummy circuit for the chunk
-pub(crate) mod dummy_circuit;
-/// Implements a dummy circuit ext for the chunk
-pub(crate) mod dummy_circuit_ext;
+pub(crate) mod dummy_chunk_circuit;
 
 #[derive(Default, Debug, Clone, Copy)]
 /// A chunk is a set of continuous blocks.
@@ -40,7 +29,7 @@ pub struct ChunkHash {
 impl ChunkHash {
     /// Sample a chunk hash from random (for testing)
     #[cfg(test)]
-    pub(crate) fn mock_chunk_hash<R: rand::RngCore>(r: &mut R) -> Self {
+    pub(crate) fn mock_random_chunk_hash_for_testing<R: rand::RngCore>(r: &mut R) -> Self {
         let mut prev_state_root = [0u8; 32];
         r.fill_bytes(&mut prev_state_root);
         let mut post_state_root = [0u8; 32];
@@ -70,22 +59,9 @@ impl ChunkHash {
         }
     }
 
-    /// Generate a dummy snark, as well as the pk. Require the chunk hash to be a dummy one
-    pub(crate) fn dummy_snark(
-        &self,
-        param: &ParamsKZG<Bn256>,
-        rng: &mut (impl Rng + Send),
-    ) -> (ProvingKey<G1Affine>, Snark) {
-        // make sure self is dummy or we will not generate a snark
-        assert!(self.is_dummy());
-        let dummy_circuit = DummyChunkHashCircuit::new(*self);
-        let pk = gen_pk(param, &dummy_circuit, None);
-        let snark = gen_snark_shplonk(&param, &pk, dummy_circuit, rng, None::<String>);
-        (pk, snark)
-    }
-
     /// A ChunkHash is dummy if its pre_state_root matches its post_state_root
     /// and its data_hash is all 0s.
+    #[allow(dead_code)]
     pub(crate) fn is_dummy(&self) -> bool {
         if self.prev_state_root != self.post_state_root || self.data_hash != [0u8; 32].into() {
             false

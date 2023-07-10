@@ -1,9 +1,6 @@
 pub(crate) mod aggregation;
 pub(crate) mod compression;
-pub(crate) mod dummy_chunk;
-pub(crate) mod end_to_end;
 pub(crate) mod mock_chunk;
-pub(crate) mod rlc;
 
 #[macro_export]
 macro_rules! layer_0 {
@@ -19,9 +16,8 @@ macro_rules! layer_0 {
         };
 
         let pk = gen_pk(
-            &param,
-            &$circuit,
-            Some(&$path.join(Path::new("layer_0.pkey"))),
+            &param, &$circuit, None,
+            // Some(&$path.join(Path::new("layer_0.pkey"))),
         );
         log::trace!("finished layer 0 pk generation for circuit");
 
@@ -159,7 +155,7 @@ macro_rules! aggregation_layer_snark {
 
         let mut rng = test_rng();
 
-        let aggregation_circuit = AggregationCircuit::new::<CompressionCircuit>(
+        let aggregation_circuit = AggregationCircuit::new(
             &$param,
             $previous_snarks.as_ref(),
             &mut rng,

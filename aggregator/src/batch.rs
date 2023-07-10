@@ -43,11 +43,10 @@
 //!     - chunks are continuous: they are linked via the state roots
 //!     - all hashes uses a same chain_id
 //! 3. the batch_pi_hash matches the circuit's public input (32 field elements) above
-
 use eth_types::{Field, H256};
 use ethers_core::utils::keccak256;
 
-use crate::constants::{ACC_LEN, DIGEST_LEN, MAX_AGG_SNARKS};
+use crate::constants::MAX_AGG_SNARKS;
 
 use super::chunk::ChunkHash;
 
@@ -69,23 +68,14 @@ pub struct BatchHash {
 }
 
 impl BatchHash {
-    /// Sample a batch hash circuit from random (for testing)
-    #[cfg(test)]
-    pub(crate) fn mock_batch_hash_circuit<R: rand::RngCore>(r: &mut R, size: usize) -> Self {
-        let mut chunks = (0..size)
-            .map(|_| ChunkHash::mock_chunk_hash(r))
-            .collect::<Vec<_>>();
-        for i in 0..size - 1 {
-            chunks[i + 1].prev_state_root = chunks[i].post_state_root;
-        }
-
-        Self::construct(&chunks)
-    }
-
     /// Build Batch hash from a list of chunks
-    pub(crate) fn construct(chunk_hashes: &[ChunkHash]) -> Self {
-        assert!(!chunk_hashes.is_empty(), "input chunk slice is empty");
-        let number_of_valid_chunks = chunk_hashes.len();
+    #[allow(dead_code)]
+    pub(crate) fn construct(chunks_without_padding: &[ChunkHash]) -> Self {
+        assert!(
+            !chunks_without_padding.is_empty(),
+            "input chunk slice is empty"
+        );
+        let number_of_valid_chunks = chunks_without_padding.len();
         assert!(
             number_of_valid_chunks <= MAX_AGG_SNARKS,
             "input #chunks ({}) exceed maximum allowed ({})",
@@ -94,27 +84,36 @@ impl BatchHash {
         );
 
         // pad the chunks with dummy ones
-        let mut chunks_with_padding = chunk_hashes.to_vec();
-        if chunk_hashes.len() != MAX_AGG_SNARKS {
-            let dummy_chunk = ChunkHash::dummy_chunk_hash(chunk_hashes.last().unwrap());
+        let mut chunks_with_padding = chunks_without_padding.to_vec();
+        if chunks_without_padding.len() != MAX_AGG_SNARKS {
+            let dummy_chunk = ChunkHash::dummy_chunk_hash(chunks_without_padding.last().unwrap()); // Safe unwrap
             chunks_with_padding = [
                 chunks_with_padding,
-                vec![dummy_chunk; MAX_AGG_SNARKS - chunk_hashes.len()],
+                vec![dummy_chunk; MAX_AGG_SNARKS - chunks_without_padding.len()],
             ]
             .concat();
         }
+        log::trace!("chunks with padding");
+        for (i, chunks) in chunks_with_padding.iter().enumerate() {
+            log::trace!("{}-th chunk: {:?}", i, chunks);
+        }
 
+        // sanity checks
+        // todo: return errors instead
         for i in 0..MAX_AGG_SNARKS - 1 {
             assert_eq!(
-                chunk_hashes[i].post_state_root,
-                chunk_hashes[i + 1].prev_state_root,
+                chunks_with_padding[i].post_state_root,
+                chunks_with_padding[i + 1].prev_state_root,
             );
-            assert_eq!(chunk_hashes[i].chain_id, chunk_hashes[i + 1].chain_id,)
+            assert_eq!(
+                chunks_with_padding[i].chain_id,
+                chunks_with_padding[i + 1].chain_id,
+            )
         }
 
         // batch's data hash is build as
         //  keccak( chunk[0].data_hash || ... || chunk[k-1].data_hash)
-        let preimage = chunk_hashes
+        let preimage = chunks_without_padding
             .iter()
             .flat_map(|chunk_hash| chunk_hash.data_hash.0.iter())
             .cloned()
@@ -129,17 +128,21 @@ impl BatchHash {
         //      chunk[k-1].withdraw_root ||
         //      batch_data_hash )
         let preimage = [
-            chunk_hashes[0].chain_id.to_be_bytes().as_ref(),
-            chunk_hashes[0].prev_state_root.as_bytes(),
-            chunk_hashes.last().unwrap().post_state_root.as_bytes(),
-            chunk_hashes.last().unwrap().withdraw_root.as_bytes(),
+            chunks_with_padding[0].chain_id.to_be_bytes().as_ref(),
+            chunks_with_padding[0].prev_state_root.as_bytes(),
+            chunks_with_padding[MAX_AGG_SNARKS - 1]
+                .post_state_root
+                .as_bytes(),
+            chunks_with_padding[MAX_AGG_SNARKS - 1]
+                .withdraw_root
+                .as_bytes(),
             data_hash.as_slice(),
         ]
         .concat();
         let public_input_hash = keccak256(preimage);
 
         Self {
-            chain_id: chunk_hashes[0].chain_id,
+            chain_id: chunks_with_padding[0].chain_id,
             chunks_with_padding: chunks_with_padding.try_into().unwrap(),
             data_hash: data_hash.into(),
             public_input_hash: public_input_hash.into(),
@@ -147,7 +150,9 @@ impl BatchHash {
         }
     }
 
-    /// Extract all the hash inputs that will ever be used
+    /// Extract all the hash inputs that will ever be used.
+    /// There are MAX_AGG_SNARKS + 2 hashes.
+    ///
     /// orders:
     /// - batch_public_input_hash
     /// - chunk\[i\].piHash for i in \[0, MAX_AGG_SNARKS)
@@ -187,7 +192,7 @@ impl BatchHash {
         //        chunk[i].prevStateRoot || chunk[i].postStateRoot || chunk[i].withdrawRoot ||
         //        chunk[i].datahash)
         for chunk in self.chunks_with_padding.iter() {
-            let chunk_pi_hash_preimage = [
+            let chunk_public_input_hash_preimage = [
                 self.chain_id.to_be_bytes().as_ref(),
                 chunk.prev_state_root.as_bytes(),
                 chunk.post_state_root.as_bytes(),
@@ -195,7 +200,7 @@ impl BatchHash {
                 chunk.data_hash.as_bytes(),
             ]
             .concat();
-            res.push(chunk_pi_hash_preimage)
+            res.push(chunk_public_input_hash_preimage)
         }
 
         // batchDataHash = keccak(chunk[0].dataHash || ... || chunk[k-1].dataHash)
@@ -211,14 +216,8 @@ impl BatchHash {
         res
     }
 
-    pub(crate) fn num_instance(&self) -> Vec<usize> {
-        // 12 elements from the accumulators
-        // 32 elements from batch_data_hash_digest
-        vec![ACC_LEN + DIGEST_LEN]
-    }
-
-    /// Compute the public inputs for this circuit, excluding the accumulator
-    /// which is the public_input_hash
+    /// Compute the public inputs for this circuit, excluding the accumulator.
+    /// Content: the public_input_hash
     pub(crate) fn instances_exclude_acc<F: Field>(&self) -> Vec<Vec<F>> {
         vec![self
             .public_input_hash
