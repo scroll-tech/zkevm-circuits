@@ -5,9 +5,8 @@ use core::{
     str::FromStr,
 };
 use itertools::Itertools;
-use num::ToPrimitive;
 use serde::{Serialize, Serializer};
-use std::{cmp, fmt};
+use std::{cmp, cmp::max, fmt};
 
 /// Represents a `MemoryAddress` of the EVM.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
@@ -86,6 +85,8 @@ impl_from_usize_wrappers!(
     MemoryAddress = MemoryAddress,
     (u8, u16, u32, u64, usize, i32, i64)
 );
+
+impl_partial_eq_wrappers!(MemoryAddress, (u8, u16, u32, u64, usize, i32, i64));
 
 impl FromStr for MemoryAddress {
     type Err = Error;
@@ -296,22 +297,25 @@ impl Memory {
     /// Reads an entire [`Word`] which starts at the provided [`MemoryAddress`]
     /// `addr` and finnishes at `addr + 32`.
     pub fn read_word(&self, addr: MemoryAddress) -> Word {
-        Word::from_big_endian(&self.read_chunk(addr, MemoryAddress::from(32)))
+        Word::from_big_endian(&self.read_chunk(MemoryRange::new_with_length(addr, 32)))
     }
 
     /// Reads an chunk of memory[offset..offset+length]. Zeros will be padded if
     /// index out of range.
-    pub fn read_chunk(&self, offset: MemoryAddress, length: MemoryAddress) -> Vec<u8> {
-        let chunk = if self.0.len() < offset.0 {
+    pub fn read_chunk(&self, range: impl Into<MemoryRange>) -> Vec<u8> {
+        let range = range.into();
+        let start_offset = range.start.0;
+        let length = range.length().0;
+        let chunk = if self.0.len() < start_offset {
             &[]
         } else {
-            &self.0[offset.0..]
+            &self.0[start_offset..]
         };
-        let chunk = if chunk.len() < length.0 {
+        let chunk = if chunk.len() < length {
             // Expand chunk to expected size
-            chunk.iter().cloned().pad_using(length.0, |_| 0).collect()
+            chunk.iter().cloned().pad_using(length, |_| 0).collect()
         } else {
-            chunk[..length.0].to_vec()
+            chunk[..length].to_vec()
         };
         chunk
     }
@@ -336,29 +340,6 @@ impl Memory {
     /// Returns the size of memory in word.
     pub fn word_size(&self) -> usize {
         self.0.len() / 32
-    }
-
-    /// Find the aligned range that contains an unaligned range.
-    ///
-    /// Given a range `[offset; offset+length)`, return:
-    /// - the `slot` offset, aligned to 32 bytes, at or just before `offset`.
-    /// - the `full_length` as a multiple of 32 bytes, such that `[slot, slot+full_length)` contains
-    ///   the given range. If `length=0`, then `full_length=0` too.
-    /// - the `shift` of the offset into the slot, such that `offset = slot + shift`.
-    pub fn align_range<O, L>(offset: O, length: L) -> (usize, usize, usize)
-    where
-        O: ToPrimitive,
-        L: ToPrimitive,
-    {
-        let offset = offset.to_usize().unwrap();
-        let length = length.to_usize().unwrap();
-        let shift = offset % 32;
-        let slot = offset - shift;
-
-        let slot_end = (offset + length + 31) / 32 * 32;
-        let full_length = if length == 0 { 0 } else { slot_end - slot };
-
-        (slot, full_length, shift)
     }
 
     /// Resize the memory for at least length and align to 32 bytes.
@@ -414,6 +395,155 @@ impl Memory {
                 dst_slice[..actual_length].copy_from_slice(src_slice);
             }
         }
+    }
+}
+
+/// Represents a range of memory addresses of [start,end).
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct MemoryRange {
+    start: MemoryAddress,
+    end: MemoryAddress,
+}
+
+impl MemoryRange {
+    /// Creates a new memory range with the provided start and length.
+    pub fn new_with_length(
+        start: impl Into<MemoryAddress>,
+        length: impl Into<MemoryAddress>,
+    ) -> Self {
+        let start = start.into();
+        let end = start + length.into();
+        Self { start, end }
+    }
+
+    /// length of the memory range.
+    #[inline(always)]
+    pub fn length(&self) -> MemoryAddress {
+        self.end - self.start
+    }
+}
+
+/// Represents a 32 bytes .
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct MemoryWordRange {
+    /// a memory range aligned to 32 bytes
+    range: MemoryRange,
+    /// length of the original range in bytes
+    original_length: MemoryAddress,
+    /// shift bytes regard to the start
+    shift: MemoryAddress,
+}
+
+impl MemoryWordRange {
+    /// Manually construct a new MemoryWordRange.
+    ///
+    /// # Panics
+    /// - Will panic if `start` is not aligned to 32 bytes.
+    /// - Will panic if `full_length` is not aligned to 32 bytes.
+    /// - Will panic if `original_length` is not greater than `full_length`.
+    /// - Will panic if `shift` is greater than 31.
+    pub fn new(
+        start: impl Into<MemoryAddress>,
+        full_length: impl Into<MemoryAddress>,
+        original_length: impl Into<MemoryAddress>,
+        shift: impl Into<MemoryAddress>,
+    ) -> Self {
+        let start = start.into();
+        let full_length = full_length.into();
+        let original_length = original_length.into();
+        let shift = shift.into();
+        assert_eq!(start.0 % 32, 0, "start must be a aligned to 32 bytes");
+        assert_eq!(
+            full_length.0 % 32,
+            0,
+            "full_length must be a aligned to 32 bytes"
+        );
+        assert!(
+            original_length <= full_length,
+            "original_length must be less or equal than full_length"
+        );
+        assert!(shift.0 < 32, "shift must be less than 32");
+        let range = MemoryRange::new_with_length(start, full_length);
+        Self {
+            range,
+            original_length,
+            shift,
+        }
+    }
+
+    /// Manually construct a new MemoryWordRange with already aligned range.
+    #[inline(always)]
+    pub fn new_aligned(start: impl Into<MemoryAddress>, length: usize) -> Self {
+        Self::new(start, length, length, 0)
+    }
+
+    /// Find the aligned range that contains an unaligned range.
+    ///
+    /// Given a range `[offset; offset+length)`, return:
+    /// - the `slot` offset, aligned to 32 bytes, at or just before `offset`.
+    /// - the `full_length` as a multiple of 32 bytes, such that `[slot, slot+full_length)` contains
+    ///   the given range. If `length=0`, then `full_length=0` too.
+    /// - the `shift` of the offset into the slot, such that `offset = slot + shift`.
+    pub fn align_range(offset: impl Into<MemoryAddress>, length: impl Into<MemoryAddress>) -> Self {
+        let offset = offset.into().0;
+        let length = length.into().0;
+        let shift = offset % 32;
+        let slot = offset - shift;
+
+        let slot_end = (offset + length + 31) / 32 * 32;
+        let full_length = if length == 0 { 0 } else { slot_end - slot };
+
+        Self::new(slot, full_length, length, shift)
+    }
+
+    /// Ensure that two range has same length.
+    #[inline(always)]
+    pub fn ensure_equal_length(&mut self, other: &mut Self) {
+        let full_length = max(self.full_length(), other.full_length());
+        self.range = MemoryRange::new_with_length(self.range.start, full_length);
+        other.range = MemoryRange::new_with_length(other.range.start, full_length);
+    }
+
+    /// Returns the word count of the aligned range.
+    #[inline(always)]
+    pub fn word_count(&self) -> usize {
+        self.full_length().0 / 32
+    }
+
+    /// Returns the start slot as MemoryAddress.
+    #[inline(always)]
+    pub fn start_slot(&self) -> MemoryAddress {
+        self.range.start
+    }
+
+    /// Returns the end slot as MemoryAddress.
+    #[inline(always)]
+    pub fn end_slot(&self) -> MemoryAddress {
+        self.range.end
+    }
+
+    /// Returns the length of the aligned range.
+    #[inline(always)]
+    pub fn full_length(&self) -> MemoryAddress {
+        self.range.length()
+    }
+
+    /// Returns the length of the original range
+    #[inline(always)]
+    pub fn original_length(&self) -> MemoryAddress {
+        self.original_length
+    }
+
+    /// Returns the shift of the offset into the start slot.
+    #[inline(always)]
+    pub fn shift(&self) -> MemoryAddress {
+        self.shift
+    }
+}
+
+impl From<MemoryWordRange> for MemoryRange {
+    fn from(value: MemoryWordRange) -> Self {
+        value.range
     }
 }
 
@@ -494,32 +624,83 @@ mod memory_tests {
             // Get (slot, full_length, shift) from (offset, length).
 
             // When length=0, full_length=0.
-            assert_eq!((o, 0, 0), Memory::align_range(o, 0));
-            assert_eq!((o, 0, 1), Memory::align_range(o + 1, 0));
-            assert_eq!((o, 0, 31), Memory::align_range(o + 31, 0));
+            assert_eq!(
+                MemoryWordRange::new(o, 0, 0, 0),
+                MemoryWordRange::align_range(o, 0)
+            );
+            assert_eq!(
+                MemoryWordRange::new(o, 0, 0, 1),
+                MemoryWordRange::align_range(o + 1, 0)
+            );
+            assert_eq!(
+                MemoryWordRange::new(o, 0, 0, 31),
+                MemoryWordRange::align_range(o + 31, 0)
+            );
 
             for l in base_lengths {
                 // When length=1, it is always ONE WORD.
-                assert_eq!((o, l + WORD, 0), Memory::align_range(o, l + 1));
-                assert_eq!((o, l + WORD, 1), Memory::align_range(o + 1, l + 1));
-                assert_eq!((o, l + WORD, 31), Memory::align_range(o + 31, l + 1));
+                assert_eq!(
+                    MemoryWordRange::new(o, l + WORD, l + 1, 0),
+                    MemoryWordRange::align_range(o, l + 1)
+                );
+                assert_eq!(
+                    MemoryWordRange::new(o, l + WORD, l + 1, 1),
+                    MemoryWordRange::align_range(o + 1, l + 1)
+                );
+                assert_eq!(
+                    MemoryWordRange::new(o, l + WORD, l + 1, 31),
+                    MemoryWordRange::align_range(o + 31, l + 1)
+                );
 
                 // When the range is still within ONE WORD.
-                assert_eq!((o, l + WORD, 0), Memory::align_range(o, l + 2));
-                assert_eq!((o, l + WORD, 0), Memory::align_range(o, l + 31));
-                assert_eq!((o, l + WORD, 1), Memory::align_range(o + 1, l + 30));
-                assert_eq!((o, l + WORD, 30), Memory::align_range(o + 30, l + 1));
+                assert_eq!(
+                    MemoryWordRange::new(o, l + WORD, l + 2, 0),
+                    MemoryWordRange::align_range(o, l + 2)
+                );
+                assert_eq!(
+                    MemoryWordRange::new(o, l + WORD, l + 31, 0),
+                    MemoryWordRange::align_range(o, l + 31)
+                );
+                assert_eq!(
+                    MemoryWordRange::new(o, l + WORD, l + 30, 1),
+                    MemoryWordRange::align_range(o + 1, l + 30)
+                );
+                assert_eq!(
+                    MemoryWordRange::new(o, l + WORD, l + 1, 30),
+                    MemoryWordRange::align_range(o + 30, l + 1)
+                );
 
                 // When the range ends exactly at a word boundary, it is still ONE WORD.
-                assert_eq!((o, l + WORD, 0), Memory::align_range(o, l + 32));
-                assert_eq!((o, l + WORD, 2), Memory::align_range(o + 2, l + 30));
-                assert_eq!((o, l + WORD, 30), Memory::align_range(o + 30, l + 2));
+                assert_eq!(
+                    MemoryWordRange::new(o, l + WORD, l + 32, 0),
+                    MemoryWordRange::align_range(o, l + 32)
+                );
+                assert_eq!(
+                    MemoryWordRange::new(o, l + WORD, l + 30, 2),
+                    MemoryWordRange::align_range(o + 2, l + 30)
+                );
+                assert_eq!(
+                    MemoryWordRange::new(o, l + WORD, l + 2, 30),
+                    MemoryWordRange::align_range(o + 30, l + 2)
+                );
 
                 // When the range spills into a SECOND WORD.
-                assert_eq!((o, l + 2 * WORD, 1), Memory::align_range(o + 1, l + 32));
-                assert_eq!((o, l + 2 * WORD, 2), Memory::align_range(o + 2, l + 31));
-                assert_eq!((o, l + 2 * WORD, 31), Memory::align_range(o + 31, l + 2));
-                assert_eq!((o, l + 2 * WORD, 31), Memory::align_range(o + 31, l + 32));
+                assert_eq!(
+                    MemoryWordRange::new(o, l + 2 * WORD, l + 32, 1),
+                    MemoryWordRange::align_range(o + 1, l + 32)
+                );
+                assert_eq!(
+                    MemoryWordRange::new(o, l + 2 * WORD, l + 31, 2),
+                    MemoryWordRange::align_range(o + 2, l + 31)
+                );
+                assert_eq!(
+                    MemoryWordRange::new(o, l + 2 * WORD, l + 2, 31),
+                    MemoryWordRange::align_range(o + 31, l + 2)
+                );
+                assert_eq!(
+                    MemoryWordRange::new(o, l + 2 * WORD, l + 32, 31),
+                    MemoryWordRange::align_range(o + 31, l + 32)
+                );
             }
         }
     }

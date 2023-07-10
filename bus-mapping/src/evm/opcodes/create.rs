@@ -1,6 +1,7 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, ExecStep,
+        NumberOrHash,
     },
     error::{ContractAddressCollisionError, ExecError},
     evm::{Opcode, OpcodeId},
@@ -8,7 +9,11 @@ use crate::{
     state_db::CodeDB,
     Error,
 };
-use eth_types::{evm_types::Memory, Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256};
+use eth_types::{
+    bytecode::BytecodeElement,
+    evm_types::{memory::MemoryWordRange, Memory},
+    Bytecode, GethExecStep, ToBigEndian, ToWord, Word, H160, H256,
+};
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
 use log::trace;
 
@@ -337,44 +342,31 @@ fn handle_copy(
     trace!("initialization_bytes bussmapping is {initialization_bytes:?}");
     let keccak_code_hash = H256(keccak256(&initialization_bytes));
     let code_hash = CodeDB::hash(&initialization_bytes);
-    let bytes: Vec<_> = Bytecode::from(initialization_bytes.clone())
-        .code
-        .iter()
-        .map(|element| (element.value, element.is_code, false))
-        .collect();
+    let bytes = Bytecode::from(initialization_bytes.clone()).code;
 
-    let (dst_begin_slot, full_length, _) = Memory::align_range(offset, length);
-    let mem_read = memory.clone();
+    let dst_range = MemoryWordRange::align_range(offset, length);
+    let mem_read = memory.read_chunk(dst_range);
     // collect all bytecode to memory with padding word
-    let create_slot_len = full_length;
-
-    let mut copy_start = 0u64;
-    let mut first_set = true;
-    let mut chunk_index = dst_begin_slot;
+    let mut chunk_index = dst_range.start_slot().0;
 
     // memory word writes to destination word
-    for _ in 0..create_slot_len / 32 {
+    for _ in 0..dst_range.word_count() {
         // read memory
         state.memory_read_word(step, chunk_index.into())?;
         chunk_index += 32;
     }
 
-    let mut copy_steps = Vec::with_capacity(length);
-    for idx in 0..create_slot_len {
-        let value = mem_read.0[dst_begin_slot + idx];
-        if (idx + dst_begin_slot < offset) || (idx + dst_begin_slot >= offset + length) {
-            // front and back mask byte
-            copy_steps.push((value, false, true));
-        } else {
-            // real copy byte
-            if first_set {
-                copy_start = idx as u64;
-                first_set = false;
-            }
-
-            copy_steps.push(bytes[idx - copy_start as usize]);
-        }
-    }
+    let copy_steps = CopyEventStepsBuilder::new()
+        .source(bytes.as_slice())
+        .read_offset(0)
+        .write_offset(dst_range.shift())
+        .step_length(dst_range.full_length())
+        .length(length)
+        .padding_byte_getter(|_: &[BytecodeElement], idx: usize| {
+            mem_read.get(idx).copied().unwrap_or(0)
+        })
+        .mapper(|v: &BytecodeElement| (v.value, v.is_code))
+        .build();
 
     state.push_copy(
         step,

@@ -185,7 +185,8 @@ impl<F: Field> MemoryAddressGadget<F> {
             CellType::StoragePhase2,
             cb.curr.cell_manager.columns()[memory_offset.cell_column_index].cell_type
         );
-        let memory_length_is_zero = IsZeroGadget::construct(cb, sum::expr(&memory_length.cells));
+        let memory_length_is_zero =
+            IsZeroGadget::construct(cb, "", sum::expr(&memory_length.cells));
         let memory_offset_bytes = cb.query_word_rlc();
 
         let has_length = 1.expr() - memory_length_is_zero.expr();
@@ -242,9 +243,9 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
         );
 
         let sum_overflow_hi = sum::expr(&sum.cells[N_BYTES_U64..]);
-        let sum_within_u64 = IsZeroGadget::construct(cb, sum_overflow_hi);
+        let sum_within_u64 = IsZeroGadget::construct(cb, "", sum_overflow_hi);
 
-        let length_is_zero = IsZeroGadget::construct(cb, sum::expr(&length.cells));
+        let length_is_zero = IsZeroGadget::construct(cb, "", sum::expr(&length.cells));
         let offset_length_sum = AddWordsGadget::construct(cb, [offset, length], sum);
 
         Self {

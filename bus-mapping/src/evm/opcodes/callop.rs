@@ -13,7 +13,8 @@ use crate::{
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        Gas, GasCost, Memory, OpcodeId,
+        memory::MemoryWordRange,
+        Gas, GasCost, MemoryAddress, OpcodeId,
     },
     GethExecStep, ToWord, Word,
 };
@@ -632,12 +633,12 @@ fn write_memory_words(
     };
 
     // Generate aligned slot bytes for MemoryOp.
-    let (begin_slot, full_length, _) = Memory::align_range(offset, length);
-    let slot_bytes = memory_updated.read_chunk(begin_slot.into(), full_length.into());
+    let range = MemoryWordRange::align_range(offset, length);
+    let slot_bytes = memory_updated.read_chunk(range);
 
     // Add memory word write ops.
     for (i, chunk) in slot_bytes.chunks(32).enumerate() {
-        let address = (begin_slot + 32 * i).into();
+        let address = range.start_slot() + MemoryAddress::from(32 * i);
         let write_word = Word::from_big_endian(chunk);
 
         if is_caller {

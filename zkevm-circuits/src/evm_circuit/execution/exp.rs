@@ -84,8 +84,8 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
 
         // We simplify constraints depending on whether or not the exponent is 0 or 1.
         // In order to do this, we build some utility expressions.
-        let exponent_lo_is_zero = IsZeroGadget::construct(cb, exponent_lo.clone());
-        let exponent_hi_is_zero = IsZeroGadget::construct(cb, exponent_hi.clone());
+        let exponent_lo_is_zero = IsZeroGadget::construct(cb, "", exponent_lo.clone());
+        let exponent_hi_is_zero = IsZeroGadget::construct(cb, "", exponent_hi.clone());
         let exponent_is_zero_expr =
             and::expr([exponent_lo_is_zero.expr(), exponent_hi_is_zero.expr()]);
         let exponent_lo_is_one = IsEqualGadget::construct(cb, exponent_lo.clone(), 1.expr());

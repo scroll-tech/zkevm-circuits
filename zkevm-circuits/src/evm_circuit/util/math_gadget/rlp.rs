@@ -45,7 +45,7 @@ impl<F: Field> RlpU64Gadget<F> {
                 .zip(&is_most_significant_byte)
                 .map(|(byte, indicator)| byte.expr() * indicator.expr()),
         );
-        let most_significant_byte_is_zero = IsZeroGadget::construct(cb, most_significant_byte);
+        let most_significant_byte_is_zero = IsZeroGadget::construct(cb, "", most_significant_byte);
 
         let value = expr_from_bytes(&value_rlc.cells);
         cb.condition(most_significant_byte_is_zero.expr(), |cb| {

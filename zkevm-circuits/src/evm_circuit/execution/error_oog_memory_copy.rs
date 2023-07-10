@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         let tx_id = cb.query_cell();
 
         let is_extcodecopy =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::EXTCODECOPY.expr());
+            IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::EXTCODECOPY.expr());
 
         cb.condition(is_extcodecopy.expr(), |cb| {
             cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, tx_id.expr());

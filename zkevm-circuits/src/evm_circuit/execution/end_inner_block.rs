@@ -63,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for EndInnerBlockGadget<F> {
 
         // if the block had transactions, the last tx's block number is the current
         // step's block number.
-        let is_empty_block = IsZeroGadget::construct(cb, num_txs.expr());
+        let is_empty_block = IsZeroGadget::construct(cb, "", num_txs.expr());
         cb.condition(not::expr(is_empty_block.expr()), |cb| {
             cb.tx_context_lookup(
                 last_tx_id.expr(),

@@ -305,7 +305,7 @@ mod log_tests {
                     &CallContextOp {
                         call_id: 1,
                         field: CallContextField::CalleeAddress,
-                        value: callee_address.to_word(),
+                        value: callee_address.unwrap().to_word(),
                     },
                 ),
                 (
@@ -332,7 +332,7 @@ mod log_tests {
                         log_id: step.log_id + 1,
                         field: TxLogField::Address,
                         index: 0,
-                        value: callee_address.to_word(),
+                        value: callee_address.unwrap().to_word(),
                     }
                 ),]
             );

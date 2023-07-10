@@ -8,7 +8,7 @@ use super::{
 #[cfg(feature = "scroll")]
 use crate::util::KECCAK_CODE_HASH_ZERO;
 use crate::{
-    circuit_input_builder::execution::{CopyEventPrevBytes, CopyEventSteps},
+    circuit_input_builder::execution::{CopyEventPrevBytes, CopyEventSteps, CopyEventStepsBuilder},
     error::{
         get_step_reported_error, ContractAddressCollisionError, DepthError, ExecError,
         InsufficientBalanceError, NonceUintOverflowError,
@@ -24,9 +24,11 @@ use crate::{
     Error,
 };
 use eth_types::{
+    bytecode::BytecodeElement,
     evm_types::{
-        gas_utils::memory_expansion_gas_cost, Gas, GasCost, Memory, MemoryAddress, OpcodeId,
-        StackAddress,
+        gas_utils::memory_expansion_gas_cost,
+        memory::{MemoryRange, MemoryWordRange},
+        Gas, GasCost, Memory, MemoryAddress, OpcodeId, StackAddress,
     },
     sign_types::SignData,
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
@@ -791,9 +793,10 @@ impl<'a> CircuitInputStateRef<'a> {
         let current_call = self.call_ctx().expect("current call not found");
         let call_data = match call.kind {
             CallKind::Call | CallKind::CallCode | CallKind::DelegateCall | CallKind::StaticCall => {
-                current_call
-                    .memory
-                    .read_chunk(call.call_data_offset.into(), call.call_data_length.into())
+                current_call.memory.read_chunk(MemoryRange::new_with_length(
+                    call.call_data_offset,
+                    call.call_data_length,
+                ))
             }
             CallKind::Create | CallKind::Create2 => Vec::new(),
         };
@@ -1153,9 +1156,10 @@ impl<'a> CircuitInputStateRef<'a> {
         if call_success_create {
             let offset = step.stack.nth_last(0)?;
             let length = step.stack.nth_last(1)?;
-            let code = call_ctx
-                .memory
-                .read_chunk(offset.low_u64().into(), length.low_u64().into());
+            let code = call_ctx.memory.read_chunk(MemoryRange::new_with_length(
+                offset.low_u64(),
+                length.low_u64(),
+            ));
             let keccak_code_hash = H256(keccak256(&code));
             let code_hash = self.code_db.insert(code);
             let (found, callee_account) = self.sdb.get_account_mut(&call.address);
@@ -1627,44 +1631,41 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         exec_step: &mut ExecStep,
         bytecode: &Bytecode,
-        src_addr: usize,
-        dst_addr: usize,
-        src_addr_end: usize,
-        bytes_left: usize,
+        src_addr: impl Into<MemoryAddress>,
+        dst_addr: impl Into<MemoryAddress>,
+        src_addr_end: impl Into<MemoryAddress>,
+        bytes_left: impl Into<MemoryAddress>,
         memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
-        let mut copy_steps = Vec::with_capacity(bytes_left);
-        let mut prev_bytes: Vec<u8> = vec![];
+        let src_addr = src_addr.into();
+        let dst_addr = dst_addr.into();
+        let src_addr_end = src_addr_end.into();
+        let bytes_left = bytes_left.into();
+
         if bytes_left == 0 {
-            return Ok((copy_steps, prev_bytes));
+            return Ok((vec![], vec![]));
         }
 
-        let (dst_begin_slot, full_length, _) = Memory::align_range(dst_addr, bytes_left);
+        let dst_range = MemoryWordRange::align_range(dst_addr, bytes_left);
+        let code_slot_bytes = memory_updated.read_chunk(dst_range);
 
-        let code_slot_bytes = memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
-
-        let copy_start = dst_addr - dst_begin_slot;
-        for (idx, value) in code_slot_bytes.iter().enumerate() {
-            if (idx + dst_begin_slot < dst_addr) || (idx + dst_begin_slot >= dst_addr + bytes_left)
-            {
-                // front and back mask byte
-                copy_steps.push((*value, false, true));
-            } else {
-                // real copy byte
-                let addr = src_addr
-                    .checked_add(idx - copy_start)
-                    .unwrap_or(src_addr_end);
-                let step = if addr < src_addr_end {
-                    let code = bytecode.code.get(addr).unwrap();
-                    (code.value, code.is_code, false)
-                } else {
-                    (0, false, false)
-                };
-                copy_steps.push(step);
-            }
-        }
-
-        self.write_chunks(exec_step, &code_slot_bytes, dst_begin_slot, &mut prev_bytes)?;
+        let dst_begin_slot = dst_range.start_slot();
+        let copy_steps = CopyEventStepsBuilder::new()
+            .source(&bytecode.code[..src_addr_end.0])
+            .mapper(|code: &BytecodeElement| (code.value, code.is_code))
+            .padding_byte_getter(|_: &[BytecodeElement], idx| code_slot_bytes[idx])
+            .read_offset(src_addr)
+            .write_offset(dst_range.shift())
+            .step_length(dst_range.full_length())
+            .length(bytes_left)
+            .build();
+        let mut prev_bytes: Vec<u8> = vec![];
+        self.write_chunks(
+            exec_step,
+            &code_slot_bytes,
+            dst_begin_slot.0,
+            &mut prev_bytes,
+        )?;
 
         Ok((copy_steps, prev_bytes))
     }
@@ -1676,25 +1677,18 @@ impl<'a> CircuitInputStateRef<'a> {
         copy_length: u64,
         caller_memory: &Memory,
     ) -> Result<CopyEventSteps, Error> {
-        let mut copy_steps = Vec::with_capacity(copy_length as usize);
         if copy_length == 0 {
-            return Ok(copy_steps);
+            return Ok(vec![]);
         }
 
-        let (src_begin_slot, full_length, _) = Memory::align_range(src_addr, copy_length);
-        let calldata_slot_bytes =
-            caller_memory.read_chunk(src_begin_slot.into(), full_length.into());
+        let src_range = MemoryWordRange::align_range(src_addr, copy_length);
+        let calldata_slot_bytes = caller_memory.read_chunk(src_range);
 
-        Self::gen_copy_steps(
-            &mut copy_steps,
-            &calldata_slot_bytes,
-            full_length,
-            src_addr as usize,
-            src_begin_slot,
-            copy_length as usize,
-        );
+        let copy_steps = CopyEventStepsBuilder::memory_range(src_range)
+            .source(calldata_slot_bytes.as_slice())
+            .build();
 
-        let mut chunk_index = src_begin_slot;
+        let mut chunk_index = src_range.start_slot().0;
         for chunk in calldata_slot_bytes.chunks(32) {
             let value = self.memory_read_caller(exec_step, chunk_index.into())?;
             debug_assert_eq!(Word::from_big_endian(chunk), value);
@@ -1709,20 +1703,21 @@ impl<'a> CircuitInputStateRef<'a> {
         exec_step: &mut ExecStep,
         result: &Vec<u8>,
     ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
-        let mut copy_steps = Vec::with_capacity(result.len());
-        let mut prev_bytes = vec![];
         if result.is_empty() {
-            return Ok((copy_steps, prev_bytes));
+            return Ok((vec![], vec![]));
         }
 
-        let (_, full_length, _) = Memory::align_range(0, result.len());
-        let mut memory = result.clone();
-        if memory.len() < full_length {
-            memory.resize(full_length, 0);
-        }
-
-        Self::gen_copy_steps(&mut copy_steps, &memory, full_length, 0, 0, result.len());
+        let range = MemoryWordRange::align_range(0, result.len());
+        let copy_steps = CopyEventStepsBuilder::memory_range(range)
+            .source(result.as_slice())
+            .build();
         let chunk_index: usize = 0;
+        // TODO: remove this
+        let mut memory = result.clone();
+        if memory.len() < range.full_length().0 {
+            memory.resize(range.full_length().0, 0);
+        }
+        let mut prev_bytes = vec![];
         self.write_chunks(exec_step, &memory, chunk_index, &mut prev_bytes)?;
 
         Ok((copy_steps, prev_bytes))
@@ -1737,45 +1732,32 @@ impl<'a> CircuitInputStateRef<'a> {
         result: &Vec<u8>,
         memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventSteps, CopyEventPrevBytes), Error> {
-        let mut read_steps = Vec::with_capacity(copy_length);
-        let mut write_steps = Vec::with_capacity(copy_length);
-        let mut prev_bytes = vec![];
         if copy_length == 0 {
-            return Ok((read_steps, write_steps, prev_bytes));
+            return Ok((vec![], vec![], vec![]));
         }
-        assert!(copy_length <= result.len());
-        let src_begin_slot = 0;
-        let (_, src_full_length, _) = Memory::align_range(0, copy_length);
-        let (dst_begin_slot, dst_full_length, _) = Memory::align_range(dst_addr, copy_length);
 
-        let slot_count = max(src_full_length, dst_full_length);
+        let mut prev_bytes = vec![];
+        assert!(copy_length <= result.len());
+        let mut src_range = MemoryWordRange::align_range(0, copy_length);
+        let mut dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
+        src_range.ensure_equal_length(&mut dst_range);
 
         let src_memory = Memory(result.clone());
 
-        let read_slot_bytes = src_memory.read_chunk(src_begin_slot.into(), slot_count.into());
-        let write_slot_bytes = memory_updated.read_chunk(dst_begin_slot.into(), slot_count.into());
+        let read_slot_bytes = src_memory.read_chunk(src_range);
+        let write_slot_bytes = memory_updated.read_chunk(dst_range);
         debug_assert_eq!(read_slot_bytes.len(), write_slot_bytes.len());
 
-        Self::gen_copy_steps(
-            &mut read_steps,
-            &read_slot_bytes,
-            slot_count,
-            0,
-            src_begin_slot as usize,
-            copy_length,
-        );
+        let read_steps = CopyEventStepsBuilder::memory_range(src_range)
+            .source(read_slot_bytes.as_slice())
+            .build();
 
-        Self::gen_copy_steps(
-            &mut write_steps,
-            &write_slot_bytes,
-            slot_count,
-            dst_addr as usize,
-            dst_begin_slot,
-            copy_length,
-        );
+        let write_steps = CopyEventStepsBuilder::memory_range(dst_range)
+            .source(write_slot_bytes.as_slice())
+            .build();
 
-        let mut src_chunk_index = src_begin_slot;
-        let mut dst_chunk_index = dst_begin_slot;
+        let mut src_chunk_index = src_range.start_slot().0;
+        let mut dst_chunk_index = dst_range.start_slot().0;
 
         for (read_chunk, write_chunk) in read_slot_bytes.chunks(32).zip(write_slot_bytes.chunks(32))
         {
@@ -1805,26 +1787,19 @@ impl<'a> CircuitInputStateRef<'a> {
         memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
         assert!(self.call()?.is_root);
-        let mut prev_bytes: Vec<u8> = vec![];
-        let mut copy_steps = Vec::with_capacity(copy_length);
         if copy_length == 0 {
-            return Ok((copy_steps, prev_bytes));
+            return Ok((vec![], vec![]));
         }
 
-        let (dst_begin_slot, full_length, _) = Memory::align_range(dst_addr, copy_length);
+        let dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
 
-        let calldata_slot_bytes =
-            memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
+        let calldata_slot_bytes = memory_updated.read_chunk(dst_range);
 
-        Self::gen_copy_steps(
-            &mut copy_steps,
-            &calldata_slot_bytes,
-            full_length,
-            dst_addr,
-            dst_begin_slot,
-            copy_length,
-        );
-        let chunk_index = dst_begin_slot;
+        let copy_steps = CopyEventStepsBuilder::memory_range(dst_range)
+            .source(calldata_slot_bytes.as_slice())
+            .build();
+        let chunk_index = dst_range.start_slot().0;
+        let mut prev_bytes: Vec<u8> = vec![];
         self.write_chunks(
             exec_step,
             &calldata_slot_bytes,
@@ -1844,46 +1819,28 @@ impl<'a> CircuitInputStateRef<'a> {
         memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
         assert!(!self.call()?.is_root);
-
-        let mut read_steps = Vec::with_capacity(copy_length as usize);
-        let mut write_steps = Vec::with_capacity(copy_length as usize);
-        let mut prev_bytes: Vec<u8> = vec![];
         if copy_length == 0 {
-            return Ok((read_steps, write_steps, prev_bytes));
+            return Ok((vec![], vec![], vec![]));
         }
 
-        let (src_begin_slot, src_length, _) = Memory::align_range(src_addr, copy_length);
-        let (dst_begin_slot, dst_length, _) = Memory::align_range(dst_addr, copy_length);
-        let full_length = max(src_length, dst_length);
+        let mut src_range = MemoryWordRange::align_range(src_addr, copy_length);
+        let mut dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
+        src_range.ensure_equal_length(&mut dst_range);
 
-        let read_slot_bytes = self
-            .caller_ctx()?
-            .memory
-            .read_chunk(src_begin_slot.into(), full_length.into());
+        let read_slot_bytes = self.caller_ctx()?.memory.read_chunk(src_range);
 
-        let write_slot_bytes = memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
+        let write_slot_bytes = memory_updated.read_chunk(dst_range);
 
-        Self::gen_copy_steps(
-            &mut read_steps,
-            &read_slot_bytes,
-            full_length,
-            src_addr as usize,
-            src_begin_slot,
-            copy_length as usize,
-        );
+        let read_steps = CopyEventStepsBuilder::memory_range(src_range)
+            .source(read_slot_bytes.as_slice())
+            .build();
+        let write_steps = CopyEventStepsBuilder::memory_range(dst_range)
+            .source(write_slot_bytes.as_slice())
+            .build();
 
-        Self::gen_copy_steps(
-            &mut write_steps,
-            &write_slot_bytes,
-            full_length,
-            dst_addr as usize,
-            dst_begin_slot,
-            copy_length as usize,
-        );
-
-        let mut copy_rwc_inc = 0;
-        let mut src_chunk_index = src_begin_slot;
-        let mut dst_chunk_index = dst_begin_slot;
+        let mut src_chunk_index = src_range.start_slot().0;
+        let mut dst_chunk_index = dst_range.start_slot().0;
+        let mut prev_bytes: Vec<u8> = vec![];
         // memory word reads from source and writes to destination word
         for write_chunk in write_slot_bytes.chunks(32) {
             self.memory_read_caller(exec_step, src_chunk_index.into())?;
@@ -1897,29 +1854,7 @@ impl<'a> CircuitInputStateRef<'a> {
             )?;
 
             dst_chunk_index += 32;
-            copy_rwc_inc += 2;
         }
-
-        trace!(
-            r#"busmapping:
-            src_addr = {src_addr}
-            dst_addr = {dst_addr}
-            copy_length = {copy_length}
-
-            dst_end = {}
-
-            src_begin_slot = {src_begin_slot}
-            dst_begin_slot = {dst_begin_slot}
-            full_length = {full_length}
-
-            len(read_slot_bytes) = {}
-            len(write_slot_bytes) = {}
-
-            copy_rwc_inc = {copy_rwc_inc}"#,
-            dst_addr + copy_length,
-            read_slot_bytes.len(),
-            write_slot_bytes.len()
-        );
 
         Ok((read_steps, write_steps, prev_bytes))
     }
@@ -1933,12 +1868,8 @@ impl<'a> CircuitInputStateRef<'a> {
         copy_length: u64, // number of bytes to copy, without padding
         memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
-        let mut read_steps = Vec::with_capacity(copy_length as usize);
-        let mut write_steps = Vec::with_capacity(copy_length as usize);
-        let mut prev_bytes: Vec<u8> = vec![];
-
         if copy_length == 0 {
-            return Ok((read_steps, write_steps, prev_bytes));
+            return Ok((vec![], vec![], vec![]));
         }
 
         let last_callee_id = self.call()?.last_callee_id;
@@ -1946,38 +1877,24 @@ impl<'a> CircuitInputStateRef<'a> {
         // won't be copy out of bound, it should be handle by geth error ReturnDataOutOfBounds
         assert!(src_addr + copy_length <= src_addr_end);
 
-        let (src_begin_slot, src_length, _) = Memory::align_range(src_addr, copy_length);
-        let (dst_begin_slot, dst_length, _) = Memory::align_range(dst_addr, copy_length);
-        let full_length = max(src_length, dst_length);
+        let mut src_range = MemoryWordRange::align_range(src_addr, copy_length);
+        let mut dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
+        src_range.ensure_equal_length(&mut dst_range);
 
-        let read_slot_bytes = self
-            .call()?
-            .last_callee_memory
-            .read_chunk(src_begin_slot.into(), full_length.into());
+        let read_slot_bytes = self.call()?.last_callee_memory.read_chunk(src_range);
 
-        let write_slot_bytes = memory_updated.read_chunk(dst_begin_slot.into(), full_length.into());
+        let write_slot_bytes = memory_updated.read_chunk(dst_range);
 
-        Self::gen_copy_steps(
-            &mut read_steps,
-            &read_slot_bytes,
-            full_length,
-            src_addr as usize,
-            src_begin_slot,
-            copy_length as usize,
-        );
+        let read_steps = CopyEventStepsBuilder::memory_range(src_range)
+            .source(read_slot_bytes.as_slice())
+            .build();
+        let write_steps = CopyEventStepsBuilder::memory_range(dst_range)
+            .source(write_slot_bytes.as_slice())
+            .build();
 
-        Self::gen_copy_steps(
-            &mut write_steps,
-            &write_slot_bytes,
-            full_length,
-            dst_addr as usize,
-            dst_begin_slot,
-            copy_length as usize,
-        );
-
-        let mut copy_rwc_inc = 0;
-        let mut src_chunk_index = src_begin_slot;
-        let mut dst_chunk_index = dst_begin_slot;
+        let mut src_chunk_index = src_range.start_slot().0;
+        let mut dst_chunk_index = dst_range.start_slot().0;
+        let mut prev_bytes: Vec<u8> = vec![];
         // memory word reads from source and writes to destination word
         for (read_chunk, write_chunk) in read_slot_bytes.chunks(32).zip(write_slot_bytes.chunks(32))
         {
@@ -2001,31 +1918,7 @@ impl<'a> CircuitInputStateRef<'a> {
             )?;
 
             dst_chunk_index += 32;
-
-            copy_rwc_inc += 2;
         }
-
-        trace!(
-            r#"busmapping:
-            src_addr = {src_addr}
-            dst_addr = {dst_addr}
-            copy_length = {copy_length}
-
-            src_end = {src_addr_end}
-            dst_end = {}
-
-            src_begin_slot = {src_begin_slot}
-            dst_begin_slot = {dst_begin_slot}
-            full_length = {full_length}
-
-            len(read_slot_bytes) = {}
-            len(write_slot_bytes) = {}
-
-            copy_rwc_inc = {copy_rwc_inc}"#,
-            dst_addr + copy_length,
-            read_slot_bytes.len(),
-            write_slot_bytes.len()
-        );
 
         Ok((read_steps, write_steps, prev_bytes))
     }
@@ -2040,17 +1933,18 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok((vec![], vec![]));
         }
 
-        let (src_begin_slot, full_length, _) = Memory::align_range(src_addr, bytes_left);
+        let src_range = MemoryWordRange::align_range(src_addr, bytes_left);
 
         // Read the aligned memory content.
         let memory = &self.call_ctx()?.memory;
-        let read_slot_bytes = memory.read_chunk(src_begin_slot.into(), full_length.into());
+        let read_slot_bytes = memory.read_chunk(src_range);
 
         // Read the actual log data and pad it with zeros.
-        let mut log_slot_bytes = memory.read_chunk(src_addr.into(), bytes_left.into());
-        log_slot_bytes.resize(full_length, 0);
+        let mut log_slot_bytes =
+            memory.read_chunk(MemoryRange::new_with_length(src_addr, bytes_left));
+        log_slot_bytes.resize(src_range.full_length().0, 0);
 
-        let mut chunk_index = src_begin_slot;
+        let mut chunk_index = src_range.start_slot().0;
         // memory word writes to destination word
         for chunk in log_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(chunk);
@@ -2063,55 +1957,25 @@ impl<'a> CircuitInputStateRef<'a> {
                 self.tx_ctx.id(),
                 self.tx_ctx.log_id + 1,
                 TxLogField::Data,
-                chunk_index - src_begin_slot,
+                chunk_index - src_range.start_slot().0,
                 dest_word,
             )?;
             chunk_index += 32;
         }
 
-        let mut read_steps = Vec::with_capacity(full_length);
-        Self::gen_copy_steps(
-            &mut read_steps,
-            &read_slot_bytes,
-            full_length,
-            src_addr as usize,
-            src_begin_slot,
-            bytes_left as usize,
-        );
+        let read_steps = CopyEventStepsBuilder::memory_range(src_range)
+            .source(read_slot_bytes.as_slice())
+            .build();
 
-        let mut write_steps = Vec::with_capacity(full_length);
-        Self::gen_copy_steps(
-            &mut write_steps,
-            &log_slot_bytes,
-            full_length,
-            0,
-            0,
-            bytes_left as usize,
-        );
+        let write_steps = CopyEventStepsBuilder::memory()
+            .source(log_slot_bytes.as_slice())
+            .read_offset(0)
+            .write_offset(0)
+            .step_length(log_slot_bytes.len())
+            .length(bytes_left)
+            .build();
 
         Ok((read_steps, write_steps))
-    }
-
-    // common use helpers
-    // gen memory copy steps(bytes) for non bytecode(is_code is different)
-    pub(crate) fn gen_copy_steps(
-        steps: &mut CopyEventSteps,
-        memory_at_begin: &[u8],
-        slot_bytes_len: usize,
-        offset_addr: usize,
-        begin_slot: usize,
-        length: usize,
-    ) {
-        for (idx, value) in memory_at_begin.iter().enumerate().take(slot_bytes_len) {
-            // padding unaligned copy of 32 bytes
-            if (idx + begin_slot < offset_addr) || (idx + begin_slot >= offset_addr + length) {
-                // front and back mask byte
-                steps.push((*value, false, true));
-            } else {
-                // real copy byte
-                steps.push((*value, false, false));
-            }
-        }
     }
 
     /// write work chunk to RW table and add prev bytes

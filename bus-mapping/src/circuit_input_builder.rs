@@ -36,8 +36,8 @@ use ethers_core::{
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
-    CopyBytes, CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep,
-    NumberOrHash,
+    CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep, ExecState, ExecStep,
+    ExpEvent, ExpStep, NumberOrHash,
 };
 use hex::decode_to_slice;
 
@@ -471,6 +471,8 @@ impl<'a> CircuitInputBuilder {
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
         let mut debug_tx = tx.clone();
         debug_tx.input.clear();
+        debug_tx.rlp_bytes.clear();
+        debug_tx.rlp_unsigned_bytes.clear();
         log::trace!("handle_tx tx {:?}", debug_tx);
         if let Some(al) = &eth_tx.access_list {
             for item in &al.0 {
@@ -546,6 +548,13 @@ impl<'a> CircuitInputBuilder {
                 } else if matches!(geth_step.op, OpcodeId::MSTORE | OpcodeId::MSTORE8) {
                     format!(
                         "{:?} {:?}",
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1),
+                    )
+                } else if matches!(geth_step.op, OpcodeId::SSTORE) {
+                    format!(
+                        "{:?} {:?} {:?}",
+                        state_ref.call().unwrap().address,
                         geth_step.stack.nth_last(0),
                         geth_step.stack.nth_last(1),
                     )

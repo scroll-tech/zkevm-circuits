@@ -35,7 +35,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let is_push0 = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::PUSH0.expr());
+        let is_push0 = IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::PUSH0.expr());
 
         let value = cb.query_word_rlc();
         cb.condition(not::expr(is_push0.expr()), |cb| cb.stack_push(value.expr()));

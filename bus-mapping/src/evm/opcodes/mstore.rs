@@ -3,7 +3,7 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     Error,
 };
-use eth_types::{GethExecStep, ToBigEndian, ToLittleEndian, Word};
+use eth_types::{evm_types::memory::MemoryRange, GethExecStep, ToBigEndian, ToLittleEndian, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MSTORE`](crate::evm::OpcodeId::MSTORE)
@@ -34,7 +34,10 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
 
         let (left_word, right_word) = {
             // Get the memory chunk that contains the word, starting at an aligned slot address.
-            let mut slots_content = state.call_ctx()?.memory.read_chunk(slot.into(), 64.into());
+            let mut slots_content = state
+                .call_ctx()?
+                .memory
+                .read_chunk(MemoryRange::new_with_length(slot, 64));
 
             // reconstruct memory with value
             match IS_MSTORE8 {

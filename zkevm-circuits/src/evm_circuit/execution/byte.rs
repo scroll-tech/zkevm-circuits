@@ -39,7 +39,7 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
         // need to copy any bytes. So just sum all the non-LSB byte
         // values here and then check if it's non-zero so we can use
         // that as an additional condition when to copy the byte value.
-        let is_msb_sum_zero = IsZeroGadget::construct(cb, sum::expr(&index.cells[1..32]));
+        let is_msb_sum_zero = IsZeroGadget::construct(cb, "", sum::expr(&index.cells[1..32]));
 
         // Now we just need to check that `result[0]` is the sum of all copied
         // bytes. We go byte by byte and check if `idx == index[0]`.

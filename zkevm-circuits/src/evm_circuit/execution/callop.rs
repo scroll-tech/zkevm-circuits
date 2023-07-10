@@ -29,12 +29,12 @@ use bus_mapping::{
     precompile::{is_precompiled, PrecompileCalls},
 };
 use eth_types::{
-    evm_types::{Memory, GAS_STIPEND_CALL_WITH_VALUE},
+    evm_types::{memory::MemoryWordRange, GAS_STIPEND_CALL_WITH_VALUE},
     Field, ToAddress, ToBigEndian, ToLittleEndian, ToScalar, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 use log::trace;
-use std::cmp::{max, min};
+use std::cmp::min;
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
@@ -92,12 +92,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
-        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
-        let is_callcode = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALLCODE.expr());
+        let is_call = IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::CALL.expr());
+        let is_callcode =
+            IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::CALLCODE.expr());
         let is_delegatecall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::DELEGATECALL.expr());
+            IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::DELEGATECALL.expr());
         let is_staticcall =
-            IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::STATICCALL.expr());
+            IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::STATICCALL.expr());
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
@@ -204,7 +205,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // whether the call is to a precompiled contract.
         // precompile contracts are stored from address 0x01 to 0x09.
-        let is_code_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address_expr());
+        let is_code_address_zero =
+            IsZeroGadget::construct(cb, "", call_gadget.callee_address_expr());
         let is_precompile_lt =
             LtGadget::construct(cb, call_gadget.callee_address_expr(), 0x0A.expr());
         let is_precompile = and::expr([
@@ -213,7 +215,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         ]);
         let precompile_return_length = cb.query_cell();
         let precompile_return_length_zero =
-            IsZeroGadget::construct(cb, precompile_return_length.expr());
+            IsZeroGadget::construct(cb, "", precompile_return_length.expr());
         let precompile_return_data_copy_size = MinMaxGadget::construct(
             cb,
             precompile_return_length.expr(),
@@ -1001,15 +1003,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 } else {
                     let begin = cd_offset.as_usize();
                     let end = cd_offset.as_usize() + input_len;
-                    let (begin_slot, full_length, _) = Memory::align_range(begin, input_len);
+                    let range = MemoryWordRange::align_range(begin, input_len);
 
                     // input may not be aligned to 32 bytes. actual input is
                     // [start_offset..end_offset]
-                    let start_offset = begin - begin_slot;
-                    let end_offset = end - begin_slot;
-                    let word_count = full_length / 32;
+                    // TODO: turn it into MemoryWordRange method
+                    let start_offset = begin - range.start_slot().0;
+                    let end_offset = end - range.start_slot().0;
 
-                    [start_offset, end_offset, word_count]
+                    [start_offset, end_offset, range.word_count()]
                 };
 
             let [output_bytes_end, output_bytes_word_count] =
@@ -1019,9 +1021,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     [0; 2]
                 } else {
                     let end = precompile_return_length.as_usize();
-                    let (_, full_length, _) = Memory::align_range(0, end);
 
-                    [end, full_length / 32]
+                    [end, MemoryWordRange::align_range(0, end).word_count()]
                 };
 
             let [return_bytes_start_offset, return_bytes_end_offset, return_bytes_word_count] =
@@ -1035,17 +1036,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     let begin = rd_offset.as_usize();
                     let end = begin + length;
 
-                    let (_, src_full_length, _) = Memory::align_range(0, length);
-                    let (begin_slot, full_length, _) = Memory::align_range(begin, length);
-                    let slot_count = max(src_full_length, full_length);
+                    let mut src_range = MemoryWordRange::align_range(0, length);
+                    let mut dst_range = MemoryWordRange::align_range(begin, length);
+                    src_range.ensure_equal_length(&mut dst_range);
 
                     // return data may not be aligned to 32 bytes. actual return data is
                     // [start_offset..end_offset]
-                    let start_offset = begin - begin_slot;
-                    let end_offset = end - begin_slot;
-                    let word_count = slot_count / 32;
+                    // TODO: turn it into MemoryWordRange method
+                    let start_offset = begin - dst_range.start_slot().0;
+                    let end_offset = end - dst_range.start_slot().0;
 
-                    [start_offset, end_offset, word_count]
+                    [start_offset, end_offset, dst_range.word_count()]
                 };
 
             trace!("rw_offset {rw_offset}");
