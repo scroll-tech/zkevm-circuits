@@ -1538,12 +1538,6 @@ impl CopyTable {
         let mut rlc_acc_read = Value::known(F::zero());
         let mut rlc_acc_write = Value::known(F::zero());
 
-        let non_mask_pos = copy_event
-            .copy_bytes
-            .bytes
-            .iter()
-            .position(|&step| !step.2)
-            .unwrap_or(0);
         let mut real_length_left = copy_event
             .copy_bytes
             .bytes
@@ -1557,11 +1551,7 @@ impl CopyTable {
             0
         };
 
-        let mut write_addr_slot = if copy_event.dst_type == CopyDataType::Memory {
-            copy_event.dst_addr - copy_event.dst_addr % 32
-        } else {
-            0
-        };
+        let mut write_addr_slot = copy_event.dst_addr - copy_event.dst_addr % 32;
 
         let read_steps = copy_event.copy_bytes.bytes.iter();
         let copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
@@ -1575,6 +1565,9 @@ impl CopyTable {
             .bytes_write_prev
             .clone()
             .unwrap_or(vec![]);
+
+        let mut src_addr = copy_event.src_addr;
+        let mut dst_addr = copy_event.dst_addr;
 
         for (step_idx, (is_read_step, mut copy_step)) in copy_steps
             .flat_map(|(read_step, write_step)| {
@@ -1632,14 +1625,10 @@ impl CopyTable {
                     if step_idx / 64 > 0 && step_idx % 64 == 0 {
                         // reset
                         value_word_read_rlc = Value::known(F::zero());
-                        value_word_read_rlc = value_word_read_rlc * challenges.evm_word()
-                            + Value::known(F::from(copy_step.value as u64));
-
                         read_addr_slot += 32;
-                    } else {
-                        value_word_read_rlc = value_word_read_rlc * challenges.evm_word()
-                            + Value::known(F::from(copy_step.value as u64));
                     }
+                    value_word_read_rlc = value_word_read_rlc * challenges.evm_word()
+                        + Value::known(F::from(copy_step.value as u64));
                 } else {
                     if !copy_step.mask {
                         rlc_acc_write = rlc_acc_write * challenges.evm_word()
@@ -1673,42 +1662,7 @@ impl CopyTable {
                 copy_event.dst_type
             };
 
-            // addr
-            let copy_step_addr: u64 =
-                if is_read_step {
-                    copy_event.src_addr
-                } else {
-                    copy_event.dst_addr
-                } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
-
-            let addr: F = if tag == CopyDataType::TxLog {
-                build_tx_log_address(
-                    write_addr_slot,
-                    TxLogFieldTag::Data,
-                    copy_event.log_id.unwrap(),
-                )
-                .to_scalar()
-                .unwrap()
-            } else if tag == CopyDataType::Bytecode && copy_event.dst_type == CopyDataType::Bytecode
-            {
-                // get real bytecode addr
-                let bytecode_addr_increase = if step_idx > non_mask_pos * 2 {
-                    step_idx as u64 / 2 - non_mask_pos as u64
-                } else {
-                    0
-                };
-                F::from(copy_event.dst_addr + bytecode_addr_increase)
-            } else if tag == CopyDataType::Bytecode || tag == CopyDataType::TxCalldata {
-                // get real bytecode or tx calldata addr
-                let bytecode_addr_increase = if step_idx > non_mask_pos * 2 {
-                    step_idx as u64 / 2 - non_mask_pos as u64
-                } else {
-                    0
-                };
-                F::from(copy_event.src_addr + bytecode_addr_increase)
-            } else {
-                F::from(copy_step_addr)
-            };
+            let addr = if is_read_step { src_addr } else { dst_addr };
 
             // bytes_left (final padding word length )
             let bytes_left =
@@ -1723,9 +1677,7 @@ impl CopyTable {
                 value_acc = value_acc * challenges.keccak_input() + value;
             }
             // is_pad
-            let is_pad = Value::known(F::from(
-                is_read_step && addr >= F::from(copy_event.src_addr_end),
-            ));
+            let is_pad = Value::known(F::from(is_read_step && addr >= copy_event.src_addr_end));
 
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
@@ -1733,6 +1685,30 @@ impl CopyTable {
             // println!(
             //     "step {step_idx},is_last {is_last:?}, real_bytes_left {real_length_left}",
             // );
+
+            // For LOG, format the address including the log_id.
+            let addr = if tag == CopyDataType::TxLog {
+                build_tx_log_address(addr, TxLogFieldTag::Data, copy_event.log_id.unwrap())
+                    .to_scalar()
+                    .unwrap()
+            } else {
+                F::from(addr)
+            };
+            let addr_slot = if tag == CopyDataType::TxLog {
+                build_tx_log_address(
+                    write_addr_slot,
+                    TxLogFieldTag::Data,
+                    copy_event.log_id.unwrap(),
+                )
+                .to_scalar()
+                .unwrap()
+            } else {
+                F::from(if is_read_step {
+                    read_addr_slot
+                } else {
+                    write_addr_slot
+                })
+            };
 
             assignments.push((
                 tag,
@@ -1794,16 +1770,18 @@ impl CopyTable {
                     (is_code, "is_code"),
                     (is_mask, "mask"),
                     (Value::known(F::from(word_index)), "word_index"),
-                    (
-                        Value::known(F::from(if is_read_step {
-                            read_addr_slot
-                        } else {
-                            write_addr_slot
-                        })),
-                        "addr_slot",
-                    ),
+                    (Value::known(addr_slot), "addr_slot"),
                 ],
             ));
+
+            // Increment the address.
+            if !copy_step.mask {
+                if is_read_step {
+                    src_addr += 1;
+                } else {
+                    dst_addr += 1;
+                }
+            }
 
             if is_read_step && !copy_step.mask {
                 real_length_left -= 1;
