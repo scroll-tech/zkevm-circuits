@@ -31,15 +31,6 @@ use crate::{
 
 use super::AggregationConfig;
 
-// use crate::{
-//     aggregation::{config::AggregationConfig, util::is_smaller_than},
-//     assigned_cell_to_value,
-//     constants::{ACC_LEN, BITS, DIGEST_LEN, LIMBS},
-//     core::{assert_hash_relations, assign_batch_hashes, extract_accumulators_and_proof},
-//     param::ConfigParams,
-//     BatchHash, ChunkHash, MAX_AGG_SNARKS,
-// };
-
 /// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
 #[derive(Clone)]
 pub struct AggregationCircuit {
@@ -277,7 +268,7 @@ impl Circuit<Fr> for AggregationCircuit {
         end_timer!(timer);
 
         // ==============================================
-        // step 3: ssert public inputs to the snarks are correct
+        // step 3: assert public inputs to the snarks are correct
         // ==============================================
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =

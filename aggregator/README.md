@@ -124,9 +124,15 @@ This relation is __not enforced__ within chunk circuit.
 
 Looking ahead, this hash is within aggregation circuit's hash table, and the validity of `chunk_pi_hash` is checked there to ensure a uniform aggregation circuit across various number of snarks.
 
+
+
+![Architecture](./figures/hashes.jpg)
+
 ## Aggregation Circuit
 
 We want to aggregate `k` snarks, each from a valid chunk. We generate `(n-k)` dummy chunks, and obtain `(n-k)` dummy snarks. 
+
+In the above example, we have `k = 2` valid chunks, and `3` dummy chunks.
 
 > Interlude: we just need to generate 1 dummy snark, and the rest `n-k-1` will be identical for the same batch. We cannot pre-compute it though, as the witness `c_k.post_state_root` and `c_k.withdraw_root` are batch dependent.
 
@@ -135,8 +141,6 @@ We want to aggregate `k` snarks, each from a valid chunk. We generate `(n-k)` du
 There will be three configurations for Aggregation circuit.
 - FpConfig; used for snark aggregation
 - KeccakConfig: used to build keccak table
-- RlcConfig: used to compute RLCs
-    - will also comes with a __phase 2__ column, and an advice column to indicate which cell to be looked up
 
 ### Public Input
 The public input of the aggregation circuit consists of
@@ -146,47 +150,71 @@ The public input of the aggregation circuit consists of
 ### Statements
 For snarks $s_1,\dots,s_k,\dots, s_n$ the aggregation circuit argues the following statements.
 
-1. The public input hash is correct and matches public input.
+1. batch_data_hash digest is reused for public input hash. __Static__.
+
+2. batch_pi_hash used same roots as chunk_pi_hash. __Static__.
 ```
 batch_pi_hash   := keccak(chain_id || chunk_1.prev_state_root || chunk_n.post_state_root || chunk_n.withdraw_root || batch_data_hash)
 ```
 and `batch_pi_hash` matches public input.
 
-2. The chunks are continuous:
+3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not padded
+
+```
+for i in 1 ... __n__
+    chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash)
+```
+
+4. chunks are continuous: they are linked via the state roots. __Static__.
 
 for i in 1 ... __n-1__
 ```
 c_i.post_state_root == c_{i+1}.prev_state_root
 ```
 
-3. Each chunk's `pi_hash` is derived correctly.
-```
-for i in 1 ... __n__
-    chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash)
-```
-3. The last `(n-k)` are dummies:
-```
-for i in 1 ... n:
-    is_padding = (i > k) // k is public input
-    if is_padding:
-        chunk_i.prev_state_root == chunk_i.post_state_root 
-        chunk_i.withdraw_root == chunk_{i-1}.withdraw_root
-        chunk_i.data_hash == [0u8; 32]
-```
-4. All the chunks use a same chain id
+5. All the chunks use a same chain id. __Static__.
 ```
 for i in 1 ... __n__
     batch.chain_id == chunk[i].chain_id
 ```
 
-5. Data hash is correct
+6. The last `(n-k)` chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
 ```
-batch_data_hash := keccak(chunk_1.data_hash || ... || chunk_k.data_hash)
+for i in 1 ... n:
+    is_padding = (i > k) // k is a public input
+    if is_padding:
+        chunk_i.prev_state_root == chunk_i.post_state_root 
+        chunk_i.withdraw_root == chunk_{i-1}.withdraw_root
+        chunk_i.data_hash == [0u8; 32]
 ```
-This keccak is the last keccak from the table, and has various length.
-This keccak can take upto $t:=\lceil32\times n/136\rceil$ rounds.
-To argue this statement, we do the following:
+7. chunk[i]'s data_hash == [0u8; 32] when chunk[i] is padded
 
+
+### Handling dynamic inputs
+
+
+![Dynamic_inputs](./figures/hash_table.jpg)
+
+
+Our keccak table uses `2^19` rows. Each keccak round takes `300` rows. When the number of round is is less than $2^19/300$, the cell manager will fill in the rest of the rows with dummy hashes. 
+
+The only hash that uses dynamic number of rounds is the last hash. 
+Suppose we target for `MAX_AGG_SNARK = 10`. Then, the last hash function will take no more than `32 * 10 /136 = 3` rounds. 
+
+We also know in the circuit if a chunk is a dummy one or not. This is given by a flag `is_padding`. 
+
+For the input of the final data hash
+- we extract `32 * MAX_AGG_SNARK` number of cells (__static__ here) from the last hash. For each cell
+    - if `is_padding`, then the cell must be a zero cell
+    - if `!is_padding `, then the cell must match the data hash from the chunks
+
+For the output of the final data hash
+- we extract all three hash digest cells from last 3 rounds. We then constraint that the actual data hash matches one of the three hash digest cells.
+
+Additional checks for dummy chunk
+- if `is_padding` for `i` the chunk, we constrain `chunk[i].prev_state_root = chunk[i].post_state_root`
+- if `is_padding` for `i` the chunk, we constrain `chunk[i-1].withdraw_root = chunk[i].withdraw_root`
+<!-- 
 1. Extact the final `data_rlc` cell from each round. There are maximum $t$ of this, denoted by $r_1,\dots r_t$
     - __caveat__: will need to make sure the circuit is padded as if there are $t$ rounds, if the actual number of rounds is less than $t$. This is done by keccak table already: 
     all columns of keccak table are padded to `1<<LOG_DEGREE` by construction (__need to double check this is circuit dependent__)
@@ -194,7 +222,7 @@ To argue this statement, we do the following:
 3. assert `rlc` is valid via a lookup argument
     - constrain `rlc` cell is within the "data_rlc" column of keccak table via standard lookup API
     - potential optimization: avoid using lookup API. There is only $t$ elements as $rlc \in \{r_1,\dots r_t\}$ and we may check equality one by one.
-
+ -->
 
 <!-- 
 Circuit witnesses:
