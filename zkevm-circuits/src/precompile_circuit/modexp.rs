@@ -13,8 +13,9 @@ use eth_types::{Field, Word};
 
 //use misc_precompiled_circuit::value_for_assign;
 use misc_precompiled_circuit::circuits::{
-    modexp::{Limb, ModExpChip, ModExpConfig, Number},
+    modexp::{ModExpChip, Number},
     range::{RangeCheckChip, RangeCheckConfig},
+    CommonGateConfig as ModExpConfig, Limb,
 };
 
 /// ModExp circuit config
