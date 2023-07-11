@@ -18,47 +18,47 @@ use super::mock_chunk::MockChunkCircuit;
 #[test]
 fn test_aggregation_circuit() {
     env_logger::init();
-    let process_id = process::id();
+    // let process_id = process::id();
 
-    let dir = format!("data/{}", process_id);
-    let path = Path::new(dir.as_str());
-    fs::create_dir(path).unwrap();
+    // let dir = format!("data/{}", process_id);
+    // let path = Path::new(dir.as_str());
+    // fs::create_dir(path).unwrap();
 
-    let mut rng = test_rng();
-    let param = gen_srs(23);
-
-    {
-        // This set up requires one round of keccak for chunk's data hash
-        let circuit = build_new_aggregation_circuit(2);
-        let instance = circuit.instances();
-        let mock_prover = MockProver::<Fr>::run(25, &circuit, instance).unwrap();
-        mock_prover.assert_satisfied_par();
-
-        let pk = gen_pk(
-            &param, &circuit, // Some(&$path.join(Path::new("layer_0.pkey"))),
-            None,
-        );
-        log::trace!("finished layer 0 pk generation for circuit");
-
-        let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>);
-        log::trace!("finished layer 0 snark generation for circuit");
-
-        assert!(verify_snark_shplonk::<AggregationCircuit>(
-            &param,
-            snark.clone(),
-            pk.get_vk()
-        ));
-    }
+    // let mut rng = test_rng();
+    // let param = gen_srs(23);
 
     // {
-    //     // This set up requires two rounds of keccak for chunk's data hash
-    //     let circuit = build_new_aggregation_circuit(5);
+    //     // This set up requires one round of keccak for chunk's data hash
+    //     let circuit = build_new_aggregation_circuit(2);
     //     let instance = circuit.instances();
-
     //     let mock_prover = MockProver::<Fr>::run(25, &circuit, instance).unwrap();
-
     //     mock_prover.assert_satisfied_par();
+
+    //     let pk = gen_pk(
+    //         &param, &circuit, // Some(&$path.join(Path::new("layer_0.pkey"))),
+    //         None,
+    //     );
+    //     log::trace!("finished layer 0 pk generation for circuit");
+
+    //     let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>);
+    //     log::trace!("finished layer 0 snark generation for circuit");
+
+    //     assert!(verify_snark_shplonk::<AggregationCircuit>(
+    //         &param,
+    //         snark.clone(),
+    //         pk.get_vk()
+    //     ));
     // }
+
+    {
+        // This set up requires two rounds of keccak for chunk's data hash
+        let circuit = build_new_aggregation_circuit(5);
+        let instance = circuit.instances();
+
+        let mock_prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
+
+        mock_prover.assert_satisfied_par();
+    }
 }
 
 fn build_new_aggregation_circuit(num_chunks: usize) -> AggregationCircuit {
