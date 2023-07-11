@@ -620,7 +620,7 @@ pub fn gen_begin_tx_ops(
     // We feed the RLP-encoded bytes to the block's SHA3 inputs, which gets assigned
     // to the Keccak circuit, so that the BeginTxGadget can do a lookup to the
     // Keccak table and verify the contract address.
-    if state.tx.is_create() && state.tx.calls[0].is_success() {
+    if state.tx.is_create() {
         // 1. add RLP-bytes for contract address to keccak circuit.
         state.block.sha3_inputs.push({
             let mut stream = ethers_core::utils::rlp::RlpStream::new();

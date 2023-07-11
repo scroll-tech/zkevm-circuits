@@ -24,7 +24,7 @@ use crate::{
     },
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, or, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -867,13 +867,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let (init_code_rlc, keccak_code_hash_rlc) = if tx.is_create {
             let init_code_rlc =
                 region.keccak_rlc(&tx.call_data.iter().cloned().rev().collect::<Vec<u8>>());
-            let keccak_code_hash_rlc = region.keccak_rlc(
-                &keccak256(&tx.call_data)
-                    .iter()
-                    .cloned()
-                    .rev()
-                    .collect::<Vec<u8>>(),
-            );
+            let keccak_code_hash_rlc = region.word_rlc(U256::from(keccak256(&tx.call_data)));
             (init_code_rlc, keccak_code_hash_rlc)
         } else {
             (Value::known(F::zero()), Value::known(F::zero()))
