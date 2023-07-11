@@ -868,7 +868,8 @@ pub(super) fn tx_convert(
         "block.chain_id = {}, tx.chain_id = {}",
         chain_id, tx.chain_id
     );
-    let callee_address = if tx.is_create() { None } else { Some(tx.to) };
+    let callee_address = tx.to;
+    //if tx.is_create() { None } else { Some(tx.to) };
     let tx_gas_cost = if tx.tx_type.is_l1_msg() {
         0
     } else {

@@ -33,8 +33,8 @@ impl<F: Field> ModGadget<F> {
         let (a, n, r) = (words[0], words[1], words[2]);
         let k = cb.query_word_rlc();
         let a_or_zero = cb.query_word_rlc();
-        let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
-        let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.cells));
+        let n_is_zero = IsZeroGadget::construct(cb, "", sum::expr(&n.cells));
+        let a_or_is_zero = IsZeroGadget::construct(cb, "", sum::expr(&a_or_zero.cells));
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
         let lt = LtWordGadget::construct(cb, r, n);
         // Constrain the aux variable a_or_zero to be =a or =0 if n==0:

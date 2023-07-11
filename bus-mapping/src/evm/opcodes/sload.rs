@@ -64,11 +64,13 @@ impl Opcode for Sload {
             let value_from_step = geth_step.storage.get_or_err(&key)?;
             let value_from_stack = geth_steps[1].stack.last().unwrap();
             if !(value_from_step == value_from_statedb && value_from_step == value_from_stack) {
-                log::error!(
-                    "inconsistent sload: step proof {:?}, local statedb {:?}, result {:?}",
+                panic!(
+                    "inconsistent sload: step proof {:?}, local statedb {:?}, result {:?} in contract {:?}, key {:?}",
                     value_from_step,
                     value_from_statedb,
-                    value_from_stack
+                    value_from_stack,
+                    contract_addr,
+                    key,
                 );
             }
         }

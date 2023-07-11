@@ -584,25 +584,45 @@ impl<'a> CircuitInputStateRef<'a> {
         );
         // If receiver doesn't exist, create it
         if (!receiver_exists && !value.is_zero()) || must_create {
+            let account = self.sdb.get_account(&receiver).1.clone();
+            let prev_code_hash = if account.is_empty() {
+                Word::zero()
+            } else {
+                CodeDB::empty_code_hash().to_word()
+            };
+            self.account_read(step, receiver, AccountField::CodeHash, prev_code_hash);
             self.push_op_reversible(
                 step,
                 AccountOp {
                     address: receiver,
                     field: AccountField::CodeHash,
                     value: CodeDB::empty_code_hash().to_word(),
-                    value_prev: Word::zero(),
+                    value_prev: prev_code_hash,
                 },
             )?;
             #[cfg(feature = "scroll")]
-            self.push_op_reversible(
-                step,
-                AccountOp {
-                    address: receiver,
-                    field: AccountField::KeccakCodeHash,
-                    value: KECCAK_CODE_HASH_ZERO.to_word(),
-                    value_prev: Word::zero(),
-                },
-            )?;
+            {
+                let prev_keccak_code_hash = if account.is_empty() {
+                    Word::zero()
+                } else {
+                    KECCAK_CODE_HASH_ZERO.to_word()
+                };
+                self.account_read(
+                    step,
+                    receiver,
+                    AccountField::KeccakCodeHash,
+                    prev_keccak_code_hash,
+                );
+                self.push_op_reversible(
+                    step,
+                    AccountOp {
+                        address: receiver,
+                        field: AccountField::KeccakCodeHash,
+                        value: KECCAK_CODE_HASH_ZERO.to_word(),
+                        value_prev: prev_keccak_code_hash,
+                    },
+                )?;
+            }
         }
         if value.is_zero() {
             // Skip transfer if value == 0

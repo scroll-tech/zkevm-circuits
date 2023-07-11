@@ -57,7 +57,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         let code_hash = cb.query_cell_phase2();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
         cb.account_read(address.expr(), AccountFieldTag::CodeHash, code_hash.expr());
-        let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
+        let not_exists = IsZeroGadget::construct(cb, "", code_hash.expr());
         let exists = not::expr(not_exists.expr());
 
         let code_size = cb.query_word_rlc();
