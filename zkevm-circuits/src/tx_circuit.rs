@@ -96,6 +96,8 @@ enum LookupCondition {
 pub struct TxCircuitConfig<F: Field> {
     minimum_rows: usize,
 
+    // This is only true at the first row of calldata part of tx table
+    q_calldata_first: Column<Fixed>,
     tx_table: TxTable,
     tx_tag_bits: BinaryNumberConfig<TxFieldTag, 5>,
 
@@ -186,6 +188,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
     ) -> Self {
         let q_enable = tx_table.q_enable;
 
+        let q_calldata_first = meta.fixed_column();
         // tag, rlp_tag, tx_type, is_none
         let tx_type = meta.advice_column();
         let rlp_tag = meta.advice_column();
@@ -749,6 +752,29 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             vec![(lookup_condition * (tx_id_next - tx_id), u16_table)]
         });
 
+        meta.create_gate("tx call data init", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            let value_is_zero = value_is_zero.expr(Rotation::cur())(meta);
+            let gas_cost = select::expr(value_is_zero, 4.expr(), 16.expr());
+
+            cb.require_equal(
+                "index == 0",
+                meta.query_advice(tx_table.index, Rotation::cur()),
+                0.expr(),
+            );
+            cb.require_equal(
+                "calldata_gas_cost_acc == gas_cost_next",
+                meta.query_advice(calldata_gas_cost_acc, Rotation::cur()),
+                gas_cost,
+            );
+
+            cb.gate(and::expr([
+                meta.query_fixed(q_calldata_first, Rotation::cur()),
+                not::expr(tx_id_is_zero.expr(Rotation::cur())(meta)),
+            ]))
+        });
+
         meta.create_gate("tx call data bytes", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
@@ -779,12 +805,34 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             });
 
             // on the final call data byte, tx_id must change.
-            cb.condition(is_final_cur, |cb| {
+            cb.condition(is_final_cur.expr(), |cb| {
                 cb.require_zero(
                     "tx_id changes at is_final == 1",
                     tx_id_unchanged.is_equal_expression.clone(),
                 );
             });
+
+            cb.condition(
+                and::expr([
+                    is_final_cur,
+                    not::expr(tx_id_is_zero.expr(Rotation::next())(meta)),
+                ]),
+                |cb| {
+                    let value_next_is_zero = value_is_zero.expr(Rotation::next())(meta);
+                    let gas_cost_next = select::expr(value_next_is_zero, 4.expr(), 16.expr());
+
+                    cb.require_equal(
+                        "index' == 0",
+                        meta.query_advice(tx_table.index, Rotation::next()),
+                        0.expr(),
+                    );
+                    cb.require_equal(
+                        "calldata_gas_cost_acc' == gas_cost_next",
+                        meta.query_advice(calldata_gas_cost_acc, Rotation::next()),
+                        gas_cost_next,
+                    );
+                },
+            );
 
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -874,6 +922,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
 
         Self {
             minimum_rows: meta.minimum_rows(),
+            q_calldata_first,
             tx_tag_bits: tag_bits,
             tx_type,
             tx_type_bits,
@@ -1222,6 +1271,7 @@ impl<F: Field> TxCircuitConfig<F> {
         let tx_type = tx.map_or(Default::default(), |tx| tx.tx_type);
         let tx_type_chip = BinaryNumberChip::construct(self.tx_type_bits);
         tx_type_chip.assign(region, *offset, &tx_type)?;
+
         region.assign_advice(
             || "tx_type",
             self.tx_type,
@@ -1905,6 +1955,7 @@ impl<F: Field> TxCircuit<F> {
                 }
 
                 log::debug!("assigning calldata, offset {}", offset);
+                assert_eq!(offset, self.max_txs * TX_LEN + 1);
 
                 // Assign call data
                 let mut calldata_count = 0;
@@ -1933,6 +1984,14 @@ impl<F: Field> TxCircuit<F> {
                             (i + 1, false)
                         };
                         calldata_gas_cost += if byte.is_zero() { 4 } else { 16 };
+                        if i == 0 && index == 0 {
+                            region.assign_fixed(
+                                || "q_calldata_first",
+                                config.q_calldata_first,
+                                offset,
+                                || Value::known(F::one()),
+                            )?;
+                        }
                         config.assign_row(
                             &mut region,
                             &mut offset,
@@ -1967,6 +2026,16 @@ impl<F: Field> TxCircuit<F> {
         layouter.assign_region(
             || "tx table (calldata zeros and paddings)",
             |mut region| {
+                if last_off == self.max_txs * TX_LEN + 1 {
+                    // The txs do not have any call data bytes
+                    // Therefore q_calldata_first is not assigned in prev region.
+                    region.assign_fixed(
+                        || "q_calldata_first",
+                        config.q_calldata_first,
+                        0,
+                        || Value::known(F::one()),
+                    )?;
+                }
                 config.assign_calldata_zeros(
                     &mut region,
                     0,
