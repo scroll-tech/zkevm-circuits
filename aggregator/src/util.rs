@@ -497,3 +497,13 @@ pub(crate) fn parse_hash_digest_cells<'a>(
         potential_batch_data_hash_digest,
     )
 }
+
+pub(crate) fn rlc(inputs: &[Fr], randomness: &Fr) -> Fr {
+    assert!(inputs.len() > 0);
+    let mut acc = inputs[0];
+    for input in inputs.iter().skip(1) {
+        acc = acc * *randomness + *input;
+    }
+
+    acc
+}
