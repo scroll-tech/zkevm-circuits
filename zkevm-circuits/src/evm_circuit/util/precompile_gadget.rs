@@ -172,7 +172,7 @@ impl<F: Field> PrecompileGadget<F> {
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
-                    cb.query_cell_phase2()
+                    cb.query_cell_phase2(),
                 );
                 let (r_pow_32, r_pow_64) = {
                     let challenges = cb.challenges().keccak_powers_of_randomness::<16>();

@@ -2295,7 +2295,7 @@ impl<F: Field> LookupTable<F> for EccTable {
             String::from("output2_rlc"),
         ]
     }
-    
+
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_fixed(self.op_type, Rotation::cur()),

@@ -40,20 +40,13 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileBn256ScalarMul;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (
-            is_valid,
-            point_p_x_rlc,
-            point_p_y_rlc,
-            scalar_s_rlc,
-            point_r_x_rlc,
-            point_r_y_rlc,
-        ) = (
+        let (is_valid, point_p_x_rlc, point_p_y_rlc, scalar_s_rlc, point_r_x_rlc, point_r_y_rlc) = (
             cb.query_bool(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
-            cb.query_cell_phase2()
+            cb.query_cell_phase2(),
         );
 
         cb.condition(is_valid.expr(), |cb| {
@@ -215,7 +208,7 @@ mod test {
                         PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
                         PUSH1(0x20)
                         MSTORE
-                        
+
                         // s
                         PUSH1(0x07)
                         PUSH1(0x40)
@@ -243,7 +236,7 @@ mod test {
                         PUSH1(0x03)
                         PUSH1(0x20)
                         MSTORE
-                        
+
                         // s
                         PUSH1(0x07)
                         PUSH1(0x40)
@@ -305,7 +298,7 @@ mod test {
                         PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
                         PUSH1(0x20)
                         MSTORE
-                        
+
                         // s
                         PUSH1(0x07)
                         PUSH1(0x40)
@@ -342,7 +335,7 @@ mod test {
                         PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD49"))
                         PUSH1(0x20)
                         MSTORE
-                        
+
                         // s = 7
                         PUSH1(0x07)
                         PUSH1(0x40)
@@ -357,66 +350,66 @@ mod test {
                 },
 
                 // TODO: Failing Test
-                // PrecompileCallArgs {
-                //     name: "ecMul (valid: scalar larger than scalar field order n but less than base field p)",
-                //     // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                PrecompileCallArgs {
+                    name: "ecMul (valid: scalar larger than scalar field order n but less than base field p)",
+                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
 
-                //     // For bn256 (alt_bn128) scalar field:
-                //     // n = 21888242871839275222246405745257275088696311157297823662689037894645226208583
+                    // For bn256 (alt_bn128) scalar field:
+                    // n = 21888242871839275222246405745257275088696311157297823662689037894645226208583
 
-                //     // Choose scalar s such that n < s < p
-                //     // s = 21888242871839275222246405745257275088696311157297823662689037894645226209000
-                //     setup_code: bytecode! {
-                //         // p_x
-                //         PUSH1(0x02)
-                //         PUSH1(0x00)
-                //         MSTORE
+                    // Choose scalar s such that n < s < p
+                    // s = 21888242871839275222246405745257275088696311157297823662689037894645226209000
+                    setup_code: bytecode! {
+                        // p_x
+                        PUSH1(0x02)
+                        PUSH1(0x00)
+                        MSTORE
 
-                //         // p_y
-                //         PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
-                //         PUSH1(0x20)
-                //         MSTORE
-                //         // s
-                //         PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFEE8"))
-                //         PUSH1(0x40)
-                //         MSTORE
-                //     },
-                //     call_data_offset: 0x00.into(),
-                //     call_data_length: 0x60.into(),
-                //     ret_offset: 0x60.into(),
-                //     ret_size: 0x40.into(),
-                //     address: PrecompileCalls::Bn128Mul.address().to_word(),
-                //     ..Default::default()
-                // },
+                        // p_y
+                        PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
+                        PUSH1(0x20)
+                        MSTORE
+                        // s
+                        PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFEE8"))
+                        PUSH1(0x40)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x60.into(),
+                    ret_offset: 0x60.into(),
+                    ret_size: 0x40.into(),
+                    address: PrecompileCalls::Bn128Mul.address().to_word(),
+                    ..Default::default()
+                },
 
                 // TODO: Failing Test
-                // PrecompileCallArgs {
-                //     name: "ecMul (valid: scalar larger than base field order)",
-                //     // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
-                //     // s = 2^256 - 1
-                //     setup_code: bytecode! {
-                //         // p_x
-                //         PUSH1(0x02)
-                //         PUSH1(0x00)
-                //         MSTORE
+                PrecompileCallArgs {
+                    name: "ecMul (valid: scalar larger than base field order)",
+                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                    // s = 2^256 - 1
+                    setup_code: bytecode! {
+                        // p_x
+                        PUSH1(0x02)
+                        PUSH1(0x00)
+                        MSTORE
 
-                //         // p_y
-                //         PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
-                //         PUSH1(0x20)
-                //         MSTORE
+                        // p_y
+                        PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
+                        PUSH1(0x20)
+                        MSTORE
 
-                //         // s
-                //         PUSH32(word!("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
-                //         PUSH1(0x40)
-                //         MSTORE
-                //     },
-                //     call_data_offset: 0x00.into(),
-                //     call_data_length: 0x60.into(),
-                //     ret_offset: 0x60.into(),
-                //     ret_size: 0x40.into(),
-                //     address: PrecompileCalls::Bn128Mul.address().to_word(),
-                //     ..Default::default()
-                // }
+                        // s
+                        PUSH32(word!("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
+                        PUSH1(0x40)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x60.into(),
+                    ret_offset: 0x60.into(),
+                    ret_size: 0x40.into(),
+                    address: PrecompileCalls::Bn128Mul.address().to_word(),
+                    ..Default::default()
+                }
             ]
         };
     }

@@ -177,7 +177,7 @@ pub struct EcMulAuxData {
     pub p_y: Word,
     /// scalar.
     pub s: Word,
-    
+
     /// x co-ordinate of the result point.
     pub r_x: Word,
     /// y co-ordinate of the result point.
