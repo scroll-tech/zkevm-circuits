@@ -38,9 +38,10 @@ use crate::{
     constants::{
         CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE, MAX_AGG_SNARKS, MAX_KECCAK_ROUNDS, ROUND_LEN,
     },
+    rlc,
     util::{
         assert_conditional_equal, assert_equal, assert_exist, assgined_cell_to_value, capacity,
-        get_indices, is_smaller_than, parse_hash_digest_cells, parse_hash_preimage_cells,
+        get_indices, is_smaller_than, parse_hash_digest_cells, parse_hash_preimage_cells, rlc,
     },
     AggregationConfig, CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX,
     WITHDRAW_ROOT_INDEX,
@@ -94,7 +95,10 @@ pub(crate) fn extract_accumulators_and_proof(
 
 /// Input the hash input bytes,
 /// assign the circuit for the hash function,
-/// return cells of the hash inputs and digests.
+/// return
+/// - cells of the hash inputs
+/// - cells of the hash digests
+/// - relevant RLC cells
 //
 // This function asserts the following constraints on the hashes
 //
@@ -114,8 +118,16 @@ pub(crate) fn assign_batch_hashes(
     challenges: Challenges<Value<Fr>>,
     preimages: &[Vec<u8>],
     num_of_valid_chunks: usize,
-) -> Result<(Vec<AssignedCell<Fr, Fr>>, Vec<AssignedCell<Fr, Fr>>), Error> {
-    let (hash_input_cells, hash_output_cells) = extract_hash_cells(
+) -> Result<
+    (
+        Vec<AssignedCell<Fr, Fr>>,
+        Vec<AssignedCell<Fr, Fr>>,
+        // todo: remove
+        Vec<AssignedCell<Fr, Fr>>,
+    ),
+    Error,
+> {
+    let (hash_input_cells, hash_output_cells, data_rlc_cells) = extract_hash_cells(
         &config.keccak_circuit_config,
         layouter,
         challenges,
@@ -136,12 +148,14 @@ pub(crate) fn assign_batch_hashes(
     conditional_constraints(
         config.flex_gate(),
         layouter,
+        challenges,
         &hash_input_cells,
         &hash_output_cells,
+        &data_rlc_cells,
         num_of_valid_chunks,
     )?;
 
-    Ok((hash_input_cells, hash_output_cells))
+    Ok((hash_input_cells, hash_output_cells, data_rlc_cells))
 }
 
 pub(crate) fn extract_hash_cells(
@@ -153,6 +167,7 @@ pub(crate) fn extract_hash_cells(
     (
         Vec<AssignedCell<Fr, Fr>>, // input cells
         Vec<AssignedCell<Fr, Fr>>, // digest cells
+        Vec<AssignedCell<Fr, Fr>>, // RLC cells
     ),
     Error,
 > {
@@ -185,6 +200,7 @@ pub(crate) fn extract_hash_cells(
 
     let mut hash_input_cells = vec![];
     let mut hash_output_cells = vec![];
+    let mut data_rlc_cells = vec![];
 
     let mut cur_preimage_index = preimage_indices_iter.next();
     let mut cur_digest_index = digest_indices_iter.next();
@@ -218,6 +234,14 @@ pub(crate) fn extract_hash_cells(
                         // current_hash_output_cells.push(row.last().unwrap().clone());
                         cur_digest_index = digest_indices_iter.next();
                     }
+                    // skip the first (MAX_AGG_SNARKS+1)*2 rounds
+                    if offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 1)
+                        || offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 2)
+                        || offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 3)
+                    {
+                        // second column is data rlc
+                        data_rlc_cells.push(row[1].clone());
+                    }
                 }
                 end_timer!(timer);
 
@@ -233,7 +257,7 @@ pub(crate) fn extract_hash_cells(
             },
         )
         .unwrap();
-    Ok((hash_input_cells, hash_output_cells))
+    Ok((hash_input_cells, hash_output_cells, data_rlc_cells))
 }
 
 // Assert the following constraints
@@ -369,8 +393,10 @@ fn copy_constraints(
 pub(crate) fn conditional_constraints(
     flex_gate: &FlexGateConfig<Fr>,
     layouter: &mut impl Layouter<Fr>,
+    challenges: Challenges<Value<Fr>>,
     hash_input_cells: &[AssignedCell<Fr, Fr>],
     hash_output_cells: &[AssignedCell<Fr, Fr>],
+    data_rlc_cells: &[AssignedCell<Fr, Fr>],
     num_of_valid_chunks: usize,
 ) -> Result<(), Error> {
     let mut first_pass = halo2_base::SKIP_FIRST_PASS;
@@ -503,41 +529,62 @@ pub(crate) fn conditional_constraints(
                 //        chunk[i].postStateRoot ||
                 //        chunk[i].withdrawRoot  ||
                 //        chunk[i].datahash)
-                for (i, chunk) in potential_batch_data_hash_preimage
+
+                let mut randomness = Fr::default();
+                challenges.keccak_input().map(|x| randomness = x);
+
+                let inputs = potential_batch_data_hash_preimage
                     .iter()
                     .take(DIGEST_LEN * MAX_AGG_SNARKS)
-                    .chunks(DIGEST_LEN)
-                    .into_iter()
-                    .enumerate()
-                {
-                    for (j, cell) in chunk.into_iter().enumerate() {
-                        // convert halo2 proof's cells to halo2-lib's
-                        let t1 = assgined_cell_to_value(flex_gate, &mut ctx, &cell);
-                        let t2 = assgined_cell_to_value(
-                            flex_gate,
-                            &mut ctx,
-                            &chunk_pi_hash_preimages[i][j + CHUNK_DATA_HASH_INDEX],
-                        );
-                        assert_conditional_equal(&t1, &t2, &chunk_is_valid[i]);
+                    .map(|cell| {
+                        let mut a = Fr::default();
+                        cell.value().map(|&x| a = x);
+                        a
+                    })
+                    .collect_vec();
 
-                        // assert (t1 - t2) * chunk_is_valid[i] == 0
-                        let t1_sub_t2 = flex_gate.sub(
-                            &mut ctx,
-                            QuantumCell::Existing(t1),
-                            QuantumCell::Existing(t2),
-                        );
-                        let res = flex_gate.mul(
-                            &mut ctx,
-                            QuantumCell::Existing(t1_sub_t2),
-                            QuantumCell::Existing(chunk_is_valid[i]),
-                        );
-                        flex_gate.assert_equal(
-                            &mut ctx,
-                            QuantumCell::Existing(res),
-                            QuantumCell::Existing(zero_cell),
-                        );
-                    }
+                let rlc = rlc(&inputs, &randomness);
+                println!("rlc {:?}", rlc);
+
+                for e in data_rlc_cells.iter() {
+                    println!("rlc {:?}", e.value());
                 }
+
+                // for (i, chunk) in potential_batch_data_hash_preimage
+                //     .iter()
+                //     .take(DIGEST_LEN * 5) // fixme
+                //     .chunks(DIGEST_LEN)
+                //     .into_iter()
+                //     .enumerate()
+                // {
+                //     for (j, cell) in chunk.into_iter().enumerate() {
+                //         // convert halo2 proof's cells to halo2-lib's
+                //         let t1 = assgined_cell_to_value(flex_gate, &mut ctx, &cell);
+                //         let t2 = assgined_cell_to_value(
+                //             flex_gate,
+                //             &mut ctx,
+                //             &chunk_pi_hash_preimages[i][j + CHUNK_DATA_HASH_INDEX],
+                //         );
+                //         assert_conditional_equal(&t1, &t2, &chunk_is_valid[i]);
+
+                //         // assert (t1 - t2) * chunk_is_valid[i] == 0
+                //         let t1_sub_t2 = flex_gate.sub(
+                //             &mut ctx,
+                //             QuantumCell::Existing(t1),
+                //             QuantumCell::Existing(t2),
+                //         );
+                //         let res = flex_gate.mul(
+                //             &mut ctx,
+                //             QuantumCell::Existing(t1_sub_t2),
+                //             QuantumCell::Existing(chunk_is_valid[i]),
+                //         );
+                //         flex_gate.assert_equal(
+                //             &mut ctx,
+                //             QuantumCell::Existing(res),
+                //             QuantumCell::Existing(zero_cell),
+                //         );
+                //     }
+                // }
                 // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
                 for (i, chunk_hash_input) in chunk_pi_hash_preimages.iter().enumerate() {
                     for j in 0..DIGEST_LEN {

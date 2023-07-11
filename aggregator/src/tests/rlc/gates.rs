@@ -7,7 +7,7 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error},
 };
 
-use crate::{rlc::{RlcConfig}, util::rlc};
+use crate::{rlc::RlcConfig, util::rlc};
 
 #[derive(Default, Debug, Clone, Copy)]
 struct ArithTestCircuit {

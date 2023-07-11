@@ -253,7 +253,7 @@ impl Circuit<Fr> for AggregationCircuit {
         end_timer!(timer);
 
         let timer = start_timer!(|| ("assign hash cells").to_string());
-        let (_hash_preimage_cells, hash_digest_cells) = assign_batch_hashes(
+        let (_hash_preimage_cells, hash_digest_cells, data_rlc_cells) = assign_batch_hashes(
             &config,
             &mut layouter,
             challenges,
@@ -266,7 +266,6 @@ impl Circuit<Fr> for AggregationCircuit {
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
             parse_hash_digest_cells(&hash_digest_cells);
         end_timer!(timer);
-
 
         #[cfg(feature = "wip")]
         {
@@ -343,11 +342,13 @@ impl CircuitExt<Fr> for AggregationCircuit {
     fn num_instance(&self) -> Vec<usize> {
         // 12 elements from accumulator
         // 32 elements from batch's public_input_hash
+        // 1 element for # of valid chunks
         vec![ACC_LEN + DIGEST_LEN]
     }
 
     // 12 elements from accumulator
     // 32 elements from batch's public_input_hash
+    // 1 element for # of valid chunks
     fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self.flattened_instances.clone()]
     }
@@ -364,6 +365,7 @@ impl CircuitExt<Fr> for AggregationCircuit {
             .iter()
             .map(|gate| gate.q_enable)
             .into_iter()
+            .chain([config.0.rlc_config.selector].iter().cloned())
             .collect()
     }
 }
