@@ -70,6 +70,8 @@ pub struct CopyCircuitConfig<F> {
     /// mask indicates when a row is not part of the copy, but it is needed to complete the front
     /// or the back of the first or last memory word.
     pub mask: Column<Advice>,
+    /// Whether the row is part of the front mask, before the copy data.
+    pub front_mask: Column<Advice>,
     /// Random linear combination accumulator value.
     pub value_acc: Column<Advice>,
     /// Whether the row is padding for out-of-bound reads when source address >= src_addr_end.
@@ -170,6 +172,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         // TODO: replace addr_slot by an expression with addr.
         let addr_slot = meta.advice_column();
         let mask = meta.advice_column();
+        let front_mask = meta.advice_column();
 
         let rlc_acc = copy_table.rlc_acc;
         let rw_counter = copy_table.rw_counter;
@@ -277,6 +280,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(is_last, Rotation::cur()),
             );
             cb.require_boolean("mask is boolean", meta.query_advice(mask, Rotation::cur()));
+            cb.require_boolean("front_mask is boolean", meta.query_advice(front_mask, Rotation::cur()));
             cb.require_zero(
                 "is_first == 0 when q_step == 0",
                 and::expr([
@@ -386,16 +390,15 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 }
             );
 
-            // The address is incremented by 1, except on masked rows.
-            cb.condition(
-                and::expr([
-                    not_last_two_rows.expr(),
-                    non_pad_non_mask.is_lt(meta, None),
-                ]),
+            // The address is incremented by 1, except in the front mask because the row address has not caught up with the address of the event yet.
+            cb.condition(not_last_two_rows.expr(),
                 |cb| {
+
+                    let addr_diff = not::expr(meta.query_advice(front_mask, Rotation::cur()));
+
                     cb.require_equal(
                         "rows[0].addr + 1 == rows[2].addr",
-                        meta.query_advice(addr, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(addr, Rotation::cur()) + addr_diff,
                         meta.query_advice(addr, Rotation(2)),
                     );
                 },
@@ -729,6 +732,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             word_index,
             addr_slot,
             mask,
+            front_mask,
             value_acc,
             is_pad,
             is_code,
@@ -819,6 +823,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.is_pad,
                 self.is_code,
                 self.mask,
+                self.front_mask,
                 self.word_index,
                 self.addr_slot,
             ]
@@ -934,6 +939,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 region.name_column(|| "word_index", self.word_index);
                 region.name_column(|| "addr_slot", self.addr_slot);
                 region.name_column(|| "mask", self.mask);
+                region.name_column(|| "front_mask", self.front_mask);
                 region.name_column(|| "is_code", self.is_code);
                 region.name_column(|| "is_pad", self.is_pad);
 
@@ -1112,6 +1118,13 @@ impl<F: Field> CopyCircuitConfig<F> {
         region.assign_advice(
             || format!("assign mask {}", *offset),
             self.mask,
+            *offset,
+            || Value::known(F::one()),
+        )?;
+        // front mask
+        region.assign_advice(
+            || format!("assign front mask {}", *offset),
+            self.front_mask,
             *offset,
             || Value::known(F::one()),
         )?;

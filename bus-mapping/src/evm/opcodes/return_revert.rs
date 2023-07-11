@@ -197,10 +197,10 @@ fn handle_copy(
     src_range.ensure_equal_length(&mut dst_range);
 
     let src_data = state.call_ctx()?.memory.read_chunk(src_range);
-
+    let dst_data_prev = state.caller_ctx()?.memory.read_chunk(dst_range);
     let dst_data = {
         // Copy src_data into dst_data
-        let mut dst_data = state.caller_ctx()?.memory.read_chunk(dst_range);
+        let mut dst_data = dst_data_prev.clone();
         dst_data[dst_range.shift().0..dst_range.shift().0 + copy_length]
             .copy_from_slice(&src_data[src_range.shift().0..src_range.shift().0 + copy_length]);
         dst_data
@@ -242,7 +242,7 @@ fn handle_copy(
             dst_id: NumberOrHash::Number(destination.id),
             dst_addr: destination.offset.try_into().unwrap(),
             log_id: None,
-            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None),
+            copy_bytes: CopyBytes::new(read_steps, Some(write_steps), Some(dst_data_prev)),
         },
     );
 

@@ -1485,7 +1485,7 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 9];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 12];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 13];
 
 impl CopyTable {
     /// Construct a new CopyTable
@@ -1562,6 +1562,9 @@ impl CopyTable {
         let mut src_addr = copy_event.src_addr;
         let mut dst_addr = copy_event.dst_addr;
 
+        let mut src_front_mask = true;
+        let mut dst_front_mask = true;
+
         for (step_idx, (is_read_step, mut copy_step)) in copy_steps
             .flat_map(|(read_step, write_step)| {
                 let read_step = CopyStep {
@@ -1609,6 +1612,7 @@ impl CopyTable {
 
             if is_read_step {
                 if !copy_step.mask {
+                    src_front_mask = false;
                     rlc_acc_read = rlc_acc_read * challenges.evm_word()
                         + Value::known(F::from(copy_step.value as u64));
                 }
@@ -1620,6 +1624,7 @@ impl CopyTable {
                     + Value::known(F::from(copy_step.value as u64));
             } else {
                 if !copy_step.mask {
+                    dst_front_mask = false;
                     rlc_acc_write = rlc_acc_write * challenges.evm_word()
                         + Value::known(F::from(copy_step.value as u64));
                 }
@@ -1739,18 +1744,25 @@ impl CopyTable {
                     (is_pad, "is_pad"),
                     (is_code, "is_code"),
                     (is_mask, "mask"),
+                    (
+                        if is_read_step {
+                            Value::known(F::from(src_front_mask))
+                        } else {
+                            Value::known(F::from(dst_front_mask))
+                        },
+                        "front_mask",
+                    ),
                     (Value::known(F::from(word_index)), "word_index"),
                     (Value::known(addr_slot), "addr_slot"),
                 ],
             ));
 
             // Increment the address.
-            if !copy_step.mask {
-                if is_read_step {
-                    src_addr += 1;
-                } else {
-                    dst_addr += 1;
-                }
+            if is_read_step && !src_front_mask {
+                src_addr += 1;
+            }
+            if !is_read_step && !dst_front_mask {
+                dst_addr += 1;
             }
 
             if is_read_step && !copy_step.mask {
@@ -1847,7 +1859,6 @@ impl<F: Field> LookupTable<F> for CopyTable {
             String::from("src_addr_end"),
             String::from("bytes_left"),
             String::from("real_bytes_left"),
-            String::from("mask"),
             String::from("rlc_acc"),
             String::from("rw_counter"),
             String::from("rwc_inc_left"),
