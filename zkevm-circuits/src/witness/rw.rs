@@ -328,6 +328,9 @@ impl Rw {
     pub fn account_codehash_pair(&self) -> (Word, Word) {
         self.account_value_pair_field_tag(AccountFieldTag::CodeHash)
     }
+    pub fn account_keccak_codehash_pair(&self) -> (Word, Word) {
+        self.account_value_pair_field_tag(AccountFieldTag::KeccakCodeHash)
+    }
     pub fn account_nonce_pair(&self) -> (Word, Word) {
         self.account_value_pair_field_tag(AccountFieldTag::Nonce)
     }

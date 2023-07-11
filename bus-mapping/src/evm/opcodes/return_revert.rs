@@ -73,38 +73,64 @@ impl Opcode for ReturnRevert {
                 ),
                 (CallContextField::IsPersistent, call.is_persistent.to_word()),
             ] {
-                state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+                state.call_context_read(&mut exec_step, call.call_id, field, value);
             }
 
-            #[cfg(feature = "scroll")]
+            let account = state.sdb.get_account(&call.address).1.clone();
+            let prev_code_hash = if account.is_empty() {
+                Word::zero()
+            } else {
+                CodeDB::empty_code_hash().to_word()
+            };
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::CodeHash,
+                prev_code_hash,
+            );
             state.push_op_reversible(
                 &mut exec_step,
                 AccountOp {
-                    address: state.call()?.address,
-                    field: AccountField::KeccakCodeHash,
-                    value: code_info.keccak_hash.to_word(),
-                    value_prev: crate::util::KECCAK_CODE_HASH_ZERO.to_word(),
-                },
-            )?;
-            state.push_op_reversible(
-                &mut exec_step,
-                AccountOp {
-                    address: state.call()?.address,
+                    address: call.address,
                     field: AccountField::CodeHash,
                     value: code_info.hash.to_word(),
-                    value_prev: CodeDB::empty_code_hash().to_word(),
+                    value_prev: prev_code_hash,
                 },
             )?;
+
             #[cfg(feature = "scroll")]
-            state.push_op_reversible(
-                &mut exec_step,
-                AccountOp {
-                    address: state.call()?.address,
-                    field: AccountField::CodeSize,
-                    value: code_info.size.to_word(),
-                    value_prev: eth_types::Word::zero(),
-                },
-            )?;
+            {
+                let prev_keccak_code_hash = if account.is_empty() {
+                    Word::zero()
+                } else {
+                    crate::util::KECCAK_CODE_HASH_ZERO.to_word()
+                };
+                state.account_read(
+                    &mut exec_step,
+                    call.address,
+                    AccountField::KeccakCodeHash,
+                    prev_keccak_code_hash,
+                );
+                state.push_op_reversible(
+                    &mut exec_step,
+                    AccountOp {
+                        address: call.address,
+                        field: AccountField::KeccakCodeHash,
+                        value: code_info.keccak_hash.to_word(),
+                        value_prev: prev_keccak_code_hash,
+                    },
+                )?;
+
+                state.push_op_reversible(
+                    &mut exec_step,
+                    AccountOp {
+                        address: call.address,
+                        field: AccountField::CodeSize,
+                        value: code_info.size.to_word(),
+                        value_prev: eth_types::Word::zero(),
+                    },
+                )?;
+            }
         }
 
         // Case B in the specs.

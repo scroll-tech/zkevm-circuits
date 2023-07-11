@@ -165,6 +165,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         // if address created before, nonce is not zero
 
+        // TODO: test create onto non-0 eth address?
         // this could be good place for checking callee_exists = true, since above
         // operation happens in evm create() method before checking
         // ErrContractAddressCollision

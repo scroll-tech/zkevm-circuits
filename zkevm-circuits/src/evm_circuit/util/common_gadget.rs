@@ -391,6 +391,8 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
+        prev_code_hash: Expression<F>,
+        #[cfg(feature = "scroll")] prev_keccak_code_hash: Expression<F>,
         value: Word<F>,
         gas_fee: Word<F>,
         reversion_info: &mut ReversionInfo<F>,
@@ -405,21 +407,34 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
                 must_create.clone(),
             ]),
             |cb| {
+                cb.account_read(
+                    receiver_address.clone(),
+                    AccountFieldTag::CodeHash,
+                    prev_code_hash.expr(),
+                );
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
                     cb.empty_code_hash_rlc(),
-                    0.expr(),
+                    prev_code_hash.expr(),
                     Some(reversion_info),
                 );
                 #[cfg(feature = "scroll")]
-                cb.account_write(
-                    receiver_address.clone(),
-                    AccountFieldTag::KeccakCodeHash,
-                    cb.empty_keccak_hash_rlc(),
-                    0.expr(),
-                    Some(reversion_info),
-                );
+                {
+                    cb.account_read(
+                        receiver_address.clone(),
+                        AccountFieldTag::KeccakCodeHash,
+                        prev_keccak_code_hash.expr(),
+                    );
+
+                    cb.account_write(
+                        receiver_address.clone(),
+                        AccountFieldTag::KeccakCodeHash,
+                        cb.empty_keccak_hash_rlc(),
+                        prev_keccak_code_hash.expr(),
+                        Some(reversion_info),
+                    );
+                }
             },
         );
         // Skip transfer if value == 0
@@ -457,7 +472,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
             self.must_create.clone()]
-        ) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
+        ) * if cfg!(feature = "scroll") {4.expr()} else {2.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()
@@ -545,6 +560,15 @@ impl<F: Field> TransferGadget<F> {
                 must_create.clone(),
             ]),
             |cb| {
+                // TODO: if we use create opcode to deploy a new contract at an address where eth
+                // balanace is not 0, it will not work well.
+                // We need to merge `TransferGadget` with `TransferWithGasFeeGadget` later
+                // similar to bus mapping.
+                cb.account_read(
+                    receiver_address.clone(),
+                    AccountFieldTag::CodeHash,
+                    0.expr(),
+                );
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
@@ -553,13 +577,20 @@ impl<F: Field> TransferGadget<F> {
                     Some(reversion_info),
                 );
                 #[cfg(feature = "scroll")]
-                cb.account_write(
-                    receiver_address.clone(),
-                    AccountFieldTag::KeccakCodeHash,
-                    cb.empty_keccak_hash_rlc(),
-                    0.expr(),
-                    Some(reversion_info),
-                );
+                {
+                    cb.account_read(
+                        receiver_address.clone(),
+                        AccountFieldTag::KeccakCodeHash,
+                        0.expr(),
+                    );
+                    cb.account_write(
+                        receiver_address.clone(),
+                        AccountFieldTag::KeccakCodeHash,
+                        cb.empty_keccak_hash_rlc(),
+                        0.expr(),
+                        Some(reversion_info),
+                    );
+                }
             },
         );
         // Skip transfer if value == 0
@@ -602,7 +633,7 @@ impl<F: Field> TransferGadget<F> {
         or::expr([
             not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
             self.must_create.clone()]
-        ) * if cfg!(feature = "scroll") {2.expr()} else {1.expr()} +
+        ) * if cfg!(feature = "scroll") {4.expr()} else {2.expr()} +
         // +1 Write Account (sender) Balance
         // +1 Write Account (receiver) Balance
         not::expr(self.value_is_zero.expr()) * 2.expr()

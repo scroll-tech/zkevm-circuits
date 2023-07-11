@@ -552,6 +552,7 @@ pub fn gen_begin_tx_ops(
         GasCost::TX.as_u64()
     } + call_data_gas_cost
         + init_code_gas_cost;
+    log::trace!("intrinsic_gas_cost {intrinsic_gas_cost}, call_data_gas_cost {call_data_gas_cost}, init_code_gas_cost {init_code_gas_cost}, exec_step.gas_cost {:?}", exec_step.gas_cost);
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
     // Get code_hash of callee
@@ -575,27 +576,25 @@ pub fn gen_begin_tx_ops(
             callee_account
         );
     }
-    let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
-        (true, _) => (call.code_hash.to_word(), false),
-        (_, true) => {
-            debug_assert_eq!(
-                callee_account.code_hash, call.code_hash,
-                "callee account's code hash: {:?}, call's code hash: {:?}",
-                callee_account.code_hash, call.code_hash
-            );
-            (
-                call.code_hash.to_word(),
-                call.code_hash == CodeDB::empty_code_hash(),
-            )
-        }
-        (_, false) => (Word::zero(), true),
+    let account_code_hash = if callee_exists {
+        callee_account.code_hash.to_word()
+    } else {
+        Word::zero()
     };
-    if !is_precompile && !call.is_create() {
+    // call_code is code being executed
+    let call_code_hash = call.code_hash.to_word();
+    if !state.tx.is_create() && !account_code_hash.is_zero() {
+        debug_assert_eq!(account_code_hash, call_code_hash);
+    }
+    let account_code_hash_is_empty_or_zero =
+        account_code_hash.is_zero() || account_code_hash == CodeDB::empty_code_hash().to_word();
+
+    if !is_precompile {
         state.account_read(
             &mut exec_step,
             call.address,
             AccountField::CodeHash,
-            callee_code_hash,
+            account_code_hash,
         );
     }
 
@@ -630,7 +629,11 @@ pub fn gen_begin_tx_ops(
     }
 
     // There are 4 branches from here.
-    match (call.is_create(), is_precompile, is_empty_code_hash) {
+    match (
+        call.is_create(),
+        is_precompile,
+        account_code_hash_is_empty_or_zero,
+    ) {
         // 1. Creation transaction.
         (true, _, _) => {
             state.push_op_reversible(
@@ -700,7 +703,7 @@ pub fn gen_begin_tx_ops(
                     (CallContextField::LastCalleeReturnDataLength, 0.into()),
                     (CallContextField::IsRoot, 1.into()),
                     (CallContextField::IsCreate, call.is_create().to_word()),
-                    (CallContextField::CodeHash, callee_code_hash),
+                    (CallContextField::CodeHash, call_code_hash),
                 ] {
                     state.call_context_write(&mut exec_step, call.call_id, field, value);
                 }
@@ -708,11 +711,23 @@ pub fn gen_begin_tx_ops(
         }
     }
 
-    exec_step.gas_cost = if geth_trace.struct_logs.is_empty() {
+    let real_gas_cost = if geth_trace.struct_logs.is_empty() {
         GasCost(geth_trace.gas.0)
     } else {
         GasCost(state.tx.gas - geth_trace.struct_logs[0].gas.0)
     };
+    if is_precompile {
+        // FIXME after we implement all precompiles
+        if exec_step.gas_cost != real_gas_cost {
+            log::warn!(
+                "change begin tx precompile gas from {:?} to {real_gas_cost:?}, step {exec_step:?}",
+                exec_step.gas_cost
+            );
+            exec_step.gas_cost = real_gas_cost;
+        }
+    } else {
+        debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+    }
 
     log::trace!("begin_tx_step: {:?}", exec_step);
     state.tx.steps_mut().push(exec_step);

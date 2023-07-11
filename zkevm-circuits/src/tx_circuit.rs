@@ -845,7 +845,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        //#[cfg(feature = "reject-eip2718")]
         meta.create_gate(
             "caller address == sv_address if it's not zero and tx_type != L1Msg",
             |meta| {

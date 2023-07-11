@@ -638,12 +638,17 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
             .assign_value(region, offset, code_hash_previous_rlc)?;
         let is_address_collision = !code_hash_previous.0.is_zero();
 
-        #[cfg(feature = "scroll")]
-        {
-            rw_offset += 1; // Write empty Keccak code hash.
-        }
-
         if is_precheck_ok == 1 && !is_address_collision {
+            /*
+            14 + rw_offset: read code_hash
+            15/16 + rw_offset: write code_hash inside transfer
+            17/18 + rw_offset: write keccak_code_hash inside transfer
+             */
+            rw_offset += 1;
+            #[cfg(feature = "scroll")]
+            {
+                rw_offset += 2; // Read Write empty Keccak code hash.
+            }
             let [caller_balance_pair, callee_balance_pair] = if !value.is_zero() {
                 let account_balance_pair = [16, 17]
                     .map(|i| block.rws[step.rw_indices[i + rw_offset]].account_balance_pair());
@@ -776,7 +781,7 @@ mod test {
     fn run_test_circuits(ctx: TestContext<2, 1>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
-                max_rws: 10000,
+                max_rws: 300000, // TODO: try smaller value?
                 ..Default::default()
             })
             .run();
