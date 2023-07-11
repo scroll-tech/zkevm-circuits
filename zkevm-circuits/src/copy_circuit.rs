@@ -61,8 +61,6 @@ pub struct CopyCircuitConfig<F> {
     pub value_word_rlc_prev: Column<Advice>,
     /// The index of the current byte within a word [0..31].
     pub word_index: Column<Advice>,
-    /// address for slot memory src or dest, review if can reuse `addr` .
-    pub addr_slot: Column<Advice>,
     /// Random linear combination of the read value
     pub rlc_acc_read: Column<Advice>,
     /// Random linear combination of the write value
@@ -169,8 +167,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let bytes_left = copy_table.bytes_left;
         let real_bytes_left = copy_table.real_bytes_left;
         let word_index = meta.advice_column();
-        // TODO: replace addr_slot by an expression with addr.
-        let addr_slot = meta.advice_column();
         let mask = meta.advice_column();
         let front_mask = meta.advice_column();
 
@@ -639,13 +635,16 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * meta.query_advice(is_memory, Rotation::cur())
                 * not::expr(is_word_continue.is_lt(meta, None));
+
+            let addr_slot = meta.query_advice(addr, Rotation::cur()) - 31.expr();
+
             vec![
                 1.expr(),
                 meta.query_advice(rw_counter, Rotation::cur()),
                 not::expr(meta.query_selector(q_step)),
                 RwTableTag::Memory.expr(),
                 meta.query_advice(id, Rotation::cur()), // call_id
-                meta.query_advice(addr_slot, Rotation::cur()), // slot address of memory word
+                addr_slot,
                 0.expr(),
                 0.expr(),
                 meta.query_advice(value_word_rlc, Rotation::cur()),
@@ -664,13 +663,15 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 * meta.query_advice(is_tx_log, Rotation::cur())
                 * not::expr(is_word_continue.is_lt(meta, None));
 
+            let addr_slot = meta.query_advice(addr, Rotation::cur()) - 31.expr();
+
             vec![
                 1.expr(),
                 meta.query_advice(rw_counter, Rotation::cur()),
                 1.expr(),
                 RwTableTag::TxLog.expr(),
                 meta.query_advice(id, Rotation::cur()), // tx_id
-                meta.query_advice(addr_slot, Rotation::cur()), // byte_index || field_tag || log_id
+                addr_slot,                              // byte_index || field_tag || log_id
                 0.expr(),
                 0.expr(),
                 meta.query_advice(value_word_rlc, Rotation::cur()),
@@ -730,7 +731,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             rlc_acc_read,
             rlc_acc_write,
             word_index,
-            addr_slot,
             mask,
             front_mask,
             value_acc,
@@ -825,7 +825,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.mask,
                 self.front_mask,
                 self.word_index,
-                self.addr_slot,
             ]
             .iter()
             .zip_eq(circuit_row)
@@ -937,7 +936,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                 region.name_column(|| "value_word_rlc", self.value_word_rlc);
                 region.name_column(|| "value_word_rlc_prev", self.value_word_rlc_prev);
                 region.name_column(|| "word_index", self.word_index);
-                region.name_column(|| "addr_slot", self.addr_slot);
                 region.name_column(|| "mask", self.mask);
                 region.name_column(|| "front_mask", self.front_mask);
                 region.name_column(|| "is_code", self.is_code);
@@ -1104,13 +1102,6 @@ impl<F: Field> CopyCircuitConfig<F> {
         region.assign_advice(
             || format!("assign word_index {}", *offset),
             self.word_index,
-            *offset,
-            || Value::known(F::zero()),
-        )?;
-        // addr_slot
-        region.assign_advice(
-            || format!("assign addr_slot {}", *offset),
-            self.addr_slot,
             *offset,
             || Value::known(F::zero()),
         )?;

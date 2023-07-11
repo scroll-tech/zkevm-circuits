@@ -1456,8 +1456,6 @@ pub struct CopyTable {
     /// The source/destination address for this copy step.  Can be memory
     /// address, byte index in the bytecode, tx call data, and tx log data.
     pub addr: Column<Advice>,
-    /// address for slot memory src or dest, review if can reuse `addr` .
-    // pub addr_slot: Column<Advice>,
     /// The end of the source buffer for the copy event.  Any data read from an
     /// address greater than or equal to this value will be 0.
     pub src_addr_end: Column<Advice>,
@@ -1485,7 +1483,7 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 9];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 13];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 12];
 
 impl CopyTable {
     /// Construct a new CopyTable
@@ -1675,7 +1673,6 @@ impl CopyTable {
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
 
             // For LOG, format the address including the log_id.
-            let shift = addr % 32;
             let addr = if tag == CopyDataType::TxLog {
                 build_tx_log_address(addr, TxLogFieldTag::Data, copy_event.log_id.unwrap())
                     .to_scalar()
@@ -1683,7 +1680,6 @@ impl CopyTable {
             } else {
                 F::from(addr)
             };
-            let addr_slot = addr - F::from(shift);
 
             assignments.push((
                 tag,
@@ -1753,7 +1749,6 @@ impl CopyTable {
                         "front_mask",
                     ),
                     (Value::known(F::from(word_index)), "word_index"),
-                    (Value::known(addr_slot), "addr_slot"),
                 ],
             ));
 
