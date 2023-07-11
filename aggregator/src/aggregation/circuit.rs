@@ -67,10 +67,11 @@ impl AggregationCircuit {
         let timer = start_timer!(|| "generate aggregation circuit");
 
         // sanity check: snarks's public input matches chunk_hashes
-        for (chunk, snark) in batch_hash
+        for (chunk_idx, (chunk, snark)) in batch_hash
             .chunks_with_padding
             .iter()
             .zip(snarks_with_padding.iter())
+            .enumerate()
         {
             let chunk_hash_bytes = chunk.public_input_hash();
             let snark_hash_bytes = &snark.instances[0];
@@ -84,7 +85,8 @@ impl AggregationCircuit {
                 //  accumulator + public_input_hash = snark public input
                 assert_eq!(
                     Fr::from(chunk_hash_bytes.as_bytes()[i] as u64),
-                    snark_hash_bytes[i + ACC_LEN]
+                    snark_hash_bytes[i + ACC_LEN],
+                    "gupeng - agg-circuit - failed at chunk-{chunk_idx}",
                 );
             }
         }
@@ -137,7 +139,17 @@ impl Circuit<Fr> for AggregationCircuit {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        let params = ConfigParams::aggregation_param();
+        let params = std::env::var("AGGREGATION_CONFIG").map_or_else(
+            |_| ConfigParams::aggregation_param(),
+            |path| {
+                serde_json::from_reader(
+                    std::fs::File::open(path.as_str())
+                        .unwrap_or_else(|_| panic!("{path:?} does not exist")),
+                )
+                .unwrap()
+            },
+        );
+
         let challenges = Challenges::construct(meta);
         let config = AggregationConfig::configure(meta, &params, challenges);
         log::info!(
