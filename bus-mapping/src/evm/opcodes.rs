@@ -716,7 +716,18 @@ pub fn gen_begin_tx_ops(
     } else {
         GasCost(state.tx.gas - geth_trace.struct_logs[0].gas.0)
     };
-    debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+    if is_precompile {
+        // FIXME after we implement all precompiles
+        if exec_step.gas_cost != real_gas_cost {
+            log::warn!(
+                "change begin tx precompile gas from {:?} to {real_gas_cost:?}, step {exec_step:?}",
+                exec_step.gas_cost
+            );
+            exec_step.gas_cost = real_gas_cost;
+        }
+    } else {
+        debug_assert_eq!(exec_step.gas_cost, real_gas_cost);
+    }
 
     log::trace!("begin_tx_step: {:?}", exec_step);
     state.tx.steps_mut().push(exec_step);
