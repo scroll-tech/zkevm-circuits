@@ -21,7 +21,9 @@ mod util;
 mod tests;
 
 pub use aggregation::*;
+pub use batch::BatchHash;
 pub use chunk::ChunkHash;
 pub use compression::*;
+pub use constants::MAX_AGG_SNARKS;
 pub(crate) use constants::*;
 pub use param::*;

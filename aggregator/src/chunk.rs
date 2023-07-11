@@ -1,9 +1,13 @@
 //! This module implements `Chunk` related data types.
 //! A chunk is a list of blocks.
-use eth_types::H256;
+use eth_types::{ToBigEndian, H256};
 use ethers_core::utils::keccak256;
+use halo2_proofs::halo2curves::bn256::Fr;
+use serde::{Deserialize, Serialize};
+use std::iter;
+use zkevm_circuits::witness::Block;
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, Deserialize, Serialize)]
 /// A chunk is a set of continuous blocks.
 /// A ChunkHash consists of 4 hashes, representing the changes incurred by this chunk of blocks:
 /// - state root before this chunk
@@ -27,6 +31,49 @@ pub struct ChunkHash {
 }
 
 impl ChunkHash {
+    /// Construct by a witness block.
+    pub fn from_witness_block(block: &Block<Fr>, is_padding: bool) -> Self {
+        // <https://github.com/scroll-tech/zkevm-circuits/blob/25dd32aa316ec842ffe79bb8efe9f05f86edc33e/bus-mapping/src/circuit_input_builder.rs#L690>
+
+        let data_bytes = iter::empty()
+            .chain(block.context.ctxs.iter().flat_map(|(b_num, b_ctx)| {
+                let num_txs = block
+                    .txs
+                    .iter()
+                    .filter(|tx| tx.block_number == *b_num)
+                    .count() as u16;
+
+                iter::empty()
+                    // Block Values
+                    .chain(b_ctx.number.as_u64().to_be_bytes())
+                    .chain(b_ctx.timestamp.as_u64().to_be_bytes())
+                    .chain(b_ctx.base_fee.to_be_bytes())
+                    .chain(b_ctx.gas_limit.to_be_bytes())
+                    .chain(num_txs.to_be_bytes())
+            }))
+            // Tx Hashes
+            .chain(block.txs.iter().flat_map(|tx| tx.hash.to_fixed_bytes()))
+            .collect::<Vec<u8>>();
+
+        let data_hash = H256(keccak256(data_bytes));
+
+        let post_state_root = block
+            .context
+            .ctxs
+            .last_key_value()
+            .map(|(_, b_ctx)| b_ctx.eth_block.state_root)
+            .unwrap_or(H256(block.prev_state_root.to_be_bytes()));
+
+        Self {
+            chain_id: block.chain_id,
+            prev_state_root: H256(block.prev_state_root.to_be_bytes()),
+            post_state_root,
+            withdraw_root: H256(block.withdraw_root.to_be_bytes()),
+            data_hash,
+            is_padding,
+        }
+    }
+
     /// Sample a chunk hash from random (for testing)
     #[cfg(test)]
     pub(crate) fn mock_random_chunk_hash_for_testing<R: rand::RngCore>(r: &mut R) -> Self {

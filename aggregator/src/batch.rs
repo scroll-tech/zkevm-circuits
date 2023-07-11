@@ -30,7 +30,7 @@ pub struct BatchHash {
 impl BatchHash {
     /// Build Batch hash from an ordered list of #MAX_AGG_SNARKS of chunks.
     #[allow(dead_code)]
-    pub(crate) fn construct(chunks_with_padding: &[ChunkHash]) -> Self {
+    pub fn construct(chunks_with_padding: &[ChunkHash]) -> Self {
         assert_eq!(
             chunks_with_padding.len(),
             MAX_AGG_SNARKS,

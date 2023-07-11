@@ -7,6 +7,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use rand::Rng;
+use std::{env, fs::File};
 
 #[cfg(not(feature = "disable_proof_aggregation"))]
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base;
@@ -137,7 +138,16 @@ impl Circuit<Fr> for AggregationCircuit {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        let params = ConfigParams::aggregation_param();
+        let params = env::var("AGGREGATION_CONFIG").map_or_else(
+            |_| ConfigParams::aggregation_param(),
+            |path| {
+                serde_json::from_reader(
+                    File::open(path.as_str()).unwrap_or_else(|_| panic!("{path:?} does not exist")),
+                )
+                .unwrap()
+            },
+        );
+
         let challenges = Challenges::construct(meta);
         let config = AggregationConfig::configure(meta, &params, challenges);
         log::info!(
