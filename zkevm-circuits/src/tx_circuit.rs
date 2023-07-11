@@ -1715,18 +1715,18 @@ impl<F: Field> TxCircuit<F> {
                             Value::known(F::from(tx.nonce)),
                         ),
                         (
-                            Gas,
-                            Some(Tag::Gas.into()),
-                            Some(tx.gas == 0),
-                            Value::known(F::from(tx.gas)),
-                        ),
-                        (
                             GasPrice,
                             Some(Tag::GasPrice.into()),
                             Some(tx.gas_price.is_zero()),
                             challenges
                                 .evm_word()
                                 .map(|challenge| rlc(tx.gas_price.to_le_bytes(), challenge)),
+                        ),
+                        (
+                            Gas,
+                            Some(Tag::Gas.into()),
+                            Some(tx.gas == 0),
+                            Value::known(F::from(tx.gas)),
                         ),
                         (
                             CallerAddress,
