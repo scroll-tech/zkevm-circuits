@@ -781,7 +781,8 @@ mod test {
     fn run_test_circuits(ctx: TestContext<2, 1>) {
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
-                max_rws: 300000, // TODO: try smaller value?
+                max_rws: 70_000,
+                max_copy_rows: 140_000,
                 ..Default::default()
             })
             .run();
