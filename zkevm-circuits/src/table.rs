@@ -1460,11 +1460,11 @@ pub struct CopyTable {
     /// address greater than or equal to this value will be 0.
     pub src_addr_end: Column<Advice>,
     /// The number of bytes left to be copied.
-    pub bytes_left: Column<Advice>,
+    pub bytes_left: Column<Advice>, // TODO: rm
     /// The number of non-masked bytes left to be copied.
     pub real_bytes_left: Column<Advice>,
     /// mask indicates the byte is actual coped or padding to memory word
-    pub value_wrod_rlc: Column<Advice>,
+    pub value_wrod_rlc: Column<Advice>, // TODO: rm
     /// mask indicates the byte is actual coped or padding to memory word
     //pub mask: Column<Advice>,
     /// An accumulator value in the RLC representation. This is used for
@@ -1535,12 +1535,13 @@ impl CopyTable {
 
         let full_length = copy_event.copy_bytes.bytes.len();
 
-        let mut real_length_left = copy_event
+        let mut src_bytes_left = copy_event
             .copy_bytes
             .bytes
             .iter()
             .filter(|&step| !step.2)
             .count();
+        let mut dst_bytes_left = src_bytes_left;
 
         let read_steps = copy_event.copy_bytes.bytes.iter();
         let copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
@@ -1687,7 +1688,11 @@ impl CopyTable {
                     (Value::known(F::from(addr_end)), "src_addr_end"),
                     (Value::known(F::from(bytes_left)), "bytes_left"),
                     (
-                        Value::known(F::from(real_length_left as u64)),
+                        Value::known(F::from(if is_read_step {
+                            src_bytes_left
+                        } else {
+                            dst_bytes_left
+                        } as u64)),
                         "real_bytes_left",
                     ),
                     (
@@ -1762,7 +1767,10 @@ impl CopyTable {
             }
 
             if is_read_step && !copy_step.mask {
-                real_length_left -= 1;
+                src_bytes_left -= 1;
+            }
+            if !is_read_step && !copy_step.mask {
+                dst_bytes_left -= 1;
             }
         }
         assignments
@@ -1830,11 +1838,11 @@ impl<F: Field> LookupTable<F> for CopyTable {
             self.q_enable.into(),
             self.is_first.into(),
             self.id.into(),
-            self.addr.into(),
+            self.addr.into(), // TODO: rm
             self.src_addr_end.into(),
-            self.bytes_left.into(),
+            self.bytes_left.into(), // TODO: rm
             self.real_bytes_left.into(),
-            //self.value_wrod_rlc.into(),
+            //self.value_wrod_rlc.into(), // TODO: rm
             self.rlc_acc.into(),
             self.rw_counter.into(),
             self.rwc_inc_left.into(),

@@ -165,6 +165,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let id = copy_table.id;
         let addr = copy_table.addr;
         let src_addr_end = copy_table.src_addr_end;
+        // TODO: rm bytes_left.
         let bytes_left = copy_table.bytes_left;
         let real_bytes_left = copy_table.real_bytes_left;
         let word_index = meta.advice_column();
@@ -463,6 +464,17 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 cb.require_zero("front_mask = 0 by the end of the first word", front_mask.expr());
             });
 
+            // Decrement the real_bytes_left on non-masked rows. At the end, it must reach 0.
+            {
+                let real_bytes_left_next = meta.query_advice(real_bytes_left, Rotation::cur()) - not::expr(meta.query_advice(mask, Rotation::cur()));
+                let next_or_finish = select::expr(is_continue.expr(), meta.query_advice(real_bytes_left, Rotation(2)), 0.expr());
+                cb.require_equal(
+                    "real_bytes_left[2] == real_bytes_left[0] - !mask, or 0 at the end",
+                    real_bytes_left_next,
+                    next_or_finish,
+                );
+            }
+
             // Derive the next step from the current step.
             cb.condition(is_continue.expr(),
             |cb| {
@@ -477,6 +489,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         meta.query_advice(addr, Rotation(2)),
                     );
 
+                    // TODO: rm
                     // The byte count including mask always decrements.
                     cb.require_equal(
                         "bytes_left == bytes_left_next + 1 for non-last step",
@@ -534,7 +547,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        meta.create_gate("Last Step, check rlc_acc", |meta| {
+        meta.create_gate("Last Step", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
             cb.require_equal(
@@ -585,30 +598,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     meta.query_advice(is_last, Rotation::next()),
                     1.expr() - meta.query_advice(bytes_left, Rotation::cur()),
                 ]),
-            );
-            cb.require_zero(
-                "real_bytes_left == 0 for last step",
-                and::expr([
-                    meta.query_advice(is_last, Rotation::next()),
-                    meta.query_advice(real_bytes_left, Rotation::next()),
-                ]),
-            );
-
-            cb.condition(
-                not::expr(meta.query_advice(is_last, Rotation::next())),
-                |cb| {
-                    cb.require_equal(
-                        "real_bytes_left[0] == real_bytes_left[2] + !mask",
-                        meta.query_advice(real_bytes_left, Rotation::cur()),
-                        meta.query_advice(real_bytes_left, Rotation(2))
-                            + not::expr(meta.query_advice(mask, Rotation::cur())),
-                    );
-                    cb.require_equal(
-                        "real_bytes_left[1] == real_bytes_left[2]",
-                        meta.query_advice(real_bytes_left, Rotation::next()),
-                        meta.query_advice(real_bytes_left, Rotation(2)),
-                    );
-                },
             );
 
             cb.require_equal(
