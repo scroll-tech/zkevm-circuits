@@ -472,6 +472,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
 
+            // Forward rlc_acc from the event to all rows.
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::cur())),
                 |cb| {
@@ -485,74 +486,28 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
-        meta.create_gate(
-            "Last Step (check value accumulator) Memory => Precompile or Precompile => Memory",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
-
-                cb.require_equal(
-                    "value_acc == rlc_acc on the last row",
-                    meta.query_advice(value_acc, Rotation::next()),
-                    meta.query_advice(rlc_acc, Rotation::next()),
-                );
-
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(is_last, Rotation::next()),
-                    or::expr([
-                        meta.query_advice(is_precompiled, Rotation::cur()),
-                        meta.query_advice(is_precompiled, Rotation::next()),
-                    ]),
-                ]))
-            },
-        );
-
-        meta.create_gate(
-            "Last Step (check value accumulator) Memory => Bytecode",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
-
-                cb.require_equal(
-                    "value_acc == rlc_acc on the last row",
-                    meta.query_advice(value_acc, Rotation::next()),
-                    meta.query_advice(rlc_acc, Rotation::next()),
-                );
-
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(is_last, Rotation::next()),
-                    and::expr([
-                        meta.query_advice(is_memory, Rotation::cur()),
-                        meta.query_advice(is_bytecode, Rotation::next()),
-                    ]),
-                ]))
-            },
-        );
-
-        meta.create_gate(
-            "Last Step (check value accumulator) TxCalldata => Bytecode",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
-
-                cb.require_equal(
-                    "value_acc == rlc_acc on the last row",
-                    meta.query_advice(value_acc, Rotation::next()),
-                    meta.query_advice(rlc_acc, Rotation::next()),
-                );
-
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(is_last, Rotation::next()),
-                    and::expr([
-                        meta.query_advice(is_tx_calldata, Rotation::cur()),
-                        meta.query_advice(is_bytecode, Rotation::next()),
-                    ]),
-                ]))
-            },
-        );
-
-        meta.create_gate("Last Step (check value accumulator) RlcAcc", |meta| {
+        meta.create_gate("Last Step, check rlc_acc", |meta| {
             let mut cb = BaseConstraintBuilder::default();
+
+            // Check the rlc_acc from the event if any of:
+            // - Precompile => *
+            // - * => Precompile
+            // - Memory => Bytecode
+            // - TxCalldata => Bytecode
+            // - * => RlcAcc
+            let rlc_acc_cond = sum::expr([
+                meta.query_advice(is_precompiled, Rotation::cur()),
+                meta.query_advice(is_precompiled, Rotation::next()),
+                and::expr([
+                    meta.query_advice(is_memory, Rotation::cur()),
+                    meta.query_advice(is_bytecode, Rotation::next()),
+                ]),
+                and::expr([
+                    meta.query_advice(is_tx_calldata, Rotation::cur()),
+                    meta.query_advice(is_bytecode, Rotation::next()),
+                ]),
+                tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(meta),
+            ]);
 
             cb.require_equal(
                 "value_acc == rlc_acc on the last row",
@@ -563,7 +518,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_advice(is_last, Rotation::next()),
-                tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(meta),
+                rlc_acc_cond,
             ]))
         });
 
