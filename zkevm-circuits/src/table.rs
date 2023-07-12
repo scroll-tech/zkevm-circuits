@@ -1483,7 +1483,7 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 9];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 10];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
 
 impl CopyTable {
     /// Construct a new CopyTable
@@ -1565,7 +1565,7 @@ impl CopyTable {
             .flat_map(|(read_step, write_step)| {
                 let read_step = CopyStep {
                     value: read_step.0,
-                    prev_value: None,
+                    prev_value: read_step.0,
                     mask: read_step.2,
                     is_code: if copy_event.src_type == CopyDataType::Bytecode {
                         Some(read_step.1)
@@ -1575,8 +1575,8 @@ impl CopyTable {
                 };
                 let write_step = CopyStep {
                     value: write_step.0,
-                    // temp set prev_value to None, will assgin it latter
-                    prev_value: None,
+                    // Will overwrite if previous values are given.
+                    prev_value: write_step.0,
                     mask: write_step.2,
                     is_code: if copy_event.dst_type == CopyDataType::Bytecode {
                         Some(write_step.1)
@@ -1590,8 +1590,9 @@ impl CopyTable {
         {
             // re-assign with correct `prev_value` in copy_step
             if !is_read_step && !prev_write_bytes.is_empty() {
-                copy_step.prev_value = Some(*prev_write_bytes.get(step_idx / 2).unwrap());
+                copy_step.prev_value = *prev_write_bytes.get(step_idx / 2).unwrap();
             }
+            let copy_step = copy_step;
 
             // is_first
             let is_first = Value::known(if step_idx == 0 { F::one() } else { F::zero() });
@@ -1613,6 +1614,7 @@ impl CopyTable {
             } else {
                 value
             };
+            let value_prev = Value::known(F::from(copy_step.prev_value as u64));
 
             if is_read_step {
                 if !copy_step.mask {
@@ -1623,23 +1625,20 @@ impl CopyTable {
                     // reset
                     value_word_read_rlc = Value::known(F::zero());
                 }
-                value_word_read_rlc = value_word_read_rlc * challenges.evm_word()
-                    + Value::known(F::from(copy_step.value as u64));
+                value_word_read_rlc = value_word_read_rlc * challenges.evm_word() + value;
             } else {
                 if !copy_step.mask {
                     dst_front_mask = false;
-                    dst_value_acc = dst_value_acc * challenges.keccak_input()
-                        + Value::known(F::from(copy_step.value as u64));
+                    dst_value_acc = dst_value_acc * challenges.keccak_input() + value;
                 }
                 if (step_idx / 2) % 32 == 0 {
                     // reset
                     value_word_write_rlc = Value::known(F::zero());
                     value_word_write_rlc_prev = Value::known(F::zero());
                 }
-                value_word_write_rlc = value_word_write_rlc * challenges.evm_word()
-                    + Value::known(F::from(copy_step.value as u64));
-                value_word_write_rlc_prev = value_word_write_rlc_prev * challenges.evm_word()
-                    + Value::known(F::from(copy_step.prev_value.unwrap_or(0u8) as u64));
+                value_word_write_rlc = value_word_write_rlc * challenges.evm_word() + value;
+                value_word_write_rlc_prev =
+                    value_word_write_rlc_prev * challenges.evm_word() + value_prev;
             }
 
             // id
@@ -1714,6 +1713,7 @@ impl CopyTable {
                 [
                     (is_last, "is_last"),
                     (value, "value"),
+                    (value_prev, "value_prev"),
                     (
                         if is_read_step {
                             value_word_read_rlc

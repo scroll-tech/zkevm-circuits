@@ -328,7 +328,7 @@ pub struct CopyStep {
     /// Byte value copied in this step.
     pub value: u8,
     /// Byte value before this step.
-    pub prev_value: Option<u8>,
+    pub prev_value: u8,
     /// mask indicates this byte won't be copied.
     pub mask: bool,
     /// Optional field which is enabled only for the source being `bytecode`,
