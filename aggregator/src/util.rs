@@ -1,6 +1,6 @@
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::AssignedCell,
+    circuit::{AssignedCell, Region},
     halo2curves::{bn256::Fr, FieldExt},
 };
 use itertools::Itertools;
@@ -11,6 +11,7 @@ use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
 
 use crate::{
     constants::{DIGEST_LEN, MAX_AGG_SNARKS, ROUND_LEN},
+    rlc::RlcConfig,
     DEFAULT_KECCAK_ROWS, NUM_ROUNDS,
 };
 
@@ -383,9 +384,9 @@ pub(crate) fn assert_equal<F: Field>(a: &AssignedCell<F, F>, b: &AssignedCell<F,
 // if cond = 1, assert two cells have same value;
 // (NOT constraining equality in circuit)
 pub(crate) fn assert_conditional_equal<F: Field>(
-    a: &AssignedValue<F>,
-    b: &AssignedValue<F>,
-    cond: &AssignedValue<F>,
+    a: &AssignedCell<F, F>,
+    b: &AssignedCell<F, F>,
+    cond: &AssignedCell<F, F>,
 ) {
     let mut t1 = F::default();
     let mut t2 = F::default();
@@ -440,7 +441,7 @@ pub(crate) fn is_smaller_than<F: FieldExt>(
 }
 
 #[inline]
-pub(crate) fn assgined_cell_to_value(
+pub(crate) fn assigned_cell_to_value(
     gate: &FlexGateConfig<Fr>,
     ctx: &mut Context<Fr>,
     assigned_cell: &AssignedCell<Fr, Fr>,
@@ -449,6 +450,22 @@ pub(crate) fn assgined_cell_to_value(
     let assigned_value = gate.load_witness(ctx, value);
     ctx.region
         .constrain_equal(assigned_cell.cell(), assigned_value.cell)
+        .unwrap();
+    assigned_value
+}
+
+#[inline]
+pub(crate) fn assigned_value_to_cell(
+    config: &RlcConfig,
+    region: &mut Region<Fr>,
+    assigned_cell: &AssignedValue<Fr>,
+    offset: &mut usize,
+) -> AssignedCell<Fr, Fr> {
+    let mut value = Fr::default();
+    assigned_cell.value().map(|&x| value = x);
+    let assigned_value = config.load_private(region, &value, offset).unwrap();
+    region
+        .constrain_equal(assigned_cell.cell(), assigned_value.cell())
         .unwrap();
     assigned_value
 }

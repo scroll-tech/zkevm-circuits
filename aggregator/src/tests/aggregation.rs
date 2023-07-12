@@ -52,7 +52,7 @@ fn test_aggregation_circuit() {
 
     {
         // This set up requires two rounds of keccak for chunk's data hash
-        let circuit = build_new_aggregation_circuit(5);
+        let circuit = build_new_aggregation_circuit(10);
         let instance = circuit.instances();
 
         let mock_prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
