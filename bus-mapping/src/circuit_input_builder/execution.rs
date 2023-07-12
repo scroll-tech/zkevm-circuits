@@ -21,7 +21,10 @@ use ethers_core::k256::elliptic_curve::subtle::{Choice, CtOption};
 use gadgets::impl_expr;
 use halo2_proofs::{
     arithmetic::CurveAffine,
-    halo2curves::bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
+    halo2curves::{
+        bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
+        group::cofactor::CofactorCurveAffine,
+    },
     plonk::Expression,
 };
 use strum::IntoEnumIterator;
@@ -523,14 +526,14 @@ impl PrecompileEvents {
     pub fn get_ec_pairing_events(&self) -> Vec<EcPairingOp> {
         self.events
             .iter()
+            .cloned()
             .filter_map(|e| {
                 if let PrecompileEvent::EcPairing(op) = e {
-                    Some(op)
+                    Some(*op)
                 } else {
                     None
                 }
             })
-            .cloned()
             .collect()
     }
 }
@@ -545,7 +548,7 @@ pub enum PrecompileEvent {
     /// Represents the I/O from EcMul call.
     EcMul(EcMulOp),
     /// Represents the I/O from EcPairing call.
-    EcPairing(EcPairingOp),
+    EcPairing(Box<EcPairingOp>),
 }
 
 impl Default for PrecompileEvent {
@@ -644,11 +647,16 @@ impl Default for EcMulOp {
     }
 }
 
+/// The number of pairing inputs per pairing operation. If the inputs provided to the precompile
+/// call are < 4, we append (G1::infinity, G2::Infinity) until we have the required number of
+/// inputs.
+pub const N_PAIRING_PER_OP: usize = 4;
+
 /// EcPairing operation
 #[derive(Clone, Debug)]
 pub struct EcPairingOp {
     /// tuples of G1 and G2 points.
-    pub inputs: Vec<(G1Affine, G2Affine)>,
+    pub inputs: [(G1Affine, G2Affine); N_PAIRING_PER_OP],
     /// Result from the pairing check.
     pub output: Word,
 }
@@ -669,7 +677,7 @@ impl Default for EcPairingOp {
         const G2_Y_21: &str = "0x2a23af9a5ce2ba2796c1f4e453a370eb0af8c212d9dc9acd8fc02c2e907baea2";
         const G2_Y_22: &str = "0x23a8eb0b0996252cb548a4487da97b02422ebc0e834613f954de6c7e0afdc1fc";
         Self {
-            inputs: vec![
+            inputs: [
                 (
                     G1Affine {
                         x: Fq::from_bytes(&word!(G1_X_1).to_le_bytes()).unwrap(),
@@ -702,6 +710,8 @@ impl Default for EcPairingOp {
                         },
                     },
                 ),
+                (G1Affine::identity(), G2Affine::identity()),
+                (G1Affine::identity(), G2Affine::identity()),
             ],
             output: Word::one(),
         }

@@ -1,13 +1,17 @@
 use std::{
     marker::PhantomData,
-    ops::{Add, Mul},
+    ops::{Add, Mul, Neg},
 };
 
 use bus_mapping::circuit_input_builder::{EcAddOp, EcMulOp, EcPairingOp, PrecompileEcParams};
 use eth_types::Field;
 use halo2_proofs::{
+    arithmetic::Field as ArithmeticField,
     dev::MockProver,
-    halo2curves::bn256::{Fr, G1Affine, G2Affine},
+    halo2curves::{
+        bn256::{Fr, G1Affine, G2Affine},
+        group::cofactor::CofactorCurveAffine,
+    },
 };
 use rand::{CryptoRng, RngCore};
 
@@ -61,9 +65,21 @@ impl GenRand for EcMulOp {
 
 impl GenRand for EcPairingOp {
     fn gen_rand<R: RngCore + CryptoRng>(mut r: &mut R) -> Self {
+        let alpha = Fr::random(&mut r);
+        let beta = Fr::random(&mut r);
+        let point_p = G1Affine::from(G1Affine::generator() * alpha);
+        let point_p_negated = point_p.neg();
+        let point_q = G2Affine::from(G2Affine::generator() * beta);
+        let point_s = G1Affine::from(G1Affine::generator() * alpha * beta);
+        let point_t = G2Affine::generator();
         Self {
-            inputs: vec![(G1Affine::random(&mut r), G2Affine::random(&mut r))],
-            output: 0u64.into(), // pairing check will be 0 for random values.
+            inputs: [
+                (point_p_negated, point_q),
+                (point_s, point_t),
+                (G1Affine::identity(), G2Affine::identity()),
+                (G1Affine::identity(), G2Affine::identity()),
+            ],
+            output: 1u64.into(),
         }
     }
 }
@@ -89,7 +105,6 @@ fn test_ecc_circuit() {
             ec_mul: 10,
             ec_pairing: 2,
         },
-        // using empty vec will populate the default ops.
         gen(&mut rng, 9),
         gen(&mut rng, 9),
         gen(&mut rng, 1),
