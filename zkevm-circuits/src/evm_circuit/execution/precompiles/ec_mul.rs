@@ -21,6 +21,7 @@ pub struct EcMulGadget<F> {
     point_p_x_rlc: Cell<F>,
     point_p_y_rlc: Cell<F>,
     scalar_s_rlc: Cell<F>,
+    scalar_s_raw_rlc: Cell<F>,
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
     is_valid: Cell<F>,
@@ -40,8 +41,9 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileBn256ScalarMul;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (is_valid, point_p_x_rlc, point_p_y_rlc, scalar_s_rlc, point_r_x_rlc, point_r_y_rlc) = (
+        let (is_valid, point_p_x_rlc, point_p_y_rlc, scalar_s_rlc, scalar_s_raw_rlc, point_r_x_rlc, point_r_y_rlc) = (
             cb.query_bool(),
+            cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -94,6 +96,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             point_p_x_rlc,
             point_p_y_rlc,
             scalar_s_rlc,
+            scalar_s_raw_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
             is_valid,
@@ -129,6 +132,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 (&self.point_p_x_rlc, aux_data.p_x),
                 (&self.point_p_y_rlc, aux_data.p_y),
                 (&self.scalar_s_rlc, aux_data.s),
+                (&self.scalar_s_raw_rlc, aux_data.s_raw),
                 (&self.point_r_x_rlc, aux_data.r_x),
                 (&self.point_r_y_rlc, aux_data.r_y),
             ] {
@@ -349,16 +353,15 @@ mod test {
                     ..Default::default()
                 },
 
-                // TODO: Failing Test
                 PrecompileCallArgs {
                     name: "ecMul (valid: scalar larger than scalar field order n but less than base field p)",
                     // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
 
                     // For bn256 (alt_bn128) scalar field:
-                    // n = 21888242871839275222246405745257275088696311157297823662689037894645226208583
+                    // n = 21888242871839275222246405745257275088548364400416034343698204186575808495617
 
                     // Choose scalar s such that n < s < p
-                    // s = 21888242871839275222246405745257275088696311157297823662689037894645226209000
+                    // s = 21888242871839275222246405745257275088548364400416034343698204186575808500000
                     setup_code: bytecode! {
                         // p_x
                         PUSH1(0x02)
@@ -370,7 +373,7 @@ mod test {
                         PUSH1(0x20)
                         MSTORE
                         // s
-                        PUSH32(word!("0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFEE8"))
+                        PUSH32(word!("0x30644E72E131A029B85045B68181585D2833E84879B9709143E1F593F0001120"))
                         PUSH1(0x40)
                         MSTORE
                     },
@@ -382,7 +385,6 @@ mod test {
                     ..Default::default()
                 },
 
-                // TODO: Failing Test
                 PrecompileCallArgs {
                     name: "ecMul (valid: scalar larger than base field order)",
                     // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)

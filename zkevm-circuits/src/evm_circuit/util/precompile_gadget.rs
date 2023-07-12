@@ -166,8 +166,9 @@ impl<F: Field> PrecompileGadget<F> {
             Box::new(|_cb| { /* Modexp */ }),
             Box::new(|_cb| { /* Bn128Add */ }),
             Box::new(|cb| {
-                let (is_valid, p_x_rlc, p_y_rlc, scalar_s_rlc, r_x_rlc, r_y_rlc) = (
+                let (is_valid, p_x_rlc, p_y_rlc, scalar_s_rlc, scalar_s_raw_rlc, r_x_rlc, r_y_rlc) = (
                     cb.query_bool(),
+                    cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
                     cb.query_cell_phase2(),
@@ -186,7 +187,7 @@ impl<F: Field> PrecompileGadget<F> {
                     padded_rlc3,
                     (p_x_rlc.expr() * r_pow_64)
                         + (p_y_rlc.expr() * r_pow_32.expr())
-                        + scalar_s_rlc.expr(),
+                        + scalar_s_raw_rlc.expr(),
                 );
                 // RLC of output bytes always equals RLC of result elliptic curve point R.
                 cb.require_equal(

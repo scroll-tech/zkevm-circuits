@@ -177,6 +177,8 @@ pub struct EcMulAuxData {
     pub p_y: Word,
     /// scalar.
     pub s: Word,
+    /// unmodulated scalar
+    pub s_raw: Word,
 
     /// x co-ordinate of the result point.
     pub r_x: Word,
@@ -191,11 +193,14 @@ impl EcMulAuxData {
     pub fn new(input: &[u8], output: &[u8]) -> Self {
         assert_eq!(input.len(), 96);
         assert_eq!(output.len(), 64);
-        let is_valid = EcMulOp::new_from_bytes(input, output).is_some().unwrap_u8();
+        let ec_mul_op = EcMulOp::new_from_bytes(input, output);
+        let is_valid = ec_mul_op.is_some().unwrap_u8();
+        
         Self {
             p_x: Word::from_big_endian(&input[0x00..0x20]),
             p_y: Word::from_big_endian(&input[0x20..0x40]),
-            s: Word::from_big_endian(&input[0x40..0x60]),
+            s: Word::from_little_endian(&ec_mul_op.unwrap().s.to_bytes()),
+            s_raw: Word::from_big_endian(&input[0x40..0x60]),
             r_x: Word::from_big_endian(&output[0x00..0x20]),
             r_y: Word::from_big_endian(&output[0x20..0x40]),
             is_valid,
