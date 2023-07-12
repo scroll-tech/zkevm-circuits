@@ -346,6 +346,16 @@ pub enum NumberOrHash {
 }
 
 /// Represents all bytes related in one copy event.
+///
+/// - When the source is memory, `bytes` is the memory content, including masked areas. The
+///   destination data is the non-masked bytes.
+/// - When only the destination is memory or log, `bytes` is the memory content to write, including
+///   masked areas. The source data is the non-masked bytes.
+/// - When both source and destination are memory or log, it is `aux_bytes` that holds the
+///   destination memory.
+///
+/// Additionally, when the destination is memory, `bytes_write_prev` holds the memory content
+/// *before* the write.
 #[derive(Clone, Debug)]
 pub struct CopyBytes {
     /// Represents the list of (bytes, is_code, mask) copied during this copy event

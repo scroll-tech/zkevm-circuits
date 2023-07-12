@@ -102,8 +102,8 @@ pub struct CopyCircuitConfig<F> {
     pub addr_lt_addr_end: LtConfig<F, 8>,
     /// Whether this is the end of a word (last byte).
     pub is_word_end: IsEqualConfig<F>,
-    /// non pad and non mask gadget
-    pub non_pad_non_mask: LtConfig<F, 1>,
+    /// non pad and non mask witness to reduce the degree of lookups.
+    pub non_pad_non_mask: Column<Advice>,
     // External tables
     /// TxTable
     pub tx_table: TxTable,
@@ -199,15 +199,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             |_meta| 31.expr(),
         );
 
-        let non_pad_non_mask = LtChip::configure(
-            meta,
-            |meta| meta.query_selector(q_step),
-            |meta| {
-                meta.query_advice(is_pad, Rotation::cur())
-                    + meta.query_advice(mask, Rotation::cur())
-            },
-            |_meta| 1.expr(),
-        );
+        let non_pad_non_mask = meta.advice_column();
 
         meta.create_gate("decode tag", |meta| {
             let enabled = meta.query_fixed(q_enable, Rotation::cur());
@@ -304,6 +296,14 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     meta.query_advice(is_last, Rotation::cur()),
                     meta.query_selector(q_step),
+                ]),
+            );
+            cb.require_equal(
+                "non_pad_non_mask = !pad AND !mask",
+                meta.query_advice(non_pad_non_mask, Rotation::cur()),
+                and::expr([
+                    not::expr(meta.query_advice(is_pad, Rotation::cur())),
+                    not::expr(meta.query_advice(mask, Rotation::cur())),
                 ]),
             );
 
@@ -625,6 +625,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
 
+            let value_or_pad_2 = meta.query_advice(value, Rotation(2))
+                * not::expr(meta.query_advice(is_pad, Rotation(2)));
+
+            // TODO: check value_acc(0) = value when is_first
             cb.require_equal(
                 "value_acc is same for read-write rows",
                 meta.query_advice(value_acc, Rotation::cur()),
@@ -641,20 +645,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         "value_acc(2) == value_acc(0) * r + value(2)",
                         meta.query_advice(value_acc, Rotation(2)),
                         meta.query_advice(value_acc, Rotation::cur()) * challenges.keccak_input()
-                            + meta.query_advice(value, Rotation(2)),
+                            + value_or_pad_2,
                     );
                 },
             );
-            cb.condition(not::expr(meta.query_advice(mask, Rotation::cur())), |cb| {
-                cb.require_zero(
-                    "value == 0 when is_pad == 1 for read",
-                    and::expr([
-                        meta.query_advice(is_pad, Rotation::cur()),
-                        meta.query_advice(value, Rotation::cur()),
-                        meta.query_advice(mask, Rotation::cur()),
-                    ]),
-                );
-            });
 
             cb.require_equal(
                 "is_pad == 1 - (src_addr < src_addr_end) for read row",
@@ -730,7 +724,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Bytecode lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * meta.query_advice(is_bytecode, Rotation::cur())
-                * non_pad_non_mask.is_lt(meta, None);
+                * meta.query_advice(non_pad_non_mask, Rotation::cur());
 
             vec![
                 1.expr(),
@@ -749,7 +743,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Tx calldata lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * meta.query_advice(is_tx_calldata, Rotation::cur())
-                * non_pad_non_mask.is_lt(meta, None);
+                * meta.query_advice(non_pad_non_mask, Rotation::cur());
 
             vec![
                 1.expr(),
@@ -806,7 +800,6 @@ impl<F: Field> CopyCircuitConfig<F> {
         tag_chip: &BinaryNumberChip<F, CopyDataType, 4>,
         lt_chip: &LtChip<F, 8>,
         lt_word_end_chip: &IsEqualChip<F>,
-        non_pad_non_mask_chip: &LtChip<F, 1>,
         challenges: Challenges<Value<F>>,
         copy_event: &CopyEvent,
     ) -> Result<(), Error> {
@@ -901,13 +894,14 @@ impl<F: Field> CopyCircuitConfig<F> {
 
             let pad = unwrap_value(circuit_row[7].0);
             let mask = unwrap_value(circuit_row[9].0);
-
-            non_pad_non_mask_chip.assign(
-                region,
+            let non_pad_non_mask = pad.is_zero_vartime() && mask.is_zero_vartime();
+            region.assign_advice(
+                || format!("non_pad_non_mask at row: {offset}"),
+                self.non_pad_non_mask,
                 *offset,
-                pad + mask, // is_pad + mask
-                F::from(1u64),
+                || Value::known(F::from(non_pad_non_mask)),
             )?;
+
             // if the memory copy operation is related to precompile calls.
             let is_precompiled = CopyDataType::precompile_types().contains(tag);
             region.assign_advice(
@@ -972,7 +966,6 @@ impl<F: Field> CopyCircuitConfig<F> {
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
         let lt_word_end_chip = IsEqualChip::construct(self.is_word_end.clone());
-        let non_pad_non_mask_chip: LtChip<F, 1> = LtChip::construct(self.non_pad_non_mask);
 
         layouter.assign_region(
             || "assign copy table",
@@ -986,6 +979,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 region.name_column(|| "front_mask", self.front_mask);
                 region.name_column(|| "is_code", self.is_code);
                 region.name_column(|| "is_pad", self.is_pad);
+                region.name_column(|| "non_pad_non_mask", self.non_pad_non_mask);
                 region.name_column(|| "is_event", self.is_event);
 
                 let mut offset = 0;
@@ -1007,7 +1001,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                         &tag_chip,
                         &lt_chip,
                         &lt_word_end_chip,
-                        &non_pad_non_mask_chip,
                         challenges,
                         copy_event,
                     )?;
@@ -1022,7 +1015,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                         &tag_chip,
                         &lt_chip,
                         &lt_word_end_chip,
-                        &non_pad_non_mask_chip,
                     )?;
                 }
 
@@ -1033,7 +1025,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                     &tag_chip,
                     &lt_chip,
                     &lt_word_end_chip,
-                    &non_pad_non_mask_chip,
                 )?;
                 self.assign_padding_row(
                     &mut region,
@@ -1042,7 +1033,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                     &tag_chip,
                     &lt_chip,
                     &lt_word_end_chip,
-                    &non_pad_non_mask_chip,
                 )?;
 
                 Ok(())
@@ -1059,7 +1049,6 @@ impl<F: Field> CopyCircuitConfig<F> {
         tag_chip: &BinaryNumberChip<F, CopyDataType, 4>,
         lt_chip: &LtChip<F, 8>,
         lt_word_end_chip: &IsEqualChip<F>,
-        non_pad_non_mask_chip: &LtChip<F, 1>,
     ) -> Result<(), Error> {
         if !is_last_two {
             // q_enable
@@ -1227,7 +1216,13 @@ impl<F: Field> CopyCircuitConfig<F> {
             Value::known(F::zero()),
             Value::known(F::from(31u64)),
         )?;
-        non_pad_non_mask_chip.assign(region, *offset, F::one(), F::one())?;
+        region.assign_advice(
+            || format!("non_pad_non_mask at row: {offset}"),
+            self.non_pad_non_mask,
+            *offset,
+            || Value::known(F::zero()),
+        )?;
+
         for column in [
             self.is_precompiled,
             self.is_tx_calldata,
