@@ -6,6 +6,7 @@ pub const LOG_TOTAL_NUM_ROWS: u32 = 20;
 
 pub struct G1Decomposed<F: Field> {
     pub ec_point: EcPoint<F, CRTInteger<F>>,
+    pub is_identity: bool,
     pub x_cells: Vec<QuantumCell<F>>,
     pub y_cells: Vec<QuantumCell<F>>,
 }
@@ -28,6 +29,7 @@ pub struct ScalarAssigned<F: Field> {
 
 pub struct G2Decomposed<F: Field> {
     pub ec_point: EcPoint<F, FieldExtPoint<CRTInteger<F>>>,
+    pub is_identity: bool,
     pub x_c0_cells: Vec<QuantumCell<F>>,
     pub x_c1_cells: Vec<QuantumCell<F>>,
     pub y_c0_cells: Vec<QuantumCell<F>>,
