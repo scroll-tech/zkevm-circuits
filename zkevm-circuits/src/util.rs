@@ -67,8 +67,8 @@ impl MockChallenges {
     pub fn construct<F: FieldExt>(_meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             evm_word: 0x100,
-            keccak_input: 0x100,
-            lookup_input: 0x100,
+            keccak_input: 0x101,
+            lookup_input: 0x102,
         }
     }
     /// ..
