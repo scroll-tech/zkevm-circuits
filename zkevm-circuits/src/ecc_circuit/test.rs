@@ -19,15 +19,19 @@ use crate::ecc_circuit::EccCircuit;
 
 fn run<F: Field>(
     k: u32,
-    max_ec_ops: PrecompileEcParams,
+    _max_ec_ops: PrecompileEcParams,
     add_ops: Vec<EcAddOp>,
     mul_ops: Vec<EcMulOp>,
     pairing_ops: Vec<EcPairingOp>,
 ) {
     let circuit = EccCircuit::<F> {
-        max_add_ops: max_ec_ops.ec_add,
-        max_mul_ops: max_ec_ops.ec_mul,
-        max_pairing_ops: max_ec_ops.ec_pairing,
+        ec_add_unequal_ops: 5,
+        ec_double_ops: 5,
+        ec_mul_nonzero_ops: 5,
+        ec_pairing1_ops: 1,
+        ec_pairing2_ops: 2,
+        ec_pairing3_ops: 1,
+        ec_pairing4_ops: 2,
         add_ops,
         mul_ops,
         pairing_ops,
@@ -105,8 +109,49 @@ fn test_ecc_circuit() {
             ec_mul: 10,
             ec_pairing: 2,
         },
-        gen(&mut rng, 9),
-        gen(&mut rng, 9),
-        gen(&mut rng, 1),
+        gen(&mut rng, 4),
+        gen(&mut rng, 3),
+        gen(&mut rng, 2),
     )
+}
+
+#[test]
+fn variadic_size_check() {
+    use crate::ecc_circuit::util::LOG_TOTAL_NUM_ROWS;
+    use halo2_proofs::halo2curves::bn256::Fr;
+
+    let mut rng = rand::thread_rng();
+
+    let circuit = EccCircuit::<Fr> {
+        ec_add_unequal_ops: 5,
+        ec_double_ops: 5,
+        ec_mul_nonzero_ops: 5,
+        ec_pairing1_ops: 1,
+        ec_pairing2_ops: 2,
+        ec_pairing3_ops: 1,
+        ec_pairing4_ops: 2,
+        add_ops: gen(&mut rng, 4),
+        mul_ops: gen(&mut rng, 3),
+        pairing_ops: gen(&mut rng, 2),
+        _marker: PhantomData,
+    };
+    let prover1 = MockProver::<Fr>::run(LOG_TOTAL_NUM_ROWS, &circuit, vec![]).unwrap();
+
+    let circuit = EccCircuit::<Fr> {
+        ec_add_unequal_ops: 5,
+        ec_double_ops: 5,
+        ec_mul_nonzero_ops: 5,
+        ec_pairing1_ops: 1,
+        ec_pairing2_ops: 2,
+        ec_pairing3_ops: 1,
+        ec_pairing4_ops: 2,
+        add_ops: gen(&mut rng, 3),
+        mul_ops: gen(&mut rng, 2),
+        pairing_ops: gen(&mut rng, 1),
+        _marker: PhantomData,
+    };
+    let prover2 = MockProver::<Fr>::run(LOG_TOTAL_NUM_ROWS, &circuit, vec![]).unwrap();
+
+    assert_eq!(prover1.fixed(), prover2.fixed());
+    assert_eq!(prover1.permutation(), prover2.permutation());
 }
