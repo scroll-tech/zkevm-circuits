@@ -322,41 +322,33 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             cb.condition(is_first.expr(),
                 |cb| {
-                    cb.require_zero("reader word_index starts at 0", meta.query_advice(word_index, Rotation::cur()));
-                    cb.require_zero("writer word_index starts at 0", meta.query_advice(word_index, Rotation::next()));
+                    // Apply the same constraints on the first reader and first writer rows.
+                    for rot in [Rotation::cur(), Rotation::next()] {
+                        cb.require_zero("word_index starts at 0", meta.query_advice(word_index, rot));
+
+                        cb.require_equal(
+                            "value_acc init to the first value, or 0 if padded or masked",
+                            meta.query_advice(value_acc, rot),
+                            meta.query_advice(value, rot) * meta.query_advice(non_pad_non_mask, rot),
+                        );
+                    }
                 },
             );
 
-            cb.condition(
-                and::expr([
-                    is_continue.expr(),
-                    not_word_end.expr(),
-                ]),
+            cb.condition(is_continue.expr(),
                 |cb| {
-                    cb.require_equal(
-                        "word_index[0] + 1 == word_index[2]",
+
+                    let inc_or_reset = select::expr(
+                      is_word_end.expr(),
+                        0.expr(),
                         meta.query_advice(word_index, Rotation::cur()) + 1.expr(),
+                    );
+
+                    cb.require_equal(
+                        "word_index increments or resets to 0",
+                        inc_or_reset,
                         meta.query_advice(word_index, Rotation(2)),
                     )
-                },
-            );
-
-            cb.condition(
-                and::expr([
-                    is_continue.expr(),
-                    is_word_end.expr(),
-                ]),
-                |cb| {
-                    cb.require_equal(
-                        "word_index[0] == 31",
-                        meta.query_advice(word_index, Rotation::cur()),
-                        31.expr(),
-                    );
-                    cb.require_equal(
-                        "word_index[2] == 0",
-                        meta.query_advice(word_index, Rotation(2)),
-                        0.expr(),
-                    );
                 },
             );
 
@@ -464,7 +456,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         meta.query_advice(src_addr_end, Rotation(2)),
                     );
 
-                    // Accumulate the value into the next value_acc.
+                    // Accumulate the next value into the next value_acc.
                     {
                         let current = meta.query_advice(value_acc, Rotation::cur());
                         // If source padding, replace the value with 0.
@@ -493,8 +485,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     );
                 },
             );
-
-            // TODO: check value_acc(0) = value on first non-mask row.
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
