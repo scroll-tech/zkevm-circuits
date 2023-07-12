@@ -1483,7 +1483,7 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 9];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 12];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
 
 impl CopyTable {
     /// Construct a new CopyTable
@@ -1533,8 +1533,8 @@ impl CopyTable {
         let mut value_word_write_rlc = Value::known(F::zero());
         let mut value_word_write_rlc_prev = Value::known(F::zero());
         let mut value_acc = Value::known(F::zero());
-        let mut rlc_acc_read = Value::known(F::zero());
-        let mut rlc_acc_write = Value::known(F::zero());
+        let mut copy_rlc_read = Value::known(F::zero());
+        let mut copy_rlc_write = Value::known(F::zero());
 
         let full_length = copy_event.copy_bytes.bytes.len();
 
@@ -1612,7 +1612,7 @@ impl CopyTable {
             if is_read_step {
                 if !copy_step.mask {
                     src_front_mask = false;
-                    rlc_acc_read = rlc_acc_read * challenges.evm_word()
+                    copy_rlc_read = copy_rlc_read * challenges.evm_word()
                         + Value::known(F::from(copy_step.value as u64));
                 }
                 if (step_idx / 2) % 32 == 0 {
@@ -1624,7 +1624,7 @@ impl CopyTable {
             } else {
                 if !copy_step.mask {
                     dst_front_mask = false;
-                    rlc_acc_write = rlc_acc_write * challenges.evm_word()
+                    copy_rlc_write = copy_rlc_write * challenges.evm_word()
                         + Value::known(F::from(copy_step.value as u64));
                 }
                 if (step_idx / 2) % 32 == 0 {
@@ -1738,8 +1738,14 @@ impl CopyTable {
                         },
                         "value_word_rlc_prev",
                     ),
-                    (rlc_acc_read, "rlc_acc_read"),
-                    (rlc_acc_write, "rlc_acc_write"),
+                    (
+                        if is_read_step {
+                            copy_rlc_read
+                        } else {
+                            copy_rlc_write
+                        },
+                        "copy_rlc",
+                    ),
                     (value_acc, "value_acc"),
                     (is_pad, "is_pad"),
                     (is_code, "is_code"),
@@ -1768,11 +1774,6 @@ impl CopyTable {
                 real_length_left -= 1;
             }
         }
-        /* This does not work with negative test copy_circuit_invalid_tx_log
-        rlc_acc_read
-            .zip(rlc_acc_write)
-            .assert_if_known(|(r, w)| r == w);
-        */
         assignments
     }
 

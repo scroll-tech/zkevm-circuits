@@ -62,10 +62,8 @@ pub struct CopyCircuitConfig<F> {
     pub value_word_rlc_prev: Column<Advice>,
     /// The index of the current byte within a word [0..31].
     pub word_index: Column<Advice>,
-    /// Random linear combination of the read value
-    pub rlc_acc_read: Column<Advice>,
-    /// Random linear combination of the write value
-    pub rlc_acc_write: Column<Advice>,
+    /// Random linear combination of the copied data.
+    pub copy_rlc: Column<Advice>,
     /// mask indicates when a row is not part of the copy, but it is needed to complete the front
     /// or the back of the first or last memory word.
     pub mask: Column<Advice>,
@@ -150,8 +148,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let value = meta.advice_column_in(SecondPhase);
         let value_word_rlc = meta.advice_column_in(SecondPhase);
         let value_word_rlc_prev = meta.advice_column_in(SecondPhase);
-        let rlc_acc_read = meta.advice_column_in(SecondPhase);
-        let rlc_acc_write = meta.advice_column_in(SecondPhase);
+        let copy_rlc = meta.advice_column_in(SecondPhase);
 
         let value_acc = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
@@ -528,19 +525,14 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 let mut cb = BaseConstraintBuilder::default();
 
                 cb.require_equal(
-                    "rlc_acc_read == rlc_acc_write on the last row",
-                    meta.query_advice(rlc_acc_read, Rotation::next()),
-                    meta.query_advice(rlc_acc_write, Rotation::next()),
+                    "source copy_rlc == destination copy_rlc on the last row",
+                    meta.query_advice(copy_rlc, Rotation::cur()),
+                    meta.query_advice(copy_rlc, Rotation::next()),
                 );
 
                 cb.gate(and::expr([
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(is_last, Rotation::next()),
-                    // and::expr([
-                    //     meta.query_advice(is_memory, Rotation::cur()),
-                    //     meta.query_advice(is_memory, Rotation::next())
-                    //         + meta.query_advice(is_tx_log, Rotation::next()),
-                    // ]),
                 ]))
             },
         );
@@ -580,7 +572,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
 
-            // TODO: check value_acc(0) = value when is_first
+            // TODO: check value_acc(0) = value on first non-mask row.
             cb.require_equal(
                 "value_acc is same for read-write rows",
                 meta.query_advice(value_acc, Rotation::cur()),
@@ -718,8 +710,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             value,
             value_word_rlc,
             value_word_rlc_prev,
-            rlc_acc_read,
-            rlc_acc_write,
+            copy_rlc,
             word_index,
             mask,
             front_mask,
@@ -810,8 +801,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.value,
                 self.value_word_rlc,
                 self.value_word_rlc_prev,
-                self.rlc_acc_read,
-                self.rlc_acc_write,
+                self.copy_rlc,
                 self.value_acc,
                 self.is_pad,
                 self.is_code,
@@ -846,8 +836,8 @@ impl<F: Field> CopyCircuitConfig<F> {
                 Value::known(F::from(31u64)),
             )?;
 
-            let pad = unwrap_value(circuit_row[7].0);
-            let mask = unwrap_value(circuit_row[9].0);
+            let pad = unwrap_value(circuit_row[6].0);
+            let mask = unwrap_value(circuit_row[8].0);
             let non_pad_non_mask = pad.is_zero_vartime() && mask.is_zero_vartime();
             region.assign_advice(
                 || format!("non_pad_non_mask at row: {offset}"),
@@ -1092,6 +1082,13 @@ impl<F: Field> CopyCircuitConfig<F> {
         region.assign_advice(
             || format!("assign value_word_rlc_prev {}", *offset),
             self.value_word_rlc_prev,
+            *offset,
+            || Value::known(F::zero()),
+        )?;
+        // copy_rlc
+        region.assign_advice(
+            || format!("assign copy_rlc {}", *offset),
+            self.copy_rlc,
             *offset,
             || Value::known(F::zero()),
         )?;
