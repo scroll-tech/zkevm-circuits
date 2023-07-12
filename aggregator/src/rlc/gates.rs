@@ -12,7 +12,7 @@ use zkevm_circuits::util::Challenges;
 #[cfg(test)]
 use halo2_proofs::plonk::FirstPhase;
 
-use crate::constants::LOG_DEGREE;
+use crate::constants::{DIGEST_LEN, LOG_DEGREE};
 
 use super::RlcConfig;
 
@@ -177,6 +177,33 @@ impl RlcConfig {
         Ok(d)
     }
 
+    /// caller need to ensure a is binary
+    /// return !a
+    pub(crate) fn not(
+        &self,
+        region: &mut Region<Fr>,
+        a: &AssignedCell<Fr, Fr>,
+        offset: &mut usize,
+    ) -> Result<AssignedCell<Fr, Fr>, Error> {
+        let one = self.load_private(region, &Fr::one(), offset)?;
+        self.sub(region, &one, a, offset)
+    }
+
+    // if cond = 1 return a, else b
+    pub(crate) fn select(
+        &self,
+        region: &mut Region<Fr>,
+        a: &AssignedCell<Fr, Fr>,
+        b: &AssignedCell<Fr, Fr>,
+        cond: &AssignedCell<Fr, Fr>,
+        offset: &mut usize,
+    ) -> Result<AssignedCell<Fr, Fr>, Error> {
+        // (cond - 1) * b + cond * a
+        let cond_not = self.not(region, cond, offset)?;
+        let tmp = self.mul(region, a, cond, offset)?;
+        self.mul_add(region, b, &cond_not, &tmp, offset)
+    }
+
     // Returns inputs[0] + challange * inputs[1] + ... + challenge^k * inputs[k]
     pub(crate) fn rlc(
         &self,
@@ -188,6 +215,25 @@ impl RlcConfig {
         let mut acc = inputs[0].clone();
         for input in inputs.iter().skip(1) {
             acc = self.mul_add(region, &acc, &challenge, input, offset)?;
+        }
+        Ok(acc)
+    }
+
+    // Returns inputs[0] + challange * inputs[1] + ... + challenge^k * inputs[k]
+    pub(crate) fn rlc_with_flag(
+        &self,
+        region: &mut Region<Fr>,
+        inputs: &[AssignedCell<Fr, Fr>],
+        challenge: &AssignedCell<Fr, Fr>,
+        flags: &[AssignedCell<Fr, Fr>],
+        offset: &mut usize,
+    ) -> Result<AssignedCell<Fr, Fr>, Error> {
+        assert!(flags.len() == inputs.len());
+
+        let mut acc = inputs[0].clone();
+        for (input, flag) in inputs.iter().zip(flags.iter()).skip(1) {
+            let tmp = self.mul_add(region, &acc, &challenge, input, offset)?;
+            acc = self.select(region, &tmp, &acc, flag, offset)?;
         }
         Ok(acc)
     }

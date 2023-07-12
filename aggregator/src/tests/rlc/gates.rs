@@ -70,16 +70,56 @@ impl Circuit<Fr> for ArithTestCircuit {
                     let f5_rec = config.mul_add(&mut region, &f1, &f2, &f3, &mut offset)?;
                     region.constrain_equal(f5.cell(), f5_rec.cell())?;
                 }
-                // unit test: rlc
-                {
-                    let f6_rec = config.rlc(&mut region, &[f1, f2, f3, f4], &f5, &mut offset)?;
-                    region.constrain_equal(f6.cell(), f6_rec.cell())?;
-                }
                 // unit test: enforce_zero
                 {
                     config.enforce_zero(&mut region, &f7, &mut offset)?;
                 }
+                // unit test: not gate
+                {
+                    let zero = config.load_private(&mut region, &Fr::zero(), &mut offset)?;
+                    let one = config.not(&mut region, &zero, &mut offset)?;
+                    let zero_rec = config.not(&mut region, &one, &mut offset)?;
 
+                    zero.value().map(|&x| assert_eq!(x, Fr::zero()));
+                    one.value().map(|&x| assert_eq!(x, Fr::one()));
+                    zero_rec.value().map(|&x| assert_eq!(x, Fr::zero()));
+                }
+                // unit test: conditional select gate
+                {
+                    let zero = config.load_private(&mut region, &Fr::zero(), &mut offset)?;
+                    let one = config.not(&mut region, &zero, &mut offset)?;
+
+                    let f2_rec = config.select(&mut region, &f1, &f2, &zero, &mut offset)?;
+                    region.constrain_equal(f2.cell(), f2_rec.cell())?;
+
+                    let f1_rec = config.select(&mut region, &f1, &f2, &one, &mut offset)?;
+                    region.constrain_equal(f1.cell(), f1_rec.cell())?;
+                }
+
+                let inputs = vec![f1, f2, f3, f4];
+
+                // unit test: rlc
+                {
+                    let f6_rec = config.rlc(&mut region, &inputs, &f5, &mut offset)?;
+                    region.constrain_equal(f6.cell(), f6_rec.cell())?;
+                }
+                // unit test: rlc with flags
+                {
+                    let zero = config.load_private(&mut region, &Fr::zero(), &mut offset)?;
+                    let one = config.not(&mut region, &zero, &mut offset)?;
+
+                    let flag = [one.clone(), one.clone(),one.clone(),one.clone()];
+                    let f6_rec =
+                        config.rlc_with_flag(&mut region, &inputs, &f5, &flag, &mut offset)?;
+                    region.constrain_equal(f6.cell(), f6_rec.cell())?;
+
+                    let flag = [one.clone(), one.clone(),one,zero];
+                    let res = rlc(&[self.f1, self.f2, self.f3], &self.f5);
+                    let res = config.load_private(&mut region, &res, &mut offset)?;
+                    let res_rec =
+                        config.rlc_with_flag(&mut region, &inputs, &f5, &flag, &mut offset)?;
+                    region.constrain_equal(res.cell(), res_rec.cell())?;
+                }
                 Ok(())
             },
         )?;
@@ -93,9 +133,9 @@ fn test_field_ops() {
 
     let f1 = Fr::from(3);
     let f2 = Fr::from(4);
-    let f3 = f1 + f2;
-    let f4 = f1 * f2;
-    let f5 = f1 * f2 + f3;
+    let f3 = f1 + f2;   // 7
+    let f4 = f1 * f2;   // 12
+    let f5 = f1 * f2 + f3;  // 19
     let f6 = rlc(&[f1, f2, f3, f4], &f5);
     let f7 = Fr::zero();
 

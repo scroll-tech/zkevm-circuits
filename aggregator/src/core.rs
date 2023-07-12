@@ -235,10 +235,10 @@ pub(crate) fn extract_hash_cells(
                         cur_digest_index = digest_indices_iter.next();
                     }
                     // skip the first (MAX_AGG_SNARKS+1)*2 rounds
-                    if offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 1)
-                        || offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 2)
-                        || offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 3)
-                    {
+                    // if offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 1)
+                    //     || offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 2)
+                    //     || offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 3)
+                    if offset % 300 == 0 && offset / 300 < 30 {
                         // second column is data rlc
                         data_rlc_cells.push(row[1].clone());
                     }
@@ -535,16 +535,17 @@ pub(crate) fn conditional_constraints(
 
                 let inputs = potential_batch_data_hash_preimage
                     .iter()
+                    .enumerate()
                     .take(DIGEST_LEN * MAX_AGG_SNARKS)
-                    .map(|cell| {
+                    .map(|(i, cell)| {
                         let mut a = Fr::default();
                         cell.value().map(|&x| a = x);
                         a
                     })
                     .collect_vec();
 
-                let rlc = rlc(&inputs, &randomness);
-                println!("rlc {:?}", rlc);
+                let rlc_cell = rlc(&inputs, &randomness);
+                println!("rlc 1 {:?}", rlc_cell);
 
                 for e in data_rlc_cells.iter() {
                     println!("rlc {:?}", e.value());
