@@ -463,7 +463,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         meta.query_advice(src_addr_end, Rotation::cur()),
                         meta.query_advice(src_addr_end, Rotation(2)),
                     );
-                    
+
                     // Accumulate the value into the next value_acc.
                     {
                         let current = meta.query_advice(value_acc, Rotation::cur());
@@ -481,7 +481,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     }
                 },
             );
-            
+
             // Forward rlc_acc from the event to all rows.
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::cur())),
@@ -501,13 +501,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         meta.create_gate("Last Step, check rlc_acc", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-            
+
             cb.require_equal(
                 "source value_acc == destination value_acc on the last row",
                 meta.query_advice(value_acc, Rotation::cur()),
                 meta.query_advice(value_acc, Rotation::next()),
             );
-            
+
             // Check the rlc_acc given in the event if any of:
             // - Precompile => *
             // - * => Precompile
@@ -527,7 +527,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 ]),
                 tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(meta),
             ]);
-            cb.condition(rlc_acc_cond,|cb| {
+            cb.condition(rlc_acc_cond, |cb| {
                 cb.require_equal(
                     "value_acc == rlc_acc on the last row",
                     meta.query_advice(value_acc, Rotation::next()),
