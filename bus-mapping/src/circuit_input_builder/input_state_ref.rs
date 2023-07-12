@@ -25,6 +25,7 @@ use crate::{
 use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
+        MAX_CODE_SIZE,
     },
     sign_types::SignData,
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
@@ -1404,7 +1405,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 if call.is_create() {
                     let offset = step.stack.nth_last(0)?;
                     let length = step.stack.nth_last(1)?;
-                    if length > Word::from(0x6000u64) {
+                    if length > Word::from(MAX_CODE_SIZE) {
                         return Ok(Some(ExecError::MaxCodeSizeExceeded));
                     } else if length > Word::zero()
                         && !call_ctx.memory.is_empty()

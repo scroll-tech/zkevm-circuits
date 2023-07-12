@@ -353,6 +353,28 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             },
         );
 
+        meta.create_gate(
+            "Last Step (check value accumulator) TxCalldata => Bytecode",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
+
+                cb.require_equal(
+                    "value_acc == rlc_acc on the last row",
+                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(rlc_acc, Rotation::next()),
+                );
+
+                cb.gate(and::expr([
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    meta.query_advice(is_last, Rotation::next()),
+                    and::expr([
+                        meta.query_advice(is_tx_calldata, Rotation::cur()),
+                        meta.query_advice(is_bytecode, Rotation::next()),
+                    ]),
+                ]))
+            },
+        );
+
         meta.create_gate("Last Step (check value accumulator) RlcAcc", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 

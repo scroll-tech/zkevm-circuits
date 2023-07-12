@@ -1613,6 +1613,7 @@ impl CopyTable {
                     (
                         match (copy_event.src_type, copy_event.dst_type) {
                             (CopyDataType::Memory, CopyDataType::Bytecode) => rlc_acc,
+                            (CopyDataType::TxCalldata, CopyDataType::Bytecode) => rlc_acc,
                             (_, CopyDataType::RlcAcc) => rlc_acc,
                             (CopyDataType::Memory, CopyDataType::Precompile(_)) => rlc_acc,
                             (CopyDataType::Precompile(_), CopyDataType::Memory) => rlc_acc,
