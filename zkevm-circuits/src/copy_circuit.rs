@@ -20,7 +20,7 @@ use gadgets::{
     binary_number::BinaryNumberChip,
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     less_than::{LtChip, LtConfig, LtInstruction},
-    util::{and, not, or, select, sum, Expr},
+    util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -580,9 +580,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
 
-            let value_or_pad_2 = meta.query_advice(value, Rotation(2))
-                * not::expr(meta.query_advice(is_pad, Rotation(2)));
-
             // TODO: check value_acc(0) = value when is_first
             cb.require_equal(
                 "value_acc is same for read-write rows",
@@ -590,17 +587,19 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(value_acc, Rotation::next()),
             );
             cb.condition(
-                and::expr([
-                    not::expr(meta.query_advice(is_last, Rotation::next())),
-                    not::expr(meta.query_advice(is_pad, Rotation::cur())),
-                    not::expr(meta.query_advice(mask, Rotation(2))),
-                ]),
+                not::expr(meta.query_advice(is_last, Rotation::next())),
                 |cb| {
+                    let mask = meta.query_advice(mask, Rotation(2));
+                    let value_or_pad = meta.query_advice(value, Rotation(2))
+                        * not::expr(meta.query_advice(is_pad, Rotation(2)));
+                    let current = meta.query_advice(value_acc, Rotation::cur());
+                    let accumulated = current.expr() * challenges.keccak_input() + value_or_pad;
+                    let next = select::expr(mask, current, accumulated);
+
                     cb.require_equal(
-                        "value_acc(2) == value_acc(0) * r + value(2)",
+                        "value_acc(2) == value_acc(0) * r + value(2), or copy value_acc(0)",
                         meta.query_advice(value_acc, Rotation(2)),
-                        meta.query_advice(value_acc, Rotation::cur()) * challenges.keccak_input()
-                            + value_or_pad_2,
+                        next,
                     );
                 },
             );
