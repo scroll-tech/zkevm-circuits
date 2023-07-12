@@ -62,14 +62,12 @@ pub struct CopyCircuitConfig<F> {
     pub value_word_rlc_prev: Column<Advice>,
     /// The index of the current byte within a word [0..31].
     pub word_index: Column<Advice>,
-    /// Random linear combination of the copied data.
-    pub copy_rlc: Column<Advice>,
     /// mask indicates when a row is not part of the copy, but it is needed to complete the front
     /// or the back of the first or last memory word.
     pub mask: Column<Advice>,
     /// Whether the row is part of the front mask, before the copy data.
     pub front_mask: Column<Advice>,
-    /// Random linear combination accumulator value.
+    /// Random linear combination accumulator of the non-masked copied data.
     pub value_acc: Column<Advice>,
     /// Whether the row is padding for out-of-bound reads when source address >= src_addr_end.
     pub is_pad: Column<Advice>,
@@ -148,7 +146,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let value = meta.advice_column_in(SecondPhase);
         let value_word_rlc = meta.advice_column_in(SecondPhase);
         let value_word_rlc_prev = meta.advice_column_in(SecondPhase);
-        let copy_rlc = meta.advice_column_in(SecondPhase);
 
         let value_acc = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
@@ -466,9 +463,25 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         meta.query_advice(src_addr_end, Rotation::cur()),
                         meta.query_advice(src_addr_end, Rotation(2)),
                     );
+                    
+                    // Accumulate the value into the next value_acc.
+                    {
+                        let current = meta.query_advice(value_acc, Rotation::cur());
+                        // If source padding, replace the value with 0.
+                        let value_or_pad = meta.query_advice(value, Rotation(2)) * not::expr(meta.query_advice(is_pad, Rotation(2)));
+                        let accumulated = current.expr() * challenges.keccak_input() + value_or_pad;
+                        // If masked, copy the accumulator forward, otherwise update it.
+                        let mask = meta.query_advice(mask, Rotation(2));
+                        let copy_or_acc = select::expr(mask, current, accumulated);
+                        cb.require_equal(
+                            "value_acc(2) == value_acc(0) * r + value(2), or copy value_acc(0)",
+                            copy_or_acc,
+                            meta.query_advice(value_acc, Rotation(2)),
+                        );
+                    }
                 },
             );
-
+            
             // Forward rlc_acc from the event to all rows.
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::cur())),
@@ -480,13 +493,22 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     );
                 },
             );
+
+            // TODO: check value_acc(0) = value on first non-mask row.
+
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
         });
 
         meta.create_gate("Last Step, check rlc_acc", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-
-            // Check the rlc_acc from the event if any of:
+            
+            cb.require_equal(
+                "source value_acc == destination value_acc on the last row",
+                meta.query_advice(value_acc, Rotation::cur()),
+                meta.query_advice(value_acc, Rotation::next()),
+            );
+            
+            // Check the rlc_acc given in the event if any of:
             // - Precompile => *
             // - * => Precompile
             // - Memory => Bytecode
@@ -505,37 +527,19 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 ]),
                 tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(meta),
             ]);
-
-            cb.require_equal(
-                "value_acc == rlc_acc on the last row",
-                meta.query_advice(value_acc, Rotation::next()),
-                meta.query_advice(rlc_acc, Rotation::next()),
-            );
+            cb.condition(rlc_acc_cond,|cb| {
+                cb.require_equal(
+                    "value_acc == rlc_acc on the last row",
+                    meta.query_advice(value_acc, Rotation::next()),
+                    meta.query_advice(rlc_acc, Rotation::next()),
+                );
+            });
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
                 meta.query_advice(is_last, Rotation::next()),
-                rlc_acc_cond,
             ]))
         });
-
-        meta.create_gate(
-            "Last Step (check read and write rlc) Memory => Memory",
-            |meta| {
-                let mut cb = BaseConstraintBuilder::default();
-
-                cb.require_equal(
-                    "source copy_rlc == destination copy_rlc on the last row",
-                    meta.query_advice(copy_rlc, Rotation::cur()),
-                    meta.query_advice(copy_rlc, Rotation::next()),
-                );
-
-                cb.gate(and::expr([
-                    meta.query_fixed(q_enable, Rotation::cur()),
-                    meta.query_advice(is_last, Rotation::next()),
-                ]))
-            },
-        );
 
         meta.create_gate("verify step (q_step == 1)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -568,30 +572,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         "real_bytes_left[1] == real_bytes_left[2]",
                         meta.query_advice(real_bytes_left, Rotation::next()),
                         meta.query_advice(real_bytes_left, Rotation(2)),
-                    );
-                },
-            );
-
-            // TODO: check value_acc(0) = value on first non-mask row.
-            cb.require_equal(
-                "value_acc is same for read-write rows",
-                meta.query_advice(value_acc, Rotation::cur()),
-                meta.query_advice(value_acc, Rotation::next()),
-            );
-            cb.condition(
-                not::expr(meta.query_advice(is_last, Rotation::next())),
-                |cb| {
-                    let mask = meta.query_advice(mask, Rotation(2));
-                    let value_or_pad = meta.query_advice(value, Rotation(2))
-                        * not::expr(meta.query_advice(is_pad, Rotation(2)));
-                    let current = meta.query_advice(value_acc, Rotation::cur());
-                    let accumulated = current.expr() * challenges.keccak_input() + value_or_pad;
-                    let next = select::expr(mask, current, accumulated);
-
-                    cb.require_equal(
-                        "value_acc(2) == value_acc(0) * r + value(2), or copy value_acc(0)",
-                        meta.query_advice(value_acc, Rotation(2)),
-                        next,
                     );
                 },
             );
@@ -710,7 +690,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             value,
             value_word_rlc,
             value_word_rlc_prev,
-            copy_rlc,
             word_index,
             mask,
             front_mask,
@@ -801,7 +780,6 @@ impl<F: Field> CopyCircuitConfig<F> {
                 self.value,
                 self.value_word_rlc,
                 self.value_word_rlc_prev,
-                self.copy_rlc,
                 self.value_acc,
                 self.is_pad,
                 self.is_code,
@@ -836,8 +814,8 @@ impl<F: Field> CopyCircuitConfig<F> {
                 Value::known(F::from(31u64)),
             )?;
 
-            let pad = unwrap_value(circuit_row[6].0);
-            let mask = unwrap_value(circuit_row[8].0);
+            let pad = unwrap_value(circuit_row[5].0);
+            let mask = unwrap_value(circuit_row[7].0);
             let non_pad_non_mask = pad.is_zero_vartime() && mask.is_zero_vartime();
             region.assign_advice(
                 || format!("non_pad_non_mask at row: {offset}"),
@@ -1082,13 +1060,6 @@ impl<F: Field> CopyCircuitConfig<F> {
         region.assign_advice(
             || format!("assign value_word_rlc_prev {}", *offset),
             self.value_word_rlc_prev,
-            *offset,
-            || Value::known(F::zero()),
-        )?;
-        // copy_rlc
-        region.assign_advice(
-            || format!("assign copy_rlc {}", *offset),
-            self.copy_rlc,
             *offset,
             || Value::known(F::zero()),
         )?;

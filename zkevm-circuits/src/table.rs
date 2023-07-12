@@ -1483,7 +1483,7 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 9];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 10];
 
 impl CopyTable {
     /// Construct a new CopyTable
@@ -1522,19 +1522,16 @@ impl CopyTable {
                 .map(|(value, _, _)| *value)
                 .collect::<Vec<u8>>();
 
-            trace!("rlc_acc bytes are {values:?}");
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
         };
 
-        trace!("rlc_acc of bytecode bytes {rlc_acc:?} ");
         let mut value_word_read_rlc = Value::known(F::zero());
         let mut value_word_write_rlc = Value::known(F::zero());
         let mut value_word_write_rlc_prev = Value::known(F::zero());
-        let mut value_acc = Value::known(F::zero());
-        let mut copy_rlc_read = Value::known(F::zero());
-        let mut copy_rlc_write = Value::known(F::zero());
+        let mut src_value_acc = Value::known(F::zero());
+        let mut dst_value_acc = Value::known(F::zero());
 
         let full_length = copy_event.copy_bytes.bytes.len();
 
@@ -1606,14 +1603,21 @@ impl CopyTable {
             };
 
             let is_mask = Value::known(if copy_step.mask { F::one() } else { F::zero() });
-            // assume copy events bytes is already word aligned for copy steps.
-            // only change by skip 32
+
+            let addr = if is_read_step { src_addr } else { dst_addr };
+            let is_pad = is_read_step && addr >= copy_event.src_addr_end;
+
+            let value = Value::known(F::from(copy_step.value as u64));
+            let value_or_pad = if is_pad {
+                Value::known(F::zero())
+            } else {
+                value
+            };
 
             if is_read_step {
                 if !copy_step.mask {
                     src_front_mask = false;
-                    copy_rlc_read = copy_rlc_read * challenges.evm_word()
-                        + Value::known(F::from(copy_step.value as u64));
+                    src_value_acc = src_value_acc * challenges.keccak_input() + value_or_pad;
                 }
                 if (step_idx / 2) % 32 == 0 {
                     // reset
@@ -1624,7 +1628,7 @@ impl CopyTable {
             } else {
                 if !copy_step.mask {
                     dst_front_mask = false;
-                    copy_rlc_write = copy_rlc_write * challenges.evm_word()
+                    dst_value_acc = dst_value_acc * challenges.keccak_input()
                         + Value::known(F::from(copy_step.value as u64));
                 }
                 if (step_idx / 2) % 32 == 0 {
@@ -1634,7 +1638,6 @@ impl CopyTable {
                 }
                 value_word_write_rlc = value_word_write_rlc * challenges.evm_word()
                     + Value::known(F::from(copy_step.value as u64));
-                // use value_prev.
                 value_word_write_rlc_prev = value_word_write_rlc_prev * challenges.evm_word()
                     + Value::known(F::from(copy_step.prev_value.unwrap_or(0u8) as u64));
             }
@@ -1655,19 +1658,8 @@ impl CopyTable {
 
             // bytes_left (final padding word length )
             let bytes_left = u64::try_from(full_length * 2 - step_idx).unwrap() / 2;
-            // value
-            let value = Value::known(F::from(copy_step.value as u64));
 
             let word_index = (step_idx as u64 / 2) % 32;
-
-            // value_acc
-            if is_read_step && !copy_step.mask {
-                value_acc = value_acc * challenges.keccak_input() + value;
-            }
-
-            // is_pad
-            let addr = if is_read_step { src_addr } else { dst_addr };
-            let is_pad = Value::known(F::from(is_read_step && addr >= copy_event.src_addr_end));
 
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
@@ -1740,14 +1732,13 @@ impl CopyTable {
                     ),
                     (
                         if is_read_step {
-                            copy_rlc_read
+                            src_value_acc
                         } else {
-                            copy_rlc_write
+                            dst_value_acc
                         },
-                        "copy_rlc",
+                        "value_acc",
                     ),
-                    (value_acc, "value_acc"),
-                    (is_pad, "is_pad"),
+                    (Value::known(F::from(is_pad)), "is_pad"),
                     (is_code, "is_code"),
                     (is_mask, "mask"),
                     (
