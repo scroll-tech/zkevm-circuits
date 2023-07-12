@@ -25,41 +25,38 @@ fn test_aggregation_circuit() {
     fs::create_dir(path).unwrap();
 
     // This set up requires one round of keccak for chunk's data hash
-    let circuit = build_new_aggregation_circuit(10);
+    let circuit = build_new_aggregation_circuit(2);
     let instance = circuit.instances();
     let mock_prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
 
-    // let mut rng = test_rng();
-    // let param = gen_srs(22);
+    let mut rng = test_rng();
+    let param = gen_srs(22);
 
-    // let pk = gen_pk(
-    //     &param, &circuit, // Some(&$path.join(Path::new("layer_0.pkey"))),
-    //     None,
-    // );
-    // log::trace!("finished pk generation for circuit");
+    let pk = gen_pk(&param, &circuit, None);
+    log::trace!("finished pk generation for circuit");
 
-    // let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>);
-    // log::trace!("finished snark generation for circuit");
+    let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>);
+    log::trace!("finished snark generation for circuit");
 
-    // assert!(verify_snark_shplonk::<AggregationCircuit>(
-    //     &param,
-    //     snark.clone(),
-    //     pk.get_vk()
-    // ));
-    // log::trace!("finished verification for circuit");
+    assert!(verify_snark_shplonk::<AggregationCircuit>(
+        &param,
+        snark.clone(),
+        pk.get_vk()
+    ));
+    log::trace!("finished verification for circuit");
 
-    // // This set up requires two rounds of keccak for chunk's data hash
-    // let circuit = build_new_aggregation_circuit(5);
-    // let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>);
-    // log::trace!("finished snark generation for circuit");
+    // This set up requires two rounds of keccak for chunk's data hash
+    let circuit = build_new_aggregation_circuit(5);
+    let snark = gen_snark_shplonk(&param, &pk, circuit.clone(), &mut rng, None::<String>);
+    log::trace!("finished snark generation for circuit");
 
-    // assert!(verify_snark_shplonk::<AggregationCircuit>(
-    //     &param,
-    //     snark.clone(),
-    //     pk.get_vk()
-    // ));
-    // log::trace!("finished verification for circuit");
+    assert!(verify_snark_shplonk::<AggregationCircuit>(
+        &param,
+        snark.clone(),
+        pk.get_vk()
+    ));
+    log::trace!("finished verification for circuit");
 }
 
 fn build_new_aggregation_circuit(num_chunks: usize) -> AggregationCircuit {

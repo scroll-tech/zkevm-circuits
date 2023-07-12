@@ -441,6 +441,7 @@ pub(crate) fn is_smaller_than<F: FieldExt>(
 }
 
 #[inline]
+#[allow(dead_code)]
 pub(crate) fn assigned_cell_to_value(
     gate: &FlexGateConfig<Fr>,
     ctx: &mut Context<Fr>,
@@ -515,6 +516,7 @@ pub(crate) fn parse_hash_digest_cells<'a>(
     )
 }
 
+#[allow(dead_code)]
 pub(crate) fn rlc(inputs: &[Fr], randomness: &Fr) -> Fr {
     assert!(inputs.len() > 0);
     let mut acc = inputs[0];

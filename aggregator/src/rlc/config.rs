@@ -1,18 +1,11 @@
 use halo2_proofs::{
-    circuit::{AssignedCell, Region, Value},
     halo2curves::bn256::Fr,
-    plonk::{
-        Advice, Challenge, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector,
-    },
+    plonk::{Advice, Column, ConstraintSystem, SecondPhase, Selector},
     poly::Rotation,
 };
-use snark_verifier::system::halo2::Config;
-use zkevm_circuits::util::Challenges;
 
 #[cfg(test)]
 use halo2_proofs::plonk::FirstPhase;
-
-use crate::constants::LOG_DEGREE;
 
 /// This config is used to compute RLCs for bytes.
 /// It requires a phase 2 column

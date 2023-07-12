@@ -4,7 +4,6 @@ use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
-use itertools::Itertools;
 use rand::Rng;
 use snark_verifier::{
     loader::{
@@ -38,11 +37,10 @@ use crate::{
     constants::{
         CHAIN_ID_LEN, DIGEST_LEN, LOG_DEGREE, MAX_AGG_SNARKS, MAX_KECCAK_ROUNDS, ROUND_LEN,
     },
-    rlc::{self, RlcConfig},
+    rlc::RlcConfig,
     util::{
-        assert_conditional_equal, assert_equal, assert_exist, assigned_cell_to_value,
-        assigned_value_to_cell, capacity, get_indices, is_smaller_than, parse_hash_digest_cells,
-        parse_hash_preimage_cells, rlc,
+        assert_conditional_equal, assert_equal, assert_exist, assigned_value_to_cell, capacity,
+        get_indices, is_smaller_than, parse_hash_digest_cells, parse_hash_preimage_cells,
     },
     AggregationConfig, CHUNK_DATA_HASH_INDEX, POST_STATE_ROOT_INDEX, PREV_STATE_ROOT_INDEX,
     WITHDRAW_ROOT_INDEX,
@@ -97,9 +95,8 @@ pub(crate) fn extract_accumulators_and_proof(
 /// Input the hash input bytes,
 /// assign the circuit for the hash function,
 /// return
-/// - cells of the hash inputs
 /// - cells of the hash digests
-/// - relevant RLC cells
+/// - the cell that contains the number of valid snarks
 //
 // This function asserts the following constraints on the hashes
 //
@@ -119,15 +116,7 @@ pub(crate) fn assign_batch_hashes(
     challenges: Challenges<Value<Fr>>,
     preimages: &[Vec<u8>],
     num_of_valid_chunks: usize,
-) -> Result<
-    (
-        Vec<AssignedCell<Fr, Fr>>,
-        Vec<AssignedCell<Fr, Fr>>,
-        // todo: remove
-        Vec<AssignedCell<Fr, Fr>>,
-    ),
-    Error,
-> {
+) -> Result<(Vec<AssignedCell<Fr, Fr>>, AssignedValue<Fr>), Error> {
     let (hash_input_cells, hash_output_cells, data_rlc_cells) = extract_hash_cells(
         &config.keccak_circuit_config,
         layouter,
@@ -146,7 +135,7 @@ pub(crate) fn assign_batch_hashes(
     // padded
     // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
     // 7. chunk[i]'s data_hash == [0u8; 32] when chunk[i] is padded
-    conditional_constraints(
+    let num_valid_snarks = conditional_constraints(
         &config.rlc_config,
         config.flex_gate(),
         layouter,
@@ -157,7 +146,7 @@ pub(crate) fn assign_batch_hashes(
         num_of_valid_chunks,
     )?;
 
-    Ok((hash_input_cells, hash_output_cells, data_rlc_cells))
+    Ok((hash_output_cells, num_valid_snarks))
 }
 
 pub(crate) fn extract_hash_cells(
@@ -401,9 +390,10 @@ pub(crate) fn conditional_constraints(
     hash_output_cells: &[AssignedCell<Fr, Fr>],
     data_rlc_cells: &[AssignedCell<Fr, Fr>],
     num_of_valid_chunks: usize,
-) -> Result<(), Error> {
+) -> Result<AssignedValue<Fr>, Error> {
     let mut chunk_is_valid_cells = vec![];
     let mut data_hash_flag_cells = vec![];
+    let mut num_of_valid_chunk_cell = vec![];
     let mut first_pass = halo2_base::SKIP_FIRST_PASS;
     layouter
         .assign_region(
@@ -421,18 +411,19 @@ pub(crate) fn conditional_constraints(
                         fixed_columns: flex_gate.constants.clone(),
                     },
                 );
+
+                let number_of_valid_snarks = flex_gate
+                    .load_witness(&mut ctx, Value::known(Fr::from(num_of_valid_chunks as u64)));
                 chunk_is_valid_cells.extend_from_slice(
-                    chunk_is_valid(&flex_gate, &mut ctx, num_of_valid_chunks).as_slice(),
+                    chunk_is_valid(&flex_gate, &mut ctx, &number_of_valid_snarks).as_slice(),
                 );
+                num_of_valid_chunk_cell.push(number_of_valid_snarks);
 
                 // #valid snarks | offset of data hash | flags
                 // 1,2,3,4       | 0                   | 1, 0, 0
                 // 5,6,7,8       | 32                  | 0, 1, 0
                 // 9,10          | 64                  | 0, 0, 1
 
-                // todo: return number_of_valid_snarks cell
-                let number_of_valid_snarks = flex_gate
-                    .load_witness(&mut ctx, Value::known(Fr::from(num_of_valid_chunks as u64)));
                 let four = flex_gate.load_constant(&mut ctx, Fr::from(4));
                 let eight = flex_gate.load_constant(&mut ctx, Fr::from(8));
                 let flag1 = is_smaller_than(&flex_gate, &mut ctx, &number_of_valid_snarks, &four);
@@ -726,7 +717,7 @@ pub(crate) fn conditional_constraints(
             },
         )
         .unwrap();
-    Ok(())
+    Ok(num_of_valid_chunk_cell[0])
 }
 
 /// generate a string of binary cells indicating
@@ -734,15 +725,13 @@ pub(crate) fn conditional_constraints(
 pub(crate) fn chunk_is_valid(
     gate: &FlexGateConfig<Fr>,
     ctx: &mut Context<Fr>,
-    num_of_valid_chunks: usize,
+    num_of_valid_chunks: &AssignedValue<Fr>,
 ) -> [AssignedValue<Fr>; MAX_AGG_SNARKS] {
     let mut res = vec![];
 
-    let threshold = gate.load_witness(ctx, Value::known(Fr::from(num_of_valid_chunks as u64)));
-
     for i in 0..MAX_AGG_SNARKS {
         let value = gate.load_witness(ctx, Value::known(Fr::from(i as u64)));
-        let is_valid = is_smaller_than(&gate, ctx, &value, &threshold);
+        let is_valid = is_smaller_than(&gate, ctx, &value, &num_of_valid_chunks);
         res.push(is_valid);
     }
 

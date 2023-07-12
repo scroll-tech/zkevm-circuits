@@ -1,18 +1,10 @@
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
     halo2curves::bn256::Fr,
-    plonk::{
-        Advice, Challenge, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector,
-    },
-    poly::Rotation,
+    plonk::Error,
 };
-use snark_verifier::system::halo2::Config;
-use zkevm_circuits::util::Challenges;
 
-#[cfg(test)]
-use halo2_proofs::plonk::FirstPhase;
-
-use crate::constants::{DIGEST_LEN, LOG_DEGREE};
+use crate::constants::LOG_DEGREE;
 
 use super::RlcConfig;
 
@@ -66,6 +58,7 @@ impl RlcConfig {
     }
 
     /// Enforce res = a + b
+    #[allow(dead_code)]
     pub(crate) fn add(
         &self,
         region: &mut Region<Fr>,
@@ -205,6 +198,7 @@ impl RlcConfig {
     }
 
     // Returns inputs[0] + challenge * inputs[1] + ... + challenge^k * inputs[k]
+    #[allow(dead_code)]
     pub(crate) fn rlc(
         &self,
         region: &mut Region<Fr>,
@@ -239,6 +233,7 @@ impl RlcConfig {
     }
 
     // padded the columns
+    #[allow(dead_code)]
     pub(crate) fn pad(&self, region: &mut Region<Fr>, offset: &usize) -> Result<(), Error> {
         for index in *offset..(1 << LOG_DEGREE - 1) {
             region.assign_advice(

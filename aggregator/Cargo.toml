@@ -27,4 +27,3 @@ snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", br
 [features]
 default = [ ]
 print-trace = [ "ark-std/print-trace" ]
-wip = []
