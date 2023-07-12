@@ -273,6 +273,13 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         is_tx_tag!(is_hash, TxHash);
         is_tx_tag!(is_block_num, BlockNumber);
 
+        let tx_id_unchanged = IsEqualChip::configure(
+            meta,
+            |meta| meta.query_fixed(q_enable, Rotation::cur()),
+            |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
+            |meta| meta.query_advice(tx_table.tx_id, Rotation::next()),
+        );
+
         // testing if value is zero for tags
         let value_is_zero = IsZeroChip::configure(
             meta,
@@ -321,6 +328,14 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     );
                 },
             );
+
+            cb.condition(tx_id_unchanged.is_equal_expression.expr(), |cb| {
+                cb.require_equal(
+                    "sv_address does not change",
+                    meta.query_advice(sv_address, Rotation::next()),
+                    meta.query_advice(sv_address, Rotation::cur()),
+                );
+            });
 
             cb.gate(and::expr([
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -729,13 +744,6 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         ////////////////////////////////////////////////////////////////////////
         ///////////  CallData length and gas_cost calculation  /////////////////
         ////////////////////////////////////////////////////////////////////////
-        let tx_id_unchanged = IsEqualChip::configure(
-            meta,
-            |meta| meta.query_fixed(q_enable, Rotation::cur()),
-            |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
-            |meta| meta.query_advice(tx_table.tx_id, Rotation::next()),
-        );
-
         meta.lookup("tx_id_diff must in u16", |meta| {
             let q_enable = meta.query_fixed(q_enable, Rotation::next());
             let is_calldata = meta.query_advice(is_calldata, Rotation::cur());
