@@ -532,7 +532,7 @@ impl<F: Field> ModExpOutputs<F> {
             "output acc bytes must equal",
             output_bytes_acc,
             rlc_word_rev(&result, cb.challenges().keccak_input()),
-        );        
+        );
 
         Self {
             result,
