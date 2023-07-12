@@ -204,7 +204,7 @@ impl RlcConfig {
         self.mul_add(region, b, &cond_not, &tmp, offset)
     }
 
-    // Returns inputs[0] + challange * inputs[1] + ... + challenge^k * inputs[k]
+    // Returns inputs[0] + challenge * inputs[1] + ... + challenge^k * inputs[k]
     pub(crate) fn rlc(
         &self,
         region: &mut Region<Fr>,
@@ -219,7 +219,7 @@ impl RlcConfig {
         Ok(acc)
     }
 
-    // Returns inputs[0] + challange * inputs[1] + ... + challenge^k * inputs[k]
+    // Returns inputs[0] + challenge * inputs[1] + ... + challenge^k * inputs[k]
     pub(crate) fn rlc_with_flag(
         &self,
         region: &mut Region<Fr>,

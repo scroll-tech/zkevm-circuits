@@ -403,6 +403,7 @@ pub(crate) fn conditional_constraints(
     num_of_valid_chunks: usize,
 ) -> Result<(), Error> {
     let mut chunk_is_valid_cells = vec![];
+    let mut data_hash_flag_cells = vec![];
     let mut first_pass = halo2_base::SKIP_FIRST_PASS;
     layouter
         .assign_region(
@@ -420,10 +421,32 @@ pub(crate) fn conditional_constraints(
                         fixed_columns: flex_gate.constants.clone(),
                     },
                 );
-                let zero_cell = flex_gate.load_zero(&mut ctx);
                 chunk_is_valid_cells.extend_from_slice(
                     chunk_is_valid(&flex_gate, &mut ctx, num_of_valid_chunks).as_slice(),
                 );
+
+                // #valid snarks | offset of data hash | flags
+                // 1,2,3,4       | 0                   | 1, 0, 0
+                // 5,6,7,8       | 32                  | 0, 1, 0
+                // 9,10          | 64                  | 0, 0, 1
+
+                // todo: return number_of_valid_snarks cell
+                let number_of_valid_snarks = flex_gate
+                    .load_witness(&mut ctx, Value::known(Fr::from(num_of_valid_chunks as u64)));
+                let four = flex_gate.load_constant(&mut ctx, Fr::from(4));
+                let eight = flex_gate.load_constant(&mut ctx, Fr::from(8));
+                let flag1 = is_smaller_than(&flex_gate, &mut ctx, &number_of_valid_snarks, &four);
+                let not_flag1 = flex_gate.not(&mut ctx, QuantumCell::Existing(flag1));
+                let flag2 = is_smaller_than(&flex_gate, &mut ctx, &number_of_valid_snarks, &eight);
+                let flag3 = flex_gate.not(&mut ctx, QuantumCell::Existing(flag2));
+                let flag2 = flex_gate.mul(
+                    &mut ctx,
+                    QuantumCell::Existing(not_flag1),
+                    QuantumCell::Existing(flag2),
+                );
+
+                // flag3 is !flag2 and is omitted
+                data_hash_flag_cells = vec![flag1, flag2, flag3];
                 Ok(())
             },
         )
@@ -478,6 +501,34 @@ pub(crate) fn conditional_constraints(
                 //      chunk[k-1].post_state_root ||
                 //      chunk[k-1].withdraw_root ||
                 //      batch_data_hash )
+                //
+                // #valid snarks | offset of data hash | flags
+                // 1,2,3,4       | 0                   | 1, 0, 0
+                // 5,6,7,8       | 32                  | 0, 1, 0
+                // 9,10          | 64                  | 0, 0, 1
+                let flag1 = assigned_value_to_cell(
+                    &rlc_config,
+                    &mut region,
+                    &data_hash_flag_cells[0],
+                    &mut offset,
+                );
+                let flag2 = assigned_value_to_cell(
+                    &rlc_config,
+                    &mut region,
+                    &data_hash_flag_cells[1],
+                    &mut offset,
+                );
+                let flag3 = assigned_value_to_cell(
+                    &rlc_config,
+                    &mut region,
+                    &data_hash_flag_cells[2],
+                    &mut offset,
+                );
+
+                println!("flag1: {:?}", flag1.value());
+                println!("flag2: {:?}", flag2.value());
+                println!("flag3: {:?}", flag3.value());
+
                 for i in 0..4 {
                     for j in 0..8 {
                         // sanity check
@@ -487,61 +538,37 @@ pub(crate) fn conditional_constraints(
                             &potential_batch_data_hash_digest[(3 - i) * 8 + j + 32],
                             &potential_batch_data_hash_digest[(3 - i) * 8 + j + 64],
                         );
-                        // fixme!
-                        // // convert halo2 proof's cells to halo2-lib's
-                        // let t1 = assigned_cell_to_value(
-                        //     flex_gate,
-                        //     &mut ctx,
-                        //     &batch_pi_hash_preimage[i * 8 + j + CHUNK_DATA_HASH_INDEX],
-                        // );
-                        // let t2 = assigned_cell_to_value(
-                        //     flex_gate,
-                        //     &mut ctx,
-                        //     &potential_batch_data_hash_digest[(3 - i) * 8 + j],
-                        // );
-                        // let t3 = assigned_cell_to_value(
-                        //     flex_gate,
-                        //     &mut ctx,
-                        //     &potential_batch_data_hash_digest[(3 - i) * 8 + j + DIGEST_LEN],
-                        // );
-                        // let t4 = assigned_cell_to_value(
-                        //     flex_gate,
-                        //     &mut ctx,
-                        //     &potential_batch_data_hash_digest[(3 - i) * 8 + j + DIGEST_LEN * 2],
-                        // );
+                        // assert
+                        // batch_pi_hash_preimage[i * 8 + j + CHUNK_DATA_HASH_INDEX]
+                        // = flag1 * potential_batch_data_hash_digest[(3 - i) * 8 + j]
+                        // + flag2 * potential_batch_data_hash_digest[(3 - i) * 8 + j + 32]
+                        // + flag3 * potential_batch_data_hash_digest[(3 - i) * 8 + j + 32]
 
-                        // // assert (t1-t2)*(t1-t3)*(t1-t4)==0
-                        // let t2 = flex_gate.sub(
-                        //     &mut ctx,
-                        //     QuantumCell::Existing(t1),
-                        //     QuantumCell::Existing(t2),
-                        // );
-                        // let t3 = flex_gate.sub(
-                        //     &mut ctx,
-                        //     QuantumCell::Existing(t1),
-                        //     QuantumCell::Existing(t3),
-                        // );
-                        // let t4 = flex_gate.sub(
-                        //     &mut ctx,
-                        //     QuantumCell::Existing(t1),
-                        //     QuantumCell::Existing(t4),
-                        // );
+                        let rhs = rlc_config.mul(
+                            &mut region,
+                            &flag1,
+                            &potential_batch_data_hash_digest[(3 - i) * 8 + j],
+                            &mut offset,
+                        )?;
+                        let rhs = rlc_config.mul_add(
+                            &mut region,
+                            &flag2,
+                            &potential_batch_data_hash_digest[(3 - i) * 8 + j + 32],
+                            &rhs,
+                            &mut offset,
+                        )?;
+                        let rhs = rlc_config.mul_add(
+                            &mut region,
+                            &flag3,
+                            &potential_batch_data_hash_digest[(3 - i) * 8 + j + 64],
+                            &rhs,
+                            &mut offset,
+                        )?;
 
-                        // let t1 = flex_gate.mul(
-                        //     &mut ctx,
-                        //     QuantumCell::Existing(t2),
-                        //     QuantumCell::Existing(t3),
-                        // );
-                        // let t1 = flex_gate.mul(
-                        //     &mut ctx,
-                        //     QuantumCell::Existing(t1),
-                        //     QuantumCell::Existing(t4),
-                        // );
-                        // flex_gate.assert_equal(
-                        //     &mut ctx,
-                        //     QuantumCell::Existing(t1),
-                        //     QuantumCell::Existing(zero_cell),
-                        // );
+                        region.constrain_equal(
+                            batch_pi_hash_preimage[i * 8 + j + CHUNK_DATA_HASH_INDEX].cell(),
+                            rhs.cell(),
+                        )?;
                     }
                 }
 
@@ -562,20 +589,6 @@ pub(crate) fn conditional_constraints(
                 let challenge_cell =
                     rlc_config.load_private(&mut region, &randomness, &mut offset)?;
 
-                // let inputs = potential_batch_data_hash_preimage
-                //     .iter()
-                //     .enumerate()
-                //     .take(DIGEST_LEN * MAX_AGG_SNARKS)
-                //     .map(|(i, cell)| {
-                //         let mut a = Fr::default();
-                //         cell.value().map(|&x| a = x);
-                //         a
-                //     })
-                //     .collect_vec();
-
-                // for (i, e) in data_rlc_cells.iter().enumerate() {
-                //     println!("rlc {} {:?}", i, e.value());
-                // }
                 let flags = chunk_is_valid_cells
                     .iter()
                     .map(|cell| vec![cell; 32])
@@ -590,17 +603,46 @@ pub(crate) fn conditional_constraints(
                     &flags,
                     &mut offset,
                 )?;
-                println!("rlc from chip {:?}", rlc_cell.value());
-                println!("rlc from table {:?}", data_rlc_cells[23].value());
-                println!("rlc from table {:?}", data_rlc_cells[24].value());
-                println!("rlc from table {:?}", data_rlc_cells[25].value());
 
-                let t1 =
-                    rlc_config.sub(&mut region, &rlc_cell, &data_rlc_cells[23], &mut offset)?;
-                let t2 =
-                    rlc_config.sub(&mut region, &rlc_cell, &data_rlc_cells[24], &mut offset)?;
-                let t3 =
-                    rlc_config.sub(&mut region, &rlc_cell, &data_rlc_cells[25], &mut offset)?;
+                assert_exist(
+                    &rlc_cell,
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 3],
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 4],
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 5],
+                );
+                log::trace!("rlc from chip {:?}", rlc_cell.value());
+                log::trace!(
+                    "rlc from table {:?}",
+                    data_rlc_cells[MAX_AGG_SNARKS * 2 + 3].value()
+                );
+                log::trace!(
+                    "rlc from table {:?}",
+                    data_rlc_cells[MAX_AGG_SNARKS * 2 + 4].value()
+                );
+                log::trace!(
+                    "rlc from table {:?}",
+                    data_rlc_cells[MAX_AGG_SNARKS * 2 + 5].value()
+                );
+
+                // assert
+                let t1 = rlc_config.sub(
+                    &mut region,
+                    &rlc_cell,
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 3],
+                    &mut offset,
+                )?;
+                let t2 = rlc_config.sub(
+                    &mut region,
+                    &rlc_cell,
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 4],
+                    &mut offset,
+                )?;
+                let t3 = rlc_config.sub(
+                    &mut region,
+                    &rlc_cell,
+                    &data_rlc_cells[MAX_AGG_SNARKS * 2 + 5],
+                    &mut offset,
+                )?;
                 let t1t2 = rlc_config.mul(&mut region, &t1, &t2, &mut offset)?;
                 let t1t2t3 = rlc_config.mul(&mut region, &t1t2, &t3, &mut offset)?;
                 rlc_config.enforce_zero(&mut region, &t1t2t3, &mut offset)?;
