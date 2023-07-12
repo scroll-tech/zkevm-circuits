@@ -1,6 +1,8 @@
 //! Definition of each opcode of the EVM.
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
     error::{
         ContractAddressCollisionError, DepthError, ExecError, InsufficientBalanceError,
         NonceUintOverflowError, OogError,
@@ -17,7 +19,7 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{
     evm_types::{gas_utils::tx_data_gas_cost, GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
-    evm_unimplemented, GethExecStep, GethExecTrace, ToAddress, ToWord, Word,
+    evm_unimplemented, Bytecode, GethExecStep, GethExecTrace, ToAddress, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
 
@@ -619,6 +621,7 @@ pub fn gen_begin_tx_ops(
     // to the Keccak circuit, so that the BeginTxGadget can do a lookup to the
     // Keccak table and verify the contract address.
     if state.tx.is_create() {
+        // 1. add RLP-bytes for contract address to keccak circuit.
         state.block.sha3_inputs.push({
             let mut stream = ethers_core::utils::rlp::RlpStream::new();
             stream.begin_list(2);
@@ -626,6 +629,32 @@ pub fn gen_begin_tx_ops(
             stream.append(&nonce_prev);
             stream.out().to_vec()
         });
+        // 2. add init code to keccak circuit.
+        let init_code = state.tx.input.as_slice();
+        state.block.sha3_inputs.push(init_code.to_vec());
+        // 3. add init code to copy circuit.
+        let code_hash = CodeDB::hash(init_code);
+        let bytes = Bytecode::from(init_code.to_vec())
+            .code
+            .iter()
+            .map(|element| (element.value, element.is_code))
+            .collect::<Vec<(u8, bool)>>();
+        let rw_counter_start = state.block_ctx.rwc;
+        state.push_copy(
+            &mut exec_step,
+            CopyEvent {
+                src_addr: 0,
+                src_addr_end: init_code.len() as u64,
+                src_type: CopyDataType::TxCalldata,
+                src_id: NumberOrHash::Number(state.tx_ctx.id()),
+                dst_addr: 0,
+                dst_type: CopyDataType::Bytecode,
+                dst_id: NumberOrHash::Hash(code_hash),
+                log_id: None,
+                rw_counter_start,
+                bytes,
+            },
+        );
     }
 
     // There are 4 branches from here.
