@@ -322,7 +322,7 @@ impl<F: Field> ModExpInputs<F> {
         let exp_limbs = Limbs::configure(cb, &exp);
         let modulus_limbs = Limbs::configure(cb, &modulus);
 
-        let input_valid = cb.query_cell();
+        let input_valid = cb.query_bool();
         cb.require_equal(
             "mark input valid by checking 3 lens is valid",
             input_valid.expr(),
@@ -388,7 +388,7 @@ impl<F: Field> ModExpInputs<F> {
         );
 
         cb.require_equal(
-            "acc bytes must equal",
+            "input acc bytes must equal",
             padding_pow.expr() * input_bytes_acc,
             rlc_word_rev(&modulus, cb.challenges().keccak_input()) //rlc of base
             + modulus_pow.expr() * rlc_word_rev(&exp, cb.challenges().keccak_input()) //rlc of exp plus r**base_len
@@ -528,13 +528,11 @@ impl<F: Field> ModExpOutputs<F> {
         let result = cb.query_bytes();
         let result_limbs = Limbs::configure(cb, &result);
 
-        cb.condition(util::not::expr(is_result_zero.expr()), |cb| {
-            cb.require_equal(
-                "acc bytes must equal",
-                output_bytes_acc,
-                rlc_word_rev(&result, cb.challenges().keccak_input()),
-            );
-        });
+        cb.require_equal(
+            "output acc bytes must equal",
+            output_bytes_acc,
+            rlc_word_rev(&result, cb.challenges().keccak_input()),
+        );        
 
         Self {
             result,
@@ -1067,7 +1065,6 @@ mod test {
         .run();
     }
 
-    #[ignore]
     #[test]
     fn precompile_modexp_test() {
         let call_kinds = vec![
