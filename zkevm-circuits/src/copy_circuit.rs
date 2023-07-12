@@ -334,6 +334,12 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let is_word_end = is_word_end.is_equal_expression.expr();
             let not_word_end = not::expr(is_word_end.expr());
 
+            // Apply the same constraints for the RLCs of words before and after the write.
+            let word_rlc_both = [
+                (value_word_rlc, value),
+                (value_word_rlc_prev, value_prev),
+            ];
+
             // Initial values derived from the event.
             cb.condition(is_first.expr(),
                 |cb| {
@@ -346,13 +352,14 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                             meta.query_advice(value_acc, rot),
                             meta.query_advice(value, rot) * meta.query_advice(non_pad_non_mask, rot),
                         );
-                        
-                        cb.require_equal(
-                            "word_rlc init to the first value",
-                            meta.query_advice(value_word_rlc, rot),
-                            meta.query_advice(value, rot),
-                        );
-                        // TODO: init value_word_rlc_prev
+
+                        for (word_rlc, value) in word_rlc_both {
+                            cb.require_equal(
+                                "word_rlc init to the first value",
+                                meta.query_advice(word_rlc, rot),
+                                meta.query_advice(value, rot),
+                            );
+                        }
                     }
                 },
             );
@@ -370,7 +377,22 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         "word_index increments or resets to 0",
                         inc_or_reset,
                         meta.query_advice(word_index, Rotation(2)),
-                    )
+                    );
+
+                    // Accumulate the next value into the next word_rlc.
+                    for (word_rlc, value) in word_rlc_both {
+                        let current_or_reset = select::expr(is_word_end.expr(),
+                            0.expr(),
+                            meta.query_advice(word_rlc, Rotation::cur()),
+                        );
+                        let value = meta.query_advice(value, Rotation(2));
+                        let accumulated = current_or_reset.expr() * challenges.evm_word() + value;
+                        cb.require_equal(
+                            "value_word_rlc(2) == value_word_rlc(0) * r + value(2)",
+                            accumulated,
+                            meta.query_advice(word_rlc, Rotation(2)),
+                        );
+                    }
                 },
             );
 
@@ -494,8 +516,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                             meta.query_advice(value_acc, Rotation(2)),
                         );
                     }
-
-                    // TODO: Accumulate the next value into the next word_rlc.
                 },
             );
 
