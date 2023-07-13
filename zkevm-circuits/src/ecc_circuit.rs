@@ -25,10 +25,7 @@ use halo2_ecc::{
 use halo2_proofs::{
     arithmetic::Field as Halo2Field,
     circuit::{Layouter, Value},
-    halo2curves::{
-        bn256::{Fq, Fq12, Fr, G1Affine, G2Affine},
-        group::prime::PrimeCurveAffine,
-    },
+    halo2curves::bn256::{Fq, Fq12, Fr, G1Affine, G2Affine},
     plonk::{ConstraintSystem, Error, Expression},
 };
 use itertools::Itertools;
@@ -159,20 +156,6 @@ impl<F: Field> EccCircuit<F> {
             return Err(Error::Synthesis);
         }
 
-        // for each pairing check input, we only allow up to 4 pairs, i.e. 4 * 192 bytes. The aim
-        // is to simplify zkEVM implementation for now, not allowing dynamic length input for
-        // EcPairing precompiled contract call.
-        for pairing_op in self.pairing_ops.iter() {
-            if pairing_op.inputs.len() > 4 {
-                error!(
-                    "pairing check inputs = {} max allowed = {}",
-                    pairing_op.inputs.len(),
-                    4,
-                );
-                return Err(Error::Synthesis);
-            }
-        }
-
         // keccak powers of randomness.
         let keccak_powers = std::iter::successors(Some(Value::known(F::one())), |coeff| {
             Some(challenges.keccak_input() * coeff)
@@ -200,195 +183,42 @@ impl<F: Field> EccCircuit<F> {
 
                 let mut ctx = config.fp_config.new_context(region);
 
+                macro_rules! assign_ec_op {
+                    ($op_type:ident, $ops:expr, $n_ops:expr, $assign_fn:ident) => {
+                        $ops.iter()
+                            .filter(|op| !op.is_zero())
+                            .chain(std::iter::repeat(&$op_type::default()))
+                            .take($n_ops)
+                            .map(|op| {
+                                self.$assign_fn(
+                                    &mut ctx,
+                                    &ecc_chip,
+                                    &fr_chip,
+                                    &pairing_chip,
+                                    &fp12_chip,
+                                    &keccak_powers,
+                                    &op,
+                                )
+                            })
+                            .collect_vec()
+                    };
+                }
+
                 // P + Q == R
-                let ec_adds_assigned = self
-                    .add_ops
-                    .iter()
-                    .filter(|add_op| !add_op.is_zero())
-                    .chain(std::iter::repeat(&EcAddOp::default()))
-                    .take(self.max_add_ops)
-                    .map(|add_op| {
-                        let point_p =
-                            self.assign_g1(&mut ctx, &ecc_chip, add_op.p, keccak_powers.clone());
-                        let point_q =
-                            self.assign_g1(&mut ctx, &ecc_chip, add_op.q, keccak_powers.clone());
-                        let point_r =
-                            self.assign_g1(&mut ctx, &ecc_chip, add_op.r, keccak_powers.clone());
-                        let point_r_got = ecc_chip.sum::<G1Affine>(
-                            &mut ctx,
-                            [
-                                point_p.decomposed.ec_point.clone(),
-                                point_q.decomposed.ec_point.clone(),
-                            ]
-                            .into_iter(),
-                        );
-                        ecc_chip.assert_equal(&mut ctx, &point_r.decomposed.ec_point, &point_r_got);
-                        EcAddAssigned {
-                            point_p,
-                            point_q,
-                            point_r,
-                        }
-                    })
-                    .collect_vec();
+                let ec_adds_assigned =
+                    assign_ec_op!(EcAddOp, self.add_ops, self.max_add_ops, assign_ec_add_op);
 
                 // s.P = R
-                let ec_muls_assigned = self
-                    .mul_ops
-                    .iter()
-                    .filter(|mul_op| !mul_op.is_zero())
-                    .chain(std::iter::repeat(&EcMulOp::default()))
-                    .take(self.max_mul_ops)
-                    .map(|mul_op| {
-                        let point_p =
-                            self.assign_g1(&mut ctx, &ecc_chip, mul_op.p, keccak_powers.clone());
-                        let scalar_s =
-                            self.assign_fr(&mut ctx, &fr_chip, mul_op.s, keccak_powers.clone());
-                        let point_r =
-                            self.assign_g1(&mut ctx, &ecc_chip, mul_op.r, keccak_powers.clone());
-                        let point_r_got = ecc_chip.scalar_mult(
-                            &mut ctx,
-                            &point_p.decomposed.ec_point,
-                            &scalar_s.decomposed.scalar.limbs().to_vec(),
-                            fr_chip.limb_bits,
-                            4, // TODO: window bits?
-                        );
-                        ecc_chip.assert_equal(&mut ctx, &point_r.decomposed.ec_point, &point_r_got);
-                        EcMulAssigned {
-                            point_p,
-                            scalar_s,
-                            point_r,
-                        }
-                    })
-                    .collect_vec();
+                let ec_muls_assigned =
+                    assign_ec_op!(EcMulOp, self.mul_ops, self.max_mul_ops, assign_ec_mul_op);
 
                 // e(G1 . G2) * ... * e(G1 . G2) -> Gt
-                // Note: maximum 4 pairings per pairing op.
-                let ec_pairings_assigned = self
-                    .pairing_ops
-                    .iter()
-                    .filter(|pairing_op| !pairing_op.is_zero())
-                    .chain(std::iter::repeat(&EcPairingOp::default()))
-                    .take(self.max_pairing_ops)
-                    .map(|pairing_op| {
-                        let g1s = pairing_op
-                            .inputs
-                            .iter()
-                            .map(|i| {
-                                let (x_cells, y_cells) = self.decompose_g1(i.0);
-                                let decomposed = G1Decomposed {
-                                    ec_point: pairing_chip
-                                        .load_private_g1(&mut ctx, Value::known(i.0)),
-                                    is_identity: i.0.is_identity().into(),
-                                    x_cells: x_cells.clone(),
-                                    y_cells: y_cells.clone(),
-                                };
-                                G1Assigned {
-                                    decomposed,
-                                    x_rlc: pairing_chip.fp_chip.range.gate.inner_product(
-                                        &mut ctx,
-                                        x_cells,
-                                        keccak_powers.clone(),
-                                    ),
-                                    y_rlc: pairing_chip.fp_chip.range.gate.inner_product(
-                                        &mut ctx,
-                                        y_cells,
-                                        keccak_powers.clone(),
-                                    ),
-                                }
-                            })
-                            .collect_vec();
-                        let g2s = pairing_op
-                            .inputs
-                            .iter()
-                            .map(|i| {
-                                let [x_c0_cells, x_c1_cells, y_c0_cells, y_c1_cells] =
-                                    self.decompose_g2(i.1);
-                                let decomposed = G2Decomposed {
-                                    ec_point: pairing_chip
-                                        .load_private_g2(&mut ctx, Value::known(i.1)),
-                                    is_identity: i.1.is_identity().into(),
-                                    x_c0_cells: x_c0_cells.clone(),
-                                    x_c1_cells: x_c1_cells.clone(),
-                                    y_c0_cells: y_c0_cells.clone(),
-                                    y_c1_cells: y_c1_cells.clone(),
-                                };
-                                G2Assigned {
-                                    decomposed,
-                                    x_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
-                                        &mut ctx,
-                                        x_c0_cells,
-                                        keccak_powers.clone(),
-                                    ),
-                                    x_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
-                                        &mut ctx,
-                                        x_c1_cells,
-                                        keccak_powers.clone(),
-                                    ),
-                                    y_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
-                                        &mut ctx,
-                                        y_c0_cells,
-                                        keccak_powers.clone(),
-                                    ),
-                                    y_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
-                                        &mut ctx,
-                                        y_c1_cells,
-                                        keccak_powers.clone(),
-                                    ),
-                                }
-                            })
-                            .collect_vec();
-
-                        // RLC over the entire input bytes.
-                        let input_cells = std::iter::empty()
-                            .chain(g1s.iter().map(|g1| g1.decomposed.x_cells.clone()))
-                            .chain(g1s.iter().map(|g1| g1.decomposed.y_cells.clone()))
-                            .chain(g2s.iter().map(|g2| g2.decomposed.x_c0_cells.clone()))
-                            .chain(g2s.iter().map(|g2| g2.decomposed.x_c1_cells.clone()))
-                            .chain(g2s.iter().map(|g2| g2.decomposed.y_c0_cells.clone()))
-                            .chain(g2s.iter().map(|g2| g2.decomposed.y_c1_cells.clone()))
-                            .flatten()
-                            .collect::<Vec<QuantumCell<F>>>();
-                        let input_rlc = pairing_chip.fp_chip.range.gate.inner_product(
-                            &mut ctx,
-                            input_cells,
-                            keccak_powers.clone(),
-                        );
-
-                        let pairs = g1s
-                            .iter()
-                            .zip(g2s.iter())
-                            .map(|(g1, g2)| (&g1.decomposed.ec_point, &g2.decomposed.ec_point))
-                            .collect_vec();
-
-                        let success = {
-                            let gt = {
-                                let gt = pairing_chip.multi_miller_loop(&mut ctx, pairs);
-                                fp12_chip.final_exp(&mut ctx, &gt)
-                            };
-                            // whether pairing check was successful.
-                            let one = fp12_chip.load_constant(&mut ctx, Fq12::one());
-                            fp12_chip.is_equal(&mut ctx, &gt, &one)
-                        };
-
-                        ecc_chip.field_chip().range().gate().assert_equal(
-                            &mut ctx,
-                            QuantumCell::Existing(success),
-                            QuantumCell::Witness(Value::known(
-                                pairing_op
-                                    .output
-                                    .to_scalar()
-                                    .expect("EcPairing output = {0, 1}"),
-                            )),
-                        );
-
-                        EcPairingAssigned {
-                            g1s,
-                            g2s,
-                            input_rlc,
-                            success,
-                        }
-                    })
-                    .collect_vec();
+                let ec_pairings_assigned = assign_ec_op!(
+                    EcPairingOp,
+                    self.pairing_ops,
+                    self.max_pairing_ops,
+                    assign_ec_pairing_op
+                );
 
                 Ok(EcOpsAssigned {
                     ec_adds_assigned,
@@ -551,18 +381,198 @@ impl<F: Field> EccCircuit<F> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn assign_ec_add_op(
+        &self,
+        ctx: &mut Context<F>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
+        _fr_chip: &FpConfig<F, Fr>,
+        _pairing_chip: &PairingChip<F>,
+        _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, 9>,
+        powers_of_rand: &[QuantumCell<F>],
+        op: &EcAddOp,
+    ) -> EcAddAssigned<F> {
+        let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_rand);
+        let point_q = self.assign_g1(ctx, ecc_chip, op.q, powers_of_rand);
+        let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_rand);
+        let point_r_got = ecc_chip.sum::<G1Affine>(
+            ctx,
+            [
+                point_p.decomposed.ec_point.clone(),
+                point_q.decomposed.ec_point.clone(),
+            ]
+            .into_iter(),
+        );
+        ecc_chip.assert_equal(ctx, &point_r.decomposed.ec_point, &point_r_got);
+        EcAddAssigned {
+            point_p,
+            point_q,
+            point_r,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign_ec_mul_op(
+        &self,
+        ctx: &mut Context<F>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
+        fr_chip: &FpConfig<F, Fr>,
+        _pairing_chip: &PairingChip<F>,
+        _fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, 9>,
+        powers_of_rand: &[QuantumCell<F>],
+        op: &EcMulOp,
+    ) -> EcMulAssigned<F> {
+        let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_rand);
+        let scalar_s = self.assign_fr(ctx, fr_chip, op.s, powers_of_rand);
+        let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_rand);
+        let point_r_got = ecc_chip.scalar_mult(
+            ctx,
+            &point_p.decomposed.ec_point,
+            &scalar_s.decomposed.scalar.limbs().to_vec(),
+            fr_chip.limb_bits,
+            4, // TODO: window bits?
+        );
+        ecc_chip.assert_equal(ctx, &point_r.decomposed.ec_point, &point_r_got);
+        EcMulAssigned {
+            point_p,
+            scalar_s,
+            point_r,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign_ec_pairing_op(
+        &self,
+        ctx: &mut Context<F>,
+        ecc_chip: &EccChip<F, FpConfig<F, Fq>>,
+        _fr_chip: &FpConfig<F, Fr>,
+        pairing_chip: &PairingChip<F>,
+        fp12_chip: &Fp12Chip<F, FpConfig<F, Fq>, Fq12, 9>,
+        powers_of_rand: &[QuantumCell<F>],
+        op: &EcPairingOp,
+    ) -> EcPairingAssigned<F> {
+        let g1s = op
+            .inputs
+            .iter()
+            .map(|i| {
+                let (x_cells, y_cells) = self.decompose_g1(i.0);
+                let decomposed = G1Decomposed {
+                    ec_point: pairing_chip.load_private_g1(ctx, Value::known(i.0)),
+                    x_cells: x_cells.clone(),
+                    y_cells: y_cells.clone(),
+                };
+                G1Assigned {
+                    decomposed,
+                    x_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                        ctx,
+                        x_cells,
+                        powers_of_rand.iter().cloned(),
+                    ),
+                    y_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                        ctx,
+                        y_cells,
+                        powers_of_rand.iter().cloned(),
+                    ),
+                }
+            })
+            .collect_vec();
+        let g2s = op
+            .inputs
+            .iter()
+            .map(|i| {
+                let [x_c0_cells, x_c1_cells, y_c0_cells, y_c1_cells] = self.decompose_g2(i.1);
+                let decomposed = G2Decomposed {
+                    ec_point: pairing_chip.load_private_g2(ctx, Value::known(i.1)),
+                    x_c0_cells: x_c0_cells.clone(),
+                    x_c1_cells: x_c1_cells.clone(),
+                    y_c0_cells: y_c0_cells.clone(),
+                    y_c1_cells: y_c1_cells.clone(),
+                };
+                G2Assigned {
+                    decomposed,
+                    x_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                        ctx,
+                        x_c0_cells,
+                        powers_of_rand.iter().cloned(),
+                    ),
+                    x_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                        ctx,
+                        x_c1_cells,
+                        powers_of_rand.iter().cloned(),
+                    ),
+                    y_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                        ctx,
+                        y_c0_cells,
+                        powers_of_rand.iter().cloned(),
+                    ),
+                    y_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                        ctx,
+                        y_c1_cells,
+                        powers_of_rand.iter().cloned(),
+                    ),
+                }
+            })
+            .collect_vec();
+
+        // RLC over the entire input bytes.
+        let input_cells = std::iter::empty()
+            .chain(g1s.iter().map(|g1| g1.decomposed.x_cells.clone()))
+            .chain(g1s.iter().map(|g1| g1.decomposed.y_cells.clone()))
+            .chain(g2s.iter().map(|g2| g2.decomposed.x_c0_cells.clone()))
+            .chain(g2s.iter().map(|g2| g2.decomposed.x_c1_cells.clone()))
+            .chain(g2s.iter().map(|g2| g2.decomposed.y_c0_cells.clone()))
+            .chain(g2s.iter().map(|g2| g2.decomposed.y_c1_cells.clone()))
+            .flatten()
+            .collect::<Vec<QuantumCell<F>>>();
+        let input_rlc = pairing_chip.fp_chip.range.gate.inner_product(
+            ctx,
+            input_cells,
+            powers_of_rand.iter().cloned(),
+        );
+
+        let pairs = g1s
+            .iter()
+            .zip(g2s.iter())
+            .map(|(g1, g2)| (&g1.decomposed.ec_point, &g2.decomposed.ec_point))
+            .collect_vec();
+
+        let success = {
+            let gt = {
+                let gt = pairing_chip.multi_miller_loop(ctx, pairs);
+                fp12_chip.final_exp(ctx, &gt)
+            };
+            // whether pairing check was successful.
+            let one = fp12_chip.load_constant(ctx, Fq12::one());
+            fp12_chip.is_equal(ctx, &gt, &one)
+        };
+
+        ecc_chip.field_chip().range().gate().assert_equal(
+            ctx,
+            QuantumCell::Existing(success),
+            QuantumCell::Witness(Value::known(
+                op.output.to_scalar().expect("EcPairing output = {0, 1}"),
+            )),
+        );
+
+        EcPairingAssigned {
+            g1s,
+            g2s,
+            input_rlc,
+            success,
+        }
+    }
+
     fn assign_g1(
         &self,
         ctx: &mut Context<F>,
         fp_chip: &EccChip<F, FpConfig<F, Fq>>,
         g1: G1Affine,
-        powers_of_rand: Vec<QuantumCell<F>>,
+        powers_of_rand: &[QuantumCell<F>],
     ) -> G1Assigned<F> {
         let ec_point = fp_chip.load_private(ctx, (Value::known(g1.x), Value::known(g1.y)));
         let (x_cells, y_cells) = self.decompose_g1(g1);
         let decomposed = G1Decomposed {
             ec_point,
-            is_identity: g1.is_identity().into(),
             x_cells: x_cells.clone(),
             y_cells: x_cells.clone(),
         };
@@ -571,13 +581,13 @@ impl<F: Field> EccCircuit<F> {
             x_rlc: fp_chip.field_chip().range.gate.inner_product(
                 ctx,
                 x_cells,
-                powers_of_rand.clone(),
+                powers_of_rand.iter().cloned(),
             ),
-            y_rlc: fp_chip
-                .field_chip()
-                .range
-                .gate
-                .inner_product(ctx, y_cells, powers_of_rand),
+            y_rlc: fp_chip.field_chip().range.gate.inner_product(
+                ctx,
+                y_cells,
+                powers_of_rand.iter().cloned(),
+            ),
         }
     }
 
@@ -624,7 +634,7 @@ impl<F: Field> EccCircuit<F> {
         ctx: &mut Context<F>,
         fr_chip: &FpConfig<F, Fr>,
         s: Fr,
-        powers_of_rand: Vec<QuantumCell<F>>,
+        powers_of_rand: &[QuantumCell<F>],
     ) -> ScalarAssigned<F> {
         let scalar = fr_chip.load_private(ctx, FpConfig::<F, Fr>::fe_to_witness(&Value::known(s)));
         let cells = s
@@ -638,7 +648,10 @@ impl<F: Field> EccCircuit<F> {
         };
         ScalarAssigned {
             decomposed,
-            rlc: fr_chip.range.gate.inner_product(ctx, cells, powers_of_rand),
+            rlc: fr_chip
+                .range
+                .gate
+                .inner_product(ctx, cells, powers_of_rand.iter().cloned()),
         }
     }
 }
