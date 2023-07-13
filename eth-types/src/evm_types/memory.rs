@@ -344,10 +344,16 @@ impl Memory {
 
     /// Resize the memory for at least length and align to 32 bytes.
     pub fn extend_at_least(&mut self, minimal_length: usize) {
-        let memory_size = (minimal_length + 31) / 32 * 32;
+        let memory_size = Self::align_length(minimal_length);
         if memory_size > self.0.len() {
             self.0.resize(memory_size, 0);
         }
+    }
+
+    /// Calculate the aligned memory length (will be extended) by an expected length
+    /// (no change for current memory).
+    pub fn length_to_extend(&self, expected_length: usize) -> usize {
+        self.0.len().max(Self::align_length(expected_length))
     }
 
     /// Resize the memory for at least `offset+length` and align to 32 bytes, except if `length=0`
@@ -395,6 +401,12 @@ impl Memory {
                 dst_slice[..actual_length].copy_from_slice(src_slice);
             }
         }
+    }
+
+    /// Calculate memory length aligned to 32 bytes.
+    #[inline(always)]
+    pub fn align_length(len: usize) -> usize {
+        (len + 31) / 32 * 32
     }
 }
 
@@ -490,7 +502,7 @@ impl MemoryWordRange {
         let shift = offset % 32;
         let slot = offset - shift;
 
-        let slot_end = (offset + length + 31) / 32 * 32;
+        let slot_end = Memory::align_length(offset + length);
         let full_length = if length == 0 { 0 } else { slot_end - slot };
 
         Self::new(slot, full_length, length, shift)
