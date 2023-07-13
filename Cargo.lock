@@ -1288,7 +1288,7 @@ dependencies = [
  "crypto-bigint",
  "der",
  "digest 0.10.7",
- "ff 0.12.1",
+ "ff",
  "generic-array 0.14.7",
  "group",
  "pkcs8",
@@ -1777,17 +1777,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ff"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ded41244b729663b1e574f1b4fb731469f69f79c17667b5d776b16cda0479449"
-dependencies = [
- "bitvec 1.0.1",
- "rand_core",
- "subtle",
-]
-
-[[package]]
 name = "fixed-hash"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2138,7 +2127,7 @@ version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5dfbfb3a6cfbd390d5c9564ab283a0349b9b9fcd46a706c1eb10e0db70bfbac7"
 dependencies = [
- "ff 0.12.1",
+ "ff",
  "rand_core",
  "subtle",
 ]
@@ -2173,7 +2162,7 @@ name = "halo2-base"
 version = "0.2.2"
 source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#2c225864227e74b207d9f4b9e08c4d5f1afc69a1"
 dependencies = [
- "ff 0.12.1",
+ "ff",
  "halo2_proofs",
  "itertools",
  "num-bigint",
@@ -2188,7 +2177,7 @@ name = "halo2-ecc"
 version = "0.2.2"
 source = "git+https://github.com/scroll-tech/halo2-lib?branch=develop#2c225864227e74b207d9f4b9e08c4d5f1afc69a1"
 dependencies = [
- "ff 0.12.1",
+ "ff",
  "group",
  "halo2-base",
  "itertools",
@@ -2205,9 +2194,8 @@ dependencies = [
 [[package]]
 name = "halo2-gate-generator"
 version = "0.1.0"
-source = "git+https://github.com/DelphinusLab/halo2gategen.git?branch=main#506f904a2e678c5e7a3f9ea2ba2e7c78b126fc7a"
+source = "git+https://github.com/scroll-tech/halo2gategen.git#35b137de2f71c37dfbd236842b868013c46739d1"
 dependencies = [
- "ff 0.13.0",
  "halo2_proofs",
  "lazy_static",
  "num-bigint",
@@ -2251,7 +2239,7 @@ dependencies = [
  "cfg-if 0.1.10",
  "crossbeam",
  "env_logger 0.8.4",
- "ff 0.12.1",
+ "ff",
  "group",
  "halo2curves",
  "log",
@@ -2272,7 +2260,7 @@ name = "halo2curves"
 version = "0.3.1"
 source = "git+https://github.com/scroll-tech/halo2curves.git?branch=0.3.1-derive-serde#969f1e44d9713ee4cd552563bd0c762c5d53b56e"
 dependencies = [
- "ff 0.12.1",
+ "ff",
  "group",
  "lazy_static",
  "num-bigint",
@@ -3225,7 +3213,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5cc65faf8e7313b4b1fbaa9f7ca917a0eed499a9663be71477f87993604341d8"
 dependencies = [
  "blake2b_simd",
- "ff 0.12.1",
+ "ff",
  "group",
  "lazy_static",
  "rand",
@@ -4010,7 +3998,7 @@ dependencies = [
 [[package]]
 name = "rmd160-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?branch=integration#0bdc4e4ba6e35d1edec5fc3ff02084615f8bcec1"
+source = "git+https://github.com/scroll-tech/misc-precompiled-circuit.git?branch=integration#31c41ca4365dcf2b6ed4f2cdcd3dc8d2e8f080df"
 dependencies = [
  "halo2-gate-generator",
  "halo2_proofs",
