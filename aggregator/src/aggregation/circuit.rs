@@ -8,18 +8,23 @@ use halo2_proofs::{
 use itertools::Itertools;
 use rand::Rng;
 use snark_verifier::{
-    loader::{
-        halo2::{
-            halo2_ecc::halo2_base::{self, AssignedValue, Context, ContextParams},
-            Halo2Loader,
-        },
-        native::NativeLoader,
-    },
-    pcs::kzg::{Bdfg21, Kzg, KzgAccumulator, KzgSuccinctVerifyingKey},
+    loader::native::NativeLoader,
+    pcs::kzg::{KzgAccumulator, KzgSuccinctVerifyingKey},
     util::arithmetic::fe_to_limbs,
 };
-use snark_verifier_sdk::{aggregate, flatten_accumulator, CircuitExt, Snark, SnarkWitness};
+use snark_verifier_sdk::{CircuitExt, Snark, SnarkWitness};
 use zkevm_circuits::util::Challenges;
+
+#[cfg(not(feature = "disable_proof_aggregation"))]
+use snark_verifier::{
+    loader::halo2::{
+        halo2_ecc::halo2_base::{self, AssignedValue, Context, ContextParams},
+        Halo2Loader,
+    },
+    pcs::kzg::{Bdfg21, Kzg},
+};
+#[cfg(not(feature = "disable_proof_aggregation"))]
+use snark_verifier_sdk::{aggregate, flatten_accumulator};
 
 use crate::{
     batch::BatchHash,
@@ -33,6 +38,7 @@ use super::AggregationConfig;
 
 /// Aggregation circuit that does not re-expose any public inputs from aggregated snarks
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct AggregationCircuit {
     pub(crate) svk: KzgSuccinctVerifyingKey<G1Affine>,
     // the input snarks for the aggregation circuit

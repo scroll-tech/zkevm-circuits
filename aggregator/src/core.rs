@@ -659,18 +659,8 @@ pub(crate) fn conditional_constraints(
                 for (i, chunk_hash_input) in chunk_pi_hash_preimages.iter().enumerate() {
                     for j in 0..DIGEST_LEN {
                         let t1 = &chunk_hash_input[j + CHUNK_DATA_HASH_INDEX];
+                        // constrain t1 == 0 if chunk_is_padding == 1
                         assert_conditional_equal(t1, &zero_cell, &chunk_is_pad[i]);
-                        // // constrain t1 == 0 if chunk_is_padding == 1
-                        // let res = flex_gate.and(
-                        //     &mut ctx,
-                        //     QuantumCell::Existing(t1),
-                        //     QuantumCell::Existing(chunk_is_pad[i]),
-                        // );
-                        // flex_gate.assert_equal(
-                        //     &mut ctx,
-                        //     QuantumCell::Existing(res),
-                        //     QuantumCell::Existing(zero_cell),
-                        // );
                     }
                 }
 
