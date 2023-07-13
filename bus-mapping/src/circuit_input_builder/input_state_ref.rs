@@ -35,7 +35,7 @@ use eth_types::{
 };
 use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
 use log::trace;
-use std::cmp::max;
+use std::{cmp::max, iter::repeat};
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
@@ -1655,37 +1655,53 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: impl Into<MemoryAddress>,
         src_addr_end: impl Into<MemoryAddress>,
         bytes_left: impl Into<MemoryAddress>,
-        memory_updated: &Memory,
     ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
-        let src_addr = src_addr.into();
-        let dst_addr = dst_addr.into();
-        let src_addr_end = src_addr_end.into();
-        let bytes_left = bytes_left.into();
+        let src_addr = src_addr.into().0;
+        let dst_addr = dst_addr.into().0;
+        let src_addr_end = src_addr_end.into().0;
+        let bytes_left = bytes_left.into().0;
+        let src_copy_end = src_addr + bytes_left;
+        let dst_copy_end = dst_addr + bytes_left;
 
         if bytes_left == 0 {
             return Ok((vec![], vec![]));
         }
 
-        let dst_range = MemoryWordRange::align_range(dst_addr, bytes_left);
-        let code_slot_bytes = memory_updated.read_chunk(dst_range);
+        // Extend call memory.
+        let memory = &mut self.call_ctx_mut()?.memory;
+        memory.extend_for_range(dst_addr.into(), bytes_left.into());
 
-        let dst_begin_slot = dst_range.start_slot();
+        // Align memory range.
+        let dst_range = MemoryWordRange::align_range(dst_addr, bytes_left);
+        let dst_begin_slot = dst_range.start_slot().0;
+        let dst_end_slot = dst_range.end_slot().0.min(memory.len());
+        assert!(dst_begin_slot <= dst_addr && dst_end_slot >= dst_copy_end);
+
+        // Combine the slot bytes.
+        let bytes_to_copy = bytecode.code[src_addr..src_addr_end.min(src_copy_end)]
+            .iter()
+            .map(|b| b.value);
+        let padding_bytes =
+            repeat(0).take(src_copy_end.checked_sub(src_addr_end).unwrap_or_default());
+        let slot_bytes: Vec<u8> = memory[dst_begin_slot..dst_addr]
+            .iter()
+            .cloned()
+            .chain(bytes_to_copy)
+            .chain(padding_bytes)
+            .chain(memory[dst_copy_end..dst_end_slot].iter().cloned())
+            .collect();
+
         let copy_steps = CopyEventStepsBuilder::new()
-            .source(&bytecode.code[..src_addr_end.0])
+            .source(&bytecode.code[..src_addr_end])
             .mapper(|code: &BytecodeElement| (code.value, code.is_code))
-            .padding_byte_getter(|_: &[BytecodeElement], idx| code_slot_bytes[idx])
+            .padding_byte_getter(|_: &[BytecodeElement], idx| slot_bytes[idx])
             .read_offset(src_addr)
             .write_offset(dst_range.shift())
             .step_length(dst_range.full_length())
             .length(bytes_left)
             .build();
         let mut prev_bytes: Vec<u8> = vec![];
-        self.write_chunks(
-            exec_step,
-            &code_slot_bytes,
-            dst_begin_slot.0,
-            &mut prev_bytes,
-        )?;
+        self.write_chunks(exec_step, &slot_bytes, dst_begin_slot, &mut prev_bytes)?;
 
         Ok((copy_steps, prev_bytes))
     }

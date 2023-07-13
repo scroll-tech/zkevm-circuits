@@ -133,23 +133,13 @@ fn gen_copy_event(
         .unwrap_or(u64::MAX)
         .min(src_addr_end);
 
-    let call_ctx = state.call_ctx_mut()?;
-    let memory = &mut call_ctx.memory;
-    memory.extend_for_range(dst_offset, length.into());
-    let memory_updated = {
-        let mut memory_updated = memory.clone();
-        memory_updated.copy_from(dst_offset, code_offset, length.into(), &bytecode.to_vec());
-        memory_updated
-    };
-
     let (copy_steps, prev_bytes) = state.gen_copy_steps_for_bytecode(
         exec_step,
         &bytecode,
-        src_addr as usize,
-        dst_addr as usize,
-        src_addr_end as usize,
-        length as usize,
-        &memory_updated,
+        src_addr,
+        dst_addr,
+        src_addr_end,
+        length,
     )?;
 
     Ok(CopyEvent {
