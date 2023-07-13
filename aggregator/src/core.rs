@@ -110,6 +110,7 @@ pub(crate) fn extract_accumulators_and_proof(
 // 5. batch and all its chunks use a same chain id
 // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
 // 7. chunk[i]'s data_hash == [0u8; 32] when chunk[i] is padded
+#[allow(clippy::type_complexity)]
 pub(crate) fn assign_batch_hashes(
     config: &AggregationConfig,
     layouter: &mut impl Layouter<Fr>,
@@ -149,6 +150,7 @@ pub(crate) fn assign_batch_hashes(
     Ok((hash_output_cells, num_valid_snarks))
 }
 
+#[allow(clippy::type_complexity)]
 pub(crate) fn extract_hash_cells(
     keccak_config: &KeccakCircuitConfig<Fr>,
     layouter: &mut impl Layouter<Fr>,
@@ -180,7 +182,8 @@ pub(crate) fn extract_hash_cells(
     // (3) batchDataHash preimage =
     //      (chunk[0].dataHash || ... || chunk[k-1].dataHash)
     // each part of the preimage is mapped to image by Keccak256
-    let witness = multi_keccak(preimages, challenges, capacity(num_rows)).unwrap();
+    let witness = multi_keccak(preimages, challenges, capacity(num_rows))
+        .map_err(|e| Error::AssertionFailure(format!("multi keccak assignment failed: {e:?}")))?;
     end_timer!(timer);
 
     // extract the indices of the rows for which the preimage and the digest cells lie in
@@ -216,19 +219,13 @@ pub(crate) fn extract_hash_cells(
                     if cur_preimage_index.is_some() && *cur_preimage_index.unwrap() == offset {
                         // 10-th column is Keccak input in Keccak circuit
                         hash_input_cells.push(row[10].clone());
-                        // current_hash_input_cells.push(row[10].clone());
                         cur_preimage_index = preimage_indices_iter.next();
                     }
                     if cur_digest_index.is_some() && *cur_digest_index.unwrap() == offset {
                         // last column is Keccak output in Keccak circuit
-                        hash_output_cells.push(row.last().unwrap().clone());
-                        // current_hash_output_cells.push(row.last().unwrap().clone());
+                        hash_output_cells.push(row.last().unwrap().clone()); // sage unwrap
                         cur_digest_index = digest_indices_iter.next();
                     }
-                    // skip the first (MAX_AGG_SNARKS+1)*2 rounds
-                    // if offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 1)
-                    //     || offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 2)
-                    //     || offset == 300 * ((MAX_AGG_SNARKS + 1) * 2 + 3)
                     if offset % 300 == 0 && offset / 300 < 30 {
                         // second column is data rlc
                         data_rlc_cells.push(row[1].clone());
@@ -247,7 +244,7 @@ pub(crate) fn extract_hash_cells(
                 Ok(())
             },
         )
-        .unwrap();
+        .map_err(|e| Error::AssertionFailure(format!("assign keccak rows: {e}")))?;
     Ok((hash_input_cells, hash_output_cells, data_rlc_cells))
 }
 
@@ -280,7 +277,7 @@ fn copy_constraints(
                     batch_pi_hash_preimage,
                     chunk_pi_hash_preimages,
                     _potential_batch_data_hash_preimage,
-                ) = parse_hash_preimage_cells(&hash_input_cells);
+                ) = parse_hash_preimage_cells(hash_input_cells);
 
                 // ====================================================
                 // Constraint the relations between hash preimages
@@ -357,20 +354,21 @@ fn copy_constraints(
                 }
 
                 // 5 assert hashes use a same chain id
-                for i in 0..MAX_AGG_SNARKS {
-                    for j in 0..CHAIN_ID_LEN {
+                for chunk_pi_hash_preimage in chunk_pi_hash_preimages.iter() {
+                    for (lhs, rhs) in batch_pi_hash_preimage
+                        .iter()
+                        .take(CHAIN_ID_LEN)
+                        .zip(chunk_pi_hash_preimage.iter().take(CHAIN_ID_LEN))
+                    {
                         // sanity check
-                        assert_equal(&batch_pi_hash_preimage[j], &chunk_pi_hash_preimages[i][j]);
-                        region.constrain_equal(
-                            batch_pi_hash_preimage[j].cell(),
-                            chunk_pi_hash_preimages[i][j].cell(),
-                        )?;
+                        assert_equal(lhs, rhs);
+                        region.constrain_equal(lhs.cell(), rhs.cell())?;
                     }
                 }
                 Ok(())
             },
         )
-        .unwrap();
+        .map_err(|e| Error::AssertionFailure(format!("assign keccak rows: {e}")))?;
     Ok(())
 }
 
@@ -380,7 +378,7 @@ fn copy_constraints(
 // 3. batch_data_hash and chunk[i].pi_hash use a same chunk[i].data_hash when chunk[i] is not padded
 // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
 // 7. chunk[i]'s data_hash == [0u8; 32] when chunk[i] is padded
-#[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn conditional_constraints(
     rlc_config: &RlcConfig,
     flex_gate: &FlexGateConfig<Fr>,
@@ -415,7 +413,7 @@ pub(crate) fn conditional_constraints(
                 let number_of_valid_snarks = flex_gate
                     .load_witness(&mut ctx, Value::known(Fr::from(num_of_valid_chunks as u64)));
                 chunk_is_valid_cells.extend_from_slice(
-                    chunk_is_valid(&flex_gate, &mut ctx, &number_of_valid_snarks).as_slice(),
+                    chunk_is_valid(flex_gate, &mut ctx, &number_of_valid_snarks).as_slice(),
                 );
                 num_of_valid_chunk_cell.push(number_of_valid_snarks);
 
@@ -426,9 +424,9 @@ pub(crate) fn conditional_constraints(
 
                 let four = flex_gate.load_constant(&mut ctx, Fr::from(4));
                 let eight = flex_gate.load_constant(&mut ctx, Fr::from(8));
-                let flag1 = is_smaller_than(&flex_gate, &mut ctx, &number_of_valid_snarks, &four);
+                let flag1 = is_smaller_than(flex_gate, &mut ctx, &number_of_valid_snarks, &four);
                 let not_flag1 = flex_gate.not(&mut ctx, QuantumCell::Existing(flag1));
-                let flag2 = is_smaller_than(&flex_gate, &mut ctx, &number_of_valid_snarks, &eight);
+                let flag2 = is_smaller_than(flex_gate, &mut ctx, &number_of_valid_snarks, &eight);
                 let flag3 = flex_gate.not(&mut ctx, QuantumCell::Existing(flag2));
                 let flag2 = flex_gate.mul(
                     &mut ctx,
@@ -441,7 +439,7 @@ pub(crate) fn conditional_constraints(
                 Ok(())
             },
         )
-        .unwrap();
+        .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))?;
 
     let mut first_pass = halo2_base::SKIP_FIRST_PASS;
     layouter
@@ -457,13 +455,13 @@ pub(crate) fn conditional_constraints(
 
                 let chunk_is_valid_cells = chunk_is_valid_cells
                     .iter()
-                    .map(|cell| assigned_value_to_cell(&rlc_config, &mut region, cell, &mut offset))
-                    .collect::<Vec<_>>();
+                    .map(|cell| assigned_value_to_cell(rlc_config, &mut region, cell, &mut offset))
+                    .collect::<Result<Vec<_>, _>>()?;
 
                 let chunk_is_pad = chunk_is_valid_cells
                     .iter()
-                    .map(|cell| rlc_config.not(&mut region, cell, &mut offset).unwrap())
-                    .collect::<Vec<_>>();
+                    .map(|cell| rlc_config.not(&mut region, cell, &mut offset))
+                    .collect::<Result<Vec<_>, _>>()?;
 
                 // ====================================================
                 // parse the hashes
@@ -473,14 +471,14 @@ pub(crate) fn conditional_constraints(
                     batch_pi_hash_preimage,
                     chunk_pi_hash_preimages,
                     potential_batch_data_hash_preimage,
-                ) = parse_hash_preimage_cells(&hash_input_cells);
+                ) = parse_hash_preimage_cells(hash_input_cells);
 
                 // digests
                 let (
                     _batch_pi_hash_digest,
                     _chunk_pi_hash_digests,
                     potential_batch_data_hash_digest,
-                ) = parse_hash_digest_cells(&hash_output_cells);
+                ) = parse_hash_digest_cells(hash_output_cells);
 
                 //
                 // 1 batch_data_hash digest is reused for public input hash
@@ -498,23 +496,23 @@ pub(crate) fn conditional_constraints(
                 // 5,6,7,8       | 32                  | 0, 1, 0
                 // 9,10          | 64                  | 0, 0, 1
                 let flag1 = assigned_value_to_cell(
-                    &rlc_config,
+                    rlc_config,
                     &mut region,
                     &data_hash_flag_cells[0],
                     &mut offset,
-                );
+                )?;
                 let flag2 = assigned_value_to_cell(
-                    &rlc_config,
+                    rlc_config,
                     &mut region,
                     &data_hash_flag_cells[1],
                     &mut offset,
-                );
+                )?;
                 let flag3 = assigned_value_to_cell(
-                    &rlc_config,
+                    rlc_config,
                     &mut region,
                     &data_hash_flag_cells[2],
                     &mut offset,
-                );
+                )?;
 
                 println!("flag1: {:?}", flag1.value());
                 println!("flag2: {:?}", flag2.value());
@@ -533,7 +531,7 @@ pub(crate) fn conditional_constraints(
                         // batch_pi_hash_preimage[i * 8 + j + CHUNK_DATA_HASH_INDEX]
                         // = flag1 * potential_batch_data_hash_digest[(3 - i) * 8 + j]
                         // + flag2 * potential_batch_data_hash_digest[(3 - i) * 8 + j + 32]
-                        // + flag3 * potential_batch_data_hash_digest[(3 - i) * 8 + j + 32]
+                        // + flag3 * potential_batch_data_hash_digest[(3 - i) * 8 + j + 64]
 
                         let rhs = rlc_config.mul(
                             &mut region,
@@ -582,8 +580,7 @@ pub(crate) fn conditional_constraints(
 
                 let flags = chunk_is_valid_cells
                     .iter()
-                    .map(|cell| vec![cell; 32])
-                    .flatten()
+                    .flat_map(|cell| vec![cell; 32])
                     .cloned()
                     .collect::<Vec<_>>();
 
@@ -638,41 +635,6 @@ pub(crate) fn conditional_constraints(
                 let t1t2t3 = rlc_config.mul(&mut region, &t1t2, &t3, &mut offset)?;
                 rlc_config.enforce_zero(&mut region, &t1t2t3, &mut offset)?;
 
-                // for (i, chunk) in potential_batch_data_hash_preimage
-                //     .iter()
-                //     .take(DIGEST_LEN * 5) // fixme
-                //     .chunks(DIGEST_LEN)
-                //     .into_iter()
-                //     .enumerate()
-                // {
-                //     for (j, cell) in chunk.into_iter().enumerate() {
-                //         // convert halo2 proof's cells to halo2-lib's
-                //         let t1 = assgined_cell_to_value(flex_gate, &mut ctx, &cell);
-                //         let t2 = assgined_cell_to_value(
-                //             flex_gate,
-                //             &mut ctx,
-                //             &chunk_pi_hash_preimages[i][j + CHUNK_DATA_HASH_INDEX],
-                //         );
-                //         assert_conditional_equal(&t1, &t2, &chunk_is_valid[i]);
-
-                //         // assert (t1 - t2) * chunk_is_valid[i] == 0
-                //         let t1_sub_t2 = flex_gate.sub(
-                //             &mut ctx,
-                //             QuantumCell::Existing(t1),
-                //             QuantumCell::Existing(t2),
-                //         );
-                //         let res = flex_gate.mul(
-                //             &mut ctx,
-                //             QuantumCell::Existing(t1_sub_t2),
-                //             QuantumCell::Existing(chunk_is_valid[i]),
-                //         );
-                //         flex_gate.assert_equal(
-                //             &mut ctx,
-                //             QuantumCell::Existing(res),
-                //             QuantumCell::Existing(zero_cell),
-                //         );
-                //     }
-                // }
                 // 6. chunk[i]'s prev_state_root == post_state_root when chunk[i] is padded
                 for (i, chunk_hash_input) in chunk_pi_hash_preimages.iter().enumerate() {
                     for j in 0..DIGEST_LEN {
@@ -681,8 +643,7 @@ pub(crate) fn conditional_constraints(
 
                         assert_conditional_equal(t1, t2, &chunk_is_pad[i]);
                         // assert (t1 - t2) * chunk_is_padding == 0
-
-                        let t1_sub_t2 = rlc_config.sub(&mut region, &t1, &t2, &mut offset)?;
+                        let t1_sub_t2 = rlc_config.sub(&mut region, t1, t2, &mut offset)?;
                         let res = rlc_config.mul(
                             &mut region,
                             &t1_sub_t2,
@@ -698,7 +659,7 @@ pub(crate) fn conditional_constraints(
                 for (i, chunk_hash_input) in chunk_pi_hash_preimages.iter().enumerate() {
                     for j in 0..DIGEST_LEN {
                         let t1 = &chunk_hash_input[j + CHUNK_DATA_HASH_INDEX];
-                        assert_conditional_equal(&t1, &zero_cell, &chunk_is_pad[i]);
+                        assert_conditional_equal(t1, &zero_cell, &chunk_is_pad[i]);
                         // // constrain t1 == 0 if chunk_is_padding == 1
                         // let res = flex_gate.and(
                         //     &mut ctx,
@@ -716,7 +677,7 @@ pub(crate) fn conditional_constraints(
                 Ok(())
             },
         )
-        .unwrap();
+        .map_err(|e| Error::AssertionFailure(format!("aggregation: {e}")))?;
     Ok(num_of_valid_chunk_cell[0])
 }
 
@@ -731,7 +692,7 @@ pub(crate) fn chunk_is_valid(
 
     for i in 0..MAX_AGG_SNARKS {
         let value = gate.load_witness(ctx, Value::known(Fr::from(i as u64)));
-        let is_valid = is_smaller_than(&gate, ctx, &value, &num_of_valid_chunks);
+        let is_valid = is_smaller_than(gate, ctx, &value, num_of_valid_chunks);
         res.push(is_valid);
     }
 

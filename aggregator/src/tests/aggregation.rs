@@ -107,4 +107,5 @@ fn build_new_aggregation_circuit(num_chunks: usize) -> AggregationCircuit {
         rng,
         batch_hash,
     )
+    .unwrap()
 }

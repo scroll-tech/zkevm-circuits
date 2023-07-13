@@ -208,7 +208,7 @@ impl RlcConfig {
     ) -> Result<AssignedCell<Fr, Fr>, Error> {
         let mut acc = inputs[0].clone();
         for input in inputs.iter().skip(1) {
-            acc = self.mul_add(region, &acc, &challenge, input, offset)?;
+            acc = self.mul_add(region, &acc, challenge, input, offset)?;
         }
         Ok(acc)
     }
@@ -226,7 +226,7 @@ impl RlcConfig {
 
         let mut acc = inputs[0].clone();
         for (input, flag) in inputs.iter().zip(flags.iter()).skip(1) {
-            let tmp = self.mul_add(region, &acc, &challenge, input, offset)?;
+            let tmp = self.mul_add(region, &acc, challenge, input, offset)?;
             acc = self.select(region, &tmp, &acc, flag, offset)?;
         }
         Ok(acc)
@@ -235,7 +235,7 @@ impl RlcConfig {
     // padded the columns
     #[allow(dead_code)]
     pub(crate) fn pad(&self, region: &mut Region<Fr>, offset: &usize) -> Result<(), Error> {
-        for index in *offset..(1 << LOG_DEGREE - 1) {
+        for index in *offset..(1 << LOG_DEGREE) - 1 {
             region.assign_advice(
                 || "pad",
                 self.phase_2_column,

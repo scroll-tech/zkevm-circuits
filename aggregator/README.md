@@ -141,9 +141,11 @@ In the above example, we have `k = 2` valid chunks, and `3` dummy chunks.
 There will be three configurations for Aggregation circuit.
 - FpConfig; used for snark aggregation
 - KeccakConfig: used to build keccak table
+- RlcConfig: used to compute RLC of hash inputs
 
 ### Public Input
 The public input of the aggregation circuit consists of
+- 12 elements from accumulator
 - 32 elements of `batch_pi_hash`
 - 1 element of `k`
 
@@ -164,6 +166,8 @@ and `batch_pi_hash` matches public input.
 for i in 1 ... __n__
     chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root || chunk_data_hash)
 ```
+
+This is done by compute the RLCs of chunk[i]'s data_hash for `i=0..k`, and then check the RLC matches the one from the keccak table.
 
 4. chunks are continuous: they are linked via the state roots. __Static__.
 

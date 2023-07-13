@@ -56,7 +56,7 @@ impl AggregationCircuit {
         snarks_with_padding: &[Snark],
         rng: impl Rng + Send,
         batch_hash: BatchHash,
-    ) -> Self {
+    ) -> Result<Self, snark_verifier::Error> {
         let timer = start_timer!(|| "generate aggregation circuit");
 
         // sanity check: snarks's public input matches chunk_hashes
@@ -87,7 +87,7 @@ impl AggregationCircuit {
         // this aggregates MULTIPLE snarks
         //  (instead of ONE as in proof compression)
         let (accumulator, as_proof) =
-            extract_accumulators_and_proof(params, &snarks_with_padding, rng).unwrap();
+            extract_accumulators_and_proof(params, snarks_with_padding, rng)?;
         let KzgAccumulator::<G1Affine, NativeLoader> { lhs, rhs } = accumulator;
         let acc_instances = [lhs.x, lhs.y, rhs.x, rhs.y]
             .map(fe_to_limbs::<Fq, Fr, LIMBS, BITS>)
@@ -108,13 +108,13 @@ impl AggregationCircuit {
         .concat();
 
         end_timer!(timer);
-        Self {
+        Ok(Self {
             svk,
             snarks_with_padding: snarks_with_padding.iter().cloned().map_into().collect(),
             flattened_instances,
             as_proof: Value::known(as_proof),
             batch_hash,
-        }
+        })
     }
 
     pub fn as_proof(&self) -> Value<&[u8]> {
@@ -259,7 +259,7 @@ impl Circuit<Fr> for AggregationCircuit {
             &preimages,
             self.batch_hash.number_of_valid_chunks,
         )
-        .unwrap();
+        .map_err(|_e| Error::ConstraintSystemFailure)?;
 
         // digests
         let (batch_pi_hash_digest, chunk_pi_hash_digests, _potential_batch_data_hash_digest) =
@@ -269,7 +269,18 @@ impl Circuit<Fr> for AggregationCircuit {
         // ==============================================
         // step 3: assert public inputs to the snarks are correct
         // ==============================================
-
+        for (i, chunk) in chunk_pi_hash_digests.iter().enumerate() {
+            let hash = self.batch_hash.chunks_with_padding[i].public_input_hash();
+            for j in 0..4 {
+                for k in 0..8 {
+                    log::trace!(
+                        "pi {:02x} {:?}",
+                        hash[j * 8 + k],
+                        chunk[8 * (3 - j) + k].value()
+                    );
+                }
+            }
+        }
         layouter.assign_region(
             || "aggregation",
             |mut region| {
@@ -305,16 +316,14 @@ impl Circuit<Fr> for AggregationCircuit {
             layouter.constrain_instance(v.cell(), config.instance, i)?;
         }
         // public input hash
-        log::trace!("hash digest");
-        for (i, e) in batch_pi_hash_digest.iter().enumerate() {
-            log::trace!("{}: {:?}", i, e.value())
-        }
-        log::trace!("instance");
-        for (i, e) in self.instances()[0].iter().enumerate() {
-            log::trace!("{}: {:?}", i, e)
-        }
         for i in 0..4 {
             for j in 0..8 {
+                log::trace!(
+                    "pi (circuit vs real): {:?} {:?}",
+                    batch_pi_hash_digest[i * 8 + j].value(),
+                    self.instances()[0][(3 - i) * 8 + j + ACC_LEN]
+                );
+
                 layouter.constrain_instance(
                     batch_pi_hash_digest[i * 8 + j].cell(),
                     config.instance,

@@ -2,6 +2,7 @@ use eth_types::Field;
 use halo2_proofs::{
     circuit::{AssignedCell, Region},
     halo2curves::{bn256::Fr, FieldExt},
+    plonk::Error,
 };
 use itertools::Itertools;
 use snark_verifier::loader::halo2::halo2_ecc::halo2_base::{
@@ -437,7 +438,7 @@ pub(crate) fn is_smaller_than<F: FieldExt>(
     let c = gate_config.sub(ctx, QuantumCell::Existing(*a), QuantumCell::Existing(*b));
     let c_bits = gate_config.num_to_bits(ctx, &c, 254);
 
-    *c_bits.last().unwrap()
+    *c_bits.last().unwrap() // safe unwrap
 }
 
 #[inline]
@@ -446,38 +447,36 @@ pub(crate) fn assigned_cell_to_value(
     gate: &FlexGateConfig<Fr>,
     ctx: &mut Context<Fr>,
     assigned_cell: &AssignedCell<Fr, Fr>,
-) -> AssignedValue<Fr> {
+) -> Result<AssignedValue<Fr>, Error> {
     let value = assigned_cell.value().copied();
     let assigned_value = gate.load_witness(ctx, value);
     ctx.region
-        .constrain_equal(assigned_cell.cell(), assigned_value.cell)
-        .unwrap();
-    assigned_value
+        .constrain_equal(assigned_cell.cell(), assigned_value.cell)?;
+    Ok(assigned_value)
 }
 
 #[inline]
 pub(crate) fn assigned_value_to_cell(
     config: &RlcConfig,
     region: &mut Region<Fr>,
-    assigned_cell: &AssignedValue<Fr>,
+    assigned_value: &AssignedValue<Fr>,
     offset: &mut usize,
-) -> AssignedCell<Fr, Fr> {
+) -> Result<AssignedCell<Fr, Fr>, Error> {
     let mut value = Fr::default();
-    assigned_cell.value().map(|&x| value = x);
-    let assigned_value = config.load_private(region, &value, offset).unwrap();
-    region
-        .constrain_equal(assigned_cell.cell(), assigned_value.cell())
-        .unwrap();
-    assigned_value
+    assigned_value.value().map(|&x| value = x);
+    let assigned_cell = config.load_private(region, &value, offset)?;
+    region.constrain_equal(assigned_cell.cell(), assigned_value.cell())?;
+    Ok(assigned_cell)
 }
 
 #[inline]
-pub(crate) fn parse_hash_preimage_cells<'a>(
-    hash_input_cells: &'a [AssignedCell<Fr, Fr>],
+#[allow(clippy::type_complexity)]
+pub(crate) fn parse_hash_preimage_cells(
+    hash_input_cells: &[AssignedCell<Fr, Fr>],
 ) -> (
-    &'a [AssignedCell<Fr, Fr>],
-    Vec<&'a [AssignedCell<Fr, Fr>]>,
-    &'a [AssignedCell<Fr, Fr>],
+    &[AssignedCell<Fr, Fr>],
+    Vec<&[AssignedCell<Fr, Fr>]>,
+    &[AssignedCell<Fr, Fr>],
 ) {
     let batch_pi_hash_preimage = &hash_input_cells[0..ROUND_LEN * 2];
     let mut chunk_pi_hash_preimages = vec![];
@@ -496,12 +495,13 @@ pub(crate) fn parse_hash_preimage_cells<'a>(
 }
 
 #[inline]
-pub(crate) fn parse_hash_digest_cells<'a>(
-    hash_output_cells: &'a [AssignedCell<Fr, Fr>],
+#[allow(clippy::type_complexity)]
+pub(crate) fn parse_hash_digest_cells(
+    hash_output_cells: &[AssignedCell<Fr, Fr>],
 ) -> (
-    &'a [AssignedCell<Fr, Fr>],
-    Vec<&'a [AssignedCell<Fr, Fr>]>,
-    &'a [AssignedCell<Fr, Fr>],
+    &[AssignedCell<Fr, Fr>],
+    Vec<&[AssignedCell<Fr, Fr>]>,
+    &[AssignedCell<Fr, Fr>],
 ) {
     let batch_pi_hash_digest = &hash_output_cells[0..DIGEST_LEN];
     let mut chunk_pi_hash_digests = vec![];
@@ -518,7 +518,7 @@ pub(crate) fn parse_hash_digest_cells<'a>(
 
 #[allow(dead_code)]
 pub(crate) fn rlc(inputs: &[Fr], randomness: &Fr) -> Fr {
-    assert!(inputs.len() > 0);
+    assert!(!inputs.is_empty());
     let mut acc = inputs[0];
     for input in inputs.iter().skip(1) {
         acc = acc * *randomness + *input;

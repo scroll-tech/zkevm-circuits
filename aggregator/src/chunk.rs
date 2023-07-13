@@ -63,11 +63,7 @@ impl ChunkHash {
     /// and its data_hash is all 0s.
     #[allow(dead_code)]
     pub(crate) fn is_dummy(&self) -> bool {
-        if self.prev_state_root != self.post_state_root || self.data_hash != [0u8; 32].into() {
-            false
-        } else {
-            true
-        }
+        !(self.prev_state_root != self.post_state_root || self.data_hash != [0u8; 32].into())
     }
 
     /// Public input hash for a given chunk is defined as

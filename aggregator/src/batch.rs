@@ -1,48 +1,5 @@
 //! This module implements related functions that aggregates public inputs of many chunks into a
 //! single one.
-//!
-//! # Spec
-//!
-//! A chunk is a list of continuous blocks. It consists of 4 hashes:
-//! - state root before this chunk
-//! - state root after this chunk
-//! - the withdraw root of this chunk
-//! - the data hash of this chunk
-//! Those 4 hashes are obtained from the caller.
-//!
-//! A chunk's public input hash is then derived from the above 4 attributes via
-//!
-//! - chunk_pi_hash   := keccak(chain_id || prev_state_root || post_state_root || withdraw_root ||
-//!   chunk_data_hash)
-//!
-//! A batch is a list of continuous chunks. It consists of 2 hashes
-//!
-//! - batch_data_hash := keccak(chunk_0.data_hash || ... || chunk_k-1.data_hash)
-//!
-//! - batch_pi_hash   := keccak(chain_id || chunk_0.prev_state_root || chunk_k-1.post_state_root ||
-//!   chunk_k-1.withdraw_root || batch_data_hash)
-//!
-//! Note that chain_id is used for all public input hashes. But not for any data hashes.
-//!
-//! # Circuit
-//!
-//! A BatchHashCircuit asserts that the batch is well-formed.
-//!
-//! ## Public Input
-//! The public inputs of the circuit (32 Field elements) is constructed as
-//! - batch_pi_hash: 32 Field elements
-//!
-//! ## Constraints
-//! The circuit attests the following statements:
-//!
-//! 1. all hashes are computed correctly
-//! 2. the relations between hash preimages and digests are satisfied
-//!     - batch_data_hash is part of the input to compute batch_pi_hash
-//!     - batch_pi_hash used same roots as chunk_pi_hash
-//!     - same data_hash is used to compute batch_data_hash and chunk_pi_hash for all chunks
-//!     - chunks are continuous: they are linked via the state roots
-//!     - all hashes uses a same chain_id
-//! 3. the batch_pi_hash matches the circuit's public input (32 field elements) above
 use eth_types::{Field, H256};
 use ethers_core::utils::keccak256;
 
@@ -78,9 +35,7 @@ impl BatchHash {
         let number_of_valid_chunks = chunks_without_padding.len();
         assert!(
             number_of_valid_chunks <= MAX_AGG_SNARKS,
-            "input #chunks ({}) exceed maximum allowed ({})",
-            number_of_valid_chunks,
-            MAX_AGG_SNARKS
+            "input #chunks ({number_of_valid_chunks}) exceed maximum allowed ({MAX_AGG_SNARKS})",
         );
 
         // pad the chunks with dummy ones
@@ -143,7 +98,7 @@ impl BatchHash {
 
         Self {
             chain_id: chunks_with_padding[0].chain_id,
-            chunks_with_padding: chunks_with_padding.try_into().unwrap(),
+            chunks_with_padding: chunks_with_padding.try_into().unwrap(), // safe unwrap
             data_hash: data_hash.into(),
             public_input_hash: public_input_hash.into(),
             number_of_valid_chunks,
@@ -170,14 +125,10 @@ impl BatchHash {
         let batch_public_input_hash_preimage = [
             self.chain_id.to_be_bytes().as_ref(),
             self.chunks_with_padding[0].prev_state_root.as_bytes(),
-            self.chunks_with_padding
-                .last()
-                .unwrap()
+            self.chunks_with_padding[MAX_AGG_SNARKS - 1]
                 .post_state_root
                 .as_bytes(),
-            self.chunks_with_padding
-                .last()
-                .unwrap()
+            self.chunks_with_padding[MAX_AGG_SNARKS - 1]
                 .withdraw_root
                 .as_bytes(),
             self.data_hash.as_bytes(),

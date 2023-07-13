@@ -31,8 +31,7 @@ impl CompressionConfig {
     pub fn configure(meta: &mut ConstraintSystem<Fr>, params: ConfigParams) -> Self {
         assert!(
             params.limb_bits == BITS && params.num_limbs == LIMBS,
-            "For now we fix limb_bits = {}, otherwise change code",
-            BITS
+            "For now we fix limb_bits = {BITS}, otherwise change code",
         );
         let base_field_config = FpConfig::configure(
             meta,

@@ -36,6 +36,7 @@ pub struct AggregationConfig {
     /// Instance for public input; stores
     /// - accumulator from aggregation (12 elements)
     /// - batch_public_input_hash (32 elements)
+    /// - the number of valid SNARKs (1 element)
     pub instance: Column<Instance>,
 }
 
@@ -48,8 +49,7 @@ impl AggregationConfig {
     ) -> Self {
         assert!(
             params.limb_bits == BITS && params.num_limbs == LIMBS,
-            "For now we fix limb_bits = {}, otherwise change code",
-            BITS
+            "For now we fix limb_bits = {BITS}, otherwise change code",
         );
 
         // base field configuration for aggregation circuit
@@ -103,6 +103,7 @@ impl AggregationConfig {
         // Instance column stores public input column
         // - the accumulator
         // - the batch public input hash
+        // - the number of valid SNARKs
         let instance = meta.instance_column();
         meta.enable_equality(instance);
 
