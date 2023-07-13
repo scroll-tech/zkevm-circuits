@@ -1558,6 +1558,12 @@ impl CopyTable {
         let mut src_front_mask = true;
         let mut dst_front_mask = true;
 
+        let src_rw = copy_event.src_type == CopyDataType::Memory;
+        let dst_rw = copy_event.dst_type == CopyDataType::Memory
+            || copy_event.dst_type == CopyDataType::TxLog;
+        let mut rw_counter = copy_event.rw_counter_start.0 as u64;
+        let mut rwc_inc_left = (src_rw as u64 + dst_rw as u64) * (full_length / 32) as u64;
+
         for (step_idx, (is_read_step, mut copy_step)) in copy_steps
             .flat_map(|(read_step, write_step)| {
                 let read_step = CopyStep {
@@ -1698,14 +1704,8 @@ impl CopyTable {
                         },
                         "rlc_acc",
                     ),
-                    (
-                        Value::known(F::from(copy_event.rw_counter_step(step_idx))),
-                        "rw_counter",
-                    ),
-                    (
-                        Value::known(F::from(copy_event.rw_counter_increase_left(step_idx))),
-                        "rwc_inc_left",
-                    ),
+                    (Value::known(F::from(rw_counter)), "rw_counter"),
+                    (Value::known(F::from(rwc_inc_left)), "rwc_inc_left"),
                 ],
                 [
                     (is_last, "is_last"),
@@ -1757,12 +1757,18 @@ impl CopyTable {
             if !is_read_step && !dst_front_mask {
                 dst_addr += 1;
             }
-
+            // Decrement the number of steps left.
             if is_read_step && !copy_step.mask {
                 src_bytes_left -= 1;
             }
             if !is_read_step && !copy_step.mask {
                 dst_bytes_left -= 1;
+            }
+            // Update the RW counter.
+            let is_word_end = (step_idx / 2) % 32 == 31;
+            if is_word_end && (is_read_step && src_rw || !is_read_step && dst_rw) {
+                rw_counter += 1;
+                rwc_inc_left -= 1;
             }
         }
         assignments

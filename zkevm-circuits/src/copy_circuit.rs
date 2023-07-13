@@ -321,16 +321,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 - meta.query_advice(is_last, Rotation::cur())
                 - meta.query_advice(is_last, Rotation::next());
 
-            // Whether this row is not the last step, or not part of an event at all.
-            let not_last_two_rows = 1.expr()
-                - meta.query_advice(is_last, Rotation::cur())
-                - meta.query_advice(is_last, Rotation::next());
-
-            // Whether this row is part of a memory or log word.
-            let is_word = meta.query_advice(is_memory, Rotation::cur()) + meta.query_advice(is_tx_log, Rotation::cur());
-
             let is_word_end = is_word_end.is_equal_expression.expr();
-            let not_word_end = not::expr(is_word_end.expr());
 
             // Apply the same constraints for the RLCs of words before and after the write.
             let word_rlc_both = [
@@ -397,57 +388,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
 
-            // for all cases, rw_counter + rwc_inc_left stays the same
-            cb.condition(
-                not::expr(meta.query_advice(is_last, Rotation::cur())),
-                |cb| {
-                    cb.require_equal(
-                        "rows[0].rw_counter + rows[0].rwc_inc_left == rows[1].rw_counter + rows[1].rwc_inc_left",
-                        meta.query_advice(rw_counter, Rotation::cur()) + meta.query_advice(rwc_inc_left, Rotation::cur()),
-                        meta.query_advice(rw_counter, Rotation::next()) + meta.query_advice(rwc_inc_left, Rotation::next()),
-                    );
-                }
-            );
-            // for all cases, rows[0].rw_counter + diff == rows[1].rw_counter
-            cb.condition(
-                and::expr([
-                    not_word_end.expr(),
-                    not_last_two_rows.expr(),
-                ]),
-                |cb| {
-                    let is_memory2memory = and::expr([
-                        meta.query_advice(is_memory, Rotation::cur()),
-                        meta.query_advice(is_memory, Rotation::next()),
-                    ]);
-                    let diff = select::expr(
-                        is_memory2memory,
-                        select::expr(meta.query_selector(q_step), 1.expr(), -(1.expr())),
-                        0.expr(),
-                    );
-                    cb.require_equal(
-                        "rows[0].rw_counter + diff == rows[1].rw_counter",
-                        meta.query_advice(rw_counter, Rotation::cur()) + diff.expr(),
-                        meta.query_advice(rw_counter, Rotation::next()),
-                    );
-                }
-            );
-            // for all cases, rw_counter increase by 1 on word end for write step
-            cb.condition(
-                and::expr([
-                    is_word_end.expr(),
-                    not::expr(meta.query_advice(is_last, Rotation::cur())),
-                    not::expr(meta.query_selector(q_step)), // TODO: rm
-                    is_word.expr(),
-                ]),
-                |cb| {
-                    cb.require_equal(
-                        "rows[0].rw_counter + 1 == rows[1].rw_counter",
-                        meta.query_advice(rw_counter, Rotation::cur()) + 1.expr(),
-                        meta.query_advice(rw_counter, Rotation::next()),
-                    );
-                }
-            );
-
             // Split the mask into front and back segments.
             // If front_mask=1, then mask=1 and back_mask=0.
             // If back_mask=1, then mask=1 and front_mask=0.
@@ -490,16 +430,45 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 );*/
             });
 
-            // Decrement the real_bytes_left on non-masked rows. At the end, it must reach 0.
+            // Decrement real_bytes_left for the next step, on non-masked rows. At the end, it must reach 0.
             {
-                let real_bytes_left_next = meta.query_advice(real_bytes_left, Rotation::cur()) - not::expr(mask.expr());
-                let next_or_finish = select::expr(is_continue.expr(), meta.query_advice(real_bytes_left, Rotation(2)), 0.expr());
+                let next_value = meta.query_advice(real_bytes_left, Rotation::cur()) - not::expr(mask.expr());
+                let update_or_finish = select::expr(is_continue.expr(), meta.query_advice(real_bytes_left, Rotation(2)), 0.expr());
                 cb.require_equal(
                     "real_bytes_left[2] == real_bytes_left[0] - !mask, or 0 at the end",
-                    real_bytes_left_next,
-                    next_or_finish,
+                    next_value,
+                    update_or_finish,
                 );
             }
+
+            // Decrement rwc_inc_left for the next row, when an RW operation happens. At the end, it must reach 0.
+            {
+                let is_rw_type = meta.query_advice(is_memory, Rotation::cur()) + meta.query_advice(is_tx_log, Rotation::cur());
+                let rwc_diff = is_rw_type * is_word_end.expr();
+                let next_value = meta.query_advice(rwc_inc_left, Rotation::cur()) - rwc_diff;
+                let update_or_finish = select::expr(
+                    meta.query_advice(is_last, Rotation::cur()),
+                    0.expr(),
+                    meta.query_advice(rwc_inc_left, Rotation::next()),
+                );
+                cb.require_equal(
+                    "rwc_inc_left[2] == rwc_inc_left[0] - rwc_diff, or 0 at the end",
+                    next_value,
+                    update_or_finish,
+                );
+            }
+
+            // Maintain rw_counter based on rwc_inc_left. Their sum remains constant in all cases.
+            cb.condition(
+                not::expr(meta.query_advice(is_last, Rotation::cur())),
+                |cb| {
+                    cb.require_equal(
+                        "rows[0].rw_counter + rows[0].rwc_inc_left == rows[1].rw_counter + rows[1].rwc_inc_left",
+                        meta.query_advice(rw_counter, Rotation::cur()) + meta.query_advice(rwc_inc_left, Rotation::cur()),
+                        meta.query_advice(rw_counter, Rotation::next()) + meta.query_advice(rwc_inc_left, Rotation::next()),
+                    );
+                }
+            );
 
             // Derive the next step from the current step.
             cb.condition(is_continue.expr(),

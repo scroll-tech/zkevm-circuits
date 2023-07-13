@@ -472,14 +472,6 @@ impl CopyEvent {
 
         source_rw_increase + destination_rw_increase
     }
-
-    // increase in rw counter for tx log specially
-    fn rw_counter_increase_log(&self, step_index: usize) -> u64 {
-        match self.dst_type {
-            CopyDataType::TxLog => u64::try_from(step_index).unwrap() / 2,
-            _ => unreachable!(),
-        }
-    }
 }
 
 /// Defines a builder to construct a copy event.
