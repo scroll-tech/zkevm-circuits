@@ -2350,6 +2350,7 @@ impl EccTable {
         // assign EcAdd
         for add_op in add_ops
             .iter()
+            .filter(|add_op| !add_op.is_zero())
             .chain(std::iter::repeat(&EcAddOp::default()))
             .take(params.ec_add)
         {
@@ -2369,6 +2370,7 @@ impl EccTable {
         // assign EcMul
         for mul_op in mul_ops
             .iter()
+            .filter(|mul_op| !mul_op.is_zero())
             .chain(std::iter::repeat(&EcMulOp::default()))
             .take(params.ec_mul)
         {
@@ -2388,6 +2390,7 @@ impl EccTable {
         // assign EcPairing
         for pairing_op in pairing_ops
             .iter()
+            .filter(|pairing_op| !pairing_op.is_zero())
             .chain(std::iter::repeat(&EcPairingOp::default()))
             .take(params.ec_pairing)
         {
@@ -2424,7 +2427,7 @@ impl EccTable {
                         .zip_eq(row.iter().skip(1))
                     {
                         region.assign_advice(
-                            || format!("ecc table row = {i}, column = {:?}", column),
+                            || format!("ecc table row = {i}, column = {column:?}"),
                             column,
                             i,
                             || value,

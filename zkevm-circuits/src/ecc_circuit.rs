@@ -84,7 +84,7 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
         let fp_config = FpConfig::configure(
             meta,
             FpStrategy::Simple,
-            &[15, 1], // num advice
+            &[30, 1], // num advice
             &[17],    // num lookup advice
             1,        // num fixed
             13,       // lookup bits
@@ -204,6 +204,7 @@ impl<F: Field> EccCircuit<F> {
                 let ec_adds_assigned = self
                     .add_ops
                     .iter()
+                    .filter(|add_op| !add_op.is_zero())
                     .chain(std::iter::repeat(&EcAddOp::default()))
                     .take(self.max_add_ops)
                     .map(|add_op| {
@@ -213,17 +214,14 @@ impl<F: Field> EccCircuit<F> {
                             self.assign_g1(&mut ctx, &ecc_chip, add_op.q, keccak_powers.clone());
                         let point_r =
                             self.assign_g1(&mut ctx, &ecc_chip, add_op.r, keccak_powers.clone());
-                        let point_r_got = if add_op.inputs_equal() {
-                            ecc_chip.double(&mut ctx, &point_p.decomposed.ec_point)
-                        } else {
-                            ecc_chip.add_unequal(
-                                &mut ctx,
-                                &point_p.decomposed.ec_point,
-                                &point_q.decomposed.ec_point,
-                                false, /* strict == false, as we do not check for whether or not
-                                        * P == Q */
-                            )
-                        };
+                        let point_r_got = ecc_chip.sum::<G1Affine>(
+                            &mut ctx,
+                            [
+                                point_p.decomposed.ec_point.clone(),
+                                point_q.decomposed.ec_point.clone(),
+                            ]
+                            .into_iter(),
+                        );
                         ecc_chip.assert_equal(&mut ctx, &point_r.decomposed.ec_point, &point_r_got);
                         EcAddAssigned {
                             point_p,
@@ -237,6 +235,7 @@ impl<F: Field> EccCircuit<F> {
                 let ec_muls_assigned = self
                     .mul_ops
                     .iter()
+                    .filter(|mul_op| !mul_op.is_zero())
                     .chain(std::iter::repeat(&EcMulOp::default()))
                     .take(self.max_mul_ops)
                     .map(|mul_op| {
@@ -267,6 +266,7 @@ impl<F: Field> EccCircuit<F> {
                 let ec_pairings_assigned = self
                     .pairing_ops
                     .iter()
+                    .filter(|pairing_op| !pairing_op.is_zero())
                     .chain(std::iter::repeat(&EcPairingOp::default()))
                     .take(self.max_pairing_ops)
                     .map(|pairing_op| {
@@ -357,27 +357,10 @@ impl<F: Field> EccCircuit<F> {
                         let pairs = g1s
                             .iter()
                             .zip(g2s.iter())
-                            .filter_map(|(g1_assigned, g2_assigned)| {
-                                if g1_assigned.decomposed.is_identity
-                                    && g2_assigned.decomposed.is_identity
-                                {
-                                    None
-                                } else {
-                                    Some((
-                                        &g1_assigned.decomposed.ec_point,
-                                        &g2_assigned.decomposed.ec_point,
-                                    ))
-                                }
-                            })
+                            .map(|(g1, g2)| (&g1.decomposed.ec_point, &g2.decomposed.ec_point))
                             .collect_vec();
 
-                        let success = if pairs.is_empty() {
-                            ecc_chip
-                                .field_chip()
-                                .range()
-                                .gate()
-                                .load_constant(&mut ctx, F::one())
-                        } else {
+                        let success = {
                             let gt = {
                                 let gt = pairing_chip.multi_miller_loop(&mut ctx, pairs);
                                 fp12_chip.final_exp(&mut ctx, &gt)
