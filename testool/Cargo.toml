@@ -38,7 +38,7 @@ urlencoding = "2.1.2"
 ctor = "0.1.22"
 
 [features]
-default = ["ignore-test-docker", "skip-self-destruct"]
+default = ["ignore-test-docker", "skip-self-destruct", "shanghai"]
 ignore-test-docker = []
 skip-self-destruct = []
 shanghai = ["bus-mapping/shanghai", "eth-types/shanghai", "mock/shanghai", "zkevm-circuits/shanghai"]

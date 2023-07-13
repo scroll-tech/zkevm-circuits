@@ -110,12 +110,12 @@ impl ZktrieState {
             let (exists, acc) = self.sdb.get_account(addr);
             if exists {
                 log::trace!(
-                    "skip trace account into sdb: {:?} => {:?}, keep old: {:?}",
+                    "overwrite trace account in sdb: addr {:?}, new {:?}, replace old: {:?}",
                     addr,
                     acc_data,
                     acc
                 );
-                continue;
+                //continue;
             }
             if acc_proof.key.is_some() {
                 log::trace!("trace account into sdb: {:?} => {:?}", addr, acc_data);
@@ -139,10 +139,11 @@ impl ZktrieState {
         }
 
         for (addr, key, bytes) in storage_proofs {
-            let (exists, _value) = self.sdb.get_storage(addr, key);
-            if exists {
-                continue;
-            }
+            let (_exists, old_value) = self.sdb.get_storage(addr, key);
+            let old_value = *old_value;
+            //if exists {
+            //    continue;
+            //}
             let (_, acc) = self.sdb.get_account_mut(addr);
             let mut key_buf = [0u8; 32];
             key.to_big_endian(key_buf.as_mut_slice());
@@ -159,10 +160,22 @@ impl ZktrieState {
                     );
                     acc.storage.insert(*key, *store_proof.data.as_ref());
                 } else {
+                    log::trace!(
+                        "set storage to 0, addr {:?} key {:?} old value {:?}",
+                        addr,
+                        key,
+                        old_value
+                    );
                     //acc.storage.remove(key);
                     acc.storage.insert(*key, U256::zero());
                 }
             } else {
+                log::trace!(
+                    "clear storage addr {:?} key {:?} old value {:?}",
+                    addr,
+                    key,
+                    old_value
+                );
                 // acc.storage.remove(key);
                 acc.storage.insert(*key, U256::zero());
             }

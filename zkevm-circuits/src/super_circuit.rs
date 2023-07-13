@@ -623,12 +623,6 @@ impl<
 
         let block = self.evm_circuit.block.as_ref().unwrap();
 
-        // PI circuit had the hardcoded constants for RegionIndex of block table
-        // and tx table (which are 0 and 1).
-        // The reason for that is the assignment of block/tx tables are done in
-        // their load() functions which however do not emit the cells.
-        // To set up copy constraints between pi cells and block/tx table cells,
-        // we need to construct them manually.
         config.tx_table.load(
             &mut layouter,
             &block.txs,
@@ -636,13 +630,6 @@ impl<
             block.circuits_params.max_calldata,
             block.chain_id,
             &challenges,
-        )?;
-
-        config.mpt_table.load(
-            &mut layouter,
-            &self.state_circuit.updates,
-            block.circuits_params.max_mpt_rows,
-            challenges.evm_word(),
         )?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)

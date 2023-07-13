@@ -265,9 +265,9 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         value_prev: Cell<F>,
         original_value: Cell<F>,
     ) -> Self {
-        let value_prev_is_zero_gadget = IsZeroGadget::construct(cb, value_prev.expr());
-        let value_is_zero_gadget = IsZeroGadget::construct(cb, value.expr());
-        let original_is_zero_gadget = IsZeroGadget::construct(cb, original_value.expr());
+        let value_prev_is_zero_gadget = IsZeroGadget::construct(cb, "", value_prev.expr());
+        let value_is_zero_gadget = IsZeroGadget::construct(cb, "", value.expr());
+        let original_is_zero_gadget = IsZeroGadget::construct(cb, "", original_value.expr());
 
         let original_eq_value_gadget =
             IsEqualGadget::construct(cb, original_value.expr(), value.expr());

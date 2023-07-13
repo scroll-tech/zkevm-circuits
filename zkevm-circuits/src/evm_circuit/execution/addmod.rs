@@ -66,7 +66,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         let a_reduced = cb.query_word_rlc();
         let d = cb.query_word_rlc();
 
-        let n_is_zero = IsZeroGadget::construct(cb, n.clone().expr());
+        let n_is_zero = IsZeroGadget::construct(cb, "", n.clone().expr());
 
         // 1. check k * N + a_reduced == a without overflow
         let muladd_k_n_areduced = MulAddWordsGadget::construct(cb, [&k, &n, &a_reduced, &a]);

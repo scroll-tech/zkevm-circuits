@@ -61,7 +61,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let d = cb.query_word_rlc();
 
         let mul_add_words = MulAddWordsGadget::construct(cb, [&a, &b, &c, &d]);
-        let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&b.cells));
+        let divisor_is_zero = IsZeroGadget::construct(cb, "", sum::expr(&b.cells));
         let lt_word = LtWordGadget::construct(cb, &c, &b);
 
         // Pop a and b from the stack, push result on the stack

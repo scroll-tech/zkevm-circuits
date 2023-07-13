@@ -93,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let p_hi = cb.query_cell();
         let p_top = cb.query_cell();
         let is_neg = LtGadget::construct(cb, 127.expr(), a.cells[31].expr());
-        let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.cells[1..32]));
+        let shf_lt256 = IsZeroGadget::construct(cb, "", sum::expr(&shift.cells[1..32]));
 
         for idx in 0..4 {
             cb.require_equal(
@@ -118,7 +118,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         });
 
         // Merge contraints
-        let shf_lo_div64_eq0 = IsZeroGadget::construct(cb, shf_div64.expr());
+        let shf_lo_div64_eq0 = IsZeroGadget::construct(cb, "", shf_div64.expr());
         let shf_lo_div64_eq1 = IsEqualGadget::construct(cb, shf_div64.expr(), 1.expr());
         let shf_lo_div64_eq2 = IsEqualGadget::construct(cb, shf_div64.expr(), 2.expr());
         let shf_lo_div64_eq3 = IsEqualGadget::construct(cb, shf_div64.expr(), 3.expr());
