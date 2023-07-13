@@ -321,7 +321,7 @@ impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
     }
 }
 
-pub(crate) type BoxedClosure<F> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>)>;
+pub(crate) type BoxedClosure<'a, F> = Box<dyn FnOnce(&mut EVMConstraintBuilder<F>) + 'a>;
 
 impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(

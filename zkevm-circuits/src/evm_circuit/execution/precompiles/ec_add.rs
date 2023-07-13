@@ -1,6 +1,6 @@
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
 use eth_types::{Field, ToLittleEndian, ToScalar};
-use gadgets::util::Expr;
+use gadgets::util::{and, not, or, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
@@ -8,8 +8,10 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder, rlc,
-            CachedRegion, Cell,
+            common_gadget::RestoreContextGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::IsZeroGadget,
+            rlc, CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
@@ -24,7 +26,11 @@ pub struct EcAddGadget<F> {
     point_q_y_rlc: Cell<F>,
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
-    is_valid: Cell<F>,
+
+    p_x_is_zero: IsZeroGadget<F>,
+    p_y_is_zero: IsZeroGadget<F>,
+    q_x_is_zero: IsZeroGadget<F>,
+    q_y_is_zero: IsZeroGadget<F>,
 
     is_success: Cell<F>,
     callee_address: Cell<F>,
@@ -43,7 +49,6 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let (
-            is_valid,
             point_p_x_rlc,
             point_p_y_rlc,
             point_q_x_rlc,
@@ -51,7 +56,6 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             point_r_x_rlc,
             point_r_y_rlc,
         ) = (
-            cb.query_bool(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -60,18 +64,64 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             cb.query_cell_phase2(),
         );
 
-        cb.condition(is_valid.expr(), |cb| {
-            cb.ecc_table_lookup(
-                u64::from(PrecompileCalls::Bn128Add).expr(),
-                point_p_x_rlc.expr(),
-                point_p_y_rlc.expr(),
-                point_q_x_rlc.expr(),
-                point_q_y_rlc.expr(),
-                0.expr(), // input_rlc
-                point_r_x_rlc.expr(),
-                point_r_y_rlc.expr(),
-            );
+        let p_x_is_zero = IsZeroGadget::construct(cb, "ecAdd(P_x)", point_p_x_rlc.expr());
+        let p_y_is_zero = IsZeroGadget::construct(cb, "ecAdd(P_y)", point_p_y_rlc.expr());
+        let q_x_is_zero = IsZeroGadget::construct(cb, "ecAdd(Q_x)", point_q_x_rlc.expr());
+        let q_y_is_zero = IsZeroGadget::construct(cb, "ecAdd(Q_y)", point_q_y_rlc.expr());
+
+        let p_is_zero = and::expr([p_x_is_zero.expr(), p_y_is_zero.expr()]);
+        let q_is_zero = and::expr([q_x_is_zero.expr(), q_y_is_zero.expr()]);
+
+        cb.condition(and::expr([p_is_zero.expr(), q_is_zero.expr()]), |cb| {
+            cb.require_zero("if P == 0 && Q == 0 then R_x == 0", point_r_x_rlc.expr());
+            cb.require_zero("if P == 0 && Q == 0 then R_y == 0", point_r_y_rlc.expr());
         });
+        cb.condition(
+            and::expr([p_is_zero.expr(), not::expr(q_is_zero.expr())]),
+            |cb| {
+                cb.require_equal(
+                    "if P == 0 then R_x == Q_x",
+                    point_r_x_rlc.expr(),
+                    point_q_x_rlc.expr(),
+                );
+                cb.require_equal(
+                    "if P == 0 then R_y == Q_y",
+                    point_r_y_rlc.expr(),
+                    point_q_y_rlc.expr(),
+                );
+            },
+        );
+        cb.condition(
+            and::expr([q_is_zero.expr(), not::expr(p_is_zero.expr())]),
+            |cb| {
+                cb.require_equal(
+                    "if Q == 0 then R_x == P_x",
+                    point_r_x_rlc.expr(),
+                    point_p_x_rlc.expr(),
+                );
+                cb.require_equal(
+                    "if Q == 0 then R_y == P_y",
+                    point_r_y_rlc.expr(),
+                    point_p_y_rlc.expr(),
+                );
+            },
+        );
+
+        cb.condition(
+            not::expr(or::expr([p_is_zero.expr(), q_is_zero.expr()])),
+            |cb| {
+                cb.ecc_table_lookup(
+                    u64::from(PrecompileCalls::Bn128Add).expr(),
+                    point_p_x_rlc.expr(),
+                    point_p_y_rlc.expr(),
+                    point_q_x_rlc.expr(),
+                    point_q_y_rlc.expr(),
+                    0.expr(), // input_rlc
+                    point_r_x_rlc.expr(),
+                    point_r_y_rlc.expr(),
+                );
+            },
+        );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
@@ -108,7 +158,11 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
             point_q_y_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
-            is_valid,
+
+            p_x_is_zero,
+            p_y_is_zero,
+            q_x_is_zero,
+            q_y_is_zero,
 
             is_success,
             callee_address,
@@ -132,16 +186,17 @@ impl<F: Field> ExecutionGadget<F> for EcAddGadget<F> {
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::EcAdd(aux_data)) = &step.aux_data {
             let keccak_rand = region.challenges().keccak_input();
-            self.is_valid.assign(
-                region,
-                offset,
-                Value::known(F::from(u64::from(aux_data.is_valid))),
-            )?;
+            for (col, is_zero_gadget, word_value) in [
+                (&self.point_p_x_rlc, &self.p_x_is_zero, aux_data.p_x),
+                (&self.point_p_y_rlc, &self.p_y_is_zero, aux_data.p_y),
+                (&self.point_q_x_rlc, &self.q_x_is_zero, aux_data.q_x),
+                (&self.point_q_y_rlc, &self.q_y_is_zero, aux_data.q_y),
+            ] {
+                let rlc_val = keccak_rand.map(|r| rlc::value(&word_value.to_le_bytes(), r));
+                col.assign(region, offset, rlc_val)?;
+                is_zero_gadget.assign_value(region, offset, rlc_val)?;
+            }
             for (col, word_value) in [
-                (&self.point_p_x_rlc, aux_data.p_x),
-                (&self.point_p_y_rlc, aux_data.p_y),
-                (&self.point_q_x_rlc, aux_data.q_x),
-                (&self.point_q_y_rlc, aux_data.q_y),
                 (&self.point_r_x_rlc, aux_data.r_x),
                 (&self.point_r_y_rlc, aux_data.r_y),
             ] {

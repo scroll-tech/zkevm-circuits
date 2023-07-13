@@ -4,8 +4,6 @@ use eth_types::{evm_types::GasCost, Address, ToBigEndian, Word};
 use revm_precompile::{Precompile, Precompiles};
 use strum::EnumIter;
 
-use crate::circuit_input_builder::EcAddOp;
-
 /// Check if address is a precompiled or not.
 pub fn is_precompiled(address: &Address) -> bool {
     Precompiles::berlin()
@@ -183,8 +181,6 @@ pub struct EcAddAuxData {
     pub r_x: Word,
     /// y co-ordinate of the result point.
     pub r_y: Word,
-    /// whether valid inputs were provided.
-    pub is_valid: u8,
 }
 
 impl EcAddAuxData {
@@ -192,7 +188,6 @@ impl EcAddAuxData {
     pub fn new(input: &[u8], output: &[u8]) -> Self {
         assert_eq!(input.len(), 128);
         assert_eq!(output.len(), 64);
-        let is_valid = EcAddOp::new_from_bytes(input, output).is_some().unwrap_u8();
         Self {
             p_x: Word::from_big_endian(&input[0x00..0x20]),
             p_y: Word::from_big_endian(&input[0x20..0x40]),
@@ -200,7 +195,6 @@ impl EcAddAuxData {
             q_y: Word::from_big_endian(&input[0x60..0x80]),
             r_x: Word::from_big_endian(&output[0x00..0x20]),
             r_y: Word::from_big_endian(&output[0x20..0x40]),
-            is_valid,
         }
     }
 }

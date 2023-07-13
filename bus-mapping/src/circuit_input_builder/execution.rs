@@ -17,12 +17,12 @@ use eth_types::{
     sign_types::SignData,
     GethExecStep, Word, H256,
 };
-use ethers_core::k256::elliptic_curve::subtle::{Choice, CtOption};
+use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
 use halo2_proofs::{
     arithmetic::{CurveAffine, Field},
     halo2curves::{
-        bn256::{Fr, G1Affine, G2Affine},
+        bn256::{Fq, Fr, G1Affine, G2Affine},
         group::cofactor::CofactorCurveAffine,
     },
     plonk::Expression,
@@ -585,7 +585,7 @@ impl EcAddOp {
     }
 
     /// Creates a new EcAdd op given input and output bytes from a precompile call.
-    pub fn new_from_bytes(input: &[u8], output: &[u8]) -> CtOption<Self> {
+    pub fn new_from_bytes(input: &[u8], output: &[u8]) -> Self {
         let fq_from_slice = |buf: &mut [u8; 32], bytes: &[u8]| -> CtOption<Fq> {
             buf.copy_from_slice(bytes);
             buf.reverse();
@@ -598,27 +598,19 @@ impl EcAddOp {
             })
         };
 
+        assert_eq!(input.len(), 128);
+        assert_eq!(output.len(), 64);
+
         let mut buf = [0u8; 32];
-        g1_from_slice(&mut buf, &input[0x00..0x40]).and_then(|point_p| {
-            g1_from_slice(&mut buf, &input[0x40..0x80]).and_then(|point_q| {
-                // valid input implies valid output. If the result matches, the computation was
-                // successful.
-                let point_r_got = g1_from_slice(&mut buf, output).unwrap();
-                let point_r: G1Affine = point_p.add(&point_q).into();
-                if point_r.eq(&point_r_got) {
-                    CtOption::new(
-                        Self {
-                            p: point_p,
-                            q: point_q,
-                            r: point_r,
-                        },
-                        Choice::from(1u8),
-                    )
-                } else {
-                    CtOption::new(Self::default(), Choice::from(0u8))
-                }
-            })
-        })
+        let point_p = g1_from_slice(&mut buf, &input[0x00..0x40]).unwrap();
+        let point_q = g1_from_slice(&mut buf, &input[0x40..0x80]).unwrap();
+        let point_r_got = g1_from_slice(&mut buf, &output[0x00..0x40]).unwrap();
+        assert_eq!(G1Affine::from(point_p.add(&point_q)), point_r_got);
+        Self {
+            p: point_p,
+            q: point_q,
+            r: point_r_got,
+        }
     }
 
     /// Returns true if P == Q == Infinity.

@@ -22,7 +22,5 @@ pub(crate) fn handle(
     exec_step.aux_data = Some(PrecompileAuxData::EcAdd(aux_data));
 
     let ec_add_op = EcAddOp::new_from_bytes(&input_bytes, &output_bytes);
-    if ec_add_op.is_some().into() {
-        state.push_precompile_event(PrecompileEvent::EcAdd(ec_add_op.unwrap()));
-    }
+    state.push_precompile_event(PrecompileEvent::EcAdd(ec_add_op));
 }
