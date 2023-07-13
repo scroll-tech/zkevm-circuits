@@ -215,10 +215,11 @@ For the input of the final data hash
 For the output of the final data hash
 - we extract all three hash digest cells from last 3 rounds. We then constraint that the actual data hash matches one of the three hash digest cells with proper flags defined as follows.
 
-    #valid snarks | offset of data hash | flags
-    1,2,3,4       | 0                   | 1, 0, 0
-    5,6,7,8       | 32                  | 0, 1, 0   
-    9,10          | 64                  | 0, 0, 1
+|#valid snarks | offset of data hash | flags|
+|---| ---| ---|
+|1,2,3,4       | 0                   | 1, 0, 0|
+|5,6,7,8       | 32                  | 0, 1, 0   |
+|9,10          | 64                  | 0, 0, 1|
 
 Additional checks for dummy chunk
 - if `is_padding` for `i` the chunk, we constrain `chunk[i].prev_state_root = chunk[i].post_state_root`
