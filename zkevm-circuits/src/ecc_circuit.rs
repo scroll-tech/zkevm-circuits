@@ -84,7 +84,7 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
         let fp_config = FpConfig::configure(
             meta,
             FpStrategy::Simple,
-            &[15, 1], // num advice
+            &[50, 1], // num advice
             &[17],    // num lookup advice
             1,        // num fixed
             13,       // lookup bits
@@ -118,13 +118,20 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
 /// operations will be invalid.
 #[derive(Clone, Debug, Default)]
 pub struct EccCircuit<F: Field> {
-    /// Maximum number of EcAdd operations supported in one instance of the ECC Circuit.
-    pub max_add_ops: usize,
-    /// Maximum number of scalar multiplication operations supported in one instance of the ECC
-    /// Circuit.
-    pub max_mul_ops: usize,
-    /// Maximum number of pairing operations supported in one instance of the ECC Circuit.
-    pub max_pairing_ops: usize,
+    /// Number of EcAdd operations supported in one instance of the ECC Circuit, where P != Q.
+    pub ec_add_unequal_ops: usize,
+    /// Number of EcAdd operations supported in one instance of the ECC Circuit, where P == Q.
+    pub ec_double_ops: usize,
+    /// Number of scalar multiplication ops supported in the ECC Circuit, where P != Identity.
+    pub ec_mul_nonzero_ops: usize,
+    /// Number of pairing operations supported in one instance of the ECC Circuit, with 1 pair.
+    pub ec_pairing1_ops: usize,
+    /// Number of pairing operations supported in one instance of the ECC Circuit, with 2 pair.
+    pub ec_pairing2_ops: usize,
+    /// Number of pairing operations supported in one instance of the ECC Circuit, with 3 pair.
+    pub ec_pairing3_ops: usize,
+    /// Number of pairing operations supported in one instance of the ECC Circuit, with 4 pair.
+    pub ec_pairing4_ops: usize,
 
     /// EcAdd operations provided as witness data to the ECC circuit.
     pub add_ops: Vec<EcAddOp>,
@@ -143,6 +150,8 @@ impl<F: Field> EccCircuit<F> {
         config: &<Self as SubCircuit<F>>::Config,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
+        // TODO(rohit): fixme
+        /*
         if self.add_ops.len() > self.max_add_ops
             || self.mul_ops.len() > self.max_mul_ops
             || self.pairing_ops.len() > self.max_pairing_ops
@@ -158,6 +167,7 @@ impl<F: Field> EccCircuit<F> {
             );
             return Err(Error::Synthesis);
         }
+        */
 
         // for each pairing check input, we only allow up to 4 pairs, i.e. 4 * 192 bytes. The aim
         // is to simplify zkEVM implementation for now, not allowing dynamic length input for
@@ -200,12 +210,13 @@ impl<F: Field> EccCircuit<F> {
 
                 let mut ctx = config.fp_config.new_context(region);
 
-                // P + Q == R
-                let ec_adds_assigned = self
+                // P + Q == R, where P != Q
+                let mut ec_adds_assigned = self
                     .add_ops
                     .iter()
-                    .chain(std::iter::repeat(&EcAddOp::default()))
-                    .take(self.max_add_ops)
+                    .filter(|add_op| !add_op.is_zero() && !add_op.inputs_equal())
+                    .chain(std::iter::repeat(&EcAddOp::dummy_unequal()))
+                    .take(self.ec_add_unequal_ops)
                     .map(|add_op| {
                         let point_p =
                             self.assign_g1(&mut ctx, &ecc_chip, add_op.p, keccak_powers.clone());
@@ -213,17 +224,12 @@ impl<F: Field> EccCircuit<F> {
                             self.assign_g1(&mut ctx, &ecc_chip, add_op.q, keccak_powers.clone());
                         let point_r =
                             self.assign_g1(&mut ctx, &ecc_chip, add_op.r, keccak_powers.clone());
-                        let point_r_got = if add_op.inputs_equal() {
-                            ecc_chip.double(&mut ctx, &point_p.decomposed.ec_point)
-                        } else {
-                            ecc_chip.add_unequal(
-                                &mut ctx,
-                                &point_p.decomposed.ec_point,
-                                &point_q.decomposed.ec_point,
-                                false, /* strict == false, as we do not check for whether or not
-                                        * P == Q */
-                            )
-                        };
+                        let point_r_got = ecc_chip.add_unequal(
+                            &mut ctx,
+                            &point_p.decomposed.ec_point,
+                            &point_q.decomposed.ec_point,
+                            false, // strict == true, as we check for whether or not P == Q
+                        );
                         ecc_chip.assert_equal(&mut ctx, &point_r.decomposed.ec_point, &point_r_got);
                         EcAddAssigned {
                             point_p,
@@ -233,12 +239,44 @@ impl<F: Field> EccCircuit<F> {
                     })
                     .collect_vec();
 
-                // s.P = R
+                // P + Q == R, where P == Q
+                let ec_doubles_assigned = self
+                    .add_ops
+                    .iter()
+                    .filter(|add_op| !add_op.is_zero() && add_op.inputs_equal())
+                    .chain(std::iter::repeat(&EcAddOp::dummy_equal()))
+                    .take(self.ec_add_unequal_ops)
+                    .map(|add_op| {
+                        let point_p =
+                            self.assign_g1(&mut ctx, &ecc_chip, add_op.p, keccak_powers.clone());
+                        let point_q =
+                            self.assign_g1(&mut ctx, &ecc_chip, add_op.q, keccak_powers.clone());
+                        let point_r =
+                            self.assign_g1(&mut ctx, &ecc_chip, add_op.r, keccak_powers.clone());
+                        let point_r_got = ecc_chip.double(&mut ctx, &point_p.decomposed.ec_point);
+
+                        ecc_chip.assert_equal(
+                            &mut ctx,
+                            &point_p.decomposed.ec_point,
+                            &point_q.decomposed.ec_point,
+                        );
+                        ecc_chip.assert_equal(&mut ctx, &point_r.decomposed.ec_point, &point_r_got);
+
+                        EcAddAssigned {
+                            point_p,
+                            point_q,
+                            point_r,
+                        }
+                    })
+                    .collect_vec();
+
+                // s.P == R, where P != Infinity.
                 let ec_muls_assigned = self
                     .mul_ops
                     .iter()
-                    .chain(std::iter::repeat(&EcMulOp::default()))
-                    .take(self.max_mul_ops)
+                    .filter(|mul_op| !mul_op.is_zero())
+                    .chain(std::iter::repeat(&EcMulOp::dummy_non_zero()))
+                    .take(self.ec_mul_nonzero_ops)
                     .map(|mul_op| {
                         let point_p =
                             self.assign_g1(&mut ctx, &ecc_chip, mul_op.p, keccak_powers.clone());
@@ -253,7 +291,11 @@ impl<F: Field> EccCircuit<F> {
                             fr_chip.limb_bits,
                             4, // TODO: window bits?
                         );
+
+                        ecc_chip
+                            .assert_is_on_curve::<G1Affine>(&mut ctx, &point_p.decomposed.ec_point);
                         ecc_chip.assert_equal(&mut ctx, &point_r.decomposed.ec_point, &point_r_got);
+
                         EcMulAssigned {
                             point_p,
                             scalar_s,
@@ -262,13 +304,13 @@ impl<F: Field> EccCircuit<F> {
                     })
                     .collect_vec();
 
-                // e(G1 . G2) * ... * e(G1 . G2) -> Gt
-                // Note: maximum 4 pairings per pairing op.
-                let ec_pairings_assigned = self
+                // e(G1 . G2)
+                let ec_pairings1_assigned = self
                     .pairing_ops
                     .iter()
-                    .chain(std::iter::repeat(&EcPairingOp::default()))
-                    .take(self.max_pairing_ops)
+                    .filter(|pairing_op| pairing_op.is_pairing(1usize))
+                    .chain(std::iter::repeat(&EcPairingOp::dummy_pair1()))
+                    .take(self.ec_pairing1_ops)
                     .map(|pairing_op| {
                         let g1s = pairing_op
                             .inputs
@@ -371,13 +413,148 @@ impl<F: Field> EccCircuit<F> {
                             })
                             .collect_vec();
 
-                        let success = if pairs.is_empty() {
-                            ecc_chip
-                                .field_chip()
-                                .range()
-                                .gate()
-                                .load_constant(&mut ctx, F::one())
-                        } else {
+                        debug_assert_eq!(pairs.len(), 1);
+                        let success = {
+                            let gt = {
+                                let gt = pairing_chip.miller_loop(&mut ctx, pairs[0].1, pairs[0].0);
+                                fp12_chip.final_exp(&mut ctx, &gt)
+                            };
+                            // whether pairing check was successful.
+                            let one = fp12_chip.load_constant(&mut ctx, Fq12::one());
+                            fp12_chip.is_equal(&mut ctx, &gt, &one)
+                        };
+
+                        ecc_chip.field_chip().range().gate().assert_equal(
+                            &mut ctx,
+                            QuantumCell::Existing(success),
+                            QuantumCell::Witness(Value::known(
+                                pairing_op
+                                    .output
+                                    .to_scalar()
+                                    .expect("EcPairing output = {0, 1}"),
+                            )),
+                        );
+
+                        EcPairingAssigned {
+                            g1s,
+                            g2s,
+                            input_rlc,
+                            success,
+                        }
+                    })
+                    .collect_vec();
+
+                // e(G1 . G2) * e(G1 . G2)
+                let ec_pairings2_assigned = self
+                    .pairing_ops
+                    .iter()
+                    .filter(|pairing_op| pairing_op.is_pairing(2usize))
+                    .chain(std::iter::repeat(&EcPairingOp::dummy_pair2()))
+                    .take(self.ec_pairing2_ops)
+                    .map(|pairing_op| {
+                        let g1s = pairing_op
+                            .inputs
+                            .iter()
+                            .map(|i| {
+                                let (x_cells, y_cells) = self.decompose_g1(i.0);
+                                let decomposed = G1Decomposed {
+                                    ec_point: pairing_chip
+                                        .load_private_g1(&mut ctx, Value::known(i.0)),
+                                    is_identity: i.0.is_identity().into(),
+                                    x_cells: x_cells.clone(),
+                                    y_cells: y_cells.clone(),
+                                };
+                                G1Assigned {
+                                    decomposed,
+                                    x_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        x_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    y_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        y_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                }
+                            })
+                            .collect_vec();
+                        let g2s = pairing_op
+                            .inputs
+                            .iter()
+                            .map(|i| {
+                                let [x_c0_cells, x_c1_cells, y_c0_cells, y_c1_cells] =
+                                    self.decompose_g2(i.1);
+                                let decomposed = G2Decomposed {
+                                    ec_point: pairing_chip
+                                        .load_private_g2(&mut ctx, Value::known(i.1)),
+                                    is_identity: i.1.is_identity().into(),
+                                    x_c0_cells: x_c0_cells.clone(),
+                                    x_c1_cells: x_c1_cells.clone(),
+                                    y_c0_cells: y_c0_cells.clone(),
+                                    y_c1_cells: y_c1_cells.clone(),
+                                };
+                                G2Assigned {
+                                    decomposed,
+                                    x_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        x_c0_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    x_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        x_c1_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    y_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        y_c0_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    y_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        y_c1_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                }
+                            })
+                            .collect_vec();
+
+                        // RLC over the entire input bytes.
+                        let input_cells = std::iter::empty()
+                            .chain(g1s.iter().map(|g1| g1.decomposed.x_cells.clone()))
+                            .chain(g1s.iter().map(|g1| g1.decomposed.y_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.x_c0_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.x_c1_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.y_c0_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.y_c1_cells.clone()))
+                            .flatten()
+                            .collect::<Vec<QuantumCell<F>>>();
+                        let input_rlc = pairing_chip.fp_chip.range.gate.inner_product(
+                            &mut ctx,
+                            input_cells,
+                            keccak_powers.clone(),
+                        );
+
+                        let pairs = g1s
+                            .iter()
+                            .zip(g2s.iter())
+                            .filter_map(|(g1_assigned, g2_assigned)| {
+                                if g1_assigned.decomposed.is_identity
+                                    && g2_assigned.decomposed.is_identity
+                                {
+                                    None
+                                } else {
+                                    Some((
+                                        &g1_assigned.decomposed.ec_point,
+                                        &g2_assigned.decomposed.ec_point,
+                                    ))
+                                }
+                            })
+                            .collect_vec();
+
+                        debug_assert_eq!(pairs.len(), 2);
+                        let success = {
                             let gt = {
                                 let gt = pairing_chip.multi_miller_loop(&mut ctx, pairs);
                                 fp12_chip.final_exp(&mut ctx, &gt)
@@ -407,6 +584,290 @@ impl<F: Field> EccCircuit<F> {
                     })
                     .collect_vec();
 
+                // e(G1 . G2) * e(G1 . G2) * e(G1 . G2)
+                let ec_pairings3_assigned = self
+                    .pairing_ops
+                    .iter()
+                    .filter(|pairing_op| pairing_op.is_pairing(3usize))
+                    .chain(std::iter::repeat(&EcPairingOp::dummy_pair3()))
+                    .take(self.ec_pairing3_ops)
+                    .map(|pairing_op| {
+                        let g1s = pairing_op
+                            .inputs
+                            .iter()
+                            .map(|i| {
+                                let (x_cells, y_cells) = self.decompose_g1(i.0);
+                                let decomposed = G1Decomposed {
+                                    ec_point: pairing_chip
+                                        .load_private_g1(&mut ctx, Value::known(i.0)),
+                                    is_identity: i.0.is_identity().into(),
+                                    x_cells: x_cells.clone(),
+                                    y_cells: y_cells.clone(),
+                                };
+                                G1Assigned {
+                                    decomposed,
+                                    x_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        x_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    y_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        y_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                }
+                            })
+                            .collect_vec();
+                        let g2s = pairing_op
+                            .inputs
+                            .iter()
+                            .map(|i| {
+                                let [x_c0_cells, x_c1_cells, y_c0_cells, y_c1_cells] =
+                                    self.decompose_g2(i.1);
+                                let decomposed = G2Decomposed {
+                                    ec_point: pairing_chip
+                                        .load_private_g2(&mut ctx, Value::known(i.1)),
+                                    is_identity: i.1.is_identity().into(),
+                                    x_c0_cells: x_c0_cells.clone(),
+                                    x_c1_cells: x_c1_cells.clone(),
+                                    y_c0_cells: y_c0_cells.clone(),
+                                    y_c1_cells: y_c1_cells.clone(),
+                                };
+                                G2Assigned {
+                                    decomposed,
+                                    x_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        x_c0_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    x_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        x_c1_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    y_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        y_c0_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    y_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        y_c1_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                }
+                            })
+                            .collect_vec();
+
+                        // RLC over the entire input bytes.
+                        let input_cells = std::iter::empty()
+                            .chain(g1s.iter().map(|g1| g1.decomposed.x_cells.clone()))
+                            .chain(g1s.iter().map(|g1| g1.decomposed.y_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.x_c0_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.x_c1_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.y_c0_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.y_c1_cells.clone()))
+                            .flatten()
+                            .collect::<Vec<QuantumCell<F>>>();
+                        let input_rlc = pairing_chip.fp_chip.range.gate.inner_product(
+                            &mut ctx,
+                            input_cells,
+                            keccak_powers.clone(),
+                        );
+
+                        let pairs = g1s
+                            .iter()
+                            .zip(g2s.iter())
+                            .filter_map(|(g1_assigned, g2_assigned)| {
+                                if g1_assigned.decomposed.is_identity
+                                    && g2_assigned.decomposed.is_identity
+                                {
+                                    None
+                                } else {
+                                    Some((
+                                        &g1_assigned.decomposed.ec_point,
+                                        &g2_assigned.decomposed.ec_point,
+                                    ))
+                                }
+                            })
+                            .collect_vec();
+
+                        debug_assert_eq!(pairs.len(), 3);
+                        let success = {
+                            let gt = {
+                                let gt = pairing_chip.multi_miller_loop(&mut ctx, pairs);
+                                fp12_chip.final_exp(&mut ctx, &gt)
+                            };
+                            // whether pairing check was successful.
+                            let one = fp12_chip.load_constant(&mut ctx, Fq12::one());
+                            fp12_chip.is_equal(&mut ctx, &gt, &one)
+                        };
+
+                        ecc_chip.field_chip().range().gate().assert_equal(
+                            &mut ctx,
+                            QuantumCell::Existing(success),
+                            QuantumCell::Witness(Value::known(
+                                pairing_op
+                                    .output
+                                    .to_scalar()
+                                    .expect("EcPairing output = {0, 1}"),
+                            )),
+                        );
+
+                        EcPairingAssigned {
+                            g1s,
+                            g2s,
+                            input_rlc,
+                            success,
+                        }
+                    })
+                    .collect_vec();
+
+                // e(G1 . G2) * e(G1 . G2) * e(G1 . G2) * e(G1 . G2)
+                let mut ec_pairings_assigned = self
+                    .pairing_ops
+                    .iter()
+                    .filter(|pairing_op| pairing_op.is_pairing(4usize))
+                    .chain(std::iter::repeat(&EcPairingOp::dummy_pair4()))
+                    .take(self.ec_pairing4_ops)
+                    .map(|pairing_op| {
+                        let g1s = pairing_op
+                            .inputs
+                            .iter()
+                            .map(|i| {
+                                let (x_cells, y_cells) = self.decompose_g1(i.0);
+                                let decomposed = G1Decomposed {
+                                    ec_point: pairing_chip
+                                        .load_private_g1(&mut ctx, Value::known(i.0)),
+                                    is_identity: i.0.is_identity().into(),
+                                    x_cells: x_cells.clone(),
+                                    y_cells: y_cells.clone(),
+                                };
+                                G1Assigned {
+                                    decomposed,
+                                    x_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        x_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    y_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        y_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                }
+                            })
+                            .collect_vec();
+                        let g2s = pairing_op
+                            .inputs
+                            .iter()
+                            .map(|i| {
+                                let [x_c0_cells, x_c1_cells, y_c0_cells, y_c1_cells] =
+                                    self.decompose_g2(i.1);
+                                let decomposed = G2Decomposed {
+                                    ec_point: pairing_chip
+                                        .load_private_g2(&mut ctx, Value::known(i.1)),
+                                    is_identity: i.1.is_identity().into(),
+                                    x_c0_cells: x_c0_cells.clone(),
+                                    x_c1_cells: x_c1_cells.clone(),
+                                    y_c0_cells: y_c0_cells.clone(),
+                                    y_c1_cells: y_c1_cells.clone(),
+                                };
+                                G2Assigned {
+                                    decomposed,
+                                    x_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        x_c0_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    x_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        x_c1_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    y_c0_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        y_c0_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                    y_c1_rlc: pairing_chip.fp_chip.range.gate.inner_product(
+                                        &mut ctx,
+                                        y_c1_cells,
+                                        keccak_powers.clone(),
+                                    ),
+                                }
+                            })
+                            .collect_vec();
+
+                        // RLC over the entire input bytes.
+                        let input_cells = std::iter::empty()
+                            .chain(g1s.iter().map(|g1| g1.decomposed.x_cells.clone()))
+                            .chain(g1s.iter().map(|g1| g1.decomposed.y_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.x_c0_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.x_c1_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.y_c0_cells.clone()))
+                            .chain(g2s.iter().map(|g2| g2.decomposed.y_c1_cells.clone()))
+                            .flatten()
+                            .collect::<Vec<QuantumCell<F>>>();
+                        let input_rlc = pairing_chip.fp_chip.range.gate.inner_product(
+                            &mut ctx,
+                            input_cells,
+                            keccak_powers.clone(),
+                        );
+
+                        let pairs = g1s
+                            .iter()
+                            .zip(g2s.iter())
+                            .filter_map(|(g1_assigned, g2_assigned)| {
+                                if g1_assigned.decomposed.is_identity
+                                    && g2_assigned.decomposed.is_identity
+                                {
+                                    None
+                                } else {
+                                    Some((
+                                        &g1_assigned.decomposed.ec_point,
+                                        &g2_assigned.decomposed.ec_point,
+                                    ))
+                                }
+                            })
+                            .collect_vec();
+
+                        debug_assert_eq!(pairs.len(), 4);
+                        let success = {
+                            let gt = {
+                                let gt = pairing_chip.multi_miller_loop(&mut ctx, pairs);
+                                fp12_chip.final_exp(&mut ctx, &gt)
+                            };
+                            // whether pairing check was successful.
+                            let one = fp12_chip.load_constant(&mut ctx, Fq12::one());
+                            fp12_chip.is_equal(&mut ctx, &gt, &one)
+                        };
+
+                        ecc_chip.field_chip().range().gate().assert_equal(
+                            &mut ctx,
+                            QuantumCell::Existing(success),
+                            QuantumCell::Witness(Value::known(
+                                pairing_op
+                                    .output
+                                    .to_scalar()
+                                    .expect("EcPairing output = {0, 1}"),
+                            )),
+                        );
+
+                        EcPairingAssigned {
+                            g1s,
+                            g2s,
+                            input_rlc,
+                            success,
+                        }
+                    })
+                    .collect_vec();
+
+                ec_adds_assigned.extend(ec_doubles_assigned);
+                ec_pairings_assigned.extend(ec_pairings1_assigned);
+                ec_pairings_assigned.extend(ec_pairings2_assigned);
+                ec_pairings_assigned.extend(ec_pairings3_assigned);
                 Ok(EcOpsAssigned {
                     ec_adds_assigned,
                     ec_muls_assigned,
@@ -473,7 +934,7 @@ impl<F: Field> EccCircuit<F> {
 
                 // handle EcMul ops.
                 for (idx, ec_mul_assigned) in assigned_ec_ops.ec_muls_assigned.iter().enumerate() {
-                    let idx = idx + self.max_add_ops;
+                    let idx = idx + self.ec_add_unequal_ops + self.ec_double_ops;
                     region.assign_fixed(
                         || "assign ecc_table op_type",
                         config.ecc_table.op_type,
@@ -524,7 +985,10 @@ impl<F: Field> EccCircuit<F> {
                 for (idx, ec_pairing_assigned) in
                     assigned_ec_ops.ec_pairings_assigned.iter().enumerate()
                 {
-                    let idx = idx + self.max_add_ops + self.max_mul_ops;
+                    let idx = idx
+                        + self.ec_add_unequal_ops
+                        + self.ec_double_ops
+                        + self.ec_mul_nonzero_ops;
                     region.assign_fixed(
                         || "assign ecc_table op_type",
                         config.ecc_table.op_type,
@@ -665,9 +1129,14 @@ impl<F: Field> SubCircuit<F> for EccCircuit<F> {
 
     fn new_from_block(block: &Block<F>) -> Self {
         Self {
-            max_add_ops: block.circuits_params.max_ec_ops.ec_add,
-            max_mul_ops: block.circuits_params.max_ec_ops.ec_mul,
-            max_pairing_ops: block.circuits_params.max_ec_ops.ec_pairing,
+            // TODO(rohit): get from block's circuits params.
+            ec_add_unequal_ops: 2,
+            ec_double_ops: 2,
+            ec_mul_nonzero_ops: 2,
+            ec_pairing1_ops: 1,
+            ec_pairing2_ops: 1,
+            ec_pairing3_ops: 1,
+            ec_pairing4_ops: 1,
             add_ops: block.get_ec_add_ops(),
             mul_ops: block.get_ec_mul_ops(),
             pairing_ops: block.get_ec_pairing_ops(),

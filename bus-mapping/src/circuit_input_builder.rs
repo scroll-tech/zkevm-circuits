@@ -125,7 +125,7 @@ impl Default for CircuitsParams {
             max_ec_ops: PrecompileEcParams {
                 ec_add: 10,
                 ec_mul: 10,
-                ec_pairing: 4,
+                ec_pairing: 2,
             },
         }
     }

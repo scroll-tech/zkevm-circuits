@@ -2347,10 +2347,11 @@ impl EccTable {
 
         let keccak_rand = challenges.keccak_input();
 
-        // assign EcAdd
+        // assign ecAdd unequals.
         for add_op in add_ops
             .iter()
-            .chain(std::iter::repeat(&EcAddOp::default()))
+            .filter(|add_op| !add_op.inputs_equal())
+            .chain(std::iter::repeat(&EcAddOp::dummy_unequal()))
             .take(params.ec_add)
         {
             assignments.push([
@@ -2366,10 +2367,13 @@ impl EccTable {
             ]);
         }
 
-        // assign EcMul
+        // TODO(rohit): assign ecAdd doubles.
+
+        // assign ecMul non-zero
         for mul_op in mul_ops
             .iter()
-            .chain(std::iter::repeat(&EcMulOp::default()))
+            .filter(|mul_op| !mul_op.is_zero())
+            .chain(std::iter::repeat(&EcMulOp::dummy_non_zero()))
             .take(params.ec_mul)
         {
             assignments.push([
@@ -2385,7 +2389,10 @@ impl EccTable {
             ]);
         }
 
+        // TODO(rohit): can completely ignore ecMul ops where P == Infinity?
+
         // assign EcPairing
+        // TODO(rohit): separation of ops based on inputs.len() where inputs are not Infinity.
         for pairing_op in pairing_ops
             .iter()
             .chain(std::iter::repeat(&EcPairingOp::default()))
