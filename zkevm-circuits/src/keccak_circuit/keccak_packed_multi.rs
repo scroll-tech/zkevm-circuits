@@ -616,25 +616,12 @@ pub(crate) fn keccak<F: Field>(
                 }
 
                 data_rlcs[NUM_BYTES_PER_WORD] = data_rlc; // Start at 0 or forward the previous value.
-                                                          // println!("challenge {:?}",challenges.keccak_input() );
-                                                          // println!("data rlcs {:?}",data_rlcs );
-                                                          // println!("data rlc {:?}",data_rlc );
                 for (idx, (byte, padding)) in input_bytes.iter().zip(paddings.iter()).enumerate() {
                     if !*padding {
                         let byte_value = Value::known(byte.value);
-
-                        // println!("data rlc before {:?}",data_rlc );
-                        //     println!("byte_value {:?}", byte_value);
                         data_rlc = data_rlc * challenges.keccak_input() + byte_value;
-
-                        // println!("data rlc after {:?}",data_rlc );
                     }
                     data_rlcs[NUM_BYTES_PER_WORD - (idx + 1)] = data_rlc; // data_rlc_after_this_byte
-                                                                          // println!("index: {}",
-                                                                          // idx);
-                                                                          // println!("data rlcs
-                                                                          // {:?}",data_rlcs );
-                                                                          // println!("==============");
                 }
             } else {
                 // In rounds without inputs, forward the previous value.
