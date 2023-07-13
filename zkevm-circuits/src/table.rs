@@ -1529,16 +1529,6 @@ impl CopyTable {
         let mut src_value_acc = Value::known(F::zero());
         let mut dst_value_acc = Value::known(F::zero());
 
-        let full_length = copy_event.copy_bytes.bytes.len();
-
-        let mut src_bytes_left = copy_event
-            .copy_bytes
-            .bytes
-            .iter()
-            .filter(|&step| !step.2)
-            .count();
-        let mut dst_bytes_left = src_bytes_left;
-
         let read_steps = copy_event.copy_bytes.bytes.iter();
         let copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
             read_steps.zip(write_steps.iter())
@@ -1552,17 +1542,17 @@ impl CopyTable {
             .clone()
             .unwrap_or(vec![]);
 
+        let mut src_bytes_left = copy_event.copy_length();
+        let mut dst_bytes_left = src_bytes_left;
+
         let mut src_addr = copy_event.src_addr;
         let mut dst_addr = copy_event.dst_addr;
 
         let mut src_front_mask = true;
         let mut dst_front_mask = true;
 
-        let src_rw = copy_event.src_type == CopyDataType::Memory;
-        let dst_rw = copy_event.dst_type == CopyDataType::Memory
-            || copy_event.dst_type == CopyDataType::TxLog;
-        let mut rw_counter = copy_event.rw_counter_start.0 as u64;
-        let mut rwc_inc_left = (src_rw as u64 + dst_rw as u64) * (full_length / 32) as u64;
+        let mut rw_counter = copy_event.rw_counter_start();
+        let mut rwc_inc_left = copy_event.rw_counter_delta();
 
         for (step_idx, (is_read_step, mut copy_step)) in copy_steps
             .flat_map(|(read_step, write_step)| {
@@ -1600,7 +1590,7 @@ impl CopyTable {
             // is_first
             let is_first = Value::known(if step_idx == 0 { F::one() } else { F::zero() });
             // is last
-            let is_last = if step_idx == full_length * 2 - 1 {
+            let is_last = if step_idx as u64 == copy_event.full_length() * 2 - 1 {
                 Value::known(F::one())
             } else {
                 Value::known(F::zero())
@@ -1675,7 +1665,7 @@ impl CopyTable {
             let addr_end = if is_read_step {
                 copy_event.src_addr_end
             } else {
-                copy_event.dst_addr + full_length as u64
+                copy_event.dst_addr + copy_event.full_length()
             };
 
             assignments.push((
@@ -1690,7 +1680,7 @@ impl CopyTable {
                             src_bytes_left
                         } else {
                             dst_bytes_left
-                        } as u64)),
+                        })),
                         "real_bytes_left",
                     ),
                     (
@@ -1766,7 +1756,10 @@ impl CopyTable {
             }
             // Update the RW counter.
             let is_word_end = (step_idx / 2) % 32 == 31;
-            if is_word_end && (is_read_step && src_rw || !is_read_step && dst_rw) {
+            if is_word_end
+                && (is_read_step && copy_event.is_source_rw()
+                    || !is_read_step && copy_event.is_destination_rw())
+            {
                 rw_counter += 1;
                 rwc_inc_left -= 1;
             }
