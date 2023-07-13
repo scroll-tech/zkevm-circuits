@@ -15,12 +15,13 @@ use crate::{
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
     sign_types::SignData,
-    word, GethExecStep, ToLittleEndian, Word, H256,
+    GethExecStep, Word, H256,
 };
 use gadgets::impl_expr;
 use halo2_proofs::{
+    arithmetic::Field,
     halo2curves::{
-        bn256::{Fq, Fq2, Fr, G1Affine, G2Affine},
+        bn256::{Fr, G1Affine, G2Affine},
         group::cofactor::CofactorCurveAffine,
     },
     plonk::Expression,
@@ -582,9 +583,9 @@ impl EcAddOp {
         Self { p, q, r }
     }
 
-    /// Returns true if the input points P and Q are the same.
-    pub fn inputs_equal(&self) -> bool {
-        self.p.eq(&self.q)
+    /// Returns true if P == Q == Infinity.
+    pub fn is_zero(&self) -> bool {
+        self.p.is_identity().into() && self.q.is_identity().into()
     }
 }
 
@@ -608,6 +609,13 @@ impl Default for EcMulOp {
     }
 }
 
+impl EcMulOp {
+    /// Returns true if P == Infinity or s == 0.
+    pub fn is_zero(&self) -> bool {
+        self.p.is_identity().into() || self.s.is_zero().into()
+    }
+}
+
 /// The number of pairing inputs per pairing operation. If the inputs provided to the precompile
 /// call are < 4, we append (G1::infinity, G2::Infinity) until we have the required number of
 /// inputs.
@@ -624,57 +632,14 @@ pub struct EcPairingOp {
 
 impl Default for EcPairingOp {
     fn default() -> Self {
-        // example from https://evm.codes/precompiled
-        const G1_X_1: &str = "0x2cf44499d5d27bb186308b7af7af02ac5bc9eeb6a3d147c186b21fb1b76e18da";
-        const G1_Y_1: &str = "0x2c0f001f52110ccfe69108924926e45f0b0c868df0e7bde1fe16d3242dc715f6";
-        const G2_X_11: &str = "0x1fb19bb476f6b9e44e2a32234da8212f61cd63919354bc06aef31e3cfaff3ebc";
-        const G2_X_12: &str = "0x22606845ff186793914e03e21df544c34ffe2f2f3504de8a79d9159eca2d98d9";
-        const G2_Y_11: &str = "0x2bd368e28381e8eccb5fa81fc26cf3f048eea9abfdd85d7ed3ab3698d63e4f90";
-        const G2_Y_12: &str = "0x2fe02e47887507adf0ff1743cbac6ba291e66f59be6bd763950bb16041a0a85e";
-        const G1_X_2: &str = "0x0000000000000000000000000000000000000000000000000000000000000001";
-        const G1_Y_2: &str = "0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45";
-        const G2_X_21: &str = "0x1971ff0471b09fa93caaf13cbf443c1aede09cc4328f5a62aad45f40ec133eb4";
-        const G2_X_22: &str = "0x091058a3141822985733cbdddfed0fd8d6c104e9e9eff40bf5abfef9ab163bc7";
-        const G2_Y_21: &str = "0x2a23af9a5ce2ba2796c1f4e453a370eb0af8c212d9dc9acd8fc02c2e907baea2";
-        const G2_Y_22: &str = "0x23a8eb0b0996252cb548a4487da97b02422ebc0e834613f954de6c7e0afdc1fc";
         Self {
             inputs: [
-                (
-                    G1Affine {
-                        x: Fq::from_bytes(&word!(G1_X_1).to_le_bytes()).unwrap(),
-                        y: Fq::from_bytes(&word!(G1_Y_1).to_le_bytes()).unwrap(),
-                    },
-                    G2Affine {
-                        x: Fq2 {
-                            c1: Fq::from_bytes(&word!(G2_X_11).to_le_bytes()).unwrap(),
-                            c0: Fq::from_bytes(&word!(G2_X_12).to_le_bytes()).unwrap(),
-                        },
-                        y: Fq2 {
-                            c1: Fq::from_bytes(&word!(G2_Y_11).to_le_bytes()).unwrap(),
-                            c0: Fq::from_bytes(&word!(G2_Y_12).to_le_bytes()).unwrap(),
-                        },
-                    },
-                ),
-                (
-                    G1Affine {
-                        x: Fq::from_bytes(&word!(G1_X_2).to_le_bytes()).unwrap(),
-                        y: Fq::from_bytes(&word!(G1_Y_2).to_le_bytes()).unwrap(),
-                    },
-                    G2Affine {
-                        x: Fq2 {
-                            c1: Fq::from_bytes(&word!(G2_X_21).to_le_bytes()).unwrap(),
-                            c0: Fq::from_bytes(&word!(G2_X_22).to_le_bytes()).unwrap(),
-                        },
-                        y: Fq2 {
-                            c1: Fq::from_bytes(&word!(G2_Y_21).to_le_bytes()).unwrap(),
-                            c0: Fq::from_bytes(&word!(G2_Y_22).to_le_bytes()).unwrap(),
-                        },
-                    },
-                ),
-                (G1Affine::identity(), G2Affine::identity()),
-                (G1Affine::identity(), G2Affine::identity()),
+                (G1Affine::generator(), G2Affine::generator()),
+                (G1Affine::identity(), G2Affine::generator()),
+                (G1Affine::identity(), G2Affine::generator()),
+                (G1Affine::identity(), G2Affine::generator()),
             ],
-            output: Word::one(),
+            output: Word::zero(),
         }
     }
 }
@@ -696,5 +661,13 @@ impl EcPairingOp {
                     .collect::<Vec<u8>>()
             })
             .collect::<Vec<u8>>()
+    }
+
+    /// Returns if all inputs to the pairing op are Infinity.
+    pub fn is_zero(&self) -> bool {
+        self.inputs[0].0.is_identity().into()
+            && self.inputs[1].0.is_identity().into()
+            && self.inputs[2].0.is_identity().into()
+            && self.inputs[3].0.is_identity().into()
     }
 }
