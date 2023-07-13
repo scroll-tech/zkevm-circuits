@@ -223,6 +223,8 @@ impl RlpFsmRomTable {
 pub struct RlpCircuitConfig<F> {
     /// Whether the row is the first row.
     q_first: Column<Fixed>,
+    /// Whether the row is the last row.
+    q_last: Column<Fixed>,
     /// The state of RLP verifier at the current row.
     state: Column<Advice>,
     /// A utility gadget to compare/query what state we are at.
@@ -336,6 +338,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         let q_enabled = rlp_table.q_enable;
         let (
             q_first,
+            q_last,
             byte_idx,
             byte_rev_idx,
             byte_value,
@@ -354,6 +357,7 @@ impl<F: Field> RlpCircuitConfig<F> {
             transit_to_new_rlp_instance,
             is_same_rlp_instance,
         ) = (
+            meta.fixed_column(),
             meta.fixed_column(),
             meta.advice_column(),
             meta.advice_column(),
@@ -1429,8 +1433,17 @@ impl<F: Field> RlpCircuitConfig<F> {
             ]))
         });
 
+        meta.create_gate("sm ends in End state", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            constrain_eq!(meta, cb, state, State::End);
+
+            cb.gate(meta.query_fixed(q_last, Rotation::cur()))
+        });
+
         Self {
             q_first,
+            q_last,
             state,
             state_bits,
             rlp_table,
@@ -1889,6 +1902,13 @@ impl<F: Field> RlpCircuitConfig<F> {
                 for i in sm_rows.len()..last_row {
                     self.assign_sm_end_row(&mut region, i)?;
                 }
+                region.assign_fixed(|| "q_first", self.q_first, 0, || Value::known(F::one()))?;
+                region.assign_fixed(
+                    || "q_last",
+                    self.q_last,
+                    last_row - 1,
+                    || Value::known(F::one()),
+                )?;
 
                 Ok(())
             },
