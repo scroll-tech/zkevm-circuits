@@ -14,9 +14,23 @@ use crate::{
 
 use super::mock_chunk::MockChunkCircuit;
 
-#[ignore = "it takes too much time"]
+#[cfg(feature = "disable_proof_aggregation")]
 #[test]
 fn test_aggregation_circuit() {
+    env_logger::init();
+
+    // This set up requires one round of keccak for chunk's data hash
+    let circuit = build_new_aggregation_circuit(2);
+    let instance = circuit.instances();
+    let mock_prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
+    mock_prover.assert_satisfied_par();
+}
+
+/// - Test full proof generation and verification.
+/// - Test a same pk can be used for various number of chunk proofs.
+#[ignore = "it takes too much time"]
+#[test]
+fn test_aggregation_circuit_full() {
     env_logger::init();
     let process_id = process::id();
 
@@ -27,11 +41,11 @@ fn test_aggregation_circuit() {
     // This set up requires one round of keccak for chunk's data hash
     let circuit = build_new_aggregation_circuit(2);
     let instance = circuit.instances();
-    let mock_prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
+    let mock_prover = MockProver::<Fr>::run(25, &circuit, instance).unwrap();
     mock_prover.assert_satisfied_par();
 
     let mut rng = test_rng();
-    let param = gen_srs(22);
+    let param = gen_srs(25);
 
     let pk = gen_pk(&param, &circuit, None);
     log::trace!("finished pk generation for circuit");

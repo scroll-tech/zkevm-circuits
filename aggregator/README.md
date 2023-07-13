@@ -1,7 +1,7 @@
 Proof Aggregation
 -----
 
-![Architecture](./figures/architecture.png)
+![Architecture](./figures/architecture.jpg)
 <!-- 
 This repo does proof aggregations for zkEVM proofs.
 
@@ -67,6 +67,7 @@ See [public input aggregation](./src/proof_aggregation/public_input_aggregation.
 |n | max number of chunks per batch|
 |t | number of rounds for the final hash $\lceil32\times n/136\rceil$ |
 
+Currently `n` is hard coded to `10`.
 # Structs
 
 ## Chunk
@@ -116,7 +117,7 @@ Circuit proving the relationship for a chunk is indeed the zkEVM circuit. It wil
     - 32 from public input hash
 
 ## Dummy chunk circuit
-A dummy chunk circuit also takes 44 elements as public inputs. Although its public input hash is derived as 
+A dummy chunk circuit also takes 44 elements as public inputs. Although its public input hash is also derived as 
 ```
 chunk_pi_hash := keccak(chain_id || prev_state_root || post_state_root || withdraw_root ||  chunk_data_hash)
 ```
@@ -208,12 +209,16 @@ Suppose we target for `MAX_AGG_SNARK = 10`. Then, the last hash function will ta
 We also know in the circuit if a chunk is a dummy one or not. This is given by a flag `is_padding`. 
 
 For the input of the final data hash
-- we extract `32 * MAX_AGG_SNARK` number of cells (__static__ here) from the last hash. For each cell
-    - if `is_padding`, then the cell must be a zero cell
-    - if `!is_padding `, then the cell must match the data hash from the chunks
+- we extract `32 * MAX_AGG_SNARK` number of cells (__static__ here) from the last hash. We then compute the RLC of those `32 * MAX_AGG_SNARK` when the corresponding `is_padding` is not set. We constraint this RLC matches the `data_rlc` from the keccak table.
+
 
 For the output of the final data hash
-- we extract all three hash digest cells from last 3 rounds. We then constraint that the actual data hash matches one of the three hash digest cells.
+- we extract all three hash digest cells from last 3 rounds. We then constraint that the actual data hash matches one of the three hash digest cells with proper flags defined as follows.
+
+    #valid snarks | offset of data hash | flags
+    1,2,3,4       | 0                   | 1, 0, 0
+    5,6,7,8       | 32                  | 0, 1, 0   
+    9,10          | 64                  | 0, 0, 1
 
 Additional checks for dummy chunk
 - if `is_padding` for `i` the chunk, we constrain `chunk[i].prev_state_root = chunk[i].post_state_root`
