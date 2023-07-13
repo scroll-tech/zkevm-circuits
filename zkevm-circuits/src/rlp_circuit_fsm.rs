@@ -824,6 +824,7 @@ impl<F: Field> RlpCircuitConfig<F> {
         diffs.extend(byte_value_lte_0xf8.lt_chip.config().diff);
         diffs.extend(tidx_lte_tlength.lt_chip.config().diff);
         diffs.extend(mlength_lte_0x20.lt_chip.config().diff);
+        diffs.extend(tlength_lte_mlength.lt_chip.config().diff);
 
         for diff in diffs {
             meta.lookup_any("diff in range256", |meta| {
