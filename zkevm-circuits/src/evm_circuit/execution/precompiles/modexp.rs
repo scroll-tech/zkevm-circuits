@@ -27,6 +27,7 @@ use bus_mapping::precompile::{PrecompileAuxData, MODEXP_INPUT_LIMIT, MODEXP_SIZE
 struct RandPowRepresent<F, const BIT_LIMIT: usize> {
     bits: BinaryNumberGadget<F, BIT_LIMIT>,
     pow_assembles: Vec<(Cell<F>, usize)>,
+    pow_from_bits: Option<Cell<F>>,
     pow: Expression<F>,
 }
 
@@ -96,6 +97,42 @@ impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
             pow_assembles,
             bits,
             pow,
+            pow_from_bits: None,
+        }
+    }
+
+    /// same as configure, make use of rand_pow_table instead of constraint it
+    /// by additional cells
+    pub fn configure_with_lookup(
+        cb: &mut EVMConstraintBuilder<F>,
+        _randomness: Expression<F>,
+        exponent: Expression<F>,
+        linked_val: Option<Expression<F>>,
+    ) -> Self {
+        let bits = BinaryNumberGadget::construct(cb, exponent);
+        let mut pow_assembles = Vec::new();
+        let lookup_cell = cb.query_cell_phase2();
+        cb.pow_of_rand_lookup(bits.value(), lookup_cell.expr());
+
+        let mut pow = linked_val.unwrap_or_else(|| 1.expr()) * lookup_cell.expr();
+        // still we would cache the pow expression in case degree is too larget
+        if pow.degree() > Self::BIT_EXP_MAX_DEGREE {
+            let cached_cell = cb.query_cell_phase2();
+            cb.require_equal(
+                "pow_assemble cached current expression",
+                cached_cell.expr(),
+                pow.clone(),
+            );
+
+            pow = cached_cell.expr();
+            pow_assembles.push((cached_cell, BIT_LIMIT - 1));
+        }
+
+        Self {
+            pow_assembles,
+            bits,
+            pow,
+            pow_from_bits: Some(lookup_cell),
         }
     }
 
@@ -128,6 +165,17 @@ impl<F: Field, const BIT_LIMIT: usize> RandPowRepresent<F, BIT_LIMIT> {
         let mut pow_cached_i = self.pow_assembles.iter();
         let mut cached_cell = pow_cached_i.next();
         let mut value_should_assigned = linked_value.unwrap_or_else(|| Value::known(F::one()));
+
+        if let Some(cell) = &self.pow_from_bits {
+            cell.assign(
+                region,
+                offset,
+                region
+                    .challenges()
+                    .keccak_input()
+                    .map(|v| v.pow(&[exponent as u64, 0, 0, 0])),
+            )?;
+        }
 
         for (n, (base_pow, &bit)) in base_pows.zip(bits.as_slice().iter().rev()).enumerate() {
             value_should_assigned = value_should_assigned
@@ -350,7 +398,7 @@ impl<F: Field> ModExpInputs<F> {
         let is_input_need_padding =
             LtGadget::construct(cb, input_bytes_len.clone(), input_expected.clone());
 
-        let padding_pow = RandPowRepresent::configure(
+        let padding_pow = RandPowRepresent::configure_with_lookup(
             cb,
             cb.challenges().keccak_input(),
             util::select::expr(
