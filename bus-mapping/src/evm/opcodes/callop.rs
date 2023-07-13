@@ -257,11 +257,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 let precompile_call: PrecompileCalls = code_address.0[19].into();
 
                 // get the result of the precompile call.
-                let caller_ctx = state.caller_ctx()?;
-                let caller_memory = caller_ctx.memory.clone();
                 let (result, contract_gas_cost) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
+                        let caller_memory = &state.caller_ctx()?.memory;
                         &caller_memory.0[args_offset..args_offset + args_length]
                     } else {
                         &[]
@@ -361,7 +360,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         &mut exec_step,
                         call.call_data_offset,
                         n_input_bytes as u64,
-                        &caller_memory,
                     )?;
                     let input_bytes = copy_steps
                         .iter()

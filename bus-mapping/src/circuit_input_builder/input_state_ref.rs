@@ -1711,13 +1711,13 @@ impl<'a> CircuitInputStateRef<'a> {
         exec_step: &mut ExecStep,
         src_addr: u64,
         copy_length: u64,
-        caller_memory: &Memory,
     ) -> Result<CopyEventSteps, Error> {
         if copy_length == 0 {
             return Ok(vec![]);
         }
 
         let src_range = MemoryWordRange::align_range(src_addr, copy_length);
+        let caller_memory = &self.caller_ctx()?.memory;
         let calldata_slot_bytes = caller_memory.read_chunk(src_range);
 
         let copy_steps = CopyEventStepsBuilder::memory_range(src_range)
