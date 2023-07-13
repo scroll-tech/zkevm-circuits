@@ -2350,8 +2350,8 @@ impl EccTable {
         // assign ecAdd unequals.
         for add_op in add_ops
             .iter()
-            .filter(|add_op| !add_op.inputs_equal())
-            .chain(std::iter::repeat(&EcAddOp::dummy_unequal()))
+            .filter(|add_op| !add_op.is_zero())
+            .chain(std::iter::repeat(&EcAddOp::default()))
             .take(params.ec_add)
         {
             assignments.push([
@@ -2373,7 +2373,7 @@ impl EccTable {
         for mul_op in mul_ops
             .iter()
             .filter(|mul_op| !mul_op.is_zero())
-            .chain(std::iter::repeat(&EcMulOp::dummy_non_zero()))
+            .chain(std::iter::repeat(&EcMulOp::default()))
             .take(params.ec_mul)
         {
             assignments.push([
@@ -2395,6 +2395,7 @@ impl EccTable {
         // TODO(rohit): separation of ops based on inputs.len() where inputs are not Infinity.
         for pairing_op in pairing_ops
             .iter()
+            .filter(|pairing_op| !pairing_op.is_zero())
             .chain(std::iter::repeat(&EcPairingOp::default()))
             .take(params.ec_pairing)
         {
@@ -2431,7 +2432,7 @@ impl EccTable {
                         .zip_eq(row.iter().skip(1))
                     {
                         region.assign_advice(
-                            || format!("ecc table row = {i}, column = {:?}", column),
+                            || format!("ecc table row = {i}, column = {column:?}"),
                             column,
                             i,
                             || value,

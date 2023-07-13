@@ -8,10 +8,7 @@ use eth_types::Field;
 use halo2_proofs::{
     arithmetic::Field as ArithmeticField,
     dev::MockProver,
-    halo2curves::{
-        bn256::{Fr, G1Affine, G2Affine},
-        group::cofactor::CofactorCurveAffine,
-    },
+    halo2curves::bn256::{Fr, G1Affine, G2Affine},
 };
 use rand::{CryptoRng, RngCore};
 
@@ -76,12 +73,20 @@ impl GenRand for EcPairingOp {
         let point_q = G2Affine::from(G2Affine::generator() * beta);
         let point_s = G1Affine::from(G1Affine::generator() * alpha * beta);
         let point_t = G2Affine::generator();
+
+        let alpha = Fr::random(&mut r);
+        let beta = Fr::random(&mut r);
+        let point_a = G1Affine::from(G1Affine::generator() * alpha);
+        let point_a_negated = point_a.neg();
+        let point_b = G2Affine::from(G2Affine::generator() * beta);
+        let point_c = G1Affine::from(G1Affine::generator() * alpha * beta);
+        let point_d = G2Affine::generator();
         Self {
             inputs: [
                 (point_p_negated, point_q),
                 (point_s, point_t),
-                (G1Affine::identity(), G2Affine::identity()),
-                (G1Affine::identity(), G2Affine::identity()),
+                (point_a_negated, point_b),
+                (point_c, point_d),
             ],
             output: 1u64.into(),
         }
@@ -123,30 +128,22 @@ fn variadic_size_check() {
     let mut rng = rand::thread_rng();
 
     let circuit = EccCircuit::<Fr> {
-        ec_add_unequal_ops: 5,
-        ec_double_ops: 5,
-        ec_mul_nonzero_ops: 5,
-        ec_pairing1_ops: 1,
-        ec_pairing2_ops: 2,
-        ec_pairing3_ops: 1,
-        ec_pairing4_ops: 2,
-        add_ops: gen(&mut rng, 4),
-        mul_ops: gen(&mut rng, 3),
-        pairing_ops: gen(&mut rng, 2),
+        max_add_ops: 10,
+        max_mul_ops: 10,
+        max_pairing_ops: 4,
+        add_ops: gen(&mut rng, 9),
+        mul_ops: gen(&mut rng, 8),
+        pairing_ops: gen(&mut rng, 3),
         _marker: PhantomData,
     };
     let prover1 = MockProver::<Fr>::run(LOG_TOTAL_NUM_ROWS, &circuit, vec![]).unwrap();
 
     let circuit = EccCircuit::<Fr> {
-        ec_add_unequal_ops: 5,
-        ec_double_ops: 5,
-        ec_mul_nonzero_ops: 5,
-        ec_pairing1_ops: 1,
-        ec_pairing2_ops: 2,
-        ec_pairing3_ops: 1,
-        ec_pairing4_ops: 2,
-        add_ops: gen(&mut rng, 3),
-        mul_ops: gen(&mut rng, 2),
+        max_add_ops: 10,
+        max_mul_ops: 10,
+        max_pairing_ops: 4,
+        add_ops: gen(&mut rng, 7),
+        mul_ops: gen(&mut rng, 6),
         pairing_ops: gen(&mut rng, 1),
         _marker: PhantomData,
     };
