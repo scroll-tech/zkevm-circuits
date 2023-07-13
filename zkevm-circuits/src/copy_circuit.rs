@@ -418,19 +418,21 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             });
 
             // The first word must not be completely masked.
-            cb.condition(is_word_end.expr(), |cb| {
+            // LOG has no front mask at all.
+            let is_tx_log = meta.query_advice(is_tx_log, Rotation::cur());
+            cb.condition(is_word_end.expr() + is_tx_log.expr(), |cb| {
                 // The first 31 bytes may be front_mask, but not the last byte of the first word.
                 cb.require_zero("front_mask = 0 by the end of the first word", front_mask.expr());
-
-                /* Note: other words may be completely masked, because reader and writer may have different word counts. A fully masked word is a no-op, not contributing to value_acc, and its word_rlc equals word_rlc_prev.
-                cb.require_zero(
-                    "back_mask=0 at the start of the next word",
-                    and::expr([
-                        is_continue.expr(),
-                        back_mask_next.expr(),
-                    ]),
-                );*/
             });
+
+            /* Note: other words may be completely masked, because reader and writer may have different word counts. A fully masked word is a no-op, not contributing to value_acc, and its word_rlc equals word_rlc_prev.
+            cb.require_zero(
+                "back_mask=0 at the start of the next word",
+                and::expr([
+                    is_word_end.expr(),
+                    back_mask_next.expr(),
+                ]),
+            );*/
 
             // Decrement real_bytes_left for the next step, on non-masked rows. At the end, it must reach 0.
             {
@@ -444,7 +446,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             }
 
             // Decrement rwc_inc_left for the next row, when an RW operation happens. At the end, it must reach 0.
-            let is_rw_type = meta.query_advice(is_memory, Rotation::cur()) + meta.query_advice(is_tx_log, Rotation::cur());
+            let is_rw_type = meta.query_advice(is_memory, Rotation::cur()) + is_tx_log.expr();
             {
                 let rwc_diff = is_rw_type.expr() * is_word_end.expr();
                 let next_value = meta.query_advice(rwc_inc_left, Rotation::cur()) - rwc_diff;
