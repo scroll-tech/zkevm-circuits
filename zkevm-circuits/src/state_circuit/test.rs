@@ -108,12 +108,12 @@ fn state_circuit_simple_2() {
     let memory_op_2 = Operation::new(
         RWCounter::from(17),
         RW::WRITE,
-        MemoryOp::new_write(1, MemoryAddress::from(1), 32.into(), 0.into()),
+        MemoryOp::new_write(1, MemoryAddress::from(96), 32.into(), 0.into()),
     );
     let memory_op_3 = Operation::new(
         RWCounter::from(87),
         RW::READ,
-        MemoryOp::new_write(1, MemoryAddress::from(1), 32.into(), 32.into()),
+        MemoryOp::new_write(1, MemoryAddress::from(96), 32.into(), 32.into()),
     );
 
     let stack_op_0 = Operation::new(
@@ -477,7 +477,7 @@ fn nonlexicographic_order_tag() {
         rw_counter: 1,
         is_write: true,
         call_id: 1,
-        memory_address: 10,
+        memory_address: 0,
         value: 12.into(),
         value_prev: 0.into(),
     };
@@ -677,7 +677,7 @@ fn read_inconsistency() {
             rw_counter: 10,
             is_write: false,
             call_id: 1,
-            memory_address: 10,
+            memory_address: 32,
             value: 0.into(),
             value_prev: 0.into(),
         },
@@ -685,13 +685,40 @@ fn read_inconsistency() {
             rw_counter: 40,
             is_write: false,
             call_id: 1,
-            memory_address: 10,
+            memory_address: 32,
             value: 200.into(),
             value_prev: 0.into(),
         },
     ];
 
     assert_error_matches(verify(rows), "non-first access reads don't change value");
+}
+
+#[test]
+fn memory_write_inconsistency() {
+    let rows = vec![
+        Rw::Memory {
+            rw_counter: 10,
+            is_write: true,
+            call_id: 1,
+            memory_address: 32,
+            value: 100.into(),
+            value_prev: 0.into(),
+        },
+        Rw::Memory {
+            rw_counter: 40,
+            is_write: true,
+            call_id: 1,
+            memory_address: 32,
+            value: 200.into(),
+            value_prev: 0.into(), // should have been 100.
+        },
+    ];
+
+    assert_error_matches(
+        verify(rows),
+        "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+    );
 }
 
 #[test]
@@ -732,12 +759,28 @@ fn invalid_memory_address() {
 }
 
 #[test]
+fn misaligned_memory_address() {
+    for memory_address in [1, 31, 0x010010, u32::MAX as u64] {
+        let rows = vec![Rw::Memory {
+            rw_counter: 1,
+            is_write: true,
+            call_id: 1,
+            memory_address,
+            value: 12.into(),
+            value_prev: 0.into(),
+        }];
+
+        assert_error_matches(verify(rows), "address % 32 == 0");
+    }
+}
+
+#[test]
 fn bad_initial_memory_value() {
     let rows = vec![Rw::Memory {
         rw_counter: 1,
         is_write: true,
         call_id: 1,
-        memory_address: 10,
+        memory_address: 32,
         value: 0.into(),
         value_prev: 0.into(),
     }];
