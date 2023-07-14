@@ -46,7 +46,7 @@ use crate::{
     witness::{Bytecode, RwMap, Transaction},
 };
 
-use self::copy_gadgets::constrain_word_index;
+use self::copy_gadgets::{constrain_word_index, constrain_word_rlc};
 
 /// The current row.
 const CURRENT: Rotation = Rotation(0);
@@ -340,6 +340,20 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 (value_word_rlc, value),
                 (value_word_rlc_prev, value_prev),
             ];
+            
+            // Update the word index and RLC.
+            for (word_rlc, value) in word_rlc_both {
+                constrain_word_rlc(
+                    cb,
+                    meta,
+                    is_first.expr(),
+                    is_continue.expr(),
+                    is_word_end.expr(),
+                    word_rlc,
+                    value,
+                    challenges.evm_word(),
+                );
+            }
 
             constrain_word_index(
                 cb,
@@ -362,34 +376,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                             "value_acc init to the first value, or 0 if padded or masked",
                             meta.query_advice(value_acc, rot),
                             meta.query_advice(value, rot) * meta.query_advice(non_pad_non_mask, rot),
-                        );
-
-                        for (word_rlc, value) in word_rlc_both {
-                            cb.require_equal(
-                                "word_rlc init to the first value",
-                                meta.query_advice(word_rlc, rot),
-                                meta.query_advice(value, rot),
-                            );
-                        }
-                    }
-                },
-            );
-
-            // Update the word index and RLC.
-            cb.condition(is_continue.expr(),
-                |cb| {
-                    // Accumulate the next value into the next word_rlc.
-                    for (word_rlc, value) in word_rlc_both {
-                        let current_or_reset = select::expr(is_word_end.expr(),
-                            0.expr(),
-                            meta.query_advice(word_rlc, CURRENT),
-                        );
-                        let value = meta.query_advice(value, NEXT_STEP);
-                        let accumulated = current_or_reset.expr() * challenges.evm_word() + value;
-                        cb.require_equal(
-                            "value_word_rlc(2) == value_word_rlc(0) * r + value(2)",
-                            accumulated,
-                            meta.query_advice(word_rlc, NEXT_STEP),
                         );
                     }
                 },
