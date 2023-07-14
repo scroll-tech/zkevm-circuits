@@ -301,6 +301,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 ]),
             );
 
+            let is_pad_next = meta.query_advice(is_pad, Rotation(2));
             let is_pad = meta.query_advice(is_pad, Rotation::cur());
             cb.require_boolean("is_pad is boolean", is_pad.expr());
             cb.require_equal(
@@ -329,12 +330,17 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             let is_last_step = meta.query_advice(is_last, Rotation::cur())
                 + meta.query_advice(is_last, Rotation::next());
+            let is_last = meta.query_advice(is_last, Rotation::cur());
+
+            // Prevent an event from spilling into the disabled rows. This also ensures that eventually is_last=1.
+            cb.require_zero(
+                "the next row is enabled",
+                (is_event.expr() - is_last.expr())
+                * not::expr(meta.query_fixed(q_enable, Rotation::next()))
+            );
 
             // Whether this row is part of an event but not the last step. When true, the next step is derived from the current step.
             let is_continue = is_event.expr() - is_last_step.expr();
-
-            // Prevent an event from spilling into the disabled rows. This also ensures that eventually is_last=1.
-            cb.require_zero("the next row is enabled", is_continue.expr() * not::expr(meta.query_fixed(q_enable, Rotation::next())));
 
             let is_word_end = is_word_end.is_equal_expression.expr();
 
@@ -464,7 +470,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 let rwc_diff = is_rw_type.expr() * is_word_end.expr();
                 let next_value = meta.query_advice(rwc_inc_left, Rotation::cur()) - rwc_diff;
                 let update_or_finish = select::expr(
-                    meta.query_advice(is_last, Rotation::cur()),
+                    is_last.expr(),
                     0.expr(),
                     meta.query_advice(rwc_inc_left, Rotation::next()),
                 );
@@ -477,7 +483,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             // Maintain rw_counter based on rwc_inc_left. Their sum remains constant in all cases.
             cb.condition(
-                not::expr(meta.query_advice(is_last, Rotation::cur())),
+                not::expr(is_last.expr()),
                 |cb| {
                     cb.require_equal(
                         "rows[0].rw_counter + rows[0].rwc_inc_left == rows[1].rw_counter + rows[1].rwc_inc_left",
@@ -530,7 +536,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     {
                         let current = meta.query_advice(value_acc, Rotation::cur());
                         // If source padding, replace the value with 0.
-                        let value_or_pad = meta.query_advice(value, Rotation(2)) * not::expr(is_pad.expr());
+                        let value_or_pad = meta.query_advice(value, Rotation(2)) * not::expr(is_pad_next.expr());
                         let accumulated = current.expr() * challenges.keccak_input() + value_or_pad;
                         // If masked, copy the accumulator forward, otherwise update it.
                         let copy_or_acc = select::expr(mask_next, current, accumulated);
@@ -545,7 +551,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             // Forward rlc_acc from the event to all rows.
             cb.condition(
-                not::expr(meta.query_advice(is_last, Rotation::cur())),
+                not::expr(is_last.expr()),
                 |cb| {
                     cb.require_equal(
                         "rows[0].rlc_acc == rows[1].rlc_acc",
@@ -602,24 +608,38 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         meta.create_gate("verify step (q_step == 1)", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-            
-            let is_pad_writer = meta.query_advice(is_pad, Rotation::next());
+
+            let [is_pad, is_pad_writer, is_pad_next] =
+                [Rotation::cur(), Rotation::next(), Rotation(2)]
+                    .map(|at| meta.query_advice(is_pad, at));
+
             cb.require_zero("is_pad == 0 for write row", is_pad_writer);
 
-            let is_pad_next = meta.query_advice(is_pad, Rotation(2));
-            let is_pad = meta.query_advice(is_pad, Rotation::cur());
-            
-            // TODO: is_pad when is_first.
+            let [is_src_end, is_src_end_next] = [Rotation::cur(), Rotation(2)].map(|at| {
+                let addr = meta.query_advice(addr, at);
+                let src_addr_end = meta.query_advice(src_addr_end, at);
+                is_src_end.expr_at(meta, at, addr, src_addr_end)
+            });
 
-            // When the address reaches the limit src_addr_end, the row is padding.
+            let is_first = meta.query_advice(is_first, Rotation::cur());
             let not_last = not::expr(meta.query_advice(is_last, Rotation::next()));
+
+            // When and after the address reaches the limit src_addr_end, zero-padding is enabled.
+            cb.condition(is_first, |cb| {
+                cb.require_equal(
+                    "is_pad starts at src_addr == src_addr_end",
+                    is_pad.expr(),
+                    is_src_end.expr(),
+                );
+            });
             cb.condition(not_last, |cb| {
                 cb.require_equal(
-                    "is_pad goes from 0 to 1 when src_addr == src_addr_end, otherwise it keeps its value",
-                    is_pad.expr() + is_src_end.is_equal_expression.expr(),
+                    "is_pad=1 when src_addr == src_addr_end, otherwise it keeps the previous value",
+                    select::expr(is_src_end_next, 1.expr(), is_pad.expr()),
                     is_pad_next.expr(),
                 );
             });
+
             cb.require_equal(
                 "is_pad == 1 - (src_addr < src_addr_end) for read row",
                 1.expr() - addr_lt_addr_end.is_lt(meta, None),
