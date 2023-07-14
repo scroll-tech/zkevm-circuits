@@ -1658,31 +1658,30 @@ impl<'a> CircuitInputStateRef<'a> {
     ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
         let src_addr = src_addr.into().0;
         let dst_addr = dst_addr.into().0;
-        let src_addr_end = src_addr_end.into().0;
         let bytes_left = bytes_left.into().0;
         let src_copy_end = src_addr + bytes_left;
         let dst_copy_end = dst_addr + bytes_left;
+        let src_addr_end = src_copy_end.min(src_addr_end.into().0);
 
         if bytes_left == 0 {
             return Ok((vec![], vec![]));
         }
 
-        // Extend call memory.
-        let memory = &mut self.call_ctx_mut()?.memory;
-        memory.extend_for_range(dst_addr.into(), bytes_left.into());
-
         // Align memory range.
         let dst_range = MemoryWordRange::align_range(dst_addr, bytes_left);
         let dst_begin_slot = dst_range.start_slot().0;
-        let dst_end_slot = dst_range.end_slot().0.min(memory.len());
+        let dst_end_slot = dst_range.end_slot().0;
         assert!(dst_begin_slot <= dst_addr && dst_end_slot >= dst_copy_end);
 
+        // Extend call memory.
+        let memory = &mut self.call_ctx_mut()?.memory;
+        memory.extend_for_range(dst_begin_slot.into(), dst_range.full_length().0.into());
+
         // Combine the slot bytes.
-        let bytes_to_copy = bytecode.code[src_addr..src_addr_end.min(src_copy_end)]
+        let bytes_to_copy = bytecode.code[src_addr..src_addr_end]
             .iter()
             .map(|b| b.value);
-        let padding_bytes =
-            repeat(0).take(src_copy_end.checked_sub(src_addr_end).unwrap_or_default());
+        let padding_bytes = repeat(0).take(src_copy_end - src_addr_end);
         let slot_bytes: Vec<u8> = memory[dst_begin_slot..dst_addr]
             .iter()
             .cloned()
