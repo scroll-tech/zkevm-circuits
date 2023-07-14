@@ -415,70 +415,34 @@ pub type CopyEventSteps = Vec<(u8, bool, bool)>;
 pub type CopyEventPrevBytes = Vec<u8>;
 
 impl CopyEvent {
-    /// rw counter at step index
-    pub fn rw_counter(&self, step_index: usize) -> u64 {
-        u64::try_from(self.rw_counter_start.0).unwrap() + self.rw_counter_increase(step_index)
+    /// The full length of the event, including masked segments.
+    pub fn full_length(&self) -> u64 {
+        self.copy_bytes.bytes.len() as u64
     }
 
-    /// rw counter at step index
-    pub fn rw_counter_step(&self, step_index: usize) -> u64 {
-        let mut rw_counter = u64::try_from(self.rw_counter_start.0).unwrap();
-        let rw_counter_increase = self.rw_counter_increase(step_index);
-        rw_counter += rw_counter_increase;
-
-        // step_index == self.bytes.len() when caculate total rw increasing.
-        if self.dst_type == CopyDataType::TxLog
-            && step_index != self.copy_bytes.bytes.len() * 2
-            && step_index % 64 == 63
-        {
-            // log writing
-            rw_counter += 1;
-        }
-
-        rw_counter
+    /// The length of the copied data, excluding masked segments.
+    pub fn copy_length(&self) -> u64 {
+        self.copy_bytes.bytes.iter().filter(|&step| !step.2).count() as u64
     }
 
-    /// rw counter increase left at step index
-    pub fn rw_counter_increase_left(&self, step_index: usize) -> u64 {
-        if self.rw_counter_step(self.copy_bytes.bytes.len() * 2) < self.rw_counter_step(step_index)
-        {
-            panic!("prev rw_counter_step > total tw_counter");
-        }
-        // self.rw_counter_step(self.bytes.len() * 2) - self.rw_counter_step(step_index)
-        self.rw_counter_step(self.copy_bytes.bytes.len() * 2) - self.rw_counter_step(step_index)
+    /// Whether the source performs RW lookups in the state circuit.
+    pub fn is_source_rw(&self) -> bool {
+        self.src_type == CopyDataType::Memory
     }
 
-    /// Number of rw operations performed by this copy event
+    /// Whether the destination performs RW lookups in the state circuit.
+    pub fn is_destination_rw(&self) -> bool {
+        self.dst_type == CopyDataType::Memory || self.dst_type == CopyDataType::TxLog
+    }
+
+    /// The RW counter of the first RW lookup performed by this copy event.
+    pub fn rw_counter_start(&self) -> u64 {
+        usize::from(self.rw_counter_start) as u64
+    }
+
+    /// The number of RW lookups performed by this copy event.
     pub fn rw_counter_delta(&self) -> u64 {
-        self.rw_counter_increase(self.copy_bytes.bytes.len() * 2)
-    }
-
-    // increase in rw counter from the start of the copy event to step index
-    fn rw_counter_increase(&self, step_index: usize) -> u64 {
-        if let (CopyDataType::Memory, CopyDataType::Memory) = (self.src_type, self.dst_type) {
-            return step_index as u64 % 2 + 2 * (step_index as u64 / 64);
-        }
-        let source_rw_increase = match self.src_type {
-            CopyDataType::Bytecode | CopyDataType::TxCalldata | CopyDataType::Precompile(_) => 0,
-            CopyDataType::Memory => (step_index as u64 / 2) / 32,
-            CopyDataType::RlcAcc | CopyDataType::TxLog | CopyDataType::Padding => unreachable!(),
-        };
-        let destination_rw_increase = match self.dst_type {
-            CopyDataType::RlcAcc | CopyDataType::Bytecode | CopyDataType::Precompile(_) => 0,
-            CopyDataType::Memory => (step_index as u64 / 2) / 32,
-            CopyDataType::TxLog => u64::try_from(step_index).unwrap() / 2 / 32,
-            CopyDataType::TxCalldata | CopyDataType::Padding => unreachable!(),
-        };
-
-        source_rw_increase + destination_rw_increase
-    }
-
-    // increase in rw counter for tx log specially
-    fn rw_counter_increase_log(&self, step_index: usize) -> u64 {
-        match self.dst_type {
-            CopyDataType::TxLog => u64::try_from(step_index).unwrap() / 2,
-            _ => unreachable!(),
-        }
+        (self.is_source_rw() as u64 + self.is_destination_rw() as u64) * (self.full_length() / 32)
     }
 }
 

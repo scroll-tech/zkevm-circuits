@@ -37,14 +37,12 @@ impl Opcode for ErrorCreationCode {
         let byte = state.call_ctx()?.memory.0[offset.as_usize()];
         assert!(byte == 0xef);
 
-        let mut memory = state.call_ctx_mut()?.memory.clone();
+        let memory = &state.call_ctx()?.memory;
         trace!("before mload memory length is {}", memory.0.len());
 
         let offset = offset.as_u64();
         // expand to offset + 32 as need one word at least.
         let minimal_length = offset + 32;
-
-        memory.extend_at_least(minimal_length as usize);
 
         let shift = offset % 32;
         let slot = offset - shift;
@@ -53,7 +51,7 @@ impl Opcode for ErrorCreationCode {
             minimal_length,
             slot,
             shift,
-            memory.0.len()
+            memory.length_to_extend(minimal_length as usize),
         );
 
         //state.memory_read(&mut exec_step, offset.try_into()?, byte)?;

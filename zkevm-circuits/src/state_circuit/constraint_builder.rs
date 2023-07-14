@@ -232,7 +232,12 @@ impl<F: Field> ConstraintBuilder<F> {
             self.require_zero("memory address fits into 2 limbs", limb.clone());
         }
 
-        // TODO: check address is aligned (addr%32==0)
+        // The address is aligned.
+        let inv_32 = F::from(32).invert().unwrap();
+        self.add_lookup(
+            "address % 32 == 0",
+            vec![(q.address.limbs[0].clone() * inv_32, q.lookups.u16.clone())],
+        );
 
         // 2.3. value is a word
         // 2.4. Start initial value is 0
