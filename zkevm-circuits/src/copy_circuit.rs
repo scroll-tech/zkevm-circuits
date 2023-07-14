@@ -45,6 +45,13 @@ use crate::{
     witness::{Bytecode, RwMap, Transaction},
 };
 
+/// The current row.
+const CURRENT: Rotation = Rotation(0);
+/// The next row. Constraints with NEXT_ROW connect reader-to-writer or writer-to-reader.
+const NEXT_ROW: Rotation = Rotation(1);
+/// The next step, processing the next byte. This connects reader-to-reader or writer-to-writer.
+const NEXT_STEP: Rotation = Rotation(2);
+
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]
 pub struct CopyCircuitConfig<F> {
@@ -183,96 +190,81 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let is_src_end = IsEqualChip::configure(
             meta,
             |meta| meta.query_selector(q_step),
-            |meta| meta.query_advice(addr, Rotation::cur()),
-            |meta| meta.query_advice(src_addr_end, Rotation::cur()),
+            |meta| meta.query_advice(addr, CURRENT),
+            |meta| meta.query_advice(src_addr_end, CURRENT),
         );
 
         let is_word_end = IsEqualChip::configure(
             meta,
-            |meta| meta.query_fixed(q_enable, Rotation::cur()),
-            |meta| meta.query_advice(word_index, Rotation::cur()),
+            |meta| meta.query_fixed(q_enable, CURRENT),
+            |meta| meta.query_advice(word_index, CURRENT),
             |_meta| 31.expr(),
         );
 
         let non_pad_non_mask = meta.advice_column();
 
         meta.create_gate("decode tag", |meta| {
-            let enabled = meta.query_fixed(q_enable, Rotation::cur());
-            let is_event = meta.query_advice(is_event, Rotation::cur());
-            let is_precompile = meta.query_advice(is_precompiled, Rotation::cur());
-            let is_tx_calldata = meta.query_advice(is_tx_calldata, Rotation::cur());
-            let is_bytecode = meta.query_advice(is_bytecode, Rotation::cur());
-            let is_memory = meta.query_advice(is_memory, Rotation::cur());
-            let is_tx_log = meta.query_advice(is_tx_log, Rotation::cur());
+            let enabled = meta.query_fixed(q_enable, CURRENT);
+            let is_event = meta.query_advice(is_event, CURRENT);
+            let is_precompile = meta.query_advice(is_precompiled, CURRENT);
+            let is_tx_calldata = meta.query_advice(is_tx_calldata, CURRENT);
+            let is_bytecode = meta.query_advice(is_bytecode, CURRENT);
+            let is_memory = meta.query_advice(is_memory, CURRENT);
+            let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
             let precompiles = sum::expr([
                 tag.value_equals(
                     CopyDataType::Precompile(PrecompileCalls::Ecrecover),
-                    Rotation::cur(),
+                    CURRENT,
                 )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Sha256),
-                    Rotation::cur(),
-                )(meta),
+                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Sha256), CURRENT)(meta),
                 tag.value_equals(
                     CopyDataType::Precompile(PrecompileCalls::Ripemd160),
-                    Rotation::cur(),
+                    CURRENT,
                 )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Identity),
-                    Rotation::cur(),
-                )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Modexp),
-                    Rotation::cur(),
-                )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Bn128Add),
-                    Rotation::cur(),
-                )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Bn128Mul),
-                    Rotation::cur(),
-                )(meta),
+                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Identity), CURRENT)(
+                    meta,
+                ),
+                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Modexp), CURRENT)(meta),
+                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Bn128Add), CURRENT)(
+                    meta,
+                ),
+                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Bn128Mul), CURRENT)(
+                    meta,
+                ),
                 tag.value_equals(
                     CopyDataType::Precompile(PrecompileCalls::Bn128Pairing),
-                    Rotation::cur(),
+                    CURRENT,
                 )(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Blake2F),
-                    Rotation::cur(),
-                )(meta),
+                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Blake2F), CURRENT)(meta),
             ]);
             vec![
                 // If a row is anything but padding (filler of the table), it is in an event.
                 enabled.expr()
                     * ((1.expr() - is_event.expr())
-                        - tag.value_equals(CopyDataType::Padding, Rotation::cur())(meta)),
+                        - tag.value_equals(CopyDataType::Padding, CURRENT)(meta)),
                 // Match boolean indicators to their respective tag values.
                 enabled.expr() * (is_precompile - precompiles),
                 enabled.expr()
-                    * (is_tx_calldata
-                        - tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)),
+                    * (is_tx_calldata - tag.value_equals(CopyDataType::TxCalldata, CURRENT)(meta)),
                 enabled.expr()
-                    * (is_bytecode
-                        - tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)),
+                    * (is_bytecode - tag.value_equals(CopyDataType::Bytecode, CURRENT)(meta)),
                 enabled.expr()
-                    * (is_memory - tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)),
-                enabled.expr()
-                    * (is_tx_log - tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)),
+                    * (is_memory - tag.value_equals(CopyDataType::Memory, CURRENT)(meta)),
+                enabled.expr() * (is_tx_log - tag.value_equals(CopyDataType::TxLog, CURRENT)(meta)),
             ]
         });
 
         meta.create_gate("verify row", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            let is_first = meta.query_advice(is_first, Rotation::cur());
+            let is_first = meta.query_advice(is_first, CURRENT);
             cb.require_boolean(
                 "is_first is boolean",
                 is_first.expr(),
             );
             cb.require_boolean(
                 "is_last is boolean",
-                meta.query_advice(is_last, Rotation::cur()),
+                meta.query_advice(is_last, CURRENT),
             );
             cb.require_zero(
                 "is_first == 0 when q_step == 0",
@@ -284,47 +276,47 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.require_zero(
                 "is_last == 0 when q_step == 1",
                 and::expr([
-                    meta.query_advice(is_last, Rotation::cur()),
+                    meta.query_advice(is_last, CURRENT),
                     meta.query_selector(q_step),
                 ]),
             );
 
-            let is_pad_next = meta.query_advice(is_pad, Rotation(2));
-            let is_pad = meta.query_advice(is_pad, Rotation::cur());
+            let is_pad_next = meta.query_advice(is_pad, NEXT_STEP);
+            let is_pad = meta.query_advice(is_pad, CURRENT);
             cb.require_boolean("is_pad is boolean", is_pad.expr());
             cb.require_equal(
                 "non_pad_non_mask = !pad AND !mask",
-                meta.query_advice(non_pad_non_mask, Rotation::cur()),
+                meta.query_advice(non_pad_non_mask, CURRENT),
                 and::expr([
                     not::expr(is_pad.expr()),
-                    not::expr(meta.query_advice(mask, Rotation::cur())),
+                    not::expr(meta.query_advice(mask, CURRENT)),
                 ]),
             );
 
             // On a masked row, the value is the value_prev.
             cb.condition(
-                meta.query_advice(mask, Rotation::cur()),
+                meta.query_advice(mask, CURRENT),
                 |cb| {
                     cb.require_equal(
                         "value == value_prev on masked rows",
-                        meta.query_advice(value, Rotation::cur()),
-                        meta.query_advice(value_prev, Rotation::cur()),
+                        meta.query_advice(value, CURRENT),
+                        meta.query_advice(value_prev, CURRENT),
                     );
                 },
             );
 
             // Whether this row is part of an event.
-            let is_event = meta.query_advice(is_event, Rotation::cur());
+            let is_event = meta.query_advice(is_event, CURRENT);
 
-            let is_last_step = meta.query_advice(is_last, Rotation::cur())
-                + meta.query_advice(is_last, Rotation::next());
-            let is_last = meta.query_advice(is_last, Rotation::cur());
+            let is_last_step = meta.query_advice(is_last, CURRENT)
+                + meta.query_advice(is_last, NEXT_ROW);
+            let is_last = meta.query_advice(is_last, CURRENT);
 
             // Prevent an event from spilling into the disabled rows. This also ensures that eventually is_last=1.
             cb.require_zero(
                 "the next row is enabled",
                 (is_event.expr() - is_last.expr())
-                * not::expr(meta.query_fixed(q_enable, Rotation::next()))
+                * not::expr(meta.query_fixed(q_enable, NEXT_ROW))
             );
 
             // Whether this row is part of an event but not the last step. When true, the next step is derived from the current step.
@@ -342,7 +334,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.condition(is_first.expr(),
                 |cb| {
                     // Apply the same constraints on the first reader and first writer rows.
-                    for rot in [Rotation::cur(), Rotation::next()] {
+                    for rot in [CURRENT, NEXT_ROW] {
                         cb.require_zero("word_index starts at 0", meta.query_advice(word_index, rot));
 
                         let back_mask = meta.query_advice(mask, rot) - meta.query_advice(front_mask, rot);
@@ -372,26 +364,26 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     let inc_or_reset = select::expr(
                       is_word_end.expr(),
                         0.expr(),
-                        meta.query_advice(word_index, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(word_index, CURRENT) + 1.expr(),
                     );
                     cb.require_equal(
                         "word_index increments or resets to 0",
                         inc_or_reset,
-                        meta.query_advice(word_index, Rotation(2)),
+                        meta.query_advice(word_index, NEXT_STEP),
                     );
 
                     // Accumulate the next value into the next word_rlc.
                     for (word_rlc, value) in word_rlc_both {
                         let current_or_reset = select::expr(is_word_end.expr(),
                             0.expr(),
-                            meta.query_advice(word_rlc, Rotation::cur()),
+                            meta.query_advice(word_rlc, CURRENT),
                         );
-                        let value = meta.query_advice(value, Rotation(2));
+                        let value = meta.query_advice(value, NEXT_STEP);
                         let accumulated = current_or_reset.expr() * challenges.evm_word() + value;
                         cb.require_equal(
                             "value_word_rlc(2) == value_word_rlc(0) * r + value(2)",
                             accumulated,
-                            meta.query_advice(word_rlc, Rotation(2)),
+                            meta.query_advice(word_rlc, NEXT_STEP),
                         );
                     }
                 },
@@ -401,10 +393,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // If front_mask=1, then mask=1 and back_mask=0.
             // If back_mask=1, then mask=1 and front_mask=0.
             // Otherwise, mask=0.
-            let mask_next = meta.query_advice(mask, Rotation(2));
-            let mask = meta.query_advice(mask, Rotation::cur());
-            let front_mask_next = meta.query_advice(front_mask, Rotation(2));
-            let front_mask = meta.query_advice(front_mask, Rotation::cur());
+            let mask_next = meta.query_advice(mask, NEXT_STEP);
+            let mask = meta.query_advice(mask, CURRENT);
+            let front_mask_next = meta.query_advice(front_mask, NEXT_STEP);
+            let front_mask = meta.query_advice(front_mask, CURRENT);
             let back_mask_next = mask_next.expr() - front_mask_next.expr();
             let back_mask = mask.expr() - front_mask.expr();
             cb.require_boolean("mask is boolean", mask.expr());
@@ -426,7 +418,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             // The first word must not be completely masked.
             // LOG has no front mask at all.
-            let is_tx_log = meta.query_advice(is_tx_log, Rotation::cur());
+            let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
             cb.condition(is_word_end.expr() + is_tx_log.expr(), |cb| {
                 // The first 31 bytes may be front_mask, but not the last byte of the first word.
                 cb.require_zero("front_mask = 0 by the end of the first word", front_mask.expr());
@@ -443,8 +435,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             // Decrement real_bytes_left for the next step, on non-masked rows. At the end, it must reach 0.
             {
-                let next_value = meta.query_advice(real_bytes_left, Rotation::cur()) - not::expr(mask.expr());
-                let update_or_finish = select::expr(is_continue.expr(), meta.query_advice(real_bytes_left, Rotation(2)), 0.expr());
+                let next_value = meta.query_advice(real_bytes_left, CURRENT) - not::expr(mask.expr());
+                let update_or_finish = select::expr(is_continue.expr(), meta.query_advice(real_bytes_left, NEXT_STEP), 0.expr());
                 cb.require_equal(
                     "real_bytes_left[2] == real_bytes_left[0] - !mask, or 0 at the end",
                     next_value,
@@ -453,14 +445,14 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             }
 
             // Decrement rwc_inc_left for the next row, when an RW operation happens. At the end, it must reach 0.
-            let is_rw_type = meta.query_advice(is_memory, Rotation::cur()) + is_tx_log.expr();
+            let is_rw_type = meta.query_advice(is_memory, CURRENT) + is_tx_log.expr();
             {
                 let rwc_diff = is_rw_type.expr() * is_word_end.expr();
-                let next_value = meta.query_advice(rwc_inc_left, Rotation::cur()) - rwc_diff;
+                let next_value = meta.query_advice(rwc_inc_left, CURRENT) - rwc_diff;
                 let update_or_finish = select::expr(
                     is_last.expr(),
                     0.expr(),
-                    meta.query_advice(rwc_inc_left, Rotation::next()),
+                    meta.query_advice(rwc_inc_left, NEXT_ROW),
                 );
                 cb.require_equal(
                     "rwc_inc_left[2] == rwc_inc_left[0] - rwc_diff, or 0 at the end",
@@ -475,8 +467,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 |cb| {
                     cb.require_equal(
                         "rows[0].rw_counter + rows[0].rwc_inc_left == rows[1].rw_counter + rows[1].rwc_inc_left",
-                        meta.query_advice(rw_counter, Rotation::cur()) + meta.query_advice(rwc_inc_left, Rotation::cur()),
-                        meta.query_advice(rw_counter, Rotation::next()) + meta.query_advice(rwc_inc_left, Rotation::next()),
+                        meta.query_advice(rw_counter, CURRENT) + meta.query_advice(rwc_inc_left, CURRENT),
+                        meta.query_advice(rw_counter, NEXT_ROW) + meta.query_advice(rwc_inc_left, NEXT_ROW),
                     );
                 }
             );
@@ -499,39 +491,39 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     let addr_diff = not::expr(front_mask.expr());
                     cb.require_equal(
                         "rows[0].addr + !front_mask == rows[2].addr",
-                        meta.query_advice(addr, Rotation::cur()) + addr_diff,
-                        meta.query_advice(addr, Rotation(2)),
+                        meta.query_advice(addr, CURRENT) + addr_diff,
+                        meta.query_advice(addr, NEXT_STEP),
                     );
 
                     // Forward other fields to the next step.
                     cb.require_equal(
                         "rows[0].id == rows[2].id",
-                        meta.query_advice(id, Rotation::cur()),
-                        meta.query_advice(id, Rotation(2)),
+                        meta.query_advice(id, CURRENT),
+                        meta.query_advice(id, NEXT_STEP),
                     );
                     cb.require_equal(
                         "rows[0].tag == rows[2].tag",
-                        tag.value(Rotation::cur())(meta),
-                        tag.value(Rotation(2))(meta),
+                        tag.value(CURRENT)(meta),
+                        tag.value(NEXT_STEP)(meta),
                     );
                     cb.require_equal(
                         "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
-                        meta.query_advice(src_addr_end, Rotation::cur()),
-                        meta.query_advice(src_addr_end, Rotation(2)),
+                        meta.query_advice(src_addr_end, CURRENT),
+                        meta.query_advice(src_addr_end, NEXT_STEP),
                     );
 
                     // Accumulate the next value into the next value_acc.
                     {
-                        let current = meta.query_advice(value_acc, Rotation::cur());
+                        let current = meta.query_advice(value_acc, CURRENT);
                         // If source padding, replace the value with 0.
-                        let value_or_pad = meta.query_advice(value, Rotation(2)) * not::expr(is_pad_next.expr());
+                        let value_or_pad = meta.query_advice(value, NEXT_STEP) * not::expr(is_pad_next.expr());
                         let accumulated = current.expr() * challenges.keccak_input() + value_or_pad;
                         // If masked, copy the accumulator forward, otherwise update it.
                         let copy_or_acc = select::expr(mask_next, current, accumulated);
                         cb.require_equal(
                             "value_acc(2) == value_acc(0) * r + value(2), or copy value_acc(0)",
                             copy_or_acc,
-                            meta.query_advice(value_acc, Rotation(2)),
+                            meta.query_advice(value_acc, NEXT_STEP),
                         );
                     }
                 },
@@ -543,13 +535,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 |cb| {
                     cb.require_equal(
                         "rows[0].rlc_acc == rows[1].rlc_acc",
-                        meta.query_advice(rlc_acc, Rotation::cur()),
-                        meta.query_advice(rlc_acc, Rotation::next()),
+                        meta.query_advice(rlc_acc, CURRENT),
+                        meta.query_advice(rlc_acc, NEXT_ROW),
                     );
                 },
             );
 
-            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
+            cb.gate(meta.query_fixed(q_enable, CURRENT))
         });
 
         meta.create_gate("Last Step", |meta| {
@@ -557,8 +549,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             cb.require_equal(
                 "source value_acc == destination value_acc on the last row",
-                meta.query_advice(value_acc, Rotation::cur()),
-                meta.query_advice(value_acc, Rotation::next()),
+                meta.query_advice(value_acc, CURRENT),
+                meta.query_advice(value_acc, NEXT_ROW),
             );
 
             // Check the rlc_acc given in the event if any of:
@@ -568,29 +560,29 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // - TxCalldata => Bytecode
             // - * => RlcAcc
             let rlc_acc_cond = sum::expr([
-                meta.query_advice(is_precompiled, Rotation::cur()),
-                meta.query_advice(is_precompiled, Rotation::next()),
+                meta.query_advice(is_precompiled, CURRENT),
+                meta.query_advice(is_precompiled, NEXT_ROW),
                 and::expr([
-                    meta.query_advice(is_memory, Rotation::cur()),
-                    meta.query_advice(is_bytecode, Rotation::next()),
+                    meta.query_advice(is_memory, CURRENT),
+                    meta.query_advice(is_bytecode, NEXT_ROW),
                 ]),
                 and::expr([
-                    meta.query_advice(is_tx_calldata, Rotation::cur()),
-                    meta.query_advice(is_bytecode, Rotation::next()),
+                    meta.query_advice(is_tx_calldata, CURRENT),
+                    meta.query_advice(is_bytecode, NEXT_ROW),
                 ]),
-                tag.value_equals(CopyDataType::RlcAcc, Rotation::next())(meta),
+                tag.value_equals(CopyDataType::RlcAcc, NEXT_ROW)(meta),
             ]);
             cb.condition(rlc_acc_cond, |cb| {
                 cb.require_equal(
                     "value_acc == rlc_acc on the last row",
-                    meta.query_advice(value_acc, Rotation::next()),
-                    meta.query_advice(rlc_acc, Rotation::next()),
+                    meta.query_advice(value_acc, NEXT_ROW),
+                    meta.query_advice(rlc_acc, NEXT_ROW),
                 );
             });
 
             cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_advice(is_last, Rotation::next()),
+                meta.query_fixed(q_enable, CURRENT),
+                meta.query_advice(is_last, NEXT_ROW),
             ]))
         });
 
@@ -598,19 +590,18 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let mut cb = BaseConstraintBuilder::default();
 
             let [is_pad, is_pad_writer, is_pad_next] =
-                [Rotation::cur(), Rotation::next(), Rotation(2)]
-                    .map(|at| meta.query_advice(is_pad, at));
+                [CURRENT, NEXT_ROW, NEXT_STEP].map(|at| meta.query_advice(is_pad, at));
 
             cb.require_zero("is_pad == 0 for write row", is_pad_writer);
 
-            let [is_src_end, is_src_end_next] = [Rotation::cur(), Rotation(2)].map(|at| {
+            let [is_src_end, is_src_end_next] = [CURRENT, NEXT_STEP].map(|at| {
                 let addr = meta.query_advice(addr, at);
                 let src_addr_end = meta.query_advice(src_addr_end, at);
                 is_src_end.expr_at(meta, at, addr, src_addr_end)
             });
 
-            let is_first = meta.query_advice(is_first, Rotation::cur());
-            let not_last = not::expr(meta.query_advice(is_last, Rotation::next()));
+            let is_first = meta.query_advice(is_first, CURRENT);
+            let not_last = not::expr(meta.query_advice(is_last, NEXT_ROW));
 
             // When and after the address reaches the limit src_addr_end, zero-padding is enabled.
             cb.condition(is_first, |cb| {
@@ -629,30 +620,30 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             });
 
             cb.gate(and::expr([
-                meta.query_fixed(q_enable, Rotation::cur()),
+                meta.query_fixed(q_enable, CURRENT),
                 meta.query_selector(q_step),
             ]))
         });
 
         // memory word lookup
         meta.lookup_any("Memory word lookup", |meta| {
-            let cond = meta.query_fixed(q_enable, Rotation::cur())
-                * meta.query_advice(is_memory, Rotation::cur())
+            let cond = meta.query_fixed(q_enable, CURRENT)
+                * meta.query_advice(is_memory, CURRENT)
                 * is_word_end.is_equal_expression.expr();
 
-            let addr_slot = meta.query_advice(addr, Rotation::cur()) - 31.expr();
+            let addr_slot = meta.query_advice(addr, CURRENT) - 31.expr();
 
             vec![
                 1.expr(),
-                meta.query_advice(rw_counter, Rotation::cur()),
+                meta.query_advice(rw_counter, CURRENT),
                 not::expr(meta.query_selector(q_step)),
                 RwTableTag::Memory.expr(),
-                meta.query_advice(id, Rotation::cur()), // call_id
+                meta.query_advice(id, CURRENT), // call_id
                 addr_slot,
                 0.expr(),
                 0.expr(),
-                meta.query_advice(value_word_rlc, Rotation::cur()),
-                meta.query_advice(value_word_rlc_prev, Rotation::cur()),
+                meta.query_advice(value_word_rlc, CURRENT),
+                meta.query_advice(value_word_rlc_prev, CURRENT),
                 0.expr(),
                 0.expr(),
             ]
@@ -663,22 +654,22 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         });
 
         meta.lookup_any("TxLog word lookup", |meta| {
-            let cond = meta.query_fixed(q_enable, Rotation::cur())
-                * meta.query_advice(is_tx_log, Rotation::cur())
+            let cond = meta.query_fixed(q_enable, CURRENT)
+                * meta.query_advice(is_tx_log, CURRENT)
                 * is_word_end.is_equal_expression.expr();
 
-            let addr_slot = meta.query_advice(addr, Rotation::cur()) - 31.expr();
+            let addr_slot = meta.query_advice(addr, CURRENT) - 31.expr();
 
             vec![
                 1.expr(),
-                meta.query_advice(rw_counter, Rotation::cur()),
+                meta.query_advice(rw_counter, CURRENT),
                 1.expr(),
                 RwTableTag::TxLog.expr(),
-                meta.query_advice(id, Rotation::cur()), // tx_id
-                addr_slot,                              // byte_index || field_tag || log_id
+                meta.query_advice(id, CURRENT), // tx_id
+                addr_slot,                      // byte_index || field_tag || log_id
                 0.expr(),
                 0.expr(),
-                meta.query_advice(value_word_rlc, Rotation::cur()),
+                meta.query_advice(value_word_rlc, CURRENT),
                 0.expr(),
                 0.expr(),
                 0.expr(),
@@ -690,17 +681,17 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         });
 
         meta.lookup_any("Bytecode lookup", |meta| {
-            let cond = meta.query_fixed(q_enable, Rotation::cur())
-                * meta.query_advice(is_bytecode, Rotation::cur())
-                * meta.query_advice(non_pad_non_mask, Rotation::cur());
+            let cond = meta.query_fixed(q_enable, CURRENT)
+                * meta.query_advice(is_bytecode, CURRENT)
+                * meta.query_advice(non_pad_non_mask, CURRENT);
 
             vec![
                 1.expr(),
-                meta.query_advice(id, Rotation::cur()),
+                meta.query_advice(id, CURRENT),
                 BytecodeFieldTag::Byte.expr(),
-                meta.query_advice(addr, Rotation::cur()),
-                meta.query_advice(is_code, Rotation::cur()),
-                meta.query_advice(value, Rotation::cur()),
+                meta.query_advice(addr, CURRENT),
+                meta.query_advice(is_code, CURRENT),
+                meta.query_advice(value, CURRENT),
             ]
             .into_iter()
             .zip_eq(bytecode_table.table_exprs(meta).into_iter())
@@ -709,16 +700,16 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         });
 
         meta.lookup_any("Tx calldata lookup", |meta| {
-            let cond = meta.query_fixed(q_enable, Rotation::cur())
-                * meta.query_advice(is_tx_calldata, Rotation::cur())
-                * meta.query_advice(non_pad_non_mask, Rotation::cur());
+            let cond = meta.query_fixed(q_enable, CURRENT)
+                * meta.query_advice(is_tx_calldata, CURRENT)
+                * meta.query_advice(non_pad_non_mask, CURRENT);
 
             vec![
                 1.expr(),
-                meta.query_advice(id, Rotation::cur()),
+                meta.query_advice(id, CURRENT),
                 TxContextFieldTag::CallData.expr(),
-                meta.query_advice(addr, Rotation::cur()),
-                meta.query_advice(value, Rotation::cur()),
+                meta.query_advice(addr, CURRENT),
+                meta.query_advice(value, CURRENT),
             ]
             .into_iter()
             .zip(tx_table.table_exprs(meta).into_iter())
@@ -919,7 +910,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             .sum::<usize>();
 
         // The `+ 2` is used to take into account the two extra empty copy rows needed
-        // to satisfy the queries at `Rotation(2)`.
+        // to satisfy the queries at `NEXT_STEP`.
         assert!(
             copy_rows_needed + 2 <= max_copy_rows,
             "copy rows not enough {copy_rows_needed} vs {max_copy_rows}"
