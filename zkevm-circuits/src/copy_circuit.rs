@@ -1,6 +1,7 @@
 //! The Copy circuit implements constraints and lookups for read-write steps for
 //! copied bytes while execution opcodes such as CALLDATACOPY, CODECOPY, LOGS,
 //! etc.
+mod copy_gadgets;
 pub(crate) mod util;
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
@@ -44,6 +45,8 @@ use crate::{
     witness,
     witness::{Bytecode, RwMap, Transaction},
 };
+
+use self::copy_gadgets::constrain_word_index;
 
 /// The current row.
 const CURRENT: Rotation = Rotation(0);
@@ -255,7 +258,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         });
 
         meta.create_gate("verify row", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
+            let cb = &mut BaseConstraintBuilder::default();
+            //let cb = &mut cb;
 
             // Detect the first row of an event. When true, both reader and writer are initialized.
             let is_first = meta.query_advice(is_first, CURRENT);
@@ -270,7 +274,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let not_last = not::expr(meta.query_advice(is_last, CURRENT));
             let is_last = meta.query_advice(is_last, CURRENT);
             // Detect the rows which process the last byte of a word. The next word starts at NEXT_STEP.
-            let is_word_end = is_word_end.is_equal_expression.expr();
+            let is_word_end = is_word_end.expr();
 
             // Check is_first and is_last
             cb.require_boolean(
@@ -337,13 +341,20 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 (value_word_rlc_prev, value_prev),
             ];
 
+            constrain_word_index(
+                cb,
+                meta,
+                is_first.expr(),
+                is_continue.expr(),
+                is_word_end.expr(),
+                word_index,
+            );
+
             // Initial values derived from the event.
             cb.condition(is_first.expr(),
                 |cb| {
                     // Apply the same constraints on the first reader and first writer rows.
                     for rot in [CURRENT, NEXT_ROW] {
-                        cb.require_zero("word_index starts at 0", meta.query_advice(word_index, rot));
-
                         let back_mask = meta.query_advice(mask, rot) - meta.query_advice(front_mask, rot);
                         cb.require_zero("back_mask starts at 0", back_mask);
 
@@ -367,19 +378,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // Update the word index and RLC.
             cb.condition(is_continue.expr(),
                 |cb| {
-
-                    // Update the index into the current or next word.
-                    let inc_or_reset = select::expr(
-                      is_word_end.expr(),
-                        0.expr(),
-                        meta.query_advice(word_index, CURRENT) + 1.expr(),
-                    );
-                    cb.require_equal(
-                        "word_index increments or resets to 0",
-                        inc_or_reset,
-                        meta.query_advice(word_index, NEXT_STEP),
-                    );
-
                     // Accumulate the next value into the next word_rlc.
                     for (word_rlc, value) in word_rlc_both {
                         let current_or_reset = select::expr(is_word_end.expr(),

@@ -8,6 +8,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
+use crate::util::Expr;
+
 use super::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 
 /// Instruction that the IsEqual chip needs to implement.
@@ -32,6 +34,11 @@ pub struct IsEqualConfig<F> {
 }
 
 impl<F: Field> IsEqualConfig<F> {
+    /// Returns the is_equal expression.
+    pub fn expr(&self) -> Expression<F> {
+        self.is_equal_expression.expr()
+    }
+
     /// Returns the is_equal expression from inputs, at any rotation where q_enable=1.
     pub fn expr_at(
         &self,
@@ -63,7 +70,7 @@ impl<F: Field> IsEqualChip<F> {
         let value_inv = meta.advice_column();
 
         let is_zero_config = IsZeroChip::configure(meta, q_enable, value, value_inv);
-        let is_equal_expression = is_zero_config.is_zero_expression.clone();
+        let is_equal_expression = is_zero_config.expr();
 
         IsEqualConfig {
             is_zero_config,
