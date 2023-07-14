@@ -391,6 +391,7 @@ pub struct CopyEvent {
     /// Represents the start address at the source of the copy event.
     pub src_addr: u64,
     /// Represents the end address at the source of the copy event.
+    /// It must be `src_addr_end >= src_addr`.
     pub src_addr_end: u64,
     /// Represents the source type.
     pub src_type: CopyDataType,

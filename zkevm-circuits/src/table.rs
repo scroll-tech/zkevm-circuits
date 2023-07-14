@@ -37,7 +37,6 @@ use halo2_proofs::plonk::SecondPhase;
 
 use itertools::Itertools;
 use keccak256::plain::Keccak;
-use log::trace;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
@@ -1506,7 +1505,8 @@ impl CopyTable {
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
-        trace!("assignments CopyEvent challenge  {challenges:?} ");
+        assert!(copy_event.src_addr_end >= copy_event.src_addr);
+
         let mut assignments = Vec::new();
         // rlc_acc
         let rlc_acc = {
