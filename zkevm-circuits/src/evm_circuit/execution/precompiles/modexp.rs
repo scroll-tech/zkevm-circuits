@@ -576,6 +576,13 @@ impl<F: Field> ModExpOutputs<F> {
         let result = cb.query_bytes();
         let result_limbs = Limbs::configure(cb, &result);
 
+        cb.condition(is_result_zero.expr(), |cb|{
+            cb.require_zero(
+                "output acc bytes must be zero for nil output", 
+                output_bytes_acc.clone(),
+            );
+        });
+
         cb.require_equal(
             "output acc bytes must equal",
             output_bytes_acc,
@@ -801,7 +808,7 @@ impl<F: Field> ExecutionGadget<F> for ModExpGadget<F> {
             return Err(Error::Synthesis);
         }
 
-        println!("call success {}", call.is_success);
+        //println!("call success {}", call.is_success);
         self.is_success.assign(
             region,
             offset,
@@ -994,6 +1001,33 @@ mod test {
                     address: PrecompileCalls::Modexp.address().to_word(),
                     ..Default::default()
                 },
+                PrecompileCallArgs {
+                    name: "modexp zero modulus",
+                    setup_code: bytecode! {
+                        // Base size
+                        PUSH1(0x1)
+                        PUSH1(0x00)
+                        MSTORE
+                        // Esize
+                        PUSH1(0x2)
+                        PUSH1(0x20)
+                        MSTORE
+                        // Msize
+                        PUSH1(0x0)
+                        PUSH1(0x40)
+                        MSTORE
+                        // B, E and M
+                        PUSH32(word!("0x0800090000000000000000000000000000000000000000000000000000000000"))
+                        PUSH1(0x60)
+                        MSTORE
+                    },
+                    call_data_offset: 0x0.into(),
+                    call_data_length: 0x63.into(),
+                    ret_offset: 0x9f.into(),
+                    ret_size: 0x01.into(),
+                    address: PrecompileCalls::Modexp.address().to_word(),
+                    ..Default::default()
+                },                
             ]
         };
 
@@ -1097,7 +1131,7 @@ mod test {
                     address: PrecompileCalls::Modexp.address().to_word(),
                     gas: 100000.into(),
                     ..Default::default()
-                },
+                },                
             ]
         };
     }
@@ -1114,7 +1148,7 @@ mod test {
     }
 
     #[test]
-    fn precompile_modexp_test() {
+    fn precompile_modexp_test_basic() {
         let call_kinds = vec![
             OpcodeId::CALL,
             OpcodeId::STATICCALL,
@@ -1166,9 +1200,6 @@ mod test {
                 let step_len = steps.len();
                 let call_step = &mut steps[step_len - 3];
                 assert_eq!(call_step.op, OpcodeId::STATICCALL);
-                // https://github.com/scroll-tech/go-ethereum/blob/2dcc60a082ff89d1c57e497f23daad4823b2fdea/core/vm/contracts.go#L39C42-L39C98
-                call_step.error =
-                    Some("modexp temporarily accepts only 32-byte (256-bit) inputs".into());
                 call_step.refund.0 = 0;
                 let next_gas = Gas(call_step.gas.0 - call_step.gas_cost.0);
 
@@ -1181,7 +1212,7 @@ mod test {
                 assert_eq!(final_step.op, OpcodeId::STOP);
                 final_step.gas = next_gas;
 
-                println!("trace {:?}", block.geth_traces);
+                // println!("trace {:?}", block.geth_traces);
             }))
             .run();
         }
