@@ -5,9 +5,10 @@ use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Chip, Region, Value},
     plonk::{ConstraintSystem, Error, Expression, VirtualCells},
+    poly::Rotation,
 };
 
-use super::is_zero::{IsZeroChip, IsZeroInstruction};
+use super::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 
 /// Instruction that the IsEqual chip needs to implement.
 pub trait IsEqualInstruction<F: FieldExt> {
@@ -25,9 +26,22 @@ pub trait IsEqualInstruction<F: FieldExt> {
 #[derive(Clone, Debug)]
 pub struct IsEqualConfig<F> {
     /// Stores an IsZero chip.
-    pub is_zero_chip: IsZeroChip<F>,
+    is_zero_config: IsZeroConfig<F>,
     /// Expression that denotes whether the chip evaluated to equal or not.
     pub is_equal_expression: Expression<F>,
+}
+
+impl<F: Field> IsEqualConfig<F> {
+    /// Returns the is_equal expression from inputs, at any rotation where q_enable=1.
+    pub fn expr_at(
+        &self,
+        meta: &mut VirtualCells<'_, F>,
+        at: Rotation,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) -> Expression<F> {
+        self.is_zero_config.expr_at(meta, at, lhs - rhs)
+    }
 }
 
 /// Chip that compares equality between two expressions.
@@ -52,7 +66,7 @@ impl<F: Field> IsEqualChip<F> {
         let is_equal_expression = is_zero_config.is_zero_expression.clone();
 
         IsEqualConfig {
-            is_zero_chip: IsZeroChip::construct(is_zero_config),
+            is_zero_config,
             is_equal_expression,
         }
     }
@@ -71,7 +85,11 @@ impl<F: Field> IsEqualInstruction<F> for IsEqualChip<F> {
         lhs: Value<F>,
         rhs: Value<F>,
     ) -> Result<(), Error> {
-        self.config.is_zero_chip.assign(region, offset, lhs - rhs)?;
+        IsZeroChip::construct(self.config.is_zero_config.clone()).assign(
+            region,
+            offset,
+            lhs - rhs,
+        )?;
 
         Ok(())
     }

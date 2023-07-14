@@ -43,6 +43,16 @@ impl<F: Field> IsZeroConfig<F> {
         self.is_zero_expression.clone()
     }
 
+    /// Returns the is_zero expression from inputs, at any rotation where q_enable=1.
+    pub fn expr_at(
+        &self,
+        meta: &mut VirtualCells<'_, F>,
+        at: Rotation,
+        value: Expression<F>,
+    ) -> Expression<F> {
+        1.expr() - value * meta.query_advice(self.value_inv, at)
+    }
+
     /// Annotates columns of this gadget embedded within a circuit region.
     pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
         [(self.value_inv, "GADGETS_IS_ZERO_inverse_witness")]
