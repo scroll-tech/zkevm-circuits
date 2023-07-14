@@ -576,9 +576,9 @@ impl<F: Field> ModExpOutputs<F> {
         let result = cb.query_bytes();
         let result_limbs = Limbs::configure(cb, &result);
 
-        cb.condition(is_result_zero.expr(), |cb|{
+        cb.condition(is_result_zero.expr(), |cb| {
             cb.require_zero(
-                "output acc bytes must be zero for nil output", 
+                "output acc bytes must be zero for nil output",
                 output_bytes_acc.clone(),
             );
         });
@@ -1027,7 +1027,7 @@ mod test {
                     ret_size: 0x01.into(),
                     address: PrecompileCalls::Modexp.address().to_word(),
                     ..Default::default()
-                },                
+                },
             ]
         };
 
@@ -1131,7 +1131,7 @@ mod test {
                     address: PrecompileCalls::Modexp.address().to_word(),
                     gas: 100000.into(),
                     ..Default::default()
-                },                
+                },
             ]
         };
     }
