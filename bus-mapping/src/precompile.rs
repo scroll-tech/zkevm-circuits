@@ -22,11 +22,13 @@ pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> 
             match PrecompileCalls::from(address.0[19]) {
                 // FIXME: override the behavior of invalid input
                 PrecompileCalls::Modexp => {
-                    let (input_valid, _) = ModExpAuxData::check_input(input);
+                    let (input_valid, [_, _, modulus_len]) = ModExpAuxData::check_input(input);
                     if input_valid {
+                        // detect some edge cases like modulus = 0
+                        assert_eq!(modulus_len.as_usize(), return_value.len());
                         (return_value, gas_cost)
                     } else {
-                        (vec![], gas_cost)
+                        (vec![], gas)
                     }
                 }
                 _ => (return_value, gas_cost),
