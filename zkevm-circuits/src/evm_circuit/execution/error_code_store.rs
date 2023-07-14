@@ -43,10 +43,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.require_in_set(
-            "ErrorCodeStore happens in [create,create2]",
+        // constrain opcodes
+        cb.require_equal(
+            "ErrorCodeStore checking at RETURN in create context",
             opcode.expr(),
-            vec![OpcodeId::RETURN.expr()],
+            OpcodeId::RETURN.expr(),
         );
 
         let offset = cb.query_cell_phase2();

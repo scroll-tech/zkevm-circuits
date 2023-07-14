@@ -34,9 +34,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        //
+        // constrain opcodes
         cb.require_equal(
-            "ErrorInvalidCreationCode",
+            "ErrorInvalidCreationCode checking at RETURN in create context",
             opcode.expr(),
             OpcodeId::RETURN.expr(),
         );
