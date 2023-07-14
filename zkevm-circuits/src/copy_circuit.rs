@@ -46,7 +46,7 @@ use crate::{
     witness::{Bytecode, RwMap, Transaction},
 };
 
-use self::copy_gadgets::{constrain_word_index, constrain_word_rlc, constrain_value_rlc};
+use self::copy_gadgets::{constrain_word_index, constrain_word_rlc, constrain_value_rlc, constrain_event_rlc_acc};
 
 /// The current row.
 const CURRENT: Rotation = Rotation(0);
@@ -434,6 +434,19 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 challenges.keccak_input(),
             );
 
+            constrain_event_rlc_acc(
+                cb,
+                meta,
+                is_last_col,
+                value_acc,
+                rlc_acc,
+                is_precompiled,
+                is_memory,
+                is_tx_calldata,
+                is_bytecode,
+                tag,
+            );
+
             // Decrement real_bytes_left for the next step, on non-masked rows. At the end, it must reach 0.
             {
                 let next_value = meta.query_advice(real_bytes_left, CURRENT) - not::expr(mask.expr());
@@ -515,55 +528,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
 
-            // Forward rlc_acc from the event to all rows.
-            cb.condition(
-                not_last.expr(),
-                |cb| {
-                    cb.require_equal(
-                        "rows[0].rlc_acc == rows[1].rlc_acc",
-                        meta.query_advice(rlc_acc, CURRENT),
-                        meta.query_advice(rlc_acc, NEXT_ROW),
-                    );
-                },
-            );
-
             cb.gate(meta.query_fixed(q_enable, CURRENT))
-        });
-
-        meta.create_gate("Last Step", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            // Check the rlc_acc given in the event if any of:
-            // - Precompile => *
-            // - * => Precompile
-            // - Memory => Bytecode
-            // - TxCalldata => Bytecode
-            // - * => RlcAcc
-            let rlc_acc_cond = sum::expr([
-                meta.query_advice(is_precompiled, CURRENT),
-                meta.query_advice(is_precompiled, NEXT_ROW),
-                and::expr([
-                    meta.query_advice(is_memory, CURRENT),
-                    meta.query_advice(is_bytecode, NEXT_ROW),
-                ]),
-                and::expr([
-                    meta.query_advice(is_tx_calldata, CURRENT),
-                    meta.query_advice(is_bytecode, NEXT_ROW),
-                ]),
-                tag.value_equals(CopyDataType::RlcAcc, NEXT_ROW)(meta),
-            ]);
-            cb.condition(rlc_acc_cond, |cb| {
-                cb.require_equal(
-                    "value_acc == rlc_acc on the last row",
-                    meta.query_advice(value_acc, NEXT_ROW),
-                    meta.query_advice(rlc_acc, NEXT_ROW),
-                );
-            });
-
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, CURRENT),
-                meta.query_advice(is_last, NEXT_ROW),
-            ]))
         });
 
         // Verify is_pad based on the address.

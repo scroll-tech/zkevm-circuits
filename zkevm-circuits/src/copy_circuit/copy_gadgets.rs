@@ -1,6 +1,10 @@
 use super::{CURRENT, NEXT_ROW, NEXT_STEP};
+use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::Field;
-use gadgets::util::{not, select, Expr};
+use gadgets::{
+    binary_number::BinaryNumberConfig,
+    util::{and, not, select, sum, Expr},
+};
 use halo2_proofs::plonk::{Advice, Column, Expression, VirtualCells};
 
 use crate::evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon};
@@ -121,6 +125,59 @@ pub fn constrain_value_rlc<F: Field>(
             "source value_acc == destination value_acc on the last row",
             meta.query_advice(value_acc, CURRENT),
             meta.query_advice(value_acc, NEXT_ROW),
+        );
+    });
+}
+
+pub fn constrain_event_rlc_acc<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    is_last: Column<Advice>,
+    // The RLCs to compare.
+    value_acc: Column<Advice>,
+    rlc_acc: Column<Advice>,
+    // The flags to determine whether rlc_acc is requested from the event.
+    is_precompiled: Column<Advice>,
+    is_memory: Column<Advice>,
+    is_tx_calldata: Column<Advice>,
+    is_bytecode: Column<Advice>,
+    tag: BinaryNumberConfig<CopyDataType, 4>,
+) {
+    // Forward rlc_acc from the event to all rows.
+    let not_last = not::expr(meta.query_advice(is_last, CURRENT));
+    cb.condition(not_last.expr(), |cb| {
+        cb.require_equal(
+            "rows[0].rlc_acc == rows[1].rlc_acc",
+            meta.query_advice(rlc_acc, CURRENT),
+            meta.query_advice(rlc_acc, NEXT_ROW),
+        );
+    });
+
+    // Check the rlc_acc given in the event if any of:
+    // - Precompile => *
+    // - * => Precompile
+    // - Memory => Bytecode
+    // - TxCalldata => Bytecode
+    // - * => RlcAcc
+    let rlc_acc_cond = sum::expr([
+        meta.query_advice(is_precompiled, CURRENT),
+        meta.query_advice(is_precompiled, NEXT_ROW),
+        and::expr([
+            meta.query_advice(is_memory, CURRENT),
+            meta.query_advice(is_bytecode, NEXT_ROW),
+        ]),
+        and::expr([
+            meta.query_advice(is_tx_calldata, CURRENT),
+            meta.query_advice(is_bytecode, NEXT_ROW),
+        ]),
+        tag.value_equals(CopyDataType::RlcAcc, NEXT_ROW)(meta),
+    ]);
+
+    cb.condition(rlc_acc_cond * meta.query_advice(is_last, NEXT_ROW), |cb| {
+        cb.require_equal(
+            "value_acc == rlc_acc on the last row",
+            meta.query_advice(value_acc, NEXT_ROW),
+            meta.query_advice(rlc_acc, NEXT_ROW),
         );
     });
 }
