@@ -6,8 +6,8 @@ use ethers_providers::ProviderError;
 use std::error::Error as StdError;
 
 use crate::geth_errors::{
-    GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_PRECOMPILE_MODEXP_INPUT,
-    GETH_ERR_STACK_OVERFLOW, GETH_ERR_STACK_UNDERFLOW,
+    GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
+    GETH_ERR_STACK_UNDERFLOW,
 };
 
 /// Error type for any BusMapping related failure.
@@ -209,8 +209,6 @@ pub(crate) fn get_step_reported_error(op: &OpcodeId, error: &str) -> ExecError {
         ExecError::StackOverflow
     } else if error.starts_with(GETH_ERR_STACK_UNDERFLOW) {
         ExecError::StackUnderflow
-    } else if error.starts_with(GETH_ERR_PRECOMPILE_MODEXP_INPUT) {
-        ExecError::PrecompileFailed
     } else {
         panic!("Unknown GethExecStep.error: {error}");
     }
