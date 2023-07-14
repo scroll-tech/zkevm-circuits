@@ -3,10 +3,10 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::EVMConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::IsZeroGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
-            CachedRegion, Cell, Word,
+            sum, CachedRegion, Cell, Word,
         },
     },
     table::CallContextFieldTag,
@@ -47,6 +47,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
             IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::DELEGATECALL.expr());
         let is_staticcall =
             IsZeroGadget::construct(cb, "", opcode.expr() - OpcodeId::STATICCALL.expr());
+
+        // constrain op code
+        cb.require_true(
+            "opcode is one of [call, callcode, staticcall, delegatecall]",
+            sum::expr(vec![
+                is_call.expr(),
+                is_callcode.expr(),
+                is_delegatecall.expr(),
+                is_staticcall.expr(),
+            ]),
+        );
 
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
@@ -107,6 +118,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorPrecompileFailedGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
+        println!("precompile happens in opcode {}", opcode);
         let is_call_or_callcode =
             usize::from([OpcodeId::CALL, OpcodeId::CALLCODE].contains(&opcode));
 

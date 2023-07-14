@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::EVMConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::IsEqualGadget,
             memory_gadget::{CommonMemoryAddressGadget, MemoryAddressGadget},
             CachedRegion, Cell,
@@ -14,7 +14,7 @@ use crate::{
     util::Expr,
 };
 
-use eth_types::Field;
+use eth_types::{evm_types::OpcodeId, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for code store oog and max code size exceed
@@ -34,6 +34,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        //
+        cb.require_equal(
+            "ErrorInvalidCreationCode",
+            opcode.expr(),
+            OpcodeId::RETURN.expr(),
+        );
         let first_byte = cb.query_cell();
 
         let offset = cb.query_cell_phase2();
