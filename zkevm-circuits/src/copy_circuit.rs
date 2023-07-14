@@ -46,7 +46,7 @@ use crate::{
     witness::{Bytecode, RwMap, Transaction},
 };
 
-use self::copy_gadgets::{constrain_word_index, constrain_word_rlc};
+use self::copy_gadgets::{constrain_word_index, constrain_word_rlc, constrain_value_rlc};
 
 /// The current row.
 const CURRENT: Rotation = Rotation(0);
@@ -271,6 +271,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // Whether this row is part of an event but not the last step. When true, the next step is derived from the current step.
             let is_continue = is_event.expr() - is_last_step.expr();
             // Detect the last row of an event, which is always a writer row.
+            let is_last_col = is_last;
             let not_last = not::expr(meta.query_advice(is_last, CURRENT));
             let is_last = meta.query_advice(is_last, CURRENT);
             // Detect the rows which process the last byte of a word. The next word starts at NEXT_STEP.
@@ -371,12 +372,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     for rot in [CURRENT, NEXT_ROW] {
                         let back_mask = meta.query_advice(mask, rot) - meta.query_advice(front_mask, rot);
                         cb.require_zero("back_mask starts at 0", back_mask);
-
-                        cb.require_equal(
-                            "value_acc init to the first value, or 0 if padded or masked",
-                            meta.query_advice(value_acc, rot),
-                            meta.query_advice(value, rot) * meta.query_advice(non_pad_non_mask, rot),
-                        );
                     }
                 },
             );
@@ -423,6 +418,21 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     back_mask_next.expr(),
                 ]),
             );*/
+
+
+            constrain_value_rlc(
+                cb,
+                meta,
+                is_first.expr(),
+                is_continue.expr(),
+                is_last_col,
+                is_pad_next.expr(),
+                mask_next.expr(),
+                non_pad_non_mask,
+                value_acc,
+                value,
+                challenges.keccak_input(),
+            );
 
             // Decrement real_bytes_left for the next step, on non-masked rows. At the end, it must reach 0.
             {
@@ -502,21 +512,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         meta.query_advice(src_addr_end, CURRENT),
                         meta.query_advice(src_addr_end, NEXT_STEP),
                     );
-
-                    // Accumulate the next value into the next value_acc.
-                    {
-                        let current = meta.query_advice(value_acc, CURRENT);
-                        // If source padding, replace the value with 0.
-                        let value_or_pad = meta.query_advice(value, NEXT_STEP) * not::expr(is_pad_next.expr());
-                        let accumulated = current.expr() * challenges.keccak_input() + value_or_pad;
-                        // If masked, copy the accumulator forward, otherwise update it.
-                        let copy_or_acc = select::expr(mask_next, current, accumulated);
-                        cb.require_equal(
-                            "value_acc(2) == value_acc(0) * r + value(2), or copy value_acc(0)",
-                            copy_or_acc,
-                            meta.query_advice(value_acc, NEXT_STEP),
-                        );
-                    }
                 },
             );
 
@@ -537,12 +532,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         meta.create_gate("Last Step", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_equal(
-                "source value_acc == destination value_acc on the last row",
-                meta.query_advice(value_acc, CURRENT),
-                meta.query_advice(value_acc, NEXT_ROW),
-            );
 
             // Check the rlc_acc given in the event if any of:
             // - Precompile => *
