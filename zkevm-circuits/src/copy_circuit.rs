@@ -47,8 +47,8 @@ use crate::{
 };
 
 use self::copy_gadgets::{
-    constrain_bytes_left, constrain_event_rlc_acc, constrain_rw_counter, constrain_value_rlc,
-    constrain_word_index, constrain_word_rlc,
+    constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_forward_parameters,
+    constrain_rw_counter, constrain_value_rlc, constrain_word_index, constrain_word_rlc,
 };
 
 /// The current row.
@@ -472,35 +472,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 ]),
             );
 
-            // Derive the next step from the current step.
-            cb.condition(is_continue.expr(), |cb| {
-                // The address is incremented by 1, except in the front mask. There must be the
-                // right amount of front mask until the row matches up with the
-                // initial address of the event.
-                let addr_diff = not::expr(front_mask.expr());
-                cb.require_equal(
-                    "rows[0].addr + !front_mask == rows[2].addr",
-                    meta.query_advice(addr, CURRENT) + addr_diff,
-                    meta.query_advice(addr, NEXT_STEP),
-                );
+            constrain_forward_parameters(cb, meta, is_continue.expr(), id, tag, src_addr_end);
 
-                // Forward other fields to the next step.
-                cb.require_equal(
-                    "rows[0].id == rows[2].id",
-                    meta.query_advice(id, CURRENT),
-                    meta.query_advice(id, NEXT_STEP),
-                );
-                cb.require_equal(
-                    "rows[0].tag == rows[2].tag",
-                    tag.value(CURRENT)(meta),
-                    tag.value(NEXT_STEP)(meta),
-                );
-                cb.require_equal(
-                    "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
-                    meta.query_advice(src_addr_end, CURRENT),
-                    meta.query_advice(src_addr_end, NEXT_STEP),
-                );
-            });
+            constrain_address(cb, meta, is_continue.expr(), front_mask.expr(), addr);
 
             cb.gate(meta.query_fixed(q_enable, CURRENT))
         });

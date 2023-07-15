@@ -9,6 +9,35 @@ use halo2_proofs::plonk::{Advice, Column, Expression, VirtualCells};
 
 use crate::evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon};
 
+/// Copy the parameters of the event through all rows of the event.
+pub fn constrain_forward_parameters<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    is_continue: Expression<F>,
+    id: Column<Advice>,
+    tag: BinaryNumberConfig<CopyDataType, 4>,
+    src_addr_end: Column<Advice>,
+) {
+    cb.condition(is_continue.expr(), |cb| {
+        // Forward other fields to the next step.
+        cb.require_equal(
+            "rows[0].id == rows[2].id",
+            meta.query_advice(id, CURRENT),
+            meta.query_advice(id, NEXT_STEP),
+        );
+        cb.require_equal(
+            "rows[0].tag == rows[2].tag",
+            tag.value(CURRENT)(meta),
+            tag.value(NEXT_STEP)(meta),
+        );
+        cb.require_equal(
+            "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
+            meta.query_advice(src_addr_end, CURRENT),
+            meta.query_advice(src_addr_end, NEXT_STEP),
+        );
+    });
+}
+
 /// Update the counter of bytes and verify that all bytes are consumed.
 pub fn constrain_bytes_left<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
@@ -35,6 +64,27 @@ pub fn constrain_bytes_left<F: Field>(
         new_value,
         update_or_finish,
     );
+}
+
+/// Update the address.
+pub fn constrain_address<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    is_continue: Expression<F>,
+    front_mask: Expression<F>,
+    addr: Column<Advice>,
+) {
+    cb.condition(is_continue, |cb| {
+        // The address is incremented by 1, except in the front mask. There must be the
+        // right amount of front mask until the row matches up with the
+        // initial address of the event.
+        let addr_diff = not::expr(front_mask);
+        cb.require_equal(
+            "rows[0].addr + !front_mask == rows[2].addr",
+            meta.query_advice(addr, CURRENT) + addr_diff,
+            meta.query_advice(addr, NEXT_STEP),
+        );
+    });
 }
 
 /// Update the RW counter and verify that all RWs requested by the event are consumed.
