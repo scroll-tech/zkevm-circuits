@@ -93,16 +93,6 @@ fn gen_copy_event(
     let data_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?;
 
-    let call_ctx = state.call_ctx_mut()?;
-    let memory = &mut call_ctx.memory;
-    memory.extend_for_range(memory_offset, length);
-
-    let memory_updated = {
-        let mut memory_updated = memory.clone();
-        memory_updated.copy_from(memory_offset, data_offset, length, &call_ctx.call_data);
-        memory_updated
-    };
-
     let (memory_offset, length) = (memory_offset.low_u64(), length.as_u64());
 
     let call_data_offset = state.call()?.call_data_offset;
@@ -118,13 +108,8 @@ fn gen_copy_event(
 
     if state.call()?.is_root {
         // fetch pre write bytes to fill 'bytes_write_prev' of CopyBytes
-        let (copy_steps, prev_bytes) = state.gen_copy_steps_for_call_data_root(
-            exec_step,
-            src_addr as usize,
-            dst_addr as usize,
-            length as usize,
-            &memory_updated,
-        )?;
+        let (copy_steps, prev_bytes) =
+            state.gen_copy_steps_for_call_data_root(exec_step, src_addr, dst_addr, length)?;
 
         let copy_bytes = CopyBytes::new(copy_steps, None, Some(prev_bytes));
 
@@ -141,13 +126,8 @@ fn gen_copy_event(
             copy_bytes,
         })
     } else {
-        let (read_steps, write_steps, prev_bytes) = state.gen_copy_steps_for_call_data_non_root(
-            exec_step,
-            src_addr,
-            dst_addr,
-            length,
-            &memory_updated,
-        )?;
+        let (read_steps, write_steps, prev_bytes) =
+            state.gen_copy_steps_for_call_data_non_root(exec_step, src_addr, dst_addr, length)?;
 
         Ok(CopyEvent {
             src_type: CopyDataType::Memory,

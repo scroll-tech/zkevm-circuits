@@ -1830,19 +1830,44 @@ impl<'a> CircuitInputStateRef<'a> {
     pub(crate) fn gen_copy_steps_for_call_data_root(
         &mut self,
         exec_step: &mut ExecStep,
-        _src_addr: usize,
-        dst_addr: usize,    // memory dest starting addr
-        copy_length: usize, // number of bytes to copy, without padding
-        memory_updated: &Memory,
+        src_addr: impl Into<MemoryAddress>,
+        dst_addr: impl Into<MemoryAddress>,
+        copy_length: impl Into<MemoryAddress>,
     ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
         assert!(self.call()?.is_root);
+
+        let copy_length = copy_length.into().0;
         if copy_length == 0 {
             return Ok((vec![], vec![]));
         }
 
+        // Align memory range.
+        let src_addr = src_addr.into().0;
+        let dst_addr = dst_addr.into().0;
         let dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
+        let dst_begin_slot = dst_range.start_slot().0;
+        let dst_end_slot = dst_range.end_slot().0;
 
-        let calldata_slot_bytes = memory_updated.read_chunk(dst_range);
+        // Extend call memory.
+        let call_ctx = self.call_ctx_mut()?;
+        let memory = &mut call_ctx.memory;
+        memory.extend_for_range(dst_begin_slot.into(), dst_range.full_length().0.into());
+
+        // Combine the slot bytes.
+        let data_length = call_ctx.call_data.len();
+        let src_addr = src_addr.min(data_length);
+        let src_copy_end = src_addr + copy_length;
+        let src_addr_end = src_copy_end.min(data_length);
+        let dst_copy_end = dst_addr + copy_length;
+        let bytes_to_copy = call_ctx.call_data[src_addr..src_addr_end].iter().cloned();
+        let padding_bytes = repeat(0).take(src_copy_end - src_addr_end);
+        let calldata_slot_bytes: Vec<u8> = memory[dst_begin_slot..dst_addr]
+            .iter()
+            .cloned()
+            .chain(bytes_to_copy)
+            .chain(padding_bytes)
+            .chain(memory[dst_copy_end..dst_end_slot].iter().cloned())
+            .collect();
 
         let copy_steps = CopyEventStepsBuilder::memory_range(dst_range)
             .source(calldata_slot_bytes.as_slice())
@@ -1862,23 +1887,48 @@ impl<'a> CircuitInputStateRef<'a> {
     pub(crate) fn gen_copy_steps_for_call_data_non_root(
         &mut self,
         exec_step: &mut ExecStep,
-        src_addr: u64,
-        dst_addr: u64,    // memory dest starting addr
-        copy_length: u64, // number of bytes to copy, without padding
-        memory_updated: &Memory,
+        src_addr: impl Into<MemoryAddress>,
+        dst_addr: impl Into<MemoryAddress>,
+        copy_length: impl Into<MemoryAddress>,
     ) -> Result<(CopyEventSteps, CopyEventSteps, Vec<u8>), Error> {
         assert!(!self.call()?.is_root);
+
+        let copy_length = copy_length.into().0;
         if copy_length == 0 {
             return Ok((vec![], vec![], vec![]));
         }
 
+        let src_addr = src_addr.into().0;
+        let dst_addr = dst_addr.into().0;
         let mut src_range = MemoryWordRange::align_range(src_addr, copy_length);
         let mut dst_range = MemoryWordRange::align_range(dst_addr, copy_length);
         src_range.ensure_equal_length(&mut dst_range);
-
         let read_slot_bytes = self.caller_ctx()?.memory.read_chunk(src_range);
 
-        let write_slot_bytes = memory_updated.read_chunk(dst_range);
+        // Extend call memory.
+        let dst_begin_slot = dst_range.start_slot().0;
+        let dst_end_slot = dst_range.end_slot().0;
+        let call_ctx = self.call_ctx_mut()?;
+        let memory = &mut call_ctx.memory;
+        memory.extend_for_range(dst_addr.into(), copy_length.into());
+
+        // Combine the write slot bytes.
+        let data_length = call_ctx.call_data.len();
+        let src_addr = src_addr.min(data_length);
+        let src_copy_end = src_addr + copy_length;
+        let src_addr_end = src_copy_end.min(data_length);
+        let dst_copy_end = dst_addr + copy_length;
+        let bytes_to_copy = call_ctx.call_data[src_addr..src_addr_end].iter().cloned();
+        let padding_bytes = repeat(0).take(src_copy_end - src_addr_end);
+        let write_slot_bytes: Vec<u8> = memory[dst_begin_slot..dst_addr]
+            .iter()
+            .cloned()
+            .chain(bytes_to_copy)
+            .chain(padding_bytes)
+            .chain(memory[dst_copy_end..dst_end_slot].iter().cloned())
+            .collect();
+
+        debug_assert_eq!(read_slot_bytes.len(), write_slot_bytes.len());
 
         let read_steps = CopyEventStepsBuilder::memory_range(src_range)
             .source(read_slot_bytes.as_slice())
