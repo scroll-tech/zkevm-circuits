@@ -34,6 +34,10 @@ pub struct EcMulGadget<F> {
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
 
+    p_x_is_zero: IsZeroGadget<F>,
+    p_y_is_zero: IsZeroGadget<F>,
+    s_is_zero: IsZeroGadget<F>,
+
     // Two Words (s_raw, s_modded) that satisfies
     // k * FR_N + s_modded = s_raw
     // Used for proving correct modulo by Fr
@@ -76,10 +80,10 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         // k * n + s_modded = s_raw
         let modword = ModGadget::construct(cb, [&s_raw, &n, &s_modded]);
 
+        // Conditions for dealing with infinity/empty points and zero/empty scalar
         let p_x_is_zero = IsZeroGadget::construct(cb, "ecMul(P_x)", point_p_x_rlc.expr());
         let p_y_is_zero = IsZeroGadget::construct(cb, "ecMul(P_y)", point_p_y_rlc.expr());
         let p_is_zero = and::expr([p_x_is_zero.expr(), p_y_is_zero.expr()]);
-
         let s_is_zero = IsZeroGadget::construct(cb, "ecMul(s)", scalar_s_rlc.expr());
         
         cb.condition(or::expr([p_is_zero.expr(), s_is_zero.expr()]), |cb| {
@@ -88,17 +92,14 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         });
 
         // Make sure the correct modulo test is done on actual lookup inputs
-        // TODO: adding this code block makes the last two tests fail
-        // cb.require_equal(
-        //     "s_raw == scalar_s_raw_rlc", 
-        //     scalar_s_raw_rlc.expr(),
-        //     s_raw.expr()    
-        // );
-        // cb.require_equal(
-        //     "s_modded == scalar_s_rlc",
-        //     scalar_s_rlc.expr(),
-        //     s_modded.expr()
-        // );
+        cb.condition(
+            1.expr(), 
+            |_| { scalar_s_raw_rlc.expr() - s_raw.expr() }
+        );
+        cb.condition(
+            1.expr(), 
+            |_| { scalar_s_rlc.expr() - s_modded.expr() }
+        );
 
         cb.condition(
             not::expr(or::expr([p_is_zero.expr(), s_is_zero.expr()])), 
@@ -152,6 +153,10 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             point_r_x_rlc,
             point_r_y_rlc,
 
+            p_x_is_zero,
+            p_y_is_zero,
+            s_is_zero,
+
             s_mod_pair: (s_raw, s_modded),
             n,
             modword,
@@ -177,10 +182,17 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::EcMul(aux_data)) = &step.aux_data {
+            for (col, is_zero_gadget, word_value) in [
+                (&self.point_p_x_rlc, &self.p_x_is_zero, aux_data.p_x),
+                (&self.point_p_y_rlc, &self.p_y_is_zero, aux_data.p_y),
+                (&self.scalar_s_rlc, &self.s_is_zero, aux_data.s)
+            ] {
+                let rlc_val = region.keccak_rlc(&word_value.to_le_bytes());
+                col.assign(region, offset, rlc_val)?;
+                is_zero_gadget.assign_value(region, offset, rlc_val)?;
+            }
+
             for (col, word_value) in [
-                (&self.point_p_x_rlc, aux_data.p_x),
-                (&self.point_p_y_rlc, aux_data.p_y),
-                (&self.scalar_s_rlc, aux_data.s),
                 (&self.scalar_s_raw_rlc, aux_data.s_raw),
                 (&self.point_r_x_rlc, aux_data.r_x),
                 (&self.point_r_y_rlc, aux_data.r_y),
@@ -319,43 +331,39 @@ mod test {
                     ..Default::default()
                 },
 
-                // TODO: failing test
-                // Empty scalar input makes ECC lookup fail
-                // PrecompileCallArgs {
-                //     name: "ecMul (valid input < 96 bytes)",
-                //     // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
-                //     // s = blank
-                //     setup_code: bytecode! {
-                //         // p_x
-                //         PUSH1(0x02)
-                //         PUSH1(0x00)
-                //         MSTORE
+                PrecompileCallArgs {
+                    name: "ecMul (valid input < 96 bytes)",
+                    // P = (2, 16059845205665218889595687631975406613746683471807856151558479858750240882195)
+                    // s = blank
+                    setup_code: bytecode! {
+                        // p_x
+                        PUSH1(0x02)
+                        PUSH1(0x00)
+                        MSTORE
 
-                //         // p_y
-                //         PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
-                //         PUSH1(0x20)
-                //         MSTORE
-                //     },
-                //     call_data_offset: 0x00.into(),
-                //     call_data_length: 0x40.into(),
-                //     ret_offset: 0x40.into(),
-                //     ret_size: 0x40.into(),
-                //     address: PrecompileCalls::Bn128Mul.address().to_word(),
-                //     ..Default::default()
-                // },
+                        // p_y
+                        PUSH32(word!("0x23818CDE28CF4EA953FE59B1C377FAFD461039C17251FF4377313DA64AD07E13"))
+                        PUSH1(0x20)
+                        MSTORE
+                    },
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x40.into(),
+                    ret_offset: 0x40.into(),
+                    ret_size: 0x40.into(),
+                    address: PrecompileCalls::Bn128Mul.address().to_word(),
+                    ..Default::default()
+                },
 
-                // TODO: failing test
-                // Empty scalar input makes ECC lookup fail
-                // PrecompileCallArgs {
-                //     name: "ecMul (should succeed on empty inputs)",
-                //     setup_code: bytecode! {},
-                //     call_data_offset: 0x00.into(),
-                //     call_data_length: 0x00.into(),
-                //     ret_offset: 0x00.into(),
-                //     ret_size: 0x40.into(),
-                //     address: PrecompileCalls::Bn128Mul.address().to_word(),
-                //     ..Default::default()
-                // },
+                PrecompileCallArgs {
+                    name: "ecMul (should succeed on empty inputs)",
+                    setup_code: bytecode! {},
+                    call_data_offset: 0x00.into(),
+                    call_data_length: 0x00.into(),
+                    ret_offset: 0x00.into(),
+                    ret_size: 0x40.into(),
+                    address: PrecompileCalls::Bn128Mul.address().to_word(),
+                    ..Default::default()
+                },
 
                 PrecompileCallArgs {
                     name: "ecMul (valid inputs > 96 bytes)",
