@@ -48,7 +48,8 @@ use crate::{
 
 use self::copy_gadgets::{
     constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_forward_parameters,
-    constrain_rw_counter, constrain_value_rlc, constrain_word_index, constrain_word_rlc,
+    constrain_mask, constrain_rw_counter, constrain_value_rlc, constrain_word_index,
+    constrain_word_rlc,
 };
 
 /// The current row.
@@ -354,65 +355,20 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 word_index,
             );
 
-            // Initial values derived from the event.
-            cb.condition(is_first.expr(), |cb| {
-                // Apply the same constraints on the first reader and first writer rows.
-                for rot in [CURRENT, NEXT_ROW] {
-                    let back_mask =
-                        meta.query_advice(mask, rot) - meta.query_advice(front_mask, rot);
-                    cb.require_zero("back_mask starts at 0", back_mask);
-                }
-            });
-
-            // Split the mask into front and back segments.
-            // If front_mask=1, then mask=1 and back_mask=0.
-            // If back_mask=1, then mask=1 and front_mask=0.
-            // Otherwise, mask=0.
-            let mask_next = meta.query_advice(mask, NEXT_STEP);
-            let mask = meta.query_advice(mask, CURRENT);
-            let front_mask_next = meta.query_advice(front_mask, NEXT_STEP);
-            let front_mask = meta.query_advice(front_mask, CURRENT);
-            let back_mask_next = mask_next.expr() - front_mask_next.expr();
-            let back_mask = mask.expr() - front_mask.expr();
-            cb.require_boolean("mask is boolean", mask.expr());
-            cb.require_boolean("front_mask is boolean", front_mask.expr());
-            cb.require_boolean("back_mask is boolean", back_mask.expr());
-
-            // The front mask comes before the back mask, with at least 1 non-masked byte
-            // in-between.
-            cb.condition(is_continue.expr(), |cb| {
-                cb.require_boolean(
-                    "front_mask cannot go from 0 back to 1",
-                    front_mask.expr() - front_mask_next,
-                );
-                cb.require_boolean(
-                    "back_mask cannot go from 1 back to 0",
-                    back_mask_next.expr() - back_mask,
-                );
-                cb.require_zero(
-                    "front_mask is not immediately followed by back_mask",
-                    and::expr([front_mask.expr(), back_mask_next.expr()]),
-                );
-            });
-
-            // The first word must not be completely masked.
+            // The first 31 bytes may be front_mask, but not the last byte of the first word.
             // LOG has no front mask at all.
             let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
-            cb.condition(is_word_end.expr() + is_tx_log.expr(), |cb| {
-                // The first 31 bytes may be front_mask, but not the last byte of the first word.
-                cb.require_zero(
-                    "front_mask = 0 by the end of the first word",
-                    front_mask.expr(),
-                );
-            });
-            /* Note: other words may be completely masked, because reader and writer may have different word counts. A fully masked word is a no-op, not contributing to value_acc, and its word_rlc equals word_rlc_prev.
-            cb.require_zero(
-                "back_mask=0 at the start of the next word",
-                and::expr([
-                    is_word_end.expr(),
-                    back_mask_next.expr(),
-                ]),
-            );*/
+            let forbid_front_mask = is_word_end.expr() + is_tx_log.expr();
+
+            let (mask, mask_next, front_mask) = constrain_mask(
+                cb,
+                meta,
+                is_first.expr(),
+                is_continue.expr(),
+                mask,
+                front_mask,
+                forbid_front_mask,
+            );
 
             constrain_value_rlc(
                 cb,

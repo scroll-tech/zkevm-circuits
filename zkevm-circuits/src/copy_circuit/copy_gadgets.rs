@@ -298,3 +298,71 @@ pub fn constrain_event_rlc_acc<F: Field>(
         );
     });
 }
+
+/// Return (mask, mask at NEXT_STEP, front_mask).
+pub fn constrain_mask<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    is_first: Expression<F>,
+    is_continue: Expression<F>,
+    mask: Column<Advice>,
+    front_mask: Column<Advice>,
+    forbid_front_mask: Expression<F>,
+) -> (Expression<F>, Expression<F>, Expression<F>) {
+    cb.condition(is_first.expr(), |cb| {
+        // Apply the same constraints on the first reader and first writer rows.
+        for rot in [CURRENT, NEXT_ROW] {
+            let back_mask = meta.query_advice(mask, rot) - meta.query_advice(front_mask, rot);
+            cb.require_zero("back_mask starts at 0", back_mask);
+        }
+    });
+
+    // Split the mask into front and back segments.
+    // If front_mask=1, then mask=1 and back_mask=0.
+    // If back_mask=1, then mask=1 and front_mask=0.
+    // Otherwise, mask=0.
+    let mask_next = meta.query_advice(mask, NEXT_STEP);
+    let mask = meta.query_advice(mask, CURRENT);
+    let front_mask_next = meta.query_advice(front_mask, NEXT_STEP);
+    let front_mask = meta.query_advice(front_mask, CURRENT);
+    let back_mask_next = mask_next.expr() - front_mask_next.expr();
+    let back_mask = mask.expr() - front_mask.expr();
+    cb.require_boolean("mask is boolean", mask.expr());
+    cb.require_boolean("front_mask is boolean", front_mask.expr());
+    cb.require_boolean("back_mask is boolean", back_mask.expr());
+
+    // The front mask comes before the back mask, with at least 1 non-masked byte
+    // in-between.
+    cb.condition(is_continue.expr(), |cb| {
+        cb.require_boolean(
+            "front_mask cannot go from 0 back to 1",
+            front_mask.expr() - front_mask_next,
+        );
+        cb.require_boolean(
+            "back_mask cannot go from 1 back to 0",
+            back_mask_next.expr() - back_mask,
+        );
+        cb.require_zero(
+            "front_mask is not immediately followed by back_mask",
+            and::expr([front_mask.expr(), back_mask_next.expr()]),
+        );
+    });
+
+    cb.condition(forbid_front_mask, |cb| {
+        cb.require_zero(
+            "front_mask = 0 by the end of the first word",
+            front_mask.expr(),
+        );
+    });
+
+    /* Note: other words may be completely masked, because reader and writer may have different word counts. A fully masked word is a no-op, not contributing to value_acc, and its word_rlc equals word_rlc_prev.
+    cb.require_zero(
+        "back_mask=0 at the start of the next word",
+        and::expr([
+            is_word_end.expr(),
+            back_mask_next.expr(),
+        ]),
+    );*/
+
+    (mask, mask_next, front_mask)
+}
