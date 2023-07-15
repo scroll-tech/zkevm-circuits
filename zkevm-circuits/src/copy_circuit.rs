@@ -419,7 +419,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 ]),
             );*/
 
-
             constrain_value_rlc(
                 cb,
                 meta,

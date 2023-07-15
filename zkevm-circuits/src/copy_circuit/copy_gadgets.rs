@@ -9,30 +9,35 @@ use halo2_proofs::plonk::{Advice, Column, Expression, VirtualCells};
 
 use crate::evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon};
 
+/// Update the counter of bytes and verify that all bytes are consumed.
 pub fn constrain_bytes_left<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
     is_first: Expression<F>,
     is_continue: Expression<F>,
     mask: Expression<F>,
-    real_bytes_left: Column<Advice>,
+    bytes_left: Column<Advice>,
 ) {
-    // TODO: add initial writer value.
+    let [current, next_row, next_step] =
+        [CURRENT, NEXT_ROW, NEXT_STEP].map(|at| meta.query_advice(bytes_left, at));
 
-    // Decrement real_bytes_left for the next step, on non-masked rows. At the end, it must reach 0.
-    let next_value = meta.query_advice(real_bytes_left, CURRENT) - not::expr(mask.expr());
-    let update_or_finish = select::expr(
-        is_continue.expr(),
-        meta.query_advice(real_bytes_left, NEXT_STEP),
-        0.expr(),
-    );
+    // Initial values derived from the event.
+    cb.condition(is_first.expr(), |cb| {
+        cb.require_equal("writer initial length", current.expr(), next_row);
+    });
+
+    // Decrement real_bytes_left for the next step, on non-masked rows.
+    let new_value = current - not::expr(mask);
+    // At the end, it must reach 0.
+    let update_or_finish = select::expr(is_continue, next_step, 0.expr());
     cb.require_equal(
-        "real_bytes_left[2] == real_bytes_left[0] - !mask, or 0 at the end",
-        next_value,
+        "bytes_left[2] == bytes_left[0] - !mask, or 0 at the end",
+        new_value,
         update_or_finish,
     );
 }
 
+/// Maintain the index within words, looping between 0 and 31 inclusive.
 pub fn constrain_word_index<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
@@ -64,6 +69,7 @@ pub fn constrain_word_index<F: Field>(
     });
 }
 
+/// Calculate the RLC of data within each word.
 pub fn constrain_word_rlc<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
@@ -103,6 +109,7 @@ pub fn constrain_word_rlc<F: Field>(
     });
 }
 
+/// Calculate the RLC of the non-masked data.
 pub fn constrain_value_rlc<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
@@ -153,6 +160,7 @@ pub fn constrain_value_rlc<F: Field>(
     });
 }
 
+/// Verify the rlc_acc field of the copy event against the value_acc of the data.
 pub fn constrain_event_rlc_acc<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
