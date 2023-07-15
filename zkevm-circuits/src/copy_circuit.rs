@@ -46,7 +46,10 @@ use crate::{
     witness::{Bytecode, RwMap, Transaction},
 };
 
-use self::copy_gadgets::{constrain_word_index, constrain_word_rlc, constrain_value_rlc, constrain_event_rlc_acc, constrain_bytes_left};
+use self::copy_gadgets::{
+    constrain_bytes_left, constrain_event_rlc_acc, constrain_rw_counter, constrain_value_rlc,
+    constrain_word_index, constrain_word_rlc,
+};
 
 /// The current row.
 const CURRENT: Rotation = Rotation(0);
@@ -266,39 +269,29 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // Whether this row is part of an event.
             let is_event = meta.query_advice(is_event, CURRENT);
             // Detect the last step of an event. This works on both reader and writer rows.
-            let is_last_step = meta.query_advice(is_last, CURRENT)
-                + meta.query_advice(is_last, NEXT_ROW);
-            // Whether this row is part of an event but not the last step. When true, the next step is derived from the current step.
+            let is_last_step =
+                meta.query_advice(is_last, CURRENT) + meta.query_advice(is_last, NEXT_ROW);
+            // Whether this row is part of an event but not the last step. When true, the next step
+            // is derived from the current step.
             let is_continue = is_event.expr() - is_last_step.expr();
             // Detect the last row of an event, which is always a writer row.
             let is_last_col = is_last;
             let not_last = not::expr(meta.query_advice(is_last, CURRENT));
             let is_last = meta.query_advice(is_last, CURRENT);
-            // Detect the rows which process the last byte of a word. The next word starts at NEXT_STEP.
+            // Detect the rows which process the last byte of a word. The next word starts at
+            // NEXT_STEP.
             let is_word_end = is_word_end.expr();
 
             // Check is_first and is_last
-            cb.require_boolean(
-                "is_first is boolean",
-                is_first.expr(),
-            );
-            cb.require_boolean(
-                "is_last is boolean",
-                is_last.expr(),
-            );
+            cb.require_boolean("is_first is boolean", is_first.expr());
+            cb.require_boolean("is_last is boolean", is_last.expr());
             cb.require_zero(
                 "is_first == 0 when q_step == 0",
-                and::expr([
-                    not::expr(meta.query_selector(q_step)),
-                    is_first.expr(),
-                    ]),
+                and::expr([not::expr(meta.query_selector(q_step)), is_first.expr()]),
             );
             cb.require_zero(
                 "is_last == 0 when q_step == 1",
-                and::expr([
-                    is_last.expr(),
-                    meta.query_selector(q_step),
-                ]),
+                and::expr([is_last.expr(), meta.query_selector(q_step)]),
             );
 
             // Check non_pad_non_mask.
@@ -314,34 +307,30 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 ]),
             );
 
-            // When a byte is masked, it must not be overwritten, so its value equals its value before the write.
-            cb.condition(
-                meta.query_advice(mask, CURRENT),
-                |cb| {
-                    cb.require_equal(
-                        "value == value_prev on masked rows",
-                        meta.query_advice(value, CURRENT),
-                        meta.query_advice(value_prev, CURRENT),
-                    );
-                },
-            );
+            // When a byte is masked, it must not be overwritten, so its value equals its value
+            // before the write.
+            cb.condition(meta.query_advice(mask, CURRENT), |cb| {
+                cb.require_equal(
+                    "value == value_prev on masked rows",
+                    meta.query_advice(value, CURRENT),
+                    meta.query_advice(value_prev, CURRENT),
+                );
+            });
 
-            // Prevent an event from spilling into the disabled rows. This also ensures that eventually is_last=1.
+            // Prevent an event from spilling into the disabled rows. This also ensures that
+            // eventually is_last=1.
             cb.require_zero(
                 "the next row is enabled",
                 and::expr([
                     is_event.expr(),
                     not_last.expr(),
-                    not::expr(meta.query_fixed(q_enable, NEXT_ROW))
+                    not::expr(meta.query_fixed(q_enable, NEXT_ROW)),
                 ]),
             );
 
             // Apply the same constraints for the RLCs of words before and after the write.
-            let word_rlc_both = [
-                (value_word_rlc, value),
-                (value_word_rlc_prev, value_prev),
-            ];
-            
+            let word_rlc_both = [(value_word_rlc, value), (value_word_rlc_prev, value_prev)];
+
             // Update the word index and RLC.
             for (word_rlc, value) in word_rlc_both {
                 constrain_word_rlc(
@@ -366,15 +355,14 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             );
 
             // Initial values derived from the event.
-            cb.condition(is_first.expr(),
-                |cb| {
-                    // Apply the same constraints on the first reader and first writer rows.
-                    for rot in [CURRENT, NEXT_ROW] {
-                        let back_mask = meta.query_advice(mask, rot) - meta.query_advice(front_mask, rot);
-                        cb.require_zero("back_mask starts at 0", back_mask);
-                    }
-                },
-            );
+            cb.condition(is_first.expr(), |cb| {
+                // Apply the same constraints on the first reader and first writer rows.
+                for rot in [CURRENT, NEXT_ROW] {
+                    let back_mask =
+                        meta.query_advice(mask, rot) - meta.query_advice(front_mask, rot);
+                    cb.require_zero("back_mask starts at 0", back_mask);
+                }
+            });
 
             // Split the mask into front and back segments.
             // If front_mask=1, then mask=1 and back_mask=0.
@@ -390,17 +378,21 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.require_boolean("front_mask is boolean", front_mask.expr());
             cb.require_boolean("back_mask is boolean", back_mask.expr());
 
-            // The front mask comes before the back mask, with at least 1 non-masked byte in-between.
-            cb.condition(is_continue.expr(),
-                |cb| {
-                    cb.require_boolean("front_mask cannot go from 0 back to 1", front_mask.expr() - front_mask_next);
-                    cb.require_boolean("back_mask cannot go from 1 back to 0", back_mask_next.expr() - back_mask);
-                    cb.require_zero("front_mask is not immediately followed by back_mask",
-                        and::expr([
-                            front_mask.expr(),
-                            back_mask_next.expr(),
-                        ]),
-                    );
+            // The front mask comes before the back mask, with at least 1 non-masked byte
+            // in-between.
+            cb.condition(is_continue.expr(), |cb| {
+                cb.require_boolean(
+                    "front_mask cannot go from 0 back to 1",
+                    front_mask.expr() - front_mask_next,
+                );
+                cb.require_boolean(
+                    "back_mask cannot go from 1 back to 0",
+                    back_mask_next.expr() - back_mask,
+                );
+                cb.require_zero(
+                    "front_mask is not immediately followed by back_mask",
+                    and::expr([front_mask.expr(), back_mask_next.expr()]),
+                );
             });
 
             // The first word must not be completely masked.
@@ -408,7 +400,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
             cb.condition(is_word_end.expr() + is_tx_log.expr(), |cb| {
                 // The first 31 bytes may be front_mask, but not the last byte of the first word.
-                cb.require_zero("front_mask = 0 by the end of the first word", front_mask.expr());
+                cb.require_zero(
+                    "front_mask = 0 by the end of the first word",
+                    front_mask.expr(),
+                );
             });
             /* Note: other words may be completely masked, because reader and writer may have different word counts. A fully masked word is a no-op, not contributing to value_acc, and its word_rlc equals word_rlc_prev.
             cb.require_zero(
@@ -455,37 +450,21 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 real_bytes_left,
             );
 
-            // Decrement rwc_inc_left for the next row, when an RW operation happens. At the end, it must reach 0.
             let is_rw_type = meta.query_advice(is_memory, CURRENT) + is_tx_log.expr();
-            {
-                let rwc_diff = is_rw_type.expr() * is_word_end.expr();
-                let next_value = meta.query_advice(rwc_inc_left, CURRENT) - rwc_diff;
-                let update_or_finish = select::expr(
-                    not_last.expr(),
-                    meta.query_advice(rwc_inc_left, NEXT_ROW),
-                    0.expr(),
-                );
-                cb.require_equal(
-                    "rwc_inc_left[2] == rwc_inc_left[0] - rwc_diff, or 0 at the end",
-                    next_value,
-                    update_or_finish,
-                );
-            }
 
-            // Maintain rw_counter based on rwc_inc_left. Their sum remains constant in all cases.
-            cb.condition(
+            constrain_rw_counter(
+                cb,
+                meta,
                 not_last.expr(),
-                |cb| {
-                    cb.require_equal(
-                        "rows[0].rw_counter + rows[0].rwc_inc_left == rows[1].rw_counter + rows[1].rwc_inc_left",
-                        meta.query_advice(rw_counter, CURRENT) + meta.query_advice(rwc_inc_left, CURRENT),
-                        meta.query_advice(rw_counter, NEXT_ROW) + meta.query_advice(rwc_inc_left, NEXT_ROW),
-                    );
-                }
+                is_rw_type.expr(),
+                is_word_end.expr(),
+                rw_counter,
+                rwc_inc_left,
             );
 
             // Ensure that the word operation completes.
-            cb.require_zero("is_last_step requires is_word_end for word-based types",
+            cb.require_zero(
+                "is_last_step requires is_word_end for word-based types",
                 and::expr([
                     is_last_step.expr(),
                     is_rw_type.expr(),
@@ -494,36 +473,34 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             );
 
             // Derive the next step from the current step.
-            cb.condition(is_continue.expr(),
-            |cb| {
+            cb.condition(is_continue.expr(), |cb| {
+                // The address is incremented by 1, except in the front mask. There must be the
+                // right amount of front mask until the row matches up with the
+                // initial address of the event.
+                let addr_diff = not::expr(front_mask.expr());
+                cb.require_equal(
+                    "rows[0].addr + !front_mask == rows[2].addr",
+                    meta.query_advice(addr, CURRENT) + addr_diff,
+                    meta.query_advice(addr, NEXT_STEP),
+                );
 
-                    // The address is incremented by 1, except in the front mask. There must be the right amount
-                    // of front mask until the row matches up with the initial address of the event.
-                    let addr_diff = not::expr(front_mask.expr());
-                    cb.require_equal(
-                        "rows[0].addr + !front_mask == rows[2].addr",
-                        meta.query_advice(addr, CURRENT) + addr_diff,
-                        meta.query_advice(addr, NEXT_STEP),
-                    );
-
-                    // Forward other fields to the next step.
-                    cb.require_equal(
-                        "rows[0].id == rows[2].id",
-                        meta.query_advice(id, CURRENT),
-                        meta.query_advice(id, NEXT_STEP),
-                    );
-                    cb.require_equal(
-                        "rows[0].tag == rows[2].tag",
-                        tag.value(CURRENT)(meta),
-                        tag.value(NEXT_STEP)(meta),
-                    );
-                    cb.require_equal(
-                        "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
-                        meta.query_advice(src_addr_end, CURRENT),
-                        meta.query_advice(src_addr_end, NEXT_STEP),
-                    );
-                },
-            );
+                // Forward other fields to the next step.
+                cb.require_equal(
+                    "rows[0].id == rows[2].id",
+                    meta.query_advice(id, CURRENT),
+                    meta.query_advice(id, NEXT_STEP),
+                );
+                cb.require_equal(
+                    "rows[0].tag == rows[2].tag",
+                    tag.value(CURRENT)(meta),
+                    tag.value(NEXT_STEP)(meta),
+                );
+                cb.require_equal(
+                    "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
+                    meta.query_advice(src_addr_end, CURRENT),
+                    meta.query_advice(src_addr_end, NEXT_STEP),
+                );
+            });
 
             cb.gate(meta.query_fixed(q_enable, CURRENT))
         });

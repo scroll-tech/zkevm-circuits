@@ -37,6 +37,41 @@ pub fn constrain_bytes_left<F: Field>(
     );
 }
 
+/// Update the RW counter and verify that all RWs requested by the event are consumed.
+pub fn constrain_rw_counter<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    not_last: Expression<F>,
+    is_rw_type: Expression<F>,
+    is_word_end: Expression<F>,
+    rw_counter: Column<Advice>,
+    rwc_inc_left: Column<Advice>,
+) {
+    // Decrement rwc_inc_left for the next row, when an RW operation happens.
+    let rwc_diff = is_rw_type.expr() * is_word_end.expr();
+    let new_value = meta.query_advice(rwc_inc_left, CURRENT) - rwc_diff;
+    // At the end, it must reach 0.
+    let update_or_finish = select::expr(
+        not_last.expr(),
+        meta.query_advice(rwc_inc_left, NEXT_ROW),
+        0.expr(),
+    );
+    cb.require_equal(
+        "rwc_inc_left[2] == rwc_inc_left[0] - rwc_diff, or 0 at the end",
+        new_value,
+        update_or_finish,
+    );
+
+    // Maintain rw_counter based on rwc_inc_left. Their sum remains constant in all cases.
+    cb.condition(not_last.expr(), |cb| {
+        cb.require_equal(
+            "rw_counter[0] + rwc_inc_left[0] == rw_counter[1] + rwc_inc_left[1]",
+            meta.query_advice(rw_counter, CURRENT) + meta.query_advice(rwc_inc_left, CURRENT),
+            meta.query_advice(rw_counter, NEXT_ROW) + meta.query_advice(rwc_inc_left, NEXT_ROW),
+        );
+    });
+}
+
 /// Maintain the index within words, looping between 0 and 31 inclusive.
 pub fn constrain_word_index<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
