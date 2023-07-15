@@ -46,7 +46,7 @@ use crate::{
     witness::{Bytecode, RwMap, Transaction},
 };
 
-use self::copy_gadgets::{constrain_word_index, constrain_word_rlc, constrain_value_rlc, constrain_event_rlc_acc};
+use self::copy_gadgets::{constrain_word_index, constrain_word_rlc, constrain_value_rlc, constrain_event_rlc_acc, constrain_bytes_left};
 
 /// The current row.
 const CURRENT: Rotation = Rotation(0);
@@ -447,16 +447,14 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 tag,
             );
 
-            // Decrement real_bytes_left for the next step, on non-masked rows. At the end, it must reach 0.
-            {
-                let next_value = meta.query_advice(real_bytes_left, CURRENT) - not::expr(mask.expr());
-                let update_or_finish = select::expr(is_continue.expr(), meta.query_advice(real_bytes_left, NEXT_STEP), 0.expr());
-                cb.require_equal(
-                    "real_bytes_left[2] == real_bytes_left[0] - !mask, or 0 at the end",
-                    next_value,
-                    update_or_finish,
-                );
-            }
+            constrain_bytes_left(
+                cb,
+                meta,
+                is_first.expr(),
+                is_continue.expr(),
+                mask.expr(),
+                real_bytes_left,
+            );
 
             // Decrement rwc_inc_left for the next row, when an RW operation happens. At the end, it must reach 0.
             let is_rw_type = meta.query_advice(is_memory, CURRENT) + is_tx_log.expr();

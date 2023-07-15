@@ -9,6 +9,30 @@ use halo2_proofs::plonk::{Advice, Column, Expression, VirtualCells};
 
 use crate::evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon};
 
+pub fn constrain_bytes_left<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    is_first: Expression<F>,
+    is_continue: Expression<F>,
+    mask: Expression<F>,
+    real_bytes_left: Column<Advice>,
+) {
+    // TODO: add initial writer value.
+
+    // Decrement real_bytes_left for the next step, on non-masked rows. At the end, it must reach 0.
+    let next_value = meta.query_advice(real_bytes_left, CURRENT) - not::expr(mask.expr());
+    let update_or_finish = select::expr(
+        is_continue.expr(),
+        meta.query_advice(real_bytes_left, NEXT_STEP),
+        0.expr(),
+    );
+    cb.require_equal(
+        "real_bytes_left[2] == real_bytes_left[0] - !mask, or 0 at the end",
+        next_value,
+        update_or_finish,
+    );
+}
+
 pub fn constrain_word_index<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
