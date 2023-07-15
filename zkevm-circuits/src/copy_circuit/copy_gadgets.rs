@@ -6,7 +6,7 @@ use gadgets::{
     is_equal::IsEqualConfig,
     util::{and, not, select, sum, Expr},
 };
-use halo2_proofs::plonk::{Advice, Column, Expression, VirtualCells};
+use halo2_proofs::plonk::{Advice, Column, Expression, Fixed, VirtualCells};
 
 use crate::evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon};
 
@@ -26,6 +26,26 @@ pub fn constrain_first_last<F: Field>(
     cb.require_zero(
         "is_last == 0 when q_step == 1",
         and::expr([is_last.expr(), is_reader.expr()]),
+    );
+}
+
+/// Verify that is_last goes to 1 at some point.
+pub fn constrain_must_terminate<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    q_enable: Column<Fixed>,
+    is_event: Expression<F>,
+    is_last: Expression<F>,
+) {
+    // Prevent an event from spilling into the rows where constraints are disabled.
+    // This also ensures that eventually is_last=1, because eventually q_enable=0.
+    cb.require_zero(
+        "the next row is enabled",
+        and::expr([
+            is_event,
+            not::expr(is_last),
+            not::expr(meta.query_fixed(q_enable, NEXT_ROW)),
+        ]),
     );
 }
 
@@ -388,6 +408,25 @@ pub fn constrain_mask<F: Field>(
     );*/
 
     (mask, mask_next, front_mask)
+}
+
+/// Verify that the mask applies to the value written.
+pub fn constrain_masked_value<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    mask: Expression<F>,
+    value: Column<Advice>,
+    value_prev: Column<Advice>,
+) {
+    // When a byte is masked, it must not be overwritten, so its value equals its value
+    // before the write.
+    cb.condition(mask, |cb| {
+        cb.require_equal(
+            "value == value_prev on masked rows",
+            meta.query_advice(value, CURRENT),
+            meta.query_advice(value_prev, CURRENT),
+        );
+    });
 }
 
 /// Verify that when and after the address reaches the limit src_addr_end, zero-padding is enabled.

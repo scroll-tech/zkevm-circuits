@@ -20,7 +20,7 @@ use eth_types::{Field, Word};
 use gadgets::{
     binary_number::BinaryNumberChip,
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
-    util::{and, not, select, sum, Expr},
+    util::{and, not, sum, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -48,8 +48,9 @@ use crate::{
 
 use self::copy_gadgets::{
     constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_first_last,
-    constrain_forward_parameters, constrain_is_pad, constrain_mask, constrain_non_pad_non_mask,
-    constrain_rw_counter, constrain_value_rlc, constrain_word_index, constrain_word_rlc,
+    constrain_forward_parameters, constrain_is_pad, constrain_mask, constrain_masked_value,
+    constrain_must_terminate, constrain_non_pad_non_mask, constrain_rw_counter,
+    constrain_value_rlc, constrain_word_index, constrain_word_rlc,
 };
 
 /// The current row.
@@ -277,7 +278,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let is_continue = is_event.expr() - is_last_step.expr();
             // Detect the last row of an event, which is always a writer row.
             let is_last_col = is_last;
-            let not_last = not::expr(meta.query_advice(is_last, CURRENT));
             let is_last = meta.query_advice(is_last, CURRENT);
             // Detect the rows which process the last byte of a word. The next word starts at
             // NEXT_STEP.
@@ -286,33 +286,12 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             constrain_first_last(cb, is_reader.expr(), is_first.expr(), is_last.expr());
 
-            // When a byte is masked, it must not be overwritten, so its value equals its value
-            // before the write.
-            cb.condition(meta.query_advice(mask, CURRENT), |cb| {
-                cb.require_equal(
-                    "value == value_prev on masked rows",
-                    meta.query_advice(value, CURRENT),
-                    meta.query_advice(value_prev, CURRENT),
-                );
-            });
-
-            // Prevent an event from spilling into the disabled rows. This also ensures that
-            // eventually is_last=1.
-            cb.require_zero(
-                "the next row is enabled",
-                and::expr([
-                    is_event.expr(),
-                    not_last.expr(),
-                    not::expr(meta.query_fixed(q_enable, NEXT_ROW)),
-                ]),
-            );
+            constrain_must_terminate(cb, meta, q_enable, is_event.expr(), is_last.expr());
 
             constrain_forward_parameters(cb, meta, is_continue.expr(), id, tag, src_addr_end);
 
             // Apply the same constraints for the RLCs of words before and after the write.
             let word_rlc_both = [(value_word_rlc, value), (value_word_rlc_prev, value_prev)];
-
-            // Update the word index and RLC.
             for (word_rlc, value) in word_rlc_both {
                 constrain_word_rlc(
                     cb,
@@ -363,6 +342,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 forbid_front_mask,
             );
 
+            constrain_masked_value(cb, meta, mask.expr(), value, value_prev);
+
             constrain_value_rlc(
                 cb,
                 meta,
@@ -406,7 +387,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             constrain_rw_counter(
                 cb,
                 meta,
-                not_last.expr(),
+                not::expr(is_last.expr()),
                 is_rw_type.expr(),
                 is_word_end.expr(),
                 rw_counter,
