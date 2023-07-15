@@ -11,16 +11,13 @@ mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::CopyCircuit as TestCopyCircuit;
 
-use bus_mapping::{
-    circuit_input_builder::{CopyDataType, CopyEvent},
-    precompile::PrecompileCalls,
-};
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::{Field, Word};
 
 use gadgets::{
     binary_number::BinaryNumberChip,
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
-    util::{and, not, sum, Expr},
+    util::{not, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -36,7 +33,7 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 use halo2_proofs::plonk::SecondPhase;
 
 use crate::{
-    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
     table::{
         BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
         TxContextFieldTag, TxTable,
@@ -49,7 +46,7 @@ use crate::{
 use self::copy_gadgets::{
     constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_first_last,
     constrain_forward_parameters, constrain_is_pad, constrain_mask, constrain_masked_value,
-    constrain_must_terminate, constrain_non_pad_non_mask, constrain_rw_counter,
+    constrain_must_terminate, constrain_non_pad_non_mask, constrain_rw_counter, constrain_tag,
     constrain_value_rlc, constrain_word_index, constrain_word_rlc,
 };
 
@@ -211,58 +208,19 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         let non_pad_non_mask = meta.advice_column();
 
-        meta.create_gate("decode tag", |meta| {
-            let enabled = meta.query_fixed(q_enable, CURRENT);
-            let is_event = meta.query_advice(is_event, CURRENT);
-            let is_precompile = meta.query_advice(is_precompiled, CURRENT);
-            let is_tx_calldata = meta.query_advice(is_tx_calldata, CURRENT);
-            let is_bytecode = meta.query_advice(is_bytecode, CURRENT);
-            let is_memory = meta.query_advice(is_memory, CURRENT);
-            let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
-            let precompiles = sum::expr([
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Ecrecover),
-                    CURRENT,
-                )(meta),
-                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Sha256), CURRENT)(meta),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Ripemd160),
-                    CURRENT,
-                )(meta),
-                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Identity), CURRENT)(
-                    meta,
-                ),
-                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Modexp), CURRENT)(meta),
-                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Bn128Add), CURRENT)(
-                    meta,
-                ),
-                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Bn128Mul), CURRENT)(
-                    meta,
-                ),
-                tag.value_equals(
-                    CopyDataType::Precompile(PrecompileCalls::Bn128Pairing),
-                    CURRENT,
-                )(meta),
-                tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Blake2F), CURRENT)(meta),
-            ]);
-            vec![
-                // If a row is anything but padding (filler of the table), it is in an event.
-                enabled.expr()
-                    * ((1.expr() - is_event.expr())
-                        - tag.value_equals(CopyDataType::Padding, CURRENT)(meta)),
-                // Match boolean indicators to their respective tag values.
-                enabled.expr() * (is_precompile - precompiles),
-                enabled.expr()
-                    * (is_tx_calldata - tag.value_equals(CopyDataType::TxCalldata, CURRENT)(meta)),
-                enabled.expr()
-                    * (is_bytecode - tag.value_equals(CopyDataType::Bytecode, CURRENT)(meta)),
-                enabled.expr()
-                    * (is_memory - tag.value_equals(CopyDataType::Memory, CURRENT)(meta)),
-                enabled.expr() * (is_tx_log - tag.value_equals(CopyDataType::TxLog, CURRENT)(meta)),
-            ]
-        });
+        constrain_tag(
+            meta,
+            q_enable,
+            tag,
+            is_event,
+            is_precompiled,
+            is_tx_calldata,
+            is_bytecode,
+            is_memory,
+            is_tx_log,
+        );
 
-        meta.create_gate("verify row", |meta| {
+        meta.create_gate("verify copy events", |meta| {
             let cb = &mut BaseConstraintBuilder::default();
 
             let is_reader = meta.query_selector(q_step);

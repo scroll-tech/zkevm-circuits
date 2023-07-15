@@ -1,14 +1,70 @@
 use super::{CURRENT, NEXT_ROW, NEXT_STEP};
-use bus_mapping::circuit_input_builder::CopyDataType;
+use bus_mapping::{circuit_input_builder::CopyDataType, precompile::PrecompileCalls};
 use eth_types::Field;
 use gadgets::{
     binary_number::BinaryNumberConfig,
     is_equal::IsEqualConfig,
     util::{and, not, select, sum, Expr},
 };
-use halo2_proofs::plonk::{Advice, Column, Expression, Fixed, VirtualCells};
+use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells};
 
 use crate::evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon};
+
+pub fn constrain_tag<F: Field>(
+    meta: &mut ConstraintSystem<F>,
+    q_enable: Column<Fixed>,
+    tag: BinaryNumberConfig<CopyDataType, 4>,
+    is_event: Column<Advice>,
+    is_precompiled: Column<Advice>,
+    is_tx_calldata: Column<Advice>,
+    is_bytecode: Column<Advice>,
+    is_memory: Column<Advice>,
+    is_tx_log: Column<Advice>,
+) {
+    meta.create_gate("decode tag", |meta| {
+        let enabled = meta.query_fixed(q_enable, CURRENT);
+        let is_event = meta.query_advice(is_event, CURRENT);
+        let is_precompile = meta.query_advice(is_precompiled, CURRENT);
+        let is_tx_calldata = meta.query_advice(is_tx_calldata, CURRENT);
+        let is_bytecode = meta.query_advice(is_bytecode, CURRENT);
+        let is_memory = meta.query_advice(is_memory, CURRENT);
+        let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
+        let precompiles = sum::expr([
+            tag.value_equals(
+                CopyDataType::Precompile(PrecompileCalls::Ecrecover),
+                CURRENT,
+            )(meta),
+            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Sha256), CURRENT)(meta),
+            tag.value_equals(
+                CopyDataType::Precompile(PrecompileCalls::Ripemd160),
+                CURRENT,
+            )(meta),
+            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Identity), CURRENT)(meta),
+            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Modexp), CURRENT)(meta),
+            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Bn128Add), CURRENT)(meta),
+            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Bn128Mul), CURRENT)(meta),
+            tag.value_equals(
+                CopyDataType::Precompile(PrecompileCalls::Bn128Pairing),
+                CURRENT,
+            )(meta),
+            tag.value_equals(CopyDataType::Precompile(PrecompileCalls::Blake2F), CURRENT)(meta),
+        ]);
+        vec![
+            // If a row is anything but padding (filler of the table), it is in an event.
+            enabled.expr()
+                * ((1.expr() - is_event.expr())
+                    - tag.value_equals(CopyDataType::Padding, CURRENT)(meta)),
+            // Match boolean indicators to their respective tag values.
+            enabled.expr() * (is_precompile - precompiles),
+            enabled.expr()
+                * (is_tx_calldata - tag.value_equals(CopyDataType::TxCalldata, CURRENT)(meta)),
+            enabled.expr()
+                * (is_bytecode - tag.value_equals(CopyDataType::Bytecode, CURRENT)(meta)),
+            enabled.expr() * (is_memory - tag.value_equals(CopyDataType::Memory, CURRENT)(meta)),
+            enabled.expr() * (is_tx_log - tag.value_equals(CopyDataType::TxLog, CURRENT)(meta)),
+        ]
+    });
+}
 
 /// Verify that is_first is on a reader row and is_last is on a write row.
 pub fn constrain_first_last<F: Field>(

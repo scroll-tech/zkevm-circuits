@@ -10,6 +10,7 @@ use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     evm::{gen_sha3_code, MemoryKind, OpcodeId, PrecompileCallArgs},
     mock::BlockData,
+    precompile::PrecompileCalls,
 };
 use eth_types::{bytecode, geth_types::GethData, word, ToWord, Word};
 use halo2_proofs::{
