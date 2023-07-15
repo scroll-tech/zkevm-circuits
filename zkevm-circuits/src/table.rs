@@ -1482,6 +1482,20 @@ pub struct CopyTable {
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 11];
 
+/// CopyThread is the state used while generating rows of the copy table.
+struct CopyThread<F: Field> {
+    tag: CopyDataType,
+    is_rw: bool,
+    id: Value<F>,
+    front_mask: bool,
+    addr: u64,
+    addr_end: u64,
+    bytes_left: u64,
+    value_acc: Value<F>,
+    word_rlc: Value<F>,
+    word_rlc_prev: Value<F>,
+}
+
 impl CopyTable {
     /// Construct a new CopyTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
@@ -1523,12 +1537,6 @@ impl CopyTable {
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
         };
 
-        let mut value_word_read_rlc = Value::known(F::zero());
-        let mut value_word_write_rlc = Value::known(F::zero());
-        let mut value_word_write_rlc_prev = Value::known(F::zero());
-        let mut src_value_acc = Value::known(F::zero());
-        let mut dst_value_acc = Value::known(F::zero());
-
         let read_steps = copy_event.copy_bytes.bytes.iter();
         let copy_steps = if let Some(ref write_steps) = copy_event.copy_bytes.aux_bytes {
             read_steps.zip(write_steps.iter())
@@ -1542,17 +1550,34 @@ impl CopyTable {
             .clone()
             .unwrap_or(vec![]);
 
-        let mut src_bytes_left = copy_event.copy_length();
-        let mut dst_bytes_left = src_bytes_left;
-
-        let mut src_addr = copy_event.src_addr;
-        let mut dst_addr = copy_event.dst_addr;
-
-        let mut src_front_mask = true;
-        let mut dst_front_mask = true;
-
         let mut rw_counter = copy_event.rw_counter_start();
         let mut rwc_inc_left = copy_event.rw_counter_delta();
+
+        let mut reader = CopyThread {
+            tag: copy_event.src_type,
+            is_rw: copy_event.is_source_rw(),
+            id: number_or_hash_to_field(&copy_event.src_id, challenges.evm_word()),
+            front_mask: true,
+            addr: copy_event.src_addr,
+            addr_end: copy_event.src_addr_end,
+            bytes_left: copy_event.copy_length(),
+            value_acc: Value::known(F::zero()),
+            word_rlc: Value::known(F::zero()),
+            word_rlc_prev: Value::known(F::zero()),
+        };
+
+        let mut writer = CopyThread {
+            tag: copy_event.dst_type,
+            is_rw: copy_event.is_destination_rw(),
+            id: number_or_hash_to_field(&copy_event.dst_id, challenges.evm_word()),
+            front_mask: true,
+            addr: copy_event.dst_addr,
+            addr_end: copy_event.dst_addr + copy_event.full_length(),
+            bytes_left: reader.bytes_left,
+            value_acc: Value::known(F::zero()),
+            word_rlc: Value::known(F::zero()),
+            word_rlc_prev: Value::known(F::zero()),
+        };
 
         for (step_idx, (is_read_step, mut copy_step)) in copy_steps
             .flat_map(|(read_step, write_step)| {
@@ -1587,19 +1612,16 @@ impl CopyTable {
             }
             let copy_step = copy_step;
 
-            // is_first
-            let is_first = Value::known(if step_idx == 0 { F::one() } else { F::zero() });
-            // is last
-            let is_last = if step_idx as u64 == copy_event.full_length() * 2 - 1 {
-                Value::known(F::one())
+            let thread = if is_read_step {
+                &mut reader
             } else {
-                Value::known(F::zero())
+                &mut writer
             };
 
-            let is_mask = Value::known(if copy_step.mask { F::one() } else { F::zero() });
+            let is_first = step_idx == 0;
+            let is_last = step_idx as u64 == copy_event.full_length() * 2 - 1;
 
-            let addr = if is_read_step { src_addr } else { dst_addr };
-            let is_pad = is_read_step && addr >= copy_event.src_addr_end;
+            let is_pad = is_read_step && thread.addr >= thread.addr_end;
 
             let value = Value::known(F::from(copy_step.value as u64));
             let value_or_pad = if is_pad {
@@ -1609,43 +1631,20 @@ impl CopyTable {
             };
             let value_prev = Value::known(F::from(copy_step.prev_value as u64));
 
-            if is_read_step {
-                if !copy_step.mask {
-                    src_front_mask = false;
-                    src_value_acc = src_value_acc * challenges.keccak_input() + value_or_pad;
-                }
-                if (step_idx / 2) % 32 == 0 {
-                    // reset
-                    value_word_read_rlc = Value::known(F::zero());
-                }
-                value_word_read_rlc = value_word_read_rlc * challenges.evm_word() + value;
-            } else {
-                if !copy_step.mask {
-                    dst_front_mask = false;
-                    dst_value_acc = dst_value_acc * challenges.keccak_input() + value;
-                }
-                if (step_idx / 2) % 32 == 0 {
-                    // reset
-                    value_word_write_rlc = Value::known(F::zero());
-                    value_word_write_rlc_prev = Value::known(F::zero());
-                }
-                value_word_write_rlc = value_word_write_rlc * challenges.evm_word() + value;
-                value_word_write_rlc_prev =
-                    value_word_write_rlc_prev * challenges.evm_word() + value_prev;
+            if !copy_step.mask {
+                thread.front_mask = false;
+                thread.value_acc = thread.value_acc * challenges.keccak_input() + value_or_pad;
             }
-
-            // id
-            let id = if is_read_step {
-                number_or_hash_to_field(&copy_event.src_id, challenges.evm_word())
+            if (step_idx / 2) % 32 == 0 {
+                // reset
+                thread.word_rlc = Value::known(F::zero());
+                thread.word_rlc_prev = Value::known(F::zero());
+            }
+            thread.word_rlc = thread.word_rlc * challenges.evm_word() + value;
+            thread.word_rlc_prev = if is_read_step {
+                thread.word_rlc // Reader does not change the word.
             } else {
-                number_or_hash_to_field(&copy_event.dst_id, challenges.evm_word())
-            };
-
-            // tag binary bumber chip
-            let tag = if is_read_step {
-                copy_event.src_type
-            } else {
-                copy_event.dst_type
+                thread.word_rlc_prev * challenges.evm_word() + value_prev
             };
 
             let word_index = (step_idx as u64 / 2) % 32;
@@ -1654,35 +1653,22 @@ impl CopyTable {
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
 
             // For LOG, format the address including the log_id.
-            let addr = if tag == CopyDataType::TxLog {
-                build_tx_log_address(addr, TxLogFieldTag::Data, copy_event.log_id.unwrap())
+            let addr = if thread.tag == CopyDataType::TxLog {
+                build_tx_log_address(thread.addr, TxLogFieldTag::Data, copy_event.log_id.unwrap())
                     .to_scalar()
                     .unwrap()
             } else {
-                F::from(addr)
-            };
-
-            let addr_end = if is_read_step {
-                copy_event.src_addr_end
-            } else {
-                copy_event.dst_addr + copy_event.full_length()
+                F::from(thread.addr)
             };
 
             assignments.push((
-                tag,
+                thread.tag,
                 [
-                    (is_first, "is_first"),
-                    (id, "id"),
+                    (Value::known(F::from(is_first)), "is_first"),
+                    (thread.id, "id"),
                     (Value::known(addr), "addr"),
-                    (Value::known(F::from(addr_end)), "src_addr_end"),
-                    (
-                        Value::known(F::from(if is_read_step {
-                            src_bytes_left
-                        } else {
-                            dst_bytes_left
-                        })),
-                        "real_bytes_left",
-                    ),
+                    (Value::known(F::from(thread.addr_end)), "src_addr_end"),
+                    (Value::known(F::from(thread.bytes_left)), "real_bytes_left"),
                     (
                         match (copy_event.src_type, copy_event.dst_type) {
                             (CopyDataType::Precompile(_), _) => rlc_acc,
@@ -1698,68 +1684,31 @@ impl CopyTable {
                     (Value::known(F::from(rwc_inc_left)), "rwc_inc_left"),
                 ],
                 [
-                    (is_last, "is_last"),
+                    (Value::known(F::from(is_last)), "is_last"),
                     (value, "value"),
                     (value_prev, "value_prev"),
-                    (
-                        if is_read_step {
-                            value_word_read_rlc
-                        } else {
-                            value_word_write_rlc
-                        },
-                        "value_word_rlc",
-                    ),
-                    (
-                        if is_read_step {
-                            value_word_read_rlc // Read does not change the value.
-                        } else {
-                            value_word_write_rlc_prev
-                        },
-                        "value_word_rlc_prev",
-                    ),
-                    (
-                        if is_read_step {
-                            src_value_acc
-                        } else {
-                            dst_value_acc
-                        },
-                        "value_acc",
-                    ),
+                    (thread.word_rlc, "value_word_rlc"),
+                    (thread.word_rlc_prev, "value_word_rlc_prev"),
+                    (thread.value_acc, "value_acc"),
                     (Value::known(F::from(is_pad)), "is_pad"),
                     (is_code, "is_code"),
-                    (is_mask, "mask"),
-                    (
-                        if is_read_step {
-                            Value::known(F::from(src_front_mask))
-                        } else {
-                            Value::known(F::from(dst_front_mask))
-                        },
-                        "front_mask",
-                    ),
+                    (Value::known(F::from(copy_step.mask)), "mask"),
+                    (Value::known(F::from(thread.front_mask)), "front_mask"),
                     (Value::known(F::from(word_index)), "word_index"),
                 ],
             ));
 
             // Increment the address.
-            if is_read_step && !src_front_mask {
-                src_addr += 1;
-            }
-            if !is_read_step && !dst_front_mask {
-                dst_addr += 1;
+            if !thread.front_mask {
+                thread.addr += 1;
             }
             // Decrement the number of steps left.
-            if is_read_step && !copy_step.mask {
-                src_bytes_left -= 1;
-            }
-            if !is_read_step && !copy_step.mask {
-                dst_bytes_left -= 1;
+            if !copy_step.mask {
+                thread.bytes_left -= 1;
             }
             // Update the RW counter.
             let is_word_end = (step_idx / 2) % 32 == 31;
-            if is_word_end
-                && (is_read_step && copy_event.is_source_rw()
-                    || !is_read_step && copy_event.is_destination_rw())
-            {
+            if is_word_end && thread.is_rw {
                 rw_counter += 1;
                 rwc_inc_left -= 1;
             }
