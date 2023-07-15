@@ -115,20 +115,13 @@ impl<F: Field> SubCircuitConfig<F> for EccCircuitConfig<F> {
 /// operations will be invalid.
 #[derive(Clone, Debug, Default)]
 pub struct EccCircuit<F: Field> {
-    /// Number of EcAdd operations supported in one instance of the ECC Circuit, where P != Q.
-    pub ec_add_unequal_ops: usize,
-    /// Number of EcAdd operations supported in one instance of the ECC Circuit, where P == Q.
-    pub ec_double_ops: usize,
-    /// Number of scalar multiplication ops supported in the ECC Circuit, where P != Identity.
-    pub ec_mul_nonzero_ops: usize,
-    /// Number of pairing operations supported in one instance of the ECC Circuit, with 1 pair.
-    pub ec_pairing1_ops: usize,
-    /// Number of pairing operations supported in one instance of the ECC Circuit, with 2 pair.
-    pub ec_pairing2_ops: usize,
-    /// Number of pairing operations supported in one instance of the ECC Circuit, with 3 pair.
-    pub ec_pairing3_ops: usize,
-    /// Number of pairing operations supported in one instance of the ECC Circuit, with 4 pair.
-    pub ec_pairing4_ops: usize,
+    /// Maximum number of EcAdd operations supported in one instance of the ECC Circuit.
+    pub max_add_ops: usize,
+    /// Maximum number of scalar multiplication operations supported in one instance of the ECC
+    /// Circuit.
+    pub max_mul_ops: usize,
+    /// Maximum number of pairing operations supported in one instance of the ECC Circuit.
+    pub max_pairing_ops: usize,
 
     /// EcAdd operations provided as witness data to the ECC circuit.
     pub add_ops: Vec<EcAddOp>,
@@ -147,8 +140,6 @@ impl<F: Field> EccCircuit<F> {
         config: &<Self as SubCircuit<F>>::Config,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        // TODO(rohit): fixme
-        /*
         if self.add_ops.len() > self.max_add_ops
             || self.mul_ops.len() > self.max_mul_ops
             || self.pairing_ops.len() > self.max_pairing_ops
@@ -295,7 +286,7 @@ impl<F: Field> EccCircuit<F> {
 
                 // handle EcMul ops.
                 for (idx, ec_mul_assigned) in assigned_ec_ops.ec_muls_assigned.iter().enumerate() {
-                    let idx = idx + self.ec_add_unequal_ops + self.ec_double_ops;
+                    let idx = idx + self.max_add_ops;
                     region.assign_fixed(
                         || "assign ecc_table op_type",
                         config.ecc_table.op_type,
@@ -346,10 +337,7 @@ impl<F: Field> EccCircuit<F> {
                 for (idx, ec_pairing_assigned) in
                     assigned_ec_ops.ec_pairings_assigned.iter().enumerate()
                 {
-                    let idx = idx
-                        + self.ec_add_unequal_ops
-                        + self.ec_double_ops
-                        + self.ec_mul_nonzero_ops;
+                    let idx = idx + self.max_add_ops + self.max_mul_ops;
                     region.assign_fixed(
                         || "assign ecc_table op_type",
                         config.ecc_table.op_type,
@@ -673,14 +661,9 @@ impl<F: Field> SubCircuit<F> for EccCircuit<F> {
 
     fn new_from_block(block: &Block<F>) -> Self {
         Self {
-            // TODO(rohit): get from block's circuits params.
-            ec_add_unequal_ops: 2,
-            ec_double_ops: 2,
-            ec_mul_nonzero_ops: 2,
-            ec_pairing1_ops: 1,
-            ec_pairing2_ops: 1,
-            ec_pairing3_ops: 1,
-            ec_pairing4_ops: 1,
+            max_add_ops: block.circuits_params.max_ec_ops.ec_add,
+            max_mul_ops: block.circuits_params.max_ec_ops.ec_mul,
+            max_pairing_ops: block.circuits_params.max_ec_ops.ec_pairing,
             add_ops: block.get_ec_add_ops(),
             mul_ops: block.get_ec_mul_ops(),
             pairing_ops: block.get_ec_pairing_ops(),
