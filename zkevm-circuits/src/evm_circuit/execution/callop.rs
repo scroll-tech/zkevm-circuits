@@ -217,19 +217,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
         let precompile_input_len = cb.query_cell();
         let precompile_memory_rws = select::expr(
-            call_gadget.cd_address.has_length(),
-            select::expr(
-                and::expr([
-                    call_gadget.is_success.expr(),
-                    call_gadget.rd_address.has_length(),
-                    not::expr(precompile_return_length_zero.expr()),
-                ]),
-                precompile_input_len.expr()
-                    + precompile_return_length.expr()
-                    + precompile_return_data_copy_size.min(),
-                precompile_input_len.expr(),
-            ),
-            0.expr(),
+            call_gadget.is_success.expr(),
+            // if success:
+            // - Reads from caller memory.
+            // - Writes to callee memory.
+            // - Writes to caller memory.
+            precompile_input_len.expr()
+                + precompile_return_length.expr()
+                + precompile_return_data_copy_size.min(),
+            // if failure,
+            // - Reads from caller memory.
+            precompile_input_len.expr(),
         );
 
         // Verify transfer only for CALL opcode in the successful case.  If value == 0,
