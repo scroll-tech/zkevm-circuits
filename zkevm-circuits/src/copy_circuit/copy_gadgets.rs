@@ -10,6 +10,25 @@ use halo2_proofs::plonk::{Advice, Column, Expression, VirtualCells};
 
 use crate::evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon};
 
+/// Verify that is_first is on a reader row and is_last is on a write row.
+pub fn constrain_first_last<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    is_reader: Expression<F>,
+    is_first: Expression<F>,
+    is_last: Expression<F>,
+) {
+    cb.require_boolean("is_first is boolean", is_first.expr());
+    cb.require_boolean("is_last is boolean", is_last.expr());
+    cb.require_zero(
+        "is_first == 0 when q_step == 0",
+        and::expr([not::expr(is_reader.expr()), is_first.expr()]),
+    );
+    cb.require_zero(
+        "is_last == 0 when q_step == 1",
+        and::expr([is_last.expr(), is_reader.expr()]),
+    );
+}
+
 /// Copy the parameters of the event through all rows of the event.
 pub fn constrain_forward_parameters<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
@@ -375,7 +394,7 @@ pub fn constrain_mask<F: Field>(
 pub fn constrain_is_pad<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
-    q_step: Expression<F>,
+    is_reader: Expression<F>,
     is_first: Expression<F>,
     is_last: Column<Advice>,
     is_pad: Column<Advice>,
@@ -388,7 +407,7 @@ pub fn constrain_is_pad<F: Field>(
 
     cb.require_boolean("is_pad is boolean", is_pad.expr());
 
-    cb.condition(q_step.expr(), |cb| {
+    cb.condition(is_reader.expr(), |cb| {
         cb.require_zero("is_pad == 0 on writer rows", is_pad_writer);
     });
 
@@ -407,7 +426,7 @@ pub fn constrain_is_pad<F: Field>(
         );
     });
 
-    let not_last_reader = q_step * not::expr(meta.query_advice(is_last, NEXT_ROW));
+    let not_last_reader = is_reader * not::expr(meta.query_advice(is_last, NEXT_ROW));
     cb.condition(not_last_reader, |cb| {
         cb.require_equal(
             "is_pad=1 when src_addr == src_addr_end, otherwise it keeps the previous value",

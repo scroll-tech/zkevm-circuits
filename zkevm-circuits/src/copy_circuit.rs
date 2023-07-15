@@ -47,9 +47,9 @@ use crate::{
 };
 
 use self::copy_gadgets::{
-    constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_forward_parameters,
-    constrain_is_pad, constrain_mask, constrain_non_pad_non_mask, constrain_rw_counter,
-    constrain_value_rlc, constrain_word_index, constrain_word_rlc,
+    constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_first_last,
+    constrain_forward_parameters, constrain_is_pad, constrain_mask, constrain_non_pad_non_mask,
+    constrain_rw_counter, constrain_value_rlc, constrain_word_index, constrain_word_rlc,
 };
 
 /// The current row.
@@ -264,6 +264,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.create_gate("verify row", |meta| {
             let cb = &mut BaseConstraintBuilder::default();
 
+            let is_reader = meta.query_selector(q_step);
             // Detect the first row of an event. When true, both reader and writer are initialized.
             let is_first = meta.query_advice(is_first, CURRENT);
             // Whether this row is part of an event.
@@ -283,17 +284,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let is_word_end = is_word_end.expr();
             let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
 
-            // Check is_first and is_last
-            cb.require_boolean("is_first is boolean", is_first.expr());
-            cb.require_boolean("is_last is boolean", is_last.expr());
-            cb.require_zero(
-                "is_first == 0 when q_step == 0",
-                and::expr([not::expr(meta.query_selector(q_step)), is_first.expr()]),
-            );
-            cb.require_zero(
-                "is_last == 0 when q_step == 1",
-                and::expr([is_last.expr(), meta.query_selector(q_step)]),
-            );
+            constrain_first_last(cb, is_reader.expr(), is_first.expr(), is_last.expr());
 
             // When a byte is masked, it must not be overwritten, so its value equals its value
             // before the write.
@@ -344,11 +335,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 word_index,
             );
 
-            let q_step = meta.query_selector(q_step);
             constrain_is_pad(
                 cb,
                 meta,
-                q_step,
+                is_reader.expr(),
                 is_first.expr(),
                 is_last_col,
                 is_pad,
