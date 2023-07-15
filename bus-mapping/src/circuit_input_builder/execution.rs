@@ -2,7 +2,7 @@
 
 use std::{
     marker::PhantomData,
-    ops::{Add, Mul},
+    ops::{Add, Mul, Neg},
 };
 
 use crate::{
@@ -615,7 +615,7 @@ impl EcAddOp {
 
     /// Returns true if P == Q == Infinity.
     pub fn is_zero(&self) -> bool {
-        self.p.is_identity().into() && self.q.is_identity().into()
+        (self.p.is_identity().into() && self.q.is_identity().into()) || (self.q.eq(&self.p.neg()))
     }
 }
 
