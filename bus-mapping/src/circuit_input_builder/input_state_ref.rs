@@ -1787,10 +1787,10 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Combine the write slot bytes.
         let bytes_to_copy = result[..copy_length].iter();
-        let write_slot_bytes: Vec<u8> = memory[dst_begin_slot..dst_addr as usize]
+        let write_slot_bytes: Vec<u8> = memory[dst_begin_slot..dst_addr]
             .iter()
             .chain(bytes_to_copy)
-            .chain(memory[dst_addr as usize + copy_length..dst_end_slot].iter())
+            .chain(memory[dst_addr + copy_length..dst_end_slot].iter())
             .cloned()
             .collect();
 
