@@ -16,19 +16,15 @@ use crate::ecc_circuit::EccCircuit;
 
 fn run<F: Field>(
     k: u32,
-    _max_ec_ops: PrecompileEcParams,
+    max_ec_ops: PrecompileEcParams,
     add_ops: Vec<EcAddOp>,
     mul_ops: Vec<EcMulOp>,
     pairing_ops: Vec<EcPairingOp>,
 ) {
     let circuit = EccCircuit::<F> {
-        ec_add_unequal_ops: 5,
-        ec_double_ops: 5,
-        ec_mul_nonzero_ops: 5,
-        ec_pairing1_ops: 1,
-        ec_pairing2_ops: 2,
-        ec_pairing3_ops: 1,
-        ec_pairing4_ops: 2,
+        max_add_ops: max_ec_ops.ec_add,
+        max_mul_ops: max_ec_ops.ec_mul,
+        max_pairing_ops: max_ec_ops.ec_pairing,
         add_ops,
         mul_ops,
         pairing_ops,
@@ -114,9 +110,9 @@ fn test_ecc_circuit() {
             ec_mul: 10,
             ec_pairing: 2,
         },
-        gen(&mut rng, 4),
-        gen(&mut rng, 3),
-        gen(&mut rng, 2),
+        gen(&mut rng, 9),
+        gen(&mut rng, 9),
+        gen(&mut rng, 1),
     )
 }
 
