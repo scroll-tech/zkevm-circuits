@@ -202,13 +202,15 @@ pub fn constrain_value_rlc<F: Field>(
     is_first: Expression<F>,
     is_continue: Expression<F>,
     is_last: Column<Advice>,
-    is_pad_next: Expression<F>,
+    is_pad: Column<Advice>,
     mask_next: Expression<F>,
     non_pad_non_mask: Column<Advice>,
     value_acc: Column<Advice>,
     value: Column<Advice>,
     challenge: Expression<F>,
 ) {
+    let is_pad_next = meta.query_advice(is_pad, NEXT_STEP);
+
     // Initial values derived from the event.
     cb.condition(is_first.expr(), |cb| {
         // Apply the same constraints on the first reader and first writer rows.
@@ -384,6 +386,8 @@ pub fn constrain_is_pad<F: Field>(
     let [is_pad, is_pad_writer, is_pad_next] =
         [CURRENT, NEXT_ROW, NEXT_STEP].map(|at| meta.query_advice(is_pad, at));
 
+    cb.require_boolean("is_pad is boolean", is_pad.expr());
+
     cb.condition(q_step.expr(), |cb| {
         cb.require_zero("is_pad == 0 on writer rows", is_pad_writer);
     });
@@ -411,4 +415,22 @@ pub fn constrain_is_pad<F: Field>(
             is_pad_next.expr(),
         );
     });
+}
+
+/// Verify non_pad_non_mask = !is_pad AND !mask.
+pub fn constrain_non_pad_non_mask<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    non_pad_non_mask: Column<Advice>,
+    is_pad: Column<Advice>,
+    mask: Column<Advice>,
+) {
+    cb.require_equal(
+        "non_pad_non_mask = !pad AND !mask",
+        meta.query_advice(non_pad_non_mask, CURRENT),
+        and::expr([
+            not::expr(meta.query_advice(is_pad, CURRENT)),
+            not::expr(meta.query_advice(mask, CURRENT)),
+        ]),
+    );
 }

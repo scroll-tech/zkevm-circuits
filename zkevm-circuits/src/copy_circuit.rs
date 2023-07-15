@@ -48,8 +48,8 @@ use crate::{
 
 use self::copy_gadgets::{
     constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_forward_parameters,
-    constrain_is_pad, constrain_mask, constrain_rw_counter, constrain_value_rlc,
-    constrain_word_index, constrain_word_rlc,
+    constrain_is_pad, constrain_mask, constrain_non_pad_non_mask, constrain_rw_counter,
+    constrain_value_rlc, constrain_word_index, constrain_word_rlc,
 };
 
 /// The current row.
@@ -263,7 +263,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         meta.create_gate("verify row", |meta| {
             let cb = &mut BaseConstraintBuilder::default();
-            //let cb = &mut cb;
 
             // Detect the first row of an event. When true, both reader and writer are initialized.
             let is_first = meta.query_advice(is_first, CURRENT);
@@ -282,6 +281,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             // Detect the rows which process the last byte of a word. The next word starts at
             // NEXT_STEP.
             let is_word_end = is_word_end.expr();
+            let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
 
             // Check is_first and is_last
             cb.require_boolean("is_first is boolean", is_first.expr());
@@ -293,20 +293,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.require_zero(
                 "is_last == 0 when q_step == 1",
                 and::expr([is_last.expr(), meta.query_selector(q_step)]),
-            );
-
-            // Check non_pad_non_mask.
-            let is_pad_col = is_pad;
-            let is_pad_next = meta.query_advice(is_pad, NEXT_STEP);
-            let is_pad = meta.query_advice(is_pad, CURRENT);
-            cb.require_boolean("is_pad is boolean", is_pad.expr());
-            cb.require_equal(
-                "non_pad_non_mask = !pad AND !mask",
-                meta.query_advice(non_pad_non_mask, CURRENT),
-                and::expr([
-                    not::expr(is_pad.expr()),
-                    not::expr(meta.query_advice(mask, CURRENT)),
-                ]),
             );
 
             // When a byte is masked, it must not be overwritten, so its value equals its value
@@ -329,6 +315,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     not::expr(meta.query_fixed(q_enable, NEXT_ROW)),
                 ]),
             );
+
+            constrain_forward_parameters(cb, meta, is_continue.expr(), id, tag, src_addr_end);
 
             // Apply the same constraints for the RLCs of words before and after the write.
             let word_rlc_both = [(value_word_rlc, value), (value_word_rlc_prev, value_prev)];
@@ -356,9 +344,23 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 word_index,
             );
 
+            let q_step = meta.query_selector(q_step);
+            constrain_is_pad(
+                cb,
+                meta,
+                q_step,
+                is_first.expr(),
+                is_last_col,
+                is_pad,
+                addr,
+                src_addr_end,
+                &is_src_end,
+            );
+
+            constrain_non_pad_non_mask(cb, meta, non_pad_non_mask, is_pad, mask);
+
             // The first 31 bytes may be front_mask, but not the last byte of the first word.
             // LOG has no front mask at all.
-            let is_tx_log = meta.query_advice(is_tx_log, CURRENT);
             let forbid_front_mask = is_word_end.expr() + is_tx_log.expr();
 
             let (mask, mask_next, front_mask) = constrain_mask(
@@ -377,7 +379,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 is_first.expr(),
                 is_continue.expr(),
                 is_last_col,
-                is_pad_next.expr(),
+                is_pad,
                 mask_next.expr(),
                 non_pad_non_mask,
                 value_acc,
@@ -407,6 +409,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 real_bytes_left,
             );
 
+            constrain_address(cb, meta, is_continue.expr(), front_mask.expr(), addr);
+
             let is_rw_type = meta.query_advice(is_memory, CURRENT) + is_tx_log.expr();
 
             constrain_rw_counter(
@@ -427,23 +431,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                     is_rw_type.expr(),
                     not::expr(is_word_end.expr()),
                 ]),
-            );
-
-            constrain_forward_parameters(cb, meta, is_continue.expr(), id, tag, src_addr_end);
-
-            constrain_address(cb, meta, is_continue.expr(), front_mask.expr(), addr);
-
-            let q_step = meta.query_selector(q_step);
-            constrain_is_pad(
-                cb,
-                meta,
-                q_step,
-                is_first.expr(),
-                is_last_col,
-                is_pad_col,
-                addr,
-                src_addr_end,
-                &is_src_end,
             );
 
             cb.gate(meta.query_fixed(q_enable, CURRENT))
