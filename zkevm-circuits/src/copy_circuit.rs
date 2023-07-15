@@ -48,8 +48,8 @@ use crate::{
 
 use self::copy_gadgets::{
     constrain_address, constrain_bytes_left, constrain_event_rlc_acc, constrain_forward_parameters,
-    constrain_mask, constrain_rw_counter, constrain_value_rlc, constrain_word_index,
-    constrain_word_rlc,
+    constrain_is_pad, constrain_mask, constrain_rw_counter, constrain_value_rlc,
+    constrain_word_index, constrain_word_rlc,
 };
 
 /// The current row.
@@ -296,6 +296,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             );
 
             // Check non_pad_non_mask.
+            let is_pad_col = is_pad;
             let is_pad_next = meta.query_advice(is_pad, NEXT_STEP);
             let is_pad = meta.query_advice(is_pad, CURRENT);
             cb.require_boolean("is_pad is boolean", is_pad.expr());
@@ -432,47 +433,20 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             constrain_address(cb, meta, is_continue.expr(), front_mask.expr(), addr);
 
+            let q_step = meta.query_selector(q_step);
+            constrain_is_pad(
+                cb,
+                meta,
+                q_step,
+                is_first.expr(),
+                is_last_col,
+                is_pad_col,
+                addr,
+                src_addr_end,
+                &is_src_end,
+            );
+
             cb.gate(meta.query_fixed(q_enable, CURRENT))
-        });
-
-        // Verify is_pad based on the address.
-        meta.create_gate("verify step (q_step == 1)", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            let [is_pad, is_pad_writer, is_pad_next] =
-                [CURRENT, NEXT_ROW, NEXT_STEP].map(|at| meta.query_advice(is_pad, at));
-
-            cb.require_zero("is_pad == 0 for write row", is_pad_writer);
-
-            let [is_src_end, is_src_end_next] = [CURRENT, NEXT_STEP].map(|at| {
-                let addr = meta.query_advice(addr, at);
-                let src_addr_end = meta.query_advice(src_addr_end, at);
-                is_src_end.expr_at(meta, at, addr, src_addr_end)
-            });
-
-            let is_first = meta.query_advice(is_first, CURRENT);
-            let not_last = not::expr(meta.query_advice(is_last, NEXT_ROW));
-
-            // When and after the address reaches the limit src_addr_end, zero-padding is enabled.
-            cb.condition(is_first, |cb| {
-                cb.require_equal(
-                    "is_pad starts at src_addr == src_addr_end",
-                    is_pad.expr(),
-                    is_src_end.expr(),
-                );
-            });
-            cb.condition(not_last, |cb| {
-                cb.require_equal(
-                    "is_pad=1 when src_addr == src_addr_end, otherwise it keeps the previous value",
-                    select::expr(is_src_end_next, 1.expr(), is_pad.expr()),
-                    is_pad_next.expr(),
-                );
-            });
-
-            cb.gate(and::expr([
-                meta.query_fixed(q_enable, CURRENT),
-                meta.query_selector(q_step),
-            ]))
         });
 
         // memory word lookup

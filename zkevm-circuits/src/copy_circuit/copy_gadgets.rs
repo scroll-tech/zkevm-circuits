@@ -3,6 +3,7 @@ use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::Field;
 use gadgets::{
     binary_number::BinaryNumberConfig,
+    is_equal::IsEqualConfig,
     util::{and, not, select, sum, Expr},
 };
 use halo2_proofs::plonk::{Advice, Column, Expression, VirtualCells};
@@ -299,6 +300,7 @@ pub fn constrain_event_rlc_acc<F: Field>(
     });
 }
 
+/// Verify the shape of the mask.
 /// Return (mask, mask at NEXT_STEP, front_mask).
 pub fn constrain_mask<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
@@ -365,4 +367,48 @@ pub fn constrain_mask<F: Field>(
     );*/
 
     (mask, mask_next, front_mask)
+}
+
+/// Verify that when and after the address reaches the limit src_addr_end, zero-padding is enabled.
+pub fn constrain_is_pad<F: Field>(
+    cb: &mut BaseConstraintBuilder<F>,
+    meta: &mut VirtualCells<'_, F>,
+    q_step: Expression<F>,
+    is_first: Expression<F>,
+    is_last: Column<Advice>,
+    is_pad: Column<Advice>,
+    addr: Column<Advice>,
+    src_addr_end: Column<Advice>,
+    is_src_end: &IsEqualConfig<F>,
+) {
+    let [is_pad, is_pad_writer, is_pad_next] =
+        [CURRENT, NEXT_ROW, NEXT_STEP].map(|at| meta.query_advice(is_pad, at));
+
+    cb.condition(q_step.expr(), |cb| {
+        cb.require_zero("is_pad == 0 on writer rows", is_pad_writer);
+    });
+
+    // Detect when addr == src_addr_end
+    let [is_src_end, is_src_end_next] = [CURRENT, NEXT_STEP].map(|at| {
+        let addr = meta.query_advice(addr, at);
+        let src_addr_end = meta.query_advice(src_addr_end, at);
+        is_src_end.expr_at(meta, at, addr, src_addr_end)
+    });
+
+    cb.condition(is_first, |cb| {
+        cb.require_equal(
+            "is_pad starts at src_addr == src_addr_end",
+            is_pad.expr(),
+            is_src_end.expr(),
+        );
+    });
+
+    let not_last_reader = q_step * not::expr(meta.query_advice(is_last, NEXT_ROW));
+    cb.condition(not_last_reader, |cb| {
+        cb.require_equal(
+            "is_pad=1 when src_addr == src_addr_end, otherwise it keeps the previous value",
+            select::expr(is_src_end_next, 1.expr(), is_pad.expr()),
+            is_pad_next.expr(),
+        );
+    });
 }
