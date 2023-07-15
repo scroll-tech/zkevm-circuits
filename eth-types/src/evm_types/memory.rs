@@ -303,21 +303,7 @@ impl Memory {
     /// Reads an chunk of memory[offset..offset+length]. Zeros will be padded if
     /// index out of range.
     pub fn read_chunk(&self, range: impl Into<MemoryRange>) -> Vec<u8> {
-        let range = range.into();
-        let start_offset = range.start.0;
-        let length = range.length().0;
-        let chunk = if self.0.len() < start_offset {
-            &[]
-        } else {
-            &self.0[start_offset..]
-        };
-        let chunk = if chunk.len() < length {
-            // Expand chunk to expected size
-            chunk.iter().cloned().pad_using(length, |_| 0).collect()
-        } else {
-            chunk[..length].to_vec()
-        };
-        chunk
+        MemoryRef::from(self).read_chunk(range)
     }
 
     /// Write a chunk of memory[offset..offset+length]. If any data is written out-of-bound, it must
@@ -407,6 +393,37 @@ impl Memory {
     #[inline(always)]
     pub fn align_length(len: usize) -> usize {
         (len + 31) / 32 * 32
+    }
+}
+
+/// Reference of the EVM memory
+pub struct MemoryRef<'a>(pub &'a [u8]);
+
+impl<'a> From<&'a Memory> for MemoryRef<'a> {
+    fn from(memory: &'a Memory) -> Self {
+        MemoryRef(&memory.0)
+    }
+}
+
+impl<'a> MemoryRef<'a> {
+    /// Reads an chunk of memory[offset..offset+length]. Zeros will be padded if
+    /// index out of range.
+    pub fn read_chunk(&self, range: impl Into<MemoryRange>) -> Vec<u8> {
+        let range = range.into();
+        let start_offset = range.start.0;
+        let length = range.length().0;
+        let chunk = if self.0.len() < start_offset {
+            &[]
+        } else {
+            &self.0[start_offset..]
+        };
+        let chunk = if chunk.len() < length {
+            // Expand chunk to expected size
+            chunk.iter().cloned().pad_using(length, |_| 0).collect()
+        } else {
+            chunk[..length].to_vec()
+        };
+        chunk
     }
 }
 

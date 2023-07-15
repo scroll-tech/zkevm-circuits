@@ -277,14 +277,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         caller_ctx_mut.memory.extend_at_least(ret_offset + length);
                     }
                 }
-                let updated_memory = {
-                    let mut updated_memory = state.caller_ctx()?.memory.clone();
-                    if length > 0 {
-                        updated_memory.0[ret_offset..ret_offset + length]
-                            .copy_from_slice(&result[..length]);
-                    }
-                    updated_memory
-                };
 
                 for (field, value) in [
                     (
@@ -427,7 +419,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                             call.return_data_offset,
                             length,
                             &result,
-                            &updated_memory,
                         )?;
                     let returned_bytes = read_steps
                         .iter()
