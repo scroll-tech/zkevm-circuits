@@ -290,30 +290,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             constrain_forward_parameters(cb, meta, is_continue.expr(), id, tag, src_addr_end);
 
-            // Apply the same constraints for the RLCs of words before and after the write.
-            let word_rlc_both = [(value_word_rlc, value), (value_word_rlc_prev, value_prev)];
-            for (word_rlc, value) in word_rlc_both {
-                constrain_word_rlc(
-                    cb,
-                    meta,
-                    is_first.expr(),
-                    is_continue.expr(),
-                    is_word_end.expr(),
-                    word_rlc,
-                    value,
-                    challenges.evm_word(),
-                );
-            }
-
-            constrain_word_index(
-                cb,
-                meta,
-                is_first.expr(),
-                is_continue.expr(),
-                is_word_end.expr(),
-                word_index,
-            );
-
             let (is_pad, is_pad_next) = constrain_is_pad(
                 cb,
                 meta,
@@ -371,6 +347,30 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 is_tx_calldata,
                 is_bytecode,
                 tag,
+            );
+
+            // Apply the same constraints for the RLCs of words before and after the write.
+            let word_rlc_both = [(value_word_rlc, value), (value_word_rlc_prev, value_prev)];
+            for (word_rlc, value) in word_rlc_both {
+                constrain_word_rlc(
+                    cb,
+                    meta,
+                    is_first.expr(),
+                    is_continue.expr(),
+                    is_word_end.expr(),
+                    word_rlc,
+                    value,
+                    challenges.evm_word(),
+                );
+            }
+
+            constrain_word_index(
+                cb,
+                meta,
+                is_first.expr(),
+                is_continue.expr(),
+                is_word_end.expr(),
+                word_index,
             );
 
             constrain_bytes_left(
