@@ -131,7 +131,8 @@ pub fn constrain_address<F: Field>(
 pub fn constrain_rw_counter<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
-    not_last: Expression<F>,
+    is_last: Expression<F>,      // The last row.
+    is_last_step: Expression<F>, // Both the last reader and writer rows.
     is_rw_type: Expression<F>,
     is_word_end: Expression<F>,
     rw_counter: Column<Advice>,
@@ -142,7 +143,7 @@ pub fn constrain_rw_counter<F: Field>(
     let new_value = meta.query_advice(rwc_inc_left, CURRENT) - rwc_diff;
     // At the end, it must reach 0.
     let update_or_finish = select::expr(
-        not_last.expr(),
+        not::expr(is_last.expr()),
         meta.query_advice(rwc_inc_left, NEXT_ROW),
         0.expr(),
     );
@@ -153,13 +154,23 @@ pub fn constrain_rw_counter<F: Field>(
     );
 
     // Maintain rw_counter based on rwc_inc_left. Their sum remains constant in all cases.
-    cb.condition(not_last.expr(), |cb| {
+    cb.condition(not::expr(is_last.expr()), |cb| {
         cb.require_equal(
             "rw_counter[0] + rwc_inc_left[0] == rw_counter[1] + rwc_inc_left[1]",
             meta.query_advice(rw_counter, CURRENT) + meta.query_advice(rwc_inc_left, CURRENT),
             meta.query_advice(rw_counter, NEXT_ROW) + meta.query_advice(rwc_inc_left, NEXT_ROW),
         );
     });
+
+    // Ensure that the word operation completes.
+    cb.require_zero(
+        "is_last_step requires is_word_end for word-based types",
+        and::expr([
+            is_last_step.expr(),
+            is_rw_type.expr(),
+            not::expr(is_word_end.expr()),
+        ]),
+    );
 }
 
 /// Maintain the index within words, looping between 0 and 31 inclusive.
@@ -241,15 +252,13 @@ pub fn constrain_value_rlc<F: Field>(
     is_first: Expression<F>,
     is_continue: Expression<F>,
     is_last: Column<Advice>,
-    is_pad: Column<Advice>,
-    mask_next: Expression<F>,
     non_pad_non_mask: Column<Advice>,
+    is_pad_next: Expression<F>,
+    mask_next: Expression<F>,
     value_acc: Column<Advice>,
     value: Column<Advice>,
     challenge: Expression<F>,
 ) {
-    let is_pad_next = meta.query_advice(is_pad, NEXT_STEP);
-
     // Initial values derived from the event.
     cb.condition(is_first.expr(), |cb| {
         // Apply the same constraints on the first reader and first writer rows.
@@ -430,6 +439,7 @@ pub fn constrain_masked_value<F: Field>(
 }
 
 /// Verify that when and after the address reaches the limit src_addr_end, zero-padding is enabled.
+/// Return (is_pad, is_pad at NEXT_STEP).
 pub fn constrain_is_pad<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
@@ -440,7 +450,7 @@ pub fn constrain_is_pad<F: Field>(
     addr: Column<Advice>,
     src_addr_end: Column<Advice>,
     is_src_end: &IsEqualConfig<F>,
-) {
+) -> (Expression<F>, Expression<F>) {
     let [is_pad, is_pad_writer, is_pad_next] =
         [CURRENT, NEXT_ROW, NEXT_STEP].map(|at| meta.query_advice(is_pad, at));
 
@@ -473,6 +483,8 @@ pub fn constrain_is_pad<F: Field>(
             is_pad_next.expr(),
         );
     });
+
+    (is_pad, is_pad_next)
 }
 
 /// Verify non_pad_non_mask = !is_pad AND !mask.
@@ -480,15 +492,12 @@ pub fn constrain_non_pad_non_mask<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
     non_pad_non_mask: Column<Advice>,
-    is_pad: Column<Advice>,
-    mask: Column<Advice>,
+    is_pad: Expression<F>,
+    mask: Expression<F>,
 ) {
     cb.require_equal(
         "non_pad_non_mask = !pad AND !mask",
         meta.query_advice(non_pad_non_mask, CURRENT),
-        and::expr([
-            not::expr(meta.query_advice(is_pad, CURRENT)),
-            not::expr(meta.query_advice(mask, CURRENT)),
-        ]),
+        and::expr([not::expr(is_pad), not::expr(mask)]),
     );
 }

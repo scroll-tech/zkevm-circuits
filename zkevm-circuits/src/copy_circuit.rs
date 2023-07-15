@@ -314,7 +314,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 word_index,
             );
 
-            constrain_is_pad(
+            let (is_pad, is_pad_next) = constrain_is_pad(
                 cb,
                 meta,
                 is_reader.expr(),
@@ -326,21 +326,23 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 &is_src_end,
             );
 
-            constrain_non_pad_non_mask(cb, meta, non_pad_non_mask, is_pad, mask);
+            let (mask, mask_next, front_mask) = {
+                // The first 31 bytes may be front_mask, but not the last byte of the first word.
+                // LOG has no front mask at all.
+                let forbid_front_mask = is_word_end.expr() + is_tx_log.expr();
 
-            // The first 31 bytes may be front_mask, but not the last byte of the first word.
-            // LOG has no front mask at all.
-            let forbid_front_mask = is_word_end.expr() + is_tx_log.expr();
+                constrain_mask(
+                    cb,
+                    meta,
+                    is_first.expr(),
+                    is_continue.expr(),
+                    mask,
+                    front_mask,
+                    forbid_front_mask,
+                )
+            };
 
-            let (mask, mask_next, front_mask) = constrain_mask(
-                cb,
-                meta,
-                is_first.expr(),
-                is_continue.expr(),
-                mask,
-                front_mask,
-                forbid_front_mask,
-            );
+            constrain_non_pad_non_mask(cb, meta, non_pad_non_mask, is_pad.expr(), mask.expr());
 
             constrain_masked_value(cb, meta, mask.expr(), value, value_prev);
 
@@ -350,9 +352,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 is_first.expr(),
                 is_continue.expr(),
                 is_last_col,
-                is_pad,
-                mask_next.expr(),
                 non_pad_non_mask,
+                is_pad_next.expr(),
+                mask_next.expr(),
                 value_acc,
                 value,
                 challenges.keccak_input(),
@@ -382,27 +384,20 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             constrain_address(cb, meta, is_continue.expr(), front_mask.expr(), addr);
 
-            let is_rw_type = meta.query_advice(is_memory, CURRENT) + is_tx_log.expr();
+            {
+                let is_rw_type = meta.query_advice(is_memory, CURRENT) + is_tx_log.expr();
 
-            constrain_rw_counter(
-                cb,
-                meta,
-                not::expr(is_last.expr()),
-                is_rw_type.expr(),
-                is_word_end.expr(),
-                rw_counter,
-                rwc_inc_left,
-            );
-
-            // Ensure that the word operation completes.
-            cb.require_zero(
-                "is_last_step requires is_word_end for word-based types",
-                and::expr([
+                constrain_rw_counter(
+                    cb,
+                    meta,
+                    is_last.expr(),
                     is_last_step.expr(),
                     is_rw_type.expr(),
-                    not::expr(is_word_end.expr()),
-                ]),
-            );
+                    is_word_end.expr(),
+                    rw_counter,
+                    rwc_inc_left,
+                );
+            }
 
             cb.gate(meta.query_fixed(q_enable, CURRENT))
         });
