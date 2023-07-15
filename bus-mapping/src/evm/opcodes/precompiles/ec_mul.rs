@@ -22,7 +22,5 @@ pub(crate) fn handle(
     exec_step.aux_data = Some(PrecompileAuxData::EcMul(aux_data));
 
     let ec_mul_op = EcMulOp::new_from_bytes(&input_bytes, &output_bytes);
-    if ec_mul_op.is_some().into() {
-        state.push_precompile_event(PrecompileEvent::EcMul(ec_mul_op.unwrap()));
-    }
+    state.push_precompile_event(PrecompileEvent::EcMul(ec_mul_op));
 }

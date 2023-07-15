@@ -1,6 +1,6 @@
 use bus_mapping::precompile::{PrecompileAuxData, PrecompileCalls};
 use eth_types::{Field, ToLittleEndian, ToScalar, Word};
-use gadgets::util::Expr;
+use gadgets::util::{and, not, or, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder,
             CachedRegion, Cell,
-            math_gadget::ModGadget, RandomLinearCombination,
+            math_gadget::{ModGadget, IsZeroGadget}, RandomLinearCombination,
         },
     },
     table::CallContextFieldTag,
@@ -78,6 +78,17 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         // k * n + s_modded = s_raw
         let modword = ModGadget::construct(cb, [&s_raw, &n, &s_modded]);
 
+        let p_x_is_zero = IsZeroGadget::construct(cb, "ecMul(P_x)", point_p_x_rlc.expr());
+        let p_y_is_zero = IsZeroGadget::construct(cb, "ecMul(P_y)", point_p_y_rlc.expr());
+        let p_is_zero = and::expr([p_x_is_zero.expr(), p_y_is_zero.expr()]);
+
+        let s_is_zero = IsZeroGadget::construct(cb, "ecMul(s)", scalar_s_rlc.expr());
+        
+        cb.condition(or::expr([p_is_zero.expr(), s_is_zero.expr()]), |cb| {
+            cb.require_zero("if P == 0 || s == 0, then R_x == 0", point_r_x_rlc.expr());
+            cb.require_zero("if P == 0 || s == 0, then R_y == 0", point_r_y_rlc.expr());
+        });
+
         // Make sure the correct modulo test is done on actual lookup inputs
         // TODO: adding this code block makes the last two tests fail
         // cb.require_equal(
@@ -91,18 +102,21 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         //     s_modded.expr()
         // );
 
-        cb.condition(is_valid.expr(), |cb| {
-            cb.ecc_table_lookup(
-                u64::from(PrecompileCalls::Bn128Mul).expr(),
-                point_p_x_rlc.expr(),
-                point_p_y_rlc.expr(),
-                scalar_s_rlc.expr(),
-                0.expr(),
-                0.expr(),
-                point_r_x_rlc.expr(),
-                point_r_y_rlc.expr(),
-            );
-        });
+        cb.condition(
+            not::expr(or::expr([p_is_zero.expr(), s_is_zero.expr()])), 
+            |cb| {
+                cb.ecc_table_lookup(
+                    u64::from(PrecompileCalls::Bn128Mul).expr(),
+                    point_p_x_rlc.expr(),
+                    point_p_y_rlc.expr(),
+                    scalar_s_rlc.expr(),
+                    0.expr(),
+                    0.expr(),
+                    point_r_x_rlc.expr(),
+                    point_r_y_rlc.expr(),
+                );
+            }
+        );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
