@@ -13,8 +13,7 @@ use crate::{
 use eth_types::{
     evm_types::{
         gas_utils::{eip150_gas, memory_expansion_gas_cost},
-        memory::MemoryWordRange,
-        Gas, GasCost, MemoryAddress, OpcodeId,
+        Gas, GasCost, OpcodeId,
     },
     GethExecStep, ToWord, Word,
 };
@@ -601,52 +600,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             } //
         }
     }
-}
-
-fn write_memory_words(
-    state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-    data: &[u8],
-    offset: usize,
-    length: usize,
-    is_caller: bool,
-) -> Result<(), Error> {
-    if length == 0 {
-        return Ok(());
-    }
-
-    let memory = if is_caller {
-        &mut state.caller_ctx_mut()?.memory
-    } else {
-        &mut state.call_ctx_mut()?.memory
-    };
-
-    memory.extend_at_least(offset + length);
-
-    // Reconstruct memory (special for current code of precompile).
-    let memory_updated = {
-        let mut memory_updated = memory.clone();
-        memory_updated.copy_from(offset.into(), 0.into(), length.into(), data);
-        memory_updated
-    };
-
-    // Generate aligned slot bytes for MemoryOp.
-    let range = MemoryWordRange::align_range(offset, length);
-    let slot_bytes = memory_updated.read_chunk(range);
-
-    // Add memory word write ops.
-    for (i, chunk) in slot_bytes.chunks(32).enumerate() {
-        let address = range.start_slot() + MemoryAddress::from(32 * i);
-        let write_word = Word::from_big_endian(chunk);
-
-        if is_caller {
-            state.memory_write_caller(exec_step, address, write_word)?;
-        } else {
-            state.memory_write_word(exec_step, address, write_word)?;
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(any(test, feature = "test"))]
