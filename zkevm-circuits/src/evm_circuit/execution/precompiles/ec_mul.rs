@@ -8,7 +8,7 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder,
+            common_gadget::RestoreContextGadget, constraint_builder::{EVMConstraintBuilder, ConstrainBuilderCommon},
             CachedRegion, Cell,
             math_gadget::{ModGadget, IsZeroGadget}, RandomLinearCombination,
         },
@@ -33,7 +33,6 @@ pub struct EcMulGadget<F> {
     scalar_s_raw_rlc: Cell<F>,
     point_r_x_rlc: Cell<F>,
     point_r_y_rlc: Cell<F>,
-    is_valid: Cell<F>,
 
     // Two Words (s_raw, s_modded) that satisfies
     // k * FR_N + s_modded = s_raw
@@ -60,8 +59,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileBn256ScalarMul;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (is_valid, point_p_x_rlc, point_p_y_rlc, scalar_s_rlc, scalar_s_raw_rlc, point_r_x_rlc, point_r_y_rlc) = (
-            cb.query_bool(),
+        let (point_p_x_rlc, point_p_y_rlc, scalar_s_rlc, scalar_s_raw_rlc, point_r_x_rlc, point_r_y_rlc) = (
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -85,8 +83,8 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         let s_is_zero = IsZeroGadget::construct(cb, "ecMul(s)", scalar_s_rlc.expr());
         
         cb.condition(or::expr([p_is_zero.expr(), s_is_zero.expr()]), |cb| {
-            cb.require_zero("if P == 0 || s == 0, then R_x == 0", point_r_x_rlc.expr());
-            cb.require_zero("if P == 0 || s == 0, then R_y == 0", point_r_y_rlc.expr());
+            cb.require_equal("if P == 0 || s == 0, then R_x == 0", point_r_x_rlc.expr(), 0.expr());
+            cb.require_equal("if P == 0 || s == 0, then R_y == 0", point_r_y_rlc.expr(), 0.expr());
         });
 
         // Make sure the correct modulo test is done on actual lookup inputs
@@ -153,7 +151,6 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             scalar_s_raw_rlc,
             point_r_x_rlc,
             point_r_y_rlc,
-            is_valid,
 
             s_mod_pair: (s_raw, s_modded),
             n,
@@ -180,12 +177,6 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         if let Some(PrecompileAuxData::EcMul(aux_data)) = &step.aux_data {
-            self.is_valid.assign(
-                region,
-                offset,
-                Value::known(F::from(u64::from(aux_data.is_valid))),
-            )?;
-
             for (col, word_value) in [
                 (&self.point_p_x_rlc, aux_data.p_x),
                 (&self.point_p_y_rlc, aux_data.p_y),
