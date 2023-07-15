@@ -17,7 +17,6 @@ use eth_types::{
     sign_types::SignData,
     GethExecStep, Word, H256,
 };
-use ethers_core::k256::elliptic_curve::subtle::CtOption;
 use gadgets::impl_expr;
 use halo2_proofs::{
     arithmetic::{CurveAffine, Field},
