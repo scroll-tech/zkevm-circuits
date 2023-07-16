@@ -1896,13 +1896,10 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok((vec![], vec![], vec![]));
         }
 
-        let src_addr = src_addr.into().0;
-        let dst_addr = dst_addr.into().0;
-
         let call_ctx = self.call_ctx_mut()?;
         let (src_range, dst_range, write_slot_bytes) = combine_copy_slot_bytes(
-            src_addr,
-            dst_addr,
+            src_addr.into().0,
+            dst_addr.into().0,
             copy_length,
             &call_ctx.return_data,
             &mut call_ctx.memory,
