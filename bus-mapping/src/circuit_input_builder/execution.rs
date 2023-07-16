@@ -679,8 +679,7 @@ impl EcMulOp {
 }
 
 /// The number of pairing inputs per pairing operation. If the inputs provided to the precompile
-/// call are < 4, we append (G1::infinity, G2::Infinity) until we have the required number of
-/// inputs.
+/// call are < 4, we append (G1::infinity, G2::generator) until we have the required no. of inputs.
 pub const N_PAIRING_PER_OP: usize = 4;
 
 /// EcPairing operation
