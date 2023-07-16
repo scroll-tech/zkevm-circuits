@@ -87,16 +87,6 @@ fn gen_copy_event(
     let data_offset = geth_step.stack.nth_last(1)?;
     let length = geth_step.stack.nth_last(2)?;
 
-    let call_ctx = state.call_ctx_mut()?;
-    let memory = &mut call_ctx.memory;
-    memory.extend_for_range(dst_addr, length);
-
-    let memory_updated = {
-        let mut memory_updated = memory.clone();
-        memory_updated.copy_from(dst_addr, data_offset, length, &call_ctx.return_data);
-        memory_updated
-    };
-
     let (dst_addr, data_offset, length) =
         (dst_addr.low_u64(), data_offset.as_u64(), length.as_u64());
 
@@ -107,14 +97,8 @@ fn gen_copy_event(
         last_callee_return_data_offset + last_callee_return_data_length,
     );
 
-    let (read_steps, write_steps, prev_bytes) = state.gen_copy_steps_for_return_data(
-        exec_step,
-        src_addr,
-        src_addr_end,
-        dst_addr,
-        length,
-        &memory_updated,
-    )?;
+    let (read_steps, write_steps, prev_bytes) =
+        state.gen_copy_steps_for_return_data(exec_step, src_addr, dst_addr, length)?;
 
     Ok(CopyEvent {
         src_type: CopyDataType::Memory,
