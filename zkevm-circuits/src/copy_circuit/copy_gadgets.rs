@@ -10,6 +10,7 @@ use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, V
 
 use crate::evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon};
 
+#[allow(clippy::too_many_arguments)]
 pub fn constrain_tag<F: Field>(
     meta: &mut ConstraintSystem<F>,
     q_enable: Column<Fixed>,
@@ -136,6 +137,7 @@ pub fn constrain_forward_parameters<F: Field>(
 
 /// Verify that when and after the address reaches the limit src_addr_end, zero-padding is enabled.
 /// Return (is_pad, is_pad at NEXT_STEP).
+#[allow(clippy::too_many_arguments)]
 pub fn constrain_is_pad<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
@@ -287,6 +289,7 @@ pub fn constrain_masked_value<F: Field>(
 }
 
 /// Calculate the RLC of the non-masked data.
+#[allow(clippy::too_many_arguments)]
 pub fn constrain_value_rlc<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
@@ -338,6 +341,7 @@ pub fn constrain_value_rlc<F: Field>(
 }
 
 /// Verify the rlc_acc field of the copy event against the value_acc of the data.
+#[allow(clippy::too_many_arguments)]
 pub fn constrain_event_rlc_acc<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
@@ -392,6 +396,7 @@ pub fn constrain_event_rlc_acc<F: Field>(
 }
 
 /// Calculate the RLC of data within each word.
+#[allow(clippy::too_many_arguments)]
 pub fn constrain_word_rlc<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
@@ -513,6 +518,7 @@ pub fn constrain_address<F: Field>(
 }
 
 /// Update the RW counter and verify that all RWs requested by the event are consumed.
+#[allow(clippy::too_many_arguments)]
 pub fn constrain_rw_counter<F: Field>(
     cb: &mut BaseConstraintBuilder<F>,
     meta: &mut VirtualCells<'_, F>,
