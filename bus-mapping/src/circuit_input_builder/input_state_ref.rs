@@ -1646,66 +1646,43 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Generate copy steps for bytecode.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn gen_copy_steps_for_bytecode(
         &mut self,
         exec_step: &mut ExecStep,
         bytecode: &Bytecode,
         src_addr: impl Into<MemoryAddress>,
         dst_addr: impl Into<MemoryAddress>,
-        src_addr_end: impl Into<MemoryAddress>,
-        bytes_left: impl Into<MemoryAddress>,
+        copy_length: impl Into<MemoryAddress>,
     ) -> Result<(CopyEventSteps, CopyEventPrevBytes), Error> {
-        let src_addr = src_addr.into().0;
-        let dst_addr = dst_addr.into().0;
-        let bytes_left = bytes_left.into().0;
-        let src_copy_end = src_addr + bytes_left;
-        let dst_copy_end = dst_addr + bytes_left;
-        let src_addr_end = src_copy_end.min(src_addr_end.into().0);
-
-        if bytes_left == 0 {
+        let copy_length = copy_length.into().0;
+        if copy_length == 0 {
             return Ok((vec![], vec![]));
         }
 
-        // TODO
-        // Align memory range.
-        let dst_range = MemoryWordRange::align_range(dst_addr, bytes_left);
-        let dst_begin_slot = dst_range.start_slot().0;
-        let dst_end_slot = dst_range.end_slot().0;
-        assert!(dst_begin_slot <= dst_addr && dst_end_slot >= dst_copy_end);
-
-        // Extend call memory.
-        let memory = &mut self.call_ctx_mut()?.memory;
-        memory.extend_for_range(dst_begin_slot.into(), dst_range.full_length().0.into());
-
-        // Combine the slot bytes.
-        let bytes_to_copy = bytecode.code[src_addr..src_addr_end]
-            .iter()
-            .map(|b| b.value);
-        let padding_bytes = repeat(0).take(src_copy_end - src_addr_end);
-        let slot_bytes: Vec<u8> = memory[dst_begin_slot..dst_addr]
-            .iter()
-            .cloned()
-            .chain(bytes_to_copy)
-            .chain(padding_bytes)
-            .chain(memory[dst_copy_end..dst_end_slot].iter().cloned())
-            .collect();
+        let src_addr = src_addr.into().0;
+        let (_, range, slot_bytes) = combine_copy_slot_bytes(
+            src_addr,
+            dst_addr.into().0,
+            copy_length,
+            &bytecode.code,
+            &mut self.call_ctx_mut()?.memory,
+        );
 
         let copy_steps = CopyEventStepsBuilder::new()
-            .source(&bytecode.code[..src_addr_end])
+            .source(&bytecode.code[..])
             .mapper(|code: &BytecodeElement| (code.value, code.is_code))
             .padding_byte_getter(|_: &[BytecodeElement], idx| slot_bytes[idx])
             .read_offset(src_addr)
-            .write_offset(dst_range.shift())
-            .step_length(dst_range.full_length())
-            .length(bytes_left)
+            .write_offset(range.shift())
+            .step_length(range.full_length())
+            .length(copy_length)
             .build();
         let mut prev_bytes: Vec<u8> = vec![];
         self.write_chunks(
             exec_step,
             &slot_bytes,
-            dst_begin_slot,
-            dst_range.full_length().0,
+            range.start_slot().0,
+            range.full_length().0,
             &mut prev_bytes,
         )?;
 
@@ -2072,7 +2049,7 @@ fn combine_copy_slot_bytes(
     src_addr: usize,
     dst_addr: usize,
     copy_length: usize,
-    src_data: &[u8],
+    src_data: &[impl Into<u8> + Clone],
     dst_memory: &mut Memory,
 ) -> (MemoryWordRange, MemoryWordRange, Vec<u8>) {
     let mut src_range = MemoryWordRange::align_range(src_addr, copy_length);
@@ -2091,7 +2068,11 @@ fn combine_copy_slot_bytes(
     let dst_copy_end = dst_addr + copy_length;
 
     // Combine the destination slot bytes.
-    let bytes_to_copy = src_data[src_addr..src_addr_end].iter().cloned();
+    let bytes_to_copy: Vec<_> = src_data[src_addr..src_addr_end]
+        .iter()
+        .cloned()
+        .map(Into::into)
+        .collect();
     let padding_bytes = repeat(0).take(src_copy_end - src_addr_end);
     let slot_bytes: Vec<u8> = dst_memory[dst_begin_slot..dst_addr]
         .iter()

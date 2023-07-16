@@ -133,14 +133,8 @@ fn gen_copy_event(
         .unwrap_or(u64::MAX)
         .min(src_addr_end);
 
-    let (copy_steps, prev_bytes) = state.gen_copy_steps_for_bytecode(
-        exec_step,
-        &bytecode,
-        src_addr,
-        dst_addr,
-        src_addr_end,
-        length,
-    )?;
+    let (copy_steps, prev_bytes) =
+        state.gen_copy_steps_for_bytecode(exec_step, &bytecode, src_addr, dst_addr, length)?;
 
     Ok(CopyEvent {
         src_addr,
