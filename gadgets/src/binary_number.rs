@@ -59,6 +59,15 @@ where
         }
     }
 
+    /// Return the constant that represents a given value. To be compared with the value expression.
+    pub fn constant_expr<F: Field>(&self, value: T) -> Expression<F> {
+        let f = value
+            .as_bits()
+            .iter()
+            .fold(F::zero(), |result, bit| F::from(*bit) + result * F::from(2));
+        Expression::Constant(f)
+    }
+
     /// Returns a function that can evaluate to a binary expression, that
     /// evaluates to 1 if value is equal to value as bits. The returned
     /// expression is of degree N.

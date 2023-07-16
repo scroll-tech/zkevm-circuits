@@ -208,7 +208,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         constrain_tag(
             meta,
             q_enable,
-            tag,
+            &tag,
             is_precompiled,
             is_tx_calldata,
             is_bytecode,
@@ -238,7 +238,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
             constrain_first_last(cb, is_reader.expr(), is_first.expr(), is_last.expr());
 
-            constrain_must_terminate(cb, meta, q_enable, is_last.expr());
+            constrain_must_terminate(cb, meta, q_enable, &tag);
 
             constrain_forward_parameters(cb, meta, is_continue.expr(), id, tag, src_addr_end);
 
@@ -691,6 +691,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                         &lt_word_end_chip,
                     )?;
                 }
+                assert_eq!(offset % 2, 0, "enabled rows must come in pairs");
 
                 self.assign_padding_row(
                     &mut region,
