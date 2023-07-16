@@ -154,7 +154,6 @@ impl<F: Field> PrecompileGadget<F> {
                 });
             }),
             Box::new(|_cb| { /* Modexp */ }),
-            Box::new(|_cb| { /* Bn128Add */ }),
             Box::new(|cb| {
                 let (p_x_rlc, p_y, q_x_rlc, q_y, r_x_rlc, r_y_rlc) = (
                     cb.query_cell_phase2(),
@@ -187,6 +186,7 @@ impl<F: Field> PrecompileGadget<F> {
                     r_x_rlc.expr() * r_pow_32 + r_y_rlc.expr(),
                 );
             }),
+            Box::new(|_cb| { /* Bn128Mul */ }),
             Box::new(|_cb| { /* Bn128Pairing */ }),
             Box::new(|_cb| { /* Blake2F */ }),
         ];
