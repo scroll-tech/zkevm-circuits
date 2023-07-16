@@ -8,9 +8,10 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::{EVMConstraintBuilder, ConstrainBuilderCommon},
-            CachedRegion, Cell,
-            math_gadget::{ModGadget, IsZeroGadget}, RandomLinearCombination,
+            common_gadget::RestoreContextGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::{IsZeroGadget, ModGadget},
+            CachedRegion, Cell, RandomLinearCombination,
         },
     },
     table::CallContextFieldTag,
@@ -19,10 +20,8 @@ use crate::{
 
 // Modulus for scalar field Fr
 const FR_N: [u8; 32] = [
-    0x01, 0x00, 0x00, 0xF0, 0x93, 0xF5, 0xE1, 0x43,
-    0x91, 0x70, 0xB9, 0x79, 0x48, 0xE8, 0x33, 0x28,
-    0x5D, 0x58, 0x81, 0x81, 0xB6, 0x45, 0x50, 0xB8,
-    0x29, 0xA0, 0x31, 0xE1, 0x72, 0x4E, 0x64, 0x30,
+    0x01, 0x00, 0x00, 0xF0, 0x93, 0xF5, 0xE1, 0x43, 0x91, 0x70, 0xB9, 0x79, 0x48, 0xE8, 0x33, 0x28,
+    0x5D, 0x58, 0x81, 0x81, 0xB6, 0x45, 0x50, 0xB8, 0x29, 0xA0, 0x31, 0xE1, 0x72, 0x4E, 0x64, 0x30,
 ];
 
 #[derive(Clone, Debug)]
@@ -42,10 +41,10 @@ pub struct EcMulGadget<F> {
     // k * FR_N + s_modded = s_raw
     // Used for proving correct modulo by Fr
     s_mod_pair: (
-        RandomLinearCombination<F, 32>,     // raw
-        RandomLinearCombination<F, 32>      // mod by FR_N
+        RandomLinearCombination<F, 32>, // raw
+        RandomLinearCombination<F, 32>, // mod by FR_N
     ),
-    n: RandomLinearCombination<F, 32>,      // modulus
+    n: RandomLinearCombination<F, 32>, // modulus
     modword: ModGadget<F>,
 
     is_success: Cell<F>,
@@ -63,7 +62,14 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::PrecompileBn256ScalarMul;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let (point_p_x_rlc, point_p_y_rlc, scalar_s_rlc, scalar_s_raw_rlc, point_r_x_rlc, point_r_y_rlc) = (
+        let (
+            point_p_x_rlc,
+            point_p_y_rlc,
+            scalar_s_rlc,
+            scalar_s_raw_rlc,
+            point_r_x_rlc,
+            point_r_y_rlc,
+        ) = (
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
             cb.query_cell_phase2(),
@@ -75,7 +81,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         let (s_raw, s_modded, n) = (
             cb.query_word_rlc(),
             cb.query_word_rlc(),
-            cb.query_word_rlc()
+            cb.query_word_rlc(),
         );
         // k * n + s_modded = s_raw
         let modword = ModGadget::construct(cb, [&s_raw, &n, &s_modded]);
@@ -85,24 +91,26 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
         let p_y_is_zero = IsZeroGadget::construct(cb, "ecMul(P_y)", point_p_y_rlc.expr());
         let p_is_zero = and::expr([p_x_is_zero.expr(), p_y_is_zero.expr()]);
         let s_is_zero = IsZeroGadget::construct(cb, "ecMul(s)", scalar_s_rlc.expr());
-        
+
         cb.condition(or::expr([p_is_zero.expr(), s_is_zero.expr()]), |cb| {
-            cb.require_equal("if P == 0 || s == 0, then R_x == 0", point_r_x_rlc.expr(), 0.expr());
-            cb.require_equal("if P == 0 || s == 0, then R_y == 0", point_r_y_rlc.expr(), 0.expr());
+            cb.require_equal(
+                "if P == 0 || s == 0, then R_x == 0",
+                point_r_x_rlc.expr(),
+                0.expr(),
+            );
+            cb.require_equal(
+                "if P == 0 || s == 0, then R_y == 0",
+                point_r_y_rlc.expr(),
+                0.expr(),
+            );
         });
 
         // Make sure the correct modulo test is done on actual lookup inputs
-        cb.condition(
-            1.expr(), 
-            |_| { scalar_s_raw_rlc.expr() - s_raw.expr() }
-        );
-        cb.condition(
-            1.expr(), 
-            |_| { scalar_s_rlc.expr() - s_modded.expr() }
-        );
+        cb.condition(1.expr(), |_| scalar_s_raw_rlc.expr() - s_raw.expr());
+        cb.condition(1.expr(), |_| scalar_s_rlc.expr() - s_modded.expr());
 
         cb.condition(
-            not::expr(or::expr([p_is_zero.expr(), s_is_zero.expr()])), 
+            not::expr(or::expr([p_is_zero.expr(), s_is_zero.expr()])),
             |cb| {
                 cb.ecc_table_lookup(
                     u64::from(PrecompileCalls::Bn128Mul).expr(),
@@ -114,7 +122,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                     point_r_x_rlc.expr(),
                     point_r_y_rlc.expr(),
                 );
-            }
+            },
         );
 
         let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
@@ -185,7 +193,7 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
             for (col, is_zero_gadget, word_value) in [
                 (&self.point_p_x_rlc, &self.p_x_is_zero, aux_data.p_x),
                 (&self.point_p_y_rlc, &self.p_y_is_zero, aux_data.p_y),
-                (&self.scalar_s_rlc, &self.s_is_zero, aux_data.s)
+                (&self.scalar_s_rlc, &self.s_is_zero, aux_data.s),
             ] {
                 let rlc_val = region.keccak_rlc(&word_value.to_le_bytes());
                 col.assign(region, offset, rlc_val)?;
@@ -197,28 +205,21 @@ impl<F: Field> ExecutionGadget<F> for EcMulGadget<F> {
                 (&self.point_r_x_rlc, aux_data.r_x),
                 (&self.point_r_y_rlc, aux_data.r_y),
             ] {
-                col.assign(
-                    region,
-                    offset,
-                    region.keccak_rlc(&word_value.to_le_bytes())
-                )?;
+                col.assign(region, offset, region.keccak_rlc(&word_value.to_le_bytes()))?;
             }
 
             let n = Word::from_little_endian(&FR_N);
             for (col, word_value) in [
                 (&self.s_mod_pair.0, aux_data.s_raw),
                 (&self.s_mod_pair.1, aux_data.s),
-                (&self.n, n)
+                (&self.n, n),
             ] {
-                col.assign(
-                    region, 
-                    offset, 
-                    Some(word_value.to_le_bytes())
-                )?;
+                col.assign(region, offset, Some(word_value.to_le_bytes()))?;
             }
 
             let (k, _) = aux_data.s_raw.div_mod(n);
-            self.modword.assign(region, offset, aux_data.s_raw, n, aux_data.s, k)?;
+            self.modword
+                .assign(region, offset, aux_data.s_raw, n, aux_data.s, k)?;
         }
 
         self.is_success.assign(

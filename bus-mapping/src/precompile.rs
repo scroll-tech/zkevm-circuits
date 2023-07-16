@@ -183,7 +183,7 @@ pub struct EcMulAuxData {
     /// x co-ordinate of the result point.
     pub r_x: Word,
     /// y co-ordinate of the result point.
-    pub r_y: Word
+    pub r_y: Word,
 }
 
 impl EcMulAuxData {
@@ -199,7 +199,7 @@ impl EcMulAuxData {
             s: Word::from_little_endian(&ec_mul_op.s.to_bytes()),
             s_raw: Word::from_big_endian(&input[0x40..0x60]),
             r_x: Word::from_big_endian(&output[0x00..0x20]),
-            r_y: Word::from_big_endian(&output[0x20..0x40])
+            r_y: Word::from_big_endian(&output[0x20..0x40]),
         }
     }
 }

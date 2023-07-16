@@ -583,22 +583,6 @@ impl EcAddOp {
         Self { p, q, r }
     }
 
-    /// Creates dummy EcAdd op where P != Q.
-    pub fn dummy_unequal() -> Self {
-        let p = G1Affine::generator();
-        let q = G1Affine::from(G1Affine::generator() * Fr::from_raw([2, 0, 0, 0]));
-        let r = p.add(q).into();
-        Self { p, q, r }
-    }
-
-    /// Creates dummy EcAdd op where P == Q.
-    pub fn dummy_equal() -> Self {
-        let p = G1Affine::generator();
-        let q = G1Affine::generator();
-        let r = p.add(q).into();
-        Self { p, q, r }
-    }
-
     /// Returns true if P == Q == Infinity.
     pub fn is_zero(&self) -> bool {
         self.p.is_identity().into() && self.q.is_identity().into()
@@ -606,7 +590,7 @@ impl EcAddOp {
 }
 
 /// EcMul operation: s.P = R
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct EcMulOp {
     /// EC point.
     pub p: G1Affine,
@@ -616,15 +600,16 @@ pub struct EcMulOp {
     pub r: G1Affine,
 }
 
-impl EcMulOp {
-    /// Creates a new EcMul op where P != Infinity.
-    pub fn dummy_non_zero() -> Self {
+impl Default for EcMulOp {
+    fn default() -> Self {
         let p = G1Affine::generator();
         let s = Fr::one();
         let r = p.mul(s).into();
         Self { p, s, r }
     }
+}
 
+impl EcMulOp {
     /// Returns whether the ec point P is Infinity.
     pub fn is_zero(&self) -> bool {
         self.p.is_identity().into() || self.s.is_zero().into()
@@ -656,7 +641,8 @@ impl EcMulOp {
                 copy_bytes(&mut buf, &input[0x20..0x40]);
                 Fq::from_bytes(&buf).and_then(|y| G1Affine::from_xy(x, y))
             })
-        }.unwrap();
+        }
+        .unwrap();
 
         let s = Fr::from_raw(Word::from_big_endian(&input[0x40..0x60]).0);
 
@@ -666,14 +652,15 @@ impl EcMulOp {
                 copy_bytes(&mut buf, &output[0x20..0x40]);
                 Fq::from_bytes(&buf).and_then(|y| G1Affine::from_xy(x, y))
             })
-        }.unwrap();
+        }
+        .unwrap();
 
         assert_eq!(G1Affine::from(p.mul(s)), r_specified);
 
         Self {
             p,
             s,
-            r: r_specified
+            r: r_specified,
         }
     }
 }
@@ -706,70 +693,6 @@ impl Default for EcPairingOp {
 }
 
 impl EcPairingOp {
-    /// Dummy pairing op with 1 non-infinity pair.
-    pub fn dummy_pair1() -> Self {
-        Self {
-            inputs: [
-                (G1Affine::generator(), G2Affine::generator()),
-                (G1Affine::identity(), G2Affine::identity()),
-                (G1Affine::identity(), G2Affine::identity()),
-                (G1Affine::identity(), G2Affine::identity()),
-            ],
-            output: Word::zero(),
-        }
-    }
-
-    /// Dummy pairing op with 2 non-infinity pairs.
-    pub fn dummy_pair2() -> Self {
-        Self {
-            inputs: [
-                (G1Affine::generator(), G2Affine::generator()),
-                (G1Affine::generator(), G2Affine::generator()),
-                (G1Affine::identity(), G2Affine::identity()),
-                (G1Affine::identity(), G2Affine::identity()),
-            ],
-            output: Word::zero(),
-        }
-    }
-
-    /// Dummy pairing op with 3 non-infinity pairs.
-    pub fn dummy_pair3() -> Self {
-        Self {
-            inputs: [
-                (G1Affine::generator(), G2Affine::generator()),
-                (G1Affine::generator(), G2Affine::generator()),
-                (G1Affine::generator(), G2Affine::generator()),
-                (G1Affine::identity(), G2Affine::identity()),
-            ],
-            output: Word::zero(),
-        }
-    }
-
-    /// Dummy pairing op with 4 non-infinity pairs.
-    pub fn dummy_pair4() -> Self {
-        Self {
-            inputs: [
-                (G1Affine::generator(), G2Affine::generator()),
-                (G1Affine::generator(), G2Affine::generator()),
-                (G1Affine::generator(), G2Affine::generator()),
-                (G1Affine::generator(), G2Affine::generator()),
-            ],
-            output: Word::zero(),
-        }
-    }
-
-    /// Whether the pairing op has the given non-infinity pair.
-    pub fn is_pairing(&self, n: usize) -> bool {
-        (self.inputs[0].0.is_identity().into() && self.inputs[0].1.is_identity().into()) as usize
-            + (self.inputs[1].0.is_identity().into() && self.inputs[1].1.is_identity().into())
-                as usize
-            + (self.inputs[2].0.is_identity().into() && self.inputs[2].1.is_identity().into())
-                as usize
-            + (self.inputs[3].0.is_identity().into() && self.inputs[3].1.is_identity().into())
-                as usize
-            == n
-    }
-
     /// Returns the uncompressed byte representation of inputs to the EcPairingOp.
     pub fn to_bytes(&self) -> Vec<u8> {
         self.inputs
