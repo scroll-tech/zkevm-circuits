@@ -2054,15 +2054,16 @@ fn combine_copy_slot_bytes(
     src_range.ensure_equal_length(&mut dst_range);
 
     // Extend call memory.
+    dst_memory.extend_for_range(dst_addr.into(), copy_length.into());
     let dst_begin_slot = dst_range.start_slot().0;
     let dst_end_slot = dst_range.end_slot().0;
-    dst_memory.extend_for_range(dst_addr.into(), copy_length.into());
 
     let src_data_length = src_data.len();
     let src_addr = src_addr.min(src_data_length);
     let src_copy_end = src_addr + copy_length;
     let src_addr_end = src_copy_end.min(src_data_length);
     let dst_copy_end = dst_addr + copy_length;
+    let dst_addr_end = dst_end_slot.min(dst_memory.len());
 
     // Combine the destination slot bytes.
     let bytes_to_copy: Vec<_> = src_data[src_addr..src_addr_end]
@@ -2070,13 +2071,15 @@ fn combine_copy_slot_bytes(
         .cloned()
         .map(Into::into)
         .collect();
-    let padding_bytes = repeat(0).take(src_copy_end - src_addr_end);
+    let copy_padding_bytes = repeat(0).take(src_copy_end - src_addr_end);
+    let end_padding_bytes = repeat(0).take(dst_end_slot - dst_addr_end);
     let slot_bytes: Vec<u8> = dst_memory[dst_begin_slot..dst_addr]
         .iter()
         .cloned()
         .chain(bytes_to_copy)
-        .chain(padding_bytes)
-        .chain(dst_memory[dst_copy_end..dst_end_slot].iter().cloned())
+        .chain(copy_padding_bytes)
+        .chain(dst_memory[dst_copy_end..dst_addr_end].iter().cloned())
+        .chain(end_padding_bytes)
         .collect();
 
     (src_range, dst_range, slot_bytes)
