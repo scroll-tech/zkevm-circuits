@@ -393,24 +393,22 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let precompile_output_bytes_rlc = cb.condition(
                     and::expr([
                         call_gadget.is_success.expr(),
-                        call_gadget.cd_address.has_length(),
-                        call_gadget.rd_address.has_length(),
                         not::expr(precompile_return_length_zero.expr()),
                     ]),
                     |cb| {
                         let precompile_output_bytes_rlc = cb.query_cell_phase2();
                         cb.copy_table_lookup(
-                                callee_call_id.expr(),
-                                5.expr() + call_gadget.callee_address_expr(), // refer u64::from(CopyDataType)
-                                callee_call_id.expr(),
-                                CopyDataType::Memory.expr(),
-                                0.expr(),
-                                precompile_return_length.expr(),
-                                0.expr(),
-                                precompile_return_length.expr(),
-                                precompile_output_bytes_rlc.expr(),
-                                precompile_output_rws.expr(), // writes.
-                            ); // rwc_delta += `precompile_return_length` for precompile
+                            callee_call_id.expr(),
+                            5.expr() + call_gadget.callee_address_expr(), // refer u64::from(CopyDataType)
+                            callee_call_id.expr(),
+                            CopyDataType::Memory.expr(),
+                            0.expr(),
+                            precompile_return_length.expr(),
+                            0.expr(),
+                            precompile_return_length.expr(),
+                            precompile_output_bytes_rlc.expr(),
+                            precompile_output_rws.expr(), // writes.
+                        ); // rwc_delta += `precompile_return_length` for precompile
                         precompile_output_bytes_rlc
                     },
                 );
@@ -423,7 +421,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 let precompile_return_bytes_rlc = cb.condition(
                     and::expr([
                         call_gadget.is_success.expr(),
-                        call_gadget.cd_address.has_length(),
                         call_gadget.rd_address.has_length(),
                         not::expr(precompile_return_length_zero.expr()),
                     ]),
