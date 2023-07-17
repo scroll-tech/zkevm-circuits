@@ -36,8 +36,9 @@ use ethers_core::{
 };
 use ethers_providers::JsonRpcClient;
 pub use execution::{
-    CopyDataType, CopyEvent, CopyStep, EcAddOp, EcMulOp, EcPairingOp, ExecState, ExecStep,
-    ExpEvent, ExpStep, NumberOrHash, PrecompileEvent, PrecompileEvents,
+    CopyBytes, CopyDataType, CopyEvent, CopyEventStepsBuilder, CopyStep, EcAddOp, EcMulOp,
+    EcPairingOp, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash, PrecompileEvent,
+    PrecompileEvents,
 };
 use hex::decode_to_slice;
 
@@ -349,7 +350,7 @@ impl<'a> CircuitInputBuilder {
             .rev()
         {
             log::debug!(
-                "op {:?}, count {}, mem rw {}(avg {:.2}), stack rw {}(avg {:.2})",
+                "op {:?}, count {}, memory_word rw {}(avg {:.2}), stack rw {}(avg {:.2})",
                 op,
                 count,
                 mem,
@@ -358,7 +359,7 @@ impl<'a> CircuitInputBuilder {
                 *stack as f32 / *count as f32
             );
         }
-        log::debug!("memory num: {}", self.block.container.memory.len());
+        log::debug!("memory_word num: {}", self.block.container.memory.len());
         log::debug!("stack num: {}", self.block.container.stack.len());
         log::debug!("storage num: {}", self.block.container.storage.len());
         log::debug!(

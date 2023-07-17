@@ -18,6 +18,10 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 #![deny(clippy::debug_assert_with_mut_call)]
+// We have too many cast between `usize` and `u64`,
+// we'd better ensure usize is 64-bit on target arch.
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("This program requires a 64-bit target architecture.");
 
 pub mod bytecode_circuit;
 pub mod copy_circuit;

@@ -1,6 +1,6 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     Error,
 };
@@ -19,20 +19,7 @@ impl Opcode for Codecopy {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_codecopy_step(state, geth_step)?];
 
-        // reconstruction
-        let dst_offset = geth_step.stack.nth_last(0)?;
-        let code_offset = geth_step.stack.nth_last(1)?;
-        let length = geth_step.stack.nth_last(2)?;
-
-        let code_hash = state.call()?.code_hash;
-        let code = state.code(code_hash)?;
-
-        let call_ctx = state.call_ctx_mut()?;
-        let memory = &mut call_ctx.memory;
-
-        memory.copy_from(dst_offset, code_offset, length, &code);
-
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -67,6 +54,7 @@ fn gen_codecopy_step(
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
@@ -88,15 +76,8 @@ fn gen_copy_event(
         .unwrap_or(u64::MAX)
         .min(src_addr_end);
 
-    let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = state.gen_copy_steps_for_bytecode(
-        &mut exec_step,
-        &bytecode,
-        src_addr,
-        dst_addr,
-        src_addr_end,
-        length,
-    )?;
+    let (copy_steps, prev_bytes) =
+        state.gen_copy_steps_for_bytecode(exec_step, &bytecode, src_addr, dst_addr, length)?;
 
     Ok(CopyEvent {
         src_type: CopyDataType::Bytecode,
@@ -108,7 +89,8 @@ fn gen_copy_event(
         dst_addr,
         log_id: None,
         rw_counter_start,
-        bytes: copy_steps,
+        //fetch pre write bytes of CopyBytes
+        copy_bytes: CopyBytes::new(copy_steps, None, Some(prev_bytes)),
     })
 }
 
@@ -121,7 +103,10 @@ mod codecopy_tests {
         Word,
     };
     use mock::{
-        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        test_ctx::{
+            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+            LoggerConfig,
+        },
         TestContext,
     };
 
@@ -138,20 +123,21 @@ mod codecopy_tests {
         test_ok(0x20, 0x40, 0xA0);
     }
 
-    fn test_ok(dst_offset: usize, code_offset: usize, size: usize) {
+    fn test_ok(memory_offset: usize, code_offset: usize, copy_size: usize) {
         let code = bytecode! {
-            PUSH32(size)
+            PUSH32(copy_size)
             PUSH32(code_offset)
-            PUSH32(dst_offset)
+            PUSH32(memory_offset)
             CODECOPY
             STOP
         };
 
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code.clone()),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::default(),
         )
         .unwrap()
         .into();
@@ -176,7 +162,7 @@ mod codecopy_tests {
             [
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1021), Word::from(dst_offset)),
+                    &StackOp::new(1, StackAddress::from(1021), Word::from(memory_offset)),
                 ),
                 (
                     RW::READ,
@@ -184,29 +170,44 @@ mod codecopy_tests {
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from(1023), Word::from(size)),
+                    &StackOp::new(1, StackAddress::from(1023), Word::from(copy_size)),
                 ),
             ]
         );
 
-        // RW table memory writes.
+        // add RW table memory word writes.
+        let length = memory_offset + copy_size;
+        let copy_start = memory_offset - memory_offset % 32;
+        let copy_end = length - length % 32;
+        let word_ops = (copy_end + 32 - copy_start) / 32 - 1;
+        let copied_bytes = builder.block.copy_events[0]
+            .copy_bytes
+            .bytes
+            .iter()
+            .map(|(b, _, _)| *b)
+            .collect::<Vec<_>>();
+        let prev_bytes = builder.block.copy_events[0]
+            .copy_bytes
+            .bytes_write_prev
+            .clone()
+            .unwrap();
+
+        assert_eq!(builder.block.container.memory.len(), word_ops);
         assert_eq!(
-            (0..size)
+            (0..word_ops)
                 .map(|idx| &builder.block.container.memory[idx])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryOp)>>(),
-            (0..size)
+            (0..word_ops)
                 .map(|idx| {
                     (
                         RW::WRITE,
-                        MemoryOp::new(
-                            1,
-                            MemoryAddress::from(dst_offset + idx),
-                            if code_offset + idx < code.to_vec().len() {
-                                code.to_vec()[code_offset + idx]
-                            } else {
-                                0
-                            },
+                        MemoryOp::new_write(
+                            expected_call_id,
+                            MemoryAddress(copy_start + idx * 32),
+                            Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
+                            // get previous value
+                            Word::from(&prev_bytes[idx * 32..(idx + 1) * 32]),
                         ),
                     )
                 })
@@ -215,7 +216,6 @@ mod codecopy_tests {
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].bytes.len(), size);
         assert_eq!(
             copy_events[0].src_id,
             NumberOrHash::Hash(CodeDB::hash(&code.to_vec()))
@@ -227,14 +227,16 @@ mod codecopy_tests {
             copy_events[0].dst_id,
             NumberOrHash::Number(expected_call_id)
         );
-        assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
+        assert_eq!(copy_events[0].dst_addr as usize, memory_offset);
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 
-        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, is_mask)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
             let bytecode_element = code.get(code_offset + idx).unwrap_or_default();
-            assert_eq!(*value, bytecode_element.value);
-            assert_eq!(*is_code, bytecode_element.is_code);
+            if !is_mask {
+                assert_eq!(*value, bytecode_element.value);
+                assert_eq!(*is_code, bytecode_element.is_code);
+            }
         }
     }
 }

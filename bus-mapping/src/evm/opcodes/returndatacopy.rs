@@ -1,9 +1,9 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     evm::Opcode,
-    operation::{CallContextField, MemoryOp, RW},
+    operation::CallContextField,
     Error,
 };
 use eth_types::GethExecStep;
@@ -19,20 +19,7 @@ impl Opcode for Returndatacopy {
         let geth_step = &geth_steps[0];
         let mut exec_steps = vec![gen_returndatacopy_step(state, geth_step)?];
 
-        // reconstruction
-        let geth_step = &geth_steps[0];
-        let dst_offset = geth_step.stack.nth_last(0)?;
-        let src_offset = geth_step.stack.nth_last(1)?;
-        let length = geth_step.stack.nth_last(2)?;
-
-        // can we reduce this clone?
-        let return_data = state.call_ctx()?.return_data.clone();
-
-        let call_ctx = state.call_ctx_mut()?;
-        let memory = &mut call_ctx.memory;
-        memory.copy_from(dst_offset, src_offset, length, &return_data);
-
-        let copy_event = gen_copy_event(state, geth_step)?;
+        let copy_event = gen_copy_event(state, geth_step, &mut exec_steps[0])?;
         state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
@@ -61,13 +48,13 @@ fn gen_returndatacopy_step(
 
     let call_id = state.call()?.call_id;
     let call_ctx = state.call_ctx()?;
-    let return_data = call_ctx.return_data.clone();
+    let return_data_len = call_ctx.return_data.len();
     let last_callee_id = state.call()?.last_callee_id;
     let last_callee_return_data_offset = state.call()?.last_callee_return_data_offset;
     let last_callee_return_data_length = state.call()?.last_callee_return_data_length;
+
     assert_eq!(
-        last_callee_return_data_length as usize,
-        return_data.len(),
+        last_callee_return_data_length as usize, return_data_len,
         "callee return data size should be correct"
     );
 
@@ -80,7 +67,7 @@ fn gen_returndatacopy_step(
         ),
         (
             CallContextField::LastCalleeReturnDataLength,
-            return_data.len().into(),
+            return_data_len.into(),
         ),
     ] {
         state.call_context_read(&mut exec_step, call_id, field, value);
@@ -88,45 +75,20 @@ fn gen_returndatacopy_step(
     Ok(exec_step)
 }
 
-fn gen_copy_steps(
-    state: &mut CircuitInputStateRef,
-    exec_step: &mut ExecStep,
-    src_addr: u64,
-    dst_addr: u64,
-    src_addr_end: u64,
-    bytes_left: u64,
-) -> Result<Vec<(u8, bool)>, Error> {
-    let mut copy_steps = Vec::with_capacity(bytes_left as usize);
-    let src_addr_base = state.call()?.last_callee_return_data_offset;
-    for idx in 0..bytes_left {
-        let addr = src_addr + idx;
-        let value = if addr < src_addr_end {
-            state.call_ctx()?.return_data[(addr - src_addr_base) as usize]
-        } else {
-            unreachable!("return data copy out of bound")
-        };
-        // Read
-        state.push_op(
-            exec_step,
-            RW::READ,
-            MemoryOp::new(state.call()?.last_callee_id, addr.into(), value),
-        );
-
-        // Write
-        copy_steps.push((value, false));
-        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
-    }
-    Ok(copy_steps)
-}
-
 fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
+    exec_step: &mut ExecStep,
 ) -> Result<CopyEvent, Error> {
+    let rw_counter_start = state.block_ctx.rwc;
+
     // Get low Uint64 of offset.
-    let dst_addr = geth_step.stack.nth_last(0)?.low_u64();
-    let data_offset = geth_step.stack.nth_last(1)?.as_u64();
-    let length = geth_step.stack.nth_last(2)?.as_u64();
+    let dst_addr = geth_step.stack.nth_last(0)?;
+    let data_offset = geth_step.stack.nth_last(1)?;
+    let length = geth_step.stack.nth_last(2)?;
+
+    let (dst_addr, data_offset, length) =
+        (dst_addr.low_u64(), data_offset.as_u64(), length.as_u64());
 
     let last_callee_return_data_offset = state.call()?.last_callee_return_data_offset;
     let last_callee_return_data_length = state.call()?.last_callee_return_data_length;
@@ -135,35 +97,20 @@ fn gen_copy_event(
         last_callee_return_data_offset + last_callee_return_data_length,
     );
 
-    let rw_counter_start = state.block_ctx.rwc;
-    let mut exec_step = state.new_step(geth_step)?;
-    let copy_steps = gen_copy_steps(
-        state,
-        &mut exec_step,
-        src_addr,
-        dst_addr,
-        src_addr_end,
-        length,
-    )?;
-
-    let (src_type, dst_type, src_id, dst_id) = (
-        CopyDataType::Memory,
-        CopyDataType::Memory,
-        NumberOrHash::Number(state.call()?.last_callee_id),
-        NumberOrHash::Number(state.call()?.call_id),
-    );
+    let (read_steps, write_steps, prev_bytes) =
+        state.gen_copy_steps_for_return_data(exec_step, src_addr, dst_addr, length)?;
 
     Ok(CopyEvent {
-        src_type,
-        src_id,
+        src_type: CopyDataType::Memory,
+        src_id: NumberOrHash::Number(state.call()?.last_callee_id),
         src_addr,
         src_addr_end,
-        dst_type,
-        dst_id,
+        dst_type: CopyDataType::Memory,
+        dst_id: NumberOrHash::Number(state.call()?.call_id),
         dst_addr,
         log_id: None,
         rw_counter_start,
-        bytes: copy_steps,
+        copy_bytes: CopyBytes::new(read_steps, Some(write_steps), Some(prev_bytes)),
     })
 }
 
@@ -172,7 +119,10 @@ mod return_tests {
     use crate::mock::BlockData;
     use eth_types::{bytecode, geth_types::GethData};
     use mock::{
-        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        test_ctx::{
+            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+            LoggerConfig,
+        },
         TestContext, MOCK_DEPLOYED_CONTRACT_BYTECODE,
     };
 
@@ -205,11 +155,12 @@ mod return_tests {
             STOP
         };
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let block: GethData = TestContext::<2, 1>::new_with_logger_config(
             None,
             account_0_code_account_1_no_code(code),
             tx_from_1_to_0,
             |block, _tx| block.number(0xcafeu64),
+            LoggerConfig::default(),
         )
         .unwrap()
         .into();

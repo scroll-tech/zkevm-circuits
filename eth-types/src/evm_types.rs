@@ -10,7 +10,7 @@ pub mod opcode_ids;
 pub mod stack;
 pub mod storage;
 
-pub use memory::{Memory, MemoryAddress};
+pub use memory::{Memory, MemoryAddress, MemoryRef};
 pub use opcode_ids::OpcodeId;
 pub use stack::{Stack, StackAddress};
 pub use storage::Storage;
