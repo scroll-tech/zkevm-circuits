@@ -267,10 +267,13 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     callee_gas_left,
                 );
 
+                // mutate the callee memory by at least the precompile call's result that will be
+                // written from memory addr 0 to memory addr result.len()
+                state.call_ctx_mut()?.memory.extend_at_least(result.len());
+
                 // mutate the caller memory.
                 let length = min(result.len(), ret_length);
                 if length > 0 {
-                    state.call_ctx_mut()?.memory.extend_at_least(length);
                     {
                         let caller_ctx_mut = state.caller_ctx_mut()?;
                         caller_ctx_mut.return_data = result.clone();
@@ -340,7 +343,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 // insert a copy event (input) for this step and generate word memory read & write
                 // rws also handle prev bytes internally.
                 let rw_counter_start = state.block_ctx.rwc;
-
                 let input_bytes = if call.call_data_length > 0 {
                     let n_input_bytes = if let Some(input_len) = precompile_call.input_len() {
                         min(input_len, call.call_data_length as usize)
@@ -357,7 +359,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         .filter(|(_, _, is_mask)| !*is_mask)
                         .map(|t| t.0)
                         .collect();
-
                     state.push_copy(
                         &mut exec_step,
                         CopyEvent {
