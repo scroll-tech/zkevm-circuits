@@ -186,7 +186,7 @@ impl<F: Field> EccCircuit<F> {
                 macro_rules! assign_ec_op {
                     ($op_type:ident, $ops:expr, $n_ops:expr, $assign_fn:ident) => {
                         $ops.iter()
-                            .filter(|op| !op.is_zero())
+                            .filter(|op| !op.skip_by_ecc_circuit())
                             .chain(std::iter::repeat(&$op_type::default()))
                             .take($n_ops)
                             .map(|op| {
@@ -395,15 +395,70 @@ impl<F: Field> EccCircuit<F> {
         let point_p = self.assign_g1(ctx, ecc_chip, op.p, powers_of_rand);
         let point_q = self.assign_g1(ctx, ecc_chip, op.q, powers_of_rand);
         let point_r = self.assign_g1(ctx, ecc_chip, op.r, powers_of_rand);
-        let point_r_got = ecc_chip.sum::<G1Affine>(
+
+        // We follow the approach mentioned below to handle many edge cases for the points P, Q and
+        // R so that we can maintain the same fixed and permutation columns and reduce the overall
+        // validation process from the EVM Circuit.
+        //
+        // To check the validity of P + Q == R, we check:
+        // r + P + Q - R == r
+        // where r is a random point on the curve.
+        //
+        // We cover cases such as:
+        // - P == (0, 0) and/or Q == (0, 0)
+        // - P == -Q, i.e. P + Q == R == (0, 0)
+
+        let rand_point = ecc_chip.load_random_point::<G1Affine>(ctx);
+
+        // check if P == (0, 0), Q == (0, 0), R == (0, 0)
+        let p_x_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_p.decomposed.ec_point.x);
+        let p_y_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_p.decomposed.ec_point.y);
+        let q_x_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_q.decomposed.ec_point.x);
+        let q_y_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_q.decomposed.ec_point.y);
+        let r_x_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_r.decomposed.ec_point.x);
+        let r_y_is_zero = ecc_chip
+            .field_chip
+            .is_zero(ctx, &point_r.decomposed.ec_point.y);
+        let point_p_is_zero = ecc_chip.field_chip.range().gate().and(
             ctx,
-            [
-                point_p.decomposed.ec_point.clone(),
-                point_q.decomposed.ec_point.clone(),
-            ]
-            .into_iter(),
+            QuantumCell::Existing(p_x_is_zero),
+            QuantumCell::Existing(p_y_is_zero),
         );
-        ecc_chip.assert_equal(ctx, &point_r.decomposed.ec_point, &point_r_got);
+        let point_q_is_zero = ecc_chip.field_chip.range().gate().and(
+            ctx,
+            QuantumCell::Existing(q_x_is_zero),
+            QuantumCell::Existing(q_y_is_zero),
+        );
+        let point_r_is_zero = ecc_chip.field_chip.range().gate().and(
+            ctx,
+            QuantumCell::Existing(r_x_is_zero),
+            QuantumCell::Existing(r_y_is_zero),
+        );
+
+        // sum1 = if P == (0, 0) then r else r + P
+        let sum1 = ecc_chip.add_unequal(ctx, &rand_point, &point_p.decomposed.ec_point, true);
+        let sum1 = ecc_chip.select(ctx, &rand_point, &sum1, &point_p_is_zero);
+
+        // sum2 = if Q == (0, 0) then sum1 else sum1 + Q
+        let sum2 = ecc_chip.add_unequal(ctx, &sum1, &point_q.decomposed.ec_point, true);
+        let sum2 = ecc_chip.select(ctx, &sum1, &sum2, &point_q_is_zero);
+
+        // sum3 = if R == (0, 0) then sum2 else sum2 - R
+        let sum3 = ecc_chip.sub_unequal(ctx, &sum2, &point_r.decomposed.ec_point, true);
+        let sum3 = ecc_chip.select(ctx, &sum2, &sum3, &point_r_is_zero);
+
+        ecc_chip.assert_equal(ctx, &rand_point, &sum3);
+
         EcAddAssigned {
             point_p,
             point_q,
