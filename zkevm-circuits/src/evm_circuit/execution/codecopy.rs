@@ -142,7 +142,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
+        _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -183,12 +183,13 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         )?;
         self.memory_copier_gas
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
-        // rw_counter increase from copy table lookup is number of bytes copied.
+
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                size.to_scalar()
+                step.copy_rw_counter_delta
+                    .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
@@ -229,6 +230,7 @@ mod tests {
     fn codecopy_gadget_simple() {
         test_ok(0x00.into(), 0x00.into(), 0x20, false);
         test_ok(0x30.into(), 0x20.into(), 0x30, false);
+        test_ok(0x20.into(), 0x10.into(), 0x12, false);
         test_ok(0x20.into(), 0x10.into(), 0x42, false);
     }
 

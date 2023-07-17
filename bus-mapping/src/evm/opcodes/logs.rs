@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyBytes, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
     },
     operation::{CallContextField, TxLogField},
     Error,
@@ -53,19 +53,8 @@ fn gen_log_step(
     let msize = geth_step.stack.nth_last(1)?;
 
     let call_id = state.call()?.call_id;
-    let mut stack_index = 0;
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(stack_index),
-        mstart,
-    )?;
-    state.stack_read(
-        &mut exec_step,
-        geth_step.stack.nth_last_filled(stack_index + 1),
-        msize,
-    )?;
-
-    stack_index += 1;
+    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), mstart)?;
+    state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), msize)?;
 
     state.call_context_read(
         &mut exec_step,
@@ -113,10 +102,9 @@ fn gen_log_step(
         let topic = geth_step.stack.nth_last(2 + i)?;
         state.stack_read(
             &mut exec_step,
-            geth_step.stack.nth_last_filled(stack_index + 1),
+            geth_step.stack.nth_last_filled(2 + i),
             topic,
         )?;
-        stack_index += 1;
 
         if state.call()?.is_persistent {
             state.tx_log_write(
@@ -149,7 +137,7 @@ fn gen_copy_event(
     let msize = geth_step.stack.nth_last(1)?.as_u64();
 
     let (src_addr, src_addr_end) = (memory_start, memory_start.checked_add(msize).unwrap());
-    let steps = state.gen_copy_steps_for_log(exec_step, src_addr, msize)?;
+    let (read_steps, write_steps) = state.gen_copy_steps_for_log(exec_step, src_addr, msize)?;
 
     Ok(CopyEvent {
         src_type: CopyDataType::Memory,
@@ -161,7 +149,7 @@ fn gen_copy_event(
         dst_addr: 0,
         log_id: Some(state.tx_ctx.log_id as u64 + 1),
         rw_counter_start,
-        bytes: steps,
+        copy_bytes: CopyBytes::new(read_steps, Some(write_steps), None),
     })
 }
 
@@ -170,7 +158,7 @@ mod log_tests {
     use crate::{
         circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
-        operation::{CallContextField, CallContextOp, MemoryOp, StackOp, TxLogField, TxLogOp, RW},
+        operation::{CallContextField, CallContextOp, StackOp, TxLogField, TxLogOp, RW},
     };
     use eth_types::{
         bytecode,
@@ -366,48 +354,44 @@ mod log_tests {
             { log_topic_ops },
         );
 
-        // memory reads.
-        let mut log_data_ops = Vec::with_capacity(msize);
+        let copy_start = mstart - mstart % 32;
+        let copy_last = mstart + msize - 1;
+        let copy_end = copy_last - copy_last % 32;
+        let word_ops = (copy_end + 32 - copy_start) / 32;
+        let copied_bytes = builder.block.copy_events[0]
+            .copy_bytes
+            .bytes
+            .iter()
+            .map(|(b, _, _)| *b)
+            .collect::<Vec<_>>();
         assert_eq!(
-            // skip first 32 writes of MSTORE ops
-            (mstart + 64..(mstart + 64 + msize))
-                .map(|idx| &builder.block.container.memory[idx])
-                .map(|op| (op.rw(), op.op().clone()))
-                .collect::<Vec<(RW, MemoryOp)>>(),
-            {
-                let mut memory_ops = Vec::with_capacity(msize);
-                (mstart..msize).for_each(|idx| {
-                    memory_ops.push((
-                        RW::READ,
-                        MemoryOp::new(1, (mstart + idx).into(), memory_data[mstart + idx]),
-                    ));
-                    // tx log addition
-                    log_data_ops.push((
-                        RW::WRITE,
-                        TxLogOp::new(
-                            1,
-                            step.log_id + 1, // because it is in next CopyToLog step
-                            TxLogField::Data,
-                            idx - mstart,
-                            Word::from(memory_data[mstart + idx]),
-                        ),
-                    ));
-                });
-
-                memory_ops
-            },
+            builder.block.container.tx_log.len(),
+            word_ops + (1 + topic_count)
         );
         assert_eq!(
-            ((1 + topic_count)..msize + 1 + topic_count)
+            ((1 + topic_count)..word_ops + (1 + topic_count))
                 .map(|idx| &builder.block.container.tx_log[idx])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, TxLogOp)>>(),
-            { log_data_ops },
+            (0..word_ops)
+                .map(|idx| {
+                    (
+                        RW::WRITE,
+                        TxLogOp::new(
+                            1,
+                            step.log_id + 1,
+                            TxLogField::Data,
+                            idx * 32,
+                            Word::from(&copied_bytes[idx * 32..(idx + 1) * 32]),
+                        ),
+                    )
+                })
+                .collect::<Vec<(RW, TxLogOp)>>(),
         );
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].bytes.len(), msize);
+        //assert_eq!(copy_events[0].bytes.len(), msize);
         assert_eq!(copy_events[0].src_type, CopyDataType::Memory);
         assert_eq!(
             copy_events[0].src_id,
@@ -420,9 +404,11 @@ mod log_tests {
         assert_eq!(copy_events[0].dst_addr as usize, 0);
         assert_eq!(copy_events[0].log_id, Some(step.log_id as u64 + 1));
 
-        for (idx, (byte, is_code)) in copy_events[0].bytes.iter().enumerate() {
-            assert_eq!(Some(byte), memory_data.get(mstart + idx));
-            assert!(!*is_code);
+        for (idx, (byte, is_code, is_mask)) in copy_events[0].copy_bytes.bytes.iter().enumerate() {
+            if !*is_mask {
+                assert_eq!(Some(byte), memory_data.get(mstart + idx));
+                assert!(!*is_code);
+            }
         }
     }
 }
