@@ -33,7 +33,7 @@ fn run<F: Field>(
 
     let prover = match MockProver::run(k, &circuit, vec![]) {
         Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
+        Err(e) => panic!("{e:#?}"),
     };
     assert_eq!(prover.verify(), Ok(()));
 }
